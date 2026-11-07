@@ -52,6 +52,41 @@ test("deleting a worksheet marks surviving formulas and anchors, and undo restor
   expect(session.undo().mapping.workbook).toEqual([{ kind: "restoreSheet", sheetId: "sheet-1" }]);
   expect(session.getCell("sheet-1", 0, 0)?.html).toBe(before); expect(session.getAnnotations()[0]).toMatchObject({ status: "resolved", baseRevision: 4 });
 });
+test("structural formula rewrites retain historical cache values while invalidating them", () => {
+  const session = createDocumentSession(scalarWorkbook([
+    { row: 0, column: 0, value: number(5) },
+    { row: 0, column: 1, value: number(999), formula: "=Sheet1!A1+1" },
+    { row: 0, column: 2, value: { type: "text", value: "历史😀禰󠄀" }, formula: "=UNIMPLEMENTED(Sheet1!A1)" },
+    { row: 0, column: 3, value: { type: "blank" }, formula: "=UNIMPLEMENTED(Sheet1!A1)", cacheState: "unavailable" },
+  ]));
+  const original = session.serialize();
+  commit(session, [{ op: "updateWorkbookSheet", sheetId: "sheet-1", changes: { name: "中文" } }]);
+  expect(session.getCell("sheet-1", 0, 1)).toMatchObject({ value: number(999), formula: { expression: "=('中文'!A1+1)", cacheState: "stale" } });
+  expect(session.getCell("sheet-1", 0, 2)).toMatchObject({ value: { type: "text", value: "历史😀禰󠄀" }, formula: { expression: "=UNIMPLEMENTED('中文'!A1)", cacheState: "stale" } });
+  expect(session.getCell("sheet-1", 0, 2)?.html).toContain(">历史😀禰󠄀</td>");
+  expect(session.getCell("sheet-1", 0, 3)).toMatchObject({ value: { type: "blank" }, formula: { expression: "=UNIMPLEMENTED('中文'!A1)", cacheState: "unavailable" } });
+  session.calculateSync();
+  expect(session.getCalculatedCell("sheet-1", 0, 1)).toMatchObject({ value: number(6) });
+  expect(session.getCalculatedCell("sheet-1", 0, 2)).toMatchObject({ state: "unavailable", issue: { reason: "unsupported-function" } });
+  expect(openDocument(session.serialize(), { kind: "workbook" }).getCell("sheet-1", 0, 2)?.value).toEqual({ type: "text", value: "历史😀禰󠄀" });
+  session.undo();
+  const restored = new Map(session.serialize());
+  for (const [path, bytes] of original) if (path.endsWith(".html")) expect(restored.get(path)).toEqual(bytes);
+  expect(session.getCell("sheet-1", 0, 2)?.formula?.cacheState).toBe("imported");
+});
+test("a reverted formula target rename is a source no-op and retains redo", () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 1, value: number(999), formula: "=Sheet1!A1+1" }]));
+  commit(session, [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 1, column: 0, source: { kind: "value", value: number(7) } }] }]);
+  session.undo();
+  const before = session.serialize(), history = session.history(), events: string[] = [];
+  session.subscribe(event => events.push(event.type));
+  const receipt = commit(session, [
+    { op: "updateWorkbookSheet", sheetId: "sheet-1", changes: { name: "Temporary" } },
+    { op: "updateWorkbookSheet", sheetId: "sheet-1", changes: { name: "Sheet1" } },
+  ]);
+  expect(receipt.changed).toBe(false); expect(session.serialize()).toEqual(before);
+  expect(session.history()).toEqual(history); expect(events).toEqual([]);
+});
 test("invalid final visibility, duplicate names, removed targets and unknown siblings fail atomically", () => {
   const session = createDocumentSession(openDocument(createWorkbook({ documentId: "guards" }), { kind: "workbook" })), before = session.serialize();
   for (const operations of [

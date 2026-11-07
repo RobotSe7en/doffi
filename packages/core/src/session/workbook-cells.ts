@@ -28,6 +28,16 @@ export function rangesIntersect(a: WorkbookRange, b: WorkbookRange): boolean {
 }
 interface EditedChunk { descriptor: WorkbookChunkDescriptor; cells: Map<number, string>; pending: Set<number> }
 const coordinate = (row: number, column: number): number => row * 16_384 + column;
+function cellTail(html: string): string {
+  let quote = "";
+  for (let index = 0; index < html.length; index++) {
+    const character = html[index]!;
+    if (quote) { if (character === quote) quote = ""; }
+    else if (character === '"' || character === "'") quote = character;
+    else if (character === ">") return html.slice(index + 1);
+  }
+  return invalid("A workbook cell has no complete opening tag.");
+}
 
 /** A preparation owns only touched, bounded cell blocks. Other bytes stay shared. */
 export class WorkbookCellEdit {
@@ -106,6 +116,33 @@ export class WorkbookCellEdit {
     const source = "<td" + Object.entries(attrs).map(([name, value]) => " " + name + '="' + escapeWorkbookText(value) + '"').join("") + ">" + html + "</td>";
     this.store(sheetId, input.row, input.column, source, attrs["data-value-type"] === "blank" && !attrs["data-formula"] && !cssClass && !formatId);
   }
+  /** A structural edit changes the reference source, not its historical cached
+   * value or rich-text representation. Current calculation never trusts it. */
+  rewriteFormula(sheetId: string, row: number, column: number, expression: string): void {
+    const previous = this.get(sheetId, row, column);
+    if (!previous?.formula || previous.formula.expression === expression) return;
+    parseFormula(expression, { row, column });
+    const attrs = Object.fromEntries(parseWorkbookCellElement(previous.html).attrs.map(attr => [attr.name, attr.value]));
+    attrs["data-formula"] = expression;
+    if (previous.formula.cacheState !== "unavailable") attrs["data-cache-state"] = "stale";
+    this.patchAttributes(sheetId, row, column, previous, attrs, true);
+  }
+  private patchAttributes(sheetId: string, row: number, column: number, previous: WorkbookCell, attrs: Record<string, string>, restoreReferenceSource = false): void {
+    const body = cellTail(previous.html);
+    let source = "<td" + Object.entries(attrs).map(([name, value]) => " " + name + '="' + escapeWorkbookText(value) + '"').join("") + ">" + body;
+    const original = this.base.getCell(sheetId, row, column);
+    if (original && body === cellTail(original.html)) {
+      const originalAttrs = Object.fromEntries(parseWorkbookCellElement(original.html).attrs.map(attr => [attr.name, attr.value]));
+      // A reversed structural edit can reproduce the original expression with
+      // canonical parentheses or quoted sheet names. Restore its exact source
+      // and cache state only when all remaining attributes and body also match.
+      if (Object.keys(attrs).length === Object.keys(originalAttrs).length && Object.entries(attrs).every(([key, value]) =>
+        originalAttrs[key] === value || key === "data-cache-state" && attrs["data-formula"] !== undefined
+        || restoreReferenceSource && key === "data-formula" && original.formula
+          && JSON.stringify(parseFormula(value, { row, column })) === JSON.stringify(parseFormula(original.formula.expression, { row, column })))) source = original.html;
+    }
+    this.store(sheetId, row, column, source, false);
+  }
   /** Attributes alone change; formula caches and the exact rich-text body stay
    * source bytes. A format-only edit never passes through typed value input. */
   format(sheetId: string, input: WorkbookCellFormatInput): void {
@@ -117,24 +154,8 @@ export class WorkbookCellEdit {
     const root = parseWorkbookCellElement(previous.html), attrs = Object.fromEntries(root.attrs.map(attr => [attr.name, attr.value]));
     if (cssClass) attrs.class = cssClass; else delete attrs.class;
     if (formatId) attrs["data-format-id"] = formatId; else delete attrs["data-format-id"];
-    const tail = (html: string): string => {
-      let quote = "";
-      for (let index = 0; index < html.length; index++) {
-        const character = html[index]!;
-        if (quote) { if (character === quote) quote = ""; }
-        else if (character === '"' || character === "'") quote = character;
-        else if (character === ">") return html.slice(index + 1);
-      }
-      return invalid("A workbook cell has no complete opening tag.");
-    };
-    const body = tail(previous.html);
-    let source = "<td" + Object.entries(attrs).map(([name, value]) => " " + name + '="' + escapeWorkbookText(value) + '"').join("") + ">" + body;
-    const original = this.base.getCell(sheetId, input.row, input.column);
-    if (original && (cssClass ?? undefined) === original.cssClass && (formatId ?? undefined) === original.formatId && body === tail(original.html)) {
-      const originalAttrs = Object.fromEntries(parseWorkbookCellElement(original.html).attrs.map(attr => [attr.name, attr.value]));
-      if (Object.keys(attrs).length === Object.keys(originalAttrs).length && Object.entries(attrs).every(([key, value]) => originalAttrs[key] === value)) source = original.html;
-    }
-    this.store(sheetId, input.row, input.column, source, previous.value.type === "blank" && !previous.formula && !cssClass && !formatId && root.childNodes.length === 0);
+    if (previous.value.type === "blank" && !previous.formula && !cssClass && !formatId && root.childNodes.length === 0) this.store(sheetId, input.row, input.column, "", true);
+    else this.patchAttributes(sheetId, input.row, input.column, previous, attrs);
   }
   private store(sheetId: string, row: number, column: number, source: string, empty: boolean): void {
     const chunk = this.chunk(sheetId, row, column), key = coordinate(row, column);

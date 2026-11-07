@@ -6,7 +6,7 @@
 
 - main／远端 main 的基线为 `5451736`；当前分支 `feat/workbook-editing`。
 - 读取阶段已合并；CI 优化及触发频率调整分别为 `31cca2f`、`d65c0e9`，不再是待办。
-- R3-09/10/11/12 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`，均已推送。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。后续冻结界面完成下列本批检查；不能将这些进展计作完整 R3-11、R3-12 或 R3-16。
+- R3-09/10/11/12 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`、冻结界面及实际坐标查询为 `c917075`，均已推送。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。不能将这些进展计作完整 R3-11、R3-12 或 R3-16。
 - 两位授权审查者 `workbook_edit_review_one`、`workbook_edit_review_two` 已完成两轮只读基础审查。首轮 8 项、第二轮 6 项原始问题及 3 项追加边界，均由实施者修复并经原审查者复核关闭。整个阶段仍须最终差异复审，不能凭基础审查合并；详见[审查记录](workbook-editing-review.md)。
 - 不直接提交 main，不发布 npm；普通推送只执行快速检查。阶段最终验收按 [CI 执行](ci-performance.md) 显式发起。尚有 R3-09～20 共 12 项未完成验收：合并事务开始后，本阶段 8 项中 4 项实施中、4 项待实施，输出阶段另 4 项。
 
@@ -124,6 +124,8 @@
 - 冻结界面三引擎 6 项通过，日志 `.cache/workbook-freeze-browser.log`；源坐标查询三引擎 3 项通过，日志 `.cache/workbook-source-offset-browser.log`，覆盖千行隐藏、自动大字体／多行、隐藏列、只返回已发布修订、切表、非法坐标、释放和不修改源。最后冻结、坐标、既有鼠标草稿保护及 Playground 切换共 18 项三引擎定向回归全部通过，日志 `.cache/workbook-freeze-final-browser.log`；构建、最终工具类型及架构边界通过，日志 `.cache/workbook-freeze-guard-build.log`、`.cache/workbook-freeze-published-types.log`、`.cache/workbook-freeze-boundaries.log`。这仍不是阶段最终验收；行列插删／剪切／排序和其他 R3-12～16 工作继续实施。
 
 ## 接下来的工作
+
+2026-11-08 接入结构操作前增加公式缓存回归，先复现改名重写会把历史数字／文本值清空为 blank（`.cache/workbook-structural-cache-before.log`），再改用保留正文／格式的属性重写：历史缓存标为 stale，原本 unavailable 保持不可用，当前计算仍独立求值。同批改名后改回的初轮检查仍因规范化引号／括号新增修订，失败日志 `.cache/workbook-structural-cache-noop-before.log` 保留；最终只在原语义、其他属性和正文均与基线相同时还原原公式及缓存来源，保留重做且不发事件。最终核心 8 文件／73 项通过，日志 `.cache/workbook-structural-cache-final-core.log`；最终构建、类型和架构边界通过，日志 `.cache/workbook-structural-cache-final-{build,types,boundaries}.log`。原生改名／格式／复制／合并及 Worker 通道／输入 6 文件／49 项通过，日志 `.cache/workbook-structural-cache-final-integration.log`。独立 `04-formulas-names.xlsx` 改名所引用工作表后保留导入的历史值，当前重算、文档包 ZIP 重开及一次撤销均通过；这不是原生 XLSX 输出或完整行列操作验收。
 
 1. 完成 R3-09：验证共享生命周期回归、资源编辑的成功路径与结构映射全面接入；补齐原子失败、历史和冲突边界。工作表元数据基础已有，行列、剪切、排序等结构操作仍未完成。异步准备、专属 Worker 会话及远端输入／IME／TSV 基础已有，默认 Worker 编辑器／Playground 已接入，继续完整结构命令及其界面；候选最终提交仍为同步原子边界。不能将当前直连小型路径或不受限 Node 诊断当作完整大表命令验收。
 2. 完成 R3-10 的剩余边界和验收：补足函数参数／类型／错误／1904 系统与 Unicode、数值文本日期边界，以及筛选显示格式与多列／表组合的独立验收；补齐固定资源 2 万公式及普通编辑／100 步历史的完整门槛。现有 `workbook-scale` 的固定资源脚本仍只覆盖读取，新增默认编辑器 `@scale` 是容量集成；还须实现并运行默认编辑器的四引擎固定 CPU／内存／500ms 普通编辑 p95 验收，不能凭本机 247.5ms 或既有读取绿灯替代。现有函数／依赖调度及筛选小计基础不代表整个 R3-10 退出条件通过。

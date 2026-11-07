@@ -19,7 +19,7 @@ export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: Wor
     const sheet = workbook.sheets.find(sheet => sheet.sheetId === cell.sheetId)!;
     if (change.kind === "deleteSheet" && sheet.name === change.sheet) continue;
     const expression = rewrite(cell.formula!.expression, sheet.name, cell, sheet.tables?.find(table => rangeContains(table.range, cell.row, cell.column))?.name);
-    if (expression !== cell.formula!.expression) cells.set(cell.sheetId, { row: cell.row, column: cell.column, source: { kind: "formula", expression } });
+    if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression);
   }
   for (const name of workbook.names ?? []) {
     const sheet = name.sheetId === undefined ? "$workbook" : workbook.sheets.find(sheet => sheet.sheetId === name.sheetId)!.name;
