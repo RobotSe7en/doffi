@@ -118,6 +118,35 @@ test("mounted workbook merge requires an explicit clearing choice and unmerge/un
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ merges: [], history: { undoSteps: 0, redoSteps: 2 }, cells: [{ value: { type: "number", value: 7 } }, { value: { type: "number", value: 3 } }] });
 });
 
+test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
+  await page.addScriptTag({ content: editorCode });
+  const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },
+    { row: 0, column: 1, value: { type: "number", value: 999 }, formula: "=SUM(AF2:AG3)" }]);
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(model.serialize()));
+  const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }), address = page.getByRole("textbox", { name: "选择单元格或区域", exact: true });
+  await input.fill("草稿"); await expect(page.getByRole("button", { name: "插入选区行", exact: true })).toBeDisabled();
+  await input.press("Escape"); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByLabel("插入行列的格式", { exact: true }).selectOption("none");
+  await address.fill("AF2:AG3"); await address.press("Enter"); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole("button", { name: "插入选区行", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 1, 31))).toBeUndefined();
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 3, 31))).toMatchObject({ value: { type: "number", value: 7 } });
+  await address.fill("AF4:AG5"); await address.press("Enter"); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole("button", { name: "插入选区列", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 4, 34))).toMatchObject({ value: { type: "number", value: 8 } });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 1))).toMatchObject({ formula: { expression: "=SUM(AH4:AI5)" } });
+  await page.getByRole("button", { name: "删除选区列", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await address.fill("AF2:AG3"); await address.press("Enter"); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole("button", { name: "删除选区行", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 4, history: { undoSteps: 4 }, calculated: { state: "valid", value: { type: "number", value: 15 } }, cleanSource: true, errors: [] });
+  for (let index = 0; index < 4; index++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled()); }
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 8, history: { undoSteps: 0, redoSteps: 4 }, calculated: { value: { type: "number", value: 15 } }, cleanSource: true, errors: [] });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 1, 31))).toMatchObject({ value: { type: "number", value: 7 } });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 2, 32))).toMatchObject({ value: { type: "number", value: 8 } });
+});
+
 test("mounted workbook freezes before its selected cell and restores the same source through undo", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(scalarWorkbook([{ row: 0, column: 0, value: { type: "number", value: 7 } }]).serialize()));

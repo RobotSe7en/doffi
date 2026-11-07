@@ -6,6 +6,10 @@ import { WorkbookCellEdit, rangeContains } from "./workbook-cells.js";
 /** Every formula-bearing source participates in a structural reference edit.
  * Cached values are never rewritten into independent authoritative content. */
 export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): void {
+  for (const _step of rewriteWorkbookReferenceSteps(workbook, cells, change)) { /* Synchronous driver of the same kernel. */ }
+}
+export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): Generator<{ completed: number; total: number }, void> {
+  let completed = 0;
   const tables = workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => ({ name: table.name, sheet: sheet.name,
     range: table.range, header: table.header, totals: table.totals, columns: table.columns.map(column => column.name) })));
   function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string): string {
@@ -20,6 +24,7 @@ export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: Wor
     if (change.kind === "deleteSheet" && sheet.name === change.sheet) continue;
     const expression = rewrite(cell.formula!.expression, sheet.name, cell, sheet.tables?.find(table => rangeContains(table.range, cell.row, cell.column))?.name);
     if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression);
+    if (++completed % 256 === 0) yield { completed, total: 0 };
   }
   for (const name of workbook.names ?? []) {
     const sheet = name.sheetId === undefined ? "$workbook" : workbook.sheets.find(sheet => sheet.sheetId === name.sheetId)!.name;
@@ -59,4 +64,5 @@ export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: Wor
     // supplied by the caller's absolute native location or a workbook scope.
     link.location = rewrite("=" + link.location, "$workbook", { row: 0, column: 0 }).slice(1);
   }
+  yield { completed, total: completed };
 }

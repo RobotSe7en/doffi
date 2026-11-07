@@ -23,6 +23,7 @@ import { validateWorkbookCandidateSteps } from "./workbook-validation.js";
 import { checkTransactionSize } from "./limits.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import { editWorkbookSheet } from "./workbook-sheets.js";
+import { editWorkbookAxis, restoreWorkbookAxisSource } from "./workbook-axis.js";
 import { editWorkbookHyperlink, sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { compileNumberFormat } from "../workbook/number-format.js";
 import { WorkbookRegionIndex } from "../workbook/region-index.js";
@@ -93,7 +94,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       }
       annotations[index] = value;
     }
-    let operationCount = 0;
+    let operationCount = 0, changedAxis = false;
     yield { kind: "progress", value: { phase: "operations", completed: 0, total: transaction.operations.length } };
     for (const operation of transaction.operations) {
       if (!isWorkbookOperation(operation)) annotation(operation as AnnotationOperation);
@@ -126,10 +127,15 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         for (const value of editWorkbookMerge(sheet, cells, operation)) yield { kind: "progress", value: { phase: "cells", ...value } };
         mergeSheets.add(sheet.sheetId);
       }
+      else if (operation.op === "editWorkbookAxis") {
+        for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        changedAxis = true;
+      }
       else if (operation.op === "setWorkbookSettings") Object.assign(workbook, operation.changes);
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };
     }
+    if (changedAxis) restoreWorkbookAxisSource(workbook, base.snapshot().metadata.workbook, annotations, base.snapshot().annotations);
     for (const sheet of workbook.sheets.filter(sheet => mergeSheets.has(sheet.sheetId))) {
       const previous = base.snapshot().metadata.workbook.sheets.find(previous => previous.sheetId === sheet.sheetId);
       if (previous && sameWorkbookMerges(previous.merges, sheet.merges)) sheet.merges = previous.merges.map(range => ({ from: { ...range.from }, to: { ...range.to } }));

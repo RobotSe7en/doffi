@@ -129,6 +129,36 @@ test('mounted remote freeze controls use the selected source address and the Wor
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
 });
 
+test('mounted remote axis controls move cross-chunk cells and formulas through one Worker with draft protection and four undo steps', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 1, column: 31, value: { type: 'number', value: 7 } }, { row: 2, column: 32, value: { type: 'number', value: 8 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=SUM(AF2:AG3)' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }), address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  await input.fill('草稿'); await expect(page.getByRole('button', { name: '插入选区行', exact: true })).toBeDisabled();
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByLabel('插入行列的格式', { exact: true }).selectOption('none');
+  await address.fill('AF2:AG3'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '插入选区行', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(1, 31), window.workbookRemoteEditor.value(3, 31), window.workbookRemoteEditor.value(4, 32), window.workbookRemoteEditor.value(0, 1)])))
+    .toEqual(['', '7', '8', '=SUM(AF4:AG5)']);
+  await address.fill('AF4:AG5'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '插入选区列', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(3, 33), window.workbookRemoteEditor.value(4, 34), window.workbookRemoteEditor.value(0, 1)])))
+    .toEqual(['7', '8', '=SUM(AH4:AI5)']);
+  await page.getByRole('button', { name: '删除选区列', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await address.fill('AF2:AG3'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '删除选区行', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 4, history: { undoSteps: 4 }, current: { kind: 'value', value: { type: 'number', value: 15 } }, errors: [] });
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(1, 31), window.workbookRemoteEditor.value(2, 32), window.workbookRemoteEditor.value(0, 1)])))
+    .toEqual(['7', '8', '=SUM(AF2:AG3)']);
+  for (let index = 0; index < 4; index++) { await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); }
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 8, history: { undoSteps: 0, redoSteps: 4 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
 test('100 ordinary edits and complete undo/redo retain bounded current previews on 200,000 actual cells', { tag: '@scale' }, async ({ page }, info) => {
   test.setTimeout(360_000); await page.addScriptTag({ content: performanceHostCode });
   const result = await page.evaluate(({ code, bytes }) => window.workbookEditingPerformance.ordinaryWorkerEdits(code, bytes), {

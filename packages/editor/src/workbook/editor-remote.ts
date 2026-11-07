@@ -69,6 +69,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     ui.input.disabled = !state.selection || state.selecting || !!commandAbort;
     ui.mode.value = state.mode; ui.mode.disabled = busy || state.composing || !state.selection; ui.address.disabled = busy || refreshing || !source;
     for (const field of searchFields) field.disabled = busy;
+    ui.insertedFormat.disabled = busy;
     for (const { button, available } of buttons) button.disabled = !available();
     const pending = pendingInput() || state.applying || !!commandAbort;
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
@@ -242,6 +243,15 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     await perform([{ op: "updateWorkbookSheet", sheetId: anchor.sheetId, changes: { frozen: { rows: clear ? 0 : at.row, columns: clear ? 0 : at.column } } }]);
     await sourceSettled(); binding.focus();
   }
+  async function changeAxis(axis: "row" | "column", action: "insert" | "delete"): Promise<void> {
+    check(); const selected = input.state().selection, anchor = selected?.anchor;
+    if (!selected || anchor?.kind !== "cells" || anchor.ranges.length !== 1) throw new DocumentError("InvalidOperation", "请选择一个行列区域。");
+    if (selected.baseRevision !== client.state().revision) throw new DocumentError("RevisionConflict", "Axis selection belongs to a previous source.");
+    const range = anchor.ranges[0]!;
+    await perform([{ op: "editWorkbookAxis", sheetId: anchor.sheetId, axis, action, index: range.from[axis], count: range.to[axis] - range.from[axis] + 1,
+      ...(action === "insert" ? { formatSource: ui.insertedFormat.value as "before" | "after" | "none" } : {}) }]);
+    await sourceSettled(); binding.focus();
+  }
   function findQuery(): WorkbookFindQuery {
     const anchor = input.state().selection?.anchor, scope = ui.findScope.value, sheetId = preview!.layout().sheetId;
     if (scope === "selection" && anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择查找区域。");
@@ -329,6 +339,10 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("取消合并", () => queueInteraction(() => changeMerge(true)), idle);
   button("冻结选区之前", () => queueInteraction(() => changeFreeze()), idle);
   button("取消冻结", () => queueInteraction(() => changeFreeze(true)), idle);
+  button("插入选区行", () => queueInteraction(() => changeAxis("row", "insert")), idle);
+  button("删除选区行", () => queueInteraction(() => changeAxis("row", "delete")), idle);
+  button("插入选区列", () => queueInteraction(() => changeAxis("column", "insert")), idle);
+  button("删除选区列", () => queueInteraction(() => changeAxis("column", "delete")), idle);
   button("取消操作", () => commandAbort?.abort(), () => !!commandAbort && !commandApplying);
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);

@@ -58,6 +58,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     const state = input.state(); ui.mode.value = state.mode; ui.mode.disabled = Boolean(commandAbort) || state.composing || !state.selection;
     ui.address.disabled = Boolean(commandAbort) || revision < 0;
     for (const field of searchFields) field.disabled = Boolean(commandAbort);
+    ui.insertedFormat.disabled = Boolean(commandAbort);
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -184,6 +185,21 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     }
     perform([{ op: "updateWorkbookSheet", sheetId: anchor.sheetId, changes: { frozen: { rows: clear ? 0 : at.row, columns: clear ? 0 : at.column } } }]);
     await sourceSettled(); binding.focus();
+  }
+  async function changeAxis(axis: "row" | "column", action: "insert" | "delete"): Promise<void> {
+    check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    const selected = input.state().selection, anchor = selected?.anchor;
+    if (!selected || anchor?.kind !== "cells" || anchor.ranges.length !== 1) throw new DocumentError("InvalidOperation", "请选择一个行列区域。");
+    if (selected.baseRevision !== session.snapshot().manifest.revision) throw new DocumentError("RevisionConflict", "Axis selection belongs to a previous source.");
+    const range = anchor.ranges[0]!, abort = new view!.AbortController(); commandAbort = abort; ui.input.disabled = true; controls(); ui.error.hidden = true;
+    try {
+      await commitCommand({ protocolVersion: 1, documentId: selected.documentId, baseRevision: selected.baseRevision, operations: [
+        { op: "editWorkbookAxis", sheetId: anchor.sheetId, axis, action, index: range.from[axis], count: range.to[axis] - range.from[axis] + 1,
+          ...(action === "insert" ? { formatSource: ui.insertedFormat.value as "before" | "after" | "none" } : {}) },
+      ] }, abort);
+      readCurrentSelection(); await sourceSettled();
+    } finally { if (commandAbort === abort) commandAbort = undefined; if (!disposed) { ui.input.disabled = !input.state().selection; controls(); } }
+    binding.focus();
   }
   async function fill(axis: "row" | "column", series = false): Promise<void> {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
@@ -355,6 +371,10 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("取消合并", () => { void runInteraction(() => changeMerge(true)); }, idle);
   button("冻结选区之前", () => { void runInteraction(() => changeFreeze()); }, idle);
   button("取消冻结", () => { void runInteraction(() => changeFreeze(true)); }, idle);
+  button("插入选区行", () => { void runInteraction(() => changeAxis("row", "insert")); }, idle);
+  button("删除选区行", () => { void runInteraction(() => changeAxis("row", "delete")); }, idle);
+  button("插入选区列", () => { void runInteraction(() => changeAxis("column", "insert")); }, idle);
+  button("删除选区列", () => { void runInteraction(() => changeAxis("column", "delete")); }, idle);
   button("取消操作", () => commandAbort?.abort(), () => Boolean(commandAbort));
   button("查找下一个", () => { void runInteraction(() => search()); }, () => idle() && Boolean(ui.find.value), ui.searchTools);
   button("替换当前项", () => { void runInteraction(() => search("one")); }, () => idle() && ui.findField.value !== "display" && Boolean(found && found.index >= 0), ui.searchTools);

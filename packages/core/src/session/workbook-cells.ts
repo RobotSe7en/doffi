@@ -127,6 +127,19 @@ export class WorkbookCellEdit {
     if (previous.formula.cacheState !== "unavailable") attrs["data-cache-state"] = "stale";
     this.patchAttributes(sheetId, row, column, previous, attrs, true);
   }
+  /** Relocates captured, validated source without converting rich text or a
+   * historical formula value through the public typed-input representation. */
+  relocate(cell: WorkbookCell, row: number, column: number): void {
+    const attrs = Object.fromEntries(parseWorkbookCellElement(cell.html).attrs.map(attr => [attr.name, attr.value]));
+    attrs["data-column"] = String(column);
+    if (cell.formula && cell.formula.cacheState !== "unavailable") attrs["data-cache-state"] = "stale";
+    this.patchAttributes(cell.sheetId, row, column, cell, attrs, true);
+  }
+  checkAdditionalCells(additional: number): void {
+    const current = this.manifest.chunks.reduce((total, descriptor) =>
+      total + (this.chunks.get(this.key(descriptor.sheetId, descriptor.row, descriptor.column))?.cells.size ?? this.originals.get(descriptor.path)?.cellCount ?? 0), 0);
+    checkLimit(current + additional, workbookSource(this.base)!.workbookLimits.maxCells);
+  }
   private patchAttributes(sheetId: string, row: number, column: number, previous: WorkbookCell, attrs: Record<string, string>, restoreReferenceSource = false): void {
     const body = cellTail(previous.html);
     let source = "<td" + Object.entries(attrs).map(([name, value]) => " " + name + '="' + escapeWorkbookText(value) + '"').join("") + ">" + body;

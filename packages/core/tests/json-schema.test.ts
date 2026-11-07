@@ -8,6 +8,15 @@ import { invalidCases, manifest, repository, validCases } from "./fixtures.js";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validators = new Map(CONTRACT_NAMES.map((name) => [name, ajv.compile(getContractJsonSchema(name))]));
 
+test("axis edits have strict generated and runtime contracts", () => {
+  const valid = { op: "editWorkbookAxis", sheetId: "sheet-1", axis: "row", action: "insert", index: 255, count: 2 };
+  expect(validators.get("document-operation")!(valid)).toBe(true);
+  expect(parseContract("document-operation", valid)).toEqual(valid);
+  for (const invalid of [{ ...valid, count: 0 }, { ...valid, index: -1 }, { ...valid, axis: "sheet" }, { ...valid, action: "guess" }, { ...valid, partial: true }]) {
+    expect(validators.get("document-operation")!(invalid)).toBe(false); expect(() => parseContract("document-operation", invalid)).toThrow(DocumentError);
+  }
+});
+
 test("merge operations and explicit clearing share strict runtime and generated JSON contracts", () => {
   const target = { sheetId: "sheet-1", range: { from: { row: 0, column: 0 }, to: { row: 1, column: 1 } } };
   const valid = [{ op: "mergeWorkbookCells", ...target }, { op: "mergeWorkbookCells", ...target, coveredContent: "clear" }, { op: "unmergeWorkbookCells", ...target }];
