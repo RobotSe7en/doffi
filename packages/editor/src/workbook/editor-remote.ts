@@ -229,6 +229,19 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     await perform([unmerge ? { op: "unmergeWorkbookCells", ...target } : { op: "mergeWorkbookCells", ...target, coveredContent: clear ? "clear" : "reject" }]);
     await sourceSettled(); binding.focus();
   }
+  async function changeFreeze(clear = false): Promise<void> {
+    check(); const selected = input.state().selection, anchor = selected?.anchor;
+    if (!selected || anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择冻结位置。");
+    if (selected.baseRevision !== client.state().revision) throw new DocumentError("RevisionConflict", "Freeze selection belongs to a previous source.");
+    const at = anchor.ranges[0]!.from;
+    if (!clear) {
+      const offset = preview!.sourceOffset(at), viewport = preview!.layout().viewport;
+      if (offset.revision !== selected.baseRevision || offset.sheetId !== anchor.sheetId) throw new DocumentError("RevisionConflict", "Freeze geometry belongs to a previous view.");
+      if (offset.leftPt >= viewport.widthPt || offset.topPt >= viewport.heightPt) throw new DocumentError("InvalidOperation", "冻结区域将占满当前视口，请选择更靠前的位置。");
+    }
+    await perform([{ op: "updateWorkbookSheet", sheetId: anchor.sheetId, changes: { frozen: { rows: clear ? 0 : at.row, columns: clear ? 0 : at.column } } }]);
+    await sourceSettled(); binding.focus();
+  }
   function findQuery(): WorkbookFindQuery {
     const anchor = input.state().selection?.anchor, scope = ui.findScope.value, sheetId = preview!.layout().sheetId;
     if (scope === "selection" && anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择查找区域。");
@@ -314,6 +327,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("合并单元格", () => queueInteraction(() => changeMerge()), idle);
   button("合并并清除覆盖内容", () => queueInteraction(() => changeMerge(false, true)), idle);
   button("取消合并", () => queueInteraction(() => changeMerge(true)), idle);
+  button("冻结选区之前", () => queueInteraction(() => changeFreeze()), idle);
+  button("取消冻结", () => queueInteraction(() => changeFreeze(true)), idle);
   button("取消操作", () => commandAbort?.abort(), () => !!commandAbort && !commandApplying);
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);

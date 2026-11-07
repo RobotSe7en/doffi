@@ -6,7 +6,7 @@
 
 - main／远端 main 的基线为 `5451736`；当前分支 `feat/workbook-editing`。
 - 读取阶段已合并；CI 优化及触发频率调整分别为 `31cca2f`、`d65c0e9`，不再是待办。
-- R3-09/10/11/12 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 已推送为 `b161098`，跨表复制为 `04ab466`。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。后续开始合并／取消合并事务；不能将这些进展计作完整 R3-11、R3-12 或 R3-16。
+- R3-09/10/11/12 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`，均已推送。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。后续冻结界面完成下列本批检查；不能将这些进展计作完整 R3-11、R3-12 或 R3-16。
 - 两位授权审查者 `workbook_edit_review_one`、`workbook_edit_review_two` 已完成两轮只读基础审查。首轮 8 项、第二轮 6 项原始问题及 3 项追加边界，均由实施者修复并经原审查者复核关闭。整个阶段仍须最终差异复审，不能凭基础审查合并；详见[审查记录](workbook-editing-review.md)。
 - 不直接提交 main，不发布 npm；普通推送只执行快速检查。阶段最终验收按 [CI 执行](ci-performance.md) 显式发起。尚有 R3-09～20 共 12 项未完成验收：合并事务开始后，本阶段 8 项中 4 项实施中、4 项待实施，输出阶段另 4 项。
 
@@ -120,6 +120,8 @@
 - 合并事务 `5d2eb2f` 已推送，远端快速检查 `42384970948` 成功。后续新增真实默认编辑器容量探针：同一 Worker 内 200,000 实际格／20,000 公式／40 块，公式栏编辑 C1，屏幕保持 T1；100 次都检查该编辑器自身显示的依赖结果，不再另作验证重算。100 次编辑及实际界面按钮的 100 次撤销／重做／再撤销通过，最终修订 400、输入恢复 `22`、显示结果 `492`、40 个原始块恢复、包重开一致，宿主始终一项核心会话。日志 `.cache/workbook-mounted-capacity.log`，带源／Worker／宿主 bundle 摘要与全部 100 个样本的报告 `.cache/workbook-mounted-capacity/**/workbook-mounted-editing.json`。
 - 该次不受限 Chromium 诊断从输入字节解码开始计首屏约 23.323s，单独选择／滚动设置约 128.8ms；编辑到实际公式画面 p95 247.5ms、最大 291.7ms。普通编辑只读取至第 19 行，最大通道回复 530,432 个 UTF-16 单位；100 步历史保留 61,116,282 字节，复用同一 iframe。测试观察只保留当前／准备中的渲染根，不持有全部历史 DOM；场景加入现有 `@scale` 四引擎容量集成，新增 bundle 仅在该场景实际运行时构建，日常检查不增加这项容量负担。工具类型检查通过；SDK 运行时未因该探针改动。
 - 默认编辑器容量探针已提交推送为 `8b64e10`。后续 `setWorkbookAutoFilter` 允许设置普通区域定义及以 null 移除，复用现有当前值／小计、验证和历史；不修改源行或手动隐藏／尺寸。定向 6 文件／155 项通过，日志 `.cache/workbook-filter-edit-regressions.log`，包含停止型验证影响、列／区域非法及合并互斥、同源 JSON Schema、唯一 Worker 当前小计与撤销、原生来源移除／恢复与包 ZIP 重开。新增合法非规范化控制 JSON 的无变化事务仍保持原始字节及零历史，实测通过，没有为此修改序列化器。包构建和工具类型通过，日志 `.cache/workbook-filter-edit-final-build.log`、`.cache/workbook-filter-edit-types.log`。这仍是类型化事务基础，人工筛选界面和表内筛选继续实施。
+- `8b64e10`、`3bc5307` 的远端快速检查分别为 `42386436498`、`42387742888`，均成功，未启动全量 CI。2026-11-08 继续接入直连／Worker 的冻结选区前行列、取消冻结和两步撤销。公共预览 `sourceOffset` 读取当前已接受画面的实际行列位置及身份，使用已测自动行高、隐藏区间和列宽，不展开空白；界面在提交前拒绝占满当前视口的冻结和过期画面，保留源修订／历史。底层源契约边界不变。
+- 冻结界面三引擎 6 项通过，日志 `.cache/workbook-freeze-browser.log`；源坐标查询三引擎 3 项通过，日志 `.cache/workbook-source-offset-browser.log`，覆盖千行隐藏、自动大字体／多行、隐藏列、只返回已发布修订、切表、非法坐标、释放和不修改源。最后冻结、坐标、既有鼠标草稿保护及 Playground 切换共 18 项三引擎定向回归全部通过，日志 `.cache/workbook-freeze-final-browser.log`；构建、最终工具类型及架构边界通过，日志 `.cache/workbook-freeze-guard-build.log`、`.cache/workbook-freeze-published-types.log`、`.cache/workbook-freeze-boundaries.log`。这仍不是阶段最终验收；行列插删／剪切／排序和其他 R3-12～16 工作继续实施。
 
 ## 接下来的工作
 

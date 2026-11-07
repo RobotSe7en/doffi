@@ -2,6 +2,7 @@ import { encodeTestPackage } from './package-transport.js';
 import { openSdkHost } from './sdk-host.js';
 import { expect, test } from '@playwright/test';
 import { openDocument } from '@doffi/core';
+import type { WorkbookDocumentMetadata } from '@doffi/core';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +50,21 @@ test('completed calculation renders an unruled long chain and preserves view sel
   const model = scalarWorkbook(Array.from({ length: 150 }, (_, row) => ({ row, column: 0, value: { type: 'number' as const, value: 9999 }, formula: row ? `=A${row}+1` : '=1' })), metadata => { metadata.workbook.sheets[0]!.defaultRowHeightCustom = true; });
   const result = await page.evaluate(entries => window.workbookPreview.calculatedPreview(entries), encodeTestPackage(model.serialize()));
   expect(result).toEqual({ cell: '150', retained: true, sheet: 'preview-empty', errors: [], unchanged: true });
+});
+test('source offsets bind measured automatic heights, hidden axes and the accepted revision', async ({ page }) => {
+  const model = scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } }, { row: 1001, column: 2, value: { type: 'text', value: 'tall' } }], metadata => {
+    const sheet = metadata.workbook.sheets[0]!; sheet.defaultRowHeightCustom = false;
+    sheet.rowDimensions = [{ from: 0, to: 0, heightPt: 20 }, { from: 1, to: 1000, hidden: true }, { from: 1001, to: 1001, autoHeight: true }];
+    sheet.columnDimensions = [{ from: 1, to: 1, hidden: true, unit: 'characters' }];
+  }), files = new Map(model.serialize());
+  files.set('styles.css', new TextEncoder().encode(new TextDecoder().decode(files.get('styles.css')!) + '.large{font-size:40pt;line-height:1.2}'));
+  const metadata = JSON.parse(new TextDecoder().decode(files.get('metadata.json')!)) as WorkbookDocumentMetadata;
+  metadata.workbook.sheets[0]!.rowDimensions[2]!.cssClass = 'large'; files.set('metadata.json', new TextEncoder().encode(JSON.stringify(metadata)));
+  const result = await page.evaluate(entries => window.workbookPreview.sourceOffsets(entries), encodeTestPackage(files));
+  expect(result).toMatchObject({ first: { documentId: 'scalar-kernel', revision: 0, sheetId: 'sheet-1', topPt: 20 }, pending: { revision: 0 }, updated: { revision: 1 },
+    other: { revision: 1, sheetId: 'preview-empty', topPt: 20 }, invalid: 'InvalidOperation', disposed: 'InvalidOperation', unchanged: true, frozen: true });
+  expect(result.hiddenStart.leftPt).toBe(result.hiddenEnd.leftPt); expect(result.afterTall.topPt - result.first.topPt).toBeGreaterThan(15);
+  expect(result.pending).toEqual(result.afterTall); expect(result.updated.topPt).toBeGreaterThan(result.afterTall.topPt);
 });
 for (const rtl of [false, true]) test(`imperative source-range selection scrolls and guards worksheet races in ${rtl ? 'RTL' : 'LTR'}`, async ({ page }) => {
   const files = await importXlsx(readFileSync('examples/xlsx/03-structure.xlsx'), { documentId: 'range-selection' });

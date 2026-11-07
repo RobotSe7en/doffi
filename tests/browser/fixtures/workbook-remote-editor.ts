@@ -29,7 +29,7 @@ export async function mount(code: string, encoded: string) {
       try {
         const current = await source.rules!.read({ ...DEFAULT_WORKBOOK_RULE_LIMITS, documentId: client.state().documentId, revision: client.state().revision,
           sheetId: 'sheet-1', includeCurrent: true, coordinates: [{ row: 0, column: 1 }] }, new AbortController().signal);
-        return { ...client.state(), source: await client.readInput('sheet-1', { row: 0, column: 0 }), input: editor.inputState(), selection: editor.selection(), current: current.cells[0]?.current, merges: source.cells.snapshot.metadata.workbook.sheets[0]!.merges, errors: [...errors] };
+        return { ...client.state(), source: await client.readInput('sheet-1', { row: 0, column: 0 }), input: editor.inputState(), selection: editor.selection(), current: current.cells[0]?.current, merges: source.cells.snapshot.metadata.workbook.sheets[0]!.merges, frozen: source.cells.snapshot.metadata.workbook.sheets[0]!.frozen, errors: [...errors] };
       } finally { source.dispose(); }
     },
     settled: () => editor.settled(),

@@ -503,3 +503,25 @@ export async function autoRowRulesCancellation(entries: Entries) {
   } finally { release(); formatter.dispose(); surface.dispose(); container.remove(); }
 }
 (window as unknown as { workbookPreview: Record<string, unknown> }).workbookPreview.autoRowRulesCancellation = autoRowRulesCancellation;
+
+export async function sourceOffsets(entries: Entries) {
+  cleanup(); const session = createDocumentSession(modelOf(entries)), container = host(), before = session.serialize();
+  const { preview } = mount(container, session);
+  try {
+    await preview.ready;
+    const first = preview.sourceOffset({ row: 1001, column: 2 }), afterTall = preview.sourceOffset({ row: 1002, column: 2 });
+    const hiddenStart = preview.sourceOffset({ row: 0, column: 1 }), hiddenEnd = preview.sourceOffset({ row: 0, column: 2 });
+    let invalid = ''; try { preview.sourceOffset({ row: -1, column: 0 }); } catch (error) { invalid = (error as DocumentError).code; }
+    const after = session.serialize(), unchanged = before.size === after.size && [...before].every(([path, bytes]) => {
+      const other = after.get(path); return other?.length === bytes.length && bytes.every((byte, index) => byte === other[index]);
+    });
+    session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1',
+      cells: [{ row: 1001, column: 2, source: { kind: 'value', value: { type: 'text', value: 'tall\nsecond line' } } }] }] }));
+    preview.update(session); const pending = preview.sourceOffset({ row: 1002, column: 2 }); await preview.settled();
+    const updated = preview.sourceOffset({ row: 1002, column: 2 });
+    await preview.showSheet('preview-empty'); const other = preview.sourceOffset({ row: 1, column: 1 });
+    preview.dispose(); let disposed = ''; try { preview.sourceOffset({ row: 0, column: 0 }); } catch (error) { disposed = (error as DocumentError).code; }
+    return { first, afterTall, hiddenStart, hiddenEnd, invalid, unchanged, pending, updated, other, disposed, frozen: Object.isFrozen(first) };
+  } finally { preview.dispose(); session.dispose(); container.remove(); }
+}
+(window as unknown as { workbookPreview: Record<string, unknown> }).workbookPreview.sourceOffsets = sourceOffsets;

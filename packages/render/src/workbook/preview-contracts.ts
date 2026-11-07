@@ -1,4 +1,4 @@
-import type { DeepReadonly, DocumentErrorData, DocumentSelection, WorkbookChangeImpact, WorkbookModel, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
+import type { DeepReadonly, DocumentErrorData, DocumentSelection, WorkbookChangeImpact, WorkbookCoordinate, WorkbookModel, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import type { FontResolution } from "../contracts.js";
 import type { WorkbookWindowSource } from "./window-source.js";
 import type { WorkbookAssetSource } from "./assets.js";
@@ -68,6 +68,9 @@ export interface WorkbookPreview {
   update(input: WorkbookPreviewInput): void;
   showSheet(sheetId: string): Promise<WorkbookRenderReport>;
   setViewport(viewport: WorkbookViewport): Promise<WorkbookRenderReport>;
+  /** Measured logical grid offset, including hidden axes and automatic row
+   * heights. The identity belongs to the currently accepted source/view. */
+  sourceOffset(at: WorkbookCoordinate): Readonly<{ documentId: string; revision: number; sheetId: string; leftPt: number; topPt: number }>;
   /** Select source coordinates on the displayed worksheet; rendering and
    * scrolling never rewrite the document source. */
   selectRange(range: DeepReadonly<WorkbookRange>, ensureVisible?: boolean): Promise<DocumentSelection>;

@@ -172,6 +172,19 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     perform([unmerge ? { op: "unmergeWorkbookCells", ...target } : { op: "mergeWorkbookCells", ...target, coveredContent: clear ? "clear" : "reject" }]);
     await sourceSettled(); binding.focus();
   }
+  async function changeFreeze(clear = false): Promise<void> {
+    check(); const selected = input.state().selection, anchor = selected?.anchor;
+    if (!selected || anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择冻结位置。");
+    if (selected.baseRevision !== session.snapshot().manifest.revision) throw new DocumentError("RevisionConflict", "Freeze selection belongs to a previous source.");
+    const at = anchor.ranges[0]!.from;
+    if (!clear) {
+      const offset = preview.sourceOffset(at), viewport = preview.layout().viewport;
+      if (offset.revision !== selected.baseRevision || offset.sheetId !== anchor.sheetId) throw new DocumentError("RevisionConflict", "Freeze geometry belongs to a previous view.");
+      if (offset.leftPt >= viewport.widthPt || offset.topPt >= viewport.heightPt) throw new DocumentError("InvalidOperation", "冻结区域将占满当前视口，请选择更靠前的位置。");
+    }
+    perform([{ op: "updateWorkbookSheet", sheetId: anchor.sheetId, changes: { frozen: { rows: clear ? 0 : at.row, columns: clear ? 0 : at.column } } }]);
+    await sourceSettled(); binding.focus();
+  }
   async function fill(axis: "row" | "column", series = false): Promise<void> {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
     const selected = input.state().selection;
@@ -340,6 +353,8 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("合并单元格", () => { void runInteraction(() => changeMerge()); }, idle);
   button("合并并清除覆盖内容", () => { void runInteraction(() => changeMerge(false, true)); }, idle);
   button("取消合并", () => { void runInteraction(() => changeMerge(true)); }, idle);
+  button("冻结选区之前", () => { void runInteraction(() => changeFreeze()); }, idle);
+  button("取消冻结", () => { void runInteraction(() => changeFreeze(true)); }, idle);
   button("取消操作", () => commandAbort?.abort(), () => Boolean(commandAbort));
   button("查找下一个", () => { void runInteraction(() => search()); }, () => idle() && Boolean(ui.find.value), ui.searchTools);
   button("替换当前项", () => { void runInteraction(() => search("one")); }, () => idle() && ui.findField.value !== "display" && Boolean(found && found.index >= 0), ui.searchTools);

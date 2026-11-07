@@ -118,6 +118,24 @@ test("mounted workbook merge requires an explicit clearing choice and unmerge/un
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ merges: [], history: { undoSteps: 0, redoSteps: 2 }, cells: [{ value: { type: "number", value: 7 } }, { value: { type: "number", value: 3 } }] });
 });
 
+test("mounted workbook freezes before its selected cell and restores the same source through undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(scalarWorkbook([{ row: 0, column: 0, value: { type: "number", value: 7 } }]).serialize()));
+  await page.evaluate(() => window.workbookEditor.select(10000, 1000));
+  await page.getByRole("button", { name: "冻结选区之前", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await expect(page.getByRole("alert")).toContainText("冻结区域将占满当前视口");
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 0, frozen: { rows: 0, columns: 0 }, history: { undoSteps: 0 }, errors: ["InvalidOperation"] });
+  await page.evaluate(() => window.workbookEditor.select(1, 1));
+  await page.getByRole("button", { name: "冻结选区之前", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 1, frozen: { rows: 1, columns: 1 }, history: { undoSteps: 1 }, errors: ["InvalidOperation"] });
+  await page.getByRole("button", { name: "取消冻结", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 2, frozen: { rows: 0, columns: 0 } });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ frozen: { rows: 1, columns: 1 } });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ frozen: { rows: 0, columns: 0 }, history: { undoSteps: 0, redoSteps: 2 }, cells: [{ value: { type: "number", value: 7 } }], errors: ["InvalidOperation"] });
+});
+
 for (const rtl of [false, true]) test(`mounted workbook keyboard extends source ranges across hidden dimensions in ${rtl ? "RTL" : "LTR"}`, async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode }); await page.evaluate(entries => window.workbookEditor.mount(entries), editorSource(rtl)); await page.evaluate(() => window.workbookEditor.select(0));
   const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }); await input.press(rtl ? "ArrowLeft" : "ArrowRight"); await page.evaluate(() => window.workbookEditor.settled());

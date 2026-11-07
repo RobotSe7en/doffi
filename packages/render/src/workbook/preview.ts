@@ -1,4 +1,4 @@
-import { createWorkbookNumberFormatter, DocumentError, WorkbookRangeSchema } from "@doffi/core";
+import { createWorkbookNumberFormatter, DocumentError, WorkbookCoordinateSchema, WorkbookRangeSchema } from "@doffi/core";
 import type { DeepReadonly, DocumentSelection, WorkbookCoordinate, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import { createWorkbookPreviewChrome, workbookColumnLabel } from "./preview-chrome.js";
 import type { WorkbookPreview, WorkbookPreviewInput, WorkbookPreviewOptions, WorkbookRenderReport } from "./preview-contracts.js";
@@ -296,6 +296,12 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
   try { update(input); } catch (error) { chrome.dispose(); throw error; }
   return Object.freeze({ kind: "workbook", element: chrome.element, ready, snapshot: () => current().context.snapshot,
     layout: () => reportOf(current().window), fonts: () => current().window.fonts, selection: () => { check(); return selection; }, settled, update, showSheet, setViewport,
+    sourceOffset(at: WorkbookCoordinate) {
+      check(); const parsed = WorkbookCoordinateSchema.safeParse(at); if (!parsed.success) throw new DocumentError("InvalidOperation", "Workbook source offsets require a valid coordinate.");
+      const { context, window } = current();
+      return Object.freeze({ documentId: context.snapshot.manifest.documentId, revision: context.snapshot.manifest.revision, sheetId: window.frame.sheetId,
+        leftPt: window.dimensions.columns.position(parsed.data.column), topPt: window.dimensions.rows.position(parsed.data.row) });
+    },
     selectRange: (range: DeepReadonly<WorkbookRange>, ensureVisible?: boolean) => selectRange(range, ensureVisible), moveSelection,
     openComment(annotationId: string) { current().ui.controls.openComment(annotationId); }, closeComment() { current().ui.controls.closeComment(); },
     dispose() { if (disposed) return; disposed = true; ++generation; pending?.cancel(); pending = undefined; active?.dispose(); active = undefined;
