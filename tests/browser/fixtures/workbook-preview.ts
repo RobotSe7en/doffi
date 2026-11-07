@@ -1,7 +1,7 @@
 import { decodeTestPackage, type TestPackage } from './package-transport.js';
-import { createWorkbookNumberFormatter, DocumentError, openDocument } from '@doffi/core';
+import { createDocumentSession, createWorkbookNumberFormatter, DocumentError, openDocument } from '@doffi/core';
 import type { DocumentSelection, WorkbookDocumentMetadata, WorkbookModel } from '@doffi/core';
-import { mountDocumentPreview } from '@doffi/render';
+import { createWorkbookPreviewSource, mountDocumentPreview } from '@doffi/render';
 import type { WorkbookPreview, WorkbookPreviewSource, WorkbookPreviewOptions } from '@doffi/render';
 import { modelWindowSource } from '../../../packages/render/src/workbook/window-source.js';
 import { modelAssetSource } from '../../../packages/render/src/workbook/assets.js';
@@ -10,6 +10,8 @@ import { modelRuleSource } from '../../../packages/render/src/workbook/rule-sour
 import { createWorkbookSurface } from '../../../packages/render/src/workbook/surface.js';
 import { WorkbookWindowController } from '../../../packages/render/src/workbook/window-controller.js';
 import { decorateWorkbookPreview } from '../../../packages/render/src/workbook/preview-decoration.js';
+import { incrementalPreview } from './workbook-incremental.js';
+export { incrementalPreview };
 import type { WorkbookPreviewDecoration } from '../../../packages/render/src/workbook/preview-decoration.js';
 
 type Entries = TestPackage;
@@ -34,6 +36,46 @@ function mount(container: HTMLElement, input: WorkbookModel | WorkbookPreviewSou
 let cleanup = () => {}, inspect = () => ({}), action = async (_action: string) => ({});
 export function previewInspect() { return inspect(); }
 export function previewAction(name: string) { return action(name); }
+export async function imperativeRangeSelection(entries: Entries, rtl: boolean) {
+  cleanup(); const model = modelOf(entries, rtl), before = model.serialize(), container = host();
+  const { preview } = mount(container, model);
+  try {
+    await preview.ready;
+    const range = { from: { row: 0, column: 0 }, to: { row: 3, column: 3 } }, first = await preview.selectRange(range);
+    let invalid = ""; try { await preview.selectRange({ from: { row: 2, column: 2 }, to: { row: 1, column: 1 } }); } catch (error) { invalid = (error as DocumentError).code; }
+    const retained = preview.selection() === first;
+    const far = await preview.selectRange({ from: { row: 500, column: 40 }, to: { row: 502, column: 42 } }), moved = preview.layout().viewport;
+    const unscrolled = await preview.selectRange(range, false), sameViewport = JSON.stringify(preview.layout().viewport) === JSON.stringify(moved);
+    const pending = preview.selectRange(range, false); void pending.catch(() => {});
+    await preview.showSheet("preview-empty"); let race = ""; try { await pending; } catch (error) { race = (error as DocumentError).code; }
+    const after = model.serialize(), unchanged = [...before].every(([path, bytes]) => bytes.length === after.get(path)!.length && bytes.every((byte, index) => byte === after.get(path)![index]));
+    return { first, far, unscrolled, invalid, retained, moved, sameViewport, race, unchanged, frozen: Object.isFrozen(first.anchor) && first.anchor.kind === "cells" && Object.isFrozen(first.anchor.ranges[0]!.from) };
+  } finally { preview.dispose(); container.remove(); }
+}
+export async function calculatedPreview(entries: Entries) {
+  cleanup(); const session = createDocumentSession(modelOf(entries)), before = session.serialize(), container = host(), errors: string[] = [];
+  const result = await session.calculate({ yield: () => new Promise<void>(resolve => setTimeout(resolve, 0)) });
+  const { preview, chrome } = mount(container, createWorkbookPreviewSource(session, result), { retainSelection: true, onError: error => errors.push(error.code) });
+  const views = new WeakMap<HTMLIFrameElement, ShadowRoot>(), watched = new Set<HTMLIFrameElement>(), restores: (() => void)[] = [];
+  const watch = () => { for (const frame of chrome.querySelectorAll<HTMLIFrameElement>('iframe')) {
+    if (watched.has(frame)) continue; watched.add(frame);
+    frame.addEventListener('load', () => {
+      const prototype = (frame.contentWindow as Window & typeof globalThis).Element.prototype, attach = prototype.attachShadow;
+      prototype.attachShadow = function(init) { const root = attach.call(this, init); if (this.localName === 'office-workbook-view-surface') views.set(frame, root); return root; };
+      restores.push(() => { prototype.attachShadow = attach; });
+    }, { capture: true, once: true });
+  } };
+  const observer = new MutationObserver(watch); observer.observe(chrome, { childList: true, subtree: true }); watch();
+  try {
+    await preview.ready; const at = { row: 149, column: 0 };
+    const selected = await preview.selectRange({ from: at, to: at });
+    const cell = views.get(chrome.querySelector<HTMLIFrameElement>('iframe')!)!.querySelector('[data-office-view="workbook-cell"][data-row="149"][data-column="0"]')?.textContent;
+    await preview.setViewport({ ...preview.layout().viewport, scrollTopPt: 0 }); const retained = JSON.stringify(preview.selection()) === JSON.stringify(selected);
+    await preview.showSheet("preview-empty"); preview.update(createWorkbookPreviewSource(session, result)); await preview.settled();
+    const sheet = preview.layout().sheetId, after = session.serialize();
+    return { cell, retained, sheet, errors, unchanged: [...before].every(([path, bytes]) => bytes.every((byte, index) => byte === after.get(path)![index])) };
+  } finally { observer.disconnect(); for (const restore of restores) restore(); preview.dispose(); session.dispose(); container.remove(); }
+}
 export async function mountPublicPreview(entries: Entries, rtl: boolean) {
   cleanup(); const model = modelOf(entries, rtl), before = model.serialize(), container = host(), errors: string[] = [], selections: (DocumentSelection | undefined)[] = [];
   let serializations = 0;
@@ -184,7 +226,7 @@ export async function ruleWindowLifecycle(entries: Entries) {
     return { failures, cancelled, aborted, retainedLatest: controller.current!.frame.sheetId === 'preview-empty' };
   } finally { controller.dispose(); surface.dispose(); formatter.dispose(); container.remove(); }
 }
-(window as unknown as { workbookPreview: unknown }).workbookPreview = { mountPublicPreview, previewInspect, previewAction, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
+(window as unknown as { workbookPreview: unknown }).workbookPreview = { incrementalPreview, mountPublicPreview, previewInspect, previewAction, imperativeRangeSelection, calculatedPreview, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
 
 export async function publicReadAhead(entries: Entries, allow: boolean, rows: number, mode: 'normal' | 'hold' | 'failure' | 'revision' | 'active' | 'preference' = 'normal') {
   const model = modelOf(entries), before = model.serialize(), snapshot = model.snapshot(), source = modelWindowSource(model), container = host();

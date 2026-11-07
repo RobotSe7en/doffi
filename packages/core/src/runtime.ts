@@ -129,16 +129,18 @@ export type PresentationAnnotationSubmissionHandler=(request:DeepReadonly<Presen
 
 // Type-only opacity is supplemented by private candidate identity inside the session.
 declare const candidateBrand: unique symbol;
-export interface CandidateChange {
+export interface CandidateChange<Model extends DocumentModel = ContentDocumentModel> {
   readonly [candidateBrand]: true;
   readonly documentId: string;
   readonly baseRevision: number;
-  readonly preview: ContentDocumentSnapshot;
+  readonly preview: ReturnType<Model["snapshot"]>;
   /** Immutable candidate source, including staged resources; no editing session. */
-  readonly model:ContentDocumentModel;
+  readonly model: Model;
   readonly affectedNodeIds: readonly string[];
   /** Stable slide identities whose rendered content or dependencies changed. PPT only. */
   readonly affectedSlideIds?: readonly string[];
+  readonly affectedSheetIds?: readonly string[];
+  readonly changedRanges?: readonly WorkbookRangeChange[];
   readonly changes: readonly DocumentNodeChange[];
   readonly changedAnnotationIds: readonly string[];
   readonly mapping: ChangeMapping;
@@ -160,6 +162,7 @@ export interface DocumentSessionLimits {
 
 export interface DocumentSessionOptions extends OpenDocumentOptions {
   readonly sessionLimits?: Partial<DocumentSessionLimits>;
+  readonly calculationLimits?: Partial<import("./workbook/calculation.js").WorkbookCalculationLimits>;
 }
 
 export interface DocumentHistoryState {
@@ -178,7 +181,17 @@ export interface TextOffsetMapping {
 export interface ChangeMapping {
   readonly nodes: ReadonlyMap<string, string | null>;
   readonly textEdits: readonly TextOffsetMapping[];
+  /** Ordered structural steps; each step maps the preceding source state. */
+  readonly workbook?: readonly WorkbookStructureMapping[];
 }
+
+export interface WorkbookRangeChange { readonly sheetId: string; readonly range: DeepReadonly<import("./contracts/workbook.js").WorkbookRange> }
+export type WorkbookStructureMapping =
+  | { readonly kind: "axis"; readonly sheetId: string; readonly axis: "row" | "column"; readonly action: "insert" | "delete"; readonly index: number; readonly count: number }
+  | { readonly kind: "move"; readonly source: WorkbookRangeChange; readonly target: WorkbookRangeChange }
+  | { readonly kind: "sort"; readonly sheetId: string; readonly range: DeepReadonly<import("./contracts/workbook.js").WorkbookRange>; readonly rows: readonly number[] }
+  | { readonly kind: "deleteSheet"; readonly sheetId: string }
+  | { readonly kind: "restoreSheet"; readonly sheetId: string };
 
 export interface TransactionReceipt {
   readonly documentId: string;
@@ -186,6 +199,8 @@ export interface TransactionReceipt {
   readonly changed: boolean;
   readonly affectedNodeIds: readonly string[];
   readonly affectedSlideIds?: readonly string[];
+  readonly affectedSheetIds?: readonly string[];
+  readonly changedRanges?: readonly WorkbookRangeChange[];
   readonly mapping: ChangeMapping;
 }
 
@@ -195,20 +210,45 @@ export type AnnotationSubmissionHandler = (request: DeepReadonly<DocumentInterac
 /** Host-authorized immutable resources staged with the same isolated candidate. */
 export interface TransactionPrepareOptions {
   readonly assets?: readonly { readonly descriptor: AssetDescriptor; readonly bytes: Uint8Array }[];
+  readonly calculationContext?: import("./workbook/scalar.js").WorkbookScalarContext;
+  /** Warning/information rules require an explicit host acknowledgment. Stop
+   * rules cannot be bypassed by this list. */
+  readonly validation?: { readonly acceptedRuleIds: readonly string[] };
+}
+export interface TransactionPreparationProgress {
+  readonly phase: "operations" | "cells" | "chunks" | "validation" | "calculation";
+  readonly completed: number;
+  /** Zero when this phase cannot know its final work count in advance. */
+  readonly total: number;
+}
+/** Hosts provide a macrotask checkpoint for message-based cancellation. Core
+ * owns neither the Worker nor its event loop. */
+export interface TransactionPreparationExecution {
+  readonly signal?: { readonly aborted: boolean };
+  readonly yield?: () => Promise<void>;
+  readonly onProgress?: (progress: TransactionPreparationProgress) => void;
 }
 
 /** Shared transaction and history boundary for editing views. */
-export interface DocumentEditingSession extends ContentDocumentModel {
+export interface SessionLifecycle<Candidate extends CandidateChange<DocumentModel>> {
   getAnnotations(): readonly DeepReadonly<Annotation>[];
-  prepare(transaction: DocumentTransaction, options?: TransactionPrepareOptions): CandidateChange;
-  commit(candidate: CandidateChange): TransactionReceipt;
-  discard(candidate: CandidateChange): void;
+  prepare(transaction: DocumentTransaction, options?: TransactionPrepareOptions): Candidate;
+  commit(candidate: Candidate): TransactionReceipt;
+  discard(candidate: Candidate): void;
   undo(): TransactionReceipt;
   redo(): TransactionReceipt;
   history(): DocumentHistoryState;
   clearHistory(): void;
   subscribe(listener: DocumentEventListener): () => void;
   dispose(): void;
+}
+export interface DocumentEditingSession extends ContentDocumentModel, SessionLifecycle<CandidateChange> {}
+export type WorkbookCandidateChange = CandidateChange<WorkbookModel>;
+export interface WorkbookSession extends WorkbookModel, SessionLifecycle<WorkbookCandidateChange> {
+  prepareAsync(transaction: DocumentTransaction, options?: TransactionPrepareOptions, execution?: TransactionPreparationExecution): Promise<WorkbookCandidateChange>;
+  calculate(options?: import("./workbook/calculation.js").WorkbookCalculationOptions): Promise<import("./workbook/calculation.js").WorkbookCalculationResult>;
+  calculateSync(options?: Omit<import("./workbook/calculation.js").WorkbookCalculationOptions, "yield">): import("./workbook/calculation.js").WorkbookCalculationResult;
+  getCalculatedCell(sheetId: string, row: number, column: number): import("./workbook/calculation.js").WorkbookCalculatedCell;
 }
 
 /** Revision-bound collaboration on the same transaction boundary. */

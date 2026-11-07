@@ -4,7 +4,7 @@ import { freeze } from "../document/validation.js";
 import { affectedPresentationSlides } from "./presentation.js";
 
 /** ReadonlyMap is a runtime boundary too: Object.freeze(new Map()) still exposes set(). */
-function readonlyMap<Key, Value>(input: Map<Key, Value>): ReadonlyMap<Key, Value> {
+export function readonlyMap<Key, Value>(input: Map<Key, Value>): ReadonlyMap<Key, Value> {
   const result: ReadonlyMap<Key, Value> = Object.freeze({
     get size() { return input.size; },
     has: (key: Key) => input.has(key),

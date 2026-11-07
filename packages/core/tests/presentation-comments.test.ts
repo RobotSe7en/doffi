@@ -1,5 +1,6 @@
+import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import {expect,test} from "vitest";
-import {createDocumentSession,createPresentation,openDocument} from "@doffi/core";
+import { createDocumentSession, createPresentation } from "@doffi/core";
 import type {DocumentOperation,DocumentSession} from "@doffi/core";
 const blank=()=>createDocumentSession(openDocument(createPresentation({documentId:"comments"})));
 const p=(s:DocumentSession)=>s.snapshot().metadata.presentation!;

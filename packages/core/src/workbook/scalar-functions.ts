@@ -2,6 +2,10 @@ import type { FormulaExpression } from "./formula.js";
 import type { ScalarEvaluation, ScalarFunctionContext, ScalarResolved } from "./scalar.js";
 import { decimalComponents } from "./format-decimal.js";
 import { scalarBinary, scalarBoolean, scalarError, scalarNumber, scalarToBoolean, scalarToNumber, scalarToText } from "./scalar-values.js";
+import { evaluateTextFunction } from "./scalar-text.js";
+import { evaluateDateFunction } from "./scalar-dates.js";
+import { evaluateConditionalAggregate, evaluateSubtotal } from "./scalar-statistics.js";
+import { evaluateLookupFunction } from "./scalar-lookup.js";
 
 const aggregateNames = new Set(["SUM", "MIN", "MAX", "AVERAGE", "COUNT", "COUNTA", "COUNTBLANK"]);
 function aggregate(name: string, args: readonly (FormulaExpression | null)[], context: ScalarFunctionContext): ScalarResolved {
@@ -46,6 +50,15 @@ function rounded(value: number, places: number, direction: "nearest" | "down" | 
 export function evaluateScalarFunction(node: Extract<FormulaExpression, { kind: "call" }>, context: ScalarFunctionContext): ScalarEvaluation {
   const name = node.name.toUpperCase().replace(/^_XLFN\./, ""), args = node.arguments;
   const scalar = (index: number): ScalarResolved => context.scalar(context.visit(args[index] ?? null));
+  if (name === "IFS") {
+    if (args.length < 2 || args.length % 2 || args.length > 254) return scalarError("#VALUE!");
+    for (let index = 0; index < args.length; index += 2) {
+      const value = scalar(index); if (!("type" in value)) return value;
+      const test = scalarToBoolean(value); if (typeof test !== "boolean") return test;
+      if (test) return context.visit(args[index + 1]!);
+    }
+    return scalarError("#N/A");
+  }
   if (name === "IF") {
     if (args.length < 1 || args.length > 3) return scalarError("#VALUE!");
     const value = scalar(0); if (!("type" in value)) return value;
@@ -75,8 +88,17 @@ export function evaluateScalarFunction(node: Extract<FormulaExpression, { kind: 
   }
   if (["ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "ISNA"].includes(name)) {
     if (args.length !== 1) return scalarError("#VALUE!");
+    if (name === "ISBLANK") {
+      const source = context.visit(args[0]!);
+      if (!("type" in source) && source.kind === "references" && source.areas.length === 1) {
+        const area = source.areas[0]!, row = area.from.row === area.to.row ? area.from.row : context.origin.row, column = area.from.column === area.to.column ? area.from.column : context.origin.column;
+        if (!(area.from.row !== area.to.row && area.from.column !== area.to.column) && row >= area.from.row && row <= area.to.row && column >= area.from.column && column <= area.to.column)
+          return scalarBoolean(!context.hasContent({ sheetId: area.sheetId, row, column }));
+      }
+      const value = context.scalar(source); return "type" in value ? scalarBoolean(value.type === "blank") : value;
+    }
     const value = scalar(0); if (!("type" in value)) return value;
-    return scalarBoolean(name === "ISBLANK" ? value.type === "blank" : name === "ISNUMBER" ? value.type === "number"
+    return scalarBoolean(name === "ISNUMBER" ? value.type === "number"
       : name === "ISTEXT" ? value.type === "text" : name === "ISERROR" ? value.type === "error" : value.type === "error" && value.value === "#N/A");
   }
   if (aggregateNames.has(name)) return aggregate(name, args, context);
@@ -94,6 +116,15 @@ export function evaluateScalarFunction(node: Extract<FormulaExpression, { kind: 
     if (args.length !== 1) return scalarError("#VALUE!");
     const value = scalar(0); if (!("type" in value)) return value;
     const text = scalarToText(value); return typeof text === "string" ? scalarNumber(text.length) : text;
+  }
+  const textResult = evaluateTextFunction(name, args, context); if (textResult !== undefined) return textResult;
+  const conditionalResult = evaluateConditionalAggregate(name, args, context); if (conditionalResult !== undefined) return conditionalResult;
+  if (name === "SUBTOTAL") return evaluateSubtotal(args, context);
+  const lookupResult = evaluateLookupFunction(name, args, context); if (lookupResult !== undefined) return lookupResult;
+  if (["DATE", "YEAR", "MONTH", "DAY", "TIME", "HOUR", "MINUTE", "SECOND", "DAYS", "EDATE", "EOMONTH", "WEEKDAY", "TODAY", "NOW"].includes(name)) {
+    const values: import("./scalar-values.js").ScalarValue[] = [];
+    for (let index = 0; index < args.length; index++) { const value = scalar(index); if (!("type" in value)) return value; values.push(value); }
+    return evaluateDateFunction(name, values, context)!;
   }
   const counts: Readonly<Record<string, readonly [number, number]>> = {
     ABS: [1, 1], INT: [1, 1], TRUNC: [1, 2], MOD: [2, 2], POWER: [2, 2], SQRT: [1, 1], ROUND: [2, 2], ROUNDUP: [2, 2], ROUNDDOWN: [2, 2],

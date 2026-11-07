@@ -1,5 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { WorkbookSnapshot } from "@doffi/core";
+import { FontProbeCache } from "../font-probe-cache.js";
 
 export interface WorkbookSurface {
   readonly frame: HTMLIFrameElement;
@@ -8,6 +9,11 @@ export interface WorkbookSurface {
   readonly source: HTMLElement;
   /** Only materialized display nodes belong in this isolated view. */
   readonly view: HTMLElement;
+  /** Internal leases share the unchanged scriptless document and source CSS,
+   * while each window owns a separate shadow tree and publication lifetime. */
+  fork?(): WorkbookSurface;
+  activate?(): void;
+  fontState?(): { readonly ready: boolean; readonly epoch: number; readonly identity: object };
   dispose(): void;
 }
 export interface WorkbookSurfaceOptions {
@@ -39,13 +45,41 @@ export function createWorkbookSurface(container: HTMLElement, snapshot: Workbook
   return new Promise((resolve, reject) => {
     let disposed = false, pending = true;
     let ownedDocument: Document | undefined, sourceRoot: HTMLElement | undefined, viewRoot: HTMLElement | undefined;
+    const leases = new Map<HTMLElement, HTMLElement>(), fonts = new FontProbeCache();
     const detach = (): void => { frame.removeEventListener("load", load); signal?.removeEventListener("abort", abort); clearTimeout(timer); };
-    const dispose = (): void => {
+    const destroy = (): void => {
       if (disposed) return; disposed = true; styleText = undefined; detach(); frame.remove(); frame.removeAttribute("srcdoc");
       sourceRoot?.replaceChildren(); viewRoot?.replaceChildren(); ownedDocument?.head.replaceChildren(); ownedDocument?.body.replaceChildren();
+      fonts.clear();
     };
-    const fail = (error: unknown): void => { if (!pending) return; pending = false; dispose(); reject(error); };
+    const fail = (error: unknown): void => { if (!pending) return; pending = false; destroy(); reject(error); };
     const abort = (): void => fail(new DocumentError("OperationCancelled", "Workbook surface preparation was cancelled."));
+    function lease(document: Document, source: HTMLElement, host: HTMLElement, view: HTMLElement): WorkbookSurface {
+      let released = false; leases.set(view, host);
+      const check = (): void => { if (released || disposed) throw new DocumentError("InvalidOperation", "This workbook surface lease has been released."); };
+      return Object.freeze({ frame, document, source, view,
+        fork() {
+          check(); const nextHost = document.createElement("office-workbook-view-surface"), nextView = document.createElement("div");
+          nextHost.style.cssText = host.style.cssText; nextHost.style.setProperty("visibility", "hidden", "important"); nextHost.style.setProperty("pointer-events", "none", "important");
+          nextView.style.cssText = view.style.cssText;
+          nextHost.attachShadow({ mode: "closed" }).append(nextView); document.body.append(nextHost);
+          return lease(document, source, nextHost, nextView);
+        },
+        activate() {
+          check();
+          // New window contents remain detached until the owner commits. No
+          // observer can see two complete published grids in this document.
+          for (const other of leases.values()) if (other !== host) other.remove();
+          if (!host.isConnected) document.body.append(host);
+          host.style.removeProperty("visibility"); host.style.removeProperty("pointer-events");
+        },
+        fontState() { check(); return { ...fonts.watch(document.fonts), identity: document.fonts }; },
+        dispose() {
+          if (released) return; released = true; leases.delete(view); host.remove(); view.replaceChildren();
+          if (!leases.size) destroy();
+        },
+      });
+    }
     const load = (): void => {
       if (disposed || !pending) return;
       try {
@@ -64,12 +98,12 @@ export function createWorkbookSurface(container: HTMLElement, snapshot: Workbook
         source.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;contain:layout;left:0;top:0;width:0;height:0;overflow:hidden";
         // Inline important wins over source selectors targeting the host;
         // the shadow boundary then protects all generated descendants.
-        host.style.cssText = "all:initial!important;display:block!important;position:relative!important;width:100%!important;height:100%!important;direction:ltr!important;unicode-bidi:isolate!important";
+        host.style.cssText = "all:initial!important;display:block!important;position:absolute!important;left:0!important;top:0!important;width:100%!important;height:100%!important;direction:ltr!important;unicode-bidi:isolate!important";
         view.style.cssText = "position:relative;width:100%;height:100%;overflow:hidden;direction:ltr";
         host.attachShadow({ mode: "closed" }).append(view); document.body.append(source, host);
         void document.fonts.ready.then(() => {
           if (disposed || !pending) return;
-          pending = false; detach(); resolve(Object.freeze({ frame, document, source, view, dispose }));
+          pending = false; detach(); resolve(lease(document, source, host, view));
         }).catch(fail);
       } catch (error) { fail(error); }
     };

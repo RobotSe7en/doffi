@@ -7,7 +7,8 @@ import { normalizeCss, setInlineStyle } from "./css.js";
 import { bodyTags, parseHtml, supportedTags } from "./html.js";
 import { parseHtmlFragment, parseHtmlTree, serializeHtmlOuter, serializeHtmlTree } from "./html-parser.js";
 import { encode, resolveReference } from "./package.js";
-import type { DocumentState } from "./state.js";
+import type { HtmlSourceDescriptor, ParsedHtml } from "./html.js";
+import type { DocumentPackage } from "../runtime.js";
 import { checkLimit } from "./validation.js";
 import { isTextBoundary, textPositions } from "./text.js";
 
@@ -18,6 +19,14 @@ const blocks = new Set(["article", "section", "div", "p", "h1", "h2", "h3", "h4"
 const isElement = (node: Node): node is Element => "tagName" in node;
 const attr = (node: Element, name: string) => node.attrs.find((item) => item.name === name)?.value;
 function fail(message: string): never { throw new DocumentError("InvalidOperation", message); }
+
+/** Format adapters share the same bounded HTML editor and source validation. */
+export interface EditableHtmlSource {
+  readonly files: DocumentPackage;
+  readonly snapshot: { readonly html: string; readonly manifest: HtmlSourceDescriptor;
+    readonly metadata: { readonly presentation?: { readonly hyperlinks: readonly { readonly nodeId: string }[] } } };
+  readonly html: ParsedHtml;
+}
 
 function setAttribute(node: Element, name: string, value: string): void {
   const existing = node.attrs.find((item) => item.name === name);
@@ -90,7 +99,7 @@ export class DocumentEdit {
   readonly replacedTextNodes = new Set<string>();
   readonly structuralTextNodes = new Set<string>();
 
-  constructor(private readonly state: DocumentState, private readonly limits: DocumentReadLimits, private readonly allocate: () => string) {
+  constructor(private readonly state: EditableHtmlSource, private readonly limits: DocumentReadLimits, private readonly allocate: () => string) {
     this.tree = parseHtmlTree(state.snapshot.html, limits, supportedTags);
     this.baseIds = new Set(state.html.nodeIds());
   }

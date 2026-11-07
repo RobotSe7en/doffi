@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { createWorkbook, createWorkbookNumberFormatter, openDocument } from "@doffi/core";
+import { createWorkbook, createWorkbookCalculator, createWorkbookNumberFormatter, openDocument } from "@doffi/core";
 import type { WorkbookChart, WorkbookDocumentMetadata, WorkbookManifest, WorkbookModel } from "@doffi/core";
 import { readXlsxRecords } from "../../office/src/xlsx/read.js";
 import { importXlsx } from "../../office/src/xlsx-import.js";
@@ -47,6 +47,14 @@ function cells(response: WorkbookChartReadResponse, role = "series-values") {
 }
 
 describe("bounded current-source workbook chart reads", () => {
+  it("reads current formulas with the completed batch's explicit time context after calculator disposal", async () => {
+    const model = seeded(() => {}, "=TODAY()"), before = model.serialize(), calculator = createWorkbookCalculator(model);
+    const calculation = calculator.calculateSync({ context: { now: { unixMilliseconds: 0, utcOffsetMinutes: 0 } } });
+    const provider = modelChartSource(model, calculation); calculator.dispose();
+    const response = await provider.read(request(model), new AbortController().signal);
+    expect(cells(response)[4]).toMatchObject({ state: "valid", value: { type: "number", value: 25569 } });
+    expect(model.serialize()).toEqual(before);
+  });
   it("returns immutable sparse literals without resolving formulas or reading worksheet cells", async () => {
     const model = seeded(chart => {
       chart.categories = { kind: "literal", valueType: "text", count: 4, points: [{ index: 0, value: "季度😀" }] };

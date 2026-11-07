@@ -31,6 +31,15 @@ export interface WorkbookAutoRows {
   readonly fonts: readonly FontResolution[];
   readonly usedFallbackLineMetrics: boolean;
   readonly measuredCells: number;
+  /** Private measured state; never persisted or used as document authority. */
+  readonly heights: ReadonlyMap<number, number>;
+  readonly reusable: boolean;
+}
+export interface WorkbookAutoRowReuse {
+  readonly previous: WorkbookAutoRows;
+  readonly rows: readonly { readonly from: number; readonly to: number }[];
+  /** The owner binds this to its unchanged surface/font measurement epoch. */
+  guard(): boolean;
 }
 
 /** At most one authorized next read overlaps current row measurement. Each
@@ -78,7 +87,7 @@ function automatic(sheet: DeepReadonly<WorkbookSheet>, row: number): boolean {
  * Imported formula caches remain imported; this pass does not mark them fresh. */
 export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "source" | "view">, source: WorkbookWindowSource,
   sheetId: string, normal: WorkbookColumnFont, formatter: WorkbookNumberFormatter, signal: AbortSignal,
-  options: Partial<WorkbookAutoRowLimits> = {}, rules?: { readonly source: WorkbookRuleSource; readonly limits: WorkbookRuleReadLimits }): Promise<WorkbookAutoRows> {
+  options: Partial<WorkbookAutoRowLimits> = {}, rules?: { readonly source: WorkbookRuleSource; readonly limits: WorkbookRuleReadLimits }, reuse?: WorkbookAutoRowReuse): Promise<WorkbookAutoRows> {
   const limits = { ...DEFAULT_AUTO_ROW_LIMITS, ...options }, snapshot = source.snapshot;
   if (Object.keys(limits).some(key => !Object.hasOwn(DEFAULT_AUTO_ROW_LIMITS, key)) || !Object.values(limits).every(value => Number.isSafeInteger(value) && value > 0))
     throw new DocumentError("InvalidOperation", "Automatic worksheet rows require supported positive budgets.");
@@ -86,7 +95,6 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
   if (!selectedSheet) throw new DocumentError("InvalidOperation", "Automatic rows require a source worksheet.");
   const sheet = selectedSheet;
   const measurementColumns = worksheetColumnDimensions(sheet, normal.maximumDigitWidthPx, true), merges = new WorkbookMergeIndex(sheet.merges);
-  const heights = new Map<number, number>(), fonts = new Map<string, FontResolution>();
   const formats = new Map(snapshot.metadata.workbook.numberFormats.map(format => [format.formatId, format]));
   // Native class-only styles have no coordinate/ancestor selectors. A custom
   // package with any other selector still resolves every cell independently.
@@ -97,8 +105,21 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
   const columnFonts = sheet.columnDimensions.some(run => run.cssClass);
   const fontRegions = implicitWorkbookFontRegions(snapshot, sheet, simpleClasses);
   const implicitFonts = columnFonts || sheet.rowDimensions.some(run => run.cssClass) || fontRegions.length > 0;
+  const partial = reuse?.previous.reusable && simpleClasses && !implicitFonts && !sheet.conditionalRules?.length && !sheet.tables?.length ? reuse : undefined;
+  const selectedRow = (row: number): boolean => {
+    if (!partial) return true;
+    let low = 0, high = partial.rows.length;
+    while (low < high) { const mid = (low + high) >>> 1; if (partial.rows[mid]!.to < row) low = mid + 1; else high = mid; }
+    return partial.rows[low] !== undefined && partial.rows[low]!.from <= row;
+  };
+  if (partial) for (const [index, row] of partial.rows.entries()) if (!Number.isSafeInteger(row.from) || !Number.isSafeInteger(row.to) || row.from < 0 || row.to < row.from || row.to >= 1_048_576
+    || index > 0 && row.from <= partial.rows[index - 1]!.to) throw new DocumentError("InvalidOperation", "Row invalidation intervals must be ordered, disjoint source rows.");
+  const checkReuse = (): void => { if (partial && !partial.guard()) throw new DocumentError("InvalidOperation", "Worksheet measurement conditions changed during row invalidation."); };
+  checkReuse();
+  const heights = new Map(partial?.previous.heights), fonts = new Map((partial?.previous.fonts ?? []).map(font => [JSON.stringify(font), font]));
+  if (partial) for (const row of heights.keys()) if (selectedRow(row)) heights.delete(row);
   const occupied = new Map<number, Set<number>>(); let lastUsedRow = -1;
-  let visited = 0, units = 0, measuredCells = 0, usedFallbackLineMetrics = false, checkpoint = performance.now();
+  let visited = 0, units = 0, measuredCells = 0, usedFallbackLineMetrics = false, inlineStyles = false, checkpoint = performance.now();
   const chunks = snapshot.manifest.chunks.filter(chunk => chunk.sheetId === sheetId);
   const identity = { documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision };
   // Preflight sparse query slots before the first provider request. Fixed or
@@ -109,7 +130,7 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     if (index && index % 32 === 0) { await new Promise<void>(resolve => setTimeout(resolve, 0)); checkWindowCancellation(signal); }
     let start: number | undefined;
     for (let row = chunk.row; row <= chunk.row + 256; row++) {
-      const include = row < chunk.row + 256 && (columnFonts || automatic(sheet, row));
+      const include = row < chunk.row + 256 && selectedRow(row) && (columnFonts || automatic(sheet, row));
       if (include && start === undefined) start = row;
       if (!include && start !== undefined) {
         visited += (row - start) * 32;
@@ -123,12 +144,13 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
   const probes = new FontProbeCache(), fontEpoch = probes.watch(surface.source.ownerDocument.fonts).epoch;
   async function measure(coordinates: readonly Readonly<WorkbookCoordinate>[], byCoordinate: ReadonlyMap<number, WorkbookCell>): Promise<void> {
     checkWindowCancellation(signal);
+    checkReuse();
     const fontState = probes.watch(surface.source.ownerDocument.fonts);
     if (!fontState.ready || fontState.epoch !== fontEpoch) throw new DocumentError("InvalidOperation", "Worksheet fonts changed during automatic row measurement.");
     let current;
-    if (sheet.conditionalRules?.length || sheet.dataValidations?.length) {
+    if (sheet.conditionalRules?.length || sheet.dataValidations?.length || rules?.source.currentValues) {
       if (!rules) throw new DocumentError("InvalidOperation", "Automatic rule appearance requires an authorized current-value provider.");
-      const request = Object.freeze({ ...identity, sheetId, ...rules.limits, coordinates: Object.freeze(coordinates) });
+      const request = Object.freeze({ ...identity, sheetId, ...rules.limits, coordinates: Object.freeze(coordinates), ...(rules.source.currentValues ? { includeCurrent: true } : {}) });
       current = checkedWorkbookRules(await waitForWorkbookRead(rules.source.read(request, signal), signal), request, snapshot); checkWindowCancellation(signal);
     }
     const shared = new Map<number, WorkbookSourceCell>(), ordinary: Readonly<WorkbookCoordinate>[] = [];
@@ -177,6 +199,7 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
   try {
     for await (const [window, response] of autoRowReads(source, windows, Math.min(limits.maxCodeUnits, 8 * 1024 * 1024), signal)) {
       checkWindowCancellation(signal); checkWindowIdentity(response, snapshot);
+      checkReuse();
       if (response.cells.length > window.rows * window.columns) throw new DocumentError("InvalidDocument", "Automatic row data exceeds its requested coordinates.");
       const seen = new Set<number>();
       const cells: WorkbookCell[] = [];
@@ -189,6 +212,7 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
         if (implicitFonts) { let columns = occupied.get(cell.row); if (!columns) { columns = new Set(); occupied.set(cell.row, columns); } columns.add(cell.column); }
         if (++measuredCells > limits.maxCells) throw new DocumentError("ResourceLimitExceeded", "Automatic rows exceed their cumulative source-cell budget.");
         units += cellSourceUnits(cell);
+        inlineStyles ||= /\b(?:style|face)\s*=/i.test(cell.html);
         if (units > limits.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Automatic rows exceed their cumulative source-text budget.");
         // Merged cells do not drive native AutoFit; their complete source extent
         // is retained by ordinary merge layout rather than distributed over rows.
@@ -203,7 +227,7 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     const admit = (): void => {
       if (++visited > limits.maxReadCells) throw new DocumentError("ResourceLimitExceeded", "Automatic row discovery exceeds its cumulative query and implicit-discovery budget.");
     };
-    for await (const point of implicitWorkbookRowSources(sheet, measurementColumns, occupied, lastUsedRow,
+    if (!partial) for await (const point of implicitWorkbookRowSources(sheet, measurementColumns, occupied, lastUsedRow,
       simpleClasses && !sheet.conditionalRules?.length && !sheet.tables?.length, row => automatic(sheet, row), (row, column) => merges.at(row, column)?.to.column, admit, signal, fontRegions)) {
       implicit.push(point);
       if (implicit.length === 128) { await measure(implicit, new Map()); implicit = []; }
@@ -211,8 +235,15 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     if (implicit.length) await measure(implicit, new Map());
 
     checkWindowCancellation(signal);
+    checkReuse();
     const finalFonts = probes.watch(surface.source.ownerDocument.fonts);
     if (!finalFonts.ready || finalFonts.epoch !== fontEpoch) throw new DocumentError("InvalidOperation", "Worksheet fonts changed during automatic row measurement.");
-    return Object.freeze({ dimensions: worksheetDimensions(sheet, normal.maximumDigitWidthPx, heights), fonts: Object.freeze([...fonts.values()]), usedFallbackLineMetrics, measuredCells });
+    const finalDiagnostics = Object.freeze([...fonts.values()]);
+    // A warning or incomplete audit needs a fresh pass next time, so clearing
+    // its last source cannot retain a stale diagnostic. Healthy declarations
+    // remain valid while their stylesheet and font epoch are unchanged.
+    const reusable = simpleClasses && !implicitFonts && !sheet.conditionalRules?.length && !sheet.tables?.length && !inlineStyles && !usedFallbackLineMetrics
+      && finalDiagnostics.every(font => !font.substituted && !font.missingCharacters?.length && font.glyphAuditComplete !== false);
+    return Object.freeze({ dimensions: worksheetDimensions(sheet, normal.maximumDigitWidthPx, heights), fonts: finalDiagnostics, usedFallbackLineMetrics, measuredCells, heights, reusable });
   } finally { prototypes?.dispose(); probes.clear(); }
 }

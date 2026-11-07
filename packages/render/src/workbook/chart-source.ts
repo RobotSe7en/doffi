@@ -1,5 +1,5 @@
-import { createWorkbookScalarEvaluator, DocumentError } from "@doffi/core";
-import type { DeepReadonly, WorkbookChart, WorkbookChartLiteral, WorkbookChartVector, WorkbookFormulaSource, WorkbookModel, WorkbookReferenceArea, WorkbookReferenceResult, WorkbookScalarEvaluator, WorkbookScalarResult, WorkbookScalarUnavailable, WorkbookSheet, WorkbookSnapshot, WorkbookValue } from "@doffi/core";
+import { captureWorkbookModel, createWorkbookCalculatedEvaluator, createWorkbookScalarEvaluator, DocumentError } from "@doffi/core";
+import type { DeepReadonly, WorkbookCalculationResult, WorkbookChart, WorkbookChartLiteral, WorkbookChartVector, WorkbookFormulaSource, WorkbookModel, WorkbookReferenceArea, WorkbookReferenceResult, WorkbookScalarEvaluator, WorkbookScalarResult, WorkbookScalarUnavailable, WorkbookSheet, WorkbookSnapshot, WorkbookValue } from "@doffi/core";
 import { workbookCellFormat } from "./cell-format.js";
 
 export interface WorkbookChartReadLimits {
@@ -68,7 +68,8 @@ function references(chart: DeepReadonly<WorkbookChart>, add: (slot: WorkbookChar
  * admit the entire batch before its first cell read. Imported chart caches stay
  * in the snapshot; they never replace unresolved references or current cells.
  * The response is structured-cloneable for a host-owned Worker transport. */
-export function modelChartSource(model: WorkbookModel): WorkbookChartSource {
+export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCalculationResult): WorkbookChartSource {
+  model = captureWorkbookModel(model);
   const snapshot = model.snapshot(), workbook = snapshot.metadata.workbook;
   const charts = new Map((workbook.charts ?? []).map(chart => [chart.chartId, chart]));
   const owners = new Map((workbook.objects ?? []).filter(object => object.kind === "chart").map(object => [object.chartId, object.sheetId]));
@@ -132,8 +133,8 @@ export function modelChartSource(model: WorkbookModel): WorkbookChartSource {
       const key = JSON.stringify([sheetId, row, column]), cached = evaluated.get(key);
       if (cached) return cached;
       if (steps >= budget.maxFormulaSteps) throw new DocumentError("ResourceLimitExceeded", "Chart formulas exceed their cumulative step budget.");
-      evaluator ??= createWorkbookScalarEvaluator(model, { maxSteps: budget.maxFormulaSteps, maxCells: budget.maxFormulaCells,
-        maxCodeUnits: budget.maxCodeUnits, maxWindowCells: 256 });
+      const evaluatorLimits = { maxSteps: budget.maxFormulaSteps, maxCells: budget.maxFormulaCells, maxCodeUnits: budget.maxCodeUnits, maxWindowCells: 256 };
+      evaluator ??= calculation === undefined ? createWorkbookScalarEvaluator(model, evaluatorLimits) : createWorkbookCalculatedEvaluator(model, calculation, evaluatorLimits);
       const result = evaluator.cell({ sheetId, row, column }, { signal, maxSteps: budget.maxFormulaSteps - steps, maxCodeUnits: budget.maxCodeUnits - units });
       account(result.codeUnits);
       steps += result.steps; readCells += result.readCells;

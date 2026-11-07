@@ -1,0 +1,1143 @@
+{
+  "scope": "Additional selected calculation families from independent ZIP/XML sources and pinned Calc. Source caches are deliberately wrong. Explicit host time is tested separately; Excel/WPS runtime remains unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "2089afccfbe53f3778906850f7e5d537054b5ee6da7087c3904268850d872c74",
+  "referenceInputSha256": "1f325e0c7a71e9ed4cc973309730da4fc1e571659a12df45701fa98ac100bacd",
+  "cases": [
+    {
+      "address": "E1",
+      "expression": "=_xlfn.IFS(FALSE,1,TRUE,2)",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E2",
+      "expression": "=_xlfn.IFS(FALSE,1)",
+      "value": {
+        "type": "error",
+        "value": "#N/A"
+      },
+      "expected": {
+        "type": "error",
+        "value": "#N/A"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E3",
+      "expression": "=LEFT(\"中文ABC\",2)",
+      "value": {
+        "type": "text",
+        "value": "中文"
+      },
+      "expected": {
+        "type": "text",
+        "value": "中文"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E4",
+      "expression": "=RIGHT(\"中文ABC\",2)",
+      "value": {
+        "type": "text",
+        "value": "BC"
+      },
+      "expected": {
+        "type": "text",
+        "value": "BC"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E5",
+      "expression": "=MID(\"中文ABC\",2,3)",
+      "value": {
+        "type": "text",
+        "value": "文AB"
+      },
+      "expected": {
+        "type": "text",
+        "value": "文AB"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E6",
+      "expression": "=RIGHT(\"abc\",0)",
+      "value": {
+        "type": "text",
+        "value": ""
+      },
+      "expected": {
+        "type": "text",
+        "value": ""
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E7",
+      "expression": "=LEFT(\"abc\",-1)",
+      "value": {
+        "type": "error",
+        "value": "#VALUE!"
+      },
+      "expected": {
+        "type": "error",
+        "value": "#VALUE!"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E8",
+      "expression": "=TRIM(\"  a   b  \")",
+      "value": {
+        "type": "text",
+        "value": "a b"
+      },
+      "expected": {
+        "type": "text",
+        "value": "a b"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E9",
+      "expression": "=UPPER(\"aBc中国\")",
+      "value": {
+        "type": "text",
+        "value": "ABC中国"
+      },
+      "expected": {
+        "type": "text",
+        "value": "ABC中国"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E10",
+      "expression": "=LOWER(\"aBc中国\")",
+      "value": {
+        "type": "text",
+        "value": "abc中国"
+      },
+      "expected": {
+        "type": "text",
+        "value": "abc中国"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E11",
+      "expression": "=_xlfn.CONCAT(\"a\",1,TRUE)",
+      "value": {
+        "type": "text",
+        "value": "a11"
+      },
+      "expected": {
+        "type": "text",
+        "value": "a1TRUE"
+      },
+      "basis": "Existing declared logical-to-text conversion is TRUE/FALSE, shared with concatenation; see prior xlsx-scalar-semantics evidence",
+      "matchesProducer": false
+    },
+    {
+      "address": "E12",
+      "expression": "=CONCATENATE(\"a\",\"b\",3)",
+      "value": {
+        "type": "text",
+        "value": "ab3"
+      },
+      "expected": {
+        "type": "text",
+        "value": "ab3"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E13",
+      "expression": "=_xlfn.TEXTJOIN(\"-\",TRUE,\"a\",\"\",\"b\")",
+      "value": {
+        "type": "text",
+        "value": "a-b"
+      },
+      "expected": {
+        "type": "text",
+        "value": "a-b"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E14",
+      "expression": "=_xlfn.TEXTJOIN(\"-\",FALSE,\"a\",\"\",\"b\")",
+      "value": {
+        "type": "text",
+        "value": "a--b"
+      },
+      "expected": {
+        "type": "text",
+        "value": "a--b"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E15",
+      "expression": "=_xlfn.TEXTJOIN(\"-\",TRUE,A1:A5)",
+      "value": {
+        "type": "text",
+        "value": "2-2-1"
+      },
+      "expected": {
+        "type": "text",
+        "value": "2-2-TRUE"
+      },
+      "basis": "Existing declared logical-to-text conversion is TRUE/FALSE, shared with concatenation",
+      "matchesProducer": false
+    },
+    {
+      "address": "E16",
+      "expression": "=_xlfn.CONCAT(A1:A5)",
+      "value": {
+        "type": "text",
+        "value": "221"
+      },
+      "expected": {
+        "type": "text",
+        "value": "22TRUE"
+      },
+      "basis": "Existing declared logical-to-text conversion is TRUE/FALSE, shared with concatenation",
+      "matchesProducer": false
+    },
+    {
+      "address": "E17",
+      "expression": "=SUBSTITUTE(\"a-a-a\",\"a\",\"x\",2)",
+      "value": {
+        "type": "text",
+        "value": "a-x-a"
+      },
+      "expected": {
+        "type": "text",
+        "value": "a-x-a"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E18",
+      "expression": "=SUBSTITUTE(\"a-a-a\",\"a\",\"x\")",
+      "value": {
+        "type": "text",
+        "value": "x-x-x"
+      },
+      "expected": {
+        "type": "text",
+        "value": "x-x-x"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E19",
+      "expression": "=REPLACE(\"abcdef\",2,3,\"X\")",
+      "value": {
+        "type": "text",
+        "value": "aXef"
+      },
+      "expected": {
+        "type": "text",
+        "value": "aXef"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E20",
+      "expression": "=FIND(\"B\",\"aBcB\",3)",
+      "value": {
+        "type": "number",
+        "value": 4.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 4.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E21",
+      "expression": "=SEARCH(\"b?\",\"aBcB\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E22",
+      "expression": "=SEARCH(\"~*\",\"a*b\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E23",
+      "expression": "=EXACT(\"ABC\",\"abc\")",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "expected": {
+        "type": "boolean",
+        "value": false
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E24",
+      "expression": "=TEXT(1234.5,\"0.00\")",
+      "value": {
+        "type": "text",
+        "value": "1234.50"
+      },
+      "expected": {
+        "type": "text",
+        "value": "1234.50"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E25",
+      "expression": "=TEXT(\"123\",\"0.00\")",
+      "value": {
+        "type": "text",
+        "value": "123.00"
+      },
+      "expected": {
+        "type": "text",
+        "value": "123.00"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E26",
+      "expression": "=TEXT(\"abc\",\"@\")",
+      "value": {
+        "type": "text",
+        "value": "abc"
+      },
+      "expected": {
+        "type": "text",
+        "value": "abc"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E27",
+      "expression": "=VALUE(\"1234.50\")",
+      "value": {
+        "type": "number",
+        "value": 1234.5
+      },
+      "expected": {
+        "type": "number",
+        "value": 1234.5
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E28",
+      "expression": "=VALUE(\"15%\")",
+      "value": {
+        "type": "number",
+        "value": 0.15
+      },
+      "expected": {
+        "type": "number",
+        "value": 0.15
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E29",
+      "expression": "=VALUE(\"2024-02-29\")",
+      "value": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E30",
+      "expression": "=DATE(2024,2,29)",
+      "value": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E31",
+      "expression": "=DATE(1900,2,29)",
+      "value": {
+        "type": "number",
+        "value": 61.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 60
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": false
+    },
+    {
+      "address": "E32",
+      "expression": "=DATE(1900,3,0)",
+      "value": {
+        "type": "number",
+        "value": 60.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 60
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": true
+    },
+    {
+      "address": "E33",
+      "expression": "=YEAR(60)",
+      "value": {
+        "type": "number",
+        "value": 1900.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1900
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": true
+    },
+    {
+      "address": "E34",
+      "expression": "=MONTH(60)",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": true
+    },
+    {
+      "address": "E35",
+      "expression": "=DAY(60)",
+      "value": {
+        "type": "number",
+        "value": 28.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 29
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": false
+    },
+    {
+      "address": "E36",
+      "expression": "=DAY(0)",
+      "value": {
+        "type": "number",
+        "value": 30.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 0
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": false
+    },
+    {
+      "address": "E37",
+      "expression": "=TIME(12,30,0)",
+      "value": {
+        "type": "number",
+        "value": 0.520833333333333
+      },
+      "expected": {
+        "type": "number",
+        "value": 0.520833333333333
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E38",
+      "expression": "=HOUR(0.5)",
+      "value": {
+        "type": "number",
+        "value": 12.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 12.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E39",
+      "expression": "=MINUTE(0.5)",
+      "value": {
+        "type": "number",
+        "value": 0.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 0.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E40",
+      "expression": "=SECOND(0.5)",
+      "value": {
+        "type": "number",
+        "value": 0.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 0.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E41",
+      "expression": "=HOUR(\"12:30:05\")",
+      "value": {
+        "type": "number",
+        "value": 12.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 12.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E42",
+      "expression": "=MINUTE(\"12:30:05\")",
+      "value": {
+        "type": "number",
+        "value": 30.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 30.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E43",
+      "expression": "=SECOND(\"12:30:05\")",
+      "value": {
+        "type": "number",
+        "value": 5.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 5.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E44",
+      "expression": "=_xlfn.DAYS(DATE(2024,3,1),DATE(2024,2,28))",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E45",
+      "expression": "=_xlfn.DAYS(\"2024-03-01\",\"2024-02-28\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E46",
+      "expression": "=EDATE(DATE(2024,1,31),1)",
+      "value": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E47",
+      "expression": "=EOMONTH(DATE(2024,1,1),1)",
+      "value": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 45351.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E48",
+      "expression": "=WEEKDAY(DATE(2024,1,1),2)",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E49",
+      "expression": "=WEEKDAY(1)",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1
+      },
+      "basis": "User-selected Excel 1900 compatibility calendar; Calc observation retained separately",
+      "matchesProducer": true
+    },
+    {
+      "address": "E50",
+      "expression": "=DATE(-1,1,1)",
+      "value": {
+        "type": "error",
+        "value": "#VALUE!"
+      },
+      "expected": {
+        "type": "error",
+        "value": "#NUM!"
+      },
+      "basis": "Microsoft DATE documentation: negative year returns #NUM!",
+      "matchesProducer": false
+    },
+    {
+      "address": "E51",
+      "expression": "=SUMIF(C1:C2,\">2\")",
+      "value": {
+        "type": "number",
+        "value": 9.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 9.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E52",
+      "expression": "=SUMIF(C1:C2,\">2\",C1)",
+      "value": {
+        "type": "number",
+        "value": 9.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 9.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E53",
+      "expression": "=COUNTIF(C1:C2,\">2\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E54",
+      "expression": "=AVERAGEIF(C1:C2,\">2\")",
+      "value": {
+        "type": "number",
+        "value": 4.5
+      },
+      "expected": {
+        "type": "number",
+        "value": 4.5
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E55",
+      "expression": "=SUMIFS(C1:C2,C1:C2,\">2\",C1:C2,\"<5\")",
+      "value": {
+        "type": "number",
+        "value": 3.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 3.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E56",
+      "expression": "=COUNTIFS(C1:C2,\">2\",C1:C2,\"<5\")",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E57",
+      "expression": "=AVERAGEIFS(C1:C2,C1:C2,\">2\",C1:C2,\"<5\")",
+      "value": {
+        "type": "number",
+        "value": 3.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 3.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E58",
+      "expression": "=COUNTIF(A1:A8,\"\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E59",
+      "expression": "=COUNTIF(A1:A8,0)",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E60",
+      "expression": "=COUNTIF(A1:A8,\"=0\")",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E61",
+      "expression": "=COUNTIF(A1:A8,\"<>0\")",
+      "value": {
+        "type": "number",
+        "value": 7.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 6
+      },
+      "basis": "Microsoft Excel.Functions.countIf range describes nonblank cells; actual blank is not a nonzero stored value; Excel/WPS runtime unverified",
+      "matchesProducer": false
+    },
+    {
+      "address": "E62",
+      "expression": "=COUNTIF(A1:A8,\"*\")",
+      "value": {
+        "type": "number",
+        "value": 7.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 3
+      },
+      "basis": "Microsoft COUNTIF wildcard example selects text-containing cells; numeric, logical, error and actual blank cells remain distinct",
+      "matchesProducer": false
+    },
+    {
+      "address": "E63",
+      "expression": "=COUNTIF(A1:A8,\"2\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E64",
+      "expression": "=COUNTIFS(A1:A8,\"\")",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E65",
+      "expression": "=COUNTIFS(A1:A8,0)",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2
+      },
+      "basis": "ECMA-376 Part 1 18.17.7.56 explicitly treats an empty cell in any argument as zero; Calc observation retained; Excel/WPS runtime unverified",
+      "matchesProducer": false
+    },
+    {
+      "address": "E66",
+      "expression": "=SUMIF(A1:A8,0,C1:C8)",
+      "value": {
+        "type": "number",
+        "value": 0.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 0.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E67",
+      "expression": "=MATCH(3,C1:C2,0)",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E68",
+      "expression": "=MATCH(4,C1:C2,1)",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E69",
+      "expression": "=MATCH(4,C1:C2,0)",
+      "value": {
+        "type": "error",
+        "value": "#N/A"
+      },
+      "expected": {
+        "type": "error",
+        "value": "#N/A"
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E70",
+      "expression": "=VLOOKUP(3,C1:C2,1,FALSE)",
+      "value": {
+        "type": "number",
+        "value": 3.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 3.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E71",
+      "expression": "=HLOOKUP(3,C1:C2,2,FALSE)",
+      "value": {
+        "type": "number",
+        "value": 6.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 6.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E72",
+      "expression": "=INDEX(C1:C2,2)",
+      "value": {
+        "type": "number",
+        "value": 6.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 6.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E73",
+      "expression": "=SUM(INDEX(C1:C2,0))",
+      "value": {
+        "type": "number",
+        "value": 9.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 9.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E74",
+      "expression": "=ROW(INDEX(C1:C2,2))",
+      "value": {
+        "type": "number",
+        "value": 2.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 2.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E75",
+      "expression": "=SUBTOTAL(9,C1:C2)",
+      "value": {
+        "type": "number",
+        "value": 9.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 9.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E76",
+      "expression": "=SUBTOTAL(109,C1:C2)",
+      "value": {
+        "type": "number",
+        "value": 9.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 9.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E77",
+      "expression": "=COUNTIF(A6,\"#N/A\")",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E78",
+      "expression": "=COUNTIFS(A6,\"#N/A\")",
+      "value": {
+        "type": "number",
+        "value": 1.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 1.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E79",
+      "expression": "=COUNTIF(A6,\"<>#N/A\")",
+      "value": {
+        "type": "number",
+        "value": 0.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 0.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E80",
+      "expression": "=SUMIF(A6,\"#N/A\",C1)",
+      "value": {
+        "type": "number",
+        "value": 3.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 3.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    },
+    {
+      "address": "E81",
+      "expression": "=AVERAGEIF(A6,\"#N/A\",C1)",
+      "value": {
+        "type": "number",
+        "value": 3.0
+      },
+      "expected": {
+        "type": "number",
+        "value": 3.0
+      },
+      "basis": "Pinned Calc observation; Excel/WPS unverified",
+      "matchesProducer": true
+    }
+  ]
+}

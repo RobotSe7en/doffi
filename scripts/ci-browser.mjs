@@ -16,7 +16,7 @@ const legacy = browser === 'legacy-chromium', project = legacy ? 'chromium' : br
 const files = {
   word: legacy ? ['workspace', 'pagination'] : ['workspace', 'interaction', 'workbench', 'text-editor', 'pagination', 'rendering', 'remote-access', 'word-closure'],
   presentation: ['presentation', 'presentation-editor', 'presentation-workbench', 'presentation-closure'],
-  workbook: ['workbook-storage', 'workbook-grid', 'workbook-drawing', 'workbook-drawing-window', 'workbook-preview', 'workbook-read-worker', 'workbook-playground'],
+  workbook: ['workbook-storage', 'workbook-grid', 'workbook-drawing', 'workbook-drawing-window', 'workbook-preview', 'workbook-input', 'workbook-read-worker', 'workbook-playground'],
 }[suite].map(file => file + '.spec.ts');
 const directory = resolve('.cache/ci-browser', browser, suite);
 mkdirSync(directory, { recursive: true });

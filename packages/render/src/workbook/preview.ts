@@ -1,16 +1,21 @@
-import { createWorkbookNumberFormatter, DocumentError } from "@doffi/core";
-import type { DocumentSelection, WorkbookSnapshot } from "@doffi/core";
+import { createWorkbookNumberFormatter, DocumentError, WorkbookRangeSchema } from "@doffi/core";
+import type { DeepReadonly, DocumentSelection, WorkbookCoordinate, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import { createWorkbookPreviewChrome, workbookColumnLabel } from "./preview-chrome.js";
 import type { WorkbookPreview, WorkbookPreviewInput, WorkbookPreviewOptions, WorkbookRenderReport } from "./preview-contracts.js";
 import { decorateWorkbookPreview } from "./preview-decoration.js";
 import type { WorkbookPreviewDecoration } from "./preview-decoration.js";
-import { workbookPreviewSource } from "./preview-source.js";
+import { workbookPreviewChangeImpact, workbookPreviewSource } from "./preview-source.js";
 import { hitWorkbookCell, WorkbookMergeIndex } from "./projection.js";
 import { createWorkbookSurface } from "./surface.js";
 import type { WorkbookSurface } from "./surface.js";
 import { WorkbookWindowController } from "./window-controller.js";
 import type { WorkbookRenderedWindow } from "./window-controller.js";
 import type { WorkbookViewport } from "./viewport.js";
+import { navigateWorkbookSelection } from "./selection-navigation.js";
+import type { WorkbookSelectionNavigation } from "./selection-navigation.js";
+import { workbookRowInvalidation } from "./row-invalidation.js";
+import { DEFAULT_AUTO_ROW_LIMITS } from "./auto-rows.js";
+import { waitForWorkbookRead } from "./read-cancellation.js";
 
 interface PreviewWindow { readonly controls: WorkbookPreviewDecoration; commitChrome(): void }
 interface PreviewContext {
@@ -55,13 +60,15 @@ function reportOf(window: WorkbookRenderedWindow): WorkbookRenderReport {
 /** One preview owns its surfaces, candidates and format caches. Authorized
  * providers (including their Worker) remain owned by the host. */
 export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPreviewInput, options: WorkbookPreviewOptions = {}): WorkbookPreview {
-  if (Object.keys(options).some(key => !["title", "widthPt", "heightPt", "sheetId", "locale", "limits", "onError", "onSelectionChange"].includes(key)))
+  if (Object.keys(options).some(key => !["title", "widthPt", "heightPt", "sheetId", "locale", "retainSelection", "limits", "onError", "onSelectionChange"].includes(key))
+    || options.retainSelection !== undefined && typeof options.retainSelection !== "boolean")
     throw new DocumentError("InvalidOperation", "Workbook preview received an unsupported option.");
   const config = { ...options, limits: { ...options.limits, read: { ...options.limits?.read }, cells: { ...options.limits?.cells },
     annotations: { ...options.limits?.annotations }, rules: { ...options.limits?.rules }, autoRows: { ...options.limits?.autoRows }, drawings: { ...options.limits?.drawings, assets: { ...options.limits?.drawings?.assets } } } };
   let desired: WorkbookViewport = Object.freeze({ widthPt: config.widthPt ?? 600, heightPt: config.heightPt ?? 360, scrollLeftPt: 0, scrollTopPt: 0 });
   let active: PreviewContext | undefined, pending: { readonly kind: "update" | "resize"; cancel(): void } | undefined, disposed = false, generation = 0;
   let selection: DocumentSelection | undefined, latest: Promise<void> = Promise.resolve();
+  let navigation: WorkbookSelectionNavigation | undefined;
   let resolveReady!: () => void, rejectReady!: (error: unknown) => void;
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   // Hosts may observe ready after mounting other UI. Do not create an unhandled
@@ -90,7 +97,7 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
     }),
   });
   const clearSelection = (): void => {
-    chrome.cell("", ""); chrome.validation("");
+    chrome.cell("", ""); chrome.validation(""); navigation = undefined;
     if (!selection) return; selection = undefined;
     const ticket = generation;
     queueMicrotask(() => { if (!disposed && ticket === generation && !selection) {
@@ -99,7 +106,10 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
   };
   const accepted = (context: PreviewContext): void => {
     const window = context.controller.current!;
-    context.windows.get(window.element)!.commitChrome(); desired = viewportOf(window); clearSelection();
+    const retained = config.retainSelection && selection?.documentId === context.snapshot.manifest.documentId && selection.baseRevision === context.snapshot.manifest.revision
+      && selection.anchor.kind === "cells" && selection.anchor.sheetId === window.frame.sheetId ? selection.anchor.ranges[0] : undefined;
+    context.windows.get(window.element)!.commitChrome(); desired = viewportOf(window);
+    if (retained) selectSourceRange(retained, true, false); else clearSelection();
     const report = reportOf(window), counts = report.formulaCaches;
     chrome.status(report.diagnostics.some(item => ["rule-current-value-unavailable", "conditional-rule-unavailable", "validation-unavailable"].includes(item.code))
       ? "部分条件格式或数据验证无法按当前值求出。"
@@ -131,6 +141,67 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
     if (pending?.kind === "update") return Promise.reject(new DocumentError("InvalidOperation", "A replacement workbook is still loading."));
     return render(current().context, sheetId, { ...desired, scrollLeftPt: 0, scrollTopPt: 0 });
   }
+  function selectSourceRange(range: DeepReadonly<WorkbookRange>, showRange = false, notify = true): DocumentSelection {
+    const { context, window, ui } = current(), sheet = context.snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === window.frame.sheetId)!;
+    const cell = range.from, value = window.frame.getCell(cell.row, cell.column);
+    ui.controls.selectRange(range);
+    const anchor = Object.freeze({ kind: "cells" as const, sheetId: sheet.sheetId, ranges: Object.freeze([Object.freeze({ from: Object.freeze({ ...range.from }), to: Object.freeze({ ...range.to }) })]) });
+    selection = Object.freeze({ documentId: context.snapshot.manifest.documentId, baseRevision: context.snapshot.manifest.revision, anchor });
+    if (notify) navigation = { origin: anchor.ranges[0]!.from, focus: anchor.ranges[0]!.from };
+    const address = (at: WorkbookRange["from"]) => workbookColumnLabel(at.column) + (at.row + 1);
+    chrome.cell(address(cell) + (!showRange || cell.row === range.to.row && cell.column === range.to.column ? "" : ":" + address(range.to)), value?.formula?.expression ?? (value?.value.type === "blank" || !value ? "" : String(value.value.value)));
+    const validation = window.rules?.cells.find(item => item.row === cell.row && item.column === cell.column)?.validation;
+    const definition = validation && sheet.dataValidations?.find(rule => rule.ruleId === validation.ruleId), messages: string[] = [];
+    if (definition && validation) {
+      if (!sheet.disableValidationPrompts && definition.showInputMessage) messages.push(...[definition.promptTitle, definition.prompt].filter(Boolean));
+      if (validation.state !== "none") messages.push(validation.state === "valid" ? "当前值符合验证规则。" : validation.state === "invalid" ? "当前值不符合验证规则。" : "当前值无法校验。" + (validation.issue?.functionName ? " 未支持函数：" + validation.issue.functionName : ""));
+      if (!sheet.disableValidationPrompts && validation.state === "invalid" && definition.showErrorMessage) messages.push(...[definition.errorTitle, definition.error].filter(Boolean));
+    }
+    chrome.validation(messages.join("\n"));
+    if (notify) try { config.onSelectionChange?.(selection); } catch { /* Host-owned callback. */ }
+    return selection;
+  }
+  async function selectRange(input: DeepReadonly<WorkbookRange>, ensureVisible = true, visibleAt?: DeepReadonly<WorkbookCoordinate>): Promise<DocumentSelection> {
+    check();
+    const parsed = WorkbookRangeSchema.safeParse(input);
+    if (!parsed.success || parsed.data.from.row > parsed.data.to.row || parsed.data.from.column > parsed.data.to.column || typeof ensureVisible !== "boolean") throw new DocumentError("InvalidOperation", "Workbook selection requires an ordered source range.");
+    if (pending) throw new DocumentError("InvalidOperation", "A replacement workbook view is still loading.");
+    const requested = current(), source = requested.context.providers, selectedSheet = requested.window.frame.sheetId;
+    await settled();
+    if (current().context.providers !== source || current().window.frame.sheetId !== selectedSheet) throw new DocumentError("RevisionConflict", "The workbook view changed during selection.");
+    const owned = current(), providers = owned.context.providers, sheet = owned.context.snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === owned.window.frame.sheetId)!;
+    const range = parsed.data.from.row === parsed.data.to.row && parsed.data.from.column === parsed.data.to.column ? new WorkbookMergeIndex(sheet.merges).at(parsed.data.from.row, parsed.data.from.column) ?? parsed.data : parsed.data;
+    if (ensureVisible) {
+      const dimensions = owned.window.dimensions;
+      const fit = (axis: "rows" | "columns", frozen: number, extent: number, scroll: number): number => {
+        const point = visibleAt ?? range.from, first = axis === "rows" ? point.row : point.column;
+        if (first < frozen) return scroll;
+        const dimension = dimensions[axis], fixed = dimension.position(frozen), size = Math.max(0, extent - Math.min(extent, fixed));
+        if (!size) return scroll;
+        const begin = dimension.position(first), end = dimension.position(first + 1), from = fixed + scroll;
+        return begin < from ? begin - fixed : end > from + size ? Math.min(begin - fixed, end - fixed - size) : scroll;
+      };
+      const left = fit("columns", sheet.frozen.columns, desired.widthPt, desired.scrollLeftPt), top = fit("rows", sheet.frozen.rows, desired.heightPt, desired.scrollTopPt);
+      if (left !== desired.scrollLeftPt || top !== desired.scrollTopPt) await render(owned.context, sheet.sheetId, { ...desired, scrollLeftPt: left, scrollTopPt: top });
+    }
+    if (current().context.providers !== providers || current().window.frame.sheetId !== sheet.sheetId) throw new DocumentError("RevisionConflict", "The workbook source changed during selection.");
+    return selectSourceRange(range, true);
+  }
+  async function moveSelection(direction: "up" | "down" | "left" | "right", extend = false): Promise<DocumentSelection> {
+    check();
+    if (!["up", "down", "left", "right"].includes(direction) || typeof extend !== "boolean") throw new DocumentError("InvalidOperation", "Invalid workbook selection movement.");
+    await settled();
+    const { context, window } = current(), sheet = context.snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === window.frame.sheetId)!;
+    const first = (axis: "rows" | "columns"): number => {
+      const dimensions = window.dimensions[axis], coordinate = dimensions.size(0) > 0 ? 0 : dimensions.neighbor(0, 1);
+      if (coordinate === undefined) throw new DocumentError("InvalidOperation", "The worksheet has no visible coordinate on this axis."); return coordinate;
+    };
+    const point = navigation?.focus ?? { row: first("rows"), column: first("columns") };
+    const next = navigateWorkbookSelection(sheet, window.dimensions, navigation ?? { origin: point, focus: point }, direction, extend);
+    const selected = await selectRange(next.range, true, next.navigation.focus);
+    if (selection === selected) navigation = next.navigation;
+    return selected;
+  }
   function render(context: PreviewContext, sheetId: string, viewport: WorkbookViewport): Promise<WorkbookRenderReport> {
     if (pending?.kind === "resize") { pending.cancel(); pending = undefined; chrome.busy(false); }
     const before = context.controller.current!.frame.layout;
@@ -146,20 +217,29 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
   function update(next: WorkbookPreviewInput): void {
     check();
     const providers = workbookPreviewSource(next), snapshot = providers.cells.snapshot;
-    prepare(providers, desired, config.sheetId ?? snapshot.metadata.workbook.activeSheetId, "update");
+    const previousSheet = active?.snapshot.manifest.documentId === snapshot.manifest.documentId ? active.controller.current?.frame.sheetId : undefined;
+    const retained = previousSheet && snapshot.metadata.workbook.sheets.some(sheet => sheet.sheetId === previousSheet && sheet.visibility === "visible") ? previousSheet : undefined;
+    prepare(providers, desired, retained ?? (active ? snapshot.metadata.workbook.activeSheetId : config.sheetId ?? snapshot.metadata.workbook.activeSheetId), "update");
   }
   function prepare(providers: ReturnType<typeof workbookPreviewSource>, inputViewport: WorkbookViewport, sheetId: string, kind: "update" | "resize"): void {
     const snapshot = providers.cells.snapshot, viewport = Object.freeze({ ...inputViewport }); desired = viewport;
-    pending?.cancel(); active?.controller.cancelPending(); const ticket = ++generation, abort = new AbortController();
+    pending?.cancel(); active?.controller.cancelForReplacement(); const ticket = ++generation, abort = new AbortController();
+    const before = active, oldViewport = before?.controller.current?.frame.layout;
+    const rows = before ? workbookRowInvalidation(before.snapshot, snapshot, workbookPreviewChangeImpact(before.providers, providers), config.limits.autoRows.maxCells ?? DEFAULT_AUTO_ROW_LIMITS.maxCells) : undefined;
+    const share = rows && before?.surface.fork && oldViewport?.widthPt === viewport.widthPt && oldViewport.heightPt === viewport.heightPt
+      && snapshot.styles.every(style => /^(?:\s*\.[a-zA-Z_][-\w]*\s*\{[^{}]*\}\s*)*$/.test(style.css)) ? before : undefined;
     let candidate: PreviewContext | undefined;
     const request = { kind, cancel() { abort.abort(); candidate?.dispose(); } }; pending = request; chrome.busy(true);
     const work = (async () => {
-      const slot = container.ownerDocument.createElement("div");
-      slot.style.cssText = "position:absolute;inset:0;opacity:0;pointer-events:none;overflow:hidden";
-      slot.setAttribute("aria-hidden", "true"); chrome.canvas.append(slot);
+      const slot = share?.slot ?? container.ownerDocument.createElement("div");
+      if (!share) {
+        slot.style.cssText = "position:absolute;inset:0;opacity:0;pointer-events:none;overflow:hidden";
+        slot.setAttribute("aria-hidden", "true"); chrome.canvas.append(slot);
+      }
       let surface: WorkbookSurface | undefined, formatter: ReturnType<typeof createWorkbookNumberFormatter> | undefined;
       try {
-        surface = await createWorkbookSurface(slot, snapshot, { ...viewport, signal: abort.signal });
+        surface = share ? share.surface.fork!() : await createWorkbookSurface(slot, snapshot, { ...viewport, signal: abort.signal });
+        if (share && surface.document.fonts.status === "loading") await waitForWorkbookRead(surface.document.fonts.ready, abort.signal);
         if (abort.signal.aborted) return;
         formatter = createWorkbookNumberFormatter({ dateSystem: snapshot.metadata.workbook.dateSystem,
           ...(config.locale !== undefined ? { hostLocale: config.locale } : {}), ...(snapshot.metadata.locale ? { documentLocale: snapshot.metadata.locale } : {}) });
@@ -182,37 +262,26 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
             const rect = ownedSurface.view.getBoundingClientRect(), x = (event.clientX - rect.left) * .75, y = (event.clientY - rect.top) * .75;
             const cell = hitWorkbookCell(window.dimensions, window.frame.layout, merges, sheet.rightToLeft ? window.frame.layout.widthPt - x : x, y);
             if (!cell) return;
-            controls.selectCell(cell.row, cell.column);
-            const range = merges.at(cell.row, cell.column) ?? { from: cell, to: cell }, value = window.frame.getCell(cell.row, cell.column);
-            const anchor = Object.freeze({ kind: "cells" as const, sheetId: sheet.sheetId, ranges: Object.freeze([Object.freeze({ from: Object.freeze({ ...range.from }), to: Object.freeze({ ...range.to }) })]) });
-            selection = Object.freeze({ documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, anchor });
-            chrome.cell(workbookColumnLabel(cell.column) + (cell.row + 1), value?.formula?.expression ?? (value?.value.type === "blank" || !value ? "" : String(value.value.value)));
-            const validation = window.rules?.cells.find(item => item.row === cell.row && item.column === cell.column)?.validation;
-            const definition = validation && sheet.dataValidations?.find(rule => rule.ruleId === validation.ruleId);
-            const messages: string[] = [];
-            if (definition && validation) {
-              if (!sheet.disableValidationPrompts && definition.showInputMessage) messages.push(...[definition.promptTitle, definition.prompt].filter(Boolean));
-              if (validation.state !== "none") messages.push(validation.state === "valid" ? "当前值符合验证规则。" : validation.state === "invalid" ? "当前值不符合验证规则。" : "当前值无法校验。" + (validation.issue?.functionName ? " 未支持函数：" + validation.issue.functionName : ""));
-              if (!sheet.disableValidationPrompts && validation.state === "invalid" && definition.showErrorMessage) messages.push(...[definition.errorTitle, definition.error].filter(Boolean));
-            }
-            chrome.validation(messages.join("\n"));
-            try { config.onSelectionChange?.(selection); } catch { /* Host-owned callback. */ }
+            selectSourceRange(merges.at(cell.row, cell.column) ?? { from: cell, to: cell });
           }), { signal: events.signal });
           return { get nodes() { return controls.nodes; }, get fonts() { return controls.fonts; }, dispose() { events.abort(); controls.dispose(); } };
-        });
+        }, { deferPublication: true, ...(share && rows ? { measurements: share.controller.measurementSeeds(rows) } : {}) });
         let released = false;
         // Native point-based styles retain their stable indexes on resize.
         // Viewport/container units and conditional CSS need a fresh surface
         // to measure typography at the final size before atomic publication.
         const viewportDependentStyles = usesViewportStyles(snapshot);
         candidate = { snapshot, providers, viewportDependentStyles, surface, controller, windows, slot, dispose() {
-          if (released) return; released = true; controller.dispose(); ownedFormatter.dispose(); ownedSurface.dispose(); slot.remove();
+          if (released) return; released = true; controller.dispose(); ownedFormatter.dispose(); ownedSurface.dispose(); if (!slot.querySelector("iframe")) slot.remove();
         } };
         if (!await controller.render(sheetId, viewport) || abort.signal.aborted || disposed || ticket !== generation) return;
         const previous = active;
         // Chrome preparation and all controls already succeeded before the
         // controller published this isolated candidate's complete window.
-        active = candidate; accepted(candidate); candidate = undefined;
+        previous?.controller.unpublish();
+        try { controller.publish(); active = candidate; accepted(candidate); }
+        catch (error) { active = previous; previous?.controller.publish(); throw error; }
+        candidate = undefined;
         slot.style.opacity = "1"; slot.style.pointerEvents = "auto"; slot.removeAttribute("aria-hidden"); previous?.dispose();
         surface = undefined; formatter = undefined;
       } catch (error) { if (!abort.signal.aborted && !disposed && ticket === generation) throw error; }
@@ -227,8 +296,9 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
   try { update(input); } catch (error) { chrome.dispose(); throw error; }
   return Object.freeze({ kind: "workbook", element: chrome.element, ready, snapshot: () => current().context.snapshot,
     layout: () => reportOf(current().window), fonts: () => current().window.fonts, selection: () => { check(); return selection; }, settled, update, showSheet, setViewport,
+    selectRange: (range: DeepReadonly<WorkbookRange>, ensureVisible?: boolean) => selectRange(range, ensureVisible), moveSelection,
     openComment(annotationId: string) { current().ui.controls.openComment(annotationId); }, closeComment() { current().ui.controls.closeComment(); },
     dispose() { if (disposed) return; disposed = true; ++generation; pending?.cancel(); pending = undefined; active?.dispose(); active = undefined;
-      selection = undefined; chrome.dispose(); rejectReady(new DocumentError("OperationCancelled", "Workbook preview was disposed before becoming ready.")); },
+      selection = undefined; navigation = undefined; chrome.dispose(); rejectReady(new DocumentError("OperationCancelled", "Workbook preview was disposed before becoming ready.")); },
   });
 }

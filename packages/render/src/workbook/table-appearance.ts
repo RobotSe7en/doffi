@@ -1,4 +1,5 @@
-import { DocumentError } from "@doffi/core";
+import { createWorkbookTableFormatResolver, DocumentError } from "@doffi/core";
+import type { WorkbookCellFormat } from "@doffi/core";
 import type { DeepReadonly, WorkbookCoordinate, WorkbookRange, WorkbookSheet, WorkbookSnapshot, WorkbookStyleApplication, WorkbookTable } from "@doffi/core";
 import { AxisDimensions } from "./dimensions.js";
 import { WorkbookMergeIndex } from "./projection.js";
@@ -79,6 +80,7 @@ export class WorkbookTableAppearance {
   private readonly definitions: ReadonlyMap<string, DeepReadonly<NonNullable<WorkbookSnapshot["metadata"]["workbook"]["cellStyles"]>["definitions"][number]>>;
   private readonly namedStyles: ReadonlyMap<string, string>;
   private units = 0;
+  private readonly format: (at: WorkbookCoordinate, source: WorkbookCellFormat) => WorkbookCellFormat;
   constructor(private readonly snapshot: WorkbookSnapshot, private readonly sheet: DeepReadonly<WorkbookSheet>, document: Document,
     account: (amount: number) => void, private readonly maxCodeUnits: number = 8 * 1024 * 1024) {
     const tables = sheet.tables ?? [];
@@ -89,6 +91,7 @@ export class WorkbookTableAppearance {
     this.visibleRows = new AxisDimensions(1_048_576, sheet.defaultRowsHidden ? 0 : 1, sheet.rowDimensions.map(run => ({ from: run.from, to: run.to,
       sizePt: (run.hidden ?? sheet.defaultRowsHidden) || run.heightPt === 0 ? 0 : 1 })));
     this.visibleColumns = new AxisDimensions(16_384, 1, sheet.columnDimensions.map(run => ({ from: run.from, to: run.to, sizePt: run.hidden || run.width === 0 ? 0 : 1 })));
+    this.format = createWorkbookTableFormatResolver(snapshot, sheet);
   }
   private layers(table: Table, coordinate: WorkbookCoordinate): readonly Layer[] {
     const result: Layer[] = [], { row, column } = coordinate;
@@ -119,14 +122,13 @@ export class WorkbookTableAppearance {
     if (!table || !this.visibleRows.size(coordinate.row) || !this.visibleColumns.size(coordinate.column)) return source;
     const layers = this.layers(table, coordinate); if (!layers.length) return source;
     const normal = this.styles.read(source.element, this.sheet.defaultCssClass), direct = this.styles.read(source.element, source.format.cssClass);
-    const patch = new Map<string, string>(); let numberFormatId: string | undefined;
+    const patch = new Map<string, string>();
     for (const layer of layers) {
       const properties = "cssClass" in layer.style ? this.styles.read(source.element, layer.style.cssClass, true) : builtinProperties(layer.style);
       const values = layer.apply ? new Map([...properties].filter(([name]) => namedProperty(name, layer.apply!))) : properties;
       const visibleRange: Range = { from: { row: this.visibleRows.hit(this.visibleRows.position(layer.range.from.row) + .5)!, column: this.visibleColumns.hit(this.visibleColumns.position(layer.range.from.column) + .5)! },
         to: { row: this.visibleRows.hit(this.visibleRows.position(layer.range.to.row + 1) - .5)!, column: this.visibleColumns.hit(this.visibleColumns.position(layer.range.to.column + 1) - .5)! } };
       for (const [name, value] of layer.apply ? values : regionalProperties(values, visibleRange, coordinate, this.sheet.rightToLeft, layer.borderOnly)) patch.set(name, value);
-      if ("numberFormatId" in layer.style && layer.style.numberFormatId !== undefined && !layer.borderOnly && (!layer.apply || layer.apply.numberFormat)) numberFormatId = layer.style.numberFormatId;
     }
     // Current native XFs are full records. Their default properties must not
     // erase table formatting, and their apply* propagation flags are unrelated.
@@ -136,8 +138,6 @@ export class WorkbookTableAppearance {
       if (this.units > this.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Composed workbook appearance exceeds its window style budget.");
       source.element.style.setProperty(name, value, "important");
     }
-    if (source.format.numberFormatId !== this.sheet.defaultNumberFormatId) numberFormatId = source.format.numberFormatId;
-    const selectedFormat = numberFormatId ?? source.format.numberFormatId;
-    return Object.freeze({ element: source.element, format: Object.freeze({ cssClass: source.format.cssClass, ...(selectedFormat !== undefined ? { numberFormatId: selectedFormat } : {}) }) });
+    return Object.freeze({ element: source.element, format: this.format(coordinate, source.format) });
   }
 }

@@ -26,7 +26,7 @@ export function checkedWorkbookRules(value: unknown, request: WorkbookRuleReadRe
       if (++inspected > request.maxSteps) throw new DocumentError("ResourceLimitExceeded", "Workbook rule response inspection exceeds its work budget.");
       return row >= range.from.row && row <= range.to.row && column >= range.from.column && column <= range.to.column;
     });
-  const required = new Map<number, { readonly row: number; readonly column: number }>();
+  const required = new Map<number, { readonly row: number; readonly column: number }>(request.includeCurrent ? request.coordinates.map(point => [key(point), point]) : []);
   const definitions = [...conditional, ...validations], selected = new Set<string>();
   for (const point of request.coordinates) for (const rule of definitions) if (contains(rule, point.row, point.column)) {
     selected.add(rule.ruleId); required.set(key(point), point);

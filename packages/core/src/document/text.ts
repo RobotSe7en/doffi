@@ -2,6 +2,7 @@ import type { DefaultTreeAdapterTypes as Tree } from "parse5";
 
 /** UTF-16 offsets may not split a surrogate pair or detach a variation selector. */
 export function isTextBoundary(text: string, offset: number): boolean {
+  if (typeof text !== "string" || !Number.isSafeInteger(offset) || offset < 0 || offset > text.length) return false;
   const before = text.charCodeAt(offset - 1);
   const after = text.charCodeAt(offset);
   const code = text.codePointAt(offset);

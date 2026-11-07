@@ -1,5 +1,7 @@
 import type { TransactionPrepareOptions } from "../runtime.js";
 import type { DocumentState } from "../document/state.js";
+import type { DocumentManifest } from "../contracts/document.js";
+import type { DeepReadonly, DocumentPackage } from "../runtime.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import type { ParsedHtml } from "../document/html.js";
 import { buildDocumentState } from "../document/state.js";
@@ -11,13 +13,18 @@ import { checkTransactionSize } from "./limits.js";
 
 /** Copy authorized bytes before they can be mutated by the caller. No provider or network. */
 export function stageResources(base: DocumentState, options: TransactionPrepareOptions | undefined, limits: DocumentReadLimits): { state: DocumentState; added: ReadonlySet<string> } {
+  const staged = stageResourceFiles(base.files, base.snapshot.manifest, options, limits);
+  return { state: staged.added.size ? buildDocumentState(staged.files, limits) : base, added: staged.added };
+}
+
+export function stageResourceFiles(baseFiles: DocumentPackage, baseManifest: DeepReadonly<DocumentManifest>, options: TransactionPrepareOptions | undefined, limits: DocumentReadLimits): { files: DocumentPackage; manifest: DeepReadonly<DocumentManifest>; added: ReadonlySet<string> } {
   const added = new Set<string>();
-  if (options === undefined) return { state: base, added };
+  if (options === undefined) return { files: baseFiles, manifest: baseManifest, added };
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => key !== "assets")
     || options.assets !== undefined && !Array.isArray(options.assets)) invalid("Invalid transaction preparation options.");
-  if (!options.assets?.length) return { state: base, added };
+  if (!options.assets?.length) return { files: baseFiles, manifest: baseManifest, added };
   checkLimit(options.assets.length, limits.maxFiles);
-  const files = new Map(base.files), manifest = parseContract("document-manifest", base.snapshot.manifest);
+  const files = new Map(baseFiles), manifest = parseContract("document-manifest", baseManifest);
   let total = [...files.values()].reduce((sum, bytes) => sum + bytes.byteLength, 0);
   const seen = new Set<string>();
   for (const input of options.assets) {
@@ -42,9 +49,9 @@ export function stageResources(base: DocumentState, options: TransactionPrepareO
     manifest.assets.push(descriptor);
     added.add(descriptor.path);
   }
-  if (!added.size) return { state: base, added };
+  if (!added.size) return { files: baseFiles, manifest: baseManifest, added };
   files.set("manifest.json", encode(JSON.stringify(manifest)));
-  return { state: buildDocumentState(files, limits), added };
+  return { files, manifest, added };
 }
 
 export function checkResourceUse(added: ReadonlySet<string>, after: ParsedHtml, entrypoint: string): void {

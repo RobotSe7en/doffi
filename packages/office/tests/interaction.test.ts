@@ -1,6 +1,7 @@
+import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { createDocumentSession, openDocument } from "@doffi/core";
+import { createDocumentSession } from "@doffi/core";
 import type { EditProposal } from "@doffi/core";
 import { importDocx, readDocumentZip, writeDocumentZip } from "@doffi/office";
 

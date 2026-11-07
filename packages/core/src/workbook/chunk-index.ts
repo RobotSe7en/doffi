@@ -17,6 +17,8 @@ export interface ChunkPosition { readonly sheetId: string; readonly row: number;
 export interface ChunkWindow { readonly row: number; readonly column: number; readonly rows: number; readonly columns: number }
 export interface IndexedCellSource { readonly row: number; readonly column: number; readonly html: string }
 export interface ChunkValidation {
+  /** Internal callers already own detached immutable bytes. */
+  readonly takeOwnership?: boolean;
   readonly textCache?: WorkbookChunkTextCache;
   readonly formulas?: FormulaTemplatePool;
   readonly cssClasses?: ReadonlySet<string>;
@@ -31,6 +33,8 @@ export interface ChunkIndex {
   readonly formulaCount: number;
   readonly sourceBytes: number;
   readonly indexBytes: number;
+  readonly formulaTemplates: readonly FormulaExpression[];
+  formulaLocations(): Iterable<{ readonly row: number; readonly column: number; readonly expression: FormulaExpression }>;
   /** Window coordinates are absolute, zero based. Returned HTML is source data. */
   readWindow(window: ChunkWindow): readonly IndexedCellSource[];
   getFormula(row: number, column: number): FormulaExpression | undefined;
@@ -120,7 +124,7 @@ export function indexWorkbookChunk(input: Uint8Array, position: ChunkPosition, m
   if (!position.sheetId || !Number.isInteger(position.row) || !Number.isInteger(position.column)
     || position.row < 0 || position.row >= MAX_SHEET_ROWS || position.row % CHUNK_ROWS
     || position.column < 0 || position.column >= MAX_SHEET_COLUMNS || position.column % CHUNK_COLUMNS) invalid("Invalid workbook chunk position.");
-  const bytes = new Uint8Array(input), location = Object.freeze({ ...position });
+  const bytes = validation?.takeOwnership ? input : new Uint8Array(input), location = Object.freeze({ ...position });
   const source = decodeText(bytes);
   const tree = parseHtmlTree(source, { maxFiles: 1, maxPackageBytes: maxBytes, maxFileBytes: maxBytes, maxNodes: validation?.maxNodes ?? 100_000, maxDepth: Math.min(16, validation?.maxDepth ?? 16), maxCssNodes: 1 }, tags);
   const [html] = only(tree, ["html"]), [head, body] = only(html!, ["head", "body"]);
@@ -173,16 +177,19 @@ function plainCell(source: string): { attrs: Record<string, string>; text: strin
   return { attrs, text };
 }
 
+/** Shared inert parser for bounded source slices and rich-input extraction. */
+export function parseWorkbookCellElement(source: string): Element {
+  const context = defaultTreeAdapter.createElement("tr", htmlNamespace.NS.HTML, []);
+  const fragment = parseHtmlFragment(source, context, { maxFiles: 1, maxPackageBytes: 8 * 1024 * 1024, maxFileBytes: 8 * 1024 * 1024, maxNodes: 100_000, maxDepth: 16, maxCssNodes: 1 }, tags);
+  const [cell] = only(fragment, ["td"]); return cell!;
+}
 /** Only used on already validated, bounded cell slices. Canonical entity-free
- * plain cells need no second HTML parse; all other syntax uses the same inert
- * parser as before. Opening still validates every source chunk independently. */
+ * plain cells need no second HTML parse. Opening validates every source chunk. */
 export function decodeWorkbookCell(source: string): { value: WorkbookValue; formula?: WorkbookFormulaSource; text: string; cssClass?: string; formatId?: string } {
   let plain = plainCell(source);
   if (!plain) {
-    const context = defaultTreeAdapter.createElement("tr", htmlNamespace.NS.HTML, []);
-    const fragment = parseHtmlFragment(source, context, { maxFiles: 1, maxPackageBytes: 8 * 1024 * 1024, maxFileBytes: 8 * 1024 * 1024, maxNodes: 100_000, maxDepth: 16, maxCssNodes: 1 }, tags);
-    const [cell] = only(fragment, ["td"]);
-    plain = { attrs: Object.fromEntries(cell!.attrs.map(a => [a.name, a.value])), text: textContent(cell!) };
+    const cell = parseWorkbookCellElement(source);
+    plain = { attrs: Object.fromEntries(cell.attrs.map(a => [a.name, a.value])), text: textContent(cell) };
   }
   const { attrs, text } = plain;
   const type = attrs["data-value-type"], raw = attrs["data-value"];
@@ -193,16 +200,25 @@ export function decodeWorkbookCell(source: string): { value: WorkbookValue; form
 }
 
 function createIndex(bytes: Uint8Array, position: ChunkPosition, coords: Uint16Array, starts: Uint32Array, stops: Uint32Array, formulaCount: number, formulaCoords: Uint16Array, templateIds: Uint32Array, formulas: FormulaTemplatePool | undefined, textCache: WorkbookChunkTextCache | undefined): ChunkIndex {
+  const expressions = Array.from(templateIds, id => formulas?.get(id));
+  const formulaTemplates = Object.freeze([...new Set(expressions.filter((item): item is FormulaExpression => item !== undefined))]);
   return Object.freeze({
     position, cellCount: coords.length, formulaCount, sourceBytes: bytes.byteLength,
     indexBytes: coords.byteLength + starts.byteLength + stops.byteLength + formulaCoords.byteLength + templateIds.byteLength,
+    formulaTemplates,
+    *formulaLocations() {
+      for (let index = 0; index < formulaCoords.length; index++) {
+        const coordinate = formulaCoords[index]!, expression = expressions[index];
+        if (expression) yield { row: position.row + Math.floor(coordinate / CHUNK_COLUMNS), column: position.column + coordinate % CHUNK_COLUMNS, expression };
+      }
+    },
     serialize: () => new Uint8Array(bytes),
     getFormula(row: number, column: number): FormulaExpression | undefined {
       if (!Number.isInteger(row) || !Number.isInteger(column) || row < position.row || row >= position.row + CHUNK_ROWS || column < position.column || column >= position.column + CHUNK_COLUMNS) return undefined;
       const coordinate = (row - position.row) * CHUNK_COLUMNS + column - position.column;
       let low = 0, high = formulaCoords.length;
       while (low < high) { const middle = (low + high) >>> 1; if (formulaCoords[middle]! < coordinate) low = middle + 1; else high = middle; }
-      return formulaCoords[low] === coordinate ? formulas?.get(templateIds[low]!) : undefined;
+      return formulaCoords[low] === coordinate ? expressions[low] : undefined;
     },
     readWindow(window: ChunkWindow): readonly IndexedCellSource[] {
       if (![window.row, window.column, window.rows, window.columns].every(Number.isSafeInteger)

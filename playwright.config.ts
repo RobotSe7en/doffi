@@ -12,8 +12,8 @@ export default defineConfig({
   snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}-{platform}{ext}",
   projects: [
     { name: "chromium", use: { browserName: "chromium", ...(process.env.DOFFI_BROWSER_EXECUTABLE ? { launchOptions: { executablePath: process.env.DOFFI_BROWSER_EXECUTABLE } } : {}) } },
-    { name: "firefox", testMatch: /(?:workspace|workbook-(?:storage|grid|preview|read-worker|reading-performance|playground|drawing(?:-window)?)|pagination|compatibility|remote-access|word-closure|presentation(?:-(?:editor|workbench|closure))?)\.spec\.ts/, use: { browserName: "firefox" } },
-    { name: "webkit", testMatch: /(?:workspace|workbook-(?:storage|grid|preview|read-worker|reading-performance|playground|drawing(?:-window)?)|pagination|compatibility|remote-access|word-closure|presentation(?:-(?:editor|workbench|closure))?)\.spec\.ts/, use: { browserName: "webkit" } },
+    { name: "firefox", testMatch: /(?:workspace|workbook-(?:storage|grid|preview|input|read-worker|reading-performance|playground|drawing(?:-window)?)|pagination|compatibility|remote-access|word-closure|presentation(?:-(?:editor|workbench|closure))?)\.spec\.ts/, use: { browserName: "firefox" } },
+    { name: "webkit", testMatch: /(?:workspace|workbook-(?:storage|grid|preview|input|read-worker|reading-performance|playground|drawing(?:-window)?)|pagination|compatibility|remote-access|word-closure|presentation(?:-(?:editor|workbench|closure))?)\.spec\.ts/, use: { browserName: "webkit" } },
   ],
   use: {
     browserName: "chromium",

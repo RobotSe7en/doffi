@@ -44,6 +44,8 @@
     "check:presentation-closure:built": "node scripts/presentation-closure-acceptance.mjs",
     "ci:office": "node scripts/ci-office.mjs",
     "check:workbook-scale": "node scripts/workbook-scale-acceptance.mjs",
+    "check:workbook-calculation": "python3 scripts/check-workbook-calculation.py --verify-native",
+    "check:workbook-filter-calculation": "python3 scripts/check-workbook-filter-calculation.py --verify-native",
     "typecheck:built": "tsc --project apps/playground/tsconfig.json && tsc --project tsconfig.tools.json",
     "test:built": "vitest run"
   },

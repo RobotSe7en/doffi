@@ -162,6 +162,8 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "name") {
       const sheet = mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
+      if (change.kind === "deleteSheet" && node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet)
+        && bindings.tables?.some(table => same(table.name, node.name) && same(table.sheet, change.sheet))) return refError();
       if (change.kind === "renameTable" && same(node.name, change.from)) {
         if (!bindings.isTableName) invalid("Bare table rename requires resolved name bindings.");
         if (bindings.isTableName(node.name, node.sheet ?? from.sheet)) return { ...node, name: change.to };
@@ -170,6 +172,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "structured") {
       const table = node.table ?? bindings.table;
+      if (change.kind === "deleteSheet" && table !== undefined && bindings.tables?.some(definition => same(definition.name, table) && same(definition.sheet, change.sheet))) return refError();
       if (change.kind === "move" && (!same(from.sheet, to.sheet) || from.row !== to.row || from.column !== to.column)) {
         if (node.selectors.includes("thisRow")) {
           if (!bindings.tables) invalid("Moving a current-row table formula requires table geometry.");

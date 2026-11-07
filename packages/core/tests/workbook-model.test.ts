@@ -28,7 +28,7 @@ describe("unified workbook package reader", () => {
     expect(model.snapshot().manifest.chunks).toEqual([]); expect(model.snapshot().metadata.workbook.dateSystem).toBe("1904");
     expect("html" in model.snapshot()).toBe(false); expect("entrypoint" in model.snapshot().manifest).toBe(false);
     expect(model.readWindow({ sheetId: "sheet-1", row: 0, column: 0, rows: 10, columns: 10 })).toEqual([]);
-    expect(() => createDocumentSession(model)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+    expect(createDocumentSession(model).snapshot()).toEqual(model.snapshot());
     expect(openDocument(model.serialize(), { kind: "workbook" }).snapshot()).toEqual(model.snapshot());
     expect(() => openDocument(files, { kind: "document" })).toThrowError(expect.objectContaining({ code: "UnsupportedFormat" }));
   });

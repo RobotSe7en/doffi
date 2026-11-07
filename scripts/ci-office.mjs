@@ -11,7 +11,7 @@ const python = name => ['/usr/bin/python3', 'scripts/' + name + '.py'];
 const tasks = {
   word: [script('check:docx-export:built'), script('check:word-closure:built')],
   presentation: [script('check:pptx-fixtures'), script('check:pptx-reference'), script('check:pptx-export:built'), script('check:presentation-closure:built')],
-  workbook: [script('check:xlsx-fixtures'), script('check:xlsx-reference'), ...[
+  workbook: [script('check:xlsx-fixtures'), script('check:xlsx-reference'), script('check:workbook-calculation'), script('check:workbook-filter-calculation'), ...[
     'chart-formulas', 'row-appearance', 'hidden-row-heights', 'accounting-underlines', 'picture-rotation',
     'gradient-rotation', 'comment-mentions', 'comment-uids', 'dual-note-boxes', 'text-overflow',
     'chart-colors', 'chart-markers', 'chart-auto-markers', 'chart-grid', 'chart-axes', 'chart-finite-scales', 'chart-labels',

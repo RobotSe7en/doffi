@@ -1,5 +1,6 @@
+import { openContentFixture as openDocument } from "../../content-fixture.js";
 import { decodeTestPackage, type TestPackage } from './package-transport.js';
-import { createDocumentSession,openDocument } from "@doffi/core";
+import { createDocumentSession } from "@doffi/core";
 import type { AssetDescriptor,DeepReadonly,DocumentSession,PresentationEditProposal,PresentationInteractionRequest } from "@doffi/core";
 import { mountDocumentWorkbench } from "@doffi/editor";
 import type { PresentationWorkbenchView } from "@doffi/editor";

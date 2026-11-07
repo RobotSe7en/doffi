@@ -1,5 +1,5 @@
-import { readWorkbookRules } from "@doffi/core";
-import type { WorkbookModel, WorkbookRuleIssue, WorkbookRuleReadRequest, WorkbookRuleReadResponse, WorkbookSnapshot } from "@doffi/core";
+import { captureWorkbookModel, readWorkbookRules } from "@doffi/core";
+import type { WorkbookCalculationResult, WorkbookModel, WorkbookRuleIssue, WorkbookRuleReadRequest, WorkbookRuleReadResponse, WorkbookSnapshot } from "@doffi/core";
 
 export interface WorkbookRuleDiagnostic {
   readonly code: "rule-current-value-unavailable" | "conditional-rule-unavailable" | "conditional-formula-error" | "validation-unavailable" | "validation-invalid";
@@ -20,13 +20,17 @@ export function workbookRuleDiagnostics(response: WorkbookRuleReadResponse): rea
 
 export interface WorkbookRuleSource {
   readonly snapshot: WorkbookSnapshot;
+  /** Request current values for every projected coordinate, including cells
+   * without a rule. Source cells and imported caches remain immutable. */
+  readonly currentValues?: boolean;
   read(request: WorkbookRuleReadRequest, signal: AbortSignal): Promise<WorkbookRuleReadResponse>;
 }
 
 /** The host adapter supplies event-loop checkpoints. Core owns neither timers
  * nor the host's Worker lifetime, and reads remain bound to one revision. */
-export function modelRuleSource(model: WorkbookModel): WorkbookRuleSource {
-  return Object.freeze({ snapshot: model.snapshot(), read(request: WorkbookRuleReadRequest, signal: AbortSignal) {
-    return readWorkbookRules(model, request, { signal, yield: () => new Promise<void>(resolve => setTimeout(resolve, 0)) });
+export function modelRuleSource(model: WorkbookModel, calculation?: WorkbookCalculationResult): WorkbookRuleSource {
+  model = captureWorkbookModel(model);
+  return Object.freeze({ snapshot: model.snapshot(), ...(calculation === undefined ? {} : { currentValues: true }), read(request: WorkbookRuleReadRequest, signal: AbortSignal) {
+    return readWorkbookRules(model, request, { signal, yield: () => new Promise<void>(resolve => setTimeout(resolve, 0)), ...(calculation === undefined ? {} : { calculation }) });
   } });
 }

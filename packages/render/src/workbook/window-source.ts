@@ -1,4 +1,4 @@
-import { DocumentError } from "@doffi/core";
+import { captureWorkbookModel, DocumentError } from "@doffi/core";
 import type { WorkbookCell, WorkbookModel, WorkbookSnapshot, WorkbookWindow } from "@doffi/core";
 
 export interface WorkbookWindowLimits { readonly maxCells: number; readonly maxCodeUnits: number }
@@ -58,6 +58,7 @@ function validateRequest(request: WorkbookWindowRequest, snapshot: WorkbookSnaps
 /** Direct small-document adapter; the same bounded batch can run in a host-owned
  * Worker without transferring the complete package or allocating implicit cells. */
 export function modelWindowSource(model: WorkbookModel): WorkbookWindowSource {
+  model = captureWorkbookModel(model);
   const snapshot = model.snapshot();
   return Object.freeze({ snapshot, allowReadAhead: true, async read(input: WorkbookWindowRequest, signal: AbortSignal): Promise<WorkbookWindowResponse> {
     checkWindowCancellation(signal);

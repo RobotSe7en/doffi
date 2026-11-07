@@ -1,7 +1,8 @@
+import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createAssetDescriptor, createDocumentSession, DocumentError, openDocument } from "@doffi/core";
+import { createAssetDescriptor, createDocumentSession, DocumentError } from "@doffi/core";
 import type { Anchor, Annotation, DocumentEditingSession, DocumentOperation, DocumentPackage } from "@doffi/core";
 import { repository } from "./fixtures.js";
 

@@ -86,7 +86,19 @@ function checkEnvelope(name: ContractName, input: unknown): void {
 // Zod collects every array item's issues before returning. Preflight arrays one
 // item at a time, including arrays nested in objects and contract variants, so
 // invalid input cannot build an issue list proportional to the array's length.
+// Cache schema structure only. A subtree without any preflight array has no
+// work here; its ordinary Zod validation below remains complete. In particular,
+// scalar cell unions need no repeated discriminator-error construction.
+const arrayPaths = new WeakMap<z.core.$ZodType, boolean>();
+function hasArrayPath(schema: z.core.$ZodType): boolean {
+  const known = arrayPaths.get(schema); if (known !== undefined) return known;
+  const found = schema instanceof z.ZodArray || schema instanceof z.ZodOptional && hasArrayPath(schema.unwrap())
+    || (schema instanceof z.ZodDiscriminatedUnion || schema instanceof z.ZodUnion) && schema.options.some(option => hasArrayPath(option))
+    || schema instanceof z.ZodObject && Object.values(schema.shape).some(child => hasArrayPath(child as z.core.$ZodType));
+  arrayPaths.set(schema, found); return found;
+}
 function checkArrayItems(schema: z.core.$ZodType, input: unknown, path: PropertyKey[], fail: (issues: z.ZodIssue[]) => never): void {
+  if (!hasArrayPath(schema)) return;
   if (schema instanceof z.ZodOptional) {
     if (input !== undefined) checkArrayItems(schema.unwrap(), input, path, fail);
   } else if (schema instanceof z.ZodDiscriminatedUnion) {

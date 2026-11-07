@@ -1,4 +1,4 @@
-import { DocumentError } from "@doffi/core";
+import { captureWorkbookModel, DocumentError } from "@doffi/core";
 import type { WorkbookModel, WorkbookSnapshot } from "@doffi/core";
 import { checkWindowCancellation, checkWindowIdentity } from "./window-source.js";
 import { workbookImageFootprint } from "./image-footprint.js";
@@ -23,6 +23,7 @@ export interface WorkbookPreparedAssets {
 }
 
 export function modelAssetSource(model: WorkbookModel): WorkbookAssetSource {
+  model = captureWorkbookModel(model);
   const snapshot = model.snapshot();
   return Object.freeze({ snapshot, async readAsset(request: WorkbookAssetRequest, signal: AbortSignal): Promise<WorkbookAssetResponse> {
     checkWindowCancellation(signal); checkWindowIdentity(request, snapshot);

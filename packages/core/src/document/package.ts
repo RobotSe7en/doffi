@@ -21,6 +21,12 @@ export function createUtf8TextCopy(): (text: string) => string {
 }
 
 export function copyPackage(input: DocumentPackage, limits: DocumentReadLimits): Map<string, Uint8Array> {
+  const files = validatePackage(input, limits);
+  return new Map([...files].map(([path, bytes]) => [path, new Uint8Array(bytes)]));
+}
+
+/** Validate already-owned immutable source without copying complete workbooks. */
+export function validatePackage(input: DocumentPackage, limits: DocumentReadLimits): Map<string, Uint8Array> {
   const files = new Map<string, Uint8Array>();
   let total = 0;
   for (const [path, bytes] of input) {
@@ -31,7 +37,7 @@ export function copyPackage(input: DocumentPackage, limits: DocumentReadLimits):
     checkLimit(bytes.byteLength, limits.maxFileBytes);
     total += bytes.byteLength;
     checkLimit(total, limits.maxPackageBytes);
-    files.set(path, new Uint8Array(bytes));
+    files.set(path, bytes);
   }
   // A trailing slash groups a file with its descendants even when sibling names
   // contain punctuation that sorts before '/'. No ancestor strings are rebuilt.

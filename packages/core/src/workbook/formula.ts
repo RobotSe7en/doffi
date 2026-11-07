@@ -116,8 +116,8 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
   function expression(minimum: number, depth: number, union = true): Operand {
     checkLimit(depth, 128); checkLimit(++nodes, 4096);
     spaces(); const token = take(); let left: Operand;
-    if (token.text === "+" || token.text === "-") left = { kind: "unary", operator: token.text, operand: operand(expression(70, depth + 1, union)) };
-    else if (token.text === "(") { left = expression(0, depth + 1); spaces(); consume(")"); }
+    if (token.kind === "operator" && (token.text === "+" || token.text === "-")) left = { kind: "unary", operator: token.text, operand: operand(expression(70, depth + 1, union)) };
+    else if (token.kind === "operator" && token.text === "(") { left = expression(0, depth + 1); spaces(); consume(")"); }
     else if (token.kind === "number") {
       const value = Number(token.text); if (!Number.isFinite(value)) invalid("Invalid formula numeric constant.");
       left = { kind: "number", value }; numericTokens.set(left, token.text);
@@ -142,7 +142,7 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
         if (peek().text !== ")") {
           while (true) {
             spaces(); args.push(peek().text === "," || peek().text === ")" ? null : operand(expression(0, depth + 1, false))); spaces();
-            checkLimit(args.length, 254);
+            checkLimit(args.length, 255);
             if (peek().text !== ",") break;
             take();
           }
@@ -201,20 +201,25 @@ export interface FormulaTemplatePool {
   readonly size: number;
   readonly keyCodeUnits: number;
   intern(source: string, origin: FormulaOrigin): number;
+  include(expression: FormulaExpression): number;
   get(id: number): FormulaExpression | undefined;
 }
 /** Per-workbook derived cache, bounded independently from source bytes. */
 export function createFormulaTemplatePool(maxTemplates = 250_000, maxKeyCodeUnits = 32 * 1024 * 1024): FormulaTemplatePool {
   if (![maxTemplates, maxKeyCodeUnits].every(value => Number.isSafeInteger(value) && value > 0)) invalid("Invalid formula template budget.");
   const ids = new Map<string, number>(), expressions: FormulaExpression[] = []; let keyCodeUnits = 0;
+  function include(ast: FormulaExpression): number {
+    const key = JSON.stringify(ast), existing = ids.get(key);
+    if (existing !== undefined) return existing;
+    checkLimit(expressions.length + 1, maxTemplates); checkLimit(keyCodeUnits + key.length, maxKeyCodeUnits);
+    const id = expressions.length; ids.set(key, id); expressions.push(ast); keyCodeUnits += key.length; return id;
+  }
   return Object.freeze({
     get size() { return expressions.length; }, get keyCodeUnits() { return keyCodeUnits; },
     intern(source: string, origin: FormulaOrigin): number {
-      const ast = parseFormula(source, origin), key = JSON.stringify(ast), existing = ids.get(key);
-      if (existing !== undefined) return existing;
-      checkLimit(expressions.length + 1, maxTemplates); checkLimit(keyCodeUnits + key.length, maxKeyCodeUnits);
-      const id = expressions.length; ids.set(key, id); expressions.push(ast); keyCodeUnits += key.length; return id;
+      return include(parseFormula(source, origin));
     },
+    include,
     get(id: number) { return expressions[id]; },
   });
 }
