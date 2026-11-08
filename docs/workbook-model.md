@@ -676,7 +676,7 @@ session.dispose();
 
 ## 工作簿请求与提案基础（R3-16 实施中）
 
-`WorkbookSession` 现提供同步／异步的 `buildInteractionRequest` 和 `prepareProposal`。独立契约名为 `workbook-interaction-request`、`workbook-edit-proposal`，类型及同名 JSON Schema 子路径从 core 导出；不更改 Word 或 PPT 的契约。完整手工来源、请求和提案见[工作簿协作示例](../examples/workbook/README.md)。工作台及完整组合、容量与阶段验收继续实施，不能将这些入口记作 R3-16 完成。
+`WorkbookSession` 现提供同步／异步的 `buildInteractionRequest` 和 `prepareProposal`。独立契约名为 `workbook-interaction-request`、`workbook-edit-proposal`，类型及同名 JSON Schema 子路径从 core 导出；不更改 Word 或 PPT 的契约。完整手工来源、请求和提案见[工作簿协作示例](../examples/workbook/README.md)。工作台 JS／React 基础已接入，完整组合、容量与阶段验收继续实施，不能将这些入口记作 R3-16 完成。
 
 请求默认写入所选打开批注的完整单元格锚点，也可由宿主声明 `ranges`、`tables` 或 `global` 作用域。智能表作用域只覆盖当前实际表范围，不自动授权相邻空白。`objectIds` 单独允许修改既有绘图，`newObjectSheetIds` 明确允许在指定工作表创建绘图；单元格范围不隐式授权该表所有绘图。`readRanges` 只增加输入，不增加写入权限。标识符、资源路径和上下文声明均不替代宿主对当前主体的授权。
 
@@ -687,3 +687,16 @@ session.dispose();
 提案复建并核对完整冻结上下文，先检查声明操作的目标，再检查候选实际改写的源补集。剪切等操作对区域外公式的改写也是写入，越界拒绝；新增公式需要未披露输入时，要求补充只读范围并重建请求，不自动扩大权限。`getProposalReview(candidate)` 单独提供当前结果变化，其中区域外消费者仍标为 `read-only`。源差异、候选模型、批注处理、提交、丢弃和撤销继续使用同一事务／历史边界；没有实际源／批注修改的提案不能自动解决批注。
 
 专属 Worker 连接通过 `buildInteractionRequest(input, execution?)` 返回有界请求，通过 `prepare({ kind: "proposal", request, proposal }, resources?, execution?)` 准备候选；句柄的 `proposalReview` 对应上述当前结果差异。预览、应用及丢弃复用既有 `view/commit/discard`，冻结时间也用于该候选的预览。请求取消、超额响应、候选检查失败和断开都不能发布部分源或泄漏候选配额。宿主继续拥有模型执行、Worker 和正式存储。
+
+
+### 工作簿工作台
+
+`mountWorkbookWorkbench(container, sessionOrConnection, options?)` 接受宿主已有的 `WorkbookSession` 或专属 Worker 连接；统一入口也可使用 `mountDocumentWorkbench(container, sessionOrConnection, { format: "workbook", ...options })`。`@doffi/editor/react` 的 `WorkbookWorkbench` 只包装该 JS 视图，卸载释放视图与所属候选，不关闭宿主会话、连接或 Worker。
+
+界面可以选择打开的批注、锚定区域／当前选区／智能表，指定既有绘图及当前表的绘图创建权限。全局选择需宿主设置 `allowGlobalScope: true`；宿主也可用 `scope` 固定写入范围。额外只读输入复用第一方引用解析，保留完整空白范围；它不增加写入范围。`contextLimits/readRanges/supportedOperations` 传给同一核心请求，`prepareOptions` 提供授权资源、时间和警告确认。
+
+`buildRequest`、`loadProposal`、`applyProposal` 和 `rejectProposal` 均返回 Promise。`onSubmitAnnotations(request, { signal })` 由宿主执行模型或其他流程，可以返回提案，也可以仅接收请求；返回的提案先进入隔离候选，不自动应用。取消和旧修订守卫使迟到结果不能改写新源。原生输入、IME 或编辑命令未结束时，请求和提案入口拒绝继续；直连及 Worker 编辑器均提供 `hasPendingInput/onPendingChange`。
+
+工作台提供请求 JSON 下载和有界提案文件导入。候选预览使用冻结时间的当前计算；值／公式／格式的直接源差异和只读消费者结果分别分页，每页最多 50 项，逐页可查看完整差异。结构详情包含元数据、样式、批注锚点和实际富 HTML 正文前后值，使用文本节点显示来源，未解释执行 HTML。放弃、修订变化、取消及卸载释放所属读取租约、分页监听和候选。应用已越过原子提交边界后，视图卸载或渲染失败不把真实回执改成“编辑失败”。
+
+这些界面仍是 R3-16 的实施基础；整体退出继续要求结构／表格／绘图／批注组合、固定资源容量和完整阶段双人独立审查。

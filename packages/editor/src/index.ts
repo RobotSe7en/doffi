@@ -26,6 +26,8 @@ export { mountWorkbookEditor } from "./workbook/editor.js";
 export { mountWorkbookRemoteEditor } from "./workbook/editor-remote.js";
 export type { WorkbookRemoteEditorOptions, WorkbookRemoteEditorView } from "./workbook/editor-remote.js";
 export type { WorkbookEditorOptions, WorkbookEditorView } from "./workbook/editor-contracts.js";
+export { mountWorkbookWorkbench } from "./workbook/workbench.js";
+export type { WorkbookWorkbenchCandidate, WorkbookWorkbenchEvent, WorkbookWorkbenchOptions, WorkbookWorkbenchView } from "./workbook/workbench.js";
 export { createWorkbookFillTransaction } from "./workbook/fill.js";
 export type { WorkbookFillOptions } from "./workbook/fill.js";
 export { findWorkbookText } from "./workbook/find.js";

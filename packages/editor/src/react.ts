@@ -1,6 +1,35 @@
 import { createElement, useEffect, useRef } from "react";
 import type { ReactElement } from "react";
-import type { DocumentEditingSession, DocumentSession } from "@doffi/core";
+import type { DocumentEditingSession, DocumentSession, WorkbookSession } from "@doffi/core";
+import { mountWorkbookWorkbench } from "./workbook/workbench.js";
+import type { WorkbookWorkbenchOptions, WorkbookWorkbenchView } from "./workbook/workbench.js";
+import type { WorkbookSessionConnection } from "./workbook/session-transport.js";
+
+export interface WorkbookWorkbenchProps extends WorkbookWorkbenchOptions {
+  readonly session: WorkbookSession | WorkbookSessionConnection;
+  readonly className?: string;
+  readonly onViewChange?: (view: WorkbookWorkbenchView | undefined) => void;
+}
+/** React owns the container; the ordinary JS workbench owns view cleanup. */
+export function WorkbookWorkbench(props: WorkbookWorkbenchProps): ReactElement {
+  const container = useRef<HTMLDivElement>(null), latest = useRef(props); latest.current = props;
+  const hasSubmission = Boolean(props.onSubmitAnnotations);
+  useEffect(() => {
+    if (!container.current) return;
+    const view = mountWorkbookWorkbench(container.current, props.session, {
+      ...(props.title !== undefined ? { title: props.title } : {}), ...(props.widthPt !== undefined ? { widthPt: props.widthPt } : {}), ...(props.heightPt !== undefined ? { heightPt: props.heightPt } : {}),
+      ...(props.locale !== undefined ? { locale: props.locale } : {}), ...(props.limits ? { limits: props.limits } : {}), ...(props.scope ? { scope: props.scope } : {}), ...(props.allowGlobalScope !== undefined ? { allowGlobalScope: props.allowGlobalScope } : {}),
+      ...(props.readRanges ? { readRanges: props.readRanges } : {}), ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}), ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
+      ...(props.prepareOptions ? { prepareOptions: () => latest.current.prepareOptions!() } : {}),
+      ...(hasSubmission ? { onSubmitAnnotations: (request, context) => latest.current.onSubmitAnnotations!(request, context) } : {}),
+      onError: error => latest.current.onError?.(error), onSelectionChange: selection => latest.current.onSelectionChange?.(selection), onPendingChange: pending => latest.current.onPendingChange?.(pending), onEvent: event => latest.current.onEvent?.(event),
+    });
+    try { latest.current.onViewChange?.(view); } catch (error) { view.dispose(); throw error; }
+    void view.ready.catch(() => { /* The ordinary workbench reports errors. */ });
+    return () => { view.dispose(); latest.current.onViewChange?.(undefined); };
+  }, [props.session, props.title, props.widthPt, props.heightPt, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), hasSubmission]);
+  return createElement("div", { ref: container, className: props.className });
+}
 import { mountDocumentWorkbench } from "./workbench.js";
 import type { DocumentWorkbenchOptions, DocumentWorkbenchView } from "./workbench.js";
 import { mountPresentationEditor } from "./presentation-editor.js";

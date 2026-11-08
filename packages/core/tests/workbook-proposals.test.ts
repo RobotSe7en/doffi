@@ -66,6 +66,7 @@ test("tampered frozen coverage and no-op writes to read-only dependencies fail b
     expect(() => session.prepareProposal(changed, proposal(input, [set(0, 0, 10)]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
   }
   expect(() => session.prepareProposal(input, proposal(input, [set(0, 1, 999)]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
+  expect(() => session.prepareProposal(input, proposal(input, [{ op: "setWorkbookCellFormats", sheetId: "sheet-1", cells: [{ row: 0, column: 1 }] }]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
   expect(session.serialize()).toEqual(before); const candidate = session.prepareProposal(input, proposal(input, [set(0, 0, 10)])); session.discard(candidate);
 });
 

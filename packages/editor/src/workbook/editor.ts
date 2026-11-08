@@ -39,12 +39,13 @@ export function mountWorkbookEditor(container: HTMLElement, session: WorkbookSes
 function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSession, options: WorkbookEditorOptions): WorkbookEditorView {
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || session.kind !== "workbook") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its owning workbook session.");
-  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
   let commentControls: ReturnType<typeof createWorkbookCommentControls> | undefined;
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), input = createWorkbookInputController(session), events = new view.AbortController();
   const clipboard = new WorkbookClipboard();
   let disposed = false, choosing = 0, refreshQueued = false, forceCalculation = false, latest: Promise<void> = Promise.resolve();
+  let reportedPending: boolean | undefined;
   let interaction: Promise<void> = Promise.resolve();
   let revision = -1, generation = 0, calculationAbort: AbortController | undefined, commandAbort: AbortController | undefined, preview: WorkbookPreview;
   let renderedSource: WorkbookPreviewSource | undefined;
@@ -77,6 +78,8 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     for (const field of ui.format.fields) field.disabled = Boolean(commandAbort);
     drawingControls?.refresh();
     commentControls?.refresh();
+    const pending = pendingInput() || Boolean(commandAbort);
+    if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Reporting cannot change source. */ } }
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -499,7 +502,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     } catch (error) { report(error); }
   }, { signal: events.signal });
   controls(); void scheduleRefresh(); const ready = sourceSettled().then(() => {}); void ready.catch(() => {});
-  return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); },
+  return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); }, hasPendingInput() { check(); return pendingInput() || Boolean(commandAbort); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: binding.apply, cancelInput, perform,
     recalculate: async () => { commandAbort?.abort(); await scheduleRefresh(true); return settled(); },
     dispose() { if (disposed) return; disposed = true; ++generation; calculationAbort?.abort(); commandAbort?.abort(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview.dispose(); renderedSource = undefined; ui.element.remove(); },

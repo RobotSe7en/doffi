@@ -2,6 +2,7 @@ import { DocumentError, parseContract } from "@doffi/core";
 import type {
   AnnotationSubmissionHandler, CandidateChange, DocumentInteractionRequest, ContentDocumentModel, DocumentSelection,
   DocumentSession, EditProposal, InteractionRequestInput, TransactionReceipt,
+  WorkbookSession,
 } from "@doffi/core";
 import { mountDocumentInteraction } from "./interaction.js";
 import type { DocumentInteractionOptions, DocumentInteractionView } from "./interaction.js";
@@ -13,6 +14,9 @@ import { mountPresentationWorkbench } from "./presentation-workbench.js";
 import type { PresentationWorkbenchOptions,PresentationWorkbenchView } from "./presentation-workbench.js";
 import { createLayoutFieldTransaction } from "@doffi/render";
 import { workspaceControls } from "./workspace.js";
+import { mountWorkbookWorkbench } from "./workbook/workbench.js";
+import type { WorkbookWorkbenchOptions, WorkbookWorkbenchView } from "./workbook/workbench.js";
+import type { WorkbookSessionConnection } from "./workbook/session-transport.js";
 
 function immutable<Value>(value: Value): Value {
   if (value && typeof value === "object") {
@@ -46,10 +50,18 @@ export interface DocumentWorkbenchView extends DocumentInteractionView {
 /** Host-owned session; no model execution or authoritative file storage is introduced here. */
 export function mountDocumentWorkbench(container:HTMLElement,session:DocumentSession,options?:DocumentWorkbenchOptions):DocumentWorkbenchView;
 export function mountDocumentWorkbench(container:HTMLElement,session:DocumentSession,options:PresentationWorkbenchOptions&{readonly format:"presentation"}):PresentationWorkbenchView;
-export function mountDocumentWorkbench(container: HTMLElement, session: DocumentSession, optionsInput: DocumentWorkbenchOptions|(PresentationWorkbenchOptions&{readonly format:"presentation"}) = {}): DocumentWorkbenchView|PresentationWorkbenchView {
+export function mountDocumentWorkbench(container:HTMLElement,session:WorkbookSession|WorkbookSessionConnection,options:WorkbookWorkbenchOptions&{readonly format:"workbook"}):WorkbookWorkbenchView;
+export function mountDocumentWorkbench(container: HTMLElement, session: DocumentSession|WorkbookSession|WorkbookSessionConnection, optionsInput: DocumentWorkbenchOptions|(PresentationWorkbenchOptions&{readonly format:"presentation"})|(WorkbookWorkbenchOptions&{readonly format:"workbook"}) = {}): DocumentWorkbenchView|PresentationWorkbenchView|WorkbookWorkbenchView {
+  if (optionsInput.format === "workbook") {
+    if ("kind" in session && session.kind !== "workbook") throw new DocumentError("UnsupportedFormat", "The workbook workbench requires its workbook session.");
+    const { format: _format, ...options } = optionsInput; return mountWorkbookWorkbench(container, session, options);
+  }
+  if (!("kind" in session) || session.kind === "workbook") throw new DocumentError("UnsupportedFormat", "Workbook workbenches require their explicit format adapter.");
   if(optionsInput.format==="presentation")return mountPresentationWorkbench(container,session,optionsInput);
   if(optionsInput.format!==undefined&&optionsInput.format!=="document")throw new DocumentError("UnsupportedFormat","Unsupported workbench format.");
-  const options=optionsInput;
+  return mountContentWorkbench(container, session, optionsInput);
+}
+function mountContentWorkbench(container: HTMLElement, session: DocumentSession, options: DocumentWorkbenchOptions): DocumentWorkbenchView {
   if (session.snapshot().metadata.presentation) throw new DocumentError("UnsupportedFeature", "Presentation workbench requires its format adapter.");
   const document = container.ownerDocument, element = document.createElement("div"), shadow = element.attachShadow({ mode: "open" });
   const style = document.createElement("style");

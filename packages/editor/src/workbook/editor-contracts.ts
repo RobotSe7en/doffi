@@ -13,6 +13,7 @@ export interface WorkbookEditorOptions {
   readonly prepareOptions?: () => TransactionPrepareOptions;
   readonly onError?: (error: Error) => void;
   readonly onSelectionChange?: (selection: DocumentSelection | undefined) => void;
+  readonly onPendingChange?: (pending: boolean) => void;
 }
 export interface WorkbookEditorView {
   readonly element: HTMLDivElement;
@@ -20,6 +21,7 @@ export interface WorkbookEditorView {
   settled(): Promise<WorkbookRenderReport>;
   selection(): DocumentSelection | undefined;
   inputState(): WorkbookInputState;
+  hasPendingInput(): boolean;
   selectRange(sheetId: string, range: DeepReadonly<WorkbookRange>): Promise<DocumentSelection>;
   focusInput(selectAll?: boolean): void;
   applyInput(): TransactionReceipt | undefined;
