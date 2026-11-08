@@ -1,6 +1,7 @@
 /** Observe only this fixture's private workbook surfaces, including the
- * asynchronously created Worker preview. No shadow is opened or source changed. */
-export function observeWorkbookViews(editor: HTMLElement) {
+ * asynchronously created Worker preview. Source surfaces remain closed; tests
+ * may open parent UI shadows to drive worksheet tabs through accessibility. */
+export function observeWorkbookViews(editor: HTMLElement, options: { openHostShadows?: boolean } = {}) {
   const preview = editor.shadowRoot!.querySelector('.preview')!, captured = new WeakMap<Element, ShadowRoot>(), views = new WeakMap<HTMLIFrameElement, ShadowRoot>();
   const watched = new Set<HTMLIFrameElement>(), observed = new WeakSet<Node>(), restores: (() => void)[] = [];
   const observer = new MutationObserver(watch);
@@ -27,7 +28,7 @@ export function observeWorkbookViews(editor: HTMLElement) {
   const prototype = editor.ownerDocument.defaultView!.Element.prototype, attach = prototype.attachShadow;
   // Preview hosts attach their shadow before joining the connected container.
   // Retain only weak handles here; scan/observe content solely under this UI.
-  prototype.attachShadow = function(init) { const shadow = attach.call(this, init); captured.set(this, shadow); return shadow; };
+  prototype.attachShadow = function(init) { const shadow = attach.call(this, options.openHostShadows ? { ...init, mode: 'open' } : init); captured.set(this, shadow); return shadow; };
   watch();
   return { root: (frame: HTMLIFrameElement) => views.get(frame), current: () => { const frame = [...watched].find(frame => frame.isConnected); return frame ? views.get(frame) : undefined; },
     dispose() { observer.disconnect(); for (const restore of restores.splice(0).reverse()) restore(); prototype.attachShadow = attach; watched.clear(); } };

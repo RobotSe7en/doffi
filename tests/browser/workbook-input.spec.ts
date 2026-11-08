@@ -279,6 +279,21 @@ test("mounted direct native whole-table cut keeps its definition across sheets a
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], tables: [{ tables: [table] }, { tables: [] }] });
 });
 
+test("mounted direct native global-name cut shows the global value despite a target local shadow", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-cut' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  await page.evaluate(() => window.workbookEditor.select(6, 1)); await page.getByRole('button', { name: '剪切选区', exact: true }).click();
+  await page.getByRole('tab', { name: target.name, exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('D1'); await address.press('Enter'); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(sheetId => window.workbookEditor.cell(sheetId, 0, 3)?.formula?.expression, target.sheetId)).toBe('=[0]!Tax');
+  expect(await page.evaluate(() => window.workbookEditor.displayedCell(0, 3))).toBe('7');
+  await expect(page.getByRole('textbox', { name: '单元格或公式输入', exact: true })).toHaveValue('=[0]!Tax');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [] });
+});
+
 test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
   await page.addScriptTag({ content: editorCode });
   const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },

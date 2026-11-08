@@ -45,7 +45,8 @@ export function workbookExpressionDependencies(model: WorkbookModel, expression:
       // its defining expression irrelevant to dependency or volatility flags.
       if (ast.kind === "name") {
         const scope = ast.sheet === undefined ? at.sheetId : sheets.find(sheet => sheet.name.toUpperCase() === ast.sheet!.toUpperCase())?.sheetId;
-        const definition = definitions.find(name => name.name.toUpperCase() === ast.name.toUpperCase() && name.sheetId === scope)
+        const definition = (ast.workbook === 0 ? definitions.find(name => name.name.toUpperCase() === ast.name.toUpperCase() && name.sheetId === undefined)
+          : definitions.find(name => name.name.toUpperCase() === ast.name.toUpperCase() && name.sheetId === scope))
           ?? (ast.sheet === undefined ? definitions.find(name => name.name.toUpperCase() === ast.name.toUpperCase() && name.sheetId === undefined) : undefined);
         if (definition) options.onName?.(definition, at);
         if (definition && !names.includes(definition.nameId)) pending.push({ ast: parseFormula(definition.expression, definition.origin), at: { ...at, sheetId: definition.sheetId ?? at.sheetId }, names: [...names, definition.nameId] });

@@ -22,12 +22,12 @@ export interface FormulaRewriteBindings {
   /** The table containing this formula, for unqualified structured references. */
   readonly table?: string;
   /** Required only when a bare identifier might name the table being renamed. */
-  readonly isTableName?: (name: string, sheet: string) => boolean;
+  readonly isTableName?: (name: string, sheet: string, workbook?: 0) => boolean;
   readonly tables?: readonly FormulaTableDefinition[];
   /** Complete tables relocating with the containing range keep their native
    * structured bindings, including current-row selectors. */
   readonly movedTables?: ReadonlySet<string>;
-  readonly resolveName?: (name: string, sheet: string, explicit: boolean) => string | undefined;
+  readonly resolveName?: (name: string, sheet: string, explicit: boolean, workbook?: 0) => string | undefined;
   /** An empty calculated column retains relative row recipes for its future
    * data body. Absolute references still follow or invalidate source cells. */
   readonly preserveRelativeAxis?: boolean;
@@ -83,8 +83,9 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     if (!Number.isInteger(change.index) || !Number.isInteger(change.count) || change.index < 0 || change.count <= 0 || change.index + change.count > bound) invalid("Invalid formula axis change.");
   }
   if (change.kind === "renameSheet" && !WorkbookSheetSchema.shape.name.safeParse(change.to).success) invalid("Invalid renamed sheet.");
-  if (change.kind === "renameTable") {
-    if (change.to.length > 255 || parseFormula("=" + change.to, from).kind !== "name") invalid("Invalid renamed table.");
+  if (change.kind === "renameTable" || change.kind === "renameName") {
+    const token = parseFormula("=" + change.to, from);
+    if (change.to.length > 255 || token.kind !== "name" || token.sheet !== undefined || token.workbook !== undefined || token.name !== change.to) invalid("A renamed definition requires an unqualified identifier.");
   }
   if (change.kind === "renameColumn" && (!change.to || change.to.length > 255 || change.to.trim() !== change.to || /[\u0000-\u001f]/.test(change.to))) invalid("Invalid renamed table column.");
   const location = (cell: FormulaCell): FormulaLocation => ({ row: cell.row + (cell.absoluteRow ? 0 : from.row), column: cell.column + (cell.absoluteColumn ? 0 : from.column), sheet: cell.sheet ?? from.sheet });
@@ -189,21 +190,22 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };
     }
     if (node.kind === "name") {
-      const sheet = mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
-      if (change.kind === "move" && node.sheet === undefined && bindings.resolveName) {
+      const sheet = node.workbook === 0 ? from.sheet : mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
+      if (change.kind === "move" && node.workbook === undefined && node.sheet === undefined && bindings.resolveName) {
         const binding = bindings.resolveName(node.name, from.sheet, false);
         if (binding !== undefined && binding === bindings.resolveName(node.name, to.sheet, false)) return node;
-        if (binding !== undefined && binding !== bindings.resolveName(node.name, from.sheet, true)) invalid("Moving a workbook name into a conflicting local scope requires a workbook-qualified name.");
+        if (binding !== undefined && binding !== bindings.resolveName(node.name, from.sheet, true)) return { ...node, workbook: 0 };
       }
-      if (change.kind === "renameName" && bindings.resolveName?.(node.name, node.sheet ?? from.sheet, node.sheet !== undefined) === change.nameId) return { ...node, name: change.to };
-      if (change.kind === "convertTable" && same(node.name, change.table) && bindings.isTableName?.(node.name, node.sheet ?? from.sheet))
+      if (change.kind === "renameName" && bindings.resolveName?.(node.name, node.sheet ?? from.sheet, node.sheet !== undefined, node.workbook) === change.nameId) return { ...node, name: change.to };
+      if (change.kind === "convertTable" && same(node.name, change.table) && bindings.isTableName?.(node.name, node.sheet ?? from.sheet, node.workbook))
         return visit({ kind: "structured", table: node.name, columns: [], selectors: [] });
-      if (change.kind === "deleteSheet" && node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet)
+      if (change.kind === "deleteSheet" && node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook)
         && bindings.tables?.some(table => same(table.name, node.name) && same(table.sheet, change.sheet))) return refError();
       if (change.kind === "renameTable" && same(node.name, change.from)) {
         if (!bindings.isTableName) invalid("Bare table rename requires resolved name bindings.");
-        if (bindings.isTableName(node.name, node.sheet ?? from.sheet)) return { ...node, name: change.to };
+        if (bindings.isTableName(node.name, node.sheet ?? from.sheet, node.workbook)) return { ...node, name: change.to };
       }
+      if (node.workbook === 0) return node;
       return { ...node, ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };
     }
     if (node.kind === "structured") {

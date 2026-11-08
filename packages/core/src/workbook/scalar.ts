@@ -205,7 +205,7 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
         const pending = [node];
         while (pending.length) {
           step(); const part = pending.pop()!;
-          if (part.kind === "name" && part.sheet === undefined && localNames.has(part.name.toUpperCase())) return unavailable("ambiguous-name-scope");
+          if (part.kind === "name" && part.workbook === undefined && part.sheet === undefined && localNames.has(part.name.toUpperCase())) return unavailable("ambiguous-name-scope");
           if (part.kind === "binary" && [",", " ", ":"].includes(part.operator)) pending.push(part.right, part.left);
         }
       }
@@ -246,10 +246,11 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
       if (node.kind === "boolean") return { type: "boolean", value: node.value };
       if (node.kind === "error") return scalarError(node.value as Extract<ScalarValue, { type: "error" }>["value"]);
       if (node.kind === "name") {
-        if (node.sheet === undefined && nameContext?.sheetId === undefined && nameContext && localNames.has(node.name.toUpperCase())) return unavailable("ambiguous-name-scope");
+        if (node.workbook === undefined && node.sheet === undefined && nameContext?.sheetId === undefined && nameContext && localNames.has(node.name.toUpperCase())) return unavailable("ambiguous-name-scope");
         const explicit = node.sheet === undefined ? undefined : sheetNames.get(node.sheet.toUpperCase()); if (node.sheet !== undefined && !explicit) return scalarError("#REF!");
         const scope = explicit ?? nameContext?.sheetId ?? at.sheetId;
-        const definition = names.get(JSON.stringify([scope, node.name.toUpperCase()])) ?? (explicit ? undefined : names.get(JSON.stringify([null, node.name.toUpperCase()])));
+        const definition = node.workbook === 0 ? names.get(JSON.stringify([null, node.name.toUpperCase()]))
+          : names.get(JSON.stringify([scope, node.name.toUpperCase()])) ?? (explicit ? undefined : names.get(JSON.stringify([null, node.name.toUpperCase()])));
         if (!definition) return reference(node, at, nameContext);
         hooks.name?.(definition);
         const id = key(at), active = namePath.get(definition.nameId) ?? new Set<number>();

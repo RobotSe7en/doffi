@@ -77,9 +77,10 @@ export class WorkbookReferences {
         // A local definition resolves its unqualified nested names in its own
         // scope. Global definitions with locally shadowed nested names require
         // an independently verified binding context; do not guess from the UI.
-        if (node.sheet === undefined && nameContext && nameContext.sheetId === undefined && this.localNames.has(node.name.toUpperCase())) return unresolved("ambiguous-name-scope");
+        if (node.workbook === undefined && node.sheet === undefined && nameContext && nameContext.sheetId === undefined && this.localNames.has(node.name.toUpperCase())) return unresolved("ambiguous-name-scope");
         const scope = explicit?.sheetId ?? nameContext?.sheetId ?? context.sheetId;
-        const name = this.names.get(key(scope, node.name)) ?? (explicit ? undefined : this.names.get(key(undefined, node.name)));
+        const name = node.workbook === 0 ? this.names.get(key(undefined, node.name))
+          : this.names.get(key(scope, node.name)) ?? (explicit ? undefined : this.names.get(key(undefined, node.name)));
         if (!name) {
           if (!node.sheet && this.tables.has(node.name.toUpperCase())) return visit({ kind: "structured", table: node.name, selectors: [], columns: [] }, context, depth + 1, nameContext);
           return error("#NAME?");

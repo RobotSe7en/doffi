@@ -9,6 +9,7 @@ let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
+  displayedCell(row: number, column: number): string | undefined;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
 export async function mount(code: string, encoded: string, observeView = false) {
   cleanup(); const host = document.createElement('div'); document.body.append(host);
@@ -25,10 +26,13 @@ export async function mount(code: string, encoded: string, observeView = false) 
   let observed: ReturnType<typeof observeWorkbookViews> | undefined;
   try {
     editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
-    observed = observeView ? observeWorkbookViews(editor.element) : undefined;
+    if (observeView) {
+      Element.prototype.attachShadow = attach;
+      observed = observeWorkbookViews(editor.element, { openHostShadows: true });
+    }
     await editor.ready;
   }
-  finally { Element.prototype.attachShadow = attach; }
+  finally { if (!observed) Element.prototype.attachShadow = attach; }
   let disposed = false;
   const release = () => { if (!disposed) { editor.dispose(); disposed = true; } };
   cleanup = () => { observed?.dispose(); release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
@@ -46,6 +50,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
     },
     settled: () => editor.settled(),
     displayedChart: () => measureWorkbookChart(observed?.current()),
+    displayedCell: (row, column) => observed?.current()?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined,
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
     async sourceCell(row, column, sheetId = 'sheet-1') {
       const source = await client.view(), current = client.state();
@@ -60,13 +65,15 @@ export async function mount(code: string, encoded: string, observeView = false) 
     async finish() {
       release(); client.dispose(); let resolve!: (value: unknown) => void; const response = new Promise<unknown>(done => { resolve = done; });
       const timeout = setTimeout(() => resolve({ error: 'audit timeout' }), 10_000); worker.onmessage = event => { if (event.data.kind === 'audit' || event.data.kind === 'error') resolve(event.data); };
-      worker.postMessage({ kind: 'closed-audit' }); const result = await response; clearTimeout(timeout); cleanup(); return result;
+      worker.postMessage({ kind: 'closed-audit' }); const result = await response; clearTimeout(timeout); cleanup();
+      return { ...(result as object), hostShadowsRestored: Element.prototype.attachShadow === attach };
     },
   };
 }
 export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
 export function displayedChart() { return actions.displayedChart(); }
+export function displayedCell(row: number, column: number) { return actions.displayedCell(row, column); }
 export function external(text: string, wait = true) { return actions.external(text, wait); }
 export function holdReference() { actions.holdReference(); }
 export function referenceHeld() { return actions.referenceHeld(); }
@@ -75,4 +82,4 @@ export function value(row: number, column: number) { return actions.value(row, c
 export function sourceCell(row: number, column: number, sheetId?: string) { return actions.sourceCell(row, column, sheetId); }
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

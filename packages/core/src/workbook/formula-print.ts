@@ -26,7 +26,7 @@ export function printFormula(expression: FormulaExpression, origin: FormulaOrigi
       case "boolean": output = node.value ? "TRUE" : "FALSE"; break;
       case "string": output = '"' + node.value.replaceAll('"', '""') + '"'; break;
       case "error": output = node.value; break;
-      case "name": output = sheetPrefix(node.sheet) + node.name; break;
+      case "name": output = (node.workbook === 0 ? "[0]!" : sheetPrefix(node.sheet)) + node.name; break;
       case "structured": output = printStructuredReference(node); break;
       case "cell": {
         const row = node.row + (node.absoluteRow ? 0 : origin.row), column = node.column + (node.absoluteColumn ? 0 : origin.column);

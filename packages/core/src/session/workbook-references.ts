@@ -23,14 +23,15 @@ export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, chan
   return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, globalContext = false): string {
     const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
     return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, movedTables, ...(table ? { table } : {}),
-      resolveName: (name, owner, explicit) => {
+      resolveName: (name, owner, explicit, workbook) => {
         const token = name.toUpperCase();
+        if (workbook === 0) return globalNames.get(token);
         // A workbook definition whose nested name is locally shadowed has no
         // verified caller scope. Preserve that ambiguity instead of rebinding.
         if (globalContext && localNames.has(token)) return undefined;
         return locals.get(owner.toUpperCase())?.get(token) ?? (explicit ? undefined : globalNames.get(token));
       },
-      isTableName: (name, owner) => !globalNames.has(name.toUpperCase()) && !locals.get(owner.toUpperCase())?.has(name.toUpperCase()) && tableNames.has(name.toUpperCase()),
+      isTableName: (name, owner, workbook) => !globalNames.has(name.toUpperCase()) && (workbook === 0 || !locals.get(owner.toUpperCase())?.has(name.toUpperCase())) && tableNames.has(name.toUpperCase()),
     });
   };
 }

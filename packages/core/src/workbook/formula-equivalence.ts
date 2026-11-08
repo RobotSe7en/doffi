@@ -17,7 +17,7 @@ export function createWorkbookFormulaEquivalence(workbook: DeepReadonly<Workbook
       if (node.kind === "range") return { ...node, from: visit(node.from), to: visit(node.to) };
       if (node.kind === "name") {
         const owner = ids.get((node.sheet ?? sheetName).toUpperCase()), token = node.name.toUpperCase();
-        const binding = (owner === undefined ? undefined : scopes.get(owner)?.get(token)) ?? (node.sheet === undefined ? scopes.get(undefined)?.get(token) : undefined);
+        const binding = (node.workbook === 0 || owner === undefined ? undefined : scopes.get(owner)?.get(token)) ?? (node.sheet === undefined ? scopes.get(undefined)?.get(token) : undefined);
         return binding === undefined ? node : { kind: "name", nameId: binding };
       }
       if (node.kind === "binary") return { ...node, left: visit(node.left), right: visit(node.right) };

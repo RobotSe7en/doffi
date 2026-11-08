@@ -8,7 +8,7 @@ export type FormulaExpression =
   | { readonly kind: "string"; readonly value: string }
   | { readonly kind: "boolean"; readonly value: boolean }
   | { readonly kind: "error"; readonly value: string }
-  | { readonly kind: "name"; readonly name: string; readonly sheet?: string }
+  | { readonly kind: "name"; readonly name: string; readonly sheet?: string; readonly workbook?: 0 }
   | { readonly kind: "cell"; readonly row: number; readonly column: number; readonly absoluteRow: boolean; readonly absoluteColumn: boolean; readonly sheet?: string }
   | { readonly kind: "range"; readonly from: FormulaCell; readonly to: FormulaCell }
   | { readonly kind: "axisRange"; readonly axis: "row" | "column"; readonly from: FormulaAxisPosition; readonly to: FormulaAxisPosition; readonly sheet?: string }
@@ -112,7 +112,15 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
     || value.kind === "error" && value.value === "#REF!" || value.kind === "binary" && [",", " ", ":"].includes(value.operator)
     || value.kind === "call" && ["INDEX", "OFFSET", "INDIRECT"].includes(value.name);
   const asAxis = (value: Operand): AxisOperand | undefined => value.kind === "axis" ? value
-    : value.kind === "name" ? axisOperand(value.name, origin, value.sheet) : value.kind === "number" ? axisOperand(numericTokens.get(value) ?? "", origin) : undefined;
+    : value.kind === "name" && value.workbook === undefined ? axisOperand(value.name, origin, value.sheet) : value.kind === "number" ? axisOperand(numericTokens.get(value) ?? "", origin) : undefined;
+  function sheetReference(input: string): Operand {
+    const sheet = input.replace(/^\[0+\]/, "");
+    if (!sheet || /[\[\]\\/:?*\u0000-\u001f]/.test(sheet)) unsupported("Unsupported formula sheet reference.");
+    spaces(); const target = take();
+    if (target.kind === "error" && target.text === "#REF!") return { kind: "error", value: "#REF!" };
+    if (target.kind === "number") { const axis = axisOperand(target.text, origin, sheet); if (!axis) invalid("Invalid whole-row reference."); return axis; }
+    if (target.kind !== "word") invalid("Expected a formula reference after a sheet name."); return reference(target.text, origin, sheet);
+  }
   function expression(minimum: number, depth: number, union = true): Operand {
     checkLimit(depth, 128); checkLimit(++nodes, 4096);
     spaces(); const token = take(); let left: Operand;
@@ -123,14 +131,20 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
       left = { kind: "number", value }; numericTokens.set(left, token.text);
     } else if (token.kind === "string") left = { kind: "string", value: token.text };
     else if (token.kind === "error") left = { kind: "error", value: token.text };
+    else if (token.kind === "structured" && /^\[\d+\]$/.test(token.text) && (peek().text === "!"
+      || ["word", "quoted"].includes(peek().kind) && tokens[index + 1]?.text === "!")) {
+      if (!/^\[0+\]$/.test(token.text)) unsupported("External workbook references are not supported.");
+      if (peek().text === "!") {
+        take(); spaces(); const target = take();
+        if (target.kind !== "word") invalid("A workbook-qualified name requires a name token.");
+        const name = reference(target.text, origin); if (name.kind !== "name") invalid("A workbook prefix without a sheet requires a defined name.");
+        left = peek().kind === "structured" ? parseStructuredReference(take().text, name.name) : { ...name, workbook: 0 };
+      } else { const sheet = take(); consume("!"); left = sheetReference(sheet.text); }
+    }
     else if (token.kind === "structured") left = parseStructuredReference(token.text);
     else if (token.kind === "word" || token.kind === "quoted") {
       if (peek().text === "!") {
-        take(); spaces(); const target = take();
-        if (!token.text || /[\[\]\\/:?*\u0000-\u001f]/.test(token.text)) unsupported("Unsupported formula sheet reference.");
-        if (target.kind === "error" && target.text === "#REF!") left = { kind: "error", value: "#REF!" };
-        else if (target.kind === "number") { const axis = axisOperand(target.text, origin, token.text); if (!axis) invalid("Invalid whole-row reference."); left = axis; }
-        else { if (target.kind !== "word") invalid("Expected a formula reference after a sheet name."); left = reference(target.text, origin, token.text); }
+        take(); left = sheetReference(token.text);
       } else if (token.kind === "quoted") invalid("Quoted formula sheet names require a reference.");
       else if (peek().kind === "structured") {
         if (token.text.includes("$")) invalid("Invalid table name.");

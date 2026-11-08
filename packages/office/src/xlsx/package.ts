@@ -13,11 +13,12 @@ const roles = new Map<string, string>([
   [prefix + "spreadsheetml.calcChain+xml", "calcChain"], [prefix + "drawing+xml", "drawing"],
   [prefix + "drawingml.chart+xml", "chart"], [prefix + "theme+xml", "theme"], [prefix + "vmlDrawing", "vmlDrawing"],
   [prefix + "extended-properties+xml", "extended-properties"], ["application/vnd.openxmlformats-package.core-properties+xml", "core-properties"],
+  [prefix + "custom-properties+xml", "custom-properties"],
   ["application/vnd.ms-excel.person+xml", "person"], ["application/vnd.ms-excel.threadedcomments+xml", "threadedComment"],
   ["image/png", "image"], ["image/jpeg", "image"], ["image/webp", "image"],
 ]);
 const allowed: Readonly<Record<string, readonly string[]>> = {
-  root: [R + "/officeDocument", R + "/extended-properties", PKG + "/metadata/core-properties", PKG + "/metadata/thumbnail"],
+  root: [R + "/officeDocument", R + "/extended-properties", R + "/custom-properties", PKG + "/metadata/core-properties", PKG + "/metadata/thumbnail"],
   workbook: ["worksheet", "styles", "sharedStrings", "theme", "calcChain"].map(name => R + "/" + name).concat("http://schemas.microsoft.com/office/2017/10/relationships/person"),
   worksheet: ["drawing", "vmlDrawing", "comments", "table", "hyperlink"].map(name => R + "/" + name).concat("http://schemas.microsoft.com/office/2017/10/relationships/threadedComment"),
   drawing: [R + "/image", R + "/chart", R + "/hyperlink"],
@@ -46,6 +47,13 @@ export function auditXlsxPackage(opc: OpcPackage): void {
     }
     const role = roles.get(opc.contentType(path) ?? "");
     if (!role) throw new DocumentError("UnsupportedFeature", "The workbook contains a native part outside the declared reading scope.");
+    if (role === "custom-properties") {
+      // Calc may add an empty container on a second save. Validate its exact
+      // emptiness; populated custom properties still require source mapping.
+      const root = opc.read(path), uri = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties";
+      if (root.name !== "Properties" || root.uri !== uri) fail(root, "A custom-property container has an invalid root.");
+      attributes(root, []); check(root, [], uri);
+    }
     fileRoles.set(path, role);
   }
   const graph = new Map<string, string[]>();
@@ -78,7 +86,7 @@ export function auditXlsxPartCoverage(records: XlsxRecords, drawings: WorkbookDr
   const { opc, native } = records, consumed = new Set([native.part, ...native.sheets.map(sheet => sheet.part), ...drawings.parts, ...drawings.charts.parts]);
   const related = (owner: string, type: string): void => { const part = opc.related(owner, type); if (part) consumed.add(part); };
   for (const type of ["styles", "sharedStrings", "theme", "calcChain", "person"]) related(native.part, type);
-  for (const type of ["metadata/core-properties", "extended-properties"]) related("", type);
+  for (const type of ["metadata/core-properties", "extended-properties", "custom-properties"]) related("", type);
   for (const sheet of records.sheets) {
     for (const type of ["comments", "threadedComment"]) related(sheet.source.part, type);
     const references = [one(sheet.root, "legacyDrawing"), ...elements(one(sheet.root, "tableParts"), "tablePart", S)];

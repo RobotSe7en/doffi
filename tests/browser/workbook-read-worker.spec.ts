@@ -288,6 +288,24 @@ test('mounted Worker native whole-table cut keeps its definition across sheets a
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker native global-name cut shows the global value despite a target local shadow', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-cut' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('B7'); await page.getByRole('button', { name: '剪切选区', exact: true }).click();
+  await page.getByRole('tab', { name: target.name, exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('D1'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(sheetId => window.workbookRemoteEditor.sourceCell(0, 3, sheetId), target.sheetId)).toMatchObject({ formula: { expression: '=[0]!Tax' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.displayedCell(0, 3))).toBe('7');
+  await expect(page.getByRole('textbox', { name: '单元格或公式输入', exact: true })).toHaveValue('=[0]!Tax');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true });
+});
+
 test('mounted table row insertion fills only the new row, preserves a manual exception and restores native table source on undo', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: { type: 'number', value: 3 } }, { row: 2, column: 0, value: { type: 'number', value: 4 } }]));

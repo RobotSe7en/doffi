@@ -102,13 +102,15 @@ test("cross-sheet cuts retain workbook names and qualify original local bindings
   s.undo(); expect(s.snapshot().manifest.chunks).toEqual(openDocument(before, { kind: "workbook" }).snapshot().manifest.chunks);
 });
 
-test("an unrepresentable global/local name collision rejects the complete cut rather than changing its binding", () => {
+test("global/local name collisions use the native current-workbook prefix and retain their original binding", () => {
   const model = scalarWorkbook([{ row: 0, column: 0, value: number(999), formula: "=Shared" }], metadata => {
     const source = metadata.workbook.sheets[0]!; metadata.workbook.sheets.push({ ...structuredClone(source), sheetId: "other", name: "Other" });
     metadata.workbook.names = [{ nameId: "shared", name: "Shared", origin: { row: 0, column: 0 }, expression: "=3" },
       { nameId: "target", name: "Shared", sheetId: "other", origin: { row: 0, column: 0 }, expression: "=100" }];
   });
   const s = createDocumentSession(model); sessions.push(s); const before = s.serialize();
-  expect(() => apply(s, [{ op: "moveWorkbookRange", sheetId: "sheet-1", range: range(0, 0), targetSheetId: "other", target: { row: 2, column: 2 } }])).toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
-  expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+  apply(s, [{ op: "moveWorkbookRange", sheetId: "sheet-1", range: range(0, 0), targetSheetId: "other", target: { row: 2, column: 2 } }]); s.calculateSync();
+  expect(s.getCell("other", 2, 2)!.formula!.expression).toBe("=[0]!Shared");
+  expect(s.getCalculatedCell("other", 2, 2)).toMatchObject({ state: "valid", value: number(3) });
+  s.undo(); expect(s.snapshot().manifest.chunks).toEqual(openDocument(before, { kind: "workbook" }).snapshot().manifest.chunks);
 });
