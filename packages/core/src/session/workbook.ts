@@ -36,6 +36,11 @@ import { editWorkbookStyle, isWorkbookStyleOperation } from "./workbook-styles.j
 import { editWorkbookDrawing, isWorkbookDrawingOperation, validateWorkbookDrawingTarget } from "./workbook-drawings.js";
 import { editWorkbookComment, isWorkbookCommentOperation, reanchorWorkbookCommentSources, removeWorkbookCommentSources, restoreWorkbookCommentSource, validateWorkbookCommentTarget } from "./workbook-comments.js";
 import { WorkbookCommentMapping } from "./workbook-comment-mapping.js";
+import { buildWorkbookRequestSteps } from "./workbook-interaction-context.js";
+import { finishWorkbookInteraction, finishWorkbookInteractionAsync, reviewWorkbookProposalSteps, validateWorkbookProposalSteps, workbookInteractionExecution } from "./workbook-interaction.js";
+import { sessionLimits } from "./limits.js";
+import type { WorkbookCandidateChange, TransactionPreparationExecution } from "../runtime.js";
+import type { WorkbookProposalReview } from "../contracts/workbook-interaction.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -182,10 +187,23 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         else sheet.hyperlinks = previous.hyperlinks.map(link => ({ ...link, range: { from: { ...link.range.from }, to: { ...link.range.to } } }));
       }
     }
-    if (resolvedIds) for (const value of annotations) if (resolvedIds.includes(value.annotationId) && value.status === "open") value.status = "resolved";
     restoreWorkbookCommentSource(workbook, annotations, base.snapshot());
     for (const value of cells.flushSteps()) yield { kind: "progress", value: { phase: "chunks", ...value } };
     richContent.flush();
+    if (resolvedIds?.length) {
+      const previous = base.snapshot(), original = workbookSource(base)!.files;
+      const equal = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+      const reserved = new Set(["manifest.json", manifest.metadata, manifest.annotations]);
+      const sourceChanged = !equal(metadata, previous.metadata) || !equal(annotations, previous.annotations) || !equal(manifest, previous.manifest)
+        || [...new Set([...original.keys(), ...files.keys()])].some(path => {
+          if (reserved.has(path)) return false;
+          const a = original.get(path), b = files.get(path);
+          return a !== b && (!a || !b || a.byteLength !== b.byteLength || a.some((byte, index) => byte !== b[index]));
+        });
+      // A no-op proposal cannot claim instructions as completed. Resolution is
+      // part of the same candidate only after an actual source/annotation edit.
+      if (sourceChanged) for (const value of annotations) if (resolvedIds.includes(value.annotationId) && value.status === "open") value.status = "resolved";
+    }
     files.set("manifest.json", encode(JSON.stringify(manifest))); files.set(manifest.metadata, encode(JSON.stringify(metadata)));
     files.set(manifest.annotations, encode(JSON.stringify(annotations)));
     yield { kind: "progress", value: { phase: "validation", completed: 0, total: 0 } };
@@ -221,14 +239,40 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     same: sameWorkbookSource, retained: retainedWorkbookBytes, identities: model => workbookSource(model)?.content?.nodeIds() ?? [] }, options);
   const current = boundary.state;
   const calculator = createWorkbookCalculator(current, options.calculationLimits);
+  const interactionBudgets = sessionLimits(options.sessionLimits), reviews = new WeakMap<WorkbookCandidateChange, WorkbookProposalReview>();
+  let interactionDisposed = false;
+  const interactionGuard = (base: WorkbookModel, execution: TransactionPreparationExecution) => (): void => {
+    if (interactionDisposed || execution.signal?.aborted) throw new DocumentError("OperationCancelled", "Workbook interaction was cancelled or disposed.");
+    if (current() !== base) throw new DocumentError("RevisionConflict", "The workbook changed while preparing its interaction.");
+  };
+  const discardInteraction = (candidate: WorkbookCandidateChange): void => { if (!interactionDisposed) boundary.lifecycle.discard(candidate); };
   const session = Object.freeze<WorkbookSession>({ kind: "workbook", snapshot: () => current().snapshot(), getNode: id => current().getNode(id),
     getCell: (sheetId, row, column) => current().getCell(sheetId, row, column), readWindow: window => current().readWindow(window),
     getAsset: (path, maxBytes) => current().getAsset(path, maxBytes), resolveReference: (expression, origin) => current().resolveReference(expression, origin),
     serialize: () => current().serialize(), ...boundary.lifecycle,
     prepareAsync: (transaction, preparation, execution) => boundary.prepareAsyncTransaction(transaction, undefined, preparation, execution),
+    buildInteractionRequest: input => boundary.execute(() => finishWorkbookInteraction(buildWorkbookRequestSteps(current(), input))),
+    async buildInteractionRequestAsync(input, execution) {
+      const base = current(), config = workbookInteractionExecution(execution), guard = interactionGuard(base, config);
+      return finishWorkbookInteractionAsync(buildWorkbookRequestSteps(base, input, config), config, guard);
+    },
+    prepareProposal: (request, proposal, preparation) => boundary.execute(() => {
+      const base = current(), capture = finishWorkbookInteraction(validateWorkbookProposalSteps(base, request, proposal, preparation, interactionBudgets.maxTransactionBytes));
+      const candidate = boundary.prepareTransaction({ protocolVersion: 1, documentId: capture.proposal.documentId, baseRevision: capture.proposal.baseRevision, operations: capture.proposal.operations }, capture.proposal.annotationIds, capture.options);
+      try { reviews.set(candidate, finishWorkbookInteraction(reviewWorkbookProposalSteps(base, capture, candidate))); return candidate; }
+      catch (error) { discardInteraction(candidate); throw error; }
+    }),
+    async prepareProposalAsync(request, proposal, preparation, execution) {
+      const base = current(), config = workbookInteractionExecution(execution), guard = interactionGuard(base, config);
+      const capture = await finishWorkbookInteractionAsync(validateWorkbookProposalSteps(base, request, proposal, preparation, interactionBudgets.maxTransactionBytes, config), config, guard); guard();
+      const candidate = await boundary.prepareAsyncTransaction({ protocolVersion: 1, documentId: capture.proposal.documentId, baseRevision: capture.proposal.baseRevision, operations: capture.proposal.operations }, capture.proposal.annotationIds, capture.options, config);
+      try { guard(); reviews.set(candidate, await finishWorkbookInteractionAsync(reviewWorkbookProposalSteps(base, capture, candidate), config, guard)); guard(); return candidate; }
+      catch (error) { discardInteraction(candidate); throw error; }
+    },
+    getProposalReview: candidate => { current(); return reviews.get(candidate); },
     calculate: calculator.calculate, calculateSync: calculator.calculateSync,
     getCalculatedCell: (sheetId, row, column) => calculator.getCell({ sheetId, row, column }),
-    dispose: () => { boundary.lifecycle.dispose(); calculator.dispose(); },
+    dispose: () => { boundary.lifecycle.dispose(); interactionDisposed = true; calculator.dispose(); },
   });
   registerWorkbookModelProvider(session, current); return session;
 }

@@ -1,0 +1,35 @@
+{
+  "title": "工作簿请求示例",
+  "workbook": {
+    "dateSystem": "1900",
+    "calculationMode": "auto",
+    "activeSheetId": "sheet-1",
+    "sheets": [
+      {
+        "sheetId": "sheet-1",
+        "name": "Sheet1",
+        "visibility": "visible",
+        "defaultRowHeightPt": 15,
+        "defaultColumnWidth": 8.43,
+        "defaultCssClass": "cell-default",
+        "rowDimensions": [],
+        "columnDimensions": [],
+        "merges": [],
+        "frozen": {
+          "rows": 0,
+          "columns": 0
+        },
+        "showGridLines": true,
+        "rightToLeft": false
+      }
+    ],
+    "numberFormats": [],
+    "objects": [],
+    "charts": [],
+    "names": [],
+    "comments": [],
+    "stories": [],
+    "objectHyperlinks": [],
+    "commentAuthors": []
+  }
+}

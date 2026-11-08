@@ -6,6 +6,7 @@ import type { ContextStyle, DocumentInteractionRequest, EditProposal } from "./c
 import type { ContentOperationName, DocumentTransaction } from "./contracts/operations.js";
 import type { PresentationInteractionRequest,PresentationEditProposal,PresentationOperationName } from "./contracts/presentation-interaction.js";
 import type { WorkbookReferenceLocation, WorkbookReferenceResult } from "./workbook/reference.js";
+import type { WorkbookEditProposal, WorkbookInteractionLimits, WorkbookInteractionRange, WorkbookInteractionRequest, WorkbookInteractionScope, WorkbookProposalOperationName, WorkbookProposalReview } from "./contracts/workbook-interaction.js";
 
 export type DeepReadonly<Value> = Value extends readonly (infer Item)[]
   ? readonly DeepReadonly<Item>[]
@@ -126,6 +127,17 @@ export interface PresentationInteractionRequestInput {
   readonly limits?:InteractionRequestInput["limits"];
 }
 export type PresentationAnnotationSubmissionHandler=(request:DeepReadonly<PresentationInteractionRequest>)=>void|PresentationEditProposal|Promise<void|PresentationEditProposal>;
+export interface WorkbookInteractionRequestInput {
+  readonly kind: "workbook";
+  readonly annotationIds: readonly string[];
+  readonly scope?: DeepReadonly<WorkbookInteractionScope>;
+  /** Host-authorized additional inputs; never grant source write access. */
+  readonly readRanges?: readonly DeepReadonly<WorkbookInteractionRange>[];
+  readonly supportedOperations?: readonly WorkbookProposalOperationName[];
+  readonly assets?: readonly DeepReadonly<AssetDescriptor>[];
+  readonly limits?: Partial<WorkbookInteractionLimits>;
+  readonly calculationContext?: import("./workbook/scalar.js").WorkbookScalarContext;
+}
 
 // Type-only opacity is supplemented by private candidate identity inside the session.
 declare const candidateBrand: unique symbol;
@@ -245,6 +257,11 @@ export interface SessionLifecycle<Candidate extends CandidateChange<DocumentMode
 export interface DocumentEditingSession extends ContentDocumentModel, SessionLifecycle<CandidateChange> {}
 export type WorkbookCandidateChange = CandidateChange<WorkbookModel>;
 export interface WorkbookSession extends WorkbookModel, SessionLifecycle<WorkbookCandidateChange> {
+  buildInteractionRequest(input: WorkbookInteractionRequestInput): WorkbookInteractionRequest;
+  buildInteractionRequestAsync(input: WorkbookInteractionRequestInput, execution?: TransactionPreparationExecution): Promise<WorkbookInteractionRequest>;
+  prepareProposal(request: WorkbookInteractionRequest, proposal: WorkbookEditProposal, options?: TransactionPrepareOptions): WorkbookCandidateChange;
+  prepareProposalAsync(request: WorkbookInteractionRequest, proposal: WorkbookEditProposal, options?: TransactionPrepareOptions, execution?: TransactionPreparationExecution): Promise<WorkbookCandidateChange>;
+  getProposalReview(candidate: WorkbookCandidateChange): DeepReadonly<WorkbookProposalReview> | undefined;
   prepareAsync(transaction: DocumentTransaction, options?: TransactionPrepareOptions, execution?: TransactionPreparationExecution): Promise<WorkbookCandidateChange>;
   calculate(options?: import("./workbook/calculation.js").WorkbookCalculationOptions): Promise<import("./workbook/calculation.js").WorkbookCalculationResult>;
   calculateSync(options?: Omit<import("./workbook/calculation.js").WorkbookCalculationOptions, "yield">): import("./workbook/calculation.js").WorkbookCalculationResult;

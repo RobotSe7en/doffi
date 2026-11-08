@@ -86,6 +86,10 @@ export interface ScalarRuntimeHooks {
   read?(location: WorkbookReferenceLocation): void;
   filtered?(location: WorkbookReferenceLocation): boolean;
   reference?(area: DeepReadonly<WorkbookReferenceArea>): void;
+  /** Query-local, current-source results may be reused by the same immutable
+   * batch/context. Imported caches are never supplied through this callback. */
+  evaluated?(location: WorkbookReferenceLocation, value: ScalarResolved): void;
+  name?(definition: DeepReadonly<WorkbookDefinedName>): void;
 }
 export function createWorkbookScalarEvaluator(model: WorkbookModel, input: Partial<WorkbookScalarLimits> = {}, context: WorkbookScalarContext = {}): WorkbookScalarEvaluator {
   const kernel = createWorkbookScalarKernel(model, input, context);
@@ -161,7 +165,7 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
       try {
         const result = scalar(visit(parse(cell.formula.expression, at), at, depth + 1), at, depth + 1);
         const value = "type" in result && result.type === "blank" ? scalarNumber(0) : result;
-        memo.set(id, value); return value;
+        memo.set(id, value); hooks.evaluated?.(at, value); return value;
       } finally { path.delete(id); }
     }
     function scalar(value: ScalarEvaluation, at: WorkbookReferenceLocation, depth: number): ScalarResolved {
@@ -247,6 +251,7 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
         const scope = explicit ?? nameContext?.sheetId ?? at.sheetId;
         const definition = names.get(JSON.stringify([scope, node.name.toUpperCase()])) ?? (explicit ? undefined : names.get(JSON.stringify([null, node.name.toUpperCase()])));
         if (!definition) return reference(node, at, nameContext);
+        hooks.name?.(definition);
         const id = key(at), active = namePath.get(definition.nameId) ?? new Set<number>();
         if (active.has(id)) return unavailable("circular-name");
         active.add(id); namePath.set(definition.nameId, active);

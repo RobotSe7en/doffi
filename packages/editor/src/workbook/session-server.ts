@@ -1,5 +1,5 @@
 import { captureWorkbookModel, copyWorkbookScalarContext, createWorkbookCalculator, DocumentError, readWorkbookChangeImpact, WorkbookCoordinateSchema } from "@doffi/core";
-import type { WorkbookCandidateChange, WorkbookCalculationResult, WorkbookModel, WorkbookSession, TransactionPrepareOptions } from "@doffi/core";
+import type { WorkbookCandidateChange, WorkbookCalculationResult, WorkbookModel, WorkbookSession, TransactionPrepareOptions, WorkbookInteractionRequestInput } from "@doffi/core";
 import { serveWorkbookReads } from "@doffi/render";
 import type { WorkbookReadServer } from "@doffi/render";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
@@ -60,14 +60,20 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
     if (preparing) throw new DocumentError("ResourceLimitExceeded", "Another workbook command is already preparing.");
     preparing = true; let owned: WorkbookCandidateChange | undefined, handle: number | undefined;
     try {
-      const command = payload.command as unknown as WorkbookSessionCommand, preparation = payload.options as TransactionPrepareOptions | undefined;
+      const command = payload.command as unknown as WorkbookSessionCommand;
+      let preparation = payload.options as TransactionPrepareOptions | undefined;
       const base = captureWorkbookModel(session), guard = (): void => {
         if (abort.signal.aborted || disposed) throw new DocumentError("OperationCancelled", "Workbook command was cancelled.");
         if (captureWorkbookModel(session) !== base) throw new DocumentError("RevisionConflict", "Workbook command source changed while preparing.");
       };
       let transaction;
       const common = { signal: abort.signal, yield: yieldTask };
-      if (command.kind === "transaction") {
+      if (command.kind === "proposal") {
+        if (!keys(payload.command, ["kind", "request", "proposal"])) invalidSessionTransport("Invalid workbook proposal command.");
+        owned = await session.prepareProposalAsync(command.request, command.proposal, preparation, { ...common, onProgress: progress });
+        const frozen = command.request.context.calculationContext;
+        preparation = { ...preparation, calculationContext: { ...(frozen.now ? { now: frozen.now } : {}), ...(frozen.locale !== undefined ? { locale: frozen.locale } : {}) } };
+      } else if (command.kind === "transaction") {
         if (!keys(payload.command, ["kind", "transaction"])) invalidSessionTransport("Invalid workbook transaction command.");
         transaction = command.transaction;
       } else {
@@ -103,11 +109,12 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
             ...(command.valueMode === undefined ? {} : { valueMode: command.valueMode }), ...(command.only === undefined ? {} : { only: command.only }), onProgress: value => progress({ phase: "find", completed: value.cells, total: 0 }) });
         } else invalidSessionTransport("Unknown workbook preparation command.");
       }
-      guard(); owned = await session.prepareAsync(transaction, preparation, { ...common, onProgress: progress }); guard();
+      guard(); if (!owned) { if (!transaction) invalidSessionTransport("Workbook preparation requires a typed transaction."); owned = await session.prepareAsync(transaction, preparation, { ...common, onProgress: progress }); } guard();
       if (nextCandidate >= Number.MAX_SAFE_INTEGER) throw new DocumentError("ResourceLimitExceeded", "Workbook candidate handles are exhausted.");
       handle = ++nextCandidate; candidates.set(handle, { candidate: owned, requestId, views: new Set(), ...(preparation === undefined ? {} : { preparation }) });
       const { documentId, baseRevision, affectedNodeIds, affectedSheetIds, changedRanges, changes, changedAnnotationIds, mapping } = owned;
-      post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping) } });
+      const review = session.getProposalReview(owned);
+      post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping), ...(review ? { proposalReview: review } : {}) } });
     } catch (reason) {
       if (handle !== undefined) release(handle); else if (owned) try { session.discard(owned); } catch { /* Disposed or invalidated by its host. */ }
       throw reason;
@@ -124,6 +131,13 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
     const progress = (value: WorkbookSessionProgress): void => { if (!abort.signal.aborted) send({ id, event: "progress", value }); };
     if (operation === "state") { if (!keys(payload, [])) invalidSessionTransport("State requests have no fields."); post(id, state()); }
     else if (operation === "prepare") await prepare(payload, abort, progress, id);
+    else if (operation === "interactionRequest") {
+      if (!keys(payload, ["documentId", "revision", "input"]) || !record(payload.input)) invalidSessionTransport("Invalid workbook interaction request.");
+      identity(payload);
+      const request = await session.buildInteractionRequestAsync(payload.input as unknown as WorkbookInteractionRequestInput, { signal: abort.signal, yield: yieldTask, onProgress: progress });
+      if (abort.signal.aborted || disposed) throw new DocumentError("OperationCancelled", "Workbook interaction request was cancelled.");
+      identity(payload); post(id, request);
+    }
     else if (operation === "commit" || operation === "discard") {
       if (!keys(payload, ["handle"]) || !positiveId(payload.handle)) invalidSessionTransport("Invalid workbook candidate handle.");
       const owned = candidates.get(payload.handle); if (!owned) invalidSessionTransport("The candidate does not belong to this connection or is no longer available.");

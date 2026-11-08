@@ -41,6 +41,37 @@ test("a dedicated endpoint prepares privately, returns bounded views and shares 
   expect(await client.redo()).toMatchObject({ revision: 3, changed: true }); expect(states).toEqual([1, 2, 3]);
 });
 
+test("Worker collaboration freezes sparse requests, reviews read-only consumers and commits through the same history", async () => {
+  const { s, client } = await pair();
+  s.commit(s.prepare(transaction(s, [number(0, 0, 4), { op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 1, source: { kind: "formula", expression: "=A1+1" } }] }])));
+  const manifest = s.snapshot().manifest;
+  s.commit(s.prepare(transaction(s, [{ op: "addAnnotation", annotation: { annotationId: "request", documentId: manifest.documentId, baseRevision: manifest.revision, status: "open", instruction: "更新😀禰󠄀", anchor: { kind: "cells", sheetId, ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }] } } }]))); s.clearHistory();
+  await vi.waitFor(() => expect(client.state().revision).toBe(s.snapshot().manifest.revision));
+  const before = s.serialize(), request = await client.buildInteractionRequest({ kind: "workbook", annotationIds: ["request"] });
+  expect(Object.isFrozen(request.context.cells[1]!.current)).toBe(true); expect(request.context.cells[1]!.access).toBe("read-only");
+  const proposal = { protocolVersion: 1 as const, documentId: request.documentId, baseRevision: request.baseRevision, requestId: request.requestId, proposalId: "proposal", annotationIds: ["request"], summary: "更新", operations: [number(0, 0, 10)] };
+  const candidate = await client.prepare({ kind: "proposal", request, proposal: proposal as import("@doffi/core").WorkbookEditProposal });
+  expect(s.serialize()).toEqual(before); expect(candidate.proposalReview!.calculatedChanges.find(cell => cell.access === "read-only")!.after).toEqual({ kind: "value", value: { type: "number", value: 11 } });
+  expect(Object.isFrozen(candidate.proposalReview!.calculatedChanges)).toBe(true);
+  const preview = await client.view(candidate); expect(preview.cells.snapshot.annotations[0]!.status).toBe("resolved"); preview.dispose();
+  await client.commit(candidate); expect(s.getAnnotations()[0]!.status).toBe("resolved"); expect(s.history().undoSteps).toBe(1);
+  await client.undo(); expect(s.getCell(sheetId, 0, 0)!.value).toEqual({ type: "number", value: 4 }); expect(s.getAnnotations()[0]!.status).toBe("open");
+  await expect(client.prepare({ kind: "proposal", request, proposal: proposal as import("@doffi/core").WorkbookEditProposal })).rejects.toMatchObject({ code: "RevisionConflict" });
+});
+
+test("Worker request cancellation and an oversized reply leave the host source available without a partial request", async () => {
+  const { s, client } = await pair(), cells = Array.from({ length: 300 }, (_, row) => ({ row, column: 0, source: { kind: "value" as const, value: { type: "number" as const, value: row } } }));
+  s.commit(s.prepare(transaction(s, [{ op: "setWorkbookCells", sheetId, cells }])));
+  const manifest = s.snapshot().manifest;
+  s.commit(s.prepare(transaction(s, [{ op: "addAnnotation", annotation: { annotationId: "request", documentId: manifest.documentId, baseRevision: manifest.revision, status: "open", instruction: "更新", anchor: { kind: "cells", sheetId, ranges: [{ from: { row: 0, column: 0 }, to: { row: 299, column: 0 } }] } } }])));
+  await vi.waitFor(() => expect(client.state().revision).toBe(s.snapshot().manifest.revision)); const before = s.serialize(), abort = new AbortController();
+  await expect(client.buildInteractionRequest({ kind: "workbook", annotationIds: ["request"] }, { signal: abort.signal, onProgress: progress => { if (progress.phase === "cells") abort.abort(); } })).rejects.toMatchObject({ code: "OperationCancelled" });
+  expect(s.serialize()).toEqual(before);
+  const small = await pair(s, { maxMessageBytes: 8000 });
+  await expect(small.client.buildInteractionRequest({ kind: "workbook", annotationIds: ["request"] })).rejects.toMatchObject({ code: "ResourceLimitExceeded" });
+  expect(s.serialize()).toEqual(before); expect((await client.buildInteractionRequest({ kind: "workbook", annotationIds: ["request"] })).context.cells).toHaveLength(300);
+});
+
 test("remote font formatting maps LF offsets only inside its sole authorized source and preserves history and stale/UTF-16 rejection", async () => {
   const { s, client } = await pair();
   await client.commit(await client.prepare(command(s, [{ op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "text", value: "A\r\n禰󠄀😀Z" } } }] }]))); s.clearHistory();

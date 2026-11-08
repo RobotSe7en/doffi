@@ -1,0 +1,25 @@
+[
+  {
+    "annotationId": "review-1",
+    "documentId": "workbook-example",
+    "baseRevision": 0,
+    "status": "open",
+    "instruction": "将 A1 改为 10，保留 B1 的公式并核对其当前结果。",
+    "anchor": {
+      "kind": "cells",
+      "sheetId": "sheet-1",
+      "ranges": [
+        {
+          "from": {
+            "row": 0,
+            "column": 0
+          },
+          "to": {
+            "row": 0,
+            "column": 0
+          }
+        }
+      ]
+    }
+  }
+]

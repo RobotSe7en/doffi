@@ -10,6 +10,7 @@ export * from "./contracts/annotations.js";
 export * from "./contracts/operations.js";
 export * from "./contracts/interaction.js";
 export * from "./contracts/presentation-interaction.js";
+export * from "./contracts/workbook-interaction.js";
 export * from "./contracts/events.js";
 export { DocumentError } from "./errors.js";
 export { createOpaqueId } from "./identifiers.js";
@@ -77,6 +78,6 @@ export type {
   OpenDocumentOptions, TextOffsetMapping, TransactionReceipt, DocumentEditingSession,
   DocumentNodeChange, DocumentSessionLimits, DocumentSessionOptions, DocumentHistoryState,
   TransactionPrepareOptions,
-  WorkbookSession, WorkbookCandidateChange, WorkbookRangeChange, WorkbookStructureMapping, TransactionPreparationExecution, TransactionPreparationProgress,
+  WorkbookSession, WorkbookCandidateChange, WorkbookInteractionRequestInput, WorkbookRangeChange, WorkbookStructureMapping, TransactionPreparationExecution, TransactionPreparationProgress,
   PresentationInteractionRequestInput,PresentationAnnotationSubmissionHandler,
 } from "./runtime.js";

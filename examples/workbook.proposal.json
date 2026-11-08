@@ -1,0 +1,30 @@
+{
+  "protocolVersion": 1,
+  "requestId": "workbook-example-request",
+  "proposalId": "workbook-example-proposal",
+  "documentId": "workbook-example",
+  "baseRevision": 0,
+  "annotationIds": [
+    "review-1"
+  ],
+  "summary": "将 A1 改为 10；B1 的公式源保持不变，当前计算结果由 5 变为 11。",
+  "operations": [
+    {
+      "op": "setWorkbookCells",
+      "sheetId": "sheet-1",
+      "cells": [
+        {
+          "row": 0,
+          "column": 0,
+          "source": {
+            "kind": "value",
+            "value": {
+              "type": "number",
+              "value": 10
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { DocumentError } from "@doffi/core";
 import type { ChangeMapping, DocumentHistoryState, DocumentTransaction, TransactionPreparationProgress, TransactionPrepareOptions, TransactionReceipt,
-  WorkbookCandidateChange, WorkbookCoordinate, WorkbookRange, WorkbookScalarContext, WorkbookSort, WorkbookReferenceLocation, WorkbookReferenceResult } from "@doffi/core";
+  WorkbookCandidateChange, WorkbookCoordinate, WorkbookRange, WorkbookScalarContext, WorkbookSort, WorkbookReferenceLocation, WorkbookReferenceResult,
+  DeepReadonly, WorkbookEditProposal, WorkbookInteractionRequest, WorkbookInteractionRequestInput, WorkbookProposalReview } from "@doffi/core";
 import type { WorkbookReadConnection, WorkbookReadTransportOptions } from "@doffi/render";
 import { resolveWorkbookReadTransportOptions } from "@doffi/render";
 import type { WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
@@ -18,9 +19,11 @@ export interface WorkbookSessionMapping extends Omit<ChangeMapping, "nodes"> { r
 export interface WorkbookSessionReceipt extends Omit<TransactionReceipt, "mapping"> { readonly mapping: WorkbookSessionMapping }
 export interface WorkbookSessionCandidate extends Pick<WorkbookCandidateChange, "documentId" | "baseRevision" | "affectedNodeIds" | "affectedSheetIds" | "changedRanges" | "changes" | "changedAnnotationIds"> {
   readonly mapping: WorkbookSessionMapping;
+  readonly proposalReview?: DeepReadonly<WorkbookProposalReview>;
 }
 export type WorkbookSessionCommand =
   | { readonly kind: "transaction"; readonly transaction: DocumentTransaction }
+  | { readonly kind: "proposal"; readonly request: WorkbookInteractionRequest; readonly proposal: WorkbookEditProposal }
   | (WorkbookSessionIdentity & { readonly kind: "input"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly mode?: WorkbookTextInputMode })
   | (WorkbookSessionIdentity & { readonly kind: "formatText"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly selection: WorkbookTextFontSelection; readonly properties: Readonly<Record<string, string>> })
   | (WorkbookSessionIdentity & { readonly kind: "paste"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly options?: WorkbookPasteOptions })
@@ -60,6 +63,7 @@ export interface WorkbookSessionTransportOptions {
 }
 export interface WorkbookSessionConnection {
   state(): WorkbookSessionState;
+  buildInteractionRequest(input: WorkbookInteractionRequestInput, execution?: WorkbookSessionExecution): Promise<WorkbookInteractionRequest>;
   prepare(command: WorkbookSessionCommand, options?: TransactionPrepareOptions, execution?: WorkbookSessionExecution): Promise<WorkbookSessionCandidate>;
   /** A view is immutable and belongs to its caller. It transfers metadata and
    * requested windows, never the package or a second editing session. */

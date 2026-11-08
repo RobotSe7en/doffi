@@ -1,5 +1,5 @@
-import { DocumentError, DocumentErrorDataSchema, WorkbookCoordinateSchema, WorkbookRangeSchema } from "@doffi/core";
-import type { TransactionPrepareOptions, WorkbookChangeImpact, WorkbookCoordinate, WorkbookReferenceLocation, WorkbookReferenceResult } from "@doffi/core";
+import { DocumentError, DocumentErrorDataSchema, parseContract, WorkbookCoordinateSchema, WorkbookProposalReviewSchema, WorkbookRangeSchema } from "@doffi/core";
+import type { TransactionPrepareOptions, WorkbookChangeImpact, WorkbookCoordinate, WorkbookInteractionRequestInput, WorkbookReferenceLocation, WorkbookReferenceResult } from "@doffi/core";
 import { connectWorkbookReads, linkWorkbookPreviewSource } from "@doffi/render";
 import type { WorkbookReadConnection } from "@doffi/render";
 import { checkSessionMessage, freezeSessionValue, invalidSessionTransport, keys, positiveId, record, sessionTransportConfig, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
@@ -121,11 +121,21 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
     acceptState((await request("state", {}, signal ? { signal } : {})).value);
     return Object.freeze({
       state() { check(); return current; },
+      async buildInteractionRequest(input: WorkbookInteractionRequestInput, execution?: WorkbookSessionExecution) {
+        const expected = identity(), { value } = await request("interactionRequest", { ...expected, input }, execution);
+        const result = parseContract("workbook-interaction-request", value);
+        if (result.documentId !== expected.documentId || result.baseRevision !== expected.revision || current.revision !== expected.revision) throw new DocumentError("RevisionConflict", "Workbook interaction source changed before completion.");
+        return freezeSessionValue(result);
+      },
       async prepare(command: WorkbookSessionCommand, preparation?: TransactionPrepareOptions, execution?: WorkbookSessionExecution) {
         const { value } = await request("prepare", { command, ...(preparation === undefined ? {} : { options: preparation }) }, execution);
         if (!record(value) || !keys(value, ["handle", "candidate"]) || !positiveId(value.handle) || !record(value.candidate)
           || value.candidate.documentId !== current.documentId || !Number.isSafeInteger(value.candidate.baseRevision) || !Array.isArray(value.candidate.changes)
           || !Array.isArray(value.candidate.affectedNodeIds) || !record(value.candidate.mapping)) invalidSessionTransport("Invalid workbook candidate response.");
+        if (command.kind === "proposal") {
+          const review = WorkbookProposalReviewSchema.safeParse(value.candidate.proposalReview);
+          if (!review.success || review.data.requestId !== command.request.requestId || review.data.proposalId !== command.proposal.proposalId) invalidSessionTransport("Invalid workbook proposal review response.");
+        } else if (value.candidate.proposalReview !== undefined) invalidSessionTransport("Unexpected workbook proposal review response.");
         const candidate = freezeSessionValue(value.candidate as unknown as WorkbookSessionCandidate); candidates.set(candidate, { handle: value.handle, consumed: false }); return candidate;
       },
       async resolveReference(expression: string, origin: WorkbookReferenceLocation, execution?: WorkbookSessionExecution) {

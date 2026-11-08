@@ -3,12 +3,14 @@ import type { FormulaExpression } from "./formula.js";
 import { parseFormula } from "./formula.js";
 import { printFormula } from "./formula-print.js";
 import type { WorkbookReferenceArea, WorkbookReferenceLocation } from "./reference.js";
+import type { WorkbookDefinedName } from "../contracts/workbook.js";
 
 /** Shared, bounded source-reference discovery for calculation and validation.
  * Reference rectangles stay compact; function evaluation remains separate. */
 export function workbookExpressionDependencies(model: WorkbookModel, expression: FormulaExpression, origin: WorkbookReferenceLocation,
   step: () => void, add: (area: DeepReadonly<WorkbookReferenceArea>) => void, call?: (name: string) => void,
-  resolve: WorkbookModel["resolveReference"] = (expression, at) => model.resolveReference(expression, at)): void {
+  resolve: WorkbookModel["resolveReference"] = (expression, at) => model.resolveReference(expression, at),
+  options: { readonly onName?: (definition: DeepReadonly<WorkbookDefinedName>, location: WorkbookReferenceLocation) => void; readonly includeFilterRanges?: boolean } = {}): void {
   const workbook = model.snapshot().metadata.workbook, definitions = workbook.names ?? [], sheets = workbook.sheets;
   const seen = new Set<string>();
   const emit = (area: DeepReadonly<WorkbookReferenceArea>): void => {
@@ -27,7 +29,7 @@ export function workbookExpressionDependencies(model: WorkbookModel, expression:
           if (to.row < 1_048_576 && to.column < 16_384) emit({ sheetId: b.sheetId, from: b.from, to });
         }
       }
-      if (name === "SUBTOTAL") for (const sheet of sheets) for (const filter of [...sheet.autoFilter ? [sheet.autoFilter] : [], ...sheet.tables?.flatMap(table => table.autoFilter ? [table.autoFilter] : []) ?? []]) {
+      if (name === "SUBTOTAL" && options.includeFilterRanges !== false) for (const sheet of sheets) for (const filter of [...sheet.autoFilter ? [sheet.autoFilter] : [], ...sheet.tables?.flatMap(table => table.autoFilter ? [table.autoFilter] : []) ?? []]) {
         for (const column of filter.columns) if (column.criterion && filter.range.from.row < filter.range.to.row) {
           step(); emit({ sheetId: sheet.sheetId, from: { row: filter.range.from.row + 1, column: column.column }, to: { row: filter.range.to.row, column: column.column } });
         }
@@ -45,6 +47,7 @@ export function workbookExpressionDependencies(model: WorkbookModel, expression:
         const scope = ast.sheet === undefined ? at.sheetId : sheets.find(sheet => sheet.name.toUpperCase() === ast.sheet!.toUpperCase())?.sheetId;
         const definition = definitions.find(name => name.name.toUpperCase() === ast.name.toUpperCase() && name.sheetId === scope)
           ?? (ast.sheet === undefined ? definitions.find(name => name.name.toUpperCase() === ast.name.toUpperCase() && name.sheetId === undefined) : undefined);
+        if (definition) options.onName?.(definition, at);
         if (definition && !names.includes(definition.nameId)) pending.push({ ast: parseFormula(definition.expression, definition.origin), at: { ...at, sheetId: definition.sheetId ?? at.sheetId }, names: [...names, definition.nameId] });
       }
     }
