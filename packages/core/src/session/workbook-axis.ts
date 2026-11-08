@@ -6,7 +6,7 @@ import { DocumentError } from "../errors.js";
 import { MAX_SHEET_COLUMNS, MAX_SHEET_ROWS } from "../workbook/chunk-index.js";
 import { copyFormula } from "../workbook/formula-rewrite.js";
 import { parseFormula, type FormulaExpression } from "../workbook/formula.js";
-import { mapWorkbookRanges } from "../workbook/range-mapping.js";
+import { mapWorkbookCommentAnchors } from "./workbook-comment-mapping.js";
 import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
 import { WorkbookCellEdit } from "./workbook-cells.js";
 import { rewriteWorkbookReferenceSteps } from "./workbook-references.js";
@@ -97,9 +97,10 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
   const { axis, action, index, count } = operation, bound = axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS;
   if (index + count > bound) invalid("The worksheet axis edit exceeds its native bounds.");
   if (action === "delete" && operation.formatSource !== undefined) invalid("A deletion cannot inherit inserted-axis formatting.");
-  if (workbook.objects?.some(object => object.sheetId === sheet.sheetId)
-    || workbook.comments?.some(comment => annotations.some(annotation => annotation.annotationId === comment.annotationId && annotation.anchor.kind === "cells" && annotation.anchor.sheetId === sheet.sheetId)))
-    invalid("Axis editing of native drawings and comments is not yet connected.");
+  if (workbook.objects?.some(object => object.sheetId === sheet.sheetId && object.anchor.kind !== "absolute")
+    || workbook.comments?.some(comment => comment.format === "classic" && [comment.box, comment.commentPrBox].some(box => box && box.anchor.kind !== "absolute")
+      && annotations.some(annotation => annotation.annotationId === comment.annotationId && annotation.anchor.kind === "cells" && annotation.anchor.sheetId === sheet.sheetId)))
+    invalid("Axis editing of cell-bound native drawings and note boxes requires their layout mapping.");
   if (workbook.names?.some(name => contextualName(parseFormula(name.expression, name.origin), name.sheetId === undefined)))
     invalid("Axis editing with contextual defined names is not yet connected.");
   const step: WorkbookStructureMapping = { kind: "axis", sheetId: sheet.sheetId, axis, action, index, count };
@@ -243,11 +244,7 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
       });
     }
   }
-  for (const annotation of annotations) if (annotation.anchor.kind === "cells" && annotation.anchor.sheetId === sheet.sheetId && annotation.status !== "needs_reanchor") {
-    const mapped = mapWorkbookRanges(annotation.anchor.ranges.map(range => ({ sheetId: sheet.sheetId, range })), [step]);
-    if (mapped.length) annotation.anchor.ranges = mapped.map(item => ({ from: { ...item.range.from }, to: { ...item.range.to } }));
-    else annotation.status = "needs_reanchor";
-  }
+  yield* mapWorkbookCommentAnchors(workbook, annotations, step);
   mappings.push(step);
   yield { completed, total: moving.length };
 }

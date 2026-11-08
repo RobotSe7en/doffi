@@ -7,6 +7,7 @@ import { copyFormula } from "../workbook/formula-rewrite.js";
 import { resolveWorkbookCellFormat } from "../workbook/cell-format.js";
 import { mapWorkbookRanges } from "../workbook/range-mapping.js";
 import { checkRange } from "../workbook/ranges.js";
+import { mapWorkbookCommentAnchors } from "./workbook-comment-mapping.js";
 import { rangeContains, rangesIntersect, WorkbookCellEdit } from "./workbook-cells.js";
 
 type Reorder = Extract<WorkbookOperation, { op: "reorderWorkbookRows" }>;
@@ -44,7 +45,7 @@ export function* reorderWorkbookRows(workbook: WorkbookMetadata, cells: Workbook
   }
   for (const object of workbook.objects ?? []) if (object.sheetId === sheet.sheetId && object.anchor.kind !== "absolute" && rangeContains(range, object.anchor.from.row, object.anchor.from.column))
     invalid("Sorting cell-bound drawings is not yet connected.");
-  for (const comment of workbook.comments ?? []) if (comment.format === "classic" && (comment.box || comment.commentPrBox)) {
+  for (const comment of workbook.comments ?? []) if (comment.format === "classic" && [comment.box, comment.commentPrBox].some(box => box && box.anchor.kind !== "absolute")) {
     const owner = annotations.find(annotation => annotation.annotationId === comment.annotationId)?.anchor;
     if (owner?.kind === "cells" && owner.sheetId === sheet.sheetId && owner.ranges.some(value => rangesIntersect(value, range))) invalid("Sorting positioned native note boxes is not yet connected.");
   }
@@ -92,10 +93,6 @@ export function* reorderWorkbookRows(workbook: WorkbookMetadata, cells: Workbook
       rule.origin = origin;
     }
   }
-  for (const annotation of annotations) if (annotation.status !== "needs_reanchor" && annotation.anchor.kind === "cells" && annotation.anchor.sheetId === sheet.sheetId) {
-    annotation.anchor.ranges = mapWorkbookRanges(annotation.anchor.ranges.map(range => ({ sheetId: sheet.sheetId, range })), [step]).map(value => ({ from: { ...value.range.from }, to: { ...value.range.to } }));
-    const binding = workbook.comments?.find(comment => comment.annotationId === annotation.annotationId);
-    if (binding?.format === "modern") for (const reply of binding.replies) if (reply.nativeCell && rangeContains(range, reply.nativeCell.row, reply.nativeCell.column)) reply.nativeCell.row = rows[reply.nativeCell.row - range.from.row]!;
-  }
+  yield* mapWorkbookCommentAnchors(workbook, annotations, step);
   mappings.push(step); yield { completed, total: moving.length };
 }

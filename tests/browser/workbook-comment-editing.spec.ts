@@ -77,3 +77,26 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} commen
   if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
   else await page.evaluate(() => window.workbookEditor.dispose());
 });
+
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} grid structure and clipboard controls move a source-owned thread and restore its exact body/history`, async ({ page }) => {
+  const s = createDocumentSession(scalarWorkbook([]));
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "addWorkbookComment", anchor: { kind: "cells", sheetId: "sheet-1", ranges: [{ from: { row: 1, column: 0 }, to: { row: 1, column: 0 } }] }, html: "<p><strong>结构禰󠄀😀</strong></p>", author: { name: "结构批注" } }] }));
+  const root = s.getAnnotations()[0]!, body = s.getNode(root.bodyNodeId!)!.html, files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as Inspection;
+  const address = page.getByLabel("选择单元格或区域", { exact: true }), choose = async (value: string) => { await address.fill(value); await address.press("Enter"); await settled(); };
+  await choose("A2"); await page.getByRole("button", { name: "插入选区行", exact: true }).click(); await settled();
+  expect((await inspect()).annotations[0]!.anchor).toMatchObject({ kind: "cells", ranges: [{ from: { row: 2, column: 0 }, to: { row: 2, column: 0 } }] });
+  await choose("A3"); await page.getByRole("button", { name: "剪切选区", exact: true }).click(); await settled();
+  await choose("AG257"); await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await settled();
+  expect((await inspect()).annotations[0]!.anchor).toMatchObject({ kind: "cells", ranges: [{ from: { row: 256, column: 32 }, to: { row: 256, column: 32 } }] });
+  await choose("AG257"); await page.getByRole("button", { name: "删除选区行", exact: true }).click(); await settled();
+  expect((await inspect()).annotations[0]).toMatchObject({ status: "needs_reanchor", bodyNodeId: root.bodyNodeId });
+  for (let index = 0; index < 3; index++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
+  const restored = await inspect(); expect(restored.annotations[0]).toMatchObject({ status: "open", anchor: root.anchor }); expect(restored.content).toContain(body); expect(restored.errors).toEqual([]);
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+  else await page.evaluate(() => window.workbookEditor.dispose());
+});

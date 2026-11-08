@@ -35,6 +35,7 @@ import { SourceStyleEdit } from "./source-styles.js";
 import { editWorkbookStyle, isWorkbookStyleOperation } from "./workbook-styles.js";
 import { editWorkbookDrawing, isWorkbookDrawingOperation, validateWorkbookDrawingTarget } from "./workbook-drawings.js";
 import { editWorkbookComment, isWorkbookCommentOperation, reanchorWorkbookCommentSources, removeWorkbookCommentSources, restoreWorkbookCommentSource, validateWorkbookCommentTarget } from "./workbook-comments.js";
+import { WorkbookCommentMapping } from "./workbook-comment-mapping.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -82,6 +83,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
     const richContent = new WorkbookContentEdit(manifest, files, limits, allocate), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
+    const commentMapping = new WorkbookCommentMapping();
     function annotation(operation: AnnotationOperation): void {
       if (operation.op === "addAnnotation") {
         const value = operation.annotation;
@@ -108,6 +110,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     let operationCount = 0, changedAxis = false, changedDefinition = false;
     yield { kind: "progress", value: { phase: "operations", completed: 0, total: transaction.operations.length } };
     for (const operation of transaction.operations) {
+      if ((operation.op === "updateAnnotation" || operation.op === "updateWorkbookComment") && (operation.changes.anchor !== undefined || operation.changes.status !== undefined))
+        commentMapping.explicit(workbook, annotations, mapping, operation.annotationId);
+      if (operation.op === "editWorkbookAxis" || operation.op === "reorderWorkbookRows" || operation.op === "moveWorkbookRange") commentMapping.capture(workbook, annotations, mapping.length);
       if (!isWorkbookOperation(operation)) annotation(operation as AnnotationOperation);
       else if (operation.op === "setWorkbookCells" || operation.op === "setWorkbookCellFormats") {
         const sheet = workbook.sheets.find(item => item.sheetId === operation.sheetId) ?? invalid("An earlier operation removed the worksheet.");
@@ -163,7 +168,8 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };
     }
-    if (changedAxis) restoreWorkbookAxisSource(workbook, base.snapshot().metadata.workbook, annotations, base.snapshot().annotations);
+    for (const value of commentMapping.finish(workbook, annotations, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
+    if (changedAxis || mapping.some(step => step.kind === "move" || step.kind === "sort")) restoreWorkbookAxisSource(workbook, base.snapshot().metadata.workbook, annotations, base.snapshot().annotations);
     if (changedDefinition || changedAxis) restoreWorkbookDefinitionSource(workbook, base.snapshot().metadata.workbook);
     for (const sheet of workbook.sheets.filter(sheet => mergeSheets.has(sheet.sheetId))) {
       const previous = base.snapshot().metadata.workbook.sheets.find(previous => previous.sheetId === sheet.sheetId);

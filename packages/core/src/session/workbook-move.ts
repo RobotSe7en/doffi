@@ -5,6 +5,7 @@ import type { WorkbookCell, WorkbookStructureMapping } from "../runtime.js";
 import { DocumentError } from "../errors.js";
 import { resolveWorkbookCellFormat } from "../workbook/cell-format.js";
 import { mapWorkbookRanges } from "../workbook/range-mapping.js";
+import { mapWorkbookCommentAnchors } from "./workbook-comment-mapping.js";
 import { checkRange } from "../workbook/ranges.js";
 import { rangeContains, rangesIntersect, WorkbookCellEdit } from "./workbook-cells.js";
 import { createWorkbookReferenceRewriter, rewriteWorkbookReferenceSteps } from "./workbook-references.js";
@@ -33,7 +34,7 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
       || sheet === target && rangesIntersect(merge, destination) && !contains(destination, merge)) invalid("A cut cannot split a merged region.");
   }
   for (const object of workbook.objects ?? []) if (object.anchor.kind !== "absolute" && covered(object.sheetId, { from: object.anchor.from, to: object.anchor.from })) invalid("Cutting cell-bound drawings is not yet connected.");
-  for (const binding of workbook.comments ?? []) if (binding.format === "classic" && (binding.box || binding.commentPrBox)) {
+  for (const binding of workbook.comments ?? []) if (binding.format === "classic" && [binding.box, binding.commentPrBox].some(box => box && box.anchor.kind !== "absolute")) {
     const anchor = annotations.find(annotation => annotation.annotationId === binding.annotationId)?.anchor;
     if (anchor?.kind === "cells" && anchor.ranges.some(value => covered(anchor.sheetId, value))) invalid("Cutting positioned native notes is not yet connected.");
   }
@@ -90,22 +91,6 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
     (owner.hyperlinks ??= []).push({ ...link, range: fragment.range,
       ...(link.location ? { location: rewrite("=" + link.location, sheet.name, { row: 0, column: 0 }, undefined, { sheet: owner.name, row: 0, column: 0 }).slice(1) } : {}) });
   }
-  for (const annotation of annotations) if (annotation.status !== "needs_reanchor" && annotation.anchor.kind === "cells") {
-    const originalSheet = annotation.anchor.sheetId;
-    const mapped = mapWorkbookRanges(annotation.anchor.ranges.map(range => ({ sheetId: originalSheet, range })), [step]);
-    const sheets = new Set(mapped.map(value => value.sheetId)), binding = workbook.comments?.find(comment => comment.annotationId === annotation.annotationId);
-    if (!mapped.length || sheets.size !== 1) {
-      if (binding) binding.recoveryStatus = annotation.status;
-      annotation.status = "needs_reanchor"; continue;
-    }
-    annotation.anchor = { kind: "cells", sheetId: mapped[0]!.sheetId, ranges: mapped.map(value => ({ from: { ...value.range.from }, to: { ...value.range.to } })) };
-    for (const body of [annotation, ...annotation.replies ?? []]) if (body.bodyNodeId) {
-      const story = workbook.stories?.find(story => story.rootNodeId === body.bodyNodeId); if (story) story.sheetId = mapped[0]!.sheetId;
-    }
-    if (binding?.format === "modern") for (const reply of binding.replies) if (reply.nativeCell) {
-      const point = mapWorkbookRanges([{ sheetId: originalSheet, range: { from: reply.nativeCell, to: reply.nativeCell } }], [step]);
-      if (point.length === 1 && point[0]!.sheetId === mapped[0]!.sheetId) reply.nativeCell = { ...point[0]!.range.from };
-    }
-  }
+  yield* mapWorkbookCommentAnchors(workbook, annotations, step);
   mappings.push(step); yield { completed, total: moving.length };
 }
