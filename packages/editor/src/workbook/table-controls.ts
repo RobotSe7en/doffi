@@ -2,6 +2,7 @@ import { DocumentError, WorkbookTableSchema } from "@doffi/core";
 import type { WorkbookTable } from "@doffi/core";
 import type { WorkbookControlsHost, WorkbookControlsIdentity } from "./controls-host.js";
 import { workbookControlRange, workbookControlRangeText } from "./controls-range.js";
+import { reconcileWorkbookInputText } from "./text-projection.js";
 
 interface TableDraft {
   readonly identity: WorkbookControlsIdentity; readonly sheetId: string; readonly existing: boolean;
@@ -11,15 +12,15 @@ interface TableDraft {
  * rewrites and exceptions remain owned by the shared core transaction. */
 export function createWorkbookTableControls(document: Document, parent: ParentNode, host: WorkbookControlsHost): { readonly element: HTMLDetailsElement; refresh(): void; hasPendingInput(): boolean } {
   const panel = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "智能表管理"; panel.append(summary); parent.append(panel);
-  const fields: (HTMLInputElement | HTMLSelectElement)[] = [];
-  const field = <T extends HTMLInputElement | HTMLSelectElement>(label: string, input: T): T => { const wrapper = document.createElement("label"); input.setAttribute("aria-label", label); wrapper.append(label, input); panel.append(wrapper); fields.push(input); return input; };
-  const text = (label: string, maximum: number) => { const input = field(label, document.createElement("input")); input.maxLength = maximum; return input; };
+  const fields: (HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)[] = [];
+  const field = <T extends HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(label: string, input: T): T => { const wrapper = document.createElement("label"); input.setAttribute("aria-label", label); wrapper.append(label, input); panel.append(wrapper); fields.push(input); return input; };
+  const text = (label: string, maximum: number, multiline = false) => { const input = field(label, document.createElement(multiline ? "textarea" : "input")); input.maxLength = maximum; return input; };
   const check = (label: string) => { const input = field(label, document.createElement("input")); input.type = "checkbox"; return input; };
   const option = (select: HTMLSelectElement, value: string, label: string) => { const item = document.createElement("option"); item.value = value; item.textContent = label; select.append(item); };
-  const choice = field("选择智能表", document.createElement("select")), name = text("智能表名称", 255), objectName = text("智能表对象名称", 255), description = text("智能表说明", 255), range = text("智能表区域", 32);
+  const choice = field("选择智能表", document.createElement("select")), name = text("智能表名称", 255), objectName = text("智能表对象名称", 255, true), description = text("智能表说明", 255, true), range = text("智能表区域", 32);
   const header = check("智能表包含标题行"), totals = check("智能表显示汇总行"), filter = check("智能表显示筛选按钮"), style = field("智能表样式", document.createElement("select"));
   const firstColumn = check("智能表突出首列"), lastColumn = check("智能表突出末列"), rowStripes = check("智能表行条纹"), columnStripes = check("智能表列条纹");
-  const column = field("选择智能表列", document.createElement("select")), columnName = text("智能表列名", 255), calculated = text("智能表计算列公式", 8192), totalFunction = field("智能表列汇总方式", document.createElement("select")), totalFormula = text("智能表列自定义汇总公式", 8192), totalLabel = text("智能表列汇总文字", 32767);
+  const column = field("选择智能表列", document.createElement("select")), columnName = text("智能表列名", 255, true), calculated = text("智能表计算列公式", 8192, true), totalFunction = field("智能表列汇总方式", document.createElement("select")), totalFormula = text("智能表列自定义汇总公式", 8192, true), totalLabel = text("智能表列汇总文字", 32767, true);
   for (const [value, label] of [["none", "无"], ["sum", "求和"], ["average", "平均值"], ["count", "非空计数"], ["countNums", "数值计数"], ["min", "最小值"], ["max", "最大值"], ["stdDev", "样本标准差"], ["var", "样本方差"], ["custom", "自定义公式"]]) option(totalFunction, value!, label!);
   const status = document.createElement("p"); status.setAttribute("role", "status"); status.setAttribute("aria-label", "智能表编辑状态"); panel.append(status);
   let draft: TableDraft | undefined, selected = "", composing: HTMLElement | undefined, saving = false, serial = 0, listKey = "", styleKey = "";
@@ -59,14 +60,14 @@ export function createWorkbookTableControls(document: Document, parent: ParentNo
   function changed(): void {
     if (!draft) return; const table = draft.table;
     table.name = name.value; draft.range = range.value; table.header = header.checked; table.totals = totals.checked; table.totalsPreviouslyShown ||= totals.checked;
-    for (const [key, input] of [["objectName", objectName], ["description", description]] as const) if (input.value !== (table[key] ?? "")) { if (input.value) table[key] = input.value; else delete table[key]; }
+    for (const [key, input] of [["objectName", objectName], ["description", description]] as const) { const text = reconcileWorkbookInputText(table[key] ?? "", input.value); if (text !== (table[key] ?? "")) { if (text) table[key] = text; else delete table[key]; } }
     table.showFirstColumn = firstColumn.checked; table.showLastColumn = lastColumn.checked; table.rowStripes = rowStripes.checked; table.columnStripes = columnStripes.checked;
     if (!style.value) delete table.style;
     else table.style = style.value.startsWith("custom:") ? { kind: "custom", styleId: style.value.slice(7) } : { kind: "builtin", name: style.value };
     const value = table.columns.find(value => value.columnId === column.value);
     if (value) {
-      value.name = columnName.value; value.totalFunction = totalFunction.value as typeof value.totalFunction;
-      for (const [key, input] of [["calculatedFormula", calculated], ["totalFormula", totalFormula], ["totalLabel", totalLabel]] as const) if (input.value !== (value[key] ?? "")) { if (input.value) value[key] = input.value; else delete value[key]; }
+      value.name = reconcileWorkbookInputText(value.name, columnName.value); value.totalFunction = totalFunction.value as typeof value.totalFunction;
+      for (const [key, input] of [["calculatedFormula", calculated], ["totalFormula", totalFormula], ["totalLabel", totalLabel]] as const) { const text = reconcileWorkbookInputText(value[key] ?? "", input.value); if (text !== (value[key] ?? "")) { if (text) value[key] = text; else delete value[key]; } }
       const current = column.selectedOptions[0]; if (current) current.textContent = value.name;
     }
     draft.dirty = true; refresh(); host.draftChanged?.();

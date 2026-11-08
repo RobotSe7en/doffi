@@ -5,7 +5,10 @@ import type { DeepReadonly, WorkbookModel, WorkbookSheet, WorkbookTable } from "
 
 export function workbookTableControlsSource(model: WorkbookModel) {
   const session = createDocumentSession(model), manifest = session.snapshot().manifest;
+  const table = JSON.parse(JSON.stringify(model.snapshot().metadata.workbook.sheets[0]!.tables![0]!)) as WorkbookTable;
+  table.description = "来源\r\n中文禰󠄀😀"; table.columns[0]!.totalLabel = "合计\r\n来源";
   session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [
+    { op: "setWorkbookTable", sheetId: "sheet-1", table },
     { op: "setWorkbookCells", sheetId: "sheet-1", cells: [
       { row: 2, column: 3, source: { kind: "value", value: { type: "number", value: 777 } } },
       { row: 0, column: 5, source: { kind: "formula", expression: "=SUM(SalesTable[金额])" } },
@@ -29,7 +32,7 @@ export async function exerciseWorkbookTableControls(page: Page, remote: boolean,
   await name.fill("Revenue"); await column.selectOption(definition.columns[1]!.columnId); await columnName.fill("件数");
   await expect(choice).toBeDisabled(); expect(await inspect()).toMatchObject({ pending: true, history: { undoSteps: 0 } });
   await save.click(); await settled(); expect(await inspect()).toMatchObject({ pending: false, history: { undoSteps: 1 }, errors: [] });
-  expect(await table()).toMatchObject({ tableId: definition.tableId, name: "Revenue", style: definition.style, columns: [definition.columns[0], { ...definition.columns[1], name: "件数" }, definition.columns[2], { ...definition.columns[3], calculatedFormula: "=(Revenue[[#This Row],[件数]]*Revenue[[#This Row],[单价]])" }] });
+  expect(await table()).toMatchObject({ tableId: definition.tableId, name: "Revenue", style: definition.style, description: definition.description, columns: [definition.columns[0], { ...definition.columns[1], name: "件数" }, definition.columns[2], { ...definition.columns[3], calculatedFormula: "=(Revenue[[#This Row],[件数]]*Revenue[[#This Row],[单价]])" }] });
   expect(await cell(0, 1)).toMatchObject({ value: { type: "text", value: "件数" } }); expect(await cell(0, 5)).toMatchObject({ formula: { expression: "=SUM(Revenue[金额])" } }); expect(await cell(2, 3)).toMatchObject({ value: { type: "number", value: 777 } });
   expect(await displayed(0, 1)).toBe("件数"); expect(await displayed(2, 3)).toContain("777");
   await save.click(); await settled(); expect(await inspect()).toMatchObject({ history: { undoSteps: 1 } });

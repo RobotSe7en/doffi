@@ -497,3 +497,14 @@ test('mounted Worker table controls maintain native columns, formulas, exception
   await exerciseWorkbookTableControls(page, true, sheets);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
 });
+
+
+test('mounted Worker filter controls preserve native criteria, paged text, hidden flags, table totals and protected drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookFilterControlsSource, exerciseWorkbookFilterControls } = await import('./workbook-filter-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-calculation.xlsx'), { documentId: 'mounted-filter-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookFilterControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookFilterControls(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});

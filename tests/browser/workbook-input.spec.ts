@@ -618,3 +618,13 @@ test("mounted direct table controls maintain native columns, formulas, exception
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
   await exerciseWorkbookTableControls(page, false, sheets);
 });
+
+
+test("mounted direct filter controls preserve native criteria, paged text, hidden flags, table totals and protected drafts", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookFilterControlsSource, exerciseWorkbookFilterControls } = await import('./workbook-filter-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-calculation.xlsx'), { documentId: 'mounted-filter-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookFilterControlsSource(model);
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
+  await exerciseWorkbookFilterControls(page, false, sheets);
+});
