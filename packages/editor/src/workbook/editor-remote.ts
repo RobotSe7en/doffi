@@ -106,8 +106,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     ui.input.disabled = !state.selection || state.selecting || !!commandAbort;
     ui.mode.value = state.mode; ui.mode.disabled = busy || state.composing || !state.selection; ui.address.disabled = busy || refreshing || !source;
     for (const field of searchFields) field.disabled = busy;
-    for (const field of [ui.insertedFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite]) field.disabled = busy;
-    ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
+    for (const field of [ui.insertedFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks]) field.disabled = busy;
+    ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardSkipBlanks.disabled ||= clipboard.kind === "cut"; ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     for (const field of ui.format.fields) field.disabled = busy;
     for (const { button, available } of buttons) button.disabled = !available();
     drawingControls?.refresh();
@@ -314,14 +314,14 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   }
   async function copySelection(kind: "copy" | "cut"): Promise<void> {
     check(); await sourceSettled(); clipboard.capture(source!.cells.snapshot, input.state().selection, kind);
-    if (kind === "cut") ui.clipboardMode.value = "contents";
+    if (kind === "cut") { ui.clipboardMode.value = "contents"; ui.clipboardSkipBlanks.checked = false; }
     ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
   }
   async function pasteSelection(): Promise<void> {
     check(); await sourceSettled(); const plan = clipboard.plan(source!.cells.snapshot, input.state().selection), mode = ui.clipboardMode.value as WorkbookRangeCopyOptions["mode"];
     const receipt = plan.source.kind === "cut" ? await perform([{ op: "moveWorkbookRange", sheetId: plan.source.sheetId, range: plan.source.range, targetSheetId: plan.sheetId, target: plan.target,
       overwrittenContent: ui.clipboardOverwrite.checked ? "clear" : "reject" }]) : await commitCommand({ kind: "copy", documentId: plan.source.documentId, revision: plan.source.baseRevision,
-        sheetId: plan.source.sheetId, source: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, mode });
+        sheetId: plan.source.sheetId, source: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, mode, skipBlanks: ui.clipboardSkipBlanks.checked });
     clipboard.applied(receipt.revision, plan.sheetId, plan.target, mode!); controls(); await sourceSettled(); binding.focus();
   }
   async function formatSelection(): Promise<void> {

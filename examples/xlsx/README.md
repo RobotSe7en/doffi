@@ -68,3 +68,6 @@ pnpm check:xlsx-reference
 新增来源保存在 `packages/office/tests/fixtures/workbook-table-style.xlsx`，由 `scripts/generate-workbook-table-style-fixture.py` 使用 Python 标准 ZIP/XML 从不可变的 `05-native-table.xlsx` 派生，包含两份共享差异格式的自定义定义、四类区域、条纹及默认／表关联；原始十六份样例字节不变。[源摘要](../../docs/evidence/workbook-table-style-source.json)记录基准和新增文件 SHA-256。
 
 [固定 LibreOffice 重存与实际 B2 修改](../../docs/evidence/workbook-table-style-native.json)另外记录官方 25.8.1.1 归档摘要及生产者差异：Calc 移除自定义定义、默认值和样式关联。源及两份输出均通过官方 Transitional XSD／OPC 检查，原始来源和生产者损失分别保留；不将其称为原生 XLSX 导出或 Excel/WPS 实机验收。复现使用 `pnpm check:workbook-table-style-source` 和 `pnpm check:workbook-table-style-native`。
+
+
+[编辑阶段链接复制](../../docs/evidence/workbook-copy-hyperlinks.json)使用不可变 `01-values-text.xlsx` 和固定 LibreOffice 的普通、重叠、跨表及新建表复制。四份生产者输出保留在 `packages/office/tests/fixtures/workbook-copy-hyperlinks-*-calc.xlsx`；五份源／输出均经官方 XSD／OPC 检查。记录保留显示缓存重算、提示丢失和新建表默认字体页眉不在当前字段读取范围内的拒绝负例，不覆盖原始样例。复现命令为 `pnpm check:workbook-copy-hyperlinks`。

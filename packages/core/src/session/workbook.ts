@@ -25,7 +25,7 @@ import { WorkbookContentEdit } from "./workbook-content.js";
 import { editWorkbookSheet } from "./workbook-sheets.js";
 import { copyWorkbookSheet } from "./workbook-copy-sheet.js";
 import { editWorkbookAxis, restoreWorkbookAxisSource } from "./workbook-axis.js";
-import { editWorkbookHyperlink, sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
+import { editWorkbookHyperlink, replaceWorkbookHyperlinks, sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { compileNumberFormat } from "../workbook/number-format.js";
 import { WorkbookRegionIndex } from "../workbook/region-index.js";
 import { editWorkbookMerge, sameWorkbookMerges } from "./workbook-merges.js";
@@ -139,9 +139,10 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         if ("code" in operation.format) compileNumberFormat(operation.format.code);
         const index = workbook.numberFormats.findIndex(format => format.formatId === operation.format.formatId);
         if (index < 0) workbook.numberFormats.push(operation.format); else workbook.numberFormats[index] = operation.format;
-      } else if (operation.op === "setWorkbookHyperlink") {
+      } else if (operation.op === "setWorkbookHyperlink" || operation.op === "replaceWorkbookHyperlinks") {
         const sheet = workbook.sheets.find(item => item.sheetId === operation.sheetId) ?? invalid("An earlier operation removed the worksheet.");
-        editWorkbookHyperlink(sheet, operation, limits.maxNodes);
+        if (operation.op === "setWorkbookHyperlink") editWorkbookHyperlink(sheet, operation, limits.maxNodes);
+        else for (const value of replaceWorkbookHyperlinks(sheet, operation, limits.maxNodes)) yield { kind: "progress", value: { phase: "cells", ...value } };
         hyperlinkSheets.add(sheet.sheetId);
       } else if (operation.op === "clearWorkbookRanges") {
         if (!workbook.sheets.some(sheet => sheet.sheetId === operation.sheetId)) invalid("An earlier operation removed the worksheet.");

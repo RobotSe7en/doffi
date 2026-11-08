@@ -538,3 +538,13 @@ test('mounted Worker custom table styles isolate regions, retain native associat
   await exerciseWorkbookTableStyleControls(page, true, workbook);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
 });
+
+test('mounted Worker copy keeps hyperlink fragments, skip blanks, selective modes and cross-sheet history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookCopyHyperlinksSource, exerciseWorkbookCopyHyperlinks } = await import('./workbook-copy-hyperlinks-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/01-values-text.xlsx'), { documentId: 'mounted-copy-hyperlinks' }), { kind: 'workbook' });
+  const { source, sheets } = workbookCopyHyperlinksSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyHyperlinks(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});

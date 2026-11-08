@@ -653,3 +653,11 @@ test("mounted direct custom table styles isolate regions, retain native associat
   const { source, workbook } = workbookTableStyleControlsSource(model); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
   await exerciseWorkbookTableStyleControls(page, false, workbook);
 });
+
+test("mounted direct copy keeps hyperlink fragments, skip blanks, selective modes and cross-sheet history", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookCopyHyperlinksSource, exerciseWorkbookCopyHyperlinks } = await import('./workbook-copy-hyperlinks-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/01-values-text.xlsx'), { documentId: 'mounted-copy-hyperlinks' }), { kind: 'workbook' });
+  const { source, sheets } = workbookCopyHyperlinksSource(model); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
+  await exerciseWorkbookCopyHyperlinks(page, false, sheets);
+});

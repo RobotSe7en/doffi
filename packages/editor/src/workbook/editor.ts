@@ -68,7 +68,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   let renderedSource: WorkbookPreviewSource | undefined;
   let found: { readonly key: string; readonly result: WorkbookFindResult; index: number } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
-  const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite];
+  const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks];
   const buttons: { readonly button: HTMLButtonElement; readonly available: () => boolean }[] = [];
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook editor has been disposed."); }
   function validationContext(draftKey?: string, signal?: AbortSignal) {
@@ -100,7 +100,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     const state = input.state(); ui.mode.value = state.mode; ui.mode.disabled = Boolean(commandAbort) || state.composing || !state.selection;
     ui.address.disabled = Boolean(commandAbort) || revision < 0;
     for (const field of searchFields) field.disabled = Boolean(commandAbort);
-    ui.clipboardMode.disabled ||= clipboard.kind === "cut";
+    ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardSkipBlanks.disabled ||= clipboard.kind === "cut";
     ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     ui.insertedFormat.disabled = Boolean(commandAbort);
     for (const field of ui.format.fields) field.disabled = Boolean(commandAbort);
@@ -267,7 +267,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   }
   function copySelection(kind: "copy" | "cut"): void {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
-    clipboard.capture(session.snapshot(), input.state().selection, kind); if (kind === "cut") ui.clipboardMode.value = "contents";
+    clipboard.capture(session.snapshot(), input.state().selection, kind); if (kind === "cut") { ui.clipboardMode.value = "contents"; ui.clipboardSkipBlanks.checked = false; }
     ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
   }
   async function formatSelection(): Promise<void> {
@@ -302,7 +302,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       const calculation = plan.source.kind === "copy" && mode === "values" ? await session.calculate({ signal: abort.signal, yield: () => tasks.yield(), ...(prepared.calculationContext ? { context: prepared.calculationContext } : {}) }) : undefined;
       const transaction = plan.source.kind === "cut" ? { protocolVersion: 1 as const, documentId: plan.source.documentId, baseRevision: plan.source.baseRevision, operations: [
         { op: "moveWorkbookRange" as const, sheetId: plan.source.sheetId, range: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, overwrittenContent: ui.clipboardOverwrite.checked ? "clear" as const : "reject" as const },
-      ] } : await createWorkbookRangeCopyTransaction(session, plan.source.sheetId, plan.source.range, plan.target, { targetSheetId: plan.sheetId, mode, ...(calculation ? { calculation } : {}), signal: abort.signal, yield: () => tasks.yield() });
+      ] } : await createWorkbookRangeCopyTransaction(session, plan.source.sheetId, plan.source.range, plan.target, { targetSheetId: plan.sheetId, mode, skipBlanks: ui.clipboardSkipBlanks.checked, ...(calculation ? { calculation } : {}), signal: abort.signal, yield: () => tasks.yield() });
       candidate = await withWorkbookAsyncValidationConfirmation(options => session.prepareAsync(transaction, options, { signal: abort.signal, yield: () => tasks.yield() }), prepared, validationContext(undefined, abort.signal));
       if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Pasting was cancelled before application.");
       const receipt = session.commit(candidate); committed = true; clipboard.applied(receipt.revision, plan.sheetId, plan.target, mode!); if (!disposed) ui.error.hidden = true;

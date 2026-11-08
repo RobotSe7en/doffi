@@ -37,6 +37,7 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("setWorkbookCellStyleName"), name: WorkbookCellStylesSchema.shape.names.element }),
   z.strictObject({ op: z.literal("removeWorkbookCellStyleName"), name: z.string().min(1).max(255) }),
   z.strictObject({ op: z.literal("setWorkbookHyperlink"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, target: WorkbookHyperlinkSchema.omit({ range: true }).nullable() }),
+  z.strictObject({ op: z.literal("replaceWorkbookHyperlinks"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, links: z.array(WorkbookHyperlinkSchema) }),
   z.strictObject({ op: z.literal("clearWorkbookRanges"), sheetId: IdentifierSchema, ranges: z.array(WorkbookRangeSchema).min(1), mode: z.enum(["contents", "all"]) }),
   z.strictObject({ op: z.literal("mergeWorkbookCells"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, coveredContent: z.enum(["reject", "clear"]).optional() }),
   z.strictObject({ op: z.literal("unmergeWorkbookCells"), sheetId: IdentifierSchema, range: WorkbookRangeSchema }),
