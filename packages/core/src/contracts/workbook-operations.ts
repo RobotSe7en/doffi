@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { IdentifierSchema } from "./primitives.js";
 import { WorkbookDrawingOperationSchema } from "./workbook-drawing-operations.js";
+import { WorkbookCommentOperationSchema } from "./workbook-comment-operations.js";
 export * from "./workbook-drawing-operations.js";
+export * from "./workbook-comment-operations.js";
 import { WorkbookAutoFilterSchema, WorkbookCellStylesSchema, WorkbookConditionalRuleSchema, WorkbookCoordinateSchema, WorkbookDataValidationSchema, WorkbookDefinedNameSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookTableSchema, WorkbookTableStyleSchema, WorkbookValueSchema } from "./workbook.js";
 
 export const WorkbookCellSourceSchema = z.discriminatedUnion("kind", [
@@ -22,6 +24,7 @@ export const WorkbookCellFormatInputSchema = WorkbookCoordinateSchema.extend({
 export type WorkbookCellFormatInput = z.infer<typeof WorkbookCellFormatInputSchema>;
 export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   ...WorkbookDrawingOperationSchema.options,
+  ...WorkbookCommentOperationSchema.options,
   z.strictObject({ op: z.literal("setWorkbookCells"), sheetId: IdentifierSchema, cells: z.array(WorkbookCellInputSchema).min(1) }),
   z.strictObject({ op: z.literal("setWorkbookCellFormats"), sheetId: IdentifierSchema, cells: z.array(WorkbookCellFormatInputSchema).min(1) }),
   z.strictObject({ op: z.literal("setWorkbookNumberFormat"), format: WorkbookNumberFormatSchema }),

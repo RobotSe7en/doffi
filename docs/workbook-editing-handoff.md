@@ -6,11 +6,14 @@
 
 - main／远端 main 的基线为 `5451736`；当前分支 `feat/workbook-editing`。
 - 读取阶段已合并；CI 优化及触发频率调整分别为 `31cca2f`、`d65c0e9`，不再是待办。
-- R3-09/10/11/12/13/14 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`、冻结界面及实际坐标查询为 `c917075`，均已推送；R3-13 定义编辑基础随后接入。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。不能将这些进展计作完整 R3-11、R3-12、R3-13、R3-14 或 R3-16。
+- R3-09～15 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`、冻结界面及实际坐标查询为 `c917075`，均已推送；R3-13 定义编辑基础随后接入。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。不能将这些进展计作完整 R3-11、R3-12、R3-13、R3-14、R3-15 或 R3-16。
 - 两位授权审查者 `workbook_edit_review_one`、`workbook_edit_review_two` 已完成两轮只读基础审查。首轮 8 项、第二轮 6 项原始问题及 3 项追加边界，均由实施者修复并经原审查者复核关闭。整个阶段仍须最终差异复审，不能凭基础审查合并；详见[审查记录](workbook-editing-review.md)。
-- 不直接提交 main，不发布 npm；普通推送只执行快速检查。阶段最终验收按 [CI 执行](ci-performance.md) 显式发起。尚有 R3-09～20 共 12 项未完成验收：本阶段 8 项中 6 项实施中、2 项待实施，输出阶段另 4 项。
+- 不直接提交 main，不发布 npm；普通推送只执行快速检查。阶段最终验收按 [CI 执行](ci-performance.md) 显式发起。尚有 R3-09～20 共 12 项未完成验收：本阶段 8 项中 7 项实施中、1 项待实施，输出阶段另 4 项。
 
 ## 已有改动
+
+- 两类批注新增核心分配身份的正文／回复、作者时间／状态、经典备注框及显式重定位事务。通用 `removeAnnotation` 同时清理原生绑定和富正文／回复 stories，保留其他消息与来源人员。回复删除将存续子回复接回原父级，拒绝循环／跨线程父级及经典备注直接回复；转换经典格式须先显式处理回复／提及，不能悄悄丢失。备注框修改保留未选原生 commentPr 来源并重算差异。普通文字替换复用共同富内容编辑器，保留未改片段、CRLF 和精确 UTF-16；已有提及须使用精确区间或显式替换，交叠或断开变体序列整批失败，不猜测人物关联。同批作者／时间改回只移除本批生成且最终未使用的人员，导入的无引用人员及原 provider 身份仍保留。
+- 直连与 Worker 批注面板接入正文、经典框显示／打印、线程回复、作者时间、格式、解决状态和选区重定位；局部草稿独立于来源，外部修订保留并阻止过期提交。与绘图共享最小宿主表单接口，提交核对实际会话修订；图片读取前捕获的身份贯穿异步读取，避免旧视图尚未更新时套用新修订。当前仍须完成原生批注／备注框的完整行列、排序／剪切组合及验收，不能将新 API／面板计作完整 R3-15。
 
 - 绘图类型化事务接入新增／修改／复制／删除、锚点与旋转翻转、形状预设／富内容／外观、授权图片替换和矩形裁剪、同表层级及图表系列／分类／标题／图例／轴／标签。核心分配新对象、文字和系列身份；保留原生引用与字面向量的互斥来源，不创建第二数据表，不接收缓存作为当前结果。未改引用保留原历史缓存，保留系列维持原生索引，新系列清除原生身份。经典对象来源与包资源仍由共同候选／历史持有。空工作簿首次创建富内容部件补齐 UTF-8 声明；等价替换正文保留源节点和重做；绘图直接颜色／字体语义由现有 PPT 私有实现提取共用，不复制另一套变换规则。
 - 直连及唯一 Worker 编辑器提供折叠绘图面板：对象选择、三种锚点、属性／位置尺寸／旋转翻转、文字替换、基本颜色、本地授权图片／裁剪、选区引用图表创建、类型图例标签／标题、复制层级删除。局部表单不写入源，遇到外部修订保留草稿并阻止过期应用，显式重新读取后再编辑。当前尚缺完整图表系列／分类／轴管理界面、对象文字原生输入与片段格式、绘图和备注在行列结构下的完整联动；不能把已有表单和基础 API 计作完整 R3-14。
@@ -52,6 +55,11 @@
 - 结构契约预检按 Schema 身份缓存是否存在数组路径，不缓存任何文档输入；没有数组的标量子树直接交给原有完整校验。这样避免逐格为无关联合分支构造错误，保留嵌套数组首错停止、未知字段拒绝和错误路径／数量边界。
 
 ## 已做检查
+
+- 批注初轮核心 7 项、核心与独立来源 2 文件／12 项通过（`.cache/workbook-comment-edit-unit.log`、`.cache/workbook-comment-edit-native-unit.log`）；富文本精确替换追加后 8 项通过（`.cache/workbook-comment-text-unit.log`）。首次工具类型发现测试传只读联合锚点，改为通过同源 cells Schema 生成可写命令；初轮面板构建发现可选正文联合的显式 undefined 类型，补齐后构建通过（`.cache/workbook-comment-controls-rechecked-build.log`）。核心／原生／Worker／PPT 6 文件／70 项通过（`.cache/workbook-comment-controls-integration.log`），两条面板与绘图回归三引擎 12 项通过（`.cache/workbook-comment-controls-browser.log`），工具类型通过（`.cache/workbook-comment-controls-final-types.log`）。
+- 自查复现作者／时间同批改回仍产生多余修订，失败日志 `.cache/workbook-comment-roundtrip-before.log`；清理本批最终未使用的生成人员、恢复原人物身份后，5 文件／43 项通过（`.cache/workbook-comment-roundtrip-final-unit.log`）。扩大到完整 core／editor、独立原生批注／绘图／表格轴／工作表来源，92 文件／1211 项通过（`.cache/workbook-comment-broad-regressions.log`），构建与工具类型通过（`.cache/workbook-comment-final-build.log`、`.cache/workbook-comment-final-types.log`）。原生来源包含经典、现代、双备注框及不一致提及，验证当前编辑、明确修复、包 ZIP 重开、未改来源及历史；仍非原生 XLSX 输出或 Excel/WPS 实测。新增原生 IME 期间的按钮保护和最终输入界面复核随后记录。
+- 批注最终三引擎完整输入／Worker／绘图／批注／Playground 150 项通过、6 项既定非 Chromium CDP IME 跳过（`.cache/workbook-comment-final-browser.log`）；新批注用例在 Chromium 实际触发 IME，Firefox/WebKit 检查组合输入期间的提交保护，不把合成事件称为系统 IME。另加延迟本地图片字节读取、期间外部修订及零额外历史的三引擎直连／Worker 6 项通过（`.cache/workbook-auxiliary-captured-source-browser.log`），工具类型通过（`.cache/workbook-auxiliary-captured-source-types.log`）。
+- 最终补查显式重定位：两种更新入口同步实际原生回复单元格；多区域定位不捏造原生回复点；孤立兼容占位在明确转成正常经典备注时解除丢失线程关联，保留原 UID、正文及历史。核心／原生／Worker／PPT 5 文件／60 项通过（`.cache/workbook-comment-reanchor-final-regressions.log`），构建与工具类型通过（`.cache/workbook-comment-reanchor-build.log`、`.cache/workbook-comment-reanchor-final-types.log`）；最新构建后的批注三引擎直连／Worker 6 项通过（`.cache/workbook-comment-reanchor-final-browser.log`）。`git diff --check` 与文档本地链接通过，阶段和固定资源门槛仍未关闭，未启动远端全量 CI。
 
 - 绘图核心初轮 7 项全部因新建富内容部件缺少 charset 失败（`.cache/workbook-drawing-edit-unit.log`），修复后 7 项通过（`.cache/workbook-drawing-edit-rechecked-unit.log`）；随后核心／PPT／原生工作表／Worker 6 文件／71 项通过（`.cache/workbook-drawing-integration-unit.log`）。实际面板初轮只跑到 Chromium 2 项，未冒充三引擎；将新文件纳入 Firefox/WebKit 项目正则和显式日常浏览器分组后，三引擎直连／Worker 6 项通过（`.cache/workbook-drawing-controls-three-engine-browser.log`），覆盖图片输入、位置、撤销、外部修订草稿、当前图表引用与唯一会话关闭。工具类型初轮测试回执为 unknown，补齐准确报告断言后通过（`.cache/workbook-drawing-controls-types-recheck.log`）。
 - 独立原始／Calc 图表、图片／形状 4 份当前源编辑及 ZIP 重开接入；首轮导入标签列表为空时直接开启显示会被完整模型拒绝（`.cache/workbook-drawing-native-integration.log`），修复同步，并保留未变分类缓存和原生系列索引。核心及原生来源最终定向 2 文件／11 项通过（`.cache/workbook-drawing-native-rechecked-unit.log`），包含无净变化、当前图表读取为 42、拒绝提交假缓存、原生身份复制、未改对象／资源精确保留及完整历史。工具类型通过（`.cache/workbook-drawing-native-tools-types.log`）。这不是原生 XLSX 输出或 Excel/WPS 实测；提取共享绘图样式语义后的完整回归随后记录。

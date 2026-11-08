@@ -24,6 +24,8 @@ import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import { createWorkbookTextFormatTransaction } from "./text-format.js";
 import { createWorkbookDrawingControls } from "./drawing-controls.js";
+import { createWorkbookCommentControls } from "./comment-controls.js";
+import type { WorkbookControlsHost } from "./controls-host.js";
 
 /** The host supplies its Worker connection or direct small-document session;
  * source cells, candidates and history remain behind that core boundary. */
@@ -39,6 +41,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   if (!view || !container.isConnected || session.kind !== "workbook") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its owning workbook session.");
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
+  let commentControls: ReturnType<typeof createWorkbookCommentControls> | undefined;
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), input = createWorkbookInputController(session), events = new view.AbortController();
   const clipboard = new WorkbookClipboard();
   let disposed = false, choosing = 0, refreshQueued = false, forceCalculation = false, latest: Promise<void> = Promise.resolve();
@@ -73,6 +76,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     ui.insertedFormat.disabled = Boolean(commandAbort);
     for (const field of ui.format.fields) field.disabled = Boolean(commandAbort);
     drawingControls?.refresh();
+    commentControls?.refresh();
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -438,10 +442,14 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     const button = ui.element.ownerDocument.createElement("button"); button.type = "button"; button.textContent = label;
     button.addEventListener("click", () => { try { action(); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(button); buttons.push({ button, available });
   };
-  const idle = (): boolean => !commandAbort && !pendingInput();
-  drawingControls = createWorkbookDrawingControls(ui.element.ownerDocument, ui.preview.parentNode!, { signal: events.signal, snapshot: () => session.snapshot(),
+  const idle = (): boolean => !commandAbort && !pendingInput() && revision === session.snapshot().manifest.revision;
+  const auxiliaryHost: WorkbookControlsHost = { signal: events.signal, snapshot: () => session.snapshot(),
     selection: () => { const anchor = input.state().selection?.anchor; return anchor?.kind === "cells" ? { sheetId: anchor.sheetId, range: anchor.ranges[0]! } : undefined; },
-    idle: () => idle() && revision >= 0, run: action => { void runInteraction(action); }, perform: async (operations, options) => { const receipt = perform(operations, options); await sourceSettled(); return receipt; } });
+    idle: () => idle() && revision >= 0, run: action => { void runInteraction(action); }, perform: async (operations, options, expected) => {
+      const current = session.snapshot().manifest; if (expected && (current.documentId !== expected.documentId || current.revision !== expected.revision)) throw new DocumentError("RevisionConflict", "辅助表单属于旧修订。");
+      const receipt = perform(operations, options); await sourceSettled(); return receipt; } };
+  drawingControls = createWorkbookDrawingControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
+  commentControls = createWorkbookCommentControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   button("确认输入", () => binding.apply(), () => !commandAbort && Boolean(input.state().selection) && !input.state().composing);
   button("取消输入", cancelInput, () => !commandAbort && Boolean(input.state().selection));
   button("撤销", () => history("undo"), () => idle() && session.history().undoSteps > 0);

@@ -621,6 +621,16 @@ session.dispose();
 
 两条编辑器的折叠绘图表单使用同一事务；表单草稿绑定当前修订，外部修改后需显式重新读取。当前已接入基本对象和选区图表命令；完整图表数据／轴管理界面、对象文字原生输入和片段格式、绘图与原生备注的结构联动继续实施。独立原始／Calc 文件的当前源修改及文档包 ZIP 重开不等于原生 XLSX 输出或 Excel/WPS 实测，完整门槛见[第三轮细则](iteration-3.md)。
 
+## 批注编辑基础（R3-15 实施中）
+
+`addWorkbookComment` 创建经典备注或现代线程的有界段落正文、当前单元格／多区域锚点及可选显示作者和时间。新来源身份由核心分配。`addWorkbookCommentReply`、`removeWorkbookCommentReply` 和 `updateWorkbookCommentReply` 管理现代回复及父关系；删除父回复会保留并重新接回存续子回复，循环或跨线程父级整批失败。经典备注不能悄悄转换为现代线程。
+
+`replaceWorkbookCommentText` 使用带原文证明的 UTF-16 区间，复用富内容编辑器，保留未改片段、字体角色和 CRLF；插入文字使用 LF，不能切开代理对／变体序列或跨越原段落边界。`setWorkbookCommentBody` 明确替换段落内容。已有提及的文字改变须提供精确 `textEdits`，或显式给出新的 `mentions`；交叠提及不能猜测重绑，`mentions: []` 明确清除关联。格式改变而文字未变保留原范围。修复无效提及后仍须显式处理原来的定位状态，不自动激活线程，也不发送通知。
+
+`updateWorkbookComment` 修改作者、时间、格式、状态及明确的新锚点；从 `needs_reanchor` 恢复必须带当前工作表的显式单元格区域。`setWorkbookNoteBox` 修改经典框来源，保留未选的原生 commentPr 框和差异；以 null 清除框是显式删除。通用 `removeAnnotation` 也会清除该线程的原生绑定和全部正文／回复 stories，撤销精确恢复。导入的未引用人员及 provider 来源保留；本批生成但最终未使用的人员不会因作者改回而制造新历史。
+
+直连与 Worker 编辑器均提供折叠批注面板，表单只保存局部草稿。外部修订后保留草稿并阻止提交，正文 IME 期间也不写入源；保存、回复、状态、重定位和删除仍经过同一候选。当前已验证核心、独立原生来源和基础面板；原生备注框／线程与完整行列、排序及剪切组合继续实施，尚未通过 R3-15 退出条件。
+
 ## 现代提及和原始定位恢复
 
 `WorkbookCommentMention` 保留原生 mentionId、已绑定的本包现代 authorId、startIndex 和 length；主评论和回复分别保存自己的提及。依据 [MS-XLSX CT_Mention](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/b03ed619-e307-4d3e-9c67-b68612274128)逐项校验 GUID、人员引用及 unsignedInt，提及计入原生条目、元数据字节和核心对象总额。人员/provider/user 身份均为不透明来源，不授予访问权限；只读面板展示提及的姓名，没有通知或云任务入口。

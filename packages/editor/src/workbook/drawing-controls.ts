@@ -1,17 +1,9 @@
 import { createAssetDescriptor, createOpaqueId, DocumentError, WorkbookPresetSchema } from "@doffi/core";
-import type { DeepReadonly, DocumentOperation, TransactionPrepareOptions, WorkbookDrawingAnchor, WorkbookObject, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
-
-interface Host {
-  snapshot(): WorkbookSnapshot | undefined;
-  selection(): { sheetId: string; range: DeepReadonly<WorkbookRange> } | undefined;
-  idle(): boolean;
-  perform(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions): Promise<unknown>;
-  run(action: () => Promise<void>): void;
-  readonly signal: AbortSignal;
-}
+import type { DeepReadonly, DocumentOperation, TransactionPrepareOptions, WorkbookDrawingAnchor, WorkbookObject, WorkbookSnapshot } from "@doffi/core";
+import type { WorkbookControlsHost, WorkbookControlsIdentity } from "./controls-host.js";
 /** The fields are transient input. Only the owning transaction stores an
  * object, resource, anchor or chart; refresh never writes form values back. */
-export function createWorkbookDrawingControls(document: Document, parent: ParentNode, host: Host): { readonly element: HTMLDetailsElement; refresh(): void } {
+export function createWorkbookDrawingControls(document: Document, parent: ParentNode, host: WorkbookControlsHost): { readonly element: HTMLDetailsElement; refresh(): void } {
   const panel = document.createElement("details"), summary = document.createElement("summary"), fields: (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)[] = [];
   summary.textContent = "图片、形状与图表"; panel.append(summary); parent.append(panel);
   const label = <T extends HTMLElement>(name: string, field: T): T => { const wrapper = document.createElement("label"); field.setAttribute("aria-label", name); wrapper.append(name, field); panel.append(wrapper); return field; };
@@ -73,7 +65,7 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
     fill.value = line.value = font.value = ""; refresh();
   }
   const html = (value: string) => "<p>" + value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;").replace(/\n/g, "<br>") + "</p>";
-  async function apply(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions): Promise<void> { await host.perform(operations, options); dirty = false; boundRevision = -1; }
+  async function apply(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions, expected: WorkbookControlsIdentity | undefined = host.snapshot()?.manifest): Promise<void> { await host.perform(operations, options, expected); dirty = false; boundRevision = -1; }
   function button(label: string, action: () => Promise<void>, needsObject = true, available?: () => boolean) {
     const element = document.createElement("button"); element.type = "button"; element.textContent = label; panel.append(element); buttons.push({ element, needsObject, ...(available ? { action: available } : {}) });
     element.addEventListener("click", () => host.run(async () => { if (!host.idle()) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。"); await action(); refresh(); }), { signal: host.signal });
@@ -88,7 +80,7 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
     const bytes = new Uint8Array(await file.arrayBuffer()), now = host.snapshot()?.manifest;
     if (!expected || now?.documentId !== expected.documentId || now.revision !== expected.revision) throw new DocumentError("RevisionConflict", "读取图片期间文档已变化。");
     const path = "assets/" + createOpaqueId() + ({ "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" }[file.type] ?? ".png"), descriptor = createAssetDescriptor(path, file.type, bytes);
-    await apply([object ? { op: "replaceWorkbookImage", nodeId: object.nodeId, assetPath: path, alt: description } : { op: "insertWorkbookObject", sheetId: sheet.sheetId, anchor: position, object: { kind: "image", assetPath: path, alt: description } }], { assets: [{ descriptor, bytes }] });
+    await apply([object ? { op: "replaceWorkbookImage", nodeId: object.nodeId, assetPath: path, alt: description } : { op: "insertWorkbookObject", sheetId: sheet.sheetId, anchor: position, object: { kind: "image", assetPath: path, alt: description } }], { assets: [{ descriptor, bytes }] }, expected);
   }
   button("插入本地图片", () => imageInput(false), false); button("替换所选图片", () => imageInput(true), true, () => selectedObject()?.kind === "image");
   button("应用对象位置与属性", async () => { const object = current(); await apply([{ op: "updateWorkbookObject", nodeId: object.nodeId, changes: { anchor: anchor(), name: name.value, rotation: number(rotation), flipH: flipH.checked, flipV: flipV.checked, ...(object.kind === "geometry" ? { preset: WorkbookPresetSchema.parse(preset.value) } : {}) } }]); });

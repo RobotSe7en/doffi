@@ -34,6 +34,7 @@ import { moveWorkbookRange } from "./workbook-move.js";
 import { SourceStyleEdit } from "./source-styles.js";
 import { editWorkbookStyle, isWorkbookStyleOperation } from "./workbook-styles.js";
 import { editWorkbookDrawing, isWorkbookDrawingOperation, validateWorkbookDrawingTarget } from "./workbook-drawings.js";
+import { editWorkbookComment, isWorkbookCommentOperation, reanchorWorkbookCommentSources, removeWorkbookCommentSources, restoreWorkbookCommentSource, validateWorkbookCommentTarget } from "./workbook-comments.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -76,6 +77,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       if ("targetSheetId" in operation && !baseSheets.has(operation.targetSheetId)) invalid("Worksheet destinations must belong to the base snapshot.");
       if ("beforeSheetId" in operation && operation.beforeSheetId !== undefined && !baseSheets.has(operation.beforeSheetId)) invalid("Worksheet references must belong to the base snapshot.");
       if (isWorkbookOperation(operation) && isWorkbookDrawingOperation(operation)) validateWorkbookDrawingTarget(base, operation);
+      if (isWorkbookCommentOperation(operation)) validateWorkbookCommentTarget(base, operation);
     }
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
@@ -88,18 +90,18 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         annotations.push(value); return;
       }
       const index = annotations.findIndex(item => item.annotationId === operation.annotationId); if (index < 0) invalid("The annotation does not exist.");
-      if (operation.op === "removeAnnotation") { annotations.splice(index, 1); return; }
+      if (operation.op === "removeAnnotation") { removeWorkbookCommentSources(workbook, richContent, annotations[index]!); annotations.splice(index, 1); return; }
       const previous = annotations[index]!, value = parseContract("annotation", { ...previous, ...operation.changes });
       if (previous.status === "needs_reanchor" && value.status !== "needs_reanchor" && !operation.changes.anchor) invalid("Reactivating an annotation requires an explicit anchor.");
       if (operation.changes.anchor && (value.anchor.kind !== "cells" || !baseSheets.has(value.anchor.sheetId))) invalid("Workbook anchors require an existing worksheet.");
       if (operation.changes.anchor && value.anchor.kind === "cells") {
-        for (const target of [value, ...value.replies ?? []]) if (target.bodyNodeId) {
-          const story = workbook.stories?.find(story => story.rootNodeId === target.bodyNodeId); if (story) story.sheetId = value.anchor.sheetId;
-        }
+        reanchorWorkbookCommentSources(workbook, value);
       }
       if (value.status !== "needs_reanchor") {
         const binding = workbook.comments?.find(comment => comment.annotationId === value.annotationId);
         if (binding) { delete binding.recoveryStatus; delete binding.recoveryReasons; }
+      } else if (previous.status !== "needs_reanchor") {
+        const binding = workbook.comments?.find(comment => comment.annotationId === value.annotationId); if (binding) binding.recoveryStatus = previous.status;
       }
       annotations[index] = value;
     }
@@ -143,6 +145,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         changedDefinition = true;
       }
       else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, base, operation, allocate);
+      else if (isWorkbookCommentOperation(operation)) editWorkbookComment(workbook, annotations, richContent, base, operation, allocate);
       else if (operation.op === "moveWorkbookRange") {
         for (const value of moveWorkbookRange(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;
@@ -174,6 +177,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       }
     }
     if (resolvedIds) for (const value of annotations) if (resolvedIds.includes(value.annotationId) && value.status === "open") value.status = "resolved";
+    restoreWorkbookCommentSource(workbook, annotations, base.snapshot());
     for (const value of cells.flushSteps()) yield { kind: "progress", value: { phase: "chunks", ...value } };
     richContent.flush();
     files.set("manifest.json", encode(JSON.stringify(manifest))); files.set(manifest.metadata, encode(JSON.stringify(metadata)));

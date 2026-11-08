@@ -184,6 +184,11 @@ export class DocumentEdit {
     const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
     setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
   }
+  /** A format adapter has already checked the owning source identity. */
+  replaceSourceText(nodeId: string, edit: { readonly from: number; readonly to: number; readonly expectedText: string; readonly text: string }): void {
+    const target = this.index().get(nodeId); if (!target) fail("The source text target is unavailable.");
+    this.replaceText(target, { op: "replaceText", nodeId, from: edit.from, to: edit.to, expectedText: edit.expectedText, text: edit.text });
+  }
   removeSource(nodeId:string,contents=false):void {
     const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode)||target.parentNode.tagName==="body")fail("The document root cannot be removed.");
     const positions=textPositions(this.tree),range=positions.get(target)!;

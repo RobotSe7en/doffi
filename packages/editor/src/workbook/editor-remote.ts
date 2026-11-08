@@ -17,6 +17,8 @@ import { selectedWorkbookSort } from "./selected-sort.js";
 import { WorkbookClipboard } from "./clipboard.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import { createWorkbookDrawingControls } from "./drawing-controls.js";
+import { createWorkbookCommentControls } from "./comment-controls.js";
+import type { WorkbookControlsHost } from "./controls-host.js";
 
 export interface WorkbookRemoteEditorView extends Omit<WorkbookEditorView, "applyInput" | "perform" | "cancelInput" | "inputState"> {
   inputState(): WorkbookRemoteInputState;
@@ -48,6 +50,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   let reportedPending: boolean | undefined;
   let commandApplying = false;
   let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
+  let commentControls: ReturnType<typeof createWorkbookCommentControls> | undefined;
   let found: { key: string; result: WorkbookFindResult; index: number; view?: WorkbookReadConnection } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
   let preview: WorkbookPreview | undefined, source: WorkbookReadConnection | undefined, binding: WorkbookAsyncTextBinding;
@@ -80,6 +83,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     for (const field of ui.format.fields) field.disabled = busy;
     for (const { button, available } of buttons) button.disabled = !available();
     drawingControls?.refresh();
+    commentControls?.refresh();
     const pending = pendingInput() || state.applying || !!commandAbort;
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
   }
@@ -364,10 +368,14 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
       await commitCommand({ kind: "paste", documentId: selected.documentId, revision: selected.baseRevision, sheetId: anchor.sheetId, at: anchor.ranges[0]!.from, text });
     }); },
   });
-  const idle = (): boolean => !refreshing && !commandAbort && !input.state().applying && !input.state().selecting && !pendingInput() && !!source;
-  drawingControls = createWorkbookDrawingControls(ui.element.ownerDocument, ui.preview.parentNode!, { signal: events.signal, snapshot: () => source?.cells.snapshot,
+  const idle = (): boolean => !refreshing && !commandAbort && !input.state().applying && !input.state().selecting && !pendingInput() && source?.cells.snapshot.manifest.revision === client.state().revision;
+  const auxiliaryHost: WorkbookControlsHost = { signal: events.signal, snapshot: () => source?.cells.snapshot,
     selection: () => { const anchor = input.state().selection?.anchor; return anchor?.kind === "cells" ? { sheetId: anchor.sheetId, range: anchor.ranges[0]! } : undefined; },
-    idle, run: queueInteraction, perform: async (operations, options) => { const receipt = await perform(operations, options); await sourceSettled(); return receipt; } });
+    idle, run: queueInteraction, perform: async (operations, options, expected = source?.cells.snapshot.manifest) => {
+      const current = client.state(); if (!expected || current.documentId !== expected.documentId || current.revision !== expected.revision) throw new DocumentError("RevisionConflict", "辅助表单属于旧修订。");
+      const receipt = await perform(operations, options); await sourceSettled(); return receipt; } };
+  drawingControls = createWorkbookDrawingControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
+  commentControls = createWorkbookCommentControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void {
     const element = ui.element.ownerDocument.createElement("button"); element.type = "button"; element.textContent = label;
     element.addEventListener("click", () => { try { const result = action(); if (result instanceof Promise) void result.catch(report); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(element); buttons.push({ button: element, available });

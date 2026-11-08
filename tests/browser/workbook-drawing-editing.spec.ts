@@ -10,6 +10,7 @@ import { openSdkHost } from "./sdk-host.js";
 import type * as directFixture from "./fixtures/workbook-editor.js";
 import type * as remoteFixture from "./fixtures/workbook-remote-editor.js";
 declare global { interface Window { workbookEditor: typeof directFixture; workbookRemoteEditor: typeof remoteFixture } }
+declare global { interface Window { workbookImageReadGate: { readonly started: boolean; release(): void; restore(): void } } }
 const bundles = new Map<string, string>();
 test.beforeEach(async ({ page }) => { await openSdkHost(page); });
 test.beforeAll(async () => {
@@ -18,6 +19,30 @@ test.beforeAll(async () => {
     const output = Array.isArray(result) ? result.flatMap(part => part.output) : "output" in result ? result.output : [];
     bundles.set(name, output.filter(part => part.type === "chunk").map(part => part.code).join("\n"));
   }
+});
+
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} delayed local image input keeps its captured source revision across file reading`, async ({ page }) => {
+  const files = scalarWorkbook([]).serialize();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(files));
+  await page.getByText("图片、形状与图表", { exact: true }).click();
+  await page.getByLabel("选择本地图片", { exact: true }).setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: readFileSync("examples/presentation/assets/sample.png") });
+  await page.evaluate(() => {
+    const original = File.prototype.arrayBuffer; let release!: () => void, started = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    File.prototype.arrayBuffer = async function() { started = true; const bytes = await original.call(this); await gate; return bytes; };
+    window.workbookImageReadGate = { get started() { return started; }, release, restore() { File.prototype.arrayBuffer = original; } };
+  });
+  try {
+    await page.getByRole("button", { name: "插入本地图片", exact: true }).click(); await expect.poll(() => page.evaluate(() => window.workbookImageReadGate.started)).toBe(true);
+    await page.evaluate(remote => remote ? window.workbookRemoteEditor.external("external", false) : window.workbookEditor.external("external"), remote);
+    await page.evaluate(() => window.workbookImageReadGate.release());
+    await page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+    expect(await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote)).toMatchObject({ revision: 1, history: { undoSteps: 1 }, drawings: [], errors: ["RevisionConflict"] });
+    if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+    else await page.evaluate(() => window.workbookEditor.dispose());
+  } finally { await page.evaluate(() => { window.workbookImageReadGate.release(); window.workbookImageReadGate.restore(); }); }
 });
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} drawing controls edit typed source, local images and current chart references with history and stale-form protection`, async ({ page }) => {
   const model = scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "甲" } }, { row: 1, column: 0, value: { type: "text", value: "乙" } },
