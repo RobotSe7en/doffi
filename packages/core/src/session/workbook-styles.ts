@@ -8,7 +8,7 @@ import { SourceStyleEdit } from "./source-styles.js";
 import { checkRange } from "../workbook/ranges.js";
 import { formatWorkbookCellText } from "./workbook-text-format.js";
 
-type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookText" | "formatWorkbookRanges" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
+type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookText" | "formatWorkbookRanges" | "formatWorkbookConditionalRule" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
 type Group = keyof WorkbookStyleApplication;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
 function group(property: string): Group {
@@ -51,7 +51,7 @@ function validateNativeAppearance(properties: Readonly<Record<string, string>>, 
   }
 }
 export function isWorkbookStyleOperation(operation: WorkbookOperation): operation is StyleOperation {
-  return ["formatWorkbookText", "formatWorkbookRanges", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName"].includes(operation.op);
+  return ["formatWorkbookText", "formatWorkbookRanges", "formatWorkbookConditionalRule", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName"].includes(operation.op);
 }
 /** Style identities and update flags remain metadata; effective appearance
  * stays solely in existing CSS and cell/row/column number-format sources. */
@@ -86,6 +86,34 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
   const groups = new Map(Object.keys(properties).map(property => [property, group(property)]));
   const classes = new Set<string>();
   for (const sheet of styles.snapshot()) walk(parse(sheet.css, { context: "stylesheet" }), node => { if (node.type === "ClassSelector") classes.add(ident.decode(node.name)); });
+  if (operation.op === "formatWorkbookConditionalRule") {
+    const rule = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId)?.conditionalRules?.find(rule => rule.ruleId === operation.ruleId)
+      ?? invalid("Conditional formatting requires an existing rule.");
+    let target: { cssClass?: string | undefined; numberFormatId?: string | undefined };
+    if (rule.kind === "colorScale") {
+      if (operation.stopIndex === undefined || !rule.stops[operation.stopIndex] || operation.numberFormatId !== undefined)
+        invalid("A color scale requires an existing stop and cannot carry a number format.");
+      if (Object.keys(properties).some(property => property !== "background-color" && !/^--office-cell-fill-(?:kind|color|tint|native-alpha)$/.test(property))
+        || properties["--office-cell-fill-kind"] !== undefined && properties["--office-cell-fill-kind"].trim() !== "solid") invalid("Color-scale stops accept a solid background color.");
+      target = rule.stops[operation.stopIndex]!;
+    } else {
+      if (operation.stopIndex !== undefined) invalid("Only color-scale rules have indexed stops.");
+      target = rule;
+      if (operation.numberFormatId !== undefined && operation.numberFormatId !== null && !workbook.numberFormats.some(format => format.formatId === operation.numberFormatId))
+        invalid("Conditional formatting requires a defined number format.");
+    }
+    if (Object.keys(properties).length) {
+      const current = target.cssClass;
+      if (!current || !styles.resolver({ combineDecorations: false }).hasSpecifiedClass(current, properties)) {
+        let local: string; do { local = "workbook-rule-" + allocate(); } while (classes.has(local));
+        if (current) styles.aliasClass(current, local, new Set(Object.keys(properties)));
+        styles.overrideLocalClass(local, properties, {}, ""); target.cssClass = local;
+      }
+    }
+    if (operation.numberFormatId === null) delete target.numberFormatId;
+    else if (operation.numberFormatId !== undefined) target.numberFormatId = operation.numberFormatId;
+    return;
+  }
   if (operation.op === "formatWorkbookText") {
     if ([...groups.values()].some(group => group !== "font")) invalid("Partial text formatting accepts only font properties.");
     const cell = cells.get(operation.sheetId, operation.at.row, operation.at.column);

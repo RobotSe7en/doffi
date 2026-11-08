@@ -14,6 +14,8 @@ function invalid(message: string): never { throw new DocumentError("InvalidPropo
 const fullSheet: WorkbookRange = { from: { row: 0, column: 0 }, to: { row: 1_048_575, column: 16_383 } };
 export function validateWorkbookProposalTargets(model: WorkbookModel, request: WorkbookInteractionRequest, proposal: WorkbookEditProposal, options: TransactionPrepareOptions | undefined, budget: WorkbookInteractionBudget): void {
   const context = request.context, global = context.scope.kind === "global", workbook = model.snapshot().metadata.workbook;
+  const proposedRules = new Map<string, Extract<WorkbookEditProposal["operations"][number], { op: "setWorkbookConditionalRule" }>["rule"]>();
+  for (const op of proposal.operations) { budget.step(); if (op.op === "setWorkbookConditionalRule") proposedRules.set(JSON.stringify([op.sheetId, op.rule.ruleId]), op.rule); }
   const objects = new Set(context.writableObjectIds), annotations = new Set(context.writableAnnotationIds), supported = new Set(request.supportedOperations);
   const requireRange = (sheetId: string, range: DeepReadonly<WorkbookRange>): void => { if (!workbookContextCovers(context.writableRanges, { sheetId, range }, budget.step)) invalid("A workbook proposal targets cells outside its declared write scope."); };
   const anchor = (value: { readonly kind: string; readonly sheetId: string; readonly ranges: readonly DeepReadonly<WorkbookRange>[] }): void => {
@@ -33,6 +35,10 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
     switch (op.op) {
       case "setWorkbookCells": case "setWorkbookCellFormats": for (const at of op.cells) requireRange(op.sheetId, { from: at, to: at }); break;
       case "formatWorkbookText": requireRange(op.sheetId, { from: op.at, to: op.at }); break;
+      case "formatWorkbookConditionalRule": {
+        const original = workbook.sheets.find(sheet => sheet.sheetId === op.sheetId)?.conditionalRules?.find(rule => rule.ruleId === op.ruleId), proposed = proposedRules.get(JSON.stringify([op.sheetId, op.ruleId]));
+        for (const range of [...original?.ranges ?? [], ...proposed?.ranges ?? []]) requireRange(op.sheetId, range); break;
+      }
       case "formatWorkbookRanges": case "clearWorkbookRanges": for (const range of op.ranges) requireRange(op.sheetId, range); break;
       case "setWorkbookHyperlink": case "mergeWorkbookCells": case "unmergeWorkbookCells": case "reorderWorkbookRows": requireRange(op.sheetId, op.range); break;
       case "moveWorkbookRange": requireRange(op.sheetId, op.range); requireRange(op.targetSheetId, { from: op.target, to: { row: op.target.row + op.range.to.row - op.range.from.row, column: op.target.column + op.range.to.column - op.range.from.column } }); break;

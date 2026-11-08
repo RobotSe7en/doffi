@@ -107,10 +107,10 @@ export class SourceStyleEdit {
             if (dirty) { ast.children = output; this.files.set(sheet.path, encode(normalizeCss(generate(ast), "stylesheet", this.limits, { nodes: 0 }))); }
         }
     }
-    /** A local cell edit must win over authored class/data selectors, including
-     * important declarations. Generated selectors use one type component, so
-     * repeated edits can retain the same specificity instead of growing it. */
-    overrideLocalClass(name: string, properties: Readonly<Record<string, string>>, fontProperties: Readonly<Record<string, string>>, tag: "td" | "span"): void {
+    /** A local edit wins authored selectors, including important declarations.
+     * Metadata differentials omit the type component for class-only lookup;
+     * repeated edits retain specificity instead of growing it. */
+    overrideLocalClass(name: string, properties: Readonly<Record<string, string>>, fontProperties: Readonly<Record<string, string>>, tag: "td" | "span" | ""): void {
         let maximum = 0, tagsAtMaximum = 0;
         for (const sheet of this.snapshot()) walk(parse(sheet.css, { context: "stylesheet" }), node => {
             if (node.type !== "Selector") return;
@@ -122,7 +122,7 @@ export class SourceStyleEdit {
             if (classes > maximum) { maximum = classes; tagsAtMaximum = tags; }
             else if (classes === maximum) tagsAtMaximum = Math.max(tagsAtMaximum, tags);
         });
-        const selector = ("." + ident.encode(name)).repeat(Math.max(1, maximum + Number(tagsAtMaximum > 1)));
+        const selector = ("." + ident.encode(name)).repeat(Math.max(1, maximum + Number(tag !== "" && tagsAtMaximum > 1)));
         const declarations = (input: Readonly<Record<string, string>>): string => {
             let css = ""; for (const [property, value] of Object.entries(input)) css = setInlineStyle(css, property, value, this.limits);
             const ast = parse(css, { context: "declarationList" });

@@ -30,6 +30,7 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("setWorkbookNumberFormat"), format: WorkbookNumberFormatSchema }),
   z.strictObject({ op: z.literal("setWorkbookStyleClass"), cssClass: IdentifierSchema, properties: z.record(z.string(), z.string().min(1)) }),
   z.strictObject({ op: z.literal("formatWorkbookRanges"), sheetId: IdentifierSchema, ranges: z.array(WorkbookRangeSchema).min(1), properties: z.record(z.string(), z.string().min(1)), numberFormatId: IdentifierSchema.optional() }),
+  z.strictObject({ op: z.literal("formatWorkbookConditionalRule"), sheetId: IdentifierSchema, ruleId: IdentifierSchema, stopIndex: z.number().int().min(0).max(2).optional(), properties: z.record(z.string(), z.string().min(1)), numberFormatId: IdentifierSchema.nullable().optional() }),
   z.strictObject({ op: z.literal("formatWorkbookText"), sheetId: IdentifierSchema, at: WorkbookCoordinateSchema, from: z.number().int().min(0).max(32767), to: z.number().int().min(0).max(32767), expectedText: z.string().max(32767), properties: z.record(z.string(), z.string().min(1)) }),
   z.strictObject({ op: z.literal("setWorkbookCellStyleDefinition"), definition: WorkbookCellStylesSchema.shape.definitions.element.omit({ cssClass: true }), properties: z.record(z.string(), z.string().min(1)) }),
   z.strictObject({ op: z.literal("setWorkbookCellStyleName"), name: WorkbookCellStylesSchema.shape.names.element }),

@@ -246,7 +246,14 @@ export class SourceStyleResolver {
   /** Compare source declarations without resolving away variable provenance.
    * A later longhand prevents an opaque shorthand from being treated as equal. */
   hasSpecified(node: SourceStyleNode, properties: Css): boolean {
-    this.specified(node); const entries = this.declarationCache.get(node)!;
+    this.specified(node); return this.specifiedMatches(this.declarationCache.get(node)!, properties);
+  }
+  /** Metadata-owned differential styles use the same class-only cascade as
+   * classStyle; a synthetic HTML tag must not change their no-op decisions. */
+  hasSpecifiedClass(name: string, properties: Css): boolean {
+    return this.specifiedMatches(this.declarations(this.classRules(name)), properties);
+  }
+  private specifiedMatches(entries: ReadonlyMap<string, DeclarationEntry>, properties: Css): boolean {
     let bytes = 0; const budget: CssBudget = { nodes: 0 }, expectedProperties: [string, string, boolean][] = [];
     for (const [name, value] of Object.entries(properties)) {
       const source = ident.encode(name) + ":" + value;
