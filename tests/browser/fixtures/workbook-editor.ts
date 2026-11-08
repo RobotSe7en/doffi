@@ -8,7 +8,7 @@ import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDra
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
 let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 const errors: string[] = [];
-export async function mount(entries: TestPackage, observeText = false, prepareOptions?: TransactionPrepareOptions): Promise<void> {
+export async function mount(entries: TestPackage, observeText = false, prepareOptions?: TransactionPrepareOptions, confirmWarnings = false): Promise<void> {
   observed?.dispose(); observed = undefined;
   editor?.dispose(); session?.dispose(); container?.remove(); errors.length = 0;
   session = createDocumentSession(openDocument(decodeTestPackage(entries), { kind: "workbook" }));
@@ -17,7 +17,7 @@ export async function mount(entries: TestPackage, observeText = false, prepareOp
   // automation. Production source and render surfaces remain closed.
   const attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function(init) { return attach.call(this, { ...init, mode: "open" }); };
-  try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
+  try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用验证警告？") } : {}), onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
   finally { Element.prototype.attachShadow = attach; }
   if (observeText) observed = observeWorkbookViews(editor.element);
   await editor.ready;

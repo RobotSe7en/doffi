@@ -519,3 +519,12 @@ test('mounted Worker rule controls paint native conditions and scales, enforce v
   await exerciseWorkbookRulesControls(page, true, sheets);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
 });
+
+test('mounted Worker validation confirmations retain drafts and atomically apply input, fill and clipboard', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { validationConfirmationSource, validationPreparation, exerciseValidationConfirmation } = await import('./workbook-validation-confirmation-cases.js');
+  const bytes = Buffer.from(writeDocumentZip(validationConfirmationSource())).toString('base64');
+  await page.evaluate(({ code, bytes, options }) => window.workbookRemoteEditor.mount(code, bytes, false, options, true), { code: sessionWorkerCode, bytes, options: validationPreparation });
+  await exerciseValidationConfirmation(page, true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});

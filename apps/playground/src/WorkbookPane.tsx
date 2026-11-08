@@ -43,6 +43,9 @@ export function WorkbookPane({ document: hosted, preparing, activation, onReady,
     try {
       const editor = mountWorkbookEditor(slot, hosted.session, { widthPt: Math.max(180, container.current!.clientWidth * .75 - 49.5), heightPt: 450,
         prepareOptions: () => ({ calculationContext: { now: { unixMilliseconds: Date.now(), utcOffsetMinutes: -new Date().getTimezoneOffset() } } }),
+        confirmValidationWarnings(confirmation) {
+          return window.confirm(confirmation.warnings.map(warning => `${warning.message}（${warning.sheetId}，行 ${warning.row + 1}，列 ${warning.column + 1}）`).join("\n") + "\n是否仍应用本次更改？");
+        },
         onViewChange(snapshot) { if (mounted && (active.current === mounted || pending.current === mounted)) { hosted.acceptView(snapshot); if (active.current === mounted) callbacks.current.onUpdate(hosted); } },
         onPendingChange(value) { if (mounted && (active.current === mounted || pending.current === mounted)) hosted.setPendingInput(value); },
         onError(error) { if (mounted && active.current === mounted && !changing.current) callbacks.current.onError(hosted, error); },

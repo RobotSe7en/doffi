@@ -638,3 +638,10 @@ test("mounted direct rule controls paint native conditions and scales, enforce v
   await page.evaluate(({ entries, options }) => window.workbookEditor.mountObserved(entries, options), { entries: encodeTestPackage(source), options: workbookRuleHostPreparation });
   await exerciseWorkbookRulesControls(page, false, sheets);
 });
+
+test("mounted direct validation confirmations retain drafts and atomically apply input, fill and clipboard", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { validationConfirmationSource, validationPreparation, exerciseValidationConfirmation } = await import('./workbook-validation-confirmation-cases.js');
+  await page.evaluate(({ entries, options }) => window.workbookEditor.mount(entries, false, options, true), { entries: encodeTestPackage(validationConfirmationSource()), options: validationPreparation });
+  await exerciseValidationConfirmation(page, false);
+});

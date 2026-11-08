@@ -1,9 +1,10 @@
-import { DocumentError } from "@doffi/core";
+import { DocumentError, parseContract } from "@doffi/core";
 import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import { mountDocumentPreview } from "@doffi/render";
 import type { WorkbookPreview, WorkbookReadConnection, WorkbookRenderReport } from "@doffi/render";
 import type { WorkbookEditorOptions, WorkbookEditorView } from "./editor-contracts.js";
 import { createWorkbookEditorUi } from "./editor-ui.js";
+import { withWorkbookAsyncValidationConfirmation, workbookValidationInputKey } from "./validation-confirmation.js";
 import { createWorkbookRemoteInputController } from "./remote-input.js";
 import type { WorkbookRemoteInputState } from "./remote-input.js";
 import { bindWorkbookAsyncTextInput } from "./text-binding.js";
@@ -47,7 +48,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || !client || typeof client.readInput !== "function" || typeof client.view !== "function") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its authorized session connection.");
   client.state();
-  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), events = new view.AbortController();
   let disposed = false, choosing = 0, generation = 0, refreshQueued = false, forceCalculation = false, refreshing = false;
   let latest: Promise<void> = Promise.resolve(), interaction: Promise<void> = Promise.resolve(), refreshAbort: AbortController | undefined, commandAbort: AbortController | undefined;
@@ -78,6 +80,16 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     ui.error.textContent = problem instanceof DocumentError && problem.code === "RevisionConflict" ? "文档已变化。当前输入已保留，请先复制输入或取消后重新选择。"
       : problem instanceof DocumentError && problem.details.some(detail => detail.code === "merge-covered-content") ? "合并范围包含其他内容。若确认删除，请使用“合并并清除覆盖内容”。" : problem.message; ui.error.hidden = false;
     try { config.onError?.(problem); } catch { /* Host reporting does not own source changes. */ }
+  }
+  function validationContext(draftKey?: string, signal?: AbortSignal) {
+    const expectedDraft = draftKey ?? (config.confirmValidationWarnings ? workbookValidationInputKey(input.state()) : undefined);
+    const { documentId, revision: baseRevision } = client.state();
+    return { documentId, baseRevision, confirm: config.confirmValidationWarnings, assertCurrent() {
+      check(); const current = client.state();
+      if (current.documentId !== documentId || current.revision !== baseRevision) throw new DocumentError("RevisionConflict", "Workbook changed during validation confirmation.");
+      if (signal?.aborted || expectedDraft !== undefined && workbookValidationInputKey(input.state()) !== expectedDraft)
+        throw new DocumentError("OperationCancelled", "Workbook input changed during validation confirmation.");
+    } };
   }
   function preparation(supplied?: TransactionPrepareOptions): TransactionPrepareOptions {
     const value = supplied ?? config.prepareOptions?.() ?? {};
@@ -210,7 +222,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   async function applyPrepared(command: WorkbookSessionCommand, abort: AbortController, supplied?: TransactionPrepareOptions): Promise<WorkbookSessionReceipt> {
     let candidate: Awaited<ReturnType<WorkbookSessionConnection["prepare"]>> | undefined, consumed = false;
     try {
-      candidate = await client.prepare(command, preparation(supplied), { signal: abort.signal, onProgress: progress => { if (!disposed) ui.status.textContent = "正在准备更改 · " + progress.completed + (progress.total ? " / " + progress.total : ""); } });
+      const context = validationContext(undefined, abort.signal);
+      candidate = await withWorkbookAsyncValidationConfirmation(options => client.prepare(command, options, { signal: abort.signal, onProgress: progress => { if (!disposed) ui.status.textContent = "正在准备更改 · " + progress.completed + (progress.total ? " / " + progress.total : ""); } }), preparation(supplied), context);
       if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Workbook command was cancelled before application.");
       commandApplying = true; controls(); const receipt = await client.commit(candidate); consumed = true; if (!disposed) { ui.error.hidden = true; void scheduleRefresh(); } return receipt;
     } finally {
@@ -220,7 +233,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   }
   async function perform(operations: readonly DocumentOperation[], supplied?: TransactionPrepareOptions): Promise<WorkbookSessionReceipt> {
     check(); const { documentId, revision } = client.state();
-    return commitCommand({ kind: "transaction", transaction: { protocolVersion: 1, documentId, baseRevision: revision, operations: [...operations] } }, supplied);
+    const value = { protocolVersion: 1 as const, documentId, baseRevision: revision, operations: [...operations] };
+    return commitCommand({ kind: "transaction", transaction: config.confirmValidationWarnings ? parseContract("document-transaction", value) : value }, supplied);
   }
   async function cancelInput(): Promise<void> {
     check(); input.cancel(); binding.refresh(); await sourceSettled();
@@ -375,7 +389,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     finally { if (commandAbort === abort) commandAbort = undefined; controls(); if (!disposed && focusMatch) { view!.focus(); ui.input.focus({ preventScroll: true }); } }
   }
   const boundInput = { ...input, apply(options?: TransactionPrepareOptions) {
-    const next = input.apply(options); inputTask = next.then(() => {}, () => {}); return next;
+    const context = validationContext(config.confirmValidationWarnings ? workbookValidationInputKey(input.state()) : undefined);
+    const next = withWorkbookAsyncValidationConfirmation(value => input.apply(value), options ?? {}, context); inputTask = next.then(() => {}, () => {}); return next;
   } };
   binding = bindWorkbookAsyncTextInput(ui.input, boundInput, {
     prepareOptions: () => preparation(), onError: report,

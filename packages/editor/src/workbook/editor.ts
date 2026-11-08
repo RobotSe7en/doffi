@@ -1,9 +1,10 @@
-import { captureWorkbookModel, DocumentError } from "@doffi/core";
+import { captureWorkbookModel, DocumentError, parseContract } from "@doffi/core";
 import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, TransactionReceipt, WorkbookRange, WorkbookSession } from "@doffi/core";
 import { createWorkbookPreviewSource, mountDocumentPreview } from "@doffi/render";
 import type { WorkbookPreview, WorkbookPreviewSource, WorkbookRenderReport } from "@doffi/render";
 import type { WorkbookEditorOptions, WorkbookEditorView } from "./editor-contracts.js";
 import { createWorkbookEditorUi } from "./editor-ui.js";
+import { withWorkbookValidationConfirmation, withWorkbookAsyncValidationConfirmation, workbookValidationInputKey } from "./validation-confirmation.js";
 import { createWorkbookInputController } from "./input-controller.js";
 import { bindWorkbookTextInput } from "./text-binding.js";
 import { createWorkbookPasteTransaction } from "./text-input.js";
@@ -46,7 +47,7 @@ export function mountWorkbookEditor(container: HTMLElement, session: WorkbookSes
 function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSession, options: WorkbookEditorOptions): WorkbookEditorView {
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || session.kind !== "workbook") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its owning workbook session.");
-  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
   let commentControls: ReturnType<typeof createWorkbookCommentControls> | undefined;
   let nameControls: ReturnType<typeof createWorkbookNameControls> | undefined;
@@ -55,6 +56,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   let tableControls: ReturnType<typeof createWorkbookTableControls> | undefined;
   let filterControls: ReturnType<typeof createWorkbookFilterControls> | undefined;
   let rulesControls: ReturnType<typeof createWorkbookRulesControls> | undefined;
+  if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), input = createWorkbookInputController(session), events = new view.AbortController();
   const clipboard = new WorkbookClipboard();
   let disposed = false, choosing = 0, refreshQueued = false, forceCalculation = false, latest: Promise<void> = Promise.resolve();
@@ -67,6 +69,16 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite];
   const buttons: { readonly button: HTMLButtonElement; readonly available: () => boolean }[] = [];
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook editor has been disposed."); }
+  function validationContext(draftKey?: string, signal?: AbortSignal) {
+    const expectedDraft = draftKey ?? (config.confirmValidationWarnings ? workbookValidationInputKey(input.state()) : undefined);
+    const { documentId, revision: baseRevision } = session.snapshot().manifest;
+    return { documentId, baseRevision, confirm: config.confirmValidationWarnings, assertCurrent() {
+      check(); const current = session.snapshot().manifest;
+      if (current.documentId !== documentId || current.revision !== baseRevision) throw new DocumentError("RevisionConflict", "Workbook changed during validation confirmation.");
+      if (signal?.aborted || expectedDraft !== undefined && workbookValidationInputKey(input.state()) !== expectedDraft)
+        throw new DocumentError("OperationCancelled", "Workbook input changed during validation confirmation.");
+    } };
+  }
   function preparation(input?: TransactionPrepareOptions): TransactionPrepareOptions {
     const supplied = input ?? config.prepareOptions?.() ?? {};
     return config.locale !== undefined && supplied.calculationContext?.locale === undefined ? { ...supplied, calculationContext: { ...supplied.calculationContext, locale: config.locale } } : supplied;
@@ -198,7 +210,10 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   function perform(operations: readonly DocumentOperation[], preparedOptions?: TransactionPrepareOptions): TransactionReceipt {
     check(); if (pendingInput()) throw new DocumentError("InvalidOperation", "请先确认或取消当前单元格输入。");
     const manifest = session.snapshot().manifest;
-    const receipt = session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [...operations] }, preparation(preparedOptions)));
+    const value = { protocolVersion: 1 as const, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [...operations] };
+    const transaction = config.confirmValidationWarnings ? parseContract("document-transaction", value) : value;
+    const candidate = withWorkbookValidationConfirmation(options => session.prepare(transaction, options), preparation(preparedOptions), validationContext());
+    const receipt = session.commit(candidate);
     readCurrentSelection(); controls(); ui.error.hidden = true; return receipt;
   }
   function cancelInput(): void { check(); input.cancel(); binding.refresh(); readCurrentSelection(); controls(); ui.error.hidden = true; }
@@ -238,7 +253,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       const calculation = await session.calculate({ signal: abort.signal, yield: () => tasks.yield(), ...(prepared.calculationContext ? { context: prepared.calculationContext } : {}) });
       const transaction = await createWorkbookSortTransaction(session, target.sheetId, target.sort, { calculation, signal: abort.signal, yield: () => tasks.yield(),
         ...(config.locale === undefined ? {} : { locale: config.locale }), onProgress: progress => { if (!disposed) ui.status.textContent = "正在排序 · " + progress.completed; } });
-      candidate = await session.prepareAsync(transaction, prepared, { signal: abort.signal, yield: () => tasks.yield() });
+      candidate = await withWorkbookAsyncValidationConfirmation(options => session.prepareAsync(transaction, options, { signal: abort.signal, yield: () => tasks.yield() }), prepared, validationContext(undefined, abort.signal));
       if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Sorting was cancelled before application.");
       session.commit(candidate); committed = true; if (!disposed) ui.error.hidden = true;
     } finally {
@@ -285,7 +300,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       const transaction = plan.source.kind === "cut" ? { protocolVersion: 1 as const, documentId: plan.source.documentId, baseRevision: plan.source.baseRevision, operations: [
         { op: "moveWorkbookRange" as const, sheetId: plan.source.sheetId, range: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, overwrittenContent: ui.clipboardOverwrite.checked ? "clear" as const : "reject" as const },
       ] } : await createWorkbookRangeCopyTransaction(session, plan.source.sheetId, plan.source.range, plan.target, { targetSheetId: plan.sheetId, mode, ...(calculation ? { calculation } : {}), signal: abort.signal, yield: () => tasks.yield() });
-      candidate = await session.prepareAsync(transaction, prepared, { signal: abort.signal, yield: () => tasks.yield() });
+      candidate = await withWorkbookAsyncValidationConfirmation(options => session.prepareAsync(transaction, options, { signal: abort.signal, yield: () => tasks.yield() }), prepared, validationContext(undefined, abort.signal));
       if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Pasting was cancelled before application.");
       const receipt = session.commit(candidate); committed = true; clipboard.applied(receipt.revision, plan.sheetId, plan.target, mode!); if (!disposed) ui.error.hidden = true;
     } finally {
@@ -340,10 +355,11 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     } finally { if (commandAbort === abort) commandAbort = undefined; if (!disposed) { ui.input.disabled = !input.state().selection; controls(); } }
   }
   async function commitCommand(transaction: Parameters<WorkbookSession["prepare"]>[0], abort: AbortController): Promise<TransactionReceipt> {
-    const candidate = await session.prepareAsync(transaction, preparation(), { signal: abort.signal,
+    const context = validationContext(undefined, abort.signal);
+    const candidate = await withWorkbookAsyncValidationConfirmation(options => session.prepareAsync(transaction, options, { signal: abort.signal,
       yield: () => new Promise<void>(resolve => setTimeout(resolve, 0)), onProgress: progress => {
         if (!disposed) ui.status.textContent = `正在${progress.phase === "calculation" ? "计算" : progress.phase === "validation" ? "检查更改" : "准备更改"} · ${progress.completed}${progress.total ? ` / ${progress.total}` : ""}`;
-      } });
+      } }), preparation(), context);
     if (disposed || abort.signal.aborted) {
       try { session.discard(candidate); } catch { /* A host-disposed session has already released its candidates. */ }
       throw new DocumentError("OperationCancelled", "Workbook command was cancelled before publication.");
@@ -428,7 +444,11 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       if (!disposed) ui.status.textContent = "操作已取消。";
     } finally { if (commandAbort === abort) commandAbort = undefined; if (!disposed) { ui.input.disabled = !input.state().selection; controls(); } }
   }
-  const binding = bindWorkbookTextInput(ui.input, input, {
+  const boundInput = { ...input, apply(options?: TransactionPrepareOptions) {
+    const context = validationContext(config.confirmValidationWarnings ? workbookValidationInputKey(input.state()) : undefined);
+    return withWorkbookValidationConfirmation(value => input.apply(value), options ?? {}, context);
+  } };
+  const binding = bindWorkbookTextInput(ui.input, boundInput, {
     prepareOptions: () => preparation(),
     onApplied() { controls(); ui.error.hidden = true; }, onCancelled: cancelInput,
     onNavigate(direction, extend) { void runInteraction(async () => {
@@ -446,7 +466,9 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     onPaste(text, selected) {
       if (selected.anchor.kind !== "cells") return;
       const transaction = createWorkbookPasteTransaction(session.snapshot(), selected.anchor.sheetId, selected.anchor.ranges[0]!.from, text);
-      const receipt = session.commit(session.prepare({ ...transaction, documentId: selected.documentId, baseRevision: selected.baseRevision }, preparation()));
+      const context = validationContext(config.confirmValidationWarnings ? workbookValidationInputKey(input.state()) : undefined);
+      const candidate = withWorkbookValidationConfirmation(options => session.prepare({ ...transaction, documentId: selected.documentId, baseRevision: selected.baseRevision }, options), preparation(), context);
+      const receipt = session.commit(candidate);
       readCurrentSelection(); controls();
       if (receipt.changed) { const cells = transaction.operations[0]; if (cells?.op === "setWorkbookCells") {
         const last = cells.cells.at(-1)!, anchor = selected.anchor; void runInteraction(() => choose(anchor.sheetId, { from: anchor.ranges[0]!.from, to: { row: last.row, column: last.column } }, true));

@@ -14,7 +14,7 @@ let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; externa
   displayedDrawingBounds(): ReturnType<typeof measureWorkbookDrawingBounds>;
   displayedCell(row: number, column: number): string | undefined;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
-export async function mount(code: string, encoded: string, observeView = false, prepareOptions?: TransactionPrepareOptions) {
+export async function mount(code: string, encoded: string, observeView = false, prepareOptions?: TransactionPrepareOptions, confirmWarnings = false) {
   cleanup(); const host = document.createElement('div'); document.body.append(host);
   const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), worker = new Worker(url), channel = new MessageChannel();
   let holdReference = false, heldReference: unknown;
@@ -28,7 +28,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
   let editor: WorkbookRemoteEditorView;
   let observed: ReturnType<typeof observeWorkbookViews> | undefined;
   try {
-    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
+    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用验证警告？") } : {}), onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
     if (observeView) {
       Element.prototype.attachShadow = attach;
       observed = observeWorkbookViews(editor.element, { openHostShadows: true });
