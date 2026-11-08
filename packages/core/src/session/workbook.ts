@@ -28,6 +28,7 @@ import { editWorkbookHyperlink, sameWorkbookHyperlinks } from "./workbook-hyperl
 import { compileNumberFormat } from "../workbook/number-format.js";
 import { WorkbookRegionIndex } from "../workbook/region-index.js";
 import { editWorkbookMerge, sameWorkbookMerges } from "./workbook-merges.js";
+import { editWorkbookDefinition, isWorkbookDefinitionOperation, restoreWorkbookDefinitionSource } from "./workbook-definitions.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -94,7 +95,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       }
       annotations[index] = value;
     }
-    let operationCount = 0, changedAxis = false;
+    let operationCount = 0, changedAxis = false, changedDefinition = false;
     yield { kind: "progress", value: { phase: "operations", completed: 0, total: transaction.operations.length } };
     for (const operation of transaction.operations) {
       if (!isWorkbookOperation(operation)) annotation(operation as AnnotationOperation);
@@ -127,6 +128,10 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         for (const value of editWorkbookMerge(sheet, cells, operation)) yield { kind: "progress", value: { phase: "cells", ...value } };
         mergeSheets.add(sheet.sheetId);
       }
+      else if (isWorkbookDefinitionOperation(operation)) {
+        for (const value of editWorkbookDefinition(workbook, cells, operation, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        changedDefinition = true;
+      }
       else if (operation.op === "editWorkbookAxis") {
         for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;
@@ -136,6 +141,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };
     }
     if (changedAxis) restoreWorkbookAxisSource(workbook, base.snapshot().metadata.workbook, annotations, base.snapshot().annotations);
+    if (changedDefinition) restoreWorkbookDefinitionSource(workbook, base.snapshot().metadata.workbook);
     for (const sheet of workbook.sheets.filter(sheet => mergeSheets.has(sheet.sheetId))) {
       const previous = base.snapshot().metadata.workbook.sheets.find(previous => previous.sheetId === sheet.sheetId);
       if (previous && sameWorkbookMerges(previous.merges, sheet.merges)) sheet.merges = previous.merges.map(range => ({ from: { ...range.from }, to: { ...range.to } }));

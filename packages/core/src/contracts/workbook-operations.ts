@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IdentifierSchema } from "./primitives.js";
-import { WorkbookAutoFilterSchema, WorkbookCoordinateSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookValueSchema } from "./workbook.js";
+import { WorkbookAutoFilterSchema, WorkbookConditionalRuleSchema, WorkbookCoordinateSchema, WorkbookDataValidationSchema, WorkbookDefinedNameSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookTableSchema, WorkbookTableStyleSchema, WorkbookValueSchema } from "./workbook.js";
 
 export const WorkbookCellSourceSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("value"), value: WorkbookValueSchema }),
@@ -27,6 +27,16 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("mergeWorkbookCells"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, coveredContent: z.enum(["reject", "clear"]).optional() }),
   z.strictObject({ op: z.literal("unmergeWorkbookCells"), sheetId: IdentifierSchema, range: WorkbookRangeSchema }),
   z.strictObject({ op: z.literal("setWorkbookAutoFilter"), sheetId: IdentifierSchema, filter: WorkbookAutoFilterSchema.nullable() }),
+  z.strictObject({ op: z.literal("setWorkbookDefinedName"), name: WorkbookDefinedNameSchema }),
+  z.strictObject({ op: z.literal("removeWorkbookDefinedName"), nameId: IdentifierSchema }),
+  z.strictObject({ op: z.literal("setWorkbookTable"), sheetId: IdentifierSchema, table: WorkbookTableSchema }),
+  z.strictObject({ op: z.literal("removeWorkbookTable"), sheetId: IdentifierSchema, tableId: IdentifierSchema }),
+  z.strictObject({ op: z.literal("setWorkbookTableStyle"), style: WorkbookTableStyleSchema }),
+  z.strictObject({ op: z.literal("removeWorkbookTableStyle"), styleId: IdentifierSchema }),
+  z.strictObject({ op: z.literal("setWorkbookConditionalRule"), sheetId: IdentifierSchema, rule: WorkbookConditionalRuleSchema }),
+  z.strictObject({ op: z.literal("removeWorkbookConditionalRule"), sheetId: IdentifierSchema, ruleId: IdentifierSchema }),
+  z.strictObject({ op: z.literal("setWorkbookDataValidation"), sheetId: IdentifierSchema, rule: WorkbookDataValidationSchema }),
+  z.strictObject({ op: z.literal("removeWorkbookDataValidation"), sheetId: IdentifierSchema, ruleId: IdentifierSchema }),
   z.strictObject({ op: z.literal("editWorkbookAxis"), sheetId: IdentifierSchema, axis: z.enum(["row", "column"]), action: z.enum(["insert", "delete"]),
     index: z.number().int().min(0).max(1_048_575), count: z.number().int().min(1).max(1_048_576), formatSource: z.enum(["none", "before", "after"]).optional() }),
   z.strictObject({ op: z.literal("setWorkbookSettings"), changes: z.strictObject({

@@ -150,6 +150,24 @@ test("Worker reference queries use current worksheet identities without creating
   expect(s.history().undoSteps).toBe(0);
 });
 
+test("Worker definitions use the owning candidate, rule validation, current name queries and shared history", async () => {
+  const { s, client } = await pair(), before = s.serialize();
+  const operations: DocumentOperation[] = [number(0, 0, 7), { op: "setWorkbookDefinedName", name: {
+    nameId: "worker-name", name: "Chosen", expression: "=Sheet1!$A$1", origin: { row: 0, column: 0 },
+  } }, { op: "setWorkbookDataValidation", sheetId, rule: { ruleId: "minimum", kind: "whole", operator: "greaterThan", formulas: ["=0"],
+    ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }], origin: { row: 0, column: 0 }, allowBlank: true,
+    showInputMessage: true, showErrorMessage: true, errorStyle: "stop", errorTitle: "", error: "", promptTitle: "", prompt: "" } }];
+  const candidate = await client.prepare(command(s, operations)); expect(s.serialize()).toEqual(before);
+  expect((await client.resolveReference("=Chosen", { sheetId, row: 0, column: 0 })).kind).toBe("error");
+  await client.commit(candidate);
+  expect(await client.resolveReference("=Chosen", { sheetId, row: 0, column: 0 })).toEqual({ kind: "ranges", areas: [{ sheetId, from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }] });
+  const saved = s.serialize(); await expect(client.prepare(command(s, [number(0, 0, -3)]))).rejects.toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
+  expect(s.serialize()).toEqual(saved); expect(client.state().history.undoSteps).toBe(1);
+  await client.undo(); expect(s.snapshot().manifest.chunks).toEqual([]); expect(s.snapshot().metadata.workbook.names).toBeUndefined();
+  await client.redo(); expect(s.getCell(sheetId, 0, 0)?.value).toEqual({ type: "number", value: 7 });
+  client.dispose(); s.commit(s.prepare(transaction(s, [number(0, 0, 9)]))); expect(s.getCell(sheetId, 0, 0)?.value).toEqual({ type: "number", value: 9 });
+});
+
 test("Worker filter edits publish current subtotals while retaining every source row and the shared undo boundary", async () => {
   const s = createDocumentSession(scalarWorkbook([
     { row: 0, column: 0, value: { type: "text", value: "Amount" } }, { row: 0, column: 1, value: { type: "text", value: "Choice" } },

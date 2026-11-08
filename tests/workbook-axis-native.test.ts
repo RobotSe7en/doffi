@@ -66,8 +66,9 @@ test.each(evidence.cases)("native axis $operation.axis/$operation.action preserv
       }
       const print = item.observed.names.find(name => name.name === "_xlnm.Print_Area" && Number(name.scope) === index)!;
       expect(sheet.print?.areas).toEqual([area(print.expression.split("!")[1]!)]);
-      // Deleting a merge's leading axis has a recorded producer difference;
-      // its product choice remains pending, independently of formula evidence.
+      // The user selected Microsoft Excel compatibility (2026-11-08).
+      // This Calc difference remains open until explicit Microsoft semantics or
+      // actual Excel evidence fixes the expected topology; it is not acceptance.
       if (!(item.operation.axis === "row" && item.operation.action === "delete" && index === 0)) expect(sheet.merges).toEqual(expected.merges.map(area));
     }
     const reopened = openDocument(await readDocumentZip(await writeDocumentZip(s.serialize())), { kind: "workbook" });

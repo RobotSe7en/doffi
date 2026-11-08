@@ -237,7 +237,9 @@ pnpm probe:workbook-model
 
 普通维度、合并范围、冻结数量、超链接、筛选列键、打印区域／重复标题／分页和规则区域参加映射。规则原点被删除时，先从存留的旧目标重建相对模板，避免把所有存留格的条件误写成 #REF。宿主单元格批注按原格身份拆成精确区域，新插入的格不扩大锚点；完全删除时保留正文和旧锚点并标为 needs_reanchor。同批逆向操作的已覆盖无变化场景会还原维度跨度、公式拼写与批注分组，保留重做，不制造新历史。
 
-这仍是阶段中的基础：目标表上的智能表、绘图、原生备注／线程以及上下文相关名称暂明确拒绝，普通筛选表头的部分删除亦未接通；不得据此宣称完整 R3-12。删除合并首行／首列后的产品行为正在询问用户，当前 Calc 对照发现的取消合并差异尚未关闭，不计作该项验收通过。独立 [4 项实际插删记录](evidence/workbook-axis.json)使用 Python ZIP/XML 来源和固定 LibreOffice 25.8.1.1，通过 `pnpm check:workbook-axis` 实际编辑、重算、保存并比较原生公式／规则／打印定义；源及生产者经官方 XSD／OPC 检查。SDK 对照选择明确的前方格式继承。Excel/WPS 仍未实机验证，完整范围与剩余门槛见[交接](workbook-editing-handoff.md)。
+这仍是阶段中的基础：目标表上的智能表、绘图、原生备注／线程以及上下文相关名称暂明确拒绝，普通筛选表头的部分删除亦未接通；不得据此宣称完整 R3-12。2026-11-08 用户已决定删除合并首行／首列按 Microsoft Office 行为实现，以 Microsoft Excel 为兼容目标。当前 SDK 缩小范围，已有 Calc 对照取消合并；两者均不能证明 Excel 行为，该项仍待取得明确微软依据或实际 Excel 对照后修正及验收，不再等待用户选择。独立 [4 项实际插删记录](evidence/workbook-axis.json)使用 Python ZIP/XML 来源和固定 LibreOffice 25.8.1.1，通过 `pnpm check:workbook-axis` 实际编辑、重算、保存并比较原生公式／规则／打印定义；源及生产者经官方 XSD／OPC 检查。SDK 对照选择明确的前方格式继承。Excel/WPS 仍未实机验证，完整范围与剩余门槛见[交接](workbook-editing-handoff.md)。
+
+微软 [Range.Merge](https://learn.microsoft.com/en-us/office/vba/api/excel.range.merge) 说明合并值位于左上角，[Range.Delete](https://learn.microsoft.com/en-us/office/vba/api/excel.range.delete) 说明删除和移位；这两份接口说明没有规定删除合并起点后是否保留残余合并，不能从内容归属推断合并拓扑。后续 Excel 对照须分别覆盖整行和整列删除，含起点、内部、末端、完全覆盖及残余单格；每项从同一独立原生源开始，记录 Excel 版本／构建、操作、原始输出文件及摘要，检查合并范围、起点内容与格式、引用和保存重开。SDK 回归另须验证候选隔离、单步撤销／重做及失败不变。当前没有连接的 Excel 会话，尚未产生此项实机证据；既有 Calc 原始记录保持。
 
 ## 冻结与源坐标查询（R3-12 实施中）
 
@@ -248,6 +250,14 @@ pnpm probe:workbook-model
 ## 普通区域筛选（R3-12 实施中）
 
 `setWorkbookAutoFilter` 可设置普通工作表区域的完整筛选定义，`filter: null` 显式移除。它只改变定义，保留单元格、手动行尺寸／隐藏信息和原生公式缓存；当前小计与显示读取新定义并经过同一停止验证、候选和历史边界。定义仍接受原有列唯一性、区域、日期分组、预算及与表格／合并互斥检查。该命令可由宿主核心会话或 Worker 的原始类型事务使用；人工筛选界面及智能表内筛选编辑仍待接入。
+
+## 名称、表格与规则事务（R3-13 实施中）
+
+`setWorkbookDefinedName`／`removeWorkbookDefinedName`、`setWorkbookTable`／`removeWorkbookTable`、`setWorkbookTableStyle`／`removeWorkbookTableStyle`、`setWorkbookConditionalRule`／`removeWorkbookConditionalRule` 和 `setWorkbookDataValidation`／`removeWorkbookDataValidation` 使用同一候选、严格契约、停止／警告规则及历史。设置按稳定身份新建或替换定义；移除不存在的身份、重复名称、无效样式依赖及规则优先级冲突整批失败。名称不能在原身份下隐式换作用域；改名只改写绑定到该身份的公式，不改写其他表的同名局部名称。移除名称保留原公式拼写，当前计算返回名称错误。
+
+表格设置维护表头文字、实际计算列公式及汇总源，不创建独立可写数据表。扩展填充新数据行；未改模板的既有公式例外保留，未改汇总不规范化源公式或清空历史缓存。改表名／列名维护单元格、名称、规则等公式来源；列名交换按稳定列身份处理，被移除列的单列结构引用变为 `#REF!`，多列端点范围缩到存留列。移除表定义相当于转为普通区域：保留单元格，先将结构化引用解析为普通地址。新建／展开的实际格数在分配前检查，逐批进度允许取消，取消不提交部分表头或公式。无净变化的元数据设置保持原始表示、修订及重做。
+
+独立原生表格、条件格式来源的编辑／文档包重开及 Worker 定向回归已接入；这些检查未运行 Excel/Calc 的对应新编辑动作，不是原生 XLSX 导出。人工管理界面、命名样式更新传播、行列联动与阶段容量门槛继续实施；R3-13 尚未完成。
 
 ## Worker 会话通道（R3 编辑阶段实施中）
 

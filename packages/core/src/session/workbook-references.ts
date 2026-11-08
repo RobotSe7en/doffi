@@ -15,6 +15,11 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
   function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string): string {
     const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
     return rewriteFormula(expression, { ...at, sheet }, { ...at, sheet: target }, change, { tables, ...(table ? { table } : {}),
+      resolveName: (name, owner, explicit) => {
+        const matching = workbook.names?.filter(item => item.name.toUpperCase() === name.toUpperCase());
+        return (matching?.find(item => item.sheetId !== undefined && workbook.sheets.find(sheet => sheet.sheetId === item.sheetId)?.name.toUpperCase() === owner.toUpperCase())
+          ?? (explicit ? undefined : matching?.find(item => item.sheetId === undefined)))?.nameId;
+      },
       isTableName: (name, owner) => !workbook.names?.some(item => item.name.toUpperCase() === name.toUpperCase() && (item.sheetId === undefined || workbook.sheets.find(sheet => sheet.sheetId === item.sheetId)?.name === owner))
         && tables.some(table => table.name.toUpperCase() === name.toUpperCase()),
     });

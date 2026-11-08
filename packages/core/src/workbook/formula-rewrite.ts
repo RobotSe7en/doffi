@@ -13,14 +13,18 @@ export type FormulaReferenceChange =
   | { readonly kind: "sort"; readonly sheet: string; readonly range: FormulaRectangle }
   | { readonly kind: "renameSheet"; readonly from: string; readonly to: string }
   | { readonly kind: "deleteSheet"; readonly sheet: string }
+  | { readonly kind: "renameName"; readonly nameId: string; readonly to: string }
+  | { readonly kind: "convertTable"; readonly table: string }
   | { readonly kind: "renameTable"; readonly from: string; readonly to: string }
-  | { readonly kind: "renameColumn"; readonly table: string; readonly from: string; readonly to: string };
+  | { readonly kind: "renameColumn"; readonly table: string; readonly from: string; readonly to: string }
+  | { readonly kind: "deleteColumn"; readonly table: string; readonly column: string };
 export interface FormulaRewriteBindings {
   /** The table containing this formula, for unqualified structured references. */
   readonly table?: string;
   /** Required only when a bare identifier might name the table being renamed. */
   readonly isTableName?: (name: string, sheet: string) => boolean;
   readonly tables?: readonly FormulaTableDefinition[];
+  readonly resolveName?: (name: string, sheet: string, explicit: boolean) => string | undefined;
 }
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 const refError = (): FormulaExpression => ({ kind: "error", value: "#REF!" });
@@ -162,6 +166,9 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "name") {
       const sheet = mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
+      if (change.kind === "renameName" && bindings.resolveName?.(node.name, node.sheet ?? from.sheet, node.sheet !== undefined) === change.nameId) return { ...node, name: change.to };
+      if (change.kind === "convertTable" && same(node.name, change.table) && bindings.isTableName?.(node.name, node.sheet ?? from.sheet))
+        return visit({ kind: "structured", table: node.name, columns: [], selectors: [] });
       if (change.kind === "deleteSheet" && node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet)
         && bindings.tables?.some(table => same(table.name, node.name) && same(table.sheet, change.sheet))) return refError();
       if (change.kind === "renameTable" && same(node.name, change.from)) {
@@ -172,6 +179,24 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "structured") {
       const table = node.table ?? bindings.table;
+      if (change.kind === "deleteColumn" && table !== undefined && same(table, change.table) && node.columns.some(column => same(column, change.column))) {
+        if (node.columns.length === 1) return refError();
+        const definition = bindings.tables?.find(definition => same(definition.name, table));
+        if (!definition) invalid("Deleting a table column requires its source definition.");
+        const first = definition.columns.findIndex(column => same(column, node.columns[0]!)), last = definition.columns.findIndex(column => same(column, node.columns[1]!));
+        if (first < 0 || last < 0) return refError();
+        const remaining = definition.columns.slice(Math.min(first, last), Math.max(first, last) + 1).filter(column => !same(column, change.column));
+        if (!remaining.length) return refError();
+        return { ...node, columns: first <= last ? [remaining[0]!, remaining.at(-1)!] : [remaining.at(-1)!, remaining[0]!] };
+      }
+      if (change.kind === "convertTable" && table !== undefined && same(table, change.table)) {
+        const bound = bindStructuredReference(node, from, bindings.tables ?? [], bindings.table);
+        if ("error" in bound) return { kind: "error", value: bound.error };
+        if (!bound.range) return refError();
+        const cell = (point: FormulaOrigin): FormulaCell => ({ kind: "cell", ...point, absoluteRow: true, absoluteColumn: true,
+          ...(same(bound.sheet, to.sheet) ? {} : { sheet: bound.sheet }) });
+        return { kind: "range", from: cell(bound.range.from), to: cell(bound.range.to) };
+      }
       if (change.kind === "deleteSheet" && table !== undefined && bindings.tables?.some(definition => same(definition.name, table) && same(definition.sheet, change.sheet))) return refError();
       if (change.kind === "move" && (!same(from.sheet, to.sheet) || from.row !== to.row || from.column !== to.column)) {
         if (node.selectors.includes("thisRow")) {
