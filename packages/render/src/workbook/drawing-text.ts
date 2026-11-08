@@ -2,6 +2,7 @@ import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, DrawingTextProperties, WorkbookChart, WorkbookObject } from "@doffi/core";
 import { markViewNode } from "../view-nodes.js";
 import { workbookRichTextFonts } from "./text-fonts.js";
+import { createSourceStyleResolver, sourceStyleProjection } from "../source-style-probe.js";
 
 export interface WorkbookDrawingTextProjection {
   readonly node: Text;
@@ -58,12 +59,26 @@ function createTextBody(source: HTMLElement, nodeId: string, maxNodes: number, p
   const document = source.ownerDocument, view = document.defaultView;
   if (!source.isConnected || !view || !Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new DocumentError("InvalidOperation", "Drawing text requires a connected source and a positive node budget.");
   const root = markViewNode(document.createElement("div")), projections: WorkbookDrawingTextProjection[] = [];
+  // Explicit Office run resets require per-run paint. Browser CSS cannot
+  // cancel an ancestor's decoration with a child's `none`; keep the original
+  // compositor for documents without the source override.
+  const reset = "--office-font-decoration-reset", elements = [source, ...source.querySelectorAll<HTMLElement>("*")];
+  if (elements.length > maxNodes) throw new DocumentError("ResourceLimitExceeded", "Drawing text exceeds its source node budget.");
+  const explicit = elements.some(element => Boolean(view.getComputedStyle(element).getPropertyValue(reset).trim()));
+  const resolver = explicit ? createSourceStyleResolver(document) : undefined;
+  const decoration = new WeakMap<HTMLElement, Readonly<Record<string, string>>>();
+  const effective = (original: HTMLElement): Readonly<Record<string, string>> => {
+    let value = decoration.get(original);
+    if (!value) { value = resolver!.get(sourceStyleProjection(original, true)); decoration.set(original, value); }
+    return value;
+  };
   root.dataset.officeView = "workbook-drawing-text"; root.dataset.sourceNodeId = nodeId;
   let nodes = 1, offset = 0;
   const account = (amount: number): void => { nodes += amount; if (nodes > maxNodes) throw new DocumentError("ResourceLimitExceeded", "Drawing text exceeds its node budget."); };
   const style = (original: HTMLElement, target: HTMLElement): CSSStyleDeclaration => {
     const computed = view.getComputedStyle(original); target.dataset.officeTextStyle = "true";
     for (const name of typography) target.style.setProperty(name, computed.getPropertyValue(name));
+    if (explicit) target.style.textDecorationLine = "none";
     if (original !== source) target.style.backgroundColor = computed.backgroundColor;
     if (original.lang) target.lang = original.lang;
     if (original.dataset.nodeId) target.dataset.sourceNodeId = original.dataset.nodeId;
@@ -105,6 +120,10 @@ function createTextBody(source: HTMLElement, nodeId: string, maxNodes: number, p
         if (!run || run.from !== localOffset || run.to > end) throw new DocumentError("InvalidDocument", "Drawing font runs do not match the source text.");
         account(2); const span = document.createElement("span"), node = document.createTextNode(run.text);
         span.dataset.officeScript = run.role; span.style.fontFamily = run.font.family; span.style.fontSize = run.font.sizePx + "px"; span.style.lineHeight = computed.lineHeight; span.append(node); parent.append(span);
+        if (explicit) {
+          const paint = effective(original);
+          for (const name of ["text-decoration-line", "text-decoration-style", "text-decoration-color"]) span.style.setProperty(name, paint[name]!);
+        }
         if (project) projections.push(Object.freeze({ node, sourceNodeId: original.dataset.nodeId!, from: baseOffset + run.from, to: baseOffset + run.to })); localOffset = run.to;
       }
       if (text.length) { lineHasText = text.includes("\n") ? !text.endsWith("\n") : true; insertionStyle = original; }

@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "vitest";
-import { createDocumentSession, createWorkbook, openDocument } from "../src/index.js";
+import { createDocumentSession, createWorkbook, openDocument, SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS } from "../src/index.js";
+import type { SourceStyleNode } from "../src/index.js";
 import type { DocumentOperation, WorkbookDocumentMetadata, WorkbookSession } from "../src/index.js";
 
 const owned: WorkbookSession[] = [];
@@ -12,6 +13,44 @@ function fixture() {
   const object = session.snapshot().metadata.workbook.objects![0]!, other = session.snapshot().metadata.workbook.objects![1]!;
   return { session, nodeId: object.nodeId, paragraphId: session.getNode(object.nodeId)!.childNodeIds[0]!, second: session.getNode(object.nodeId)!.childNodeIds[1]!, other };
 }
+
+test("partial decoration clearing preserves text, native font roles, identities and exact surrounding paint through history and reopen", () => {
+  const { session: s, nodeId } = fixture();
+  commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p style="text-decoration:underline line-through double red;--office-font-ascii:&quot;Liberation Sans&quot;;--office-font-east-asia:&quot;Noto Sans CJK SC&quot;;font-size:18pt"><strong>A禰󠄀😀Z</strong></p>' }]); s.clearHistory();
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!, before = s.snapshot();
+  function appearance(): ReturnType<SourceStyleResolver["get"]>[] {
+    const resolver = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS);
+    const read = (id: string, parent?: SourceStyleNode): ReturnType<SourceStyleResolver["get"]>[] => {
+      const item = s.getNode(id)!, node = { tag: item.tagName, attrs: item.attributes, parent };
+      return [resolver.get(node), ...item.childNodeIds.flatMap(id => read(id, node))];
+    };
+    return read(nodeId).slice(-2);
+  }
+  const operation: DocumentOperation = { op: "formatWorkbookObjectText", nodeId, paragraphId, from: 1, to: 6, expectedText: "禰󠄀😀", properties: { "text-decoration-line": "none", "--office-font-decoration-reset": "underline" } };
+  commit(s, [operation]); expect(s.getNode(strong)!.text).toBe("A禰󠄀😀Z"); expect(s.history().undoSteps).toBe(1);
+  expect(appearance().map(style => style["text-decoration-line"])).toEqual(["underline line-through", "line-through"]);
+  // The unselected text remains in the original strong node; only selected
+  // leaves receive the source override. Its native role declarations inherit.
+  const wrapper = s.getNode(s.getNode(strong)!.childNodeIds[0]!)!;
+  expect(wrapper.text).toBe("禰󠄀😀"); expect(wrapper.attributes.style).toContain("--office-font-decoration-reset:underline");
+  expect(appearance()[1]).toMatchObject({ "--office-font-ascii": '"Liberation Sans"', "--office-font-east-asia": '"Noto Sans CJK SC"', "font-size": "18pt", "font-weight": "bold" });
+  expect(commit(s, [operation]).changed).toBe(false);
+  const reopened = openDocument(s.serialize(), { kind: "workbook" }); expect(reopened.snapshot().content!.html).toBe(s.snapshot().content!.html);
+  s.undo(); expect(s.snapshot().content!.html).toBe(before.content!.html); s.redo(); expect(s.getNode(strong)!.text).toBe("A禰󠄀😀Z");
+  const current = s.serialize(); expect(() => commit(s, [{ ...operation, properties: { "--office-font-decoration-reset": "all underline" } }])).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" })); expect(s.serialize()).toEqual(current);
+});
+
+test("explicit important none records a full clear and paragraph resets are persisted through the same source boundary", () => {
+  const { session: s, nodeId } = fixture(); commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p style="text-decoration:underline line-through"><strong>AB</strong></p>' }]); s.clearHistory();
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!;
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 0, to: 1, expectedText: "A", properties: { "text-decoration-line": "none!important" } }]);
+  const wrapper = s.getNode(s.getNode(strong)!.childNodeIds[0]!)!;
+  expect(wrapper.attributes.style).toContain("--office-font-decoration-reset:all");
+  const parent: SourceStyleNode = { tag: "p", attrs: s.getNode(paragraphId)!.attributes, parent: undefined }, child: SourceStyleNode = { tag: "strong", attrs: s.getNode(strong)!.attributes, parent };
+  const resolver = new SourceStyleResolver([], DEFAULT_DOCUMENT_READ_LIMITS);
+  expect(resolver.get(child)["text-decoration-line"]).toBe("underline line-through"); expect(resolver.get({ tag: "span", attrs: wrapper.attributes, parent: child })["text-decoration-line"]).toBe("none");
+  s.undo(); commit(s, [{ op: "setWorkbookObjectParagraphStyle", nodeId, paragraphId, properties: { "text-decoration": "none" } }]); expect(s.getNode(paragraphId)!.attributes.style).toContain("--office-font-decoration-reset:all");
+});
 
 test("paragraph text and partial fonts retain native source runs, CRLF, UTF-16 and one atomic history step", () => {
   const { session: s, nodeId, paragraphId, other } = fixture(), before = s.serialize(), paragraph = s.getNode(paragraphId)!, strong = paragraph.childNodeIds.find(id => s.getNode(id)!.tagName === "strong")!, unrelated = s.getNode(other.nodeId)!.html;

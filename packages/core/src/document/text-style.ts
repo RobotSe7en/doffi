@@ -6,11 +6,13 @@ import { DocumentError } from "../errors.js";
 import { checkLimit } from "./validation.js";
 import { isTextBoundary } from "./text.js";
 import { setDrawingInlineStyle } from "./drawing-css.js";
+import { textFormattingProperties } from "./text-decoration.js";
 
 export interface SourceTextRange { readonly from: number; readonly to: number; readonly expectedText: string }
 /** Format existing text leaves, retaining all paragraph/run/link identities.
  * New wrappers are core-owned source nodes; no rendered DOM enters the tree. */
 export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string): void {
+  properties = textFormattingProperties(properties);
   const fail: (message: string) => never = message => { throw new DocumentError("InvalidOperation", message); };
   for (const property of Object.keys(properties)) if (!/^(?:color|font-(?:family|size|weight|style)|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)) fail("Text range appearance accepts only font and text properties.");
   const patched = new Map<string, string>();

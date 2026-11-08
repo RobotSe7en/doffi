@@ -29,7 +29,7 @@ export function createWorkbookObjectTextControls(document: Document, parent: HTM
   text.addEventListener("input", () => { drafts.set(selected, text.value); host.changed(textGroup()); }, { signal: host.signal });
   const latin = input("对象段落西文字体"), eastAsia = input("对象段落中文字体"), size = input("对象段落字号（磅）", "number"), color = input("对象段落文字颜色");
   const weight = choice("对象段落字重", [["", "保持原设置"], ["700", "加粗"], ["400", "常规"]], "object-font"), italic = choice("对象段落斜体", [["", "保持原设置"], ["italic", "斜体"], ["normal", "常规"]], "object-font");
-  const underline = choice("对象段落下划线", [["", "保持原设置"], ["underline", "单线"]], "object-font");
+  const underline = choice("对象段落下划线", [["", "保持原设置"], ["underline", "单线"], ["none", "移除下划线"]], "object-font");
   const alignment = choice("对象段落对齐", [["", "保持原设置"], ["left", "左对齐"], ["center", "居中"], ["right", "右对齐"], ["justify", "两端对齐"]], "object-paragraph"), lineHeight = input("对象段落行距倍数", "number", "object-paragraph");
   const wrap = choice("对象文字自动换行", [["", "使用默认换行"], ["true", "自动换行"], ["false", "不换行"]], "object-body"), fit = choice("对象文字自适应", [["", "使用默认自适应"], ["none", "固定文本框"], ["normal", "溢出时缩小文字"], ["shape", "随文字扩展文本框"]], "object-body");
   const scale = input("对象文字缩放比例", "number", "object-body"), reduction = input("对象文字行距缩减比例", "number", "object-body"), bodyEdited = new Set<string>();
@@ -44,6 +44,7 @@ export function createWorkbookObjectTextControls(document: Document, parent: HTM
     if (size.validity.badInput) throw new DocumentError("InvalidOperation", "请输入完整字号。");
     if (size.value) { const value = Number(size.value); if (!Number.isFinite(value) || value <= 0 || value > 4000) throw new DocumentError("InvalidOperation", "字号须大于 0 且不超过 4000 磅。"); properties["font-size"] = value + "pt"; }
     for (const [field, key] of [[color, "color"], [weight, "font-weight"], [italic, "font-style"], [underline, "text-decoration-line"]] as const) if (field.value.trim()) properties[key] = field.value.trim();
+    if (underline.value === "none") properties["--office-font-decoration-reset"] = "underline";
     return properties;
   };
   button("应用对象选中文字字体", async () => {

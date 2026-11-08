@@ -7,6 +7,7 @@ import type { CssBudget } from "./css.js";
 import { color, length } from "./css-values.js";
 import { checkLimit, readLimits } from "./validation.js";
 import { encode } from "./package.js";
+import { resetParentDecorations, TEXT_DECORATION_RESET } from "./text-decoration.js";
 
 /** A source snapshot projection. Keep nodes and their ancestry immutable for
  * the lifetime of one resolver; editor DOM and layout substitutions are excluded. */
@@ -366,7 +367,11 @@ export class SourceStyleResolver {
     if (result.color?.toLowerCase() === "currentcolor") result.color = parent.color ?? this.initial.color!;
     // Decorations propagate through descendant inline boxes, including from a
     // block ancestor. `none` on a descendant does not erase an ancestor's paint.
-    const ownLines = result["text-decoration-line"]!, parentLines = node?.parent ? parent["text-decoration-line"] ?? "none" : "none";
+    const ownLines = result["text-decoration-line"]!;
+    let parentLines = node?.parent ? parent["text-decoration-line"] ?? "none" : "none";
+    // The override applies only where declared. Its custom-property value may
+    // be inherited as data, but must not erase marks added by later children.
+    if (custom.has(TEXT_DECORATION_RESET) && result[TEXT_DECORATION_RESET] !== undefined) parentLines = resetParentDecorations(parentLines, result[TEXT_DECORATION_RESET]!);
     const lines = [...new Set([...parentLines.split(/\s+/), ...ownLines.split(/\s+/)].filter((line) => line !== "none"))];
     if (lines.length && combineDecorations) {
       if (parentLines !== "none" && ownLines !== "none") {

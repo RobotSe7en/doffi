@@ -4,6 +4,19 @@ import type { SourceStyleNode } from "../src/index.js";
 
 const node = (tag: string, attrs: Record<string, string> = {}, parent?: SourceStyleNode): SourceStyleNode => ({ tag, attrs, parent });
 
+test("explicit Office decoration resets remove selected parent marks without changing ordinary CSS or later descendants", () => {
+  const root = node("p", { style: "color:red;text-decoration:underline line-through double currentColor" });
+  const ordinary = node("span", { style: "text-decoration:none" }, root), cleared = node("span", { style: "text-decoration:none;--office-font-decoration-reset:underline" }, root);
+  const styles = new SourceStyleResolver([], limits);
+  expect(styles.get(ordinary)["text-decoration-line"]).toBe("underline line-through");
+  expect(styles.get(cleared)).toMatchObject({ "text-decoration-line": "line-through", "text-decoration-style": "double", "text-decoration-color": "red" });
+  expect(styles.get(node("span", { style: "text-decoration:underline double red" }, cleared))["text-decoration-line"]).toBe("line-through underline");
+  const all = node("span", { style: "text-decoration:none;--office-font-decoration-reset:all;color:blue" }, root);
+  expect(styles.get(all)["text-decoration-line"]).toBe("none");
+  expect(styles.get(node("span", { style: "text-decoration:underline" }, all))["text-decoration-line"]).toBe("underline");
+  for (const value of ["", "invalid", "all underline", "underline underline", "none line-through"]) expect(() => styles.get(node("span", { style: "--office-font-decoration-reset:" + (value || '""') }, root))).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+});
+
 test("portable source cascade resolves selectors, priorities, shorthand and inherited computed font roles", () => {
   const root = node("html"), body = node("body", {}, root), outer = node("div", { class: "outer", style: '--face:"宋体";font-size:10pt;--accent:#123456' }, body);
   const paragraph = node("p", { class: "selected", "data-role": "value", style: "margin-left:4pt!important;color:purple" }, outer);

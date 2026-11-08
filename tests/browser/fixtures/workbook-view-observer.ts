@@ -50,7 +50,9 @@ export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId:
   return [...view?.querySelectorAll<HTMLElement>('[data-office-text-style][data-source-node-id]') ?? []]
     .filter(element => element.dataset.sourceNodeId === nodeId).map(element => {
       const style = element.ownerDocument.defaultView!.getComputedStyle(element);
-      return { text: element.textContent, color: style.color, size: parseFloat(style.fontSize), weight: style.fontWeight };
+      const decoration = element.ownerDocument.defaultView!.getComputedStyle(element.querySelector<HTMLElement>("[data-office-script]") ?? element);
+      return { text: element.textContent, color: style.color, size: parseFloat(style.fontSize), weight: style.fontWeight,
+        decoration: decoration.textDecorationLine, decorationStyle: decoration.textDecorationStyle };
     });
 }
 

@@ -92,7 +92,7 @@ export function runProperties(css: Css, own: Css, raw: Css = own, extra: {
     }
     if (present(own, "text-transform", "font-variant"))
         attrs.cap = css["text-transform"] === "uppercase" ? "all" : css["font-variant"] === "small-caps" ? "small" : "none";
-    if (present(own, "text-decoration-line", "text-decoration-style", "--office-underline", "--office-strike")) {
+    if (present(own, "text-decoration-line", "text-decoration-style", "--office-underline", "--office-strike", "--office-font-decoration-reset")) {
         const line = css["text-decoration-line"] ?? "none", style = css["text-decoration-style"] ?? "solid";
         if (line.includes("underline") && own["text-decoration-color"] !== undefined && css["text-decoration-color"]?.toLowerCase() !== "currentcolor")
             unsupported("Independent underline color is outside the native PPTX text profile.");

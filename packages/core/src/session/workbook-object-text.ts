@@ -3,6 +3,7 @@ import type { WorkbookObjectTextOperation } from "../contracts/workbook-object-t
 import type { WorkbookModel } from "../runtime.js";
 import { invalid } from "../document/validation.js";
 import type { ParsedHtml } from "../document/html.js";
+import { textFormattingProperties } from "../document/text-decoration.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 
 export function validateWorkbookObjectTextTarget(base: WorkbookModel, operation: WorkbookObjectTextOperation): void {
@@ -39,7 +40,7 @@ export function editWorkbookObjectText(workbook: WorkbookMetadata, content: Work
   if (operation.op === "replaceWorkbookObjectText") { content.edit().replaceSourceText(id, operation); return; }
   if (operation.op === "formatWorkbookObjectText") { content.edit().formatSourceText(id, operation, operation.properties); return; }
   if (operation.op === "setWorkbookObjectParagraphStyle") {
-    for (const [property, value] of Object.entries(operation.properties)) {
+    for (const [property, value] of Object.entries(textFormattingProperties(operation.properties))) {
       if (!/^(?:color|font-(?:family|size|weight|style)|text-(?:align|indent|decoration(?:-(?:line|style|color))?)|line-height|letter-spacing|margin-(?:top|bottom)|direction|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)) invalid("The property is outside the drawing paragraph subset.");
       content.edit().sourceDrawingStyle(id, property, value);
     }

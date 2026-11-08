@@ -848,3 +848,13 @@ session.dispose();
 `replaceWorkbookRules` 使用互不重叠的声明矩形和可选的 `conditionalRules`／`dataValidations` 数组；至少指定一类，空数组表示清除此类，未指定则保留。输入规则的全部范围必须位于声明矩形的并集中。核心从当前候选中裁出外围片段，保留外围规则原身份、原点、属性及优先级，不接受编辑器提供另一份外围权威副本。等价重复粘贴保留原身份、优先级及精确来源，不制造修订。范围提案检查实际外部规则覆盖和完整模板，允许局部切分并拒绝越界变更。整个批次仍只提交一次并形成一个撤销步骤，支持取消、冲突、独立候选及文档包 ZIP 重开。
 
 [固定原生证据](evidence/workbook-copy-rules.json)记录独立 ZIP/XML 来源、六次实际 Calc 复制和官方 Transitional XSD／OPC。部分色阶与重叠复制的生产者分组保留原样；停止型违规复制为显式差异：Calc 接受，SDK 仍按统一事务验证拒绝。以上均不声称 Excel／WPS 实机验收，也不代表整个编辑阶段或原生 XLSX 输出完成。
+
+### 对象文字的显式装饰清除（R3-14 实施中）
+
+普通 CSS `text-decoration:none` 继续遵循[祖先装饰传播规则](https://www.w3.org/TR/css-text-decor-3/)，不能自行消除祖先的绘制。Office 文字编辑使用显式源样式 `--office-font-decoration-reset` 表达覆盖意图：值为 `all`、`none`，或 `underline`／`overline`／`line-through` 的不重复组合；`all`／`none` 不与其他值混用。该声明只在当前元素过滤祖先标记，不阻止后续子元素增加自己的装饰。未知值明确拒绝。
+
+`formatWorkbookObjectText` 的字面 `text-decoration:none`／`text-decoration-line:none`（包括 `!important`）自动记录 `all`；调用者可以显式指定较小的清除范围。编辑器“移除下划线”只清除下划线，保留删除线及其他装饰。段落清除也写入同一份源 CSS。选中范围保持精确 UTF-16 与 variation sequence 边界，外围节点和文字不重建，重复格式不制造历史，清除与文字编辑仍可在一个候选中提交并撤销。
+
+DrawingML 正文片段的显式 `u="none"`／`strike="noStrike"` 读入时保留相应清除意图，元数据字体角色维持既有默认继承规则；原生 PPTX 输出写入对应关闭值，避免输出重开后恢复祖先下划线。[微软的下划线枚举](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.textunderlinevalues?view=openxml-3.0.1)定义了原生 `none` 值。带该声明的工作簿绘图文字按片段投影有效装饰，防止浏览器继续在父框上绘制；其他对象保留既有绘制路径。图表探针与绘图共用已准入源样式和祖先投影的读取助手。
+
+专门 DOCX／PPTX 用例核对原生 XML、重新导入的有效样式、来源不变和历史；浏览器验证实际文字片段，保留下划线之外的删除线、中西文字体角色及外围绘制。这不表示 R3-14 完成；完整格式包装的字体中性、所有布局变化下的锚定几何及其他既定组合仍须验收，原生 XLSX 输出仍属 R3-17。
