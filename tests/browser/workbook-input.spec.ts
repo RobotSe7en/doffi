@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { build } from "vite";
 import { expect, test } from "@playwright/test";
 import { openSdkHost } from "./sdk-host.js";
@@ -7,7 +8,7 @@ import type * as editorFixture from "./fixtures/workbook-editor.js";
 import { scalarWorkbook } from "../../packages/core/tests/workbook-scalar-fixture.js";
 import { encodeTestPackage } from "./package-transport.js";
 import { createDocumentSession, openDocument } from "@doffi/core";
-import { writeDocumentZip } from "@doffi/office";
+import { importXlsx, writeDocumentZip } from "@doffi/office";
 import type * as remoteFixture from "./fixtures/workbook-remote-text-host.js";
 declare global { interface Window { workbookInput: typeof fixture } }
 declare global { interface Window { workbookEditor: typeof editorFixture } }
@@ -98,6 +99,51 @@ test("mounted workbook formula input, calculation, address selection and toolbar
   await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, calculated: { value: { type: "number", value: 2 } }, errors: [] });
   await page.getByRole("button", { name: "重做", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled()); await expect(input).toHaveValue("5");
+});
+
+test("mounted direct range appearance edits native rich text with current colors, advanced fill and borders, and restores source in one undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const source = await importXlsx(readFileSync("examples/xlsx/01-values-text.xlsx"), { documentId: "native-format-ui" });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source)); await page.evaluate(() => window.workbookEditor.select(5));
+  const original = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0));
+  await page.getByText("设置单元格格式", { exact: true }).click();
+  await page.getByLabel("文字颜色", { exact: true }).fill("#cc2200"); await page.getByLabel("字重", { exact: true }).selectOption("normal");
+  await page.getByLabel("斜体", { exact: true }).selectOption("normal"); await page.getByLabel("字号（磅）", { exact: true }).fill("16");
+  await page.getByLabel("中文字体", { exact: true }).fill("Noto Sans CJK SC"); await page.getByLabel("水平对齐", { exact: true }).selectOption("center");
+  await page.getByLabel("自动换行", { exact: true }).selectOption("true"); await page.getByLabel("下划线", { exact: true }).selectOption("doubleAccounting");
+  await page.getByLabel("填充方式", { exact: true }).selectOption("linear"); await page.getByLabel("填充前景色", { exact: true }).fill("#cceeff");
+  await page.getByLabel("填充背景色", { exact: true }).fill("#ffffff"); await page.getByLabel("渐变角度", { exact: true }).fill("45");
+  await page.getByLabel("边框位置", { exact: true }).selectOption("diagonalBoth"); await page.getByLabel("边框线型", { exact: true }).selectOption("double");
+  await page.getByRole("button", { name: "应用单元格格式", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  const changed = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0)); expect(changed?.text).toBe(original?.text);
+  expect(changed?.html.slice(changed.html.indexOf(">") + 1)).toBe(original?.html.slice(original.html.indexOf(">") + 1));
+  const styles = await page.evaluate(() => window.workbookEditor.displayedTextStyles(5, 0));
+  expect(styles.filter(style => style.text).some(style => style.color === "rgb(204, 34, 0)" && style.weight === "400" && style.italic === "normal")).toBe(true);
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0))).toEqual(original);
+});
+
+test("mounted direct range appearance preserves nested selector styling while repeatedly changing an inherited named cell style", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const files = new Map(scalarWorkbook([], metadata => {
+    metadata.workbook.cellStyles = { definitions: [{ styleId: "base", cssClass: "cell-default", numberFormatId: "general",
+      apply: { font: true, fill: true, border: true, alignment: true, numberFormat: true, protection: true } }], names: [], bindings: [] };
+  }).serialize());
+  files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + "td.cell-default.cell-default span.cell-default{font-style:italic}"));
+  const session = createDocumentSession(openDocument(files, { kind: "workbook" })), manifest = session.snapshot().manifest;
+  session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [
+    { row: 0, column: 0, source: { kind: "richText", html: '<span class="cell-default">继承禰󠄀😀</span>' } },
+  ] }] })); const entries = encodeTestPackage(session.serialize()); session.dispose();
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), entries); await page.evaluate(() => window.workbookEditor.select(0));
+  expect((await page.evaluate(() => window.workbookEditor.displayedTextStyles(0, 0))).some(style => style.italic === "italic")).toBe(true);
+  await page.getByText("设置单元格格式", { exact: true }).click(); await page.getByLabel("填充方式", { exact: true }).selectOption("solid");
+  for (const color of ["cyan", "magenta", "yellow"]) {
+    await page.getByLabel("填充前景色", { exact: true }).fill(color);
+    await page.getByRole("button", { name: "应用单元格格式", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+    expect((await page.evaluate(() => window.workbookEditor.displayedTextStyles(0, 0))).some(style => style.italic === "italic")).toBe(true);
+  }
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 3 }, errors: [] });
 });
 
 test("mounted direct private clipboard delays cutting, explicitly overwrites and restores formulas in one undo", async ({ page }) => {

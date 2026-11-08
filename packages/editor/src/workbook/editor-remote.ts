@@ -75,6 +75,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     for (const field of searchFields) field.disabled = busy;
     for (const field of [ui.insertedFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite]) field.disabled = busy;
     ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
+    for (const field of ui.format.fields) field.disabled = busy;
     for (const { button, available } of buttons) button.disabled = !available();
     const pending = pendingInput() || state.applying || !!commandAbort;
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
@@ -276,6 +277,12 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
         sheetId: plan.source.sheetId, source: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, mode });
     clipboard.applied(receipt.revision, plan.sheetId, plan.target, mode!); controls(); await sourceSettled(); binding.focus();
   }
+  async function formatSelection(): Promise<void> {
+    check(); const snapshot = source!.cells.snapshot, operations = ui.format.operations(snapshot, input.state().selection);
+    if (!operations.length) { ui.status.textContent = "请选择要修改的格式。"; return; }
+    await sourceSettled(); await commitCommand({ kind: "transaction", transaction: { protocolVersion: 1, documentId: snapshot.manifest.documentId,
+      baseRevision: snapshot.manifest.revision, operations } }); await sourceSettled(); binding.focus();
+  }
   function findQuery(): WorkbookFindQuery {
     const anchor = input.state().selection?.anchor, scope = ui.findScope.value, sheetId = preview!.layout().sheetId;
     if (scope === "selection" && anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择查找区域。");
@@ -372,6 +379,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("复制选区", () => queueInteraction(() => copySelection("copy")), idle);
   button("剪切选区", () => queueInteraction(() => copySelection("cut")), idle);
   button("粘贴选区", () => queueInteraction(pasteSelection), () => idle() && clipboard.available);
+  button("应用单元格格式", () => queueInteraction(formatSelection), idle, ui.format.tools);
   button("取消操作", () => commandAbort?.abort(), () => !!commandAbort && !commandApplying);
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);

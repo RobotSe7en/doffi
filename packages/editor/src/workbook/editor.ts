@@ -68,6 +68,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     ui.clipboardMode.disabled ||= clipboard.kind === "cut";
     ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     ui.insertedFormat.disabled = Boolean(commandAbort);
+    for (const field of ui.format.fields) field.disabled = Boolean(commandAbort);
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -219,6 +220,16 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
     clipboard.capture(session.snapshot(), input.state().selection, kind); if (kind === "cut") ui.clipboardMode.value = "contents";
     ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
+  }
+  async function formatSelection(): Promise<void> {
+    check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    const snapshot = session.snapshot(), operations = ui.format.operations(snapshot, input.state().selection);
+    if (!operations.length) { ui.status.textContent = "请选择要修改的格式。"; return; }
+    await sourceSettled();
+    const abort = new view!.AbortController(); commandAbort = abort; controls();
+    try { await commitCommand({ protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations }, abort); readCurrentSelection(); }
+    finally { if (commandAbort === abort) commandAbort = undefined; controls(); }
+    await sourceSettled(); binding.focus();
   }
   async function pasteSelection(): Promise<void> {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
@@ -433,6 +444,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("复制选区", () => copySelection("copy"), idle);
   button("剪切选区", () => copySelection("cut"), idle);
   button("粘贴选区", () => { void runInteraction(pasteSelection); }, () => idle() && clipboard.available);
+  button("应用单元格格式", () => { void runInteraction(formatSelection); }, idle, ui.format.tools);
   button("取消操作", () => commandAbort?.abort(), () => Boolean(commandAbort));
   button("查找下一个", () => { void runInteraction(() => search()); }, () => idle() && Boolean(ui.find.value), ui.searchTools);
   button("替换当前项", () => { void runInteraction(() => search("one")); }, () => idle() && ui.findField.value !== "display" && Boolean(found && found.index >= 0), ui.searchTools);

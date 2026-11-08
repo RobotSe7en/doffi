@@ -1,3 +1,4 @@
+import { createWorkbookFormatUi } from "./format-ui.js";
 interface WorkbookEditorUi {
   readonly element: HTMLDivElement; readonly tools: HTMLDivElement; readonly input: HTMLTextAreaElement; readonly address: HTMLInputElement;
   readonly mode: HTMLSelectElement; readonly preview: HTMLDivElement; readonly status: HTMLParagraphElement; readonly error: HTMLParagraphElement;
@@ -6,6 +7,7 @@ interface WorkbookEditorUi {
   readonly insertedFormat: HTMLSelectElement;
   readonly sortColumns: HTMLInputElement; readonly sortHeader: HTMLInputElement; readonly sortCase: HTMLInputElement; readonly sortMethod: HTMLSelectElement;
   readonly clipboardMode: HTMLSelectElement; readonly clipboardOverwrite: HTMLInputElement;
+  readonly format: ReturnType<typeof createWorkbookFormatUi>;
 }
 export function createWorkbookEditorUi(container: HTMLElement, title: string): WorkbookEditorUi {
   const document = container.ownerDocument, element = document.createElement("div"), shadow = element.attachShadow({ mode: "closed" });
@@ -17,6 +19,7 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   const insertedFormat = document.createElement("select");
   const sortColumns = document.createElement("input"), sortHeader = document.createElement("input"), sortCase = document.createElement("input"), sortMethod = document.createElement("select");
   const clipboardMode = document.createElement("select"), clipboardOverwrite = document.createElement("input");
+  const format = createWorkbookFormatUi(document);
   style.textContent = ":host{display:block;color:#172638;font:14px/1.5 system-ui,sans-serif}*{box-sizing:border-box}h2{margin:0 0 8px;font-size:17px}.tools,.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}button,input,textarea,select{font:inherit;border:1px solid #bdc9d5;border-radius:4px;background:#fff;color:inherit;padding:5px 8px}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}textarea{flex:1;min-width:160px;resize:vertical;min-height:35px;max-height:160px}input{width:120px}p{margin:4px 0;white-space:pre-wrap}.error{color:#a12626}.preview{position:relative}";
   heading.textContent = title; tools.className = "tools"; tools.setAttribute("role", "toolbar"); tools.setAttribute("aria-label", "工作簿编辑"); bar.className = "bar";
   address.setAttribute("aria-label", "选择单元格或区域"); address.placeholder = "A1 或 A1:B10";
@@ -51,6 +54,6 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   }
   status.setAttribute("role", "status"); status.setAttribute("aria-label", "工作簿编辑状态"); status.setAttribute("aria-live", "polite"); status.textContent = "正在打开工作簿…";
   error.setAttribute("role", "alert"); error.className = "error"; error.hidden = true; preview.className = "preview";
-  bar.append(address, input, mode); shadow.append(style, heading, tools, bar, search, status, error, preview); container.append(element);
-  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite };
+  bar.append(address, input, mode); shadow.append(style, heading, tools, bar, search, format.element, status, error, preview); container.append(element);
+  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite, format };
 }

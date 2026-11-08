@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IdentifierSchema } from "./primitives.js";
-import { WorkbookAutoFilterSchema, WorkbookConditionalRuleSchema, WorkbookCoordinateSchema, WorkbookDataValidationSchema, WorkbookDefinedNameSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookTableSchema, WorkbookTableStyleSchema, WorkbookValueSchema } from "./workbook.js";
+import { WorkbookAutoFilterSchema, WorkbookCellStylesSchema, WorkbookConditionalRuleSchema, WorkbookCoordinateSchema, WorkbookDataValidationSchema, WorkbookDefinedNameSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookTableSchema, WorkbookTableStyleSchema, WorkbookValueSchema } from "./workbook.js";
 
 export const WorkbookCellSourceSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("value"), value: WorkbookValueSchema }),
@@ -22,6 +22,11 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("setWorkbookCells"), sheetId: IdentifierSchema, cells: z.array(WorkbookCellInputSchema).min(1) }),
   z.strictObject({ op: z.literal("setWorkbookCellFormats"), sheetId: IdentifierSchema, cells: z.array(WorkbookCellFormatInputSchema).min(1) }),
   z.strictObject({ op: z.literal("setWorkbookNumberFormat"), format: WorkbookNumberFormatSchema }),
+  z.strictObject({ op: z.literal("setWorkbookStyleClass"), cssClass: IdentifierSchema, properties: z.record(z.string(), z.string().min(1)) }),
+  z.strictObject({ op: z.literal("formatWorkbookRanges"), sheetId: IdentifierSchema, ranges: z.array(WorkbookRangeSchema).min(1), properties: z.record(z.string(), z.string().min(1)), numberFormatId: IdentifierSchema.optional() }),
+  z.strictObject({ op: z.literal("setWorkbookCellStyleDefinition"), definition: WorkbookCellStylesSchema.shape.definitions.element.omit({ cssClass: true }), properties: z.record(z.string(), z.string().min(1)) }),
+  z.strictObject({ op: z.literal("setWorkbookCellStyleName"), name: WorkbookCellStylesSchema.shape.names.element }),
+  z.strictObject({ op: z.literal("removeWorkbookCellStyleName"), name: z.string().min(1).max(255) }),
   z.strictObject({ op: z.literal("setWorkbookHyperlink"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, target: WorkbookHyperlinkSchema.omit({ range: true }).nullable() }),
   z.strictObject({ op: z.literal("clearWorkbookRanges"), sheetId: IdentifierSchema, ranges: z.array(WorkbookRangeSchema).min(1), mode: z.enum(["contents", "all"]) }),
   z.strictObject({ op: z.literal("mergeWorkbookCells"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, coveredContent: z.enum(["reject", "clear"]).optional() }),

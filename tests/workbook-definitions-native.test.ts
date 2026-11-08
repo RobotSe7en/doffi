@@ -41,3 +41,26 @@ test("independent native conditional rules can change priority/threshold and und
     s.undo(); expect(s.snapshot().metadata).toEqual(original.metadata); expect(s.snapshot().manifest.chunks).toEqual(original.manifest.chunks);
   } finally { s.dispose(); }
 });
+
+for (const name of ["02-styles-dates", "producer/02-styles-dates"]) test("native named-style edits retain cell values, fixed format groups and exact history/package reopening: " + name, async () => {
+  const s = await session(name);
+  try {
+    const before = s.snapshot(), workbook = before.metadata.workbook, definition = workbook.cellStyles!.definitions[0]!;
+    const oldCells = before.manifest.chunks.flatMap(chunk => [0, 128].flatMap(offset => s.readWindow({ sheetId: chunk.sheetId, row: chunk.row + offset, column: chunk.column, rows: 128, columns: 32 })));
+    const bindings = new Map(workbook.cellStyles!.bindings.map(binding => [binding.cssClass, binding]));
+    apply(s, [{ op: "setWorkbookNumberFormat", format: { formatId: "current-style-number", code: "0.0000" } },
+      { op: "setWorkbookCellStyleDefinition", definition: { styleId: definition.styleId, numberFormatId: "current-style-number", apply: { ...definition.apply } },
+        properties: { color: "#aa2200", "font-weight": "bold" } }]);
+    for (const cell of oldCells) {
+      const current = s.getCell(cell.sheetId, cell.row, cell.column)!;
+      expect(current.value).toEqual(cell.value); expect(current.formula).toEqual(cell.formula); expect(current.text).toBe(cell.text); expect(current.cssClass).toBe(cell.cssClass);
+      expect(current.html.slice(current.html.indexOf(">") + 1)).toBe(cell.html.slice(cell.html.indexOf(">") + 1));
+      const binding = cell.cssClass?.split(/\s+/).map(name => bindings.get(name)).find(Boolean);
+      if (binding) expect(current.formatId).toBe(binding.apply.numberFormat ? cell.formatId : "current-style-number");
+    }
+    expect(s.snapshot().metadata.workbook.cellStyles).toEqual({ ...workbook.cellStyles, definitions: workbook.cellStyles!.definitions.map(style => style.styleId === definition.styleId ? { ...style, numberFormatId: "current-style-number" } : style) });
+    expect(openDocument(readDocumentZip(writeDocumentZip(s.serialize())), { kind: "workbook" }).snapshot()).toEqual(s.snapshot());
+    expect(s.history().undoSteps).toBe(1); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().styles).toEqual(before.styles);
+    expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+  } finally { s.dispose(); }
+});

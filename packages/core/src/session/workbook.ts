@@ -31,6 +31,8 @@ import { editWorkbookMerge, sameWorkbookMerges } from "./workbook-merges.js";
 import { editWorkbookDefinition, isWorkbookDefinitionOperation, restoreWorkbookDefinitionSource } from "./workbook-definitions.js";
 import { reorderWorkbookRows } from "./workbook-reorder.js";
 import { moveWorkbookRange } from "./workbook-move.js";
+import { SourceStyleEdit } from "./source-styles.js";
+import { editWorkbookStyle, isWorkbookStyleOperation } from "./workbook-styles.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -74,6 +76,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       if ("beforeSheetId" in operation && operation.beforeSheetId !== undefined && !baseSheets.has(operation.beforeSheetId)) invalid("Worksheet references must belong to the base snapshot.");
     }
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
+    const styles = new SourceStyleEdit(files, manifest.styles, limits);
     const richContent = new WorkbookContentEdit(manifest, files, limits, allocate), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
     function annotation(operation: AnnotationOperation): void {
       if (operation.op === "addAnnotation") {
@@ -115,6 +118,8 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
           if (++completed % 256 === 0) yield { kind: "progress", value: { phase: "cells", completed, total: operation.cells.length } };
         }
         if (completed % 256 !== 0) yield { kind: "progress", value: { phase: "cells", completed, total: operation.cells.length } };
+      } else if (isWorkbookStyleOperation(operation)) {
+        for (const value of editWorkbookStyle(workbook, cells, styles, operation, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
       } else if (operation.op === "setWorkbookNumberFormat") {
         if ("code" in operation.format) compileNumberFormat(operation.format.code);
         const index = workbook.numberFormats.findIndex(format => format.formatId === operation.format.formatId);

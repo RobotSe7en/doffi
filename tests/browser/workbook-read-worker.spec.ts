@@ -72,6 +72,23 @@ test('mounted remote private clipboard repeats copies, takes current values and 
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
 });
 
+test('mounted remote range appearance rejects unsafe colors atomically, then formats current numeric display and restores one Worker history step', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 12.3 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=A1+1' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  await page.getByText('设置单元格格式', { exact: true }).click(); await page.getByLabel('文字颜色', { exact: true }).fill('url(https://private.invalid)');
+  await page.getByRole('button', { name: '应用单元格格式', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, errors: ['InvalidOperation'] });
+  await page.getByLabel('文字颜色', { exact: true }).fill('#112233'); await page.getByLabel('数字格式代码', { exact: true }).fill('0.00');
+  await page.getByLabel('字重', { exact: true }).selectOption('bold');
+  await page.getByRole('button', { name: '应用单元格格式', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, history: { undoSteps: 1 }, source: { text: '12.3' }, current: { kind: 'value', value: { type: 'number', value: 13.3 } } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 2, history: { undoSteps: 0, redoSteps: 1 }, source: { text: '12.3' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
 test('mounted remote sorting uses one Worker current batch and keeps headers, hidden rows, history and drafts', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = scalarWorkbook([

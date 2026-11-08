@@ -38,6 +38,15 @@ export function displayedCell(row: number, column: number): string | undefined {
   const frame = editor.element.shadowRoot!.querySelector(".preview")!.firstElementChild!.shadowRoot!.querySelector<HTMLIFrameElement>("iframe")!;
   return textViews.get(frame)?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined;
 }
+export function displayedTextStyles(row: number, column: number) {
+  const frame = editor.element.shadowRoot!.querySelector(".preview")!.firstElementChild!.shadowRoot!.querySelector<HTMLIFrameElement>("iframe")!;
+  const cell = textViews.get(frame)?.querySelector<HTMLElement>(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`);
+  if (!cell) return [];
+  return [cell, ...cell.querySelectorAll<HTMLElement>("[data-office-text-style]")].map(element => {
+    const style = element.ownerDocument.defaultView!.getComputedStyle(element);
+    return { text: element.textContent, color: style.color, weight: style.fontWeight, italic: style.fontStyle, size: style.fontSize, family: style.fontFamily };
+  });
+}
 export async function settled() { return editor.settled(); }
 export async function select(fromRow: number, fromColumn = 0, toRow = fromRow, toColumn = fromColumn): Promise<void> {
   await editor.selectRange("sheet-1", { from: { row: fromRow, column: fromColumn }, to: { row: toRow, column: toColumn } }); editor.focusInput();
@@ -91,4 +100,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedCell, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
