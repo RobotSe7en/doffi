@@ -30,7 +30,7 @@ export interface BasicChartOptions {
   readonly onTextRun?: (run: BasicChartTextRun) => void;
   /** Resolve styles against the source ancestry, which may be outside the view.
    * The adapter owns any temporary probes and releases them even on failure. */
-  readonly style: (classes?: string) => CSSStyleDeclaration;
+  readonly style: (classes?: string | readonly string[]) => CSSStyleDeclaration;
   readonly formatNumber: (value: number, format?: string, context?: BasicChartNumberContext) => BasicChartText;
   readonly formatCategory?: (index: number, style: CSSStyleDeclaration) => BasicChartText;
   readonly accountText?: (codeUnits: number) => void;
@@ -71,9 +71,9 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const svgElement: typeof createSvgElement = (document, tag, attributes) => { account(1); return createSvgElement(document, tag, attributes); };
   const document = node.ownerDocument, formatNumber = options.formatNumber, styles = new Map<string, CSSStyleDeclaration>();
   // Validated source CSS has no structural pseudo-classes. One probe per
-  // class list is enough for this immutable render, including repeated labels.
-  const style = (classes?: string): CSSStyleDeclaration => {
-    const key = classes ?? ""; let computed = styles.get(key);
+  // role chain is enough for this immutable render, including repeated labels.
+  const style = (classes?: string | readonly string[]): CSSStyleDeclaration => {
+    const key = JSON.stringify(classes ?? ""); let computed = styles.get(key);
     if (!computed) { computed = options.style(classes); styles.set(key, computed); }
     return computed;
   };
@@ -163,7 +163,7 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const seriesStyle = new Map(data.series.map(series => [series.seriesId, style(seriesDefinitions.get(series.seriesId)?.cssClass)]));
   const pointStyle = (seriesId: string, index: number): CSSStyleDeclaration => {
     const series = seriesDefinitions.get(seriesId), point = pointDefinitions.get(pointKey(seriesId, sourceIndex(index)));
-    return point ? style([series?.cssClass, point.cssClass].filter(Boolean).join(" ")) : seriesStyle.get(seriesId)!;
+    return point ? style([series?.cssClass, point.cssClass].filter((name): name is string => !!name)) : seriesStyle.get(seriesId)!;
   };
   const fill = (seriesId: string, index: number, s: CSSStyleDeclaration, bounds: DrawingGradientBounds, negativeColumn = false): string => {
     const invert = property(s, "--office-invert-negative", "false");
@@ -196,7 +196,7 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
     if (chart.kind !== "pie" && options.showLabelsOverMaximum === true) y = Math.max(top, Math.min(bottom, y));
     const anchorX = pieAnchor?.[0] ?? x, anchorY = pieAnchor?.[1] ?? y;
     const seriesDefinition = seriesDefinitions.get(series.seriesId), point = pointDefinitions.get(pointKey(series.seriesId, sourceIndex(index)));
-    const s = style([chart.labelCssClass, seriesDefinition?.labelCssClass, point?.labelCssClass].filter(Boolean).join(" "));
+    const s = style([chart.labelCssClass, seriesDefinition?.labelCssClass, point?.labelCssClass].filter((name): name is string => !!name));
     const contents = chart.labelContents ?? ["value"], separator = cssStringValue(property(s, "--office-label-separator", ", "));
     const values = contents.map(kind => kind === "category" ? data.categories[index]! : kind === "series" ? series.name : kind === "percent" ? formatNumber(percent ?? 0, "0%", { kind: "data-label", content: "percent", seriesId: series.seriesId, index, style: s })
       : formatNumber(value, cssStringValue(property(s, "--office-label-number-format", chart.numberFormat ?? "General")), { kind: "data-label", content: "value", seriesId: series.seriesId, index, style: s }));

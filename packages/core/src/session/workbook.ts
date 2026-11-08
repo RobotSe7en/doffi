@@ -149,7 +149,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         for (const value of editWorkbookDefinition(workbook, cells, operation, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedDefinition = true;
       }
-      else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, base, operation, allocate);
+      else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, base, operation, allocate, styles);
       else if (isWorkbookCommentOperation(operation)) editWorkbookComment(workbook, annotations, richContent, base, operation, allocate);
       else if (operation.op === "moveWorkbookRange") {
         for (const value of moveWorkbookRange(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };

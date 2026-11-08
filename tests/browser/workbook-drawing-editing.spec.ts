@@ -196,3 +196,29 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} drawin
   if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
   else await page.evaluate(() => window.workbookEditor.dispose());
 });
+
+
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart style controls retain part drafts, marker overrides and owning history`, async ({ page }) => {
+  const session = createDocumentSession(scalarWorkbook([]));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookChart", sheetId: "sheet-1", kind: "line", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 300, heightPt: 180 }, data: { series: [{ name: { kind: "text", text: "样式系列" }, values: { kind: "literal", valueType: "number", count: 2, points: [{ index: 0, value: 2 }, { index: 1, value: 4 }] } }] } }] }));
+  const chart = session.snapshot().metadata.workbook.charts![0]!, initial = chart, files = session.serialize(); session.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { revision: number; charts: WorkbookChart[]; errors: string[]; history: { undoSteps: number } };
+  await page.getByText("图片、形状与图表", { exact: true }).click(); await page.getByLabel("选择绘图对象", { exact: true }).selectOption(chart.nodeId);
+  const target = page.getByLabel("图表样式部件", { exact: true }), fill = page.getByLabel("图表部件填充颜色", { exact: true }), apply = page.getByRole("button", { name: "应用当前图表部件样式", exact: true });
+  await target.selectOption("point"); await fill.fill("#c02030"); await page.getByLabel("图表数据标记", { exact: true }).selectOption("diamond"); await page.getByLabel("图表标记大小（2 至 72 磅，0 恢复默认）", { exact: true }).fill("12");
+  await expect(page.getByLabel("图表标记大小（2 至 72 磅，0 恢复默认）", { exact: true })).toHaveValue("12"); await fill.focus();
+  await fill.dispatchEvent("compositionstart"); await expect(fill).toBeEnabled(); await expect(apply).toBeDisabled(); await fill.dispatchEvent("compositionend"); await expect(page.getByLabel("图表标记大小（2 至 72 磅，0 恢复默认）", { exact: true })).toHaveValue("12");
+  await apply.click(); await settled(); const first = (await inspect()).charts[0]!.pointStyles![0]!; expect(first).toMatchObject({ index: 0, marker: "diamond", markerSize: 12 });
+  await target.selectOption("series"); await fill.fill("#2050c0"); await page.getByLabel("图表数据标记", { exact: true }).selectOption("auto"); await apply.click(); await settled();
+  expect((await inspect()).charts[0]!.pointStyles![0]).toEqual(first); expect((await inspect()).charts[0]!.seriesStyles![0]).toMatchObject({ marker: "auto" });
+  await fill.fill("#111111"); await target.selectOption("point"); await page.getByLabel("图表样式原始数据位置（从 1 开始）", { exact: true }).fill("2"); await fill.fill("#20a040"); await target.selectOption("series"); await expect(fill).toHaveValue("#111111");
+  await apply.click(); await settled(); await expect(apply).toBeDisabled(); await target.selectOption("point"); await expect(fill).toHaveValue("#20a040"); await expect(apply).toBeDisabled();
+  await page.getByRole("button", { name: "重新读取对象", exact: true }).click(); await expect(fill).toHaveValue("");
+  for (let i = 0; i < 3; i++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
+  expect(await inspect()).toMatchObject({ charts: [initial], history: { undoSteps: 0 }, errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});

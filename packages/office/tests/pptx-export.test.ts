@@ -171,3 +171,20 @@ test("review: HTML rowspan zero covers the remaining table rows in native output
     expect(texts(openDocument(importPptx(output.bytes, { documentId: "rowspan-reopen" })))).toEqual(texts(source));
     session.dispose();
 });
+
+test("chart label hierarchy exports point/series overrides independently of later general CSS order", () => {
+    const session = createDocumentSession(openDocument(createPresentation({ documentId: "label-layer" })));
+    try {
+        session.commit(session.prepare({ protocolVersion: 1, documentId: "label-layer", baseRevision: 0, operations: [{ op: "insertPresentationChart", parentNodeId: "slide-root-1", geometry: { x: 20, y: 20, width: 400, height: 240, rotation: 0, flipH: false, flipV: false }, kind: "column", data: { categories: ["甲", "乙"], series: [{ name: "系列", values: [2, 4] }] } }] }));
+        const files = new Map(session.serialize()), metadata = JSON.parse(strFromU8(files.get("metadata.json")!)), chart = metadata.presentation.charts[0], series = metadata.presentation.dataSets[0].series[0];
+        chart.showLabels = true; chart.labelCssClass = "all-labels"; chart.seriesStyles = [{ seriesId: series.seriesId, cssClass: "series-paint", labelCssClass: "series-label" }]; chart.pointStyles = [{ seriesId: series.seriesId, index: 0, cssClass: "point-paint", labelCssClass: "point-label" }];
+        files.set("metadata.json", strToU8(JSON.stringify(metadata)));
+        const path = session.snapshot().manifest.styles[0]!;
+        files.set(path, strToU8(strFromU8(files.get(path)!) + '.series-paint{}.point-paint{}.point-label{color:#703090;font-size:16pt}.series-label{color:#20a040;font-size:11pt}.all-labels{color:#a05020;font-size:9pt}'));
+        const native = unzipSync(exportPptx(openDocument(files)).bytes), xml = strFromU8(native["ppt/charts/chart1.xml"]!);
+        const labels = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/g)!;
+        const seriesLabels = labels.find(value => value.includes("<c:dLbl>"))!, point = seriesLabels.match(/<c:dLbl>[\s\S]*?<\/c:dLbl>/)![0];
+        expect(point).toContain('sz="1600"'); expect(point).toContain('val="703090"'); expect(point).not.toContain('val="a05020"');
+        expect(seriesLabels.slice(point.length)).toContain('val="20a040"'); expect(seriesLabels.slice(point.length)).toContain('sz="1100"');
+    } finally { session.dispose(); }
+});

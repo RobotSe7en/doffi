@@ -5,6 +5,8 @@ import type { WorkbookChartDataInput, WorkbookDrawingOperation } from "../contra
 import type { WorkbookOperation } from "../contracts/workbook-operations.js";
 import type { DeepReadonly, WorkbookModel } from "../runtime.js";
 import { invalid } from "../document/validation.js";
+import { editWorkbookChartStyle, validateWorkbookChartStyleTarget } from "./workbook-chart-styles.js";
+import type { SourceStyleEdit } from "./source-styles.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import { escapeWorkbookText } from "./workbook-cells.js";
 import { WorkbookObjectTextOperationSchema } from "../contracts/workbook-object-text-operations.js";
@@ -21,6 +23,7 @@ export function validateWorkbookDrawingTarget(base: WorkbookModel, operation: Wo
   const ids = "nodeIds" in operation ? operation.nodeIds : "nodeId" in operation ? [operation.nodeId] : [];
   if (new Set(ids).size !== ids.length || ids.some(id => !objects.has(id))) invalid("Drawing targets must be distinct object identities in the base snapshot.");
   if (isObjectTextOperation(operation)) validateWorkbookObjectTextTarget(base, operation);
+  if (operation.op === "setWorkbookChartStyle") validateWorkbookChartStyleTarget(base.snapshot().metadata.workbook.charts?.find(chart => chart.nodeId === operation.nodeId), operation);
 }
 function withoutCaches<T>(input: T): T {
   const value = copy(input);
@@ -53,7 +56,7 @@ function offset(anchor: WorkbookDrawingAnchor, x: number, y: number): WorkbookDr
   const shift = (marker: typeof anchor.from) => ({ ...marker, offsetXPt: marker.offsetXPt + x, offsetYPt: marker.offsetYPt + y });
   return { ...anchor, from: shift(anchor.from), ...(anchor.kind === "two-cell" ? { to: shift(anchor.to) } : {}) };
 }
-export function editWorkbookDrawing(workbook: WorkbookMetadata, content: WorkbookContentEdit, base: WorkbookModel, operation: WorkbookDrawingOperation, allocate: () => string): void {
+export function editWorkbookDrawing(workbook: WorkbookMetadata, content: WorkbookContentEdit, base: WorkbookModel, operation: WorkbookDrawingOperation, allocate: () => string, styles: SourceStyleEdit): void {
   const edit = () => content.edit(), parse = () => content.parse(), object = (id: string) => workbook.objects?.find(object => object.nodeId === id) ?? invalid("An earlier operation removed this drawing.");
   const chartFor = (id: string) => { if (object(id).kind !== "chart") invalid("Chart editing requires a chart drawing."); return workbook.charts?.find(chart => chart.nodeId === id) ?? invalid("The chart definition is missing."); };
   function appearance(nodeId: string, properties: Readonly<Record<string, string>>): void {
@@ -144,6 +147,7 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
     for (const [side, value] of Object.entries(operation.crop)) edit().attributes(current.nodeId, { ["data-office-crop-" + side]: String(value) }); return;
   }
   const chart = chartFor(current.nodeId);
+  if (operation.op === "setWorkbookChartStyle") { editWorkbookChartStyle(chart, operation, styles, content, allocate); return; }
   if (operation.op === "setWorkbookChart") {
     Object.assign(chart, copy(operation.changes)); for (const key of operation.clear ?? []) delete chart[key];
     if (operation.changes.showLabels === false && operation.changes.labelContents === undefined && chart.labelContents?.length) delete chart.labelContents;

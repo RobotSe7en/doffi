@@ -4,6 +4,8 @@ import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
+import { createDocumentSession, createWorkbook, openDocument } from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
 import { importXlsx } from '../../packages/office/src/xlsx-import.js';
 import type { currentChartWindowMeasurement, drawingWindowMeasurement, gradientWindowMeasurement } from './fixtures/workbook-drawing-window.js';
 import type { annotationWindowMeasurement, commentTextMeasurement, windowControllerMeasurement } from './fixtures/workbook-window-controller.js';
@@ -264,4 +266,26 @@ test('classic dual-box notes use VML while preserving alternate properties and r
       expect(item.box!.differences!.includes('anchor')).toBe(name !== 'same-anchor');
     }
   }
+});
+
+
+test('chart point and label overrides survive later general/series edits with exact current-source reopen and node budgets', async ({ page }) => {
+  const session = createDocumentSession(openDocument(createWorkbook({ documentId: 'style-layers' }), { kind: 'workbook' }));
+  const commit = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'style-layers', baseRevision: session.snapshot().manifest.revision, operations }));
+  commit([{ op: 'insertWorkbookChart', sheetId: 'sheet-1', kind: 'column', anchor: { kind: 'absolute', xPt: 20, yPt: 20, widthPt: 350, heightPt: 230 }, data: { categories: { kind: 'literal', valueType: 'text', count: 2, points: [{ index: 0, value: '甲' }, { index: 1, value: '乙' }] }, series: [{ values: { kind: 'literal', valueType: 'number', count: 2, points: [{ index: 0, value: 2 }, { index: 1, value: 4 }] } }] } }]);
+  const chart = session.snapshot().metadata.workbook.charts![0]!, seriesId = chart.series[0]!.seriesId;
+  commit([{ op: 'setWorkbookChart', nodeId: chart.nodeId, changes: { showLabels: true } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'point', seriesId, index: 0, properties: { '--office-fill-kind': 'solid', '--office-fill-color': '#c02030' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'pointLabel', seriesId, index: 0, properties: { color: '#703090', 'font-size': '16pt' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'series', seriesId, properties: { '--office-fill-kind': 'solid', '--office-fill-color': '#2050c0' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'seriesLabel', seriesId, properties: { color: '#20a040', 'font-size': '11pt' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'label', properties: { color: '#a05020', 'font-size': '9pt' } }]);
+  const saved = session.serialize(); session.dispose();
+  const result = await page.evaluate(files => window.workbookDrawingWindow.currentChartWindowMeasurement(files), encodeTestPackage(saved));
+  expect(result).toMatchObject({ sourceUnchanged: true, released: true, unavailable: 0, objects: 1 }); expect(result.declaredNodes).toBe(result.actualNodes);
+  expect(result.paints).toHaveLength(1); expect(result.paints[0]!.columns).toEqual(['rgba(192,32,48,1)', 'rgba(32,80,192,1)']);
+  expect(result.paints[0]!.labels).toMatchObject([{ text: '2', fill: 'rgba(112,48,144,1)' }, { text: '4', fill: 'rgba(32,160,64,1)' }]);
+  // Browser font sizes can be quantized to 1/60 CSS px; source pt values
+  // are checked exactly in the transaction/native tests.
+  expect(Math.abs(Number(result.paints[0]!.labels[0]!.size) - 16)).toBeLessThanOrEqual(.75 / 60); expect(Math.abs(Number(result.paints[0]!.labels[1]!.size) - 11)).toBeLessThanOrEqual(.75 / 60);
 });

@@ -1,13 +1,23 @@
-import { clone, generate, ident, parse, walk } from "css-tree";
+import { clone, generate, ident, List, parse, walk } from "css-tree";
 import type { CssNode, Declaration, ListItem, Rule } from "css-tree";
 import type { DocumentReadLimits } from "../runtime.js";
 import { normalizeCss, setInlineStyle } from "../document/css.js";
 import { encode, readText } from "../document/package.js";
 import { invalid } from "../document/validation.js";
+import { setDrawingInlineStyle } from "../document/drawing-css.js";
+import { SourceStyleResolver, expandSourceCssProperty } from "../document/source-css.js";
+import type { SourceStyleResolverOptions } from "../document/source-css.js";
 /** Candidate-local CSS writes use the package's existing, bounded stylesheets. */
 export class SourceStyleEdit {
     constructor(private readonly files: Map<string, Uint8Array>, private readonly paths: readonly string[], private readonly limits: DocumentReadLimits) { }
     validateProperty(name: string, value: string): void { setInlineStyle("", name, value, this.limits); }
+    resolver(options?: SourceStyleResolverOptions): SourceStyleResolver { return new SourceStyleResolver(this.paths.map(path => readText(this.files, path)), this.limits, new Set(), options); }
+    drawingProperties(properties: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+        let css = ""; for (const [name, value] of Object.entries(properties)) css = setDrawingInlineStyle(css, name, value, this.limits);
+        const ast = parse(css, { context: "declarationList", parseCustomProperty: true });
+        if (ast.type !== "DeclarationList") invalid("Invalid drawing appearance declarations.");
+        return Object.fromEntries(ast.children.toArray().filter((node): node is Declaration => node.type === "Declaration").flatMap(node => { const decoded = ident.decode(node.property), name = decoded.startsWith("--") ? decoded : decoded.toLowerCase(); return name.startsWith("--") ? [[name, generate(node.value)]] : expandSourceCssProperty(name, generate(node.value)); }));
+    }
     snapshot(): {
         path: string;
         css: string;
@@ -24,12 +34,15 @@ export class SourceStyleEdit {
     }
     /** An alias stays in each original rule, retaining its cascade order and
      * specificity. It does not flatten inheritance or change other users. */
-    aliasClass(source: string, target: string): void {
+    aliasClass(source: string, target: string, overwritten: ReadonlySet<string> = new Set()): void {
         for (const sheet of this.snapshot()) {
             const ast = parse(sheet.css, { context: "stylesheet" }); let dirty = false;
             if (ast.type !== "StyleSheet") invalid("Invalid source stylesheet.");
-            for (const rule of ast.children) if (rule.type === "Rule" && rule.prelude.type === "SelectorList") {
-                const aliases: CssNode[] = [];
+            const output = new List<CssNode>();
+            for (const rule of ast.children) {
+                output.appendData(rule);
+                if (rule.type !== "Rule" || rule.prelude.type !== "SelectorList") continue;
+                const aliases: CssNode[] = [], trimmed: CssNode[] = [];
                 for (const selector of rule.prelude.children) {
                     if (selector.type !== "Selector") invalid("Invalid source class selector.");
                     let compound = 0; const matches = new Set<number>();
@@ -37,22 +50,36 @@ export class SourceStyleEdit {
                         if (node.type === "Combinator") compound++;
                         else if (node.type === "ClassSelector" && ident.decode(node.name) === source) matches.add(compound);
                     }
-                    // Only the formatted cell changes its selected class.
-                    // The same token on ancestors/descendants remains source;
-                    // repeated occurrences in one compound name one element.
+                    // One selected compound names the changed element. Rules
+                    // for its descendants keep all original declarations.
                     for (const selected of matches) {
-                        const alias = clone(selector); let compound = 0;
+                        const alias = clone(selector); let index = 0;
                         if (alias.type !== "Selector") invalid("Invalid cloned source class selector.");
                         for (const node of alias.children) {
-                            if (node.type === "Combinator") compound++;
-                            else if (compound === selected && node.type === "ClassSelector" && ident.decode(node.name) === source) node.name = ident.encode(target);
+                            if (node.type === "Combinator") index++;
+                            else if (index === selected && node.type === "ClassSelector" && ident.decode(node.name) === source) node.name = ident.encode(target);
                         }
-                        aliases.push(alias);
+                        (overwritten.size && selected === compound ? trimmed : aliases).push(alias);
                     }
                 }
                 for (const alias of aliases) { rule.prelude.children.appendData(alias); dirty = true; }
+                if (trimmed.length) {
+                    // The caller writes a later local important override of
+                    // these exact properties. Omit their superseded copies
+                    // only for the new target, preserving source consumers and
+                    // every unmodified declaration at its original order.
+                    const separate = clone(rule);
+                    if (separate.type !== "Rule" || separate.prelude.type !== "SelectorList") invalid("Invalid source alias rule.");
+                    separate.prelude.children = new List<CssNode>().fromArray(trimmed);
+                    separate.block.children.forEach((node, item, list) => {
+                        if (node.type !== "Declaration") return;
+                        const decoded = ident.decode(node.property), property = decoded.startsWith("--") ? decoded : decoded.toLowerCase();
+                        if (overwritten.has(property)) list.remove(item);
+                    });
+                    if (separate.block.children.size) { output.appendData(separate); dirty = true; }
+                }
             }
-            if (dirty) this.files.set(sheet.path, encode(normalizeCss(generate(ast), "stylesheet", this.limits, { nodes: 0 })));
+            if (dirty) { ast.children = output; this.files.set(sheet.path, encode(normalizeCss(generate(ast), "stylesheet", this.limits, { nodes: 0 }))); }
         }
     }
     /** A local cell edit must win over authored class/data selectors, including

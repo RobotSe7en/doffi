@@ -1,5 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, WorkbookChart } from "@doffi/core";
+import { chartStyleProbe } from "../chart-style-probe.js";
 import { renderBasicChart } from "../chart.js";
 import type { BasicChartData, BasicChartLayout, BasicChartOptions } from "../chart.js";
 import type { BasicChartTextRun } from "../chart.js";
@@ -80,9 +81,7 @@ export function createWorkbookChartView(source: HTMLElement, chart: DeepReadonly
       // MS-OI29500 §2.1.1571: specified multiple series disable by-point
       // variation, even when visibility later leaves only one rendered series.
       varyColors: (chart.varyColors ?? chart.kind === "pie") && chart.series.length === 1, accountText, onTextRun: run => { textRuns.push(run); }, ...(options.layout ? { layout: options.layout } : {}), ...(title ? { title } : {}), style(classes) {
-      account(1);
-      const probe = markViewNode(document.createElement("span")); probe.className = classes ?? "";
-      probe.style.cssText = "position:absolute;visibility:hidden"; styleScope.append(probe); probes.push(probe); return view.getComputedStyle(probe);
+      return chartStyleProbe(styleScope, classes, account, probes);
     } });
     let fonts: readonly FontResolution[] = Object.freeze([]);
     if (textRuns.length) {

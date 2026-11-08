@@ -1,6 +1,7 @@
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, PresentationChart, PresentationDataSet } from "@doffi/core";
 import { markViewNode } from "../view-nodes.js";
+import { chartStyleProbe } from "../chart-style-probe.js";
 import { renderBasicChart } from "../chart.js";
 import type { DrawingGradientOrientation } from "../drawing-gradient.js";
 
@@ -19,7 +20,7 @@ export function formatChartNumber(value: number, format = "General"): string {
 /** PPT data sets contain bounded constants; workbook references have a separate
  * data adapter. Only the derived chart geometry and appearance are shared. */
 export function renderChart(node: HTMLElement, chart: DeepReadonly<PresentationChart>, data: DeepReadonly<PresentationDataSet>, width: number, height: number, serial: string, account: (amount: number) => void, orientation?: DrawingGradientOrientation): void {
-  const document = node.ownerDocument, view = document.defaultView!, probes: HTMLElement[] = [];
+  const document = node.ownerDocument, probes: HTMLElement[] = [];
   const title = chart.titleNodeId ? node.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(chart.titleNodeId) + '"]') : undefined;
   try {
     let styleScope = node;
@@ -29,10 +30,7 @@ export function renderChart(node: HTMLElement, chart: DeepReadonly<PresentationC
     }
     renderBasicChart(node, chart, data, width, height, serial, account, { formatNumber: formatChartNumber, ...(orientation ? { orientation } : {}),
       ...(title ? { title } : {}), style(classes) {
-        account(1);
-        const probe = markViewNode(document.createElement("span")); probe.className = classes ?? "";
-        probe.style.cssText = "position:absolute;visibility:hidden";
-        styleScope.append(probe); probes.push(probe); return view.getComputedStyle(probe);
+        return chartStyleProbe(styleScope, classes, account, probes);
       },
     });
   } finally { for (const probe of probes) probe.remove(); }

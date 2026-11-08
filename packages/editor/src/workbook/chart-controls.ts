@@ -1,3 +1,5 @@
+import { createWorkbookChartStyleControls } from "./chart-style-controls.js";
+import type { WorkbookChartStyleDraftGroup } from "./chart-style-controls.js";
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, DocumentOperation, WorkbookChart, WorkbookChartDataInput, WorkbookSnapshot } from "@doffi/core";
 import { createWorkbookChartVectorControls, readWorkbookChartVectorDraft, workbookChartVectorDraft } from "./chart-vector-controls.js";
@@ -10,7 +12,7 @@ interface Host {
   run(action: () => Promise<void>): void;
   changed(group: ChartDraftGroup): void;
 }
-export type ChartDraftGroup = "chart-data" | "chart-axis" | "chart-title" | "chart-categoryAxis" | "chart-valueAxis";
+export type ChartDraftGroup = WorkbookChartStyleDraftGroup | "chart-data" | "chart-axis" | "chart-title" | "chart-categoryAxis" | "chart-valueAxis";
 type DataSeries = { seriesId?: string; nameKind: "none" | "text" | "reference"; name: string; nameValueType: "text" | "number"; values: WorkbookChartVectorDraft };
 type Appearance = Extract<DocumentOperation, { op: "setWorkbookChart" }>;
 interface Controls { load(chart: DeepReadonly<WorkbookChart> | undefined, snapshot: WorkbookSnapshot): void; refresh(disabled: boolean, available?: boolean, composing?: HTMLElement, stale?: boolean): void }
@@ -18,6 +20,7 @@ interface Controls { load(chart: DeepReadonly<WorkbookChart> | undefined, snapsh
  * cache values, independently writable data set or partial source submission. */
 export function createWorkbookChartControls(document: Document, parent: HTMLElement, host: Host): Controls {
   const root = document.createElement("fieldset"), legend = document.createElement("legend"); legend.textContent = "图表数据、坐标轴与标题"; root.append(legend); parent.append(root);
+  const styleControls = createWorkbookChartStyleControls(document, root, host);
   let series: DataSeries[] = [], selected = 0, available = false, blocked = true, sourceStale = false, kind: WorkbookChart["kind"] = "column";
   const fields: (HTMLInputElement | HTMLSelectElement)[] = [], buttons: HTMLButtonElement[] = [];
   const label = <T extends HTMLElement>(name: string, field: T, container = root): T => { const wrapper = document.createElement("label"); field.setAttribute("aria-label", name); wrapper.append(name, field); container.append(wrapper); return field; };
@@ -92,6 +95,7 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
     return { target, mode, value, valueType, reset() { changed = false; } };
   });
   function load(chart: DeepReadonly<WorkbookChart> | undefined, snapshot: WorkbookSnapshot): void {
+    styleControls.load(chart);
     available = !!chart; edited.clear(); if (!chart) { refresh(blocked, false); return; } kind = chart.kind;
     categories = workbookChartVectorDraft(chart.categories); if (!chart.categories) categories.valueType = "text"; categoryControls.load(categories); categoryMode.value = chart.categories ? "source" : "automatic"; categoryContainer.hidden = !chart.categories;
     series = chart.series.map(item => ({ seriesId: item.seriesId, nameKind: item.name?.kind ?? "none", name: item.name?.kind === "text" ? item.name.text : item.name?.reference.expression ?? "", nameValueType: item.name?.kind === "reference" ? item.name.reference.valueType : "text", values: workbookChartVectorDraft(item.values) }));
@@ -112,6 +116,7 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
     }
   }
   function refresh(disabled: boolean, isAvailable = available, composing?: HTMLElement, stale = sourceStale): void {
+    styleControls.refresh(disabled, composing, stale);
     available = isAvailable; blocked = disabled; sourceStale = stale; root.hidden = !available;
     for (const field of fields) field.disabled = (disabled || !available) && field !== composing;
     for (const field of buttons) field.disabled = disabled || stale || !available;

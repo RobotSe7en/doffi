@@ -60,7 +60,12 @@ export async function currentChartWindowMeasurement(entries: TestPackage) {
     await controller.render(snapshot.metadata.workbook.activeSheetId, { widthPt: 620, heightPt: 420, scrollLeftPt: 0, scrollTopPt: 0 });
     const window = controller.current!, text = window.element.querySelector('[data-office-view="workbook-drawings"]')!.textContent;
     const after = model.serialize();
-    const result = { text, objects: window.objects.length, diagnostics: window.diagnostics, unavailable: window.element.querySelectorAll('[data-office-view="workbook-chart-unavailable"]').length,
+    const paints = [...window.element.querySelectorAll('[data-sdk-chart]')].map(chart => ({
+      columns: [...chart.querySelectorAll('[data-sdk-chart-point=column]')].map(point => point.getAttribute('fill')),
+      labels: [...chart.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=data-label]')].map(label => ({ text: label.textContent, fill: label.getAttribute('fill'), size: label.getAttribute('font-size') })),
+    }));
+    const walker = surface.document.createTreeWalker(window.element, 0xffff_ffff); let actualNodes = 1; while (walker.nextNode()) actualNodes++;
+    const result = { text, paints, actualNodes, declaredNodes: window.nodes, objects: window.objects.length, diagnostics: window.diagnostics, unavailable: window.element.querySelectorAll('[data-office-view="workbook-chart-unavailable"]').length,
       sourceUnchanged: [...before].every(([path, bytes]) => { const saved = after.get(path)!; return bytes.length === saved.length && bytes.every((byte, index) => byte === saved[index]); }) };
     controller.dispose(); return { ...result, released: !surface.view.childNodes.length && !surface.source.childNodes.length };
   } finally { controller.dispose(); formatter.dispose(); surface.dispose(); container.remove(); }

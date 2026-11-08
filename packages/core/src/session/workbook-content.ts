@@ -5,6 +5,7 @@ import { DocumentEdit } from "../document/edit.js";
 import { parseHtml } from "../document/html.js";
 import type { HtmlSourceDescriptor } from "../document/html.js";
 import { decodeText, encode, resolveReference } from "../document/package.js";
+import type { SourceStyleNode } from "../document/source-css.js";
 import { escapeWorkbookText } from "./workbook-cells.js";
 
 /** Lazily opens only the bounded rich-content part, never the cell grid. */
@@ -30,6 +31,15 @@ export class WorkbookContentEdit {
     return this.editor = new DocumentEdit({ files: this.files, snapshot: { html: html.html, manifest: descriptor, metadata: { workbook: this.workbook } }, html }, this.limits, this.allocate);
   }
   parse() { return parseHtml(this.edit().html(), this.descriptor(), this.files, this.limits, { nodes: 0 }); }
+  styleNode(nodeId: string): SourceStyleNode {
+    const source = this.parse(), shell = this.edit().shellAncestors();
+    let parent: SourceStyleNode | undefined;
+    for (const ancestor of [...shell].reverse()) parent = { tag: ancestor.tagName, attrs: ancestor.attributes, parent };
+    const chain = []; let id: string | null = nodeId;
+    while (id !== null) { const node = source.peekNode(id); if (!node) throw new Error("Missing workbook rich source identity."); chain.push(node); id = node.parentNodeId; }
+    for (const node of chain.reverse()) parent = { tag: node.tagName, attrs: node.attributes, parent };
+    return parent!;
+  }
   root(): string { const html = this.parse(); return html.nodeIds().find(id => html.peekNode(id)?.parentNodeId === null)!; }
   relative(path: string): string {
     this.edit();
