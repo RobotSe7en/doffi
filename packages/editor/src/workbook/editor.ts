@@ -9,6 +9,7 @@ import { bindWorkbookTextInput } from "./text-binding.js";
 import { createWorkbookPasteTransaction } from "./text-input.js";
 import type { WorkbookTextInputMode } from "./text-input.js";
 import { createWorkbookFillTransaction } from "./fill.js";
+import { workbookFillSeedCount } from "./fill-selection.js";
 import { findWorkbookText } from "./find.js";
 import { createWorkbookReplaceTransaction } from "./replace.js";
 import type { WorkbookFindMatch, WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
@@ -298,7 +299,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     if (count < 2) throw new DocumentError("InvalidOperation", axis === "row" ? "向下填充需要至少两行。" : "向右填充需要至少两列。");
     const model = captureWorkbookModel(session), manifest = model.snapshot().manifest, sheetId = selected.anchor.sheetId;
     if (selected.documentId !== manifest.documentId || selected.baseRevision !== manifest.revision) throw new DocumentError("RevisionConflict", "Fill selection belongs to a previous source.");
-    let seeds = 1;
+    let seeds = series ? 1 : workbookFillSeedCount(range, model.snapshot().metadata.workbook.sheets.find(sheet => sheet.sheetId === sheetId)!.merges, axis);
     if (series) {
       const next = { ...range.from, [axis]: range.from[axis] + 1 }, value = model.getCell(sheetId, next.row, next.column);
       if (value?.formula || value && value.value.type !== "number" && value.value.type !== "blank") throw new DocumentError("InvalidOperation", "数列填充的种子必须是数字或空白。");

@@ -1,0 +1,280 @@
+{
+  "scope": "Independent ZIP/XML source, actual pinned Calc copyRange and fillAuto. Mismatched destination merges are rejected by the SDK; Calc retains its old merge. Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "ef794dfadc414fe595951baf7f2b2ce9ec7dcbfa224c7b459ad73a442c43082f",
+  "cases": [
+    {
+      "name": "copy-empty",
+      "producerSha256": "a181d8ebcd176b447f1c92333b213b3d596b3fee5e933b4a0d6cec087faf9f1b",
+      "observed": [
+        {
+          "merges": [
+            "D1:E2",
+            "A256:B257",
+            "D256:E257",
+            "H256:H257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "e",
+              "value": "#REF!",
+              "formula": "#REF!+$A$1"
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "name": "copy-matching",
+      "producerSha256": "c9f0350671ad73f29b55a26a23ddbea7a91f5e1052eb05fad06075168cc086dc",
+      "observed": [
+        {
+          "merges": [
+            "A256:B257",
+            "D256:E257",
+            "H256:H257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "name": "copy-other",
+      "producerSha256": "d8be7c65a21f42c0be83bc2a948a0c757258ecb83b207c71ab37daa1b89cd86f",
+      "observed": [
+        {
+          "merges": [
+            "A256:B257",
+            "D256:E257",
+            "H256:H257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [
+            "D1:E2"
+          ],
+          "cells": [
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "e",
+              "value": "#REF!",
+              "formula": "#REF!+$A$1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fill-down",
+      "producerSha256": "1a785389be26040c9356cd29baf1686add10865db8c7f2001330fb623991a91c",
+      "observed": [
+        {
+          "merges": [
+            "A256:B257",
+            "D256:E257",
+            "H256:H257",
+            "A258:B259",
+            "A260:B261"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A260",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "name": "fill-up",
+      "producerSha256": "27bb4dfe6dab7ab348504708b2e19ba0f670c6a071f6c9e83d980291219637df",
+      "observed": [
+        {
+          "merges": [
+            "A252:B253",
+            "A254:B255",
+            "A256:B257",
+            "D256:E257",
+            "H256:H257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "A252",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A254",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "name": "copy-incompatible",
+      "producerSha256": "3071f1a358e2401cc0cbff6955e351dba7fca82e5cf64a6abcbe015fe5fae714",
+      "observed": [
+        {
+          "merges": [
+            "A256:B257",
+            "D256:E257",
+            "H256:H257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    }
+  ]
+}

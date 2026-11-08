@@ -238,6 +238,30 @@ test("mounted workbook merge requires an explicit clearing choice and unmerge/un
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ merges: [], history: { undoSteps: 0, redoSteps: 2 }, cells: [{ value: { type: "number", value: 7 } }, { value: { type: "number", value: 3 } }] });
 });
 
+test("mounted direct merged clipboard and both fill axes retain complete templates and undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const area = (row: number, column: number, toRow: number, toColumn: number) => ({ from: { row, column }, to: { row: toRow, column: toColumn } });
+  const source = scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "合并😀禰󠄀" } }], metadata => { metadata.workbook.sheets[0]!.merges = [area(0, 0, 1, 1)]; });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(source.serialize()));
+  await page.evaluate(() => window.workbookEditor.select(0, 0, 1, 1));
+  await page.getByRole("button", { name: "复制选区", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await page.evaluate(() => window.workbookEditor.select(0, 3));
+  await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ merges: [area(0, 0, 1, 1), area(0, 3, 1, 4)], history: { undoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 3))).toMatchObject({ text: "合并😀禰󠄀" });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  for (const axis of ["row", "column"] as const) {
+    await page.evaluate(axis => window.workbookEditor.select(0, 0, axis === "row" ? 5 : 1, axis === "column" ? 5 : 1), axis);
+    await page.getByRole("button", { name: axis === "row" ? "向下填充" : "向右填充", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+    expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+    for (const offset of [2, 4]) {
+      expect(await page.evaluate(({ row, column }) => window.workbookEditor.cell("sheet-1", row, column), { row: axis === "row" ? offset : 0, column: axis === "column" ? offset : 0 })).toMatchObject({ text: "合并😀禰󠄀" });
+    }
+    await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+    expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ merges: [area(0, 0, 1, 1)], history: { undoSteps: 0 }, cleanSource: true });
+  }
+});
+
 test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
   await page.addScriptTag({ content: editorCode });
   const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },

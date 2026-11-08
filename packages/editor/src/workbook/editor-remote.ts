@@ -10,6 +10,7 @@ import { bindWorkbookAsyncTextInput } from "./text-binding.js";
 import type { WorkbookAsyncTextBinding } from "./text-binding.js";
 import type { WorkbookSessionCommand, WorkbookSessionConnection, WorkbookSessionReceipt } from "./session-transport.js";
 import { parseWorkbookTextInput } from "./text-input.js";
+import { workbookFillSeedCount } from "./fill-selection.js";
 import type { WorkbookTextInputMode } from "./text-input.js";
 import type { WorkbookFindMatch, WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
 import { workbookInputTextView } from "./text-projection.js";
@@ -224,7 +225,10 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     const range = anchor.ranges[0]!, count = range.to[axis] - range.from[axis] + 1;
     if (series && range.from.row !== range.to.row && range.from.column !== range.to.column) throw new DocumentError("InvalidOperation", "数列填充请选择单行或单列。");
     if (count < 2) throw new DocumentError("InvalidOperation", axis === "row" ? "向下填充需要至少两行。" : "向右填充需要至少两列。");
-    let seeds = 1;
+    const snapshot = source?.cells.snapshot;
+    if (!snapshot || snapshot.manifest.documentId !== selected.documentId || snapshot.manifest.revision !== selected.baseRevision)
+      throw new DocumentError("RevisionConflict", "Fill selection belongs to a previous source.");
+    let seeds = series ? 1 : workbookFillSeedCount(range, snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === anchor.sheetId)!.merges, axis);
     if (series) {
       const at = { ...range.from, [axis]: range.from[axis] + 1 }, value = await client.readInput(anchor.sheetId, at), parsed = parseWorkbookTextInput(value.text, at);
       if (parsed.kind !== "value" || parsed.value.type !== "number" && parsed.value.type !== "blank") throw new DocumentError("InvalidOperation", "数列填充的种子必须是数字或空白。");

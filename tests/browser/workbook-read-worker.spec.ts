@@ -193,6 +193,30 @@ test('mounted remote merge requires explicit covered-content clearing and preser
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
 });
 
+test('mounted Worker merged clipboard and both fill axes retain complete templates and undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const area = (row: number, column: number, toRow: number, toColumn: number) => ({ from: { row, column }, to: { row: toRow, column: toColumn } });
+  const source = scalarWorkbook([{ row: 0, column: 0, value: { type: 'text', value: '合并😀禰󠄀' } }], metadata => { metadata.workbook.sheets[0]!.merges = [area(0, 0, 1, 1)]; });
+  const bytes = Buffer.from(writeDocumentZip(source.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A1:B2'); await page.getByRole('button', { name: '复制选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('D1'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ merges: [area(0, 0, 1, 1), area(0, 3, 1, 4)], history: { undoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(0, 3))).toBe('合并😀禰󠄀');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  for (const axis of ['row', 'column'] as const) {
+    await choose(axis === 'row' ? 'A1:B6' : 'A1:F2');
+    await page.getByRole('button', { name: axis === 'row' ? '向下填充' : '向右填充', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+    expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+    for (const offset of [2, 4]) expect(await page.evaluate(({ row, column }) => window.workbookRemoteEditor.value(row, column), { row: axis === 'row' ? offset : 0, column: axis === 'column' ? offset : 0 })).toBe('合并😀禰󠄀');
+    await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+    expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ merges: [area(0, 0, 1, 1)], history: { undoSteps: 0 } });
+  }
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
 test('mounted remote freeze controls use the selected source address and the Worker history', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 7 } }]).serialize())).toString('base64');

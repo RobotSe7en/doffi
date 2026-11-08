@@ -4,6 +4,8 @@
 
 ## 基线与当前状态
 
+- 完整合并复制／填充本批最终 `pnpm check` 214 文件／2237 项、边界、类型及 SDK／Playground 构建通过（`.cache/workbook-merged-copy-fill-complete-check.log`）。末次新增交错合并种子闭包及非法选区检查也包含在该完整运行内；此前三引擎 6 项通过的 SDK 实现未再改变。没有发起远端完整 CI，R3-09～20 仍继续实施。
+- `4e6ce08` 的远端快速检查 `42479856523` 成功，未启动完整远端 CI。后续完整合并复制与模板填充正在验证：核心普通复制／来源格式填充支持完整合并，错位目标与部分合并整批拒绝；直连／Worker 按完整首带确定种子。5 文件／40 项核心、Worker、独立源／生产者对照通过（`.cache/workbook-merged-copy-fill-native-rechecked-unit.log`），三引擎界面 6 项通过（`.cache/workbook-merged-copy-fill-browser.log`）。首轮原生对照仅因合并集合顺序比较失败，已改为比较完整有序集合而保留 SDK 原始元数据顺序；原失败日志 `.cache/workbook-merged-copy-fill-native-unit.log` 保留。实际固定 Calc 六组操作及官方 XSD／OPC 重跑通过（`.cache/workbook-copy-merges-native-verified.log`），新脚本加入完整 Office 验收。选择性合并粘贴、其他结构组合及阶段最终审查／容量仍未完成，后续完整本地检查另记。
 - main／远端 main 的基线为 `5451736`；当前分支 `feat/workbook-editing`。
 - 读取阶段已合并；CI 优化及触发频率调整分别为 `31cca2f`、`d65c0e9`，不再是待办。
 - R3-09～16 实施中，均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`、冻结界面及实际坐标查询为 `c917075`，均已推送；R3-13 定义编辑基础随后接入。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。不能将这些进展计作完整 R3-11、R3-12、R3-13、R3-14、R3-15 或 R3-16。

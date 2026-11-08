@@ -15,6 +15,9 @@ function invalid(message: string): never { throw new DocumentError("InvalidOpera
 function overlap(a: DeepReadonly<WorkbookRange>, b: DeepReadonly<WorkbookRange>): boolean {
   return a.from.row <= b.to.row && b.from.row <= a.to.row && a.from.column <= b.to.column && b.from.column <= a.to.column;
 }
+function contains(a: DeepReadonly<WorkbookRange>, b: DeepReadonly<WorkbookRange>): boolean {
+  return a.from.row <= b.from.row && a.from.column <= b.from.column && a.to.row >= b.to.row && a.to.column >= b.to.column;
+}
 /** Build one revision-bound fill from immutable seeds. Overlapping targets
  * never read earlier outputs, and UI/Worker hosts own yielding and cancellation. */
 export async function createWorkbookFillTransaction(input: WorkbookModel, sheetId: string, source: DeepReadonly<WorkbookRange>, target: DeepReadonly<WorkbookRange>, options: WorkbookFillOptions = {}): Promise<DocumentTransaction> {
@@ -34,7 +37,9 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   const rows = seeds.to.row - seeds.from.row + 1, columns = seeds.to.column - seeds.from.column + 1;
   const total = (destination.to.row - destination.from.row + 1) * (destination.to.column - destination.from.column + 1);
   if (total > config.maxCells || rows * columns > config.maxCells) throw new DocumentError("ResourceLimitExceeded", "Workbook fill exceeds its cell budget.");
-  if (sheet.merges.some(merge => overlap(merge, seeds) || overlap(merge, destination))) invalid("Range fill requires unmerged source and destination cells.");
+  const sourceMerges = sheet.merges.filter(merge => overlap(merge, seeds)), targetMerges = sheet.merges.filter(merge => overlap(merge, destination));
+  if (sourceMerges.some(merge => !contains(seeds, merge)) || targetMerges.some(merge => !contains(destination, merge))) invalid("Range fill cannot split a merged region.");
+  if ((sourceMerges.length || targetMerges.length) && (config.mode !== "copy" || config.format !== "source")) invalid("Merged range fill requires copying the source content and format.");
   const guard = (): void => {
     if (config.signal?.aborted) throw new DocumentError("OperationCancelled", "Workbook fill was cancelled.");
     if (captureWorkbookModel(input) !== model) throw new DocumentError("RevisionConflict", "The workbook changed while preparing fill.");
@@ -42,6 +47,23 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   const cache = new Map<number, { readonly at: WorkbookCoordinate; readonly source: WorkbookCellSource; readonly cssClass: string; readonly numberFormatId?: string }>();
   let units = 0;
   const account = (amount: number): void => { units += amount; if (units > config.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Workbook fill exceeds its source-text budget."); };
+  const copiedMerges: WorkbookRange[] = []; let topologySteps = 0;
+  for (const merge of sourceMerges) {
+    for (let row = Math.ceil((destination.from.row - merge.to.row) / rows); row <= Math.floor((destination.to.row - merge.from.row) / rows); row++) {
+      for (let column = Math.ceil((destination.from.column - merge.to.column) / columns); column <= Math.floor((destination.to.column - merge.from.column) / columns); column++) {
+        guard();
+        const range = { from: { row: merge.from.row + row * rows, column: merge.from.column + column * columns },
+          to: { row: merge.to.row + row * rows, column: merge.to.column + column * columns } };
+        if (!contains(destination, range)) invalid("Range fill would create an incomplete merged region.");
+        account(JSON.stringify(range).length); copiedMerges.push(range);
+        if (++topologySteps % 256 === 0 && config.yield) { await config.yield(); guard(); }
+      }
+    }
+    if (++topologySteps % 256 === 0 && config.yield) { await config.yield(); guard(); }
+  }
+  const mergeKey = (range: DeepReadonly<WorkbookRange>): string => [range.from.row, range.from.column, range.to.row, range.to.column].join(":");
+  const mergeKeys = new Set(copiedMerges.map(mergeKey));
+  if (targetMerges.some(merge => !mergeKeys.has(mergeKey(merge)))) invalid("Range fill requires identically sized and aligned destination merges.");
   function read(row: number, column: number) {
     guard(); const key = row * 16_384 + column, known = cache.get(key); if (known) return known;
     const at = { row, column }, source = readWorkbookCellSource(model, { sheetId, ...at }), format = resolveWorkbookCellFormat(sheet!, at, model.getCell(sheetId, row, column));
@@ -96,10 +118,16 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   }
   guard();
   const operations: DocumentTransaction["operations"] = [];
+  if (targetMerges.length) {
+    const operation = { op: "unmergeWorkbookCells" as const, sheetId, range: destination }; account(JSON.stringify(operation).length); operations.push(operation);
+  }
   if (registerGeneral && cells.some(cell => cell.formatId === general)) {
     const definition = { op: "setWorkbookNumberFormat" as const, format: { formatId: general!, builtinId: 0 } }; account(JSON.stringify(definition).length); operations.push(definition);
   }
   if (cells.length) operations.push({ op: "setWorkbookCells", sheetId, cells });
+  for (const range of copiedMerges) {
+    const operation = { op: "mergeWorkbookCells" as const, sheetId, range, coveredContent: "reject" as const }; account(JSON.stringify(operation).length); operations.push(operation);
+  }
   return { protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision,
     operations };
 }

@@ -49,6 +49,7 @@
     "check:workbook-axis": "/usr/bin/python3 scripts/check-workbook-axis.py --verify-native",
     "check:workbook-axis-tables": "/usr/bin/python3 scripts/check-workbook-axis-tables.py --verify-native",
     "check:workbook-sort": "/usr/bin/python3 scripts/check-workbook-sort.py --verify-native",
+    "check:workbook-copy-merges": "/usr/bin/python3 scripts/check-workbook-copy-merges.py --verify-native",
     "typecheck:built": "tsc --project apps/playground/tsconfig.json && tsc --project tsconfig.tools.json",
     "test:built": "vitest run"
   },

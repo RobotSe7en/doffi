@@ -22,8 +22,11 @@ function invalid(message: string): never { throw new DocumentError("InvalidOpera
 function overlap(a: DeepReadonly<WorkbookRange>, b: DeepReadonly<WorkbookRange>): boolean {
   return a.from.row <= b.to.row && b.from.row <= a.to.row && a.from.column <= b.to.column && b.from.column <= a.to.column;
 }
-/** Copy one fixed source rectangle. This command handles unmerged
- * content/format input; clipboard lifetime, links, comments and structural
+function contains(a: DeepReadonly<WorkbookRange>, b: DeepReadonly<WorkbookRange>): boolean {
+  return a.from.row <= b.from.row && a.from.column <= b.from.column && a.to.row >= b.to.row && a.to.column >= b.to.column;
+}
+/** Copy one fixed source rectangle, including complete merged regions for
+ * ordinary content copies; clipboard lifetime, links, comments and structural
  * copy are composed separately. No output is read back as a later seed. */
 export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, sheetId: string, range: DeepReadonly<WorkbookRange>, origin: WorkbookCoordinate, options: WorkbookRangeCopyOptions = {}): Promise<DocumentTransaction> {
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["targetSheetId", "mode", "calculation", "skipBlanks", "maxCells", "maxCodeUnits", "maxSteps", "signal", "yield", "onProgress"].includes(key))) invalid("Invalid workbook range-copy options.");
@@ -42,7 +45,16 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
   if (total > config.maxCells) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its cell budget.");
   const target = { from: destination, to: { row: destination.row + rows - 1, column: destination.column + columns - 1 } };
   if (target.to.row >= 1_048_576 || target.to.column >= 16_384) invalid("Range copy exceeds the destination worksheet bounds.");
-  if (sheet.merges.some(merge => overlap(merge, source)) || targetSheet.merges.some(merge => overlap(merge, target))) invalid("Range copy requires unmerged source and destination cells.");
+  const sourceMerges = sheet.merges.filter(merge => overlap(merge, source)), targetMerges = targetSheet.merges.filter(merge => overlap(merge, target));
+  if (sourceMerges.some(merge => !contains(source, merge)) || targetMerges.some(merge => !contains(target, merge))) invalid("Range copy cannot split a merged region.");
+  if ((sourceMerges.length || targetMerges.length) && (config.mode !== "contents" || config.skipBlanks)) invalid("Merged range copy requires ordinary contents without skipping blanks.");
+  const copiedMerges = sourceMerges.map(merge => ({
+    from: { row: destination.row + merge.from.row - source.from.row, column: destination.column + merge.from.column - source.from.column },
+    to: { row: destination.row + merge.to.row - source.from.row, column: destination.column + merge.to.column - source.from.column },
+  }));
+  const mergeKey = (range: DeepReadonly<WorkbookRange>): string => [range.from.row, range.from.column, range.to.row, range.to.column].join(":");
+  const mergeKeys = new Set(copiedMerges.map(mergeKey));
+  if (targetMerges.some(merge => !mergeKeys.has(mergeKey(merge)))) invalid("Range copy requires identically sized and aligned destination merges.");
   let units = 0, steps = 0, completed = 0;
   const guard = (): void => {
     if (config.signal?.aborted) throw new DocumentError("OperationCancelled", "Workbook range copy was cancelled.");
@@ -104,11 +116,19 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
       }
     }
     guard(); const operations: DocumentTransaction["operations"] = [];
+    if (targetMerges.length) {
+      const operation = { op: "unmergeWorkbookCells" as const, sheetId: targetSheetId, range: target };
+      account(JSON.stringify(operation).length); operations.push(operation);
+    }
     if (registerGeneral && (cells.some(cell => cell.formatId === general) || formats.some(cell => cell.formatId === general))) {
       const operation = { op: "setWorkbookNumberFormat" as const, format: { formatId: general!, builtinId: 0 } }; account(JSON.stringify(operation).length); operations.push(operation);
     }
     if (cells.length) operations.push({ op: "setWorkbookCells", sheetId: targetSheetId, cells });
     if (formats.length) operations.push({ op: "setWorkbookCellFormats", sheetId: targetSheetId, cells: formats });
+    for (const range of copiedMerges) {
+      const operation = { op: "mergeWorkbookCells" as const, sheetId: targetSheetId, range, coveredContent: "reject" as const };
+      account(JSON.stringify(operation).length); operations.push(operation);
+    }
     return { protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations };
   } finally { evaluator?.dispose(); }
 }
