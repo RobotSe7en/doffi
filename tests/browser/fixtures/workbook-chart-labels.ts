@@ -34,7 +34,7 @@ export async function measureNativeChartLabels(snapshot: WorkbookSnapshot, bindi
 
 export async function measureControlledChartLabels(snapshot: WorkbookSnapshot, bindings: readonly WorkbookChartBinding[], decoration?: 'solid' | 'double' | 'dotted' | 'dashed' | 'wavy') {
   const container=document.createElement('div');document.body.append(container);
-  const css='.measured-label{font-family:"Liberation Sans";font-size:18pt;line-height:30pt;letter-spacing:2pt;--office-text-font-scale:0.5;'+(decoration?'text-decoration:underline line-through '+decoration:'')+'}.align-left{--office-axis-label-align:l}.align-right{--office-axis-label-align:r;--office-axis-label-skip:1}.keep-negative{--office-invert-negative:false}';
+  const css='.measured-label{font-family:"Liberation Sans";font-size:18pt;line-height:30pt;letter-spacing:2pt;--office-text-font-scale:0.5;--office-fill-kind:solid;--office-fill-color:#f0e0c0;--office-line-kind:solid;--office-line-color:#704090;'+(decoration?'text-decoration:underline line-through '+decoration:'')+'}.align-left{--office-axis-label-align:l}.align-right{--office-axis-label-align:r;--office-axis-label-skip:1}.keep-negative{--office-invert-negative:false}';
   const surface=await createWorkbookSurface(container,{...snapshot,styles:[...snapshot.styles,{path:'measured-label.css',css}]},{widthPt:520,heightPt:340}),sources=new WorkbookContentSources(surface.document,snapshot),formatter=createWorkbookNumberFormatter({dateSystem:snapshot.metadata.workbook.dateSystem});
   const charts=snapshot.metadata.workbook.charts!,projection=sources.project(surface.source,charts.map(chart=>chart.nodeId)),before=surface.source.innerHTML;
   try{

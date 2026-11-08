@@ -7,6 +7,12 @@ import { MAX_CHART_PAINT_EXTENT } from "./chart-clipping.js";
 export interface ChartTextDecoration { readonly node: SVGTextElement; readonly line: string; readonly style: string; readonly color: string; readonly size: number }
 const carriers = new WeakMap<SVGGraphicsElement, SVGGraphicsElement>();
 export function chartTextCarrier(node: SVGGraphicsElement): SVGGraphicsElement { return carriers.get(node) ?? node; }
+export function ensureChartTextCarrier(node: SVGTextElement, account: (amount: number) => void): SVGGraphicsElement {
+  const current = carriers.get(node); if (current) return current;
+  if (!node.parentElement) throw new DocumentError("InvalidOperation", "A chart label needs its owning scene.");
+  account(1); const group = markViewNode(svgElement(node.ownerDocument, "g", { "data-sdk-chart-text-decoration": "" }));
+  node.parentElement.insertBefore(group, node); group.append(node); carriers.set(node, group); return group;
+}
 /** SVG decoration longhands differ between engines. Measured font baselines
  * and bounded first-party strokes keep one searchable text node per label. */
 export function prepareChartTextDecorations(scene: BasicChartScene, account: (amount: number) => void, accountText?: (units: number) => void): void {
@@ -40,8 +46,8 @@ export function prepareChartTextDecorations(scene: BasicChartScene, account: (am
       }
     } finally { probe.remove(); account(-temporary); }
     if (!measured.length) continue;
-    const group = markViewNode(create(document, "g", { "data-sdk-chart-text-decoration": "" })), paint = create(document, "g", { "data-sdk-chart-decoration-paint": "", "aria-hidden": "true" });
-    node.parentElement.insertBefore(group, node); group.append(node, paint); carriers.set(node, group);
+    const group = ensureChartTextCarrier(node, account), paint = create(document, "g", { "data-sdk-chart-decoration-paint": "", "aria-hidden": "true" });
+    group.append(paint);
     for (const line of measured) for (const kind of kinds) {
       const double = decoration.style === "double", thickness = line.size * (double ? .035 : .055);
       const y = kind === "underline" ? line.baseline + line.size * (double ? .035 : .08) : kind === "line-through" ? line.baseline - line.size * .28 : line.top + thickness / 2;

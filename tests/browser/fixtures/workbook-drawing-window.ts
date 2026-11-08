@@ -63,13 +63,28 @@ export async function currentChartWindowMeasurement(entries: TestPackage, inspec
     const paints = [...window.element.querySelectorAll('[data-sdk-chart]')].map(chart => ({
       columns: [...chart.querySelectorAll('[data-sdk-chart-point=column]')].map(point => point.getAttribute('fill')),
       labels: [...chart.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=data-label]')].map(label => ({ text: label.textContent, fill: label.getAttribute('fill'), size: label.getAttribute('font-size'), decoration: label.dataset.sdkChartDecorationLine, decorationStyle: label.dataset.sdkChartDecorationStyle, decorationColor: (() => { const paint = label.closest("[data-sdk-chart-text-decoration]")?.querySelector<SVGElement>("[data-sdk-chart-decoration-paint] line,[data-sdk-chart-decoration-paint] path"); return paint ? surface.document.defaultView!.getComputedStyle(paint).stroke : label.dataset.sdkChartDecorationColor; })() })),
+      frames: [...chart.querySelectorAll<SVGRectElement>('[data-sdk-chart-label-frame]')].map(frame => ({ index: frame.parentElement!.querySelector<SVGTextElement>('[data-point-index]')!.dataset.pointIndex, fill: frame.getAttribute('fill'), color: frame.getAttribute('stroke'), width: frame.width.baseVal.value, height: frame.height.baseVal.value })),
+      legends: [...chart.querySelectorAll<SVGRectElement>('[data-sdk-chart-legend-frame]')].map(frame => ({ fill: frame.getAttribute('fill'), color: frame.getAttribute('stroke'), width: frame.width.baseVal.value, height: frame.height.baseVal.value })),
     }));
     const walker = surface.document.createTreeWalker(window.element, 0xffff_ffff); let actualNodes = 1; while (walker.nextNode()) actualNodes++;
     const ink = inspectInk ? await Promise.all([...window.element.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=data-label]')].map(chartLabelInk)) : [];
-    const result = { text, paints, ink, actualNodes, declaredNodes: window.nodes, objects: window.objects.length, diagnostics: window.diagnostics, unavailable: window.element.querySelectorAll('[data-office-view="workbook-chart-unavailable"]').length,
+    const framePixels = inspectInk ? await Promise.all([...window.element.querySelectorAll<SVGRectElement>('[data-sdk-chart-label-frame]')].filter(frame => frame.getAttribute('fill')?.startsWith('url(')).map(chartFramePixels)) : [];
+    const result = { text, paints, ink, framePixels, actualNodes, declaredNodes: window.nodes, objects: window.objects.length, diagnostics: window.diagnostics, unavailable: window.element.querySelectorAll('[data-office-view="workbook-chart-unavailable"]').length,
       sourceUnchanged: [...before].every(([path, bytes]) => { const saved = after.get(path)!; return bytes.length === saved.length && bytes.every((byte, index) => byte === saved[index]); }) };
     controller.dispose(); return { ...result, released: !surface.view.childNodes.length && !surface.source.childNodes.length };
   } finally { controller.dispose(); formatter.dispose(); surface.dispose(); container.remove(); }
+}
+
+async function chartFramePixels(frame: SVGRectElement) {
+  const source = frame.ownerSVGElement!, svg = source.cloneNode(false) as SVGSVGElement, bounds = frame.getBBox();
+  svg.setAttribute('viewBox', [bounds.x, bounds.y, bounds.width, bounds.height].join(' ')); svg.setAttribute('width', '240'); svg.setAttribute('height', '120'); svg.setAttribute('preserveAspectRatio', 'none'); svg.style.cssText = '';
+  for (const defs of source.querySelectorAll(':scope > defs')) svg.append(defs.cloneNode(true)); svg.append(frame.cloneNode(true));
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+  try {
+    const image = new Image(); image.src = url; await image.decode(); const canvas = document.createElement('canvas'); canvas.width = 240; canvas.height = 120;
+    const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+    return [36, 204].map(x => [...context.getImageData(x, 60, 1, 1).data]);
+  } finally { URL.revokeObjectURL(url); }
 }
 
 /** Raster comparison observes actual SVG decoration paint, independently of

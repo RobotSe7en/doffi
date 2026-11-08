@@ -309,3 +309,24 @@ test('chart label font decorations inherit through native roles and point none c
   expect(result.paints[0]!.labels).toMatchObject([{ text: '2', decoration: 'none' }, { text: '4', decoration: 'line-through', decorationStyle: 'solid' }, { text: '6', decoration: 'underline', decorationStyle: 'double', decorationColor: 'rgb(16, 40, 96)', fill: 'rgba(16,40,96,1)' }]);
   expect(result.ink[0]!.pixels).toBe(0); expect(result.ink[1]!.pixels).toBeGreaterThan(0); expect(result.ink[2]!.pixels).toBeGreaterThan(0); expect(result.ink[2]!.bands).toBe(2); expect(result.ink[2]!.colors[0]!.rgb).toBe('16,40,96');
 });
+
+test('chart label and legend frames use their own current-source paint with gradient pixels and explicit none', async ({ page }) => {
+  const session = createDocumentSession(openDocument(createWorkbook({ documentId: 'label-frames' }), { kind: 'workbook' }));
+  const commit = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'label-frames', baseRevision: session.snapshot().manifest.revision, operations }));
+  commit([{ op: 'insertWorkbookChart', sheetId: 'sheet-1', kind: 'column', anchor: { kind: 'absolute', xPt: 20, yPt: 20, widthPt: 350, heightPt: 230 }, data: { series: [{ values: { kind: 'literal', valueType: 'number', count: 3, points: [{ index: 0, value: 2 }, { index: 1, value: 4 }, { index: 2, value: 6 }] } }] } }]);
+  const chart = session.snapshot().metadata.workbook.charts![0]!, seriesId = chart.series[0]!.seriesId;
+  commit([{ op: 'setWorkbookChart', nodeId: chart.nodeId, changes: { showLabels: true, legend: 'bottom' } }, { op: 'setWorkbookObjectStyle', nodeId: chart.nodeId, properties: { '--office-fill-kind': 'solid', '--office-fill-color': '#008800' } }]);
+  const plain = await page.evaluate(files => window.workbookDrawingWindow.currentChartWindowMeasurement(files), encodeTestPackage(session.serialize()));
+  expect(plain.paints[0]).toMatchObject({ frames: [], legends: [] }); expect(plain.unavailable).toBe(0);
+  commit([{ op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'label', properties: { '--office-fill-kind': 'solid', '--office-fill-color': '#f0e0c0', '--office-line-kind': 'solid', '--office-line-color': '#704090', '--office-line-width': '1.5pt' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'pointLabel', seriesId, index: 0, properties: { '--office-fill-kind': 'linear', '--office-fill-angle': '0', '--office-fill-stop-count': '2', '--office-fill-stop-0-position': '0', '--office-fill-stop-0-color': '#ff0000', '--office-fill-stop-1-position': '1', '--office-fill-stop-1-color': '#0000ff' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'pointLabel', seriesId, index: 1, properties: { '--office-fill-kind': 'none', '--office-line-kind': 'none' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'legend', properties: { '--office-fill-kind': 'solid', '--office-fill-color': 'currentColor', color: '#705090', '--office-line-kind': 'solid', '--office-line-color': '#008000' } }]);
+  const saved = session.serialize(); session.dispose();
+  const result = await page.evaluate(files => window.workbookDrawingWindow.currentChartWindowMeasurement(files, true), encodeTestPackage(saved));
+  expect(result).toMatchObject({ sourceUnchanged: true, released: true, unavailable: 0 }); expect(result.actualNodes).toBe(result.declaredNodes);
+  expect(result.paints[0]!.frames).toMatchObject([{ index: '0', fill: expect.stringMatching(/^url\(#/), color: 'rgba(112,64,144,1)' }, { index: '2', fill: 'rgba(240,224,192,1)' }]);
+  expect(result.paints[0]!.legends).toMatchObject([{ fill: 'rgba(112,80,144,1)', color: 'rgba(0,128,0,1)' }]);
+  for (const frame of [...result.paints[0]!.frames, ...result.paints[0]!.legends]) { expect(frame.width).toBeGreaterThan(0); expect(frame.height).toBeGreaterThan(0); }
+  expect(result.framePixels).toHaveLength(1); for (const [index, pixel] of result.framePixels[0]!.entries()) { const expected = index ? [38, 0, 217, 255] : [217, 0, 38, 255]; for (const [channel, value] of expected.entries()) expect(Math.abs(pixel[channel]! - value)).toBeLessThanOrEqual(5); }
+});

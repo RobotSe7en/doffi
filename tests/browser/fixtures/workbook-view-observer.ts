@@ -37,5 +37,6 @@ export function measureWorkbookChart(view: ShadowRoot | undefined) {
   const category = svg.querySelector<SVGLineElement>('[data-sdk-chart-axis=category]')!, value = svg.querySelector<SVGLineElement>('[data-sdk-chart-axis=value]')!;
   return { categories: [...svg.querySelectorAll('[data-sdk-chart-label=category-axis]')].map(label => label.textContent), labels: [...svg.querySelectorAll('[data-sdk-chart-label=data-label]')].map(label => label.textContent),
     leaders: [...svg.querySelectorAll('[data-sdk-chart-leader-line]')].map(line => ({ color: line.getAttribute('stroke'), width: Number(line.getAttribute('stroke-width')) })),
+    frames: [...svg.querySelectorAll('[data-sdk-chart-label-frame]')].map(frame => ({ fill: frame.getAttribute('fill'), color: frame.getAttribute('stroke'), width: Number(frame.getAttribute('stroke-width')) })),
     axes: { y: category.y1.baseVal.value, top: value.y1.baseVal.value, bottom: value.y2.baseVal.value } };
 }

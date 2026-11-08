@@ -228,9 +228,11 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart 
   await page.getByLabel("数据标签分隔符设置", { exact: true }).selectOption("custom"); await expect(page.getByLabel("数据标签分隔文字", { exact: true })).toBeEnabled();
   await page.getByLabel("数据标签位置", { exact: true }).selectOption("r");
   await page.getByLabel("数据标签引导线", { exact: true }).selectOption("true"); await page.getByLabel("数据标签引导线颜色", { exact: true }).fill("#207040"); await page.getByLabel("数据标签引导线宽度（磅）", { exact: true }).fill("2");
+  await page.getByLabel("图表部件填充颜色", { exact: true }).fill("#f0e0c0"); await page.getByLabel("图表部件线条颜色", { exact: true }).fill("#704090"); await page.getByLabel("图表部件线宽（磅）", { exact: true }).fill("1.5");
   await apply.click(); await settled();
   expect((await paint()).labels).toEqual(["A2.00", "B4.00"]);
   expect((await paint()).leaders).toEqual(Array(2).fill({ color: 'rgba(32,112,64,1)', width: 2 }));
+  expect((await paint()).frames).toEqual(Array(2).fill({ fill: 'rgba(240,224,192,1)', color: 'rgba(112,64,144,1)', width: 1.5 }));
   await target.selectOption("categoryAxis"); await page.getByLabel("坐标轴交叉方式", { exact: true }).selectOption("max"); await apply.click(); await settled();
   const last = await axes(); expect(last.y).toBeCloseTo(last.top, 4); // The explicit old crossesAt must be cleared.
   for (let count = 0; count < 3; count++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }

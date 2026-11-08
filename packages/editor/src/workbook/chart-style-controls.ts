@@ -25,6 +25,7 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
   const target = choice("图表样式部件", [["plot", "绘图区"], ["legend", "图例"], ["text", "默认文字"], ["label", "所有数据标签"], ["categoryAxis", "分类轴"], ["valueAxis", "数值轴"], ["grid", "数值轴网格线"], ["categoryGrid", "分类轴网格线"], ["series", "系列"], ["point", "数据点"], ["seriesLabel", "系列数据标签"], ["pointLabel", "单点数据标签"]]);
   const series = choice("图表样式系列", []), index = input("图表样式原始数据位置（从 1 开始）", "number"); index.min = "1"; index.max = "4294967296"; index.step = "1"; index.value = "1";
   const hasText = () => ["text", "legend", "label", "categoryAxis", "valueAxis", "seriesLabel", "pointLabel"].includes(target.value);
+  const hasFill = () => ["plot", "legend", "label", "series", "point", "seriesLabel", "pointLabel"].includes(target.value), hasLine = () => target.value !== "text";
   const hasSeries = () => ["series", "point", "seriesLabel", "pointLabel"].includes(target.value), hasPoint = () => target.value === "point" || target.value === "pointLabel";
   const key = () => JSON.stringify([target.value, hasSeries() ? series.value : "", hasPoint() ? index.value : ""]);
   const group = (): WorkbookChartStyleDraftGroup => `chart-style:${active}`;
@@ -45,10 +46,10 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
   const apply = document.createElement("button"); apply.type = "button"; apply.textContent = "应用当前图表部件样式"; root.append(apply);
   apply.addEventListener("click", () => host.run(async () => {
     const chart = host.current(), properties: Record<string, string> = details.properties(target.value as Operation["target"], kind), font = (name: string) => { const raw = read(name); if (/[\u0000-\u001f\u007f]/.test(raw)) throw new DocumentError("InvalidOperation", "字体名称不能包含控制字符。"); return '"' + raw.replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"'; };
-    for (const [field, property] of [["fill", "--office-fill-color"], ["line", "--office-line-color"], ["color", "color"], ["weight", "font-weight"], ["italic", "font-style"], ["dash", "--office-line-dash"], ["decoration", "text-decoration-line"], ["decorationStyle", "text-decoration-style"]] as const) if (read(field) && (!["color", "weight", "italic", "decoration", "decorationStyle"].includes(field) || hasText())) properties[property] = read(field);
-    if (read("fillKind") || read("fill")) properties["--office-fill-kind"] = read("fillKind") || "solid";
-    if (read("lineKind") || read("line") || read("lineWidth") || read("dash")) properties["--office-line-kind"] = read("lineKind") || "solid";
-    if (read("lineWidth") || (values.get("lineWidth") as HTMLInputElement).validity.badInput) properties["--office-line-width"] = number("lineWidth", 0, 1584) + "pt";
+    for (const [field, property] of [["fill", "--office-fill-color"], ["line", "--office-line-color"], ["color", "color"], ["weight", "font-weight"], ["italic", "font-style"], ["dash", "--office-line-dash"], ["decoration", "text-decoration-line"], ["decorationStyle", "text-decoration-style"]] as const) if (read(field) && (field === "fill" ? hasFill() : ["line", "dash"].includes(field) ? hasLine() : hasText())) properties[property] = read(field);
+    if (hasFill() && (read("fillKind") || read("fill"))) properties["--office-fill-kind"] = read("fillKind") || "solid";
+    if (hasLine() && (read("lineKind") || read("line") || read("lineWidth") || read("dash"))) properties["--office-line-kind"] = read("lineKind") || "solid";
+    if (hasLine() && (read("lineWidth") || (values.get("lineWidth") as HTMLInputElement).validity.badInput)) properties["--office-line-width"] = number("lineWidth", 0, 1584) + "pt";
     if (hasText() && (read("fontSize") || (values.get("fontSize") as HTMLInputElement).validity.badInput)) properties["font-size"] = number("fontSize", .1, 4000) + "pt";
     if (hasText() && read("latin")) for (const role of ["ascii", "h-ansi"]) properties["--office-font-" + role] = font("latin");
     if (hasText() && read("eastAsia")) properties["--office-font-east-asia"] = font("eastAsia");
@@ -73,6 +74,7 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
     for (const field of fields) field.disabled = (disabled || !available) && field !== composing;
     series.disabled ||= !hasSeries(); index.disabled ||= !hasPoint();
     for (const name of ["color", "latin", "eastAsia", "fontSize", "weight", "italic", "decoration", "decorationStyle"]) { const field = values.get(name)!; field.disabled ||= !hasText() && field !== composing; }
+    for (const name of ["fill", "fillKind", "line", "lineKind", "lineWidth", "dash"]) { const field = values.get(name)!; field.disabled ||= !(name.startsWith("fill") ? hasFill() : hasLine()) && field !== composing; }
     const markersAvailable = kind === "line" && (target.value === "series" || target.value === "point");
     marker.disabled ||= !markersAvailable; markerSize.disabled ||= !markersAvailable;
     details.refresh(target.value as Operation["target"], kind, composing);

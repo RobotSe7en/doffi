@@ -3,19 +3,21 @@ import { svgElement } from "./svg.js";
 import { drawingGradientLine } from "../drawing-gradient.js";
 import type { DrawingGradientBounds, DrawingGradientOrientation } from "../drawing-gradient.js";
 
-export const property = (style: CSSStyleDeclaration, name: string, fallback = ""): string => style.getPropertyValue(name).trim() || fallback;
+export interface DrawingPaintStyle { getPropertyValue(name: string): string; readonly color: string }
+export const property = (style: Pick<DrawingPaintStyle, "getPropertyValue">, name: string, fallback = ""): string => style.getPropertyValue(name).trim() || fallback;
 export function cssStringValue(value: string): string {
   if (!/^["']/.test(value)) return value;
   return value.slice(1, -1).replace(/\\([0-9a-f]{1,6})(?:\r\n|[ \t\n\r\f])?|\\([\s\S])/gi, (_match, hex: string | undefined, escaped: string | undefined) => hex ? String.fromCodePoint(Math.max(1, Math.min(0x10ffff, parseInt(hex, 16)))) : escaped ?? "");
 }
-export const numeric = (style: CSSStyleDeclaration, name: string, fallback: number): number => {
+export const numeric = (style: Pick<DrawingPaintStyle, "getPropertyValue">, name: string, fallback: number): number => {
   const raw = property(style, name); const value = Number.parseFloat(raw); return Number.isFinite(value) ? value : fallback;
 };
 const colorContexts = new WeakMap<Document, CanvasRenderingContext2D>();
-export function resolvedColor(document: Document, style: CSSStyleDeclaration, prefix: string, fallback = "#000000", depth = 0): string {
+export function resolvedColor(document: Document, style: DrawingPaintStyle, prefix: string, fallback = "#000000", depth = 0): string {
   if (depth > 4) throw new DocumentError("InvalidDocument", "A presentation color reference is cyclic.");
   let context = colorContexts.get(document); if (!context) { context = document.createElement("canvas").getContext("2d")!; colorContexts.set(document, context); }
   let value = property(style, prefix + "-color", fallback);
+  if (value.toLowerCase() === "currentcolor") value = style.color;
   if (property(style, prefix + "-source") === "reference" && property(style,prefix+"-color")) {
     const reference = property(style, prefix + "-reference-prefix");
     if (!["--office-fill-reference", "--office-line-reference", "--office-background-reference", "--office-effect-reference"].includes(reference)) throw new DocumentError("InvalidDocument", "A presentation color reference is unknown.");
@@ -39,7 +41,7 @@ export function resolvedColor(document: Document, style: CSSStyleDeclaration, pr
   const alpha = Math.max(0, Math.min(1, nativeAlpha * numeric(style, prefix + "-alpha", 1)));
   return `rgba(${values.join(",")},${alpha})`;
 }
-export function svgFill(document: Document, style: CSSStyleDeclaration, svg: SVGSVGElement, id: string, bounds: DrawingGradientBounds, prefix = "--office-fill", fallback = "none", account?: (amount: number) => void, orientation?: DrawingGradientOrientation): string {
+export function svgFill(document: Document, style: DrawingPaintStyle, svg: SVGSVGElement, id: string, bounds: DrawingGradientBounds, prefix = "--office-fill", fallback = "none", account?: (amount: number) => void, orientation?: DrawingGradientOrientation): string {
   const kind = property(style, prefix + "-kind");
   if (kind === "none") return "none";
   if (kind !== "linear") return kind === "solid" || property(style, prefix + "-color") ? resolvedColor(document, style, prefix) : fallback === "none" ? "none" : resolvedColor(document,style,prefix,fallback);
@@ -62,7 +64,7 @@ export function svgFill(document: Document, style: CSSStyleDeclaration, svg: SVG
   }
   const defs = svgElement(document, "defs"); defs.append(gradient); svg.append(defs); return `url(#${id})`;
 }
-export function strokeAttributes(document: Document, style: CSSStyleDeclaration, prefix = "--office-line", fallback = "none"): Record<string, string | number> {
+export function strokeAttributes(document: Document, style: DrawingPaintStyle, prefix = "--office-line", fallback = "none"): Record<string, string | number> {
   const kind = property(style, prefix + "-kind"), color = kind === "none" ? "none" : property(style, prefix + "-color") ? resolvedColor(document, style, prefix) : fallback === "none" ? "none" : resolvedColor(document,style,prefix,fallback);
   const width = numeric(style, prefix + "-width", .75), dash = property(style, prefix + "-dash", "solid");
   const patterns: Record<string, readonly number[]> = { dash: [4, 3], dot: [1, 3], lgDash: [8, 3], dashDot: [4, 3, 1, 3], lgDashDot: [8, 3, 1, 3], lgDashDotDot: [8, 3, 1, 3, 1, 3], sysDash: [3, 1], sysDot: [1, 1], sysDashDot: [3, 1, 1, 1], sysDashDotDot: [3, 1, 1, 1, 1, 1] };

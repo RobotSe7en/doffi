@@ -9,6 +9,7 @@ import { resolvePreviewFontsInScope } from "../fonts.js";
 import type { FontResolution } from "../contracts.js";
 import { workbookDrawingOrientation } from "./drawing-view.js";
 import { prepareChartTextDecorations } from "../chart-text-decoration.js";
+import { prepareChartLabelFrames } from "../chart-label-frame.js";
 import { layoutBasicChartLabels } from "../chart-label-layout.js";
 import { layoutChartNumberFields } from "./chart-number-layout.js";
 
@@ -104,7 +105,7 @@ export function createWorkbookChartView(source: HTMLElement, chart: DeepReadonly
     measurement.style.cssText = "all:initial!important;position:absolute!important;visibility:hidden!important";
     measurement.dataset.officeView = "workbook-chart-label-measurement";
     measurement.attachShadow({ mode: "closed" }).append(element); source.append(measurement);
-    try { layoutChartNumberFields(scene, accountText); prepareChartTextDecorations(scene, account, accountText); const labels = layoutBasicChartLabels(scene, account); if (labels) diagnostics.push(Object.freeze({ code: "chart-label-overflow", chartId: chart.chartId, labels })); }
+    try { layoutChartNumberFields(scene, accountText); prepareChartTextDecorations(scene, account, accountText); prepareChartLabelFrames(scene, account, workbookDrawingOrientation(source)); const labels = layoutBasicChartLabels(scene, account); if (labels) diagnostics.push(Object.freeze({ code: "chart-label-overflow", chartId: chart.chartId, labels })); }
     finally { element.remove(); measurement.remove(); account(-2); }
     return Object.freeze({ element, nodes: nodes - probes.length - fontNodes, peakNodes, diagnostics: Object.freeze(diagnostics), fonts });
   } catch (error) { element.replaceChildren(); throw error; }
