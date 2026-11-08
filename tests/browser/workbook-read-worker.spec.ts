@@ -48,6 +48,53 @@ test('mounted remote workbook editor shares Worker input, address selection and 
   expect(await page.evaluate(() => window.workbookRemoteEditor.disposeEditor())).toBe(true);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
 });
+
+test('mounted remote private clipboard repeats copies, takes current values and rejects a stale cut without removing its source', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 7 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=A1+1' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A1:B1'); await page.getByRole('button', { name: '复制选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  for (const row of [3, 5]) {
+    await choose('A' + row); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+    expect(await page.evaluate(row => window.workbookRemoteEditor.value(row - 1, 1), row)).toBe('=(A' + row + '+1)');
+  }
+  await choose('A7'); await page.getByLabel('区域粘贴方式', { exact: true }).selectOption('values');
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(6, 1))).toBe('8');
+  await choose('A1:B1'); await page.getByRole('button', { name: '剪切选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.evaluate(() => window.workbookRemoteEditor.external('external', false)); await choose('A9');
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 4, history: { undoSteps: 4 }, errors: ['RevisionConflict'] });
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(0, 0), window.workbookRemoteEditor.value(8, 0)]))).toEqual(['external', '']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
+});
+
+test('mounted remote sorting uses one Worker current batch and keeps headers, hidden rows, history and drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = scalarWorkbook([
+    { row: 0, column: 0, value: { type: 'text', value: 'Key' } }, { row: 0, column: 1, value: { type: 'text', value: 'Label' } },
+    ...[3, 100, 1, 2].map((value, index) => ({ row: index + 1, column: 0, value: { type: 'number' as const, value: 999 }, formula: '=' + value })),
+    ...['three', 'hidden', 'one', 'two'].map((value, index) => ({ row: index + 1, column: 1, value: { type: 'text' as const, value } })),
+    { row: 5, column: 3, value: { type: 'number', value: 999 }, formula: '=A2' },
+  ], metadata => { const sheet = metadata.workbook.sheets[0]!; sheet.defaultRowHeightCustom = true; sheet.rowDimensions = [{ from: 2, to: 2, hidden: true }]; });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('A1:B5'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByLabel('首行为表头', { exact: true }).check(); await page.getByRole('button', { name: '升序排序', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([1, 2, 3, 4].map(row => window.workbookRemoteEditor.value(row, 1))))).toEqual(['one', 'hidden', 'two', 'three']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(5, 3))).toBe('=A2');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([1, 2, 3, 4].map(row => window.workbookRemoteEditor.value(row, 1))))).toEqual(['three', 'hidden', 'one', 'two']);
+  const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }); await input.fill('draft'); await expect(page.getByRole('button', { name: '降序排序', exact: true })).toBeDisabled();
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled()); await page.getByRole('button', { name: '降序排序', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([1, 2, 3, 4].map(row => window.workbookRemoteEditor.value(row, 1))))).toEqual(['three', 'hidden', 'two', 'one']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1, redoSteps: 0 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
+});
 test('mounted remote workbook fill and scoped single/all replacements remain atomic Worker commands', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } }, { row: 1, column: 0, value: { type: 'number', value: 3 } },

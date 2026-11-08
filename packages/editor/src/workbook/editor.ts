@@ -16,6 +16,12 @@ import { workbookInputTextView } from "./text-projection.js";
 import { mountWorkbookRemoteEditor } from "./editor-remote.js";
 import type { WorkbookRemoteEditorOptions, WorkbookRemoteEditorView } from "./editor-remote.js";
 import type { WorkbookSessionConnection } from "./session-transport.js";
+import { createWorkbookSortTransaction } from "./sort.js";
+import { selectedWorkbookSort } from "./selected-sort.js";
+import { createWorkbookTaskQueue } from "./task-queue.js";
+import { WorkbookClipboard } from "./clipboard.js";
+import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
+import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 
 /** The host supplies its Worker connection or direct small-document session;
  * source cells, candidates and history remain behind that core boundary. */
@@ -31,13 +37,14 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   if (!view || !container.isConnected || session.kind !== "workbook") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its owning workbook session.");
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), input = createWorkbookInputController(session), events = new view.AbortController();
+  const clipboard = new WorkbookClipboard();
   let disposed = false, choosing = 0, refreshQueued = false, forceCalculation = false, latest: Promise<void> = Promise.resolve();
   let interaction: Promise<void> = Promise.resolve();
   let revision = -1, generation = 0, calculationAbort: AbortController | undefined, commandAbort: AbortController | undefined, preview: WorkbookPreview;
   let renderedSource: WorkbookPreviewSource | undefined;
   let found: { readonly key: string; readonly result: WorkbookFindResult; index: number } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
-  const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode];
+  const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite];
   const buttons: { readonly button: HTMLButtonElement; readonly available: () => boolean }[] = [];
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook editor has been disposed."); }
   function preparation(input?: TransactionPrepareOptions): TransactionPrepareOptions {
@@ -58,6 +65,8 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     const state = input.state(); ui.mode.value = state.mode; ui.mode.disabled = Boolean(commandAbort) || state.composing || !state.selection;
     ui.address.disabled = Boolean(commandAbort) || revision < 0;
     for (const field of searchFields) field.disabled = Boolean(commandAbort);
+    ui.clipboardMode.disabled ||= clipboard.kind === "cut";
+    ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     ui.insertedFormat.disabled = Boolean(commandAbort);
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
@@ -184,6 +193,50 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       if (offset.leftPt >= viewport.widthPt || offset.topPt >= viewport.heightPt) throw new DocumentError("InvalidOperation", "冻结区域将占满当前视口，请选择更靠前的位置。");
     }
     perform([{ op: "updateWorkbookSheet", sheetId: anchor.sheetId, changes: { frozen: { rows: clear ? 0 : at.row, columns: clear ? 0 : at.column } } }]);
+    await sourceSettled(); binding.focus();
+  }
+  async function sortSelection(descending: boolean): Promise<void> {
+    check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    await sourceSettled();
+    const selected = input.state().selection, target = selectedWorkbookSort(session.snapshot(), selected,
+      { columns: ui.sortColumns.value, header: ui.sortHeader.checked, caseSensitive: ui.sortCase.checked, method: ui.sortMethod.value }, descending);
+    const abort = new view!.AbortController(), tasks = createWorkbookTaskQueue(), prepared = preparation(); commandAbort = abort; controls();
+    let candidate: ReturnType<WorkbookSession["prepare"]> | undefined, committed = false;
+    try {
+      const calculation = await session.calculate({ signal: abort.signal, yield: () => tasks.yield(), ...(prepared.calculationContext ? { context: prepared.calculationContext } : {}) });
+      const transaction = await createWorkbookSortTransaction(session, target.sheetId, target.sort, { calculation, signal: abort.signal, yield: () => tasks.yield(),
+        ...(config.locale === undefined ? {} : { locale: config.locale }), onProgress: progress => { if (!disposed) ui.status.textContent = "正在排序 · " + progress.completed; } });
+      candidate = await session.prepareAsync(transaction, prepared, { signal: abort.signal, yield: () => tasks.yield() });
+      if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Sorting was cancelled before application.");
+      session.commit(candidate); committed = true; if (!disposed) ui.error.hidden = true;
+    } finally {
+      if (candidate && !committed) try { session.discard(candidate); } catch { /* Host disposal or another source may release it. */ }
+      tasks.dispose(); if (commandAbort === abort) commandAbort = undefined; controls();
+    }
+    await sourceSettled(); binding.focus();
+  }
+  function copySelection(kind: "copy" | "cut"): void {
+    check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    clipboard.capture(session.snapshot(), input.state().selection, kind); if (kind === "cut") ui.clipboardMode.value = "contents";
+    ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
+  }
+  async function pasteSelection(): Promise<void> {
+    check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    await sourceSettled(); const plan = clipboard.plan(session.snapshot(), input.state().selection), mode = ui.clipboardMode.value as NonNullable<WorkbookRangeCopyOptions["mode"]>;
+    const abort = new view!.AbortController(), tasks = createWorkbookTaskQueue(), prepared = preparation(); commandAbort = abort; controls();
+    let candidate: ReturnType<WorkbookSession["prepare"]> | undefined, committed = false;
+    try {
+      const calculation = plan.source.kind === "copy" && mode === "values" ? await session.calculate({ signal: abort.signal, yield: () => tasks.yield(), ...(prepared.calculationContext ? { context: prepared.calculationContext } : {}) }) : undefined;
+      const transaction = plan.source.kind === "cut" ? { protocolVersion: 1 as const, documentId: plan.source.documentId, baseRevision: plan.source.baseRevision, operations: [
+        { op: "moveWorkbookRange" as const, sheetId: plan.source.sheetId, range: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, overwrittenContent: ui.clipboardOverwrite.checked ? "clear" as const : "reject" as const },
+      ] } : await createWorkbookRangeCopyTransaction(session, plan.source.sheetId, plan.source.range, plan.target, { targetSheetId: plan.sheetId, mode, ...(calculation ? { calculation } : {}), signal: abort.signal, yield: () => tasks.yield() });
+      candidate = await session.prepareAsync(transaction, prepared, { signal: abort.signal, yield: () => tasks.yield() });
+      if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Pasting was cancelled before application.");
+      const receipt = session.commit(candidate); committed = true; clipboard.applied(receipt.revision, plan.sheetId, plan.target, mode!); if (!disposed) ui.error.hidden = true;
+    } finally {
+      if (candidate && !committed) try { session.discard(candidate); } catch { /* Host disposal or another source may release it. */ }
+      tasks.dispose(); if (commandAbort === abort) commandAbort = undefined; controls();
+    }
     await sourceSettled(); binding.focus();
   }
   async function changeAxis(axis: "row" | "column", action: "insert" | "delete"): Promise<void> {
@@ -375,6 +428,11 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("删除选区行", () => { void runInteraction(() => changeAxis("row", "delete")); }, idle);
   button("插入选区列", () => { void runInteraction(() => changeAxis("column", "insert")); }, idle);
   button("删除选区列", () => { void runInteraction(() => changeAxis("column", "delete")); }, idle);
+  button("升序排序", () => { void runInteraction(() => sortSelection(false)); }, idle);
+  button("降序排序", () => { void runInteraction(() => sortSelection(true)); }, idle);
+  button("复制选区", () => copySelection("copy"), idle);
+  button("剪切选区", () => copySelection("cut"), idle);
+  button("粘贴选区", () => { void runInteraction(pasteSelection); }, () => idle() && clipboard.available);
   button("取消操作", () => commandAbort?.abort(), () => Boolean(commandAbort));
   button("查找下一个", () => { void runInteraction(() => search()); }, () => idle() && Boolean(ui.find.value), ui.searchTools);
   button("替换当前项", () => { void runInteraction(() => search("one")); }, () => idle() && ui.findField.value !== "display" && Boolean(found && found.index >= 0), ui.searchTools);

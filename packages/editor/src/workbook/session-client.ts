@@ -54,7 +54,7 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
         if (!keys(message, ["protocol", "id", "event", "value"])) throw new Error("Invalid progress envelope");
         checkSessionMessage(message.value, config);
         const value = message.value;
-        if (!record(value) || !keys(value, ["phase", "completed", "total"]) || !["operations", "cells", "chunks", "validation", "calculation", "copy", "fill", "find"].includes(String(value.phase))
+        if (!record(value) || !keys(value, ["phase", "completed", "total"]) || !["operations", "cells", "chunks", "validation", "calculation", "copy", "fill", "find", "sort"].includes(String(value.phase))
           || ![value.completed, value.total].every(item => typeof item === "number" && Number.isSafeInteger(item) && item >= 0)) throw new Error("Invalid progress result");
         try { if (!request?.cancelled) request?.progress?.(freezeSessionValue(value as unknown as WorkbookSessionProgress)); } catch { /* Progress is reporting only. */ } return;
       }

@@ -13,6 +13,9 @@ import { parseWorkbookTextInput } from "./text-input.js";
 import type { WorkbookTextInputMode } from "./text-input.js";
 import type { WorkbookFindMatch, WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
 import { workbookInputTextView } from "./text-projection.js";
+import { selectedWorkbookSort } from "./selected-sort.js";
+import { WorkbookClipboard } from "./clipboard.js";
+import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 
 export interface WorkbookRemoteEditorView extends Omit<WorkbookEditorView, "applyInput" | "perform" | "cancelInput" | "inputState"> {
   inputState(): WorkbookRemoteInputState;
@@ -48,6 +51,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   let preview: WorkbookPreview | undefined, source: WorkbookReadConnection | undefined, binding: WorkbookAsyncTextBinding;
   const buttons: { button: HTMLButtonElement; available(): boolean }[] = [];
   const input = createWorkbookRemoteInputController(client, { onChange: controls });
+  const clipboard = new WorkbookClipboard();
   const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode];
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook editor has been disposed."); }
   function report(error: unknown): void {
@@ -69,7 +73,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     ui.input.disabled = !state.selection || state.selecting || !!commandAbort;
     ui.mode.value = state.mode; ui.mode.disabled = busy || state.composing || !state.selection; ui.address.disabled = busy || refreshing || !source;
     for (const field of searchFields) field.disabled = busy;
-    ui.insertedFormat.disabled = busy;
+    for (const field of [ui.insertedFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite]) field.disabled = busy;
+    ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     for (const { button, available } of buttons) button.disabled = !available();
     const pending = pendingInput() || state.applying || !!commandAbort;
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
@@ -252,6 +257,25 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
       ...(action === "insert" ? { formatSource: ui.insertedFormat.value as "before" | "after" | "none" } : {}) }]);
     await sourceSettled(); binding.focus();
   }
+  async function sortSelection(descending: boolean): Promise<void> {
+    check(); await sourceSettled();
+    const selected = input.state().selection, target = selectedWorkbookSort(source!.cells.snapshot, selected,
+      { columns: ui.sortColumns.value, header: ui.sortHeader.checked, caseSensitive: ui.sortCase.checked, method: ui.sortMethod.value }, descending);
+    await commitCommand({ kind: "sort", documentId: selected!.documentId, revision: selected!.baseRevision, ...target, ...(config.locale === undefined ? {} : { locale: config.locale }) });
+    await sourceSettled(); binding.focus();
+  }
+  async function copySelection(kind: "copy" | "cut"): Promise<void> {
+    check(); await sourceSettled(); clipboard.capture(source!.cells.snapshot, input.state().selection, kind);
+    if (kind === "cut") ui.clipboardMode.value = "contents";
+    ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
+  }
+  async function pasteSelection(): Promise<void> {
+    check(); await sourceSettled(); const plan = clipboard.plan(source!.cells.snapshot, input.state().selection), mode = ui.clipboardMode.value as WorkbookRangeCopyOptions["mode"];
+    const receipt = plan.source.kind === "cut" ? await perform([{ op: "moveWorkbookRange", sheetId: plan.source.sheetId, range: plan.source.range, targetSheetId: plan.sheetId, target: plan.target,
+      overwrittenContent: ui.clipboardOverwrite.checked ? "clear" : "reject" }]) : await commitCommand({ kind: "copy", documentId: plan.source.documentId, revision: plan.source.baseRevision,
+        sheetId: plan.source.sheetId, source: plan.source.range, targetSheetId: plan.sheetId, target: plan.target, mode });
+    clipboard.applied(receipt.revision, plan.sheetId, plan.target, mode!); controls(); await sourceSettled(); binding.focus();
+  }
   function findQuery(): WorkbookFindQuery {
     const anchor = input.state().selection?.anchor, scope = ui.findScope.value, sheetId = preview!.layout().sheetId;
     if (scope === "selection" && anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择查找区域。");
@@ -343,6 +367,11 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("删除选区行", () => queueInteraction(() => changeAxis("row", "delete")), idle);
   button("插入选区列", () => queueInteraction(() => changeAxis("column", "insert")), idle);
   button("删除选区列", () => queueInteraction(() => changeAxis("column", "delete")), idle);
+  button("升序排序", () => queueInteraction(() => sortSelection(false)), idle);
+  button("降序排序", () => queueInteraction(() => sortSelection(true)), idle);
+  button("复制选区", () => queueInteraction(() => copySelection("copy")), idle);
+  button("剪切选区", () => queueInteraction(() => copySelection("cut")), idle);
+  button("粘贴选区", () => queueInteraction(pasteSelection), () => idle() && clipboard.available);
   button("取消操作", () => commandAbort?.abort(), () => !!commandAbort && !commandApplying);
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);

@@ -52,6 +52,8 @@ export { readWorkbookChangeImpact } from "./workbook/change-impact.js";
 export type { WorkbookChangeImpact } from "./workbook/change-impact.js";
 export { createWorkbookCalculator, DEFAULT_WORKBOOK_CALCULATION_LIMITS, WORKBOOK_CALCULATION_VERSION } from "./workbook/calculation.js";
 export { createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
+export { readWorkbookRowVisibility, DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS } from "./workbook/row-visibility.js";
+export type { WorkbookRowVisibility, WorkbookRowVisibilityRequest, WorkbookRowVisibilityOptions, WorkbookRowVisibilityLimits, WorkbookRowVisibilityResult } from "./workbook/row-visibility.js";
 export type { WorkbookCalculator, WorkbookCalculationLimits, WorkbookCalculationOptions, WorkbookCalculationResult, WorkbookCalculatedCell } from "./workbook/calculation.js";
 export { readWorkbookRules, DEFAULT_WORKBOOK_RULE_LIMITS } from "./workbook/rule-reader.js";
 export type { WorkbookRuleReadLimits, WorkbookRuleReadRequest, WorkbookRuleReadOptions, WorkbookRuleReadResponse, WorkbookRuleCell, WorkbookRuleValue, WorkbookRuleIssue,

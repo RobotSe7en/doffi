@@ -3,6 +3,7 @@ import type { WorkbookCandidateChange, WorkbookCalculationResult, WorkbookModel,
 import { serveWorkbookReads } from "@doffi/render";
 import type { WorkbookReadServer } from "@doffi/render";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
+import { createWorkbookSortTransaction } from "./sort.js";
 import { createWorkbookFillTransaction } from "./fill.js";
 import { createWorkbookReplaceTransaction } from "./replace.js";
 import { findWorkbookText } from "./find.js";
@@ -87,6 +88,11 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
           if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "source", "target", "mode", "axis"])) invalidSessionTransport("Invalid workbook fill command.");
           transaction = await createWorkbookFillTransaction(session, command.sheetId, command.source, command.target, { ...common,
             ...(command.mode === undefined ? {} : { mode: command.mode }), ...(command.axis === undefined ? {} : { axis: command.axis }), onProgress: value => progress({ phase: "fill", ...value }) });
+        } else if (command.kind === "sort") {
+          if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "sort", "locale"])) invalidSessionTransport("Invalid workbook sort command.");
+          const calculation = await calculate(base, abort, progress, preparation, guard); guard();
+          transaction = await createWorkbookSortTransaction(session, command.sheetId, command.sort, { ...common, calculation,
+            ...(command.locale === undefined ? {} : { locale: command.locale }), onProgress: value => progress({ phase: "sort", ...value }) });
         } else if (command.kind === "replace") {
           if (!keys(payload.command, ["kind", "documentId", "revision", "query", "replacement", "valueMode", "only"])) invalidSessionTransport("Invalid workbook replacement command.");
           transaction = await createWorkbookReplaceTransaction(session, command.query, command.replacement, { ...common,

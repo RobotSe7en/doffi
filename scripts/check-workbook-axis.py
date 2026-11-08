@@ -73,7 +73,7 @@ def observe(path):
     return {"sheets": result, "names": names}
 
 
-def native(source_path, output, case):
+def native(source_path, output, case, mutate=None):
     # pyuno is an acceptance-only client. No Office runtime enters the SDK.
     import uno
     from com.sun.star.beans import PropertyValue
@@ -112,10 +112,13 @@ def native(source_path, output, case):
                                                     (prop("Hidden", True), prop("ReadOnly", False), prop("UpdateDocMode", 0), prop("MacroExecutionMode", 4)))
             if document is None:
                 raise RuntimeError("The independent source did not open in Calc.")
-            sheet = document.getSheets().getByIndex(0)
-            axes = sheet.getRows() if case["axis"] == "row" else sheet.getColumns()
-            method = axes.insertByIndex if case["action"] == "insert" else axes.removeByIndex
-            method(case["index"], case["count"])
+            if mutate is not None:
+                mutate(document, prop)
+            else:
+                sheet = document.getSheets().getByIndex(0)
+                axes = sheet.getRows() if case["axis"] == "row" else sheet.getColumns()
+                method = axes.insertByIndex if case["action"] == "insert" else axes.removeByIndex
+                method(case["index"], case["count"])
             document.calculateAll()
             document.storeAsURL(output.resolve().as_uri(), (prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", True)))
             return version

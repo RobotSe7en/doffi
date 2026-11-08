@@ -33,6 +33,8 @@ export { createWorkbookReplaceTransaction } from "./workbook/replace.js";
 export type { WorkbookFindQuery, WorkbookFindOptions, WorkbookFindProgress, WorkbookFindMatch, WorkbookFindDiagnostic, WorkbookFindResult, WorkbookReplaceOptions } from "./workbook/find-contracts.js";
 export { createWorkbookRangeCopyTransaction } from "./workbook/copy-range.js";
 export type { WorkbookRangeCopyOptions } from "./workbook/copy-range.js";
+export { createWorkbookSortTransaction } from "./workbook/sort.js";
+export type { WorkbookSortOptions } from "./workbook/sort.js";
 export { serveWorkbookSession } from "./workbook/session-server.js";
 export { connectWorkbookSession } from "./workbook/session-client.js";
 export type { WorkbookSessionIdentity, WorkbookSessionState, WorkbookSessionInput, WorkbookSessionMapping, WorkbookSessionReceipt, WorkbookSessionCandidate, WorkbookSessionCommand, WorkbookSessionProgress,

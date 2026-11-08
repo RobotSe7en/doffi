@@ -1,6 +1,6 @@
 import type { WorkbookCoordinate, WorkbookMetadata, WorkbookSheet } from "../contracts/workbook.js";
 import { rewriteFormula } from "../workbook/formula-rewrite.js";
-import type { FormulaReferenceChange } from "../workbook/formula-rewrite.js";
+import type { FormulaLocation, FormulaReferenceChange } from "../workbook/formula-rewrite.js";
 import { WorkbookCellEdit, rangeContains } from "./workbook-cells.js";
 
 /** Every formula-bearing source participates in a structural reference edit.
@@ -8,33 +8,45 @@ import { WorkbookCellEdit, rangeContains } from "./workbook-cells.js";
 export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): void {
   for (const _step of rewriteWorkbookReferenceSteps(workbook, cells, change)) { /* Synchronous driver of the same kernel. */ }
 }
-export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): Generator<{ completed: number; total: number }, void> {
-  let completed = 0;
+export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, change: FormulaReferenceChange) {
   const tables = workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => ({ name: table.name, sheet: sheet.name,
     range: table.range, header: table.header, totals: table.totals, columns: table.columns.map(column => column.name) })));
-  function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string): string {
-    const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
-    return rewriteFormula(expression, { ...at, sheet }, { ...at, sheet: target }, change, { tables, ...(table ? { table } : {}),
-      resolveName: (name, owner, explicit) => {
-        const matching = workbook.names?.filter(item => item.name.toUpperCase() === name.toUpperCase());
-        return (matching?.find(item => item.sheetId !== undefined && workbook.sheets.find(sheet => sheet.sheetId === item.sheetId)?.name.toUpperCase() === owner.toUpperCase())
-          ?? (explicit ? undefined : matching?.find(item => item.sheetId === undefined)))?.nameId;
-      },
-      isTableName: (name, owner) => !workbook.names?.some(item => item.name.toUpperCase() === name.toUpperCase() && (item.sheetId === undefined || workbook.sheets.find(sheet => sheet.sheetId === item.sheetId)?.name === owner))
-        && tables.some(table => table.name.toUpperCase() === name.toUpperCase()),
-    });
+  const sheetNames = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet.name.toUpperCase()])), globalNames = new Map<string, string>(), locals = new Map<string, Map<string, string>>(), localNames = new Set<string>();
+  for (const name of workbook.names ?? []) {
+    const token = name.name.toUpperCase();
+    if (name.sheetId === undefined) globalNames.set(token, name.nameId);
+    else { const owner = sheetNames.get(name.sheetId)!, scope = locals.get(owner) ?? new Map<string, string>(); scope.set(token, name.nameId); locals.set(owner, scope); localNames.add(token); }
   }
+  const tableNames = new Set(tables.map(table => table.name.toUpperCase()));
+  return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, globalContext = false): string {
+    const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
+    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { tables, ...(table ? { table } : {}),
+      resolveName: (name, owner, explicit) => {
+        const token = name.toUpperCase();
+        // A workbook definition whose nested name is locally shadowed has no
+        // verified caller scope. Preserve that ambiguity instead of rebinding.
+        if (globalContext && localNames.has(token)) return undefined;
+        return locals.get(owner.toUpperCase())?.get(token) ?? (explicit ? undefined : globalNames.get(token));
+      },
+      isTableName: (name, owner) => !globalNames.has(name.toUpperCase()) && !locals.get(owner.toUpperCase())?.has(name.toUpperCase()) && tableNames.has(name.toUpperCase()),
+    });
+  };
+}
+export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): Generator<{ completed: number; total: number }, void> {
+  let completed = 0; const rewrite = createWorkbookReferenceRewriter(workbook, change);
   for (const cell of cells.entries(undefined, true)) {
     const sheet = workbook.sheets.find(sheet => sheet.sheetId === cell.sheetId)!;
     if (change.kind === "deleteSheet" && sheet.name === change.sheet) continue;
-    const expression = rewrite(cell.formula!.expression, sheet.name, cell, sheet.tables?.find(table => rangeContains(table.range, cell.row, cell.column))?.name);
+    const destination = change.kind === "move" && sheet.name.toUpperCase() === change.sheet.toUpperCase() && rangeContains(change.range, cell.row, cell.column)
+      ? { sheet: change.target.sheet, row: cell.row + change.target.row - change.range.from.row, column: cell.column + change.target.column - change.range.from.column } : undefined;
+    const expression = rewrite(cell.formula!.expression, sheet.name, cell, sheet.tables?.find(table => rangeContains(table.range, cell.row, cell.column))?.name, destination);
     if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression);
     if (++completed % 256 === 0) yield { completed, total: 0 };
   }
   for (const name of workbook.names ?? []) {
     const sheet = name.sheetId === undefined ? "$workbook" : workbook.sheets.find(sheet => sheet.sheetId === name.sheetId)!.name;
     if (change.kind === "deleteSheet" && sheet === change.sheet) continue;
-    name.expression = rewrite(name.expression, sheet, name.origin);
+    name.expression = rewrite(name.expression, sheet, name.origin, undefined, undefined, name.sheetId === undefined);
   }
   function sheetReferences(sheet: WorkbookSheet): void {
     for (const rule of [...sheet.conditionalRules ?? [], ...sheet.dataValidations ?? []]) {
@@ -67,7 +79,7 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
   for (const link of workbook.objectHyperlinks ?? []) if (link.location) {
     // Object hyperlinks may target child text nodes, so their owning sheet is
     // supplied by the caller's absolute native location or a workbook scope.
-    link.location = rewrite("=" + link.location, "$workbook", { row: 0, column: 0 }).slice(1);
+    link.location = rewrite("=" + link.location, "$workbook", { row: 0, column: 0 }, undefined, undefined, true).slice(1);
   }
   yield { completed, total: completed };
 }

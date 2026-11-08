@@ -1,0 +1,367 @@
+{
+  "scope": "Independent input and actual pinned Calc sort edits. Microsoft documented expectations; Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "2fb149cd6fed13a699352fea37850a6f5e3b97955e3b98b37a236aac11abc3f6",
+  "reference": "https://support.microsoft.com/en-us/excel/sort-data-in-a-range-or-table-in-excel",
+  "cases": [
+    {
+      "name": "numeric-ascending",
+      "sheet": "Numeric",
+      "keys": [
+        {
+          "column": 0,
+          "descending": false
+        }
+      ],
+      "caseSensitive": false,
+      "expected": [
+        13,
+        12,
+        11,
+        2,
+        3,
+        14,
+        7,
+        15,
+        1,
+        16,
+        8,
+        17,
+        6,
+        5,
+        4,
+        10,
+        9
+      ],
+      "observed": {
+        "identities": [
+          13,
+          12,
+          11,
+          2,
+          3,
+          14,
+          7,
+          15,
+          1,
+          16,
+          8,
+          17,
+          6,
+          5,
+          4,
+          10,
+          9
+        ],
+        "outsideFormulas": {
+          "Numeric!F1": "A2",
+          "Observer!B1": "Numeric!A2"
+        }
+      },
+      "matchesProducer": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-sort-numeric-ascending-calc.xlsx",
+      "outputSha256": "0d73f7484e8231c22cec83f848d2998c8e45ef696d8d19d1d00b281b071b42dc",
+      "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."
+    },
+    {
+      "name": "numeric-descending",
+      "sheet": "Numeric",
+      "keys": [
+        {
+          "column": 0,
+          "descending": true
+        }
+      ],
+      "caseSensitive": false,
+      "expected": [
+        9,
+        10,
+        4,
+        5,
+        6,
+        17,
+        8,
+        16,
+        1,
+        15,
+        7,
+        14,
+        2,
+        3,
+        11,
+        12,
+        13
+      ],
+      "observed": {
+        "identities": [
+          9,
+          10,
+          4,
+          5,
+          6,
+          17,
+          8,
+          16,
+          1,
+          15,
+          7,
+          14,
+          2,
+          3,
+          11,
+          12,
+          13
+        ],
+        "outsideFormulas": {
+          "Numeric!F1": "A2",
+          "Observer!B1": "Numeric!A2"
+        }
+      },
+      "matchesProducer": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-sort-numeric-descending-calc.xlsx",
+      "outputSha256": "09cc6c4c3459b7db992a09fb123b016c238b761324f3b2d7d4cf8d3055ea74c6",
+      "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."
+    },
+    {
+      "name": "ascending",
+      "sheet": "Data",
+      "keys": [
+        {
+          "column": 0,
+          "descending": false
+        }
+      ],
+      "caseSensitive": false,
+      "expected": [
+        2,
+        3,
+        1,
+        16,
+        17,
+        6,
+        5,
+        4,
+        12,
+        13,
+        14,
+        15,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "observed": {
+        "identities": [
+          7,
+          2,
+          3,
+          8,
+          1,
+          16,
+          17,
+          13,
+          6,
+          5,
+          4,
+          12,
+          14,
+          15,
+          9,
+          10,
+          11
+        ],
+        "outsideFormulas": {
+          "Data!F1": "A2",
+          "Observer!A1": "Data!A2"
+        }
+      },
+      "matchesProducer": false,
+      "outputFile": "packages/office/tests/fixtures/workbook-sort-ascending-calc.xlsx",
+      "outputSha256": "144e821e09e4237852223aa37c3c30a35e2ee5e8e4bffbbedfe7636b07a8cd23",
+      "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."
+    },
+    {
+      "name": "descending",
+      "sheet": "Data",
+      "keys": [
+        {
+          "column": 0,
+          "descending": true
+        }
+      ],
+      "caseSensitive": false,
+      "expected": [
+        9,
+        10,
+        8,
+        7,
+        14,
+        15,
+        13,
+        12,
+        4,
+        5,
+        6,
+        16,
+        17,
+        1,
+        2,
+        3,
+        11
+      ],
+      "observed": {
+        "identities": [
+          9,
+          10,
+          15,
+          14,
+          12,
+          4,
+          5,
+          6,
+          13,
+          16,
+          17,
+          1,
+          2,
+          3,
+          8,
+          7,
+          11
+        ],
+        "outsideFormulas": {
+          "Data!F1": "A2",
+          "Observer!A1": "Data!A2"
+        }
+      },
+      "matchesProducer": false,
+      "outputFile": "packages/office/tests/fixtures/workbook-sort-descending-calc.xlsx",
+      "outputSha256": "ae4689d28c7793c93e5d11e1c1eba4373dcf549d43271262ee9d4d74aeb39897",
+      "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."
+    },
+    {
+      "name": "second-key",
+      "sheet": "Data",
+      "keys": [
+        {
+          "column": 0,
+          "descending": false
+        },
+        {
+          "column": 1,
+          "descending": false
+        }
+      ],
+      "caseSensitive": false,
+      "expected": [
+        3,
+        2,
+        1,
+        17,
+        16,
+        6,
+        5,
+        4,
+        12,
+        13,
+        15,
+        14,
+        7,
+        8,
+        10,
+        9,
+        11
+      ],
+      "observed": {
+        "identities": [
+          7,
+          8,
+          3,
+          2,
+          1,
+          17,
+          16,
+          13,
+          6,
+          5,
+          4,
+          12,
+          14,
+          15,
+          10,
+          9,
+          11
+        ],
+        "outsideFormulas": {
+          "Data!F1": "A2",
+          "Observer!A1": "Data!A2"
+        }
+      },
+      "matchesProducer": false,
+      "outputFile": "packages/office/tests/fixtures/workbook-sort-second-key-calc.xlsx",
+      "outputSha256": "5aa1d394532ccf38a8362b120516c28292eb1ed64ce6a18abc20b873904e0d5b",
+      "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."
+    },
+    {
+      "name": "case-sensitive",
+      "sheet": "Data",
+      "keys": [
+        {
+          "column": 0,
+          "descending": false
+        }
+      ],
+      "caseSensitive": true,
+      "expected": [
+        2,
+        3,
+        1,
+        16,
+        12,
+        13,
+        17,
+        6,
+        5,
+        4,
+        14,
+        15,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "observed": {
+        "identities": [
+          7,
+          2,
+          3,
+          8,
+          1,
+          16,
+          17,
+          13,
+          6,
+          5,
+          4,
+          12,
+          14,
+          15,
+          9,
+          10,
+          11
+        ],
+        "outsideFormulas": {
+          "Data!F1": "A2",
+          "Observer!A1": "Data!A2"
+        }
+      },
+      "matchesProducer": false,
+      "outputFile": "packages/office/tests/fixtures/workbook-sort-case-sensitive-calc.xlsx",
+      "outputSha256": "7047e138a8892f7cb365b9f418c1ec88caeee3498f7710a7e22ff8b267c48d0b",
+      "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."
+    }
+  ]
+}

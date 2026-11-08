@@ -1,6 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { ChangeMapping, DocumentHistoryState, DocumentTransaction, TransactionPreparationProgress, TransactionPrepareOptions, TransactionReceipt,
-  WorkbookCandidateChange, WorkbookCoordinate, WorkbookRange, WorkbookScalarContext, WorkbookReferenceLocation, WorkbookReferenceResult } from "@doffi/core";
+  WorkbookCandidateChange, WorkbookCoordinate, WorkbookRange, WorkbookScalarContext, WorkbookSort, WorkbookReferenceLocation, WorkbookReferenceResult } from "@doffi/core";
 import type { WorkbookReadConnection, WorkbookReadTransportOptions } from "@doffi/render";
 import { resolveWorkbookReadTransportOptions } from "@doffi/render";
 import type { WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
@@ -26,8 +26,9 @@ export type WorkbookSessionCommand =
       readonly targetSheetId?: string; readonly mode?: WorkbookRangeCopyOptions["mode"]; readonly skipBlanks?: boolean })
   | (WorkbookSessionIdentity & { readonly kind: "fill"; readonly sheetId: string; readonly source: WorkbookRange; readonly target: WorkbookRange;
       readonly mode?: WorkbookFillOptions["mode"]; readonly axis?: WorkbookFillOptions["axis"] })
+  | (WorkbookSessionIdentity & { readonly kind: "sort"; readonly sheetId: string; readonly sort: WorkbookSort; readonly locale?: string })
   | (WorkbookSessionIdentity & { readonly kind: "replace"; readonly query: WorkbookFindQuery; readonly replacement: string; readonly valueMode?: WorkbookReplaceOptions["valueMode"]; readonly only?: WorkbookReplaceOptions["only"] });
-export interface WorkbookSessionProgress { readonly phase: TransactionPreparationProgress["phase"] | "copy" | "fill" | "find"; readonly completed: number; readonly total: number }
+export interface WorkbookSessionProgress { readonly phase: TransactionPreparationProgress["phase"] | "copy" | "fill" | "find" | "sort"; readonly completed: number; readonly total: number }
 export interface WorkbookSessionExecution {
   readonly signal?: AbortSignal;
   readonly onProgress?: (value: WorkbookSessionProgress) => void;

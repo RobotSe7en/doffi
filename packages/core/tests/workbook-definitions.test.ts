@@ -146,3 +146,15 @@ test("net-zero definitions preserve absent lists, redo and events; foreign local
   apply(s, [{ op: "setWorkbookDefinedName", name }, { op: "setWorkbookDefinedName", name: { ...name, name: "Interest" } }]);
   expect(s.getCell(sheetId, 0, 0)?.formula?.expression).toBe("=Sheet1!Rate");
 });
+test("renaming a global name does not guess the caller scope of an ambiguous nested workbook definition", () => {
+  const s = session(scalarWorkbook([{ row: 0, column: 0, value: number(99), formula: "=Parent" }], metadata => {
+    metadata.workbook.sheets.push({ ...metadata.workbook.sheets[0]!, sheetId: "other", name: "Other" });
+    metadata.workbook.names = [{ nameId: "global", name: "Rate", expression: "=7", origin: { row: 0, column: 0 } },
+      { nameId: "parent", name: "Parent", expression: "=Rate", origin: { row: 0, column: 0 } },
+      { nameId: "local", name: "Rate", sheetId: "other", expression: "=13", origin: { row: 0, column: 0 } }];
+  }));
+  s.calculateSync(); expect(s.getCalculatedCell(sheetId, 0, 0)).toMatchObject({ state: "unavailable", issue: { reason: "ambiguous-name-scope" } });
+  apply(s, [{ op: "setWorkbookDefinedName", name: { nameId: "global", name: "Interest", expression: "=7", origin: { row: 0, column: 0 } } }]);
+  expect(s.snapshot().metadata.workbook.names!.find(name => name.nameId === "parent")?.expression).toBe("=Rate");
+  s.calculateSync(); expect(s.getCalculatedCell(sheetId, 0, 0)).toMatchObject({ state: "unavailable", issue: { reason: "ambiguous-name-scope" } });
+});

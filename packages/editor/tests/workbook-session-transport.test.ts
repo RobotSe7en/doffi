@@ -168,6 +168,20 @@ test("Worker definitions use the owning candidate, rule validation, current name
   client.dispose(); s.commit(s.prepare(transaction(s, [number(0, 0, 9)]))); expect(s.getCell(sheetId, 0, 0)?.value).toEqual({ type: "number", value: 9 });
 });
 
+test("Worker sorting prepares a current-value permutation, cancels during sorting and retains the sole core history", async () => {
+  const s = createDocumentSession(scalarWorkbook(Array.from({ length: 600 }, (_, row) => ({ row, column: 0, value: { type: "number", value: 999 }, formula: "=" + (600 - row) }))));
+  cleanups.push(() => s.dispose()); const { client } = await pair(s), before = s.serialize(), abort = new AbortController();
+  const sort = { kind: "sort" as const, documentId: "scalar-kernel", revision: 0, sheetId, sort: { range: { from: { row: 0, column: 0 }, to: { row: 599, column: 0 } },
+    keys: [{ column: 0, descending: false }], method: "none" as const, caseSensitive: false } };
+  const progress: WorkbookSessionProgress[] = [];
+  await expect(client.prepare(sort, undefined, { signal: abort.signal, onProgress(value) { progress.push(value); if (value.phase === "sort" && value.total === 0) abort.abort(); } })).rejects.toThrowError(expect.objectContaining({ code: "OperationCancelled" }));
+  expect(progress.some(value => value.phase === "sort")).toBe(true); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+  const candidate = await client.prepare(sort); expect(s.serialize()).toEqual(before);
+  expect((await client.readInput(sheetId, { row: 0, column: 0 }, candidate)).text).toBe("=1");
+  await client.commit(candidate); expect(s.getCell(sheetId, 0, 0)?.formula?.expression).toBe("=1"); expect(client.state().history.undoSteps).toBe(1);
+  await client.undo(); expect(s.snapshot().manifest.chunks).toEqual(scalarWorkbook(Array.from({ length: 600 }, (_, row) => ({ row, column: 0, value: { type: "number", value: 999 }, formula: "=" + (600 - row) }))).snapshot().manifest.chunks);
+});
+
 test("Worker filter edits publish current subtotals while retaining every source row and the shared undo boundary", async () => {
   const s = createDocumentSession(scalarWorkbook([
     { row: 0, column: 0, value: { type: "text", value: "Amount" } }, { row: 0, column: 1, value: { type: "text", value: "Choice" } },

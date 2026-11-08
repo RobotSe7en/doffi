@@ -29,6 +29,8 @@ import { compileNumberFormat } from "../workbook/number-format.js";
 import { WorkbookRegionIndex } from "../workbook/region-index.js";
 import { editWorkbookMerge, sameWorkbookMerges } from "./workbook-merges.js";
 import { editWorkbookDefinition, isWorkbookDefinitionOperation, restoreWorkbookDefinitionSource } from "./workbook-definitions.js";
+import { reorderWorkbookRows } from "./workbook-reorder.js";
+import { moveWorkbookRange } from "./workbook-move.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -68,6 +70,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     for (const operation of transaction.operations) {
       if (!isWorkbookOperation(operation) && !["addAnnotation", "updateAnnotation", "removeAnnotation"].includes(operation.op)) invalid("Content and presentation operations cannot modify workbook source.");
       if ("sheetId" in operation && !baseSheets.has(operation.sheetId)) invalid("Worksheet targets must belong to the base snapshot.");
+      if ("targetSheetId" in operation && !baseSheets.has(operation.targetSheetId)) invalid("Worksheet destinations must belong to the base snapshot.");
       if ("beforeSheetId" in operation && operation.beforeSheetId !== undefined && !baseSheets.has(operation.beforeSheetId)) invalid("Worksheet references must belong to the base snapshot.");
     }
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
@@ -131,6 +134,15 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       else if (isWorkbookDefinitionOperation(operation)) {
         for (const value of editWorkbookDefinition(workbook, cells, operation, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedDefinition = true;
+      }
+      else if (operation.op === "moveWorkbookRange") {
+        for (const value of moveWorkbookRange(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        changedAxis = true;
+        for (const sheet of workbook.sheets) { mergeSheets.add(sheet.sheetId); hyperlinkSheets.add(sheet.sheetId); }
+      }
+      else if (operation.op === "reorderWorkbookRows") {
+        for (const value of reorderWorkbookRows(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        changedAxis = true; mergeSheets.add(operation.sheetId); hyperlinkSheets.add(operation.sheetId);
       }
       else if (operation.op === "editWorkbookAxis") {
         for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };

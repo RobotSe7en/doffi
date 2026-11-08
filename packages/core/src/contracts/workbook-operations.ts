@@ -39,6 +39,10 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("removeWorkbookDataValidation"), sheetId: IdentifierSchema, ruleId: IdentifierSchema }),
   z.strictObject({ op: z.literal("editWorkbookAxis"), sheetId: IdentifierSchema, axis: z.enum(["row", "column"]), action: z.enum(["insert", "delete"]),
     index: z.number().int().min(0).max(1_048_575), count: z.number().int().min(1).max(1_048_576), formatSource: z.enum(["none", "before", "after"]).optional() }),
+  z.strictObject({ op: z.literal("reorderWorkbookRows"), sheetId: IdentifierSchema, range: WorkbookRangeSchema,
+    rows: z.array(z.number().int().min(0).max(1_048_575)).min(1).max(1_048_576) }),
+  z.strictObject({ op: z.literal("moveWorkbookRange"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, targetSheetId: IdentifierSchema,
+    target: WorkbookCoordinateSchema, overwrittenContent: z.enum(["reject", "clear"]).optional() }),
   z.strictObject({ op: z.literal("setWorkbookSettings"), changes: z.strictObject({
     calculationMode: z.enum(["auto", "manual"]).optional(), activeSheetId: IdentifierSchema.optional(),
   }) }),

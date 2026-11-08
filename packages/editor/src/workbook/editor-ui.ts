@@ -4,6 +4,8 @@ interface WorkbookEditorUi {
   readonly find: HTMLInputElement; readonly replacement: HTMLInputElement; readonly findField: HTMLSelectElement; readonly findScope: HTMLSelectElement;
   readonly matchCase: HTMLInputElement; readonly entireCell: HTMLInputElement; readonly replacementMode: HTMLSelectElement; readonly searchTools: HTMLDivElement;
   readonly insertedFormat: HTMLSelectElement;
+  readonly sortColumns: HTMLInputElement; readonly sortHeader: HTMLInputElement; readonly sortCase: HTMLInputElement; readonly sortMethod: HTMLSelectElement;
+  readonly clipboardMode: HTMLSelectElement; readonly clipboardOverwrite: HTMLInputElement;
 }
 export function createWorkbookEditorUi(container: HTMLElement, title: string): WorkbookEditorUi {
   const document = container.ownerDocument, element = document.createElement("div"), shadow = element.attachShadow({ mode: "closed" });
@@ -13,6 +15,8 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   const search = document.createElement("div"), searchTools = document.createElement("div"), find = document.createElement("input"), replacement = document.createElement("input");
   const findField = document.createElement("select"), findScope = document.createElement("select"), replacementMode = document.createElement("select"), matchCase = document.createElement("input"), entireCell = document.createElement("input");
   const insertedFormat = document.createElement("select");
+  const sortColumns = document.createElement("input"), sortHeader = document.createElement("input"), sortCase = document.createElement("input"), sortMethod = document.createElement("select");
+  const clipboardMode = document.createElement("select"), clipboardOverwrite = document.createElement("input");
   style.textContent = ":host{display:block;color:#172638;font:14px/1.5 system-ui,sans-serif}*{box-sizing:border-box}h2{margin:0 0 8px;font-size:17px}.tools,.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}button,input,textarea,select{font:inherit;border:1px solid #bdc9d5;border-radius:4px;background:#fff;color:inherit;padding:5px 8px}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}textarea{flex:1;min-width:160px;resize:vertical;min-height:35px;max-height:160px}input{width:120px}p{margin:4px 0;white-space:pre-wrap}.error{color:#a12626}.preview{position:relative}";
   heading.textContent = title; tools.className = "tools"; tools.setAttribute("role", "toolbar"); tools.setAttribute("aria-label", "工作簿编辑"); bar.className = "bar";
   address.setAttribute("aria-label", "选择单元格或区域"); address.placeholder = "A1 或 A1:B10";
@@ -29,6 +33,15 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   choices(replacementMode, "替换类型", [["preserve", "保留原类型"], ["auto", "自动识别新类型"], ["text", "常量转为文本"]]);
   choices(insertedFormat, "插入行列的格式", [["before", "继承前一行／列格式"], ["after", "继承后一行／列格式"], ["none", "使用工作表默认格式"]]);
   tools.append(insertedFormat);
+  sortColumns.setAttribute("aria-label", "排序列"); sortColumns.placeholder = "排序列 A,C"; sortColumns.maxLength = 255;
+  choices(sortMethod, "排序文字顺序", [["none", "地区默认顺序"], ["pinYin", "拼音顺序"], ["stroke", "笔画顺序"]]);
+  tools.append(sortColumns, sortMethod);
+  for (const [field, text] of [[sortHeader, "首行为表头"], [sortCase, "排序区分大小写"]] as const) {
+    const label = document.createElement("label"); field.type = "checkbox"; field.style.width = "auto"; label.append(field, text); tools.append(label);
+  }
+  choices(clipboardMode, "区域粘贴方式", [["contents", "内容和格式"], ["values", "仅数值"], ["formulas", "公式和常量"], ["formats", "仅格式"]]); tools.append(clipboardMode);
+  const overwriteLabel = document.createElement("label"); clipboardOverwrite.type = "checkbox"; clipboardOverwrite.style.width = "auto";
+  overwriteLabel.append(clipboardOverwrite, "剪切时允许覆盖已有内容"); tools.append(overwriteLabel);
   for (const [input, text] of [[matchCase, "区分大小写"], [entireCell, "匹配整个单元格"]] as const) {
     const label = document.createElement("label"); input.type = "checkbox"; input.style.width = "auto"; label.append(input, text); search.append(label);
   }
@@ -39,5 +52,5 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   status.setAttribute("role", "status"); status.setAttribute("aria-label", "工作簿编辑状态"); status.setAttribute("aria-live", "polite"); status.textContent = "正在打开工作簿…";
   error.setAttribute("role", "alert"); error.className = "error"; error.hidden = true; preview.className = "preview";
   bar.append(address, input, mode); shadow.append(style, heading, tools, bar, search, status, error, preview); container.append(element);
-  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat };
+  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite };
 }

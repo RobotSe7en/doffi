@@ -99,6 +99,60 @@ test("mounted workbook formula input, calculation, address selection and toolbar
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, calculated: { value: { type: "number", value: 2 } }, errors: [] });
   await page.getByRole("button", { name: "重做", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled()); await expect(input).toHaveValue("5");
 });
+
+test("mounted direct private clipboard delays cutting, explicitly overwrites and restores formulas in one undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(scalarWorkbook([
+    { row: 0, column: 0, value: { type: "number", value: 7 } }, { row: 0, column: 1, value: { type: "number", value: 999 }, formula: "=A1+1" },
+    { row: 2, column: 0, value: { type: "text", value: "occupied" } }, { row: 0, column: 3, value: { type: "number", value: 999 }, formula: "=SUM(A1:B1)" },
+  ]).serialize()));
+  await page.evaluate(() => window.workbookEditor.select(0, 0, 0, 1));
+  await page.getByRole("button", { name: "剪切选区", exact: true }).click();
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 } });
+  await expect(page.getByLabel("区域粘贴方式", { exact: true })).toBeDisabled();
+  await page.evaluate(() => window.workbookEditor.select(2));
+  await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, errors: ["InvalidOperation"] });
+  await page.getByLabel("剪切时允许覆盖已有内容", { exact: true }).check();
+  await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => [window.workbookEditor.cell("sheet-1", 0, 0), window.workbookEditor.cell("sheet-1", 2, 0),
+    window.workbookEditor.cell("sheet-1", 2, 1)?.formula?.expression, window.workbookEditor.cell("sheet-1", 0, 3)?.formula?.expression]))
+    .toMatchObject([undefined, { value: { type: "number", value: 7 } }, "=(A3+1)", "=SUM(A3:B3)"]);
+  await expect(page.getByRole("button", { name: "粘贴选区", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 2, 0))).toMatchObject({ value: { type: "text", value: "occupied" } });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 3)?.formula?.expression)).toBe("=SUM(A1:B1)");
+  await page.evaluate(() => window.workbookEditor.select(0, 0, 0, 1)); await page.getByRole("button", { name: "复制选区", exact: true }).click();
+  await page.evaluate(() => window.workbookEditor.select(4)); await page.getByLabel("区域粘贴方式", { exact: true }).selectOption("values");
+  await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 4, 1))).toMatchObject({ value: { type: "number", value: 8 } });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 4, 1)?.formula)).toBeUndefined();
+  const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }); await input.fill("draft");
+  await expect(page.getByRole("button", { name: "复制选区", exact: true })).toBeDisabled();
+  await input.press("Escape"); expect(await page.evaluate(() => window.workbookEditor.dispose())).toMatchObject({ usable: true });
+});
+
+test("mounted direct sorting keeps headers/hidden records, copies current-key records and restores one history step", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const source = scalarWorkbook([
+    { row: 0, column: 0, value: { type: "text", value: "Key" } }, { row: 0, column: 1, value: { type: "text", value: "Label" } },
+    ...[3, 100, 1, 2].map((value, index) => ({ row: index + 1, column: 0, value: { type: "number" as const, value: 999 }, formula: "=" + value })),
+    ...["three", "hidden", "one", "two"].map((value, index) => ({ row: index + 1, column: 1, value: { type: "text" as const, value } })),
+    { row: 5, column: 3, value: { type: "number", value: 999 }, formula: "=A2" },
+  ], metadata => { const sheet = metadata.workbook.sheets[0]!; sheet.defaultRowHeightCustom = true; sheet.rowDimensions = [{ from: 2, to: 2, hidden: true }]; });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(source.serialize()));
+  await page.evaluate(() => window.workbookEditor.select(0, 0, 4, 1)); await page.getByLabel("首行为表头", { exact: true }).check();
+  await page.getByRole("button", { name: "升序排序", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => [0, 1, 2, 3, 4].map(row => window.workbookEditor.cell("sheet-1", row, 1)?.text))).toEqual(["Label", "one", "hidden", "two", "three"]);
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 3)?.formula?.expression)).toBe("=A2");
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], cleanSource: true });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => [1, 2, 3, 4].map(row => window.workbookEditor.cell("sheet-1", row, 1)?.text))).toEqual(["three", "hidden", "one", "two"]);
+  const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }); await input.fill("draft"); await expect(page.getByRole("button", { name: "降序排序", exact: true })).toBeDisabled();
+  await input.press("Escape"); await page.evaluate(() => window.workbookEditor.settled()); await page.getByRole("button", { name: "降序排序", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => [1, 2, 3, 4].map(row => window.workbookEditor.cell("sheet-1", row, 1)?.text))).toEqual(["three", "hidden", "two", "one"]);
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1, redoSteps: 0 }, errors: [] });
+});
 test("mounted workbook merge requires an explicit clearing choice and unmerge/undo retain the source", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const entries = encodeTestPackage(scalarWorkbook([{ row: 0, column: 0, value: { type: "number", value: 7 } }, { row: 0, column: 1, value: { type: "number", value: 3 } }]).serialize());

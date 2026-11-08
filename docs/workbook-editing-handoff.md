@@ -50,6 +50,10 @@
 
 ## 已做检查
 
+- 定义事务提交 `68cdb0f` 已推送；完整 `pnpm check` 186 文件／2030 项及类型、架构、SDK／Playground 构建通过，日志 `.cache/workbook-definitions-complete-check.log`。随后增加排序、行可见性查询、剪切及编辑器私有剪贴板，尚不是完整 R3-11/12。排序从当前计算构建稳定排列，跳过隐藏／筛除行；外部公式保留地址，内部相对复制。剪切捕获旧源，支持重叠、跨表、精确引用片段、整块合并、链接与需要重定位的跨表批注；部分条件格式／验证规则保留精确目标和相对原点。智能表／筛选／绘图及定位备注的剪切与排序联动仍待完成，普通复制仍拒绝合并。
+- 排序基础核心／Worker／独立原生来源定向 5 文件／54 项通过，日志 `.cache/workbook-sort-final-unit.log`；完整三引擎输入和 Worker 回归 105 通过、6 项 CDP IME 按声明跳过，日志 `.cache/workbook-sort-final-browser.log`。实际固定 Calc 六组排序与官方 XSD/OPC 记录及独立复核通过，日志 `.cache/workbook-sort-native.log`、`.cache/workbook-sort-native-recheck.log`；数字两组一致，混合类型／标点／大小写四组差异保留在[证据](evidence/workbook-sort.json)。驱动最初未提供 UNO 类型使排序未执行的错误已由探针发现并修正，原日志 `.cache/workbook-sort-native-initial-noop.log` 不记为通过或生产者差异。共享轴编辑驱动的四组实际 Calc 回归及 XSD/OPC 重新通过，日志 `.cache/workbook-axis-sort-helper-recheck.log`。
+- 剪贴板及剪切／排序／定义／原生来源／Worker 定向 7 文件／70 项通过，日志 `.cache/workbook-clipboard-unit.log`；构建、工具类型通过，日志 `.cache/workbook-clipboard-{build,types}.log`。三引擎直连／Worker 私有剪贴板 6 项通过，日志 `.cache/workbook-clipboard-browser.log`，覆盖不提前删除、显式覆盖、引用与撤销、当前公式值、连续复制、过期拒绝、草稿保护及宿主持有会话。后续规则拆分的单独 6 项通过，日志 `.cache/workbook-cut-rules-unit-recheck.log`，类型通过；初轮仅因未变表达式保留原拼写的预期写错而失败，原日志保留 `.cache/workbook-cut-rules-unit.log`。最终完整 `pnpm check` 192 文件／2064 项、类型、架构边界、SDK 与 Playground 构建通过，日志 `.cache/workbook-sort-move-complete-check.log`；最终三引擎排序／剪贴板定向 12 项全部通过，日志 `.cache/workbook-sort-move-final-browser.log`。未启动远端全量 CI；阶段最终双人审查和固定资源验收继续保留。
+
 - 2026-11-08 新增 R3-13 定义事务：名称／表格／表样式／条件格式／数据验证的设置和移除；名称和表格列改名按绑定维护引用，列名交换通过临时身份避免重定向；表移除转为普通格并展开结构化引用。计算列、表头和汇总写入实际源格，同模板的既有例外与未改汇总源保留；展开前检查格数预算并逐批支持取消。无净变化的定义恢复原属性顺序及缺省列表，保留重做。核心 68 文件／1038 项通过，后续汇总源保留修正后的核心／独立原生来源与文档包重开／Worker 定向 3 文件／41 项及包构建、工具类型通过，日志 `.cache/workbook-definitions-{core,integration,build,types}.log`。这不是实际 Excel/Calc 编辑该新命令的对照，也不是完整 R3-13：人工管理界面、命名样式传播、结构联动及容量验收仍须完成。
 - 此批最终完整 `pnpm check` 186 文件／2030 项、类型、架构边界、五包和 Playground 构建通过，日志 `.cache/workbook-definitions-complete-check.log`；未启动远端全量 CI，不能代替完整阶段审查及最终源的容量门槛。
 
