@@ -294,6 +294,21 @@ test("mounted direct native global-name cut shows the global value despite a tar
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [] });
 });
 
+test("mounted direct native local-name copy creates the missing target scope and shows current values in one undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-copy' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  await page.evaluate(() => window.workbookEditor.select(4, 1, 7, 1)); await page.getByRole('button', { name: '复制选区', exact: true }).click();
+  await page.getByRole('tab', { name: target.name, exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('B5'); await address.press('Enter'); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => [4, 5, 6, 7].map(row => window.workbookEditor.displayedCell(row, 1)))).toEqual(['107', '700', '7', '7']);
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], names: expect.arrayContaining([expect.objectContaining({ name: 'Rate', sheetId: target.sheetId })]) });
+  expect(await page.evaluate(sheetId => window.workbookEditor.cell(sheetId, 6, 1)?.formula?.expression, target.sheetId)).toBe('=[0]!Tax');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
+});
+
 test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
   await page.addScriptTag({ content: editorCode });
   const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },

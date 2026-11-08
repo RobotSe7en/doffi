@@ -1,6 +1,7 @@
 import { captureWorkbookModel, copyWorkbookFormula, createWorkbookCalculatedEvaluator, DocumentError, readWorkbookCellSource, replaceWorkbookCellText, resolveWorkbookCellFormat, WorkbookCoordinateSchema, WorkbookRangeSchema } from "@doffi/core";
 import type { DeepReadonly, DocumentTransaction, WorkbookCalculationResult, WorkbookCellFormatInput, WorkbookCellInput, WorkbookCellSource, WorkbookCoordinate, WorkbookModel, WorkbookRange } from "@doffi/core";
 import { workbookTextSplice } from "./text-projection.js";
+import { createWorkbookNameCopyPlan } from "./copy-names.js";
 
 export interface WorkbookRangeCopyOptions {
   /** Defaults to the source worksheet; both belong to the same workbook. */
@@ -61,6 +62,8 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     if (captureWorkbookModel(input) !== model) throw new DocumentError("RevisionConflict", "Workbook range-copy source changed before completion.");
   };
   const account = (amount: number): void => { units += amount; if (units > config.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its text budget."); };
+  let names: Awaited<ReturnType<typeof createWorkbookNameCopyPlan>> | undefined;
+  const step = (): void => { if (++steps > config.maxSteps) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its formula/name work budget."); };
   const evaluator = config.calculation === undefined ? undefined : createWorkbookCalculatedEvaluator(model, config.calculation, { maxSteps: config.maxSteps, maxCells: config.maxCells, maxCodeUnits: config.maxCodeUnits });
   const cells: WorkbookCellInput[] = [], formats: WorkbookCellFormatInput[] = [];
   let general = snapshot.metadata.workbook.numberFormats.find(format => "builtinId" in format ? format.builtinId === 0 : format.code.toUpperCase() === "GENERAL")?.formatId, registerGeneral = false;
@@ -94,7 +97,12 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
           } else if ((config.mode === "values" || config.mode === "formulas") && !raw?.formula) content = { kind: "value", value: raw?.value ?? { type: "blank" } };
           else content = readWorkbookCellSource(model, { sheetId, ...from });
           account(JSON.stringify(content).length);
-          if (content.kind === "formula") content = { kind: "formula", expression: copyWorkbookFormula(content.expression, from, to) };
+          if (content.kind === "formula") {
+            if (sheetId !== targetSheetId && snapshot.metadata.workbook.names?.length) {
+              names ??= await createWorkbookNameCopyPlan(snapshot.metadata.workbook, sheet, targetSheet, { guard, account, step, ...(config.yield ? { yield: config.yield } : {}) });
+              content = { kind: "formula", expression: await names.copy(content.expression, from, to) }; guard();
+            } else content = { kind: "formula", expression: copyWorkbookFormula(content.expression, from, to) };
+          }
           let unchanged = false;
           if (config.mode !== "contents" && content.kind === "value" && content.value.type === "text" && previous?.value.type === "text" && !previous.formula) {
             const edit = workbookTextSplice(previous.text, content.value.value);
@@ -116,6 +124,9 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
       }
     }
     guard(); const operations: DocumentTransaction["operations"] = [];
+    for (const name of names?.names ?? []) {
+      const operation = { op: "setWorkbookDefinedName" as const, name }; account(JSON.stringify(operation).length); operations.push(operation);
+    }
     if (targetMerges.length) {
       const operation = { op: "unmergeWorkbookCells" as const, sheetId: targetSheetId, range: target };
       account(JSON.stringify(operation).length); operations.push(operation);

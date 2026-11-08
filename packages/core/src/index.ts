@@ -38,6 +38,8 @@ export { parseFormula as parseWorkbookFormula } from "./workbook/formula.js";
 export type { FormulaExpression as WorkbookFormulaExpression, FormulaOrigin as WorkbookFormulaOrigin } from "./workbook/formula.js";
 export { printFormula as printWorkbookFormula } from "./workbook/formula-print.js";
 export { copyFormula as copyWorkbookFormula } from "./workbook/formula-rewrite.js";
+export { rewriteFormula as rewriteWorkbookFormula } from "./workbook/formula-rewrite.js";
+export type { FormulaLocation as WorkbookFormulaLocation, FormulaReferenceChange as WorkbookFormulaReferenceChange, FormulaRewriteBindings as WorkbookFormulaRewriteBindings } from "./workbook/formula-rewrite.js";
 export { readWorkbookCellSource } from "./workbook/cell-source.js";
 export { replaceWorkbookCellText } from "./workbook/cell-text.js";
 export type { WorkbookCellTextEdit } from "./workbook/cell-text.js";

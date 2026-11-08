@@ -45,6 +45,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
         return { ...client.state(), source: await client.readInput('sheet-1', { row: 0, column: 0 }), input: editor.inputState(), selection: editor.selection(), current: current.cells[0]?.current, merges: source.cells.snapshot.metadata.workbook.sheets[0]!.merges, frozen: source.cells.snapshot.metadata.workbook.sheets[0]!.frozen,
           drawings: source.cells.snapshot.metadata.workbook.objects ?? [], charts: source.cells.snapshot.metadata.workbook.charts ?? [], content: source.cells.snapshot.content?.html,
           tables: source.cells.snapshot.metadata.workbook.sheets.map(sheet => ({ sheetId: sheet.sheetId, tables: sheet.tables ?? [] })),
+          names: source.cells.snapshot.metadata.workbook.names ?? [],
           annotations: source.cells.snapshot.annotations, comments: source.cells.snapshot.metadata.workbook.comments ?? [], stories: source.cells.snapshot.metadata.workbook.stories ?? [], errors: [...errors] };
       } finally { source.dispose(); }
     },

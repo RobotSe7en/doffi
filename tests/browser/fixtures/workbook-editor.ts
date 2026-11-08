@@ -45,6 +45,7 @@ export function inspect() {
   return { input: editor.inputState(), selection: editor.selection(), revision: session.snapshot().manifest.revision, history: session.history(), errors: [...errors],
     merges: session.snapshot().metadata.workbook.sheets[0]!.merges,
     tables: session.snapshot().metadata.workbook.sheets.map(sheet => ({ sheetId: sheet.sheetId, tables: sheet.tables ?? [] })),
+    names: session.snapshot().metadata.workbook.names ?? [],
     frozen: session.snapshot().metadata.workbook.sheets[0]!.frozen,
     drawings: session.snapshot().metadata.workbook.objects ?? [], charts: session.snapshot().metadata.workbook.charts ?? [], content: session.snapshot().content?.html,
     annotations: session.snapshot().annotations, comments: session.snapshot().metadata.workbook.comments ?? [], stories: session.snapshot().metadata.workbook.stories ?? [],

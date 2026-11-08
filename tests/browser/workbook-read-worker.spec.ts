@@ -306,6 +306,24 @@ test('mounted Worker native global-name cut shows the global value despite a tar
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true });
 });
 
+test('mounted Worker native local-name copy creates the missing target scope and shows current values in one undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-copy' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('B5:B8'); await page.getByRole('button', { name: '复制选区', exact: true }).click();
+  await page.getByRole('tab', { name: target.name, exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('B5'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => [4, 5, 6, 7].map(row => window.workbookRemoteEditor.displayedCell(row, 1)))).toEqual(['107', '700', '7', '7']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], names: expect.arrayContaining([expect.objectContaining({ name: 'Rate', sheetId: target.sheetId })]) });
+  expect(await page.evaluate(sheetId => window.workbookRemoteEditor.sourceCell(6, 1, sheetId), target.sheetId)).toMatchObject({ formula: { expression: '=[0]!Tax' } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true });
+});
+
 test('mounted table row insertion fills only the new row, preserves a manual exception and restores native table source on undo', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: { type: 'number', value: 3 } }, { row: 2, column: 0, value: { type: 'number', value: 4 } }]));

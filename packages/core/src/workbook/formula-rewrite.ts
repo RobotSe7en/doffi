@@ -8,6 +8,7 @@ import { bindStructuredReference, type FormulaTableDefinition } from "./formula-
 export interface FormulaLocation extends FormulaOrigin { readonly sheet: string }
 export interface FormulaRectangle { readonly from: FormulaOrigin; readonly to: FormulaOrigin }
 export type FormulaReferenceChange =
+  | { readonly kind: "copy" }
   | { readonly kind: "axis"; readonly sheet: string; readonly axis: "row" | "column"; readonly action: "insert" | "delete"; readonly index: number; readonly count: number }
   | { readonly kind: "move"; readonly sheet: string; readonly range: FormulaRectangle; readonly target: FormulaLocation }
   | { readonly kind: "sort"; readonly sheet: string; readonly range: FormulaRectangle }
@@ -158,6 +159,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     return { kind: "range", from: cellAt({ ...first, sheet }, node.from), to: cellAt({ ...last, sheet }, node.to) };
   }
   function visit(node: FormulaExpression): FormulaExpression {
+    if (change.kind === "copy" && ["cell", "range", "axisRange", "structured"].includes(node.kind)) return node;
     if (node.kind === "cell") {
       const original = location(node), relative = change.kind === "axis" && bindings.preserveRelativeAxis && (change.axis === "row" ? !node.absoluteRow : !node.absoluteColumn);
       const point = relative && change.kind === "axis" ? { ...original, [change.axis]: original[change.axis] + to[change.axis] - from[change.axis] } : mapPosition(original);
@@ -190,6 +192,13 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };
     }
     if (node.kind === "name") {
+      if (change.kind === "copy") {
+        if (node.workbook === 0 || node.sheet !== undefined) return node;
+        const binding = bindings.resolveName?.(node.name, from.sheet, false), local = bindings.resolveName?.(node.name, from.sheet, true);
+        if (binding !== undefined && binding !== local && binding !== bindings.resolveName?.(node.name, to.sheet, false)
+          || binding === undefined && bindings.isTableName?.(node.name, from.sheet) && !bindings.isTableName(node.name, to.sheet)) return { ...node, workbook: 0 };
+        return node;
+      }
       const sheet = node.workbook === 0 ? from.sheet : mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
       if (change.kind === "move" && node.workbook === undefined && node.sheet === undefined && bindings.resolveName) {
         const binding = bindings.resolveName(node.name, from.sheet, false);
