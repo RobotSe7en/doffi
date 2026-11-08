@@ -25,6 +25,9 @@ export interface FormulaRewriteBindings {
   readonly isTableName?: (name: string, sheet: string) => boolean;
   readonly tables?: readonly FormulaTableDefinition[];
   readonly resolveName?: (name: string, sheet: string, explicit: boolean) => string | undefined;
+  /** An empty calculated column retains relative row recipes for its future
+   * data body. Absolute references still follow or invalidate source cells. */
+  readonly preserveRelativeAxis?: boolean;
 }
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 const refError = (): FormulaExpression => ({ kind: "error", value: "#REF!" });
@@ -58,6 +61,7 @@ export function copyFormula(source: string, from: FormulaOrigin, to: FormulaOrig
 /** Rewrite semantic references, never strings that happen to contain addresses. */
 export function rewriteFormula(source: string, from: FormulaLocation, to: FormulaLocation, change: FormulaReferenceChange, bindings: FormulaRewriteBindings = {}): string {
   const ast = parseFormula(source, from); checkFormulaOrigin(to);
+  if (bindings.preserveRelativeAxis !== undefined && (typeof bindings.preserveRelativeAxis !== "boolean" || change.kind !== "axis")) invalid("Relative template preservation requires a typed axis change.");
   if (change.kind === "sort" || change.kind === "move") checkRectangle(change.range);
   if (change.kind === "sort") {
     if (!same(from.sheet, change.sheet) || !inside(from, change.range)) {
@@ -122,6 +126,11 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
   function range(node: Extract<FormulaExpression, { kind: "range" }>): FormulaExpression {
     const first = location(node.from), last = location(node.to), sheet = mapSheet(first.sheet);
     if (sheet === undefined) return refError();
+    if (change.kind === "axis" && bindings.preserveRelativeAxis
+      && (change.axis === "row" ? !node.from.absoluteRow || !node.to.absoluteRow : !node.from.absoluteColumn || !node.to.absoluteColumn)) {
+      const a = visit(node.from), b = visit(node.to);
+      return a.kind === "cell" && b.kind === "cell" ? { kind: "range", from: a, to: b } : refError();
+    }
     if (change.kind === "axis" && same(first.sheet, change.sheet)) {
       const mapped = interval(first[change.axis], last[change.axis]); if (!mapped) return refError();
       return { kind: "range", from: cellAt({ ...first, sheet, [change.axis]: mapped[0] }, node.from), to: cellAt({ ...last, sheet, [change.axis]: mapped[1] }, node.to) };
@@ -145,7 +154,11 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     return { kind: "range", from: cellAt({ ...first, sheet }, node.from), to: cellAt({ ...last, sheet }, node.to) };
   }
   function visit(node: FormulaExpression): FormulaExpression {
-    if (node.kind === "cell") { const point = mapPosition(location(node)); return point ? cellAt(point, node) : refError(); }
+    if (node.kind === "cell") {
+      const original = location(node), relative = change.kind === "axis" && bindings.preserveRelativeAxis && (change.axis === "row" ? !node.absoluteRow : !node.absoluteColumn);
+      const point = relative && change.kind === "axis" ? { ...original, [change.axis]: original[change.axis] + to[change.axis] - from[change.axis] } : mapPosition(original);
+      return point ? cellAt(point, node) : refError();
+    }
     if (node.kind === "range") return range(node);
     if (node.kind === "axisRange") {
       const sourceSheet = node.sheet ?? from.sheet, sheet = mapSheet(sourceSheet); if (sheet === undefined) return refError();
@@ -159,7 +172,15 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         const rectangle = { from: { row: node.axis === "row" ? Math.min(start, end) : 0, column: node.axis === "column" ? Math.min(start, end) : 0 }, to: { row: node.axis === "row" ? Math.max(start, end) : MAX_SHEET_ROWS - 1, column: node.axis === "column" ? Math.max(start, end) : MAX_SHEET_COLUMNS - 1 } };
         if (intersect(rectangle, change.range)) return range({ kind: "range", from: cell(Math.min(start, end), false), to: cell(Math.max(start, end), true) });
       }
-      const positions = change.kind === "axis" && same(sourceSheet, change.sheet) && node.axis === change.axis ? interval(start, end) : [start, end];
+      let positions = change.kind === "axis" && same(sourceSheet, change.sheet) && node.axis === change.axis ? interval(start, end) : [start, end];
+      if (change.kind === "axis" && bindings.preserveRelativeAxis && node.axis === change.axis && (!node.from.absolute || !node.to.absolute)) {
+        const single = (value: number, absolute: boolean): number | undefined => {
+          if (!absolute) return value + to[node.axis] - from[node.axis];
+          if (!same(sourceSheet, change.sheet)) return value;
+          const point = mapPosition({ sheet: sourceSheet, row: node.axis === "row" ? value : 0, column: node.axis === "column" ? value : 0 }); return point?.[node.axis];
+        };
+        const a = single(start, node.from.absolute), b = single(end, node.to.absolute); positions = a === undefined || b === undefined ? undefined : [a, b];
+      }
       if (!positions) return refError();
       return { ...node, from: { ...node.from, index: positions[0]! - (node.from.absolute ? 0 : to[node.axis]) }, to: { ...node.to, index: positions[1]! - (node.to.absolute ? 0 : to[node.axis]) },
         ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };

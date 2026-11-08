@@ -10,6 +10,7 @@ import { mapWorkbookRanges } from "../workbook/range-mapping.js";
 import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
 import { WorkbookCellEdit } from "./workbook-cells.js";
 import { rewriteWorkbookReferenceSteps } from "./workbook-references.js";
+import { applyWorkbookAxisTables, planWorkbookAxisTables } from "./workbook-axis-tables.js";
 
 type AxisEdit = Extract<WorkbookOperation, { op: "editWorkbookAxis" }>;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
@@ -56,6 +57,19 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
         if (stop.kind === "formula" && prior?.kind === "formula" && sameFormula(stop.expression, prior.expression, rule.origin)) stop.expression = prior.expression;
       }
     }
+    const priorTables = new Map(old.tables?.map(table => [table.tableId, table]));
+    for (const table of sheet.tables ?? []) {
+      const previous = priorTables.get(table.tableId); if (!previous) continue;
+      const columns = new Map(previous.columns.map((column, index) => [column.columnId, { column, index }]));
+      for (const [index, column] of table.columns.entries()) {
+        const prior = columns.get(column.columnId); if (!prior || table.range.from.column + index !== previous.range.from.column + prior.index) continue;
+        for (const key of ["calculatedFormula", "totalFormula"] as const) {
+          const row = key === "calculatedFormula" ? table.range.from.row + Number(table.header) : table.range.to.row,
+            oldRow = key === "calculatedFormula" ? previous.range.from.row + Number(previous.header) : previous.range.to.row;
+          if (row === oldRow && column[key] !== undefined && prior.column[key] !== undefined && sameFormula(column[key]!, prior.column[key]!, { row, column: table.range.from.column + index })) column[key] = prior.column[key];
+        }
+      }
+    }
   }
   const priorNames = new Map(before.names?.map(name => [name.nameId, name]));
   for (const name of workbook.names ?? []) {
@@ -78,14 +92,14 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
  * Complex native object/table integration is added at its editing boundary;
  * until then those combinations fail atomically rather than drifting. */
 export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCellEdit, annotations: Annotation[], operation: AxisEdit,
-  mappings: WorkbookStructureMapping[]): Generator<{ completed: number; total: number }, void> {
+  mappings: WorkbookStructureMapping[], allocate: () => string): Generator<{ completed: number; total: number }, void> {
   const sheet = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId) ?? invalid("An earlier operation removed the worksheet.");
   const { axis, action, index, count } = operation, bound = axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS;
   if (index + count > bound) invalid("The worksheet axis edit exceeds its native bounds.");
   if (action === "delete" && operation.formatSource !== undefined) invalid("A deletion cannot inherit inserted-axis formatting.");
-  if (sheet.tables?.length || workbook.objects?.some(object => object.sheetId === sheet.sheetId)
+  if (workbook.objects?.some(object => object.sheetId === sheet.sheetId)
     || workbook.comments?.some(comment => annotations.some(annotation => annotation.annotationId === comment.annotationId && annotation.anchor.kind === "cells" && annotation.anchor.sheetId === sheet.sheetId)))
-    invalid("Axis editing of native tables, drawings and comments is not yet connected.");
+    invalid("Axis editing of native drawings and comments is not yet connected.");
   if (workbook.names?.some(name => contextualName(parseFormula(name.expression, name.origin), name.sheetId === undefined)))
     invalid("Axis editing with contextual defined names is not yet connected.");
   const step: WorkbookStructureMapping = { kind: "axis", sheetId: sheet.sheetId, axis, action, index, count };
@@ -179,7 +193,8 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
     if (key === "conditionalRules" && sheet.conditionalRules !== undefined) sheet.conditionalRules = retained as NonNullable<typeof sheet.conditionalRules>;
     if (key === "dataValidations" && sheet.dataValidations !== undefined) sheet.dataValidations = retained as NonNullable<typeof sheet.dataValidations>;
   }
-  yield* rewriteWorkbookReferenceSteps(workbook, cells, { kind: "axis", sheet: sheet.name, axis, action, index, count });
+  const transform = { point, range: rectangle, sort, filter }, tables = yield* planWorkbookAxisTables(workbook, sheet, cells, operation, transform, allocate);
+  yield* rewriteWorkbookReferenceSteps(workbook, cells, { kind: "axis", sheet: sheet.name, axis, action, index, count }, { skipTableFormulas: new Set(tables.map(plan => plan.table.tableId)) });
   for (const item of origins) item.rule.origin = item.origin;
   const affected: WorkbookRange = { from: { row: 0, column: 0, [axis]: index }, to: { row: MAX_SHEET_ROWS - 1, column: MAX_SHEET_COLUMNS - 1 } };
   const moving: { cell: WorkbookCell; position: number }[] = [];
@@ -214,6 +229,7 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
   if (index < frozen) sheet.frozen[frozenKey] = action === "insert" ? frozen + count : frozen - Math.min(count, frozen - index);
   if (sheet.hyperlinks) sheet.hyperlinks = sheet.hyperlinks.flatMap(link => { const range = rectangle(link.range); return range ? [{ ...link, range }] : []; });
   if (sheet.autoFilter) { const next = filter(sheet.autoFilter); if (next) sheet.autoFilter = next; else delete sheet.autoFilter; }
+  yield* applyWorkbookAxisTables(sheet, cells, tables, transform);
   if (sheet.print) {
     const print = sheet.print;
     print.areas = ranges(print.areas);

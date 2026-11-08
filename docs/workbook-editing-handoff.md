@@ -20,7 +20,7 @@
 - 工作簿单元格候选只解析修改块；支持常量、公式源、富文本、保留样式的内容清除和完整清除。基础工作簿设置与宿主单元格批注经过同一历史。
 - 结构映射原语包含行列插删、精确剪切碎片、排序置换及反向映射；普通区域行列已接入，剪切、排序和原生对象联动仍继续实施。
 - 后续 `editWorkbookAxis` 已接通普通区域行列插删：保持块内源正文、缓存和格式，维护跨表公式、绝对限定名称、规则原点／区域、维度、合并范围、冻结、链接、普通筛选键及打印定义。宿主批注精确分段并排除插入空白，完全删除保留正文供重定位；同批逆向的已覆盖场景恢复维度／公式／批注分组，保留重做。格式继承显式为 none／before／after，默认 none；界面默认选择 before，可修改。新增格式格在展开前检查总格预算。直连使用异步准备，Worker 使用原唯一会话；四个按钮按选区确定行列数量，草稿阻止结构操作，完成后回到原生输入。
-- 行列基础仍有明确未接通组合：目标工作表含智能表／绘图／原生备注／线程、工作簿含上下文名称、普通筛选表头的部分删除会失败；需在本阶段继续完成，不是范围缩减。现有独立 Calc 删除对照取消合并，SDK 当前缩小范围。2026-11-08 用户已选择按 Microsoft Office 行为实现，以 Microsoft Excel 为兼容目标；不再等待用户选择。具体结果的微软依据／Excel 实测仍缺失，该对照不计为合并删除验收通过，不把 Calc 或当前 SDK 结果冒充 Excel 行为。其余 4 组原生公式／规则／打印来源由 `scripts/check-workbook-axis.py` 生成及实际编辑，官方 LibreOffice 25.8.1.1 的归档 SHA 和构建号精确校验；源及四份实际生产者通过未修改官方 XSD／OPC。证据 `docs/evidence/workbook-axis.json`，运行 `pnpm check:workbook-axis` 可重做实际插删、重算、保存并复核，已加入显式完整 Office 验收。
+- 行列已接通智能表的数据行／列联动：新行只物化本行计算列，保留既有手工例外与历史缓存；删列绑定失效而不指向相邻列；空表保留未来相对模板，绝对引用仍按删除处理；多个表先完成绑定删除再捕获模板。新列生成唯一名称和实际表头，筛选随表范围更新，删除汇总行保留数据并关闭汇总标志，完全移除表先转换其绑定引用。插删逆向批次恢复原模板拼写、源字节与重做。存续表头行的删除当前仍明确拒绝，不能计作该组合完成。目标工作表含绘图／原生备注／线程、工作簿含上下文名称、普通筛选表头的部分删除仍未接通；需在本阶段继续完成，不是范围缩减。现有独立 Calc 删除对照取消合并，SDK 当前缩小范围。2026-11-08 用户已选择按 Microsoft Office 行为实现，以 Microsoft Excel 为兼容目标；不再等待用户选择。具体结果的微软依据／Excel 实测仍缺失，该对照不计为合并删除验收通过，不把 Calc 或当前 SDK 结果冒充 Excel 行为。其余 4 组原生公式／规则／打印来源由 `scripts/check-workbook-axis.py` 生成及实际编辑，官方 LibreOffice 25.8.1.1 的归档 SHA 和构建号精确校验；源及四份实际生产者通过未修改官方 XSD／OPC。证据 `docs/evidence/workbook-axis.json`，运行 `pnpm check:workbook-axis` 可重做实际插删、重算、保存并复核，已加入显式完整 Office 验收。
 - 资源暂存抽成公共包级原语，保留宿主授权字节、不可变路径与最终使用检查。
 - 停止型验证复用只读规则判断，检查最终修改值、计算结果及阈值／列表／计算名称／相对公式依赖影响的既有目标；不允许空白的规则包含受影响隐含格。无关编辑和格式修改保留导入已有违规值；警告／信息规则必须显式确认，不能绕过停止规则。行列结构及规则编辑的完整影响仍随后续操作继续接入。
 - 增加选定函数族、显式宿主时间／地区上下文、区域依赖索引、迭代长链／实际循环与条件读取、增量失效和整批计算。同步与异步计算共用生成器；取消、来源变化和迟到批次不发布部分结果。
@@ -49,6 +49,10 @@
 - 结构契约预检按 Schema 身份缓存是否存在数组路径，不缓存任何文档输入；没有数组的标量子树直接交给原有完整校验。这样避免逐格为无关联合分支构造错误，保留嵌套数组首错停止、未知字段拒绝和错误路径／数量边界。
 
 ## 已做检查
+
+- 智能表行列新增独立 ZIP/XML 来源、11 项固定 Calc 实际操作及摘要，见 [`workbook-axis-tables.json`](evidence/workbook-axis-tables.json)。原源与所有输出通过官方 Transitional XSD／OPC，归档 SHA 与版本精确校验，`pnpm check:workbook-axis-tables` 可复做；源及输出散列由普通验证只读检查。8 份实际生产者可重开，3 份分别因表头常量不一致或非法公式语法按声明拒绝。原始插列输出保留为负例；另一个正例明确执行插列后录入新表头两步，不修补原输出。Calc 删除列重绑定、删除汇总行提升数据、丢失计算列模板和若干过期求和缓存均原样记录，不作为 SDK／Excel 预期。SDK 当前计算按独立预期检查，历史缓存单独保留；Excel／WPS 仍未实测。
+- 表格行列核心、公式模板、既有轴／定义、Worker 和原生来源 6 文件／99 项通过，日志 `.cache/workbook-axis-tables-complete-rechecked-unit.log`；其中原生来源单独 23 项通过，日志 `.cache/workbook-axis-tables-native-integration.log`。实际生产者复做及官方结构检查通过，日志 `.cache/workbook-axis-tables-native-recheck.log`。构建／工具类型通过，日志 `.cache/workbook-axis-tables-browser-build.log`、`.cache/workbook-axis-tables-tools-types.log`。初轮 Worker 断言错误地从尚未计算的直接接口读取当前值，修正为读取该连接完成的当前规则视图；初轮界面撤销断言错误地期待规范化公式拼写，改为精确保留原来源。失败日志保留，不冒充通过；最终界面及扩展回归结果随后记载。
+- 表格行列最终三引擎实际界面 3 项通过，日志 `.cache/workbook-axis-tables-mounted-rechecked-browser.log`；完整 core／editor 及独立轴／表格／排序／定义来源 90 文件／1202 项通过，日志 `.cache/workbook-axis-tables-broad-regressions.log`。未触发远端全量 CI，阶段仍未验收，PR 保持草稿。
 
 - 区域外观／命名样式批次已提交推送为 `8f8d5f4`，PR 草稿说明同步，未触发全量 CI。随后接入 `formatWorkbookText`、公开 `createWorkbookTextFormatTransaction`、Worker `formatText` 和公式栏选中文字的字体按钮。字体子范围检查原文和精确 UTF-16，保留原片段／CRLF／变体字符／单元格关联，不把数字或公式缓存转换成富文本；原生 LF 和转义前缀只在输入转换层映射。局部样式仍走原CSS和共同候选／历史，不增设可写外观副本。字号／角度字段的浏览器未完成数字输入在提交前拒绝。
 - 核心字体与既有样式定向 2 文件／11 项通过，后续核心／转换／Worker 3 文件／37 项通过，日志 `.cache/workbook-text-format-unit.log`、`.cache/workbook-text-font-integration.log`；构建与工具类型通过，日志 `.cache/workbook-text-font-integration-{build,types}.log`。初轮工具类型发现测试辅助函数返回整个操作联合导致展开时缺少判别收窄，修正为具体字体操作返回类型，不改运行时。初轮三引擎界面为直连 3 通过／Worker 3 失败，日志 `.cache/workbook-text-font-browser.log`，原因是新增测试查询方法未挂到显式测试桥；补齐后 6 项全部通过，日志 `.cache/workbook-text-font-rechecked-browser.log`，包含实际显示颜色、原生 CRLF／转义前缀、源保留、选择保持、草稿保护、唯一会话及一次撤销。更广的核心／编辑器与完整输入／Worker 三引擎回归运行中，结果另记；这仍不是阶段最终固定资源验收。

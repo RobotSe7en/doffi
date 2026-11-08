@@ -8,7 +8,7 @@ import { WorkbookCellEdit, rangeContains } from "./workbook-cells.js";
 export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): void {
   for (const _step of rewriteWorkbookReferenceSteps(workbook, cells, change)) { /* Synchronous driver of the same kernel. */ }
 }
-export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, change: FormulaReferenceChange) {
+export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, change: FormulaReferenceChange, options: { readonly preserveRelativeAxis?: boolean } = {}) {
   const tables = workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => ({ name: table.name, sheet: sheet.name,
     range: table.range, header: table.header, totals: table.totals, columns: table.columns.map(column => column.name) })));
   const sheetNames = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet.name.toUpperCase()])), globalNames = new Map<string, string>(), locals = new Map<string, Map<string, string>>(), localNames = new Set<string>();
@@ -20,7 +20,7 @@ export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, chan
   const tableNames = new Set(tables.map(table => table.name.toUpperCase()));
   return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, globalContext = false): string {
     const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
-    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { tables, ...(table ? { table } : {}),
+    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, ...(table ? { table } : {}),
       resolveName: (name, owner, explicit) => {
         const token = name.toUpperCase();
         // A workbook definition whose nested name is locally shadowed has no
@@ -32,7 +32,8 @@ export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, chan
     });
   };
 }
-export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): Generator<{ completed: number; total: number }, void> {
+export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange,
+  options: { readonly skipTableFormulas?: ReadonlySet<string> } = {}): Generator<{ completed: number; total: number }, void> {
   let completed = 0; const rewrite = createWorkbookReferenceRewriter(workbook, change);
   for (const cell of cells.entries(undefined, true)) {
     const sheet = workbook.sheets.find(sheet => sheet.sheetId === cell.sheetId)!;
@@ -54,7 +55,7 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
       if ("formulas" in rule) rule.formulas = rule.formulas.map(formula => rewrite(formula, sheet.name, rule.origin));
       if (rule.kind === "colorScale") for (const stop of rule.stops) if (stop.kind === "formula") stop.expression = rewrite(stop.expression, sheet.name, rule.origin);
     }
-    for (const table of sheet.tables ?? []) for (const [index, column] of table.columns.entries()) {
+    for (const table of sheet.tables ?? []) if (!options.skipTableFormulas?.has(table.tableId)) for (const [index, column] of table.columns.entries()) {
       if (column.calculatedFormula) column.calculatedFormula = rewrite(column.calculatedFormula, sheet.name, { row: table.range.from.row + Number(table.header), column: table.range.from.column + index }, table.name);
       if (column.totalFormula) column.totalFormula = rewrite(column.totalFormula, sheet.name, { row: table.range.to.row, column: table.range.from.column + index }, table.name);
     }

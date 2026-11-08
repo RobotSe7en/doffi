@@ -244,6 +244,29 @@ test('mounted remote axis controls move cross-chunk cells and formulas through o
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted table row insertion fills only the new row, preserves a manual exception and restores native table source on undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: { type: 'number', value: 3 } }, { row: 2, column: 0, value: { type: 'number', value: 4 } }]));
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [
+    { op: 'setWorkbookTable', sheetId: 'sheet-1', table: { tableId: 'sales', name: 'Sales', range: { from: { row: 0, column: 0 }, to: { row: 3, column: 1 } },
+      header: true, totals: true, totalsPreviouslyShown: true, showFirstColumn: false, showLastColumn: false, rowStripes: true, columnStripes: false,
+      columns: [{ columnId: 'amount', name: 'Amount', totalFunction: 'none' }, { columnId: 'double', name: 'Double', calculatedFormula: '=A2*2', totalFunction: 'sum' }] } },
+    { op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row: 2, column: 1, source: { kind: 'value', value: { type: 'number', value: 99 } } }] },
+  ] }));
+  const bytes = Buffer.from(writeDocumentZip(s.serialize())).toString('base64'); s.dispose();
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A3'); await page.getByRole('button', { name: '插入选区行', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(2, 1), window.workbookRemoteEditor.value(3, 1)]))).toEqual(['=(A3*2)', '99']);
+  await choose('A3'); const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }); await input.fill('5'); await input.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.sourceCell(2, 1))).toMatchObject({ formula: { expression: '=(A3*2)' } });
+  for (let i = 0; i < 2; i++) { await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); }
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(1, 1), window.workbookRemoteEditor.value(2, 1)]))).toEqual(['=A2*2', '99']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 2 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
 test('100 ordinary edits and complete undo/redo retain bounded current previews on 200,000 actual cells', { tag: '@scale' }, async ({ page }, info) => {
   test.setTimeout(360_000); await page.addScriptTag({ content: performanceHostCode });
   const result = await page.evaluate(({ code, bytes }) => window.workbookEditingPerformance.ordinaryWorkerEdits(code, bytes), {

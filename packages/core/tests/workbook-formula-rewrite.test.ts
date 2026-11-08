@@ -5,6 +5,13 @@ import type { FormulaExpression } from "../src/workbook/formula.js";
 
 const place = (row = 0, column = 5, sheet = "Data"): FormulaLocation => ({ row, column, sheet });
 const area = (first: number, last: number, column = 0) => ({ from: { row: first, column }, to: { row: last, column } });
+it("empty table recipes preserve relative axis offsets while absolute cells, ranges and axes still follow deleted source", () => {
+  const operation = { kind: "axis", sheet: "Data", axis: "row", action: "delete", index: 1, count: 3 } as const, origin = place(1);
+  const map = (source: string) => parseFormula(rewriteFormula(source, origin, origin, operation, { preserveRelativeAxis: true }), origin);
+  expect(map("=A2+$B$2+A$1+Other!A2")).toEqual(parseFormula("=A2+#REF!+A$1+Other!A2", origin));
+  expect(map("=SUM(1:3,$1:$3,$1:3,$2:3,A:A)")).toEqual(parseFormula("=SUM(1:3,$1:$1,$1:3,#REF!,A:A)", origin));
+  expect(() => rewriteFormula("=A1", origin, origin, { kind: "renameSheet", from: "Data", to: "Other" }, { preserveRelativeAxis: true })).toThrow();
+});
 describe("formula reference mapping", () => {
   it("copies relative references and whole axes while preserving constants and absolute references", () => {
     expect(copyFormula('=A1+$B1+C$2+$D$4+SUM(A:C,1:$5)+"A1"', place(), place(2, 7))).toBe('=(((((C3+$B3)+E$2)+$D$4)+SUM(C:E,3:$5))+"A1")');

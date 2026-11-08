@@ -1,0 +1,1323 @@
+{
+  "scope": "Independent source and actual pinned Calc edits; producer differences are retained, not repaired. Excel/WPS runtime unverified.",
+  "references": [
+    "https://support.microsoft.com/en-us/excel/resize-a-table-by-adding-or-removing-rows-and-columns-in-excel",
+    "https://learn.microsoft.com/en-us/javascript/api/excel/excel.table?view=excel-js-preview"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "nativeLocale": "C.UTF-8",
+  "baseSourceFile": "examples/xlsx/05-native-table.xlsx",
+  "baseSourceSha256": "54e8874468f2de1ce03fde8686f8af55b21768c444249a4fbda8bde7ab529c31",
+  "sourceSha256": "25a5ac5cf409e94aa2e9fa8064e9b63d5860fd73e74c829ca1cd96b5bd8fed1e",
+  "cases": [
+    {
+      "name": "insert-body-row",
+      "operation": {
+        "axis": "row",
+        "action": "insert",
+        "index": 2,
+        "count": 1
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:D7",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "240",
+          "240"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D7",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D2": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "D4": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "D5": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "D6": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "D7": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "10",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!D7",
+              "value": "240",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-insert-body-row-calc.xlsx",
+      "outputSha256": "cee98ed50c460704ae6ea29644383be023899bc8dd7e82d444a633ad6ba857b9",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "insert-first-row",
+      "operation": {
+        "axis": "row",
+        "action": "insert",
+        "index": 1,
+        "count": 1
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:D7",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "240",
+          "240"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D7",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D3": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "D4": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "D5": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "D6": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "D7": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "10",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!D7",
+              "value": "240",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-insert-first-row-calc.xlsx",
+      "outputSha256": "315f0a7032daf7050f87235921f8433851d176ea26c728c246c8f985807ba4fb",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "insert-cross-chunk-rows",
+      "operation": {
+        "axis": "row",
+        "action": "insert",
+        "index": 1,
+        "count": 255
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:D261",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "240",
+          "240"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D261",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D257": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "D258": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "D259": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "D260": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "D261": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "0",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "10",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!D261",
+              "value": "0",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-insert-cross-chunk-rows-calc.xlsx",
+      "outputSha256": "bf891ff273dbb6d616241d81657cf1a0c081223e038fcd727e930ba26bf5a12d",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "delete-header-row",
+      "operation": {
+        "axis": "row",
+        "action": "delete",
+        "index": 0,
+        "count": 1
+      },
+      "expected": {
+        "rejected": true,
+        "ref": "A1:D6",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "240",
+          "240"
+        ]
+      },
+      "producerRejection": {
+        "code": "InvalidDocument",
+        "reason": "constant-header-mismatch"
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D5",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "甲"
+              },
+              {
+                "address": "B1",
+                "type": "n",
+                "constantText": null
+              },
+              {
+                "address": "C1",
+                "type": "n",
+                "constantText": null
+              },
+              {
+                "address": "D1",
+                "type": "n",
+                "constantText": null
+              }
+            ],
+            "columns": [
+              {
+                "name": "甲",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D1": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "D2": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "D3": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "D4": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "D5": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "220",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "8",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!D5",
+              "value": "220",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "220",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-delete-header-row-calc.xlsx",
+      "outputSha256": "4f6e1eaa16955dfc988da5336dc66dec7a0050b956513febe84359cd0121998d",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "delete-body-rows",
+      "operation": {
+        "axis": "row",
+        "action": "delete",
+        "index": 1,
+        "count": 2
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:D4",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "5",
+          "160",
+          "160"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D4",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D2": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "D3": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "D4": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "160",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "5",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!D4",
+              "value": "160",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "160",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-delete-body-rows-calc.xlsx",
+      "outputSha256": "a4b40942f6688499bdb72b5b0ea3ef202322a7f14f4cdf922059033bdc022ae0",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "delete-all-data",
+      "operation": {
+        "axis": "row",
+        "action": "delete",
+        "index": 1,
+        "count": 4
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:D2",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D2",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D2": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "#REF!",
+              "type": "e"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "#REF!",
+              "type": "e"
+            },
+            "B1": {
+              "formula": "Sales!D2",
+              "value": "#REF!",
+              "type": "e"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "#REF!",
+              "type": "e"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-delete-all-data-calc.xlsx",
+      "outputSha256": "75254de5553bc1933173c0c8fd78e061972262afa1d00a9d8d1c95626ee54472",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "delete-totals-row",
+      "operation": {
+        "axis": "row",
+        "action": "delete",
+        "index": 5,
+        "count": 1
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:D5",
+        "totals": false,
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "#REF!",
+          "240"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:D5",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "D2": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "D3": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "D4": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "D5": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "9",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "#REF!",
+              "value": "#REF!",
+              "type": "e"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "200",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-delete-totals-row-calc.xlsx",
+      "outputSha256": "39915071dd1303996bebca43580108e03ad9e6780346cfce57c5a8587c1de362",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "insert-body-column",
+      "operation": {
+        "axis": "column",
+        "action": "insert",
+        "index": 2,
+        "count": 1
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:E6",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "Column1",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "240",
+          "240"
+        ]
+      },
+      "producerRejection": {
+        "code": "InvalidDocument",
+        "reason": "constant-header-mismatch"
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:E6",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "n",
+                "constantText": null
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "E1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "Column3",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "E2": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "E3": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "E4": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "E5": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "E6": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "340",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "10",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!E6",
+              "value": "340",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-insert-body-column-calc.xlsx",
+      "outputSha256": "c6bee9b90fe00b9e8501cbc77a3f6a2ab24a1a7aacc024322bb0e185e0a76783",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "insert-named-column",
+      "operation": {
+        "axis": "column",
+        "action": "insert",
+        "index": 2,
+        "count": 1
+      },
+      "setHeader": {
+        "column": 2,
+        "text": "Inserted"
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:E6",
+        "totals": true,
+        "columns": [
+          "产品",
+          "数量",
+          "Inserted",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "10",
+          "240",
+          "240"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:E6",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "数量"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "Inserted"
+              },
+              {
+                "address": "D1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "E1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "Inserted",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "E2": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "20",
+              "type": "n"
+            },
+            "E3": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "60",
+              "type": "n"
+            },
+            "E4": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "120",
+              "type": "n"
+            },
+            "E5": {
+              "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+              "value": "40",
+              "type": "n"
+            },
+            "E6": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "340",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[数量])",
+              "value": "10",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!E6",
+              "value": "340",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "240",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-insert-named-column-calc.xlsx",
+      "outputSha256": "30e9a080f489b5dd57127dfde5fccc03aecb7c8d4d66e4d9f8b6573094f9c19c",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "delete-quantity-column",
+      "operation": {
+        "axis": "column",
+        "action": "delete",
+        "index": 1,
+        "count": 1
+      },
+      "expected": {
+        "rejected": false,
+        "ref": "A1:C6",
+        "totals": true,
+        "columns": [
+          "产品",
+          "单价",
+          "金额"
+        ],
+        "observerValues": [
+          "#REF!",
+          "#REF!",
+          "#REF!"
+        ]
+      },
+      "observed": {
+        "tables": [
+          {
+            "ref": "A1:C6",
+            "header": "1",
+            "totals": "1",
+            "headerCells": [
+              {
+                "address": "A1",
+                "type": "s",
+                "constantText": "产品"
+              },
+              {
+                "address": "B1",
+                "type": "s",
+                "constantText": "单价"
+              },
+              {
+                "address": "C1",
+                "type": "s",
+                "constantText": "金额"
+              }
+            ],
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "totalFormula": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "totalFormula": null
+              }
+            ]
+          }
+        ],
+        "formulas": {
+          "Sales": {
+            "C2": {
+              "formula": "SalesTable[[#This Row],[单价]]*SalesTable[[#This Row],[单价]]",
+              "value": "100",
+              "type": "n"
+            },
+            "C3": {
+              "formula": "SalesTable[[#This Row],[单价]]*SalesTable[[#This Row],[单价]]",
+              "value": "400",
+              "type": "n"
+            },
+            "C4": {
+              "formula": "SalesTable[[#This Row],[单价]]*SalesTable[[#This Row],[单价]]",
+              "value": "900",
+              "type": "n"
+            },
+            "C5": {
+              "formula": "SalesTable[[#This Row],[单价]]*SalesTable[[#This Row],[单价]]",
+              "value": "1600",
+              "type": "n"
+            },
+            "C6": {
+              "formula": "SUBTOTAL(109,SalesTable[金额])",
+              "value": "3000",
+              "type": "n"
+            }
+          },
+          "Observer": {
+            "A1": {
+              "formula": "SUM(SalesTable[单价])",
+              "value": "100",
+              "type": "n"
+            },
+            "B1": {
+              "formula": "Sales!C6",
+              "value": "3000",
+              "type": "n"
+            },
+            "C1": {
+              "formula": "SUM(SalesTable[金额])",
+              "value": "3000",
+              "type": "n"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-delete-quantity-column-calc.xlsx",
+      "outputSha256": "6580b7f3194b47e59768c4bd68f4bb220159f20cd706595bf7d76db934f85cce",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    },
+    {
+      "name": "delete-all-rows",
+      "operation": {
+        "axis": "row",
+        "action": "delete",
+        "index": 0,
+        "count": 6
+      },
+      "expected": {
+        "rejected": false,
+        "ref": null,
+        "totals": false,
+        "columns": [],
+        "observerValues": [
+          "#REF!",
+          "#REF!",
+          "#REF!"
+        ]
+      },
+      "producerRejection": {
+        "code": "InvalidDocument",
+        "reason": "unsafe-formula-syntax"
+      },
+      "observed": {
+        "tables": [],
+        "formulas": {
+          "Sales": {},
+          "Observer": {
+            "A1": {
+              "formula": "SUM(#NAME?['#REF!])",
+              "value": "#NAME?",
+              "type": "e"
+            },
+            "B1": {
+              "formula": "#REF!",
+              "value": "#REF!",
+              "type": "e"
+            },
+            "C1": {
+              "formula": "SUM(#NAME?['#REF!])",
+              "value": "#NAME?",
+              "type": "e"
+            }
+          }
+        }
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-axis-tables-delete-all-rows-calc.xlsx",
+      "outputSha256": "41078f7f1be849c71872aa5729e2ee7d2e3b28afdf5cd69ef0d0431cfe14e301",
+      "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."
+    }
+  ]
+}

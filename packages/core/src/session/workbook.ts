@@ -150,7 +150,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         changedAxis = true; mergeSheets.add(operation.sheetId); hyperlinkSheets.add(operation.sheetId);
       }
       else if (operation.op === "editWorkbookAxis") {
-        for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;
       }
       else if (operation.op === "setWorkbookSettings") Object.assign(workbook, operation.changes);
@@ -158,7 +158,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };
     }
     if (changedAxis) restoreWorkbookAxisSource(workbook, base.snapshot().metadata.workbook, annotations, base.snapshot().annotations);
-    if (changedDefinition) restoreWorkbookDefinitionSource(workbook, base.snapshot().metadata.workbook);
+    if (changedDefinition || changedAxis) restoreWorkbookDefinitionSource(workbook, base.snapshot().metadata.workbook);
     for (const sheet of workbook.sheets.filter(sheet => mergeSheets.has(sheet.sheetId))) {
       const previous = base.snapshot().metadata.workbook.sheets.find(previous => previous.sheetId === sheet.sheetId);
       if (previous && sameWorkbookMerges(previous.merges, sheet.merges)) sheet.merges = previous.merges.map(range => ({ from: { ...range.from }, to: { ...range.to } }));

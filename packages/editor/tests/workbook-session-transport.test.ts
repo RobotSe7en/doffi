@@ -63,6 +63,33 @@ test("remote no-op commits preserve redo and emit no core error", async () => {
   expect(s.history()).toEqual(before); expect(events).toEqual([]); expect((await client.redo()).changed).toBe(true);
 });
 
+test("remote table axis edits materialize new calculated rows privately, preserve exceptions and undo through the owning session", async () => {
+  const { s, client } = await pair();
+  const table = { tableId: "sales", name: "Sales", range: { from: { row: 0, column: 0 }, to: { row: 3, column: 1 } }, header: true, totals: true, totalsPreviouslyShown: true,
+    columns: [{ columnId: "amount", name: "Amount", totalFunction: "none" as const }, { columnId: "double", name: "Double", calculatedFormula: "=A2*2", totalFunction: "sum" as const }],
+    showFirstColumn: false, showLastColumn: false, rowStripes: true, columnStripes: false };
+  await client.commit(await client.prepare(command(s, [number(1, 0, 3), number(2, 0, 4), { op: "setWorkbookTable", sheetId, table }, number(2, 1, 99)])));
+  s.clearHistory(); const before = s.serialize(), snapshot = s.snapshot(), state = client.state();
+  const change: DocumentOperation = { op: "editWorkbookAxis", sheetId, axis: "row", action: "insert", index: 2, count: 256, formatSource: "none" };
+  const candidate = await client.prepare(command(s, [change])); expect(s.serialize()).toEqual(before);
+  const preview = await client.view(candidate);
+  try { expect(preview.cells.snapshot.metadata.workbook.sheets[0]!.tables![0]!.range.to.row).toBe(259); }
+  finally { preview.dispose(); }
+  await client.commit(candidate);
+  expect(s.getCell(sheetId, 257, 1)?.formula?.expression).toBe("=(A258*2)");
+  expect(s.getCell(sheetId, 258, 1)?.value).toEqual({ type: "number", value: 99 });
+  const current = await client.view();
+  try { const values = await current.rules!.read({ ...DEFAULT_WORKBOOK_RULE_LIMITS, documentId: state.documentId, revision: client.state().revision,
+    sheetId, includeCurrent: true, coordinates: [{ row: 259, column: 1 }] }, new AbortController().signal);
+    expect(values.cells[0]?.current).toMatchObject({ value: { type: "number", value: 105 } }); }
+  finally { current.dispose(); }
+  await expect(client.prepare({ kind: "transaction", transaction: { protocolVersion: 1, documentId: state.documentId, baseRevision: state.revision, operations: [change] } })).rejects.toMatchObject({ code: "RevisionConflict" });
+  const final = s.snapshot(); await client.undo(); expect(s.snapshot().metadata.workbook.sheets[0]!.tables![0]).toEqual(table);
+  expect(s.snapshot().manifest.chunks).toEqual(snapshot.manifest.chunks);
+  await client.redo(); expect(s.snapshot().manifest.chunks).toEqual(final.manifest.chunks);
+  expect(client.state().history).toMatchObject({ undoSteps: 1, redoSteps: 0 });
+});
+
 test("Worker input preserves literal types, no-op revisions and failed source drafts", async () => {
   const { s, client } = await pair(), at = { row: 256, column: 32 };
   const input = (revision: number, text: string, mode?: "auto" | "text" | "number") => ({ kind: "input" as const, documentId: "worker-session", revision, sheetId, at, text, ...(mode ? { mode } : {}) });
