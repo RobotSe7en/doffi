@@ -124,6 +124,26 @@ test("mounted direct range appearance edits native rich text with current colors
   expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0))).toEqual(original);
 });
 
+test("mounted direct selected text fonts map CRLF and literal-prefix offsets, preserve other characters, selection and one undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const s = createDocumentSession(scalarWorkbook([])), manifest = s.snapshot().manifest;
+  s.commit(s.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [
+    { row: 0, column: 0, source: { kind: "richText", html: '<span class="cell-default">=A&#13;<br>禰󠄀😀Z</span>' } },
+  ] }] })); const entries = encodeTestPackage(s.serialize()); s.dispose();
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), entries); await page.evaluate(() => window.workbookEditor.select(0));
+  const original = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 0)), input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true });
+  await page.getByText("设置单元格格式", { exact: true }).click(); await page.getByLabel("文字颜色", { exact: true }).fill("#cc2200");
+  await page.getByLabel("字重", { exact: true }).selectOption("bold");
+  await input.evaluate(element => { const field = element as HTMLTextAreaElement, from = field.value.indexOf("禰"); field.setSelectionRange(from, from + 5); field.dispatchEvent(new Event("select", { bubbles: true })); });
+  await page.getByRole("button", { name: "应用选中文字字体", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await input.evaluate(element => { const field = element as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe("禰󠄀😀");
+  const changed = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 0)); expect(changed?.text).toBe("=A\r\n禰󠄀😀Z"); expect(changed?.html).toContain("=A&#13;<br><span class=\"workbook-run-");
+  expect((await page.evaluate(() => window.workbookEditor.displayedTextStyles(0, 0))).some(style => style.text?.includes("禰") && style.color === "rgb(204, 34, 0)" && style.weight === "700")).toBe(true);
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 0))).toEqual(original);
+});
+
 test("mounted direct range appearance preserves nested selector styling while repeatedly changing an inherited named cell style", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const files = new Map(scalarWorkbook([], metadata => {

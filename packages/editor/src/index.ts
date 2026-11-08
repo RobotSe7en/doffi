@@ -34,6 +34,8 @@ export type { WorkbookFindQuery, WorkbookFindOptions, WorkbookFindProgress, Work
 export { createWorkbookRangeCopyTransaction } from "./workbook/copy-range.js";
 export type { WorkbookRangeCopyOptions } from "./workbook/copy-range.js";
 export { createWorkbookSortTransaction } from "./workbook/sort.js";
+export { createWorkbookTextFormatTransaction } from "./workbook/text-format.js";
+export type { WorkbookTextFontSelection } from "./workbook/text-format.js";
 export type { WorkbookSortOptions } from "./workbook/sort.js";
 export { serveWorkbookSession } from "./workbook/session-server.js";
 export { connectWorkbookSession } from "./workbook/session-client.js";

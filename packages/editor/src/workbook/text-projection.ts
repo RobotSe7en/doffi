@@ -1,9 +1,15 @@
-import { isDocumentTextBoundary } from "@doffi/core";
+import { DocumentError, isDocumentTextBoundary } from "@doffi/core";
 import type { WorkbookCellTextEdit } from "@doffi/core";
 
 /** Native textareas expose LF line endings. This is a transient projection,
  * never a request to normalize the document's untouched CR/CRLF source. */
 export function workbookInputTextView(raw: string): string { return raw.replace(/\r\n?/g, "\n"); }
+export function workbookInputTextSourceRange(raw: string, from: number, to: number): { from: number; to: number } {
+  const offsets = [0];
+  for (let index = 0; index < raw.length; index++) { if (raw[index] === "\r" && raw[index + 1] === "\n") index++; offsets.push(index + 1); }
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to <= from || to >= offsets.length) throw new DocumentError("InvalidOperation", "Select a nonempty native text range.");
+  return { from: offsets[from]!, to: offsets[to]! };
+}
 export function workbookTextSplice(before: string, after: string): WorkbookCellTextEdit | undefined {
   if (before === after) return;
   let from = 0;

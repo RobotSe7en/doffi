@@ -4,6 +4,7 @@ import { serveWorkbookReads } from "@doffi/render";
 import type { WorkbookReadServer } from "@doffi/render";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
 import { createWorkbookSortTransaction } from "./sort.js";
+import { createWorkbookTextFormatTransaction } from "./text-format.js";
 import { createWorkbookFillTransaction } from "./fill.js";
 import { createWorkbookReplaceTransaction } from "./replace.js";
 import { findWorkbookText } from "./find.js";
@@ -74,6 +75,9 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
         if (command.kind === "input") {
           if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "at", "text", "mode"])) invalidSessionTransport("Invalid workbook input command.");
           transaction = createWorkbookInputTransaction(base, command.sheetId, command.at, command.text, command.mode);
+        } else if (command.kind === "formatText") {
+          if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "at", "selection", "properties"])) invalidSessionTransport("Invalid workbook text font command.");
+          transaction = createWorkbookTextFormatTransaction(base, command.sheetId, command.at, command.selection, command.properties);
         } else if (command.kind === "paste") {
           if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "at", "text", "options"])) invalidSessionTransport("Invalid workbook paste command.");
           transaction = createWorkbookPasteTransaction(base.snapshot(), command.sheetId, command.at, command.text, command.options);

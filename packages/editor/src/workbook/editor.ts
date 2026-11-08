@@ -22,6 +22,7 @@ import { createWorkbookTaskQueue } from "./task-queue.js";
 import { WorkbookClipboard } from "./clipboard.js";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
+import { createWorkbookTextFormatTransaction } from "./text-format.js";
 
 /** The host supplies its Worker connection or direct small-document session;
  * source cells, candidates and history remain behind that core boundary. */
@@ -230,6 +231,19 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     try { await commitCommand({ protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations }, abort); readCurrentSelection(); }
     finally { if (commandAbort === abort) commandAbort = undefined; controls(); }
     await sourceSettled(); binding.focus();
+  }
+  async function formatSelectedText(): Promise<void> {
+    check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    const selected = input.state().selection;
+    if (!selected || selected.anchor.kind !== "cells") throw new DocumentError("InvalidOperation", "请先在公式栏选中文字。");
+    const selection = { from: ui.input.selectionStart, to: ui.input.selectionEnd, text: ui.input.value }, properties = ui.format.fontProperties();
+    if (!Object.keys(properties).length) throw new DocumentError("InvalidOperation", "请先选择要修改的字体设置。");
+    const transaction = createWorkbookTextFormatTransaction(session, selected.anchor.sheetId, selected.anchor.ranges[0]!.from, selection, properties);
+    if (transaction.baseRevision !== selected.baseRevision) throw new DocumentError("RevisionConflict", "选中文字的选区已过期。");
+    const abort = new view!.AbortController(); commandAbort = abort; controls();
+    try { await commitCommand(transaction, abort); readCurrentSelection(); }
+    finally { if (commandAbort === abort) commandAbort = undefined; controls(); }
+    await sourceSettled(); binding.focus(false); if (ui.input.value === selection.text) ui.input.setSelectionRange(selection.from, selection.to);
   }
   async function pasteSelection(): Promise<void> {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
@@ -445,6 +459,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("剪切选区", () => copySelection("cut"), idle);
   button("粘贴选区", () => { void runInteraction(pasteSelection); }, () => idle() && clipboard.available);
   button("应用单元格格式", () => { void runInteraction(formatSelection); }, idle, ui.format.tools);
+  button("应用选中文字字体", () => { void runInteraction(formatSelectedText); }, () => idle() && !!input.state().selection && ui.input.selectionStart < ui.input.selectionEnd, ui.format.tools);
   button("取消操作", () => commandAbort?.abort(), () => Boolean(commandAbort));
   button("查找下一个", () => { void runInteraction(() => search()); }, () => idle() && Boolean(ui.find.value), ui.searchTools);
   button("替换当前项", () => { void runInteraction(() => search("one")); }, () => idle() && ui.findField.value !== "display" && Boolean(found && found.index >= 0), ui.searchTools);
@@ -459,7 +474,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || !["f", "h"].includes(event.key.toLowerCase())) return;
     event.preventDefault(); if (!commandAbort) { ui.find.focus(); ui.find.select(); }
   }, { signal: events.signal });
-  for (const type of ["input", "keydown", "compositionstart", "compositionend"]) ui.input.addEventListener(type, controls, { signal: events.signal });
+  for (const type of ["input", "keydown", "keyup", "select", "mouseup", "compositionstart", "compositionend"]) ui.input.addEventListener(type, controls, { signal: events.signal });
   ui.mode.addEventListener("change", () => { try { input.setMode(ui.mode.value as WorkbookTextInputMode); binding.refresh(); controls(); } catch (error) { report(error); } }, { signal: events.signal });
   ui.address.addEventListener("keydown", event => {
     if (event.key !== "Enter") return; event.preventDefault();

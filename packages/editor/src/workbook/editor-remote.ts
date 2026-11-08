@@ -283,6 +283,15 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     await sourceSettled(); await commitCommand({ kind: "transaction", transaction: { protocolVersion: 1, documentId: snapshot.manifest.documentId,
       baseRevision: snapshot.manifest.revision, operations } }); await sourceSettled(); binding.focus();
   }
+  async function formatSelectedText(): Promise<void> {
+    check(); const selected = input.state().selection;
+    if (!selected || selected.anchor.kind !== "cells") throw new DocumentError("InvalidOperation", "请先在公式栏选中文字。");
+    const selection = { from: ui.input.selectionStart, to: ui.input.selectionEnd, text: ui.input.value }, properties = ui.format.fontProperties();
+    if (!Object.keys(properties).length) throw new DocumentError("InvalidOperation", "请先选择要修改的字体设置。");
+    await commitCommand({ kind: "formatText", documentId: selected.documentId, revision: selected.baseRevision, sheetId: selected.anchor.sheetId,
+      at: selected.anchor.ranges[0]!.from, selection, properties });
+    await sourceSettled(); binding.focus(false); if (ui.input.value === selection.text) ui.input.setSelectionRange(selection.from, selection.to);
+  }
   function findQuery(): WorkbookFindQuery {
     const anchor = input.state().selection?.anchor, scope = ui.findScope.value, sheetId = preview!.layout().sheetId;
     if (scope === "selection" && anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择查找区域。");
@@ -380,6 +389,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("剪切选区", () => queueInteraction(() => copySelection("cut")), idle);
   button("粘贴选区", () => queueInteraction(pasteSelection), () => idle() && clipboard.available);
   button("应用单元格格式", () => queueInteraction(formatSelection), idle, ui.format.tools);
+  button("应用选中文字字体", () => queueInteraction(formatSelectedText), () => idle() && !!input.state().selection && ui.input.selectionStart < ui.input.selectionEnd, ui.format.tools);
   button("取消操作", () => commandAbort?.abort(), () => !!commandAbort && !commandApplying);
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);
@@ -396,7 +406,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
       const area = resolved.areas[0]!; await choose(area.sheetId, { from: area.from, to: area.to }, true, false, revision);
     });
   }, { signal: events.signal });
-  for (const type of ["input", "keydown", "compositionstart", "compositionend"]) ui.input.addEventListener(type, controls, { signal: events.signal });
+  for (const type of ["input", "keydown", "keyup", "select", "mouseup", "compositionstart", "compositionend"]) ui.input.addEventListener(type, controls, { signal: events.signal });
   const unsubscribe = client.subscribe(() => { if (!disposed) { found = undefined; findSelectionScope = undefined; void scheduleRefresh(); } }); controls(); void scheduleRefresh();
   const ready = sourceSettled().then(() => {}); void ready.catch(() => {});
   async function settled(): Promise<WorkbookRenderReport> {

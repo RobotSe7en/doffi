@@ -4,6 +4,7 @@ import type { DocumentOperation, DocumentSelection, WorkbookSnapshot } from "@do
 export interface WorkbookFormatUi {
   readonly element: HTMLDetailsElement; readonly tools: HTMLDivElement; readonly fields: readonly (HTMLInputElement | HTMLSelectElement)[];
   operations(snapshot: WorkbookSnapshot, selection: DocumentSelection | undefined): DocumentOperation[];
+  fontProperties(): Readonly<Record<string, string>>;
 }
 /** Plain form values are transient UI state. The command contains only the
  * chosen appearance changes and is validated/applied by the owning session. */
@@ -39,17 +40,24 @@ export function createWorkbookFormatUi(document: Document): WorkbookFormatUi {
   const borderKind = select(border, "边框线型", [["none", "无"], ["thin", "细线"], ["medium", "中线"], ["thick", "粗线"], ["double", "双线"], ["dashed", "虚线"], ["dotted", "点线"], ["hair", "发丝线"], ["mediumDashed", "中虚线"], ["dashDot", "点划线"], ["mediumDashDot", "中点划线"], ["dashDotDot", "双点划线"], ["mediumDashDotDot", "中双点划线"], ["slantDashDot", "斜点划线"]]);
   const borderColor = input(border, "边框颜色"), numberCode = input(number, "数字格式代码"); borderColor.placeholder = "#000000"; numberCode.placeholder = "0.00 或 yyyy-mm-dd";
   const hint = document.createElement("p"); hint.textContent = "空白或“保持原设置”保留各单元格原格式；颜色可输入十六进制值。"; element.append(hint, tools);
+  const put = (properties: Record<string, string>, name: string, field: HTMLInputElement | HTMLSelectElement) => { if (field.value.trim()) properties[name] = field.value.trim(); };
+  function fontProperties(): Record<string, string> {
+    const properties: Record<string, string> = {};
+    const family = (field: HTMLInputElement) => '"' + field.value.trim().replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"';
+    if (latin.value.trim()) { properties["--office-font-ascii"] = family(latin); properties["--office-font-h-ansi"] = family(latin); }
+    if (eastAsian.value.trim()) properties["--office-font-east-asia"] = family(eastAsian);
+    if (size.validity.badInput) throw new DocumentError("InvalidOperation", "请输入有效字号。");
+    if (size.value) { const value = Number(size.value); if (!Number.isFinite(value) || value <= 0 || value > 409) throw new DocumentError("InvalidOperation", "字号须大于 0 且不超过 409 磅。"); properties["font-size"] = value + "pt"; }
+    put(properties, "color", foreground); put(properties, "font-weight", weight); put(properties, "font-style", italic); put(properties, "--office-font-underline", underline); put(properties, "--office-font-strike", strike);
+    return properties;
+  }
   function operations(snapshot: WorkbookSnapshot, selection: DocumentSelection | undefined): DocumentOperation[] {
     if (!selection || selection.anchor.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择要设置格式的单元格。");
     const manifest = snapshot.manifest;
     if (selection.documentId !== manifest.documentId || selection.baseRevision !== manifest.revision) throw new DocumentError("RevisionConflict", "格式选区已过期。");
-    const properties: Record<string, string> = {}, put = (name: string, field: HTMLInputElement | HTMLSelectElement) => { if (field.value.trim()) properties[name] = field.value.trim(); };
-    const family = (field: HTMLInputElement) => '"' + field.value.trim().replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"';
-    if (latin.value.trim()) { properties["--office-font-ascii"] = family(latin); properties["--office-font-h-ansi"] = family(latin); }
-    if (eastAsian.value.trim()) properties["--office-font-east-asia"] = family(eastAsian);
-    if (size.value) { const value = Number(size.value); if (!Number.isFinite(value) || value <= 0 || value > 409) throw new DocumentError("InvalidOperation", "字号须大于 0 且不超过 409 磅。"); properties["font-size"] = value + "pt"; }
-    put("color", foreground); put("font-weight", weight); put("font-style", italic); put("--office-font-underline", underline); put("--office-font-strike", strike);
-    put("--office-cell-horizontal", horizontal); put("--office-cell-vertical", vertical); put("--office-cell-wrap", wrap); put("--office-cell-shrink-to-fit", shrink);
+    const properties = fontProperties();
+    put(properties, "--office-cell-horizontal", horizontal); put(properties, "--office-cell-vertical", vertical); put(properties, "--office-cell-wrap", wrap); put(properties, "--office-cell-shrink-to-fit", shrink);
+    if (rotation.validity.badInput || degree.validity.badInput) throw new DocumentError("InvalidOperation", "请输入有效角度。");
     if (rotation.value && stacked.value === "vertical") throw new DocumentError("InvalidOperation", "请在旋转角度和竖排之间选择一项。");
     if (rotation.value) { const value = Number(rotation.value); if (!Number.isInteger(value) || Math.abs(value) > 90) throw new DocumentError("InvalidOperation", "旋转角度须为 -90 到 90 的整数。"); properties["--office-cell-text-rotation"] = String(value < 0 ? 90 - value : value); }
     else if (stacked.value) properties["--office-cell-text-rotation"] = stacked.value === "vertical" ? "255" : "0";
@@ -85,5 +93,5 @@ export function createWorkbookFormatUi(document: Document): WorkbookFormatUi {
       properties, ...(numberFormatId ? { numberFormatId } : {}) });
     return operations;
   }
-  return { element, tools, fields, operations };
+  return { element, tools, fields, operations, fontProperties };
 }

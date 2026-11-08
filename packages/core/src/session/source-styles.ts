@@ -58,7 +58,7 @@ export class SourceStyleEdit {
     /** A local cell edit must win over authored class/data selectors, including
      * important declarations. Generated selectors use one type component, so
      * repeated edits can retain the same specificity instead of growing it. */
-    overrideCellClass(name: string, properties: Readonly<Record<string, string>>, fontProperties: Readonly<Record<string, string>>): void {
+    overrideLocalClass(name: string, properties: Readonly<Record<string, string>>, fontProperties: Readonly<Record<string, string>>, tag: "td" | "span"): void {
         let maximum = 0, tagsAtMaximum = 0;
         for (const sheet of this.snapshot()) walk(parse(sheet.css, { context: "stylesheet" }), node => {
             if (node.type !== "Selector") return;
@@ -78,7 +78,7 @@ export class SourceStyleEdit {
             for (const node of ast.children) if (node.type === "Declaration") node.important = true;
             return generate(ast);
         };
-        this.append("td" + selector + "{" + declarations(properties) + "}" + (Object.keys(fontProperties).length ? selector + " span{" + declarations(fontProperties) + "}" : ""));
+        this.append(tag + selector + "{" + declarations(properties) + "}" + (Object.keys(fontProperties).length ? selector + " span{" + declarations(fontProperties) + "}" : ""));
     }
     setClass(name: string, properties: Readonly<Record<string, string>>): void {
         const sheets = this.snapshot().map(({ path, css }) => { const ast = parse(css, { context: "stylesheet", parseCustomProperty: true }); if (ast.type !== "StyleSheet")

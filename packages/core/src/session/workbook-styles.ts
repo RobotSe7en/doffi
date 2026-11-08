@@ -6,8 +6,9 @@ import { resolveWorkbookCellFormat } from "../workbook/cell-format.js";
 import { WorkbookCellEdit } from "./workbook-cells.js";
 import { SourceStyleEdit } from "./source-styles.js";
 import { checkRange } from "../workbook/ranges.js";
+import { formatWorkbookCellText } from "./workbook-text-format.js";
 
-type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookRanges" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
+type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookText" | "formatWorkbookRanges" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
 type Group = keyof WorkbookStyleApplication;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
 function group(property: string): Group {
@@ -50,7 +51,7 @@ function validateNativeAppearance(properties: Readonly<Record<string, string>>, 
   }
 }
 export function isWorkbookStyleOperation(operation: WorkbookOperation): operation is StyleOperation {
-  return ["formatWorkbookRanges", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName"].includes(operation.op);
+  return ["formatWorkbookText", "formatWorkbookRanges", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName"].includes(operation.op);
 }
 /** Style identities and update flags remain metadata; effective appearance
  * stays solely in existing CSS and cell/row/column number-format sources. */
@@ -85,6 +86,16 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
   const groups = new Map(Object.keys(properties).map(property => [property, group(property)]));
   const classes = new Set<string>();
   for (const sheet of styles.snapshot()) walk(parse(sheet.css, { context: "stylesheet" }), node => { if (node.type === "ClassSelector") classes.add(ident.decode(node.name)); });
+  if (operation.op === "formatWorkbookText") {
+    if ([...groups.values()].some(group => group !== "font")) invalid("Partial text formatting accepts only font properties.");
+    const cell = cells.get(operation.sheetId, operation.at.row, operation.at.column);
+    formatWorkbookCellText(cell, operation);
+    if (!Object.keys(properties).length) return;
+    let cssClass: string; do { cssClass = "workbook-run-" + allocate(); } while (classes.has(cssClass));
+    const html = formatWorkbookCellText(cell, operation, cssClass);
+    styles.overrideLocalClass(cssClass, properties, properties, "span");
+    cells.set(operation.sheetId, { ...operation.at, source: { kind: "richText", html } }); return;
+  }
   if (operation.op === "formatWorkbookRanges") {
     const sheet = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId) ?? invalid("The formatted worksheet does not exist.");
     let total = 0; for (const range of operation.ranges) { checkRange(range); total += (range.to.row - range.from.row + 1) * (range.to.column - range.from.column + 1); }
@@ -111,7 +122,7 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
             workbook.cellStyles!.bindings.push({ cssClass: local, styleId: (binding ?? definition)!.styleId, apply });
           }
           const font = Object.fromEntries(Object.entries(properties).filter(([property]) => groups.get(property) === "font"));
-          styles.overrideCellClass(local, properties, font);
+          styles.overrideLocalClass(local, properties, font, "td");
           cssClass = [...tokens.filter(name => name !== bindingToken), local].join(" ");
         } else cssClass = format.cssClass;
         derived.set(format.cssClass, cssClass);

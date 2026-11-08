@@ -1,10 +1,12 @@
 import { connectWorkbookSession, mountWorkbookEditor } from '@doffi/editor';
 import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
+import type { WorkbookCell } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
+  sourceCell(row: number, column: number): Promise<WorkbookCell | undefined>;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
 export async function mount(code: string, encoded: string) {
   cleanup(); const host = document.createElement('div'); document.body.append(host);
@@ -34,6 +36,12 @@ export async function mount(code: string, encoded: string) {
     },
     settled: () => editor.settled(),
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
+    async sourceCell(row, column) {
+      const source = await client.view(), current = client.state();
+      try { return (await source.cells.read({ documentId: current.documentId, revision: current.revision, maxCells: 1, maxCodeUnits: 65536,
+        windows: [{ sheetId: 'sheet-1', row, column, rows: 1, columns: 1 }] }, new AbortController().signal)).cells[0]; }
+      finally { source.dispose(); }
+    },
     async external(text, wait = true) { const state = client.state(); const candidate = await client.prepare({ kind: 'input', documentId: state.documentId, revision: state.revision, sheetId: 'sheet-1', at: { row: 0, column: 0 }, text, mode: 'text' }); await client.commit(candidate); if (wait) await editor.settled(); },
     holdReference() { holdReference = true; heldReference = undefined; }, referenceHeld() { return heldReference !== undefined; },
     releaseReference() { if (heldReference === undefined) throw Error('No reference reply is held'); const data = heldReference; heldReference = undefined; channel.port2.dispatchEvent(new MessageEvent('message', { data })); },
@@ -52,6 +60,7 @@ export function holdReference() { actions.holdReference(); }
 export function referenceHeld() { return actions.referenceHeld(); }
 export function releaseReference() { actions.releaseReference(); }
 export function value(row: number, column: number) { return actions.value(row, column); }
+export function sourceCell(row: number, column: number) { return actions.sourceCell(row, column); }
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, external, value, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

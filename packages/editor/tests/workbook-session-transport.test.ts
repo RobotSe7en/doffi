@@ -41,6 +41,21 @@ test("a dedicated endpoint prepares privately, returns bounded views and shares 
   expect(await client.redo()).toMatchObject({ revision: 3, changed: true }); expect(states).toEqual([1, 2, 3]);
 });
 
+test("remote font formatting maps LF offsets only inside its sole authorized source and preserves history and stale/UTF-16 rejection", async () => {
+  const { s, client } = await pair();
+  await client.commit(await client.prepare(command(s, [{ op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "text", value: "A\r\n禰󠄀😀Z" } } }] }]))); s.clearHistory();
+  const before = s.snapshot(), state = client.state(), selection = { from: 2, to: 7, text: "A\n禰󠄀😀Z" };
+  const font = { kind: "formatText" as const, ...state, sheetId, at: { row: 0, column: 0 }, selection, properties: { color: "red" } };
+  // State contains history for consumers, not as a permitted command field.
+  const { history: _history, ...request } = font;
+  const candidate = await client.prepare(request); expect(s.snapshot()).toEqual(before);
+  await client.commit(candidate); expect(s.getCell(sheetId, 0, 0)).toMatchObject({ text: "A\r\n禰󠄀😀Z" }); expect(s.getCell(sheetId, 0, 0)!.html).toContain("workbook-run-");
+  expect(s.history().undoSteps).toBe(1); await expect(client.prepare(request)).rejects.toMatchObject({ code: "RevisionConflict" });
+  await client.undo(); expect(s.snapshot().styles).toEqual(before.styles); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+  const current = client.state(); await expect(client.prepare({ ...request, revision: current.revision, selection: { ...selection, from: 3, to: 5 } })).rejects.toMatchObject({ code: "InvalidOperation" });
+  expect(s.history()).toMatchObject({ undoSteps: 0, redoSteps: 1 });
+});
+
 test("remote no-op commits preserve redo and emit no core error", async () => {
   const { s, client } = await pair(); s.commit(s.prepare(transaction(s, [number(0, 0, 1)]))); s.undo();
   await vi.waitFor(() => expect(client.state().revision).toBe(2)); const before = s.history(), events: string[] = []; s.subscribe(event => events.push(event.type));

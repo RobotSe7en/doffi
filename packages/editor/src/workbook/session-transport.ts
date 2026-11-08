@@ -7,6 +7,7 @@ import type { WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } fr
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import type { WorkbookFillOptions } from "./fill.js";
 import type { WorkbookPasteOptions, WorkbookTextInputMode } from "./text-input.js";
+import type { WorkbookTextFontSelection } from "./text-format.js";
 
 export const WORKBOOK_SESSION_PROTOCOL = "doffi/workbook-session/1";
 export interface WorkbookSessionIdentity { readonly documentId: string; readonly revision: number }
@@ -21,6 +22,7 @@ export interface WorkbookSessionCandidate extends Pick<WorkbookCandidateChange, 
 export type WorkbookSessionCommand =
   | { readonly kind: "transaction"; readonly transaction: DocumentTransaction }
   | (WorkbookSessionIdentity & { readonly kind: "input"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly mode?: WorkbookTextInputMode })
+  | (WorkbookSessionIdentity & { readonly kind: "formatText"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly selection: WorkbookTextFontSelection; readonly properties: Readonly<Record<string, string>> })
   | (WorkbookSessionIdentity & { readonly kind: "paste"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly options?: WorkbookPasteOptions })
   | (WorkbookSessionIdentity & { readonly kind: "copy"; readonly sheetId: string; readonly source: WorkbookRange; readonly target: WorkbookCoordinate;
       readonly targetSheetId?: string; readonly mode?: WorkbookRangeCopyOptions["mode"]; readonly skipBlanks?: boolean })

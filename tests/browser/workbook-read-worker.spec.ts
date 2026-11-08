@@ -6,6 +6,7 @@ import { build } from 'vite';
 import { createHash } from 'node:crypto';
 import { writeDocumentZip } from '@doffi/office';
 import { scalarWorkbook } from '../../packages/core/tests/workbook-scalar-fixture.js';
+import { createDocumentSession } from '@doffi/core';
 import type * as editorFixture from './fixtures/workbook-remote-editor.js';
 import type * as fixture from './fixtures/workbook-read-host.js';
 import type * as sessionFixture from './fixtures/workbook-session-host.js';
@@ -86,6 +87,26 @@ test('mounted remote range appearance rejects unsafe colors atomically, then for
   expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, history: { undoSteps: 1 }, source: { text: '12.3' }, current: { kind: 'value', value: { type: 'number', value: 13.3 } } });
   await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
   expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 2, history: { undoSteps: 0, redoSteps: 1 }, source: { text: '12.3' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+test('mounted remote selected text fonts resolve native offsets inside the Worker and preserve rich source, draft protection and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode }); const s = createDocumentSession(scalarWorkbook([])), manifest = s.snapshot().manifest;
+  s.commit(s.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [
+    { row: 0, column: 0, source: { kind: 'richText', html: '<span class="cell-default">=A&#13;<br>禰󠄀😀Z</span>' } },
+  ] }] })); const bytes = Buffer.from(writeDocumentZip(s.serialize())).toString('base64'); s.dispose();
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const before = await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0)), input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true });
+  await page.getByText('设置单元格格式', { exact: true }).click(); await page.getByLabel('字重', { exact: true }).selectOption('bold');
+  await input.evaluate(element => { const field = element as HTMLTextAreaElement, from = field.value.indexOf('禰'); field.setSelectionRange(from, from + 5); field.dispatchEvent(new Event('select', { bubbles: true })); });
+  await page.getByRole('button', { name: '应用选中文字字体', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  const cell = await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0)); expect(cell?.text).toBe('=A\r\n禰󠄀😀Z'); expect(cell?.html).toContain('workbook-run-');
+  expect(await input.evaluate(element => { const field = element as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe('禰󠄀😀');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0))).toEqual(before);
+  await input.fill('draft'); await expect(page.getByRole('button', { name: '应用选中文字字体', exact: true })).toBeDisabled();
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled());
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
 });
 
