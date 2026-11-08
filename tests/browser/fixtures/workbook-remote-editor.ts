@@ -6,7 +6,7 @@ import { decodeTestBytes } from './package-transport.js';
 import { measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
-let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
+let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean, at?: { row: number; column: number }): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
   displayedDrawingText(nodeId: string): ReturnType<typeof measureWorkbookDrawingText>;
@@ -65,7 +65,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
         windows: [{ sheetId, row, column, rows: 1, columns: 1 }] }, new AbortController().signal)).cells[0]; }
       finally { source.dispose(); }
     },
-    async external(text, wait = true) { const state = client.state(); const candidate = await client.prepare({ kind: 'input', documentId: state.documentId, revision: state.revision, sheetId: 'sheet-1', at: { row: 0, column: 0 }, text, mode: 'text' }); await client.commit(candidate); if (wait) await editor.settled(); },
+    async external(text, wait = true, at = { row: 0, column: 0 }) { const state = client.state(); const candidate = await client.prepare({ kind: 'input', documentId: state.documentId, revision: state.revision, sheetId: 'sheet-1', at, text, mode: 'text' }); await client.commit(candidate); if (wait) await editor.settled(); },
     holdReference() { holdReference = true; heldReference = undefined; }, referenceHeld() { return heldReference !== undefined; },
     releaseReference() { if (heldReference === undefined) throw Error('No reference reply is held'); const data = heldReference; heldReference = undefined; channel.port2.dispatchEvent(new MessageEvent('message', { data })); },
     async disposeEditor() { release(); const state = client.state(), candidate = await client.prepare({ kind: 'input', documentId: state.documentId, revision: state.revision, sheetId: 'sheet-1', at: { row: 0, column: 0 }, text: 'after editor disposal', mode: 'text' }); await client.commit(candidate); return (await client.readInput('sheet-1', { row: 0, column: 0 })).text === 'after editor disposal'; },
@@ -83,7 +83,7 @@ export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string) { return actions.displayedDrawingText(nodeId); }
 export function displayedDrawingBounds() { return actions.displayedDrawingBounds(); }
 export function displayedCell(row: number, column: number) { return actions.displayedCell(row, column); }
-export function external(text: string, wait = true) { return actions.external(text, wait); }
+export function external(text: string, wait = true, at = { row: 0, column: 0 }) { return actions.external(text, wait, at); }
 export function holdReference() { actions.holdReference(); }
 export function referenceHeld() { return actions.referenceHeld(); }
 export function releaseReference() { actions.releaseReference(); }

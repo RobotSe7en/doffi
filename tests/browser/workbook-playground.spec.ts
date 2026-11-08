@@ -66,6 +66,7 @@ for (const form of [
   { kind: 'drawing', panel: '图片、形状与图表', field: '对象名称', discard: '放弃绘图表单草稿' },
   { kind: 'comment', panel: '备注与线程批注', field: '批注正文', discard: '放弃批注表单草稿' },
   { kind: 'hyperlink', panel: '单元格超链接', field: '超链接外部地址', discard: '放弃超链接草稿并读取选区' },
+  { kind: 'table', panel: '智能表管理', field: '智能表名称', discard: '放弃智能表草稿并重新读取' },
 ]) test(`Playground retains an unsaved ${form.kind} draft on file switches until explicit discard`, async ({ page }) => {
   await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx'); await expect(status(page)).toContainText('修订 0', { timeout: 30_000 });
   await page.getByText(form.panel, { exact: true }).click(); const name = page.getByLabel(form.field, { exact: true }), original = await name.inputValue(); await name.fill('UnsavedDraft');

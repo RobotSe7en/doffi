@@ -22,6 +22,7 @@ import { createWorkbookCommentControls } from "./comment-controls.js";
 import { createWorkbookNameControls } from "./names-controls.js";
 import { createWorkbookWorksheetControls } from "./worksheet-controls.js";
 import { createWorkbookHyperlinkControls } from "./hyperlink-controls.js";
+import { createWorkbookTableControls } from "./table-controls.js";
 import type { WorkbookControlsHost } from "./controls-host.js";
 
 export interface WorkbookRemoteEditorView extends Omit<WorkbookEditorView, "applyInput" | "perform" | "cancelInput" | "inputState"> {
@@ -58,6 +59,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   let nameControls: ReturnType<typeof createWorkbookNameControls> | undefined;
   let worksheetControls: ReturnType<typeof createWorkbookWorksheetControls> | undefined;
   let hyperlinkControls: ReturnType<typeof createWorkbookHyperlinkControls> | undefined;
+  let tableControls: ReturnType<typeof createWorkbookTableControls> | undefined;
   let found: { key: string; result: WorkbookFindResult; index: number; view?: WorkbookReadConnection } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
   let preview: WorkbookPreview | undefined, source: WorkbookReadConnection | undefined, binding: WorkbookAsyncTextBinding;
@@ -78,7 +80,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     return config.locale !== undefined && value.calculationContext?.locale === undefined ? { ...value, calculationContext: { ...value.calculationContext, locale: config.locale } } : value;
   }
   function pendingInput(): boolean { return binding?.hasPendingInput() ?? false; }
-  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls].some(controls => controls?.hasPendingInput()); }
+  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls, tableControls].some(controls => controls?.hasPendingInput()); }
   function controls(): void {
     if (disposed) return; const state = input.state(), busy = !!commandAbort || state.applying || state.selecting;
     // Keep the draft editable while a remote operation is preparing or its
@@ -95,6 +97,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     nameControls?.refresh();
     worksheetControls?.refresh();
     hyperlinkControls?.refresh();
+    tableControls?.refresh();
     const pending = pendingInput() || state.applying || !!commandAbort || pendingForms();
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
   }
@@ -394,6 +397,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   nameControls = createWorkbookNameControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   worksheetControls = createWorkbookWorksheetControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   hyperlinkControls = createWorkbookHyperlinkControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
+  tableControls = createWorkbookTableControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void {
     const element = ui.element.ownerDocument.createElement("button"); element.type = "button"; element.textContent = label;
     element.addEventListener("click", () => { try { const result = action(); if (result instanceof Promise) void result.catch(report); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(element); buttons.push({ button: element, available });

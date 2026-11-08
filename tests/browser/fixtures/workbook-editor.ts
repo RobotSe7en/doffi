@@ -55,10 +55,10 @@ export function inspect() {
     cells: [session.getCell("sheet-1", 0, 0), session.getCell("sheet-1", 0, 1)], calculated: session.getCalculatedCell("sheet-1", 0, 1),
     cleanSource: [...session.serialize()].filter(([path]) => path.endsWith(".html")).every(([, bytes]) => !/contenteditable|data-office-view|textarea/.test(new TextDecoder().decode(bytes))) };
 }
-export function external(value: string): void {
+export function external(value: string, at = { row: 0, column: 0 }): void {
   const manifest = session.snapshot().manifest;
   session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision,
-    operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "text", value } } }] }] }));
+    operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ ...at, source: { kind: "value", value: { type: "text", value } } }] }] }));
 }
 export function cell(sheetId: string, row: number, column: number) { return session.getCell(sheetId, row, column); }
 export function paste(text: string): boolean {

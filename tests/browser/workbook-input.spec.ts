@@ -608,3 +608,13 @@ test("an oversized native draft cannot commit an older controller value and can 
     .toEqual({ revision: 0, length: 32768, errors: ["ResourceLimitExceeded"] });
   await input.fill("corrected"); await input.press("Enter"); expect(await page.evaluate(() => window.workbookInput.inspect())).toMatchObject({ history: { undoSteps: 1 }, state: { text: "corrected", dirty: false } });
 });
+
+
+test("mounted direct table controls maintain native columns, formulas, exceptions, styles and protected drafts", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookTableControlsSource, exerciseWorkbookTableControls } = await import('./workbook-table-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/05-native-table.xlsx'), { documentId: 'mounted-table-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookTableControlsSource(model);
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
+  await exerciseWorkbookTableControls(page, false, sheets);
+});

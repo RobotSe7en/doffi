@@ -486,3 +486,14 @@ test('200,000 actual cells copy and cancel through the editing Worker without tr
   const report = JSON.stringify(result, null, 2); writeFileSync(info.outputPath('workbook-editing-worker.json'), report + '\n');
   await info.attach('workbook-editing-worker.json', { body: report, contentType: 'application/json' });
 });
+
+
+test('mounted Worker table controls maintain native columns, formulas, exceptions, styles and protected drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookTableControlsSource, exerciseWorkbookTableControls } = await import('./workbook-table-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/05-native-table.xlsx'), { documentId: 'mounted-table-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookTableControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookTableControls(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
