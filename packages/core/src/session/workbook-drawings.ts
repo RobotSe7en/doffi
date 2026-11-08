@@ -56,6 +56,25 @@ function offset(anchor: WorkbookDrawingAnchor, x: number, y: number): WorkbookDr
   const shift = (marker: typeof anchor.from) => ({ ...marker, offsetXPt: marker.offsetXPt + x, offsetYPt: marker.offsetYPt + y });
   return { ...anchor, from: shift(anchor.from), ...(anchor.kind === "two-cell" ? { to: shift(anchor.to) } : {}) };
 }
+/** Copy native source identities and associations once. The caller chooses
+ * the worksheet/anchor and aliases the complete group of source selectors. */
+export function cloneWorkbookDrawing(workbook: WorkbookMetadata, content: WorkbookContentEdit, original: WorkbookObject, allocate: () => string): { readonly object: WorkbookObject; readonly identities: ReadonlyMap<string, string> } {
+  const cloned = content.edit().cloneSource(original.nodeId, content.root()), nodeId = cloned.rootNodeIds[0]!, value = copy(original);
+  value.nodeId = nodeId; delete value.nativeId;
+  if (value.kind === "chart") {
+    const source = workbook.charts?.find(chart => chart.nodeId === original.nodeId) ?? invalid("The copied chart definition is missing.");
+    const chart = copy(source), series = new Map(chart.series.map(item => [item.seriesId, allocate()]));
+    chart.nodeId = nodeId; chart.chartId = allocate(); value.chartId = chart.chartId;
+    for (const item of chart.series) { item.seriesId = series.get(item.seriesId)!; delete item.nativeIndex; }
+    for (const item of [...chart.seriesStyles ?? [], ...chart.pointStyles ?? []]) item.seriesId = series.get(item.seriesId)!;
+    if (chart.titleNodeId) chart.titleNodeId = cloned.identities.get(chart.titleNodeId)!;
+    for (const title of [chart.categoryAxisTitle, chart.valueAxisTitle]) if (title?.nodeId) title.nodeId = cloned.identities.get(title.nodeId)!;
+    (workbook.charts ??= []).push(chart);
+  }
+  (workbook.objects ??= []).push(value);
+  for (const link of [...workbook.objectHyperlinks ?? []]) if (cloned.identities.has(link.nodeId)) workbook.objectHyperlinks!.push({ ...copy(link), nodeId: cloned.identities.get(link.nodeId)! });
+  return { object: value, identities: cloned.identities };
+}
 export function editWorkbookDrawing(workbook: WorkbookMetadata, content: WorkbookContentEdit, base: WorkbookModel, operation: WorkbookDrawingOperation, allocate: () => string, styles: SourceStyleEdit): void {
   const edit = () => content.edit(), parse = () => content.parse(), object = (id: string) => workbook.objects?.find(object => object.nodeId === id) ?? invalid("An earlier operation removed this drawing.");
   const chartFor = (id: string) => { if (object(id).kind !== "chart") invalid("Chart editing requires a chart drawing."); return workbook.charts?.find(chart => chart.nodeId === id) ?? invalid("The chart definition is missing."); };
@@ -87,22 +106,13 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
     return;
   }
   if (operation.op === "duplicateWorkbookObjects") {
-    const selected = operation.nodeIds.map(object);
+    const selected = operation.nodeIds.map(object), identities = new Map<string, string>();
     for (const original of selected) {
-      const cloned = edit().cloneSource(original.nodeId, content.root()), nodeId = cloned.rootNodeIds[0]!, value = copy(original);
-      value.nodeId = nodeId; value.anchor = offset(value.anchor, operation.offset.xPt, operation.offset.yPt); delete value.nativeId;
-      if (value.kind === "chart") {
-        const chart = copy(chartFor(original.nodeId)), series = new Map(chart.series.map(item => [item.seriesId, allocate()]));
-        chart.nodeId = nodeId; chart.chartId = allocate(); value.chartId = chart.chartId;
-        for (const item of chart.series) { item.seriesId = series.get(item.seriesId)!; delete item.nativeIndex; }
-        for (const item of [...chart.seriesStyles ?? [], ...chart.pointStyles ?? []]) item.seriesId = series.get(item.seriesId)!;
-        if (chart.titleNodeId) chart.titleNodeId = cloned.identities.get(chart.titleNodeId)!;
-        for (const title of [chart.categoryAxisTitle, chart.valueAxisTitle]) if (title?.nodeId) title.nodeId = cloned.identities.get(title.nodeId)!;
-        (workbook.charts ??= []).push(chart);
-      }
-      workbook.objects!.push(value);
-      for (const link of [...workbook.objectHyperlinks ?? []]) if (cloned.identities.has(link.nodeId)) workbook.objectHyperlinks!.push({ ...copy(link), nodeId: cloned.identities.get(link.nodeId)! });
+      const cloned = cloneWorkbookDrawing(workbook, content, original, allocate);
+      cloned.object.anchor = offset(cloned.object.anchor, operation.offset.xPt, operation.offset.yPt);
+      for (const [source, target] of cloned.identities) identities.set(source, target);
     }
+    styles.aliasNodeIds(identities);
     return;
   }
   if (operation.op === "reorderWorkbookObjects") {

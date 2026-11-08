@@ -32,6 +32,31 @@ export class SourceStyleEdit {
         this.append("." + ident.encode(name) + "{}");
         this.setClass(name, properties);
     }
+    /** Cloned rich sources receive fresh identities. Add the complete mapped
+     * selector alongside its original, keeping cascade order and specificity. */
+    aliasNodeIds(identities: ReadonlyMap<string, string>): void {
+        if (!identities.size) return;
+        for (const sheet of this.snapshot()) {
+            const ast = parse(sheet.css, { context: "stylesheet" }); let dirty = false;
+            if (ast.type !== "StyleSheet") invalid("Invalid source stylesheet.");
+            for (const rule of ast.children) {
+                if (rule.type !== "Rule" || rule.prelude.type !== "SelectorList") continue;
+                const aliases: CssNode[] = [];
+                for (const original of rule.prelude.children) {
+                    const alias = clone(original); let changed = false;
+                    walk(alias, node => {
+                        if (node.type !== "AttributeSelector" || ident.decode(node.name.name) !== "data-node-id" || node.matcher !== "=" || !node.value) return;
+                        const value = node.value.type === "String" ? node.value.value : ident.decode(node.value.name), mapped = identities.get(value);
+                        if (mapped === undefined) return;
+                        if (node.value.type === "String") node.value.value = mapped; else node.value.name = ident.encode(mapped); changed = true;
+                    });
+                    if (changed) aliases.push(alias);
+                }
+                for (const alias of aliases) { rule.prelude.children.appendData(alias); dirty = true; }
+            }
+            if (dirty) this.files.set(sheet.path, encode(normalizeCss(generate(ast), "stylesheet", this.limits, { nodes: 0 })));
+        }
+    }
     /** An alias stays in each original rule, retaining its cascade order and
      * specificity. It does not flatten inheritance or change other users. */
     aliasClass(source: string, target: string, overwritten: ReadonlySet<string> = new Set()): void {

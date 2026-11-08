@@ -103,6 +103,21 @@ test("scoped source formatting appends local CSS without changing shared style c
   expect(() => session.prepareProposal(input, proposal(input, [{ op: "setWorkbookStyleClass", cssClass: "cell-default", properties: { color: "red" } }]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
 });
 
+test("scoped drawing copies may alias selectors only to their newly owned nodes without expanding cell permissions", () => {
+  const initial = setup(); apply(initial, [{ op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 100, heightPt: 50 }, object: { kind: "text", html: "<p><strong>复制禰󠄀</strong></p>" } }]);
+  const id = initial.snapshot().metadata.workbook.objects![0]!.nodeId, paragraph = initial.getNode(id)!.childNodeIds[0]!, files = new Map(initial.serialize());
+  files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + '[data-node-id="' + id + '"] [data-node-id="' + paragraph + '"]{color:#123456}'));
+  const session = createDocumentSession(openDocument(files, { kind: "workbook" }), { sessionLimits: { maxCandidates: 1 } }); sessions.push(session);
+  const before = session.snapshot(), scope = { kind: "ranges" as const, ranges: [{ sheetId: "sheet-1", range: range(0, 0) }], objectIds: [id] }, input = request(session, { scope });
+  const operation: WorkbookOperation = { op: "duplicateWorkbookObjects", nodeIds: [id], offset: { xPt: 5, yPt: 5 } };
+  const withoutObject = request(session); expect(() => session.prepareProposal(withoutObject, proposal(withoutObject, [operation]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
+  const candidate = session.prepareProposal(input, proposal(input, [operation])); expect(session.snapshot()).toEqual(before);
+  expect(candidate.preview.metadata.workbook.objects).toHaveLength(2); expect(candidate.preview.styles[0]!.css).toContain(candidate.preview.metadata.workbook.objects![1]!.nodeId);
+  expect(candidate.model.getCell("sheet-1", 0, 1)!.html).toBe(session.getCell("sheet-1", 0, 1)!.html); session.discard(candidate);
+  const applied = session.prepareProposal(input, proposal(input, [operation])); session.commit(applied); expect(session.history().undoSteps).toBe(1); session.undo();
+  expect(session.snapshot().metadata).toEqual(before.metadata); expect(session.snapshot().content).toEqual(before.content); expect(session.snapshot().styles).toEqual(before.styles);
+});
+
 test("new drawings use explicit worksheet creation permission without granting the whole grid", () => {
   const session = setup(), op: WorkbookOperation = { op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 20, yPt: 30, widthPt: 80, heightPt: 40 }, object: { kind: "text", html: "<p>新文本😀禰󠄀</p>" } };
   const input = request(session); expect(() => session.prepareProposal(input, proposal(input, [op]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));

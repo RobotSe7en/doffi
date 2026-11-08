@@ -41,3 +41,10 @@ export function measureWorkbookChart(view: ShadowRoot | undefined) {
     frames: [...svg.querySelectorAll('[data-sdk-chart-label-frame]')].map(frame => ({ fill: frame.getAttribute('fill'), color: frame.getAttribute('stroke'), width: Number(frame.getAttribute('stroke-width')) })),
     axes: { y: category.y1.baseVal.value, top: value.y1.baseVal.value, bottom: value.y2.baseVal.value } };
 }
+export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId: string) {
+  return [...view?.querySelectorAll<HTMLElement>('[data-office-text-style][data-source-node-id]') ?? []]
+    .filter(element => element.dataset.sourceNodeId === nodeId).map(element => {
+      const style = element.ownerDocument.defaultView!.getComputedStyle(element);
+      return { text: element.textContent, color: style.color, size: parseFloat(style.fontSize), weight: style.fontWeight };
+    });
+}

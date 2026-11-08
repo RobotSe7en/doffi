@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, test } from "vitest";
-import { createDocumentSession, createWorkbook, openDocument } from "../src/index.js";
+import { createDocumentSession, createWorkbook, openDocument, SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS } from "../src/index.js";
 import type { DocumentOperation, TransactionPrepareOptions, WorkbookChartDataInput, WorkbookDocumentMetadata, WorkbookDrawingAnchor, WorkbookSession } from "../src/index.js";
 import { assetDigest } from "../src/document/assets.js";
 
@@ -131,4 +131,25 @@ test("unsafe or foreign drawing edits, duplicate series, and invalid geometry fa
     { op: "setWorkbookChartData", nodeId: c.nodeId, data: { series: [0, 1].map(() => ({ seriesId: c.series[0]!.seriesId, values: values.series[0]!.values })) } },
   ];
   for (const operation of bad) { expect(() => commit(s, [{ op: "updateWorkbookObject", nodeId: id, changes: { rotation: 13 } }, operation])).toThrow(); expect(s.serialize()).toEqual(before); expect(s.history()).toEqual(history); }
+});
+
+test("duplicated drawings retain source-ID typography and child hyperlinks in their private candidate and one undo", () => {
+  const original = blank(); commit(original, [shape()]); const root = drawings(original)[0]!.nodeId, p = original.getNode(root)!.childNodeIds[0]!, run = original.getNode(p)!.childNodeIds.find(id => original.getNode(id)!.tagName === "strong")!;
+  const files = new Map(original.serialize()), metadata = JSON.parse(new TextDecoder().decode(files.get("metadata.json")!)) as WorkbookDocumentMetadata;
+  metadata.workbook.objectHyperlinks = [{ nodeId: run, url: "https://example.com/retained" }]; files.set("metadata.json", new TextEncoder().encode(JSON.stringify(metadata)));
+  files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + '[data-node-id="' + root + '"] [data-node-id="' + run + '"]{color:#123456;font-size:20pt}'));
+  const s = createDocumentSession(openDocument(files, { kind: "workbook" })); owned.push(s); const before = s.snapshot(), pending = prepare(s, [{ op: "duplicateWorkbookObjects", nodeIds: [root], offset: { xPt: 0, yPt: 0 } }]);
+  expect(s.snapshot()).toEqual(before); s.commit(pending); const added = drawings(s)[1]!, nextP = s.getNode(added.nodeId)!.childNodeIds[0]!, nextRun = s.getNode(nextP)!.childNodeIds.find(id => s.getNode(id)!.tagName === "strong")!;
+  const resolver = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS);
+  const style = (id: string): Record<string, string> => {
+    const chain = []; let current: string | null = id; while (current) { const node: NonNullable<ReturnType<WorkbookSession["getNode"]>> = s.getNode(current)!; chain.push(node); current = node.parentNodeId; }
+    let parent: Parameters<SourceStyleResolver["get"]>[0] | undefined;
+    for (const node of chain.reverse()) parent = { tag: node.tagName, attrs: node.attributes, parent };
+    return resolver.get(parent!);
+  };
+  expect(style(nextRun)).toEqual(style(run)); expect(style(nextRun)).toMatchObject({ color: "#123456", "font-size": "20pt" });
+  expect(s.snapshot().metadata.workbook.objectHyperlinks).toEqual([{ nodeId: run, url: "https://example.com/retained" }, { nodeId: nextRun, url: "https://example.com/retained" }]);
+  expect(s.getNode(root)!.html).toBe(original.getNode(root)!.html); expect(openDocument(s.serialize(), { kind: "workbook" }).snapshot()).toEqual(s.snapshot());
+  s.undo(); expect(s.snapshot().content).toEqual(before.content); expect(s.snapshot().styles).toEqual(before.styles); expect(s.snapshot().metadata).toEqual(before.metadata);
+  const failedBefore = s.serialize(); expect(() => commit(s, [{ op: "duplicateWorkbookObjects", nodeIds: [root], offset: { xPt: 0, yPt: 0 } }, { op: "setWorkbookObjectText", nodeId: root, html: '<p onclick="bad()">bad</p>' }])).toThrow(); expect(s.serialize()).toEqual(failedBefore);
 });

@@ -91,12 +91,17 @@ export function validateWorkbookProposalSource(model: WorkbookModel, request: Wo
     if (!equal(projection(a, previous), projection(b, next))) invalid("The workbook candidate changes rich source outside its selected objects or comment bodies.");
   }
   const freshClasses = new Set([...next.classes].filter(name => !previous.classes.has(name)));
+  const freshOwnedNodes = new Set<string>(); for (const id of owned) { budget.step(); if (!previous.content?.peekNode(id)) freshOwnedNodes.add(id); }
   const cssProjection = (css: string): string => {
     const ast = parse(css, { context: "stylesheet", parseCustomProperty: true });
     if (ast.type !== "StyleSheet") invalid("Invalid workbook candidate stylesheet.");
     ast.children.forEach((rule, item, list) => {
       budget.step(); if (rule.type !== "Rule" || rule.prelude.type !== "SelectorList") return;
-      rule.prelude.children.forEach((selector, at, selectors) => { let fresh = false; walk(selector, node => { budget.step(); if (node.type === "ClassSelector" && freshClasses.has(ident.decode(node.name))) fresh = true; }); if (fresh) selectors.remove(at); });
+      rule.prelude.children.forEach((selector, at, selectors) => { let fresh = false; walk(selector, node => {
+        budget.step(); if (node.type === "ClassSelector" && freshClasses.has(ident.decode(node.name))) fresh = true;
+        if (node.type === "AttributeSelector" && ident.decode(node.name.name) === "data-node-id" && node.matcher === "=" && node.value
+          && freshOwnedNodes.has(node.value.type === "String" ? node.value.value : ident.decode(node.value.name))) fresh = true;
+      }); if (fresh) selectors.remove(at); });
       if (!rule.prelude.children.size) list.remove(item);
     });
     return generate(ast);

@@ -24,6 +24,35 @@ test.beforeAll(async () => {
   }
 });
 
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} copied object text retains node-ID styles and the original cascade in the actual view`, async ({ page }) => {
+  const source = new Map(scalarWorkbook([]).serialize()); source.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(source.get("styles.css")!) + ".drawing-scope{}.drawing-accent{}"));
+  const s = createDocumentSession(openDocument(source, { kind: "workbook" }));
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 180, heightPt: 80 }, name: "复制外观", object: { kind: "text", html: '<p class="drawing-scope"><strong class="drawing-accent">Glyph</strong></p>' } }] }));
+  const object = s.snapshot().metadata.workbook.objects![0]!, paragraph = s.getNode(object.nodeId)!.childNodeIds[0]!, run = s.getNode(paragraph)!.childNodeIds[0]!, files = new Map(s.serialize()); s.dispose();
+  files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + '[data-node-id="' + paragraph + '"] .drawing-accent{color:red}[data-node-id="' + paragraph + '"] [data-node-id="' + run + '"]{font-size:20pt}.drawing-scope .drawing-accent{color:#334455}'));
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const styles = (id: string) => page.evaluate(({ remote, id }) => remote ? window.workbookRemoteEditor.displayedDrawingText(id) : window.workbookEditor.displayedDrawingText(id), { remote, id });
+  const before = await styles(run); expect(before).toHaveLength(1); expect(before[0]).toMatchObject({ text: "Glyph", color: "rgb(51, 68, 85)" }); expect(before[0]!.size).toBeCloseTo(20 / .75, 1);
+  await page.getByText("图片、形状与图表", { exact: true }).click(); await page.getByLabel("选择绘图对象", { exact: true }).selectOption(object.nodeId);
+  await page.getByRole("button", { name: "复制绘图对象", exact: true }).click(); await settled();
+  const result = await page.evaluate(({ remote, original }) => {
+    return Promise.resolve(remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect()).then(value => {
+      const data = value as { drawings: { nodeId: string }[]; content: string; history: { undoSteps: number }; errors: string[] };
+      const copy = data.drawings.find(item => item.nodeId !== original)!;
+      const template = document.createElement("template"); template.innerHTML = data.content;
+      const root = [...template.content.querySelectorAll("[data-node-id]")].find(element => element.getAttribute("data-node-id") === copy.nodeId)!;
+      return { run: root.querySelector("strong")!.getAttribute("data-node-id")!, history: data.history, errors: data.errors };
+    });
+  }, { remote, original: object.nodeId });
+  expect(result).toMatchObject({ history: { undoSteps: 1 }, errors: [] }); expect(result.run).not.toBe(run); expect(await styles(result.run)).toEqual(before); expect(await styles(run)).toEqual(before);
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await styles(result.run)).toEqual([]); expect(await styles(run)).toEqual(before);
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+  else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} object paragraph input keeps rich runs, exact text, per-paragraph drafts and owning history`, async ({ page, browserName }) => {
   const session = createDocumentSession(scalarWorkbook([]));
   session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 30, yPt: 30, widthPt: 240, heightPt: 120 }, name: "富文本框",
