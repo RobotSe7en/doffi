@@ -237,7 +237,7 @@ pnpm probe:workbook-model
 
 普通维度、合并范围、冻结数量、超链接、筛选列键、打印区域／重复标题／分页和规则区域参加映射。规则原点被删除时，先从存留的旧目标重建相对模板，避免把所有存留格的条件误写成 #REF。宿主单元格批注按原格身份拆成精确区域，新插入的格不扩大锚点；完全删除时保留正文和旧锚点并标为 needs_reanchor。同批逆向操作的已覆盖无变化场景会还原维度跨度、公式拼写与批注分组，保留重做，不制造新历史。
 
-这仍是阶段中的基础：智能表数据行列、现代线程、绝对定位绘图和绝对备注框已接通；单元格定位的绘图／备注框、上下文相关名称以及普通筛选表头的部分删除仍明确拒绝；不得据此宣称完整 R3-12。2026-11-08 用户已决定删除合并首行／首列按 Microsoft Office 行为实现，以 Microsoft Excel 为兼容目标。当前 SDK 缩小范围，已有 Calc 对照取消合并；两者均不能证明 Excel 行为，该项仍待取得明确微软依据或实际 Excel 对照后修正及验收，不再等待用户选择。独立 [4 项实际插删记录](evidence/workbook-axis.json)使用 Python ZIP/XML 来源和固定 LibreOffice 25.8.1.1，通过 `pnpm check:workbook-axis` 实际编辑、重算、保存并比较原生公式／规则／打印定义；源及生产者经官方 XSD／OPC 检查。SDK 对照选择明确的前方格式继承。Excel/WPS 仍未实机验证，完整范围与剩余门槛见[交接](workbook-editing-handoff.md)。
+这仍是阶段中的基础：智能表数据行列、现代线程、绝对定位绘图和绝对备注框已接通；单点固定尺寸及同时移动／缩放的双点绘图与备注框已接通，见下文行列联动基础；固定／混合双点框、上下文相关名称以及普通筛选表头的部分删除仍明确拒绝；不得据此宣称完整 R3-12。2026-11-08 用户已决定删除合并首行／首列按 Microsoft Office 行为实现，以 Microsoft Excel 为兼容目标。当前 SDK 缩小范围，已有 Calc 对照取消合并；两者均不能证明 Excel 行为，该项仍待取得明确微软依据或实际 Excel 对照后修正及验收，不再等待用户选择。独立 [4 项实际插删记录](evidence/workbook-axis.json)使用 Python ZIP/XML 来源和固定 LibreOffice 25.8.1.1，通过 `pnpm check:workbook-axis` 实际编辑、重算、保存并比较原生公式／规则／打印定义；源及生产者经官方 XSD／OPC 检查。SDK 对照选择明确的前方格式继承。Excel/WPS 仍未实机验证，完整范围与剩余门槛见[交接](workbook-editing-handoff.md)。
 
 微软 [Range.Merge](https://learn.microsoft.com/en-us/office/vba/api/excel.range.merge) 说明合并值位于左上角，[Range.Delete](https://learn.microsoft.com/en-us/office/vba/api/excel.range.delete) 说明删除和移位；这两份接口说明没有规定删除合并起点后是否保留残余合并，不能从内容归属推断合并拓扑。后续 Excel 对照须分别覆盖整行和整列删除，含起点、内部、末端、完全覆盖及残余单格；每项从同一独立原生源开始，记录 Excel 版本／构建、操作、原始输出文件及摘要，检查合并范围、起点内容与格式、引用和保存重开。SDK 回归另须验证候选隔离、单步撤销／重做及失败不变。当前没有连接的 Excel 会话，尚未产生此项实机证据；既有 Calc 原始记录保持。
 
@@ -769,3 +769,11 @@ session.dispose();
 直连与唯一 Worker 提供选区外部地址、工作簿内单元格／名称位置、屏幕提示及移除。同一候选替换精确选区的链接，局部移除或覆盖保留外围原目标和精确碎片；单元格原值、富文本和格式不被链接表单改写。已有一致目标可从覆盖选区的链接预填；多个不同目标保持明确的混合状态，不拿第一项覆盖其余来源。保留原生 `display` 来源，无变化保存不增加修订或历史。
 
 草稿绑定原工作表、范围和修订；切换选区或工作表不改写它的目标，表单显示原区域。外部源变化后保留输入并禁止旧修订提交，显式放弃才重读当前选区。IME 保持活动字段可输入；该第五类辅助表单也纳入公开 pending 和宿主切换／请求保护。核心继续校验地址和完整候选，非法可执行目标原子失败。设置、局部移除、源文字、原始链接恢复及一次命令一次撤销经三引擎直连／Worker 核对。剪贴板携带链接和其他组合继续实施，不将此入口计作完整 R3-11 退出。
+
+### 绘图与备注框的行列联动基础（R3-12／14／15 实施中）
+
+单点锚定以原物理尺寸随起点移动；同时移动／缩放的双点锚定按两端所在行列移动，保留各自偏移。插删不重建图形、图表系列、图片资源或正文身份，绝对位置保持固定。删除起点所在行列时，位置映射到该删除带的存续边界；批注语义锚点继续独立失效，保留正文、原状态和显式恢复。经典备注所选 VML 框和未选 commentPr 框分别映射，原来源及差异记录保留。新增逻辑只使用源坐标和物理尺寸，不把屏幕像素写入文档。
+
+依据微软 [oneCellAnchor](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.onecellanchor?view=openxml-3.0.1)、[EditAs](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.editasvalues?view=openxml-3.0.1) 和 [SizeWithCells](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.spreadsheet.resizewithcells?view=openxml-3.0.1)。固定或混合行为的双点框仍需按实际布局补偿，当前继续原子拒绝；排序／剪切、普通输入引起的自动行高与其他布尔组合也须继续完成，不将这部分数学映射计作整个几何闭环。
+
+[独立原生记录](evidence/workbook-axis-drawings.json)包含三份不可变来源、各自重存基线及八次实际行列编辑、来源与生产者 SHA、固定字体清单摘要、锚点／框缓存／备注位置及图表引用；`pnpm check:workbook-axis-drawings` 重做全部 27 组并通过官方 XSD／OPC。Calc 在首次打开的部分单点移动和备注内部缩放中与源声明存在差异，旋转框缓存也会重写，观察保留为生产者证据。SDK 另核对类型事务、双框、缓存、取消／预算／过期候选、文档包 ZIP 重开、撤销和三引擎实际移动／尺寸；未作 Excel／WPS 实机通过声明。

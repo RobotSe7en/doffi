@@ -4,7 +4,7 @@ import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookEditorView } from "@doffi/editor";
 import { decodeTestPackage } from "./package-transport.js";
 import type { TestPackage } from "./package-transport.js";
-import { measureWorkbookChart, measureWorkbookDrawingText, observeWorkbookViews } from "./workbook-view-observer.js";
+import { measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
 let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 const errors: string[] = [];
@@ -39,6 +39,7 @@ export function displayedTextStyles(row: number, column: number) {
   });
 }
 export async function settled() { return editor.settled(); }
+export function displayedDrawingBounds() { return measureWorkbookDrawingBounds(observed?.current()); }
 export async function select(fromRow: number, fromColumn = 0, toRow = fromRow, toColumn = fromColumn): Promise<void> {
   await editor.selectRange("sheet-1", { from: { row: fromRow, column: fromColumn }, to: { row: toRow, column: toColumn } }); editor.focusInput();
 }
@@ -96,4 +97,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedChart, displayedDrawingText, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

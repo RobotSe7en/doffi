@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { writeDocumentZip } from "@doffi/office";
 import { importXlsx } from "@doffi/office";
 import { createDocumentSession, openDocument, WorkbookChartSchema } from "@doffi/core";
-import type { WorkbookChart } from "@doffi/core";
+import type { WorkbookChart, WorkbookNoteBox } from "@doffi/core";
 import type { WorkbookRenderReport } from "@doffi/render";
 import { scalarWorkbook } from "../../packages/core/tests/workbook-scalar-fixture.js";
 import { encodeTestPackage } from "./package-transport.js";
@@ -22,6 +22,40 @@ test.beforeAll(async () => {
     const output = Array.isArray(result) ? result.flatMap(part => part.output) : "output" in result ? result.output : [];
     bundles.set(name, output.filter(part => part.type === "chunk").map(part => part.code).join("\n"));
   }
+});
+
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} axis edits move fixed one-cell drawings and resize both-marker drawings and notes in the actual canvas`, async ({ page }) => {
+  const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 0, column: 1, value: { type: "text", value: "B" } }], metadata => {
+    metadata.workbook.sheets[0]!.defaultRowHeightPt = 20; metadata.workbook.sheets[0]!.defaultRowHeightCustom = true;
+  }));
+  const at = (row: number, column: number) => ({ row, column, offsetXPt: 2, offsetYPt: 3 });
+  const note: WorkbookNoteBox = { anchor: { kind: "two-cell", from: at(3, 1), to: at(5, 3), moveWithCells: true, sizeWithCells: true }, visible: true, printable: true,
+    locked: true, lockText: false, defaultSize: false, disabled: false, autoFill: false, autoLine: false, autoScale: false, justifyLastLine: false };
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations: [
+    { op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "one-cell", from: at(2, 1), widthPt: 80, heightPt: 30 }, name: "Fixed extent", object: { kind: "text", html: "<p>固定</p>" } },
+    { op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "two-cell", from: at(2, 2), to: at(6, 4), moveWithCells: true, sizeWithCells: true }, name: "Resizing", object: { kind: "geometry", preset: "rect", html: "<p>缩放</p>" } },
+    { op: "addWorkbookComment", anchor: { kind: "cells", sheetId: "sheet-1", ranges: [{ from: { row: 1, column: 1 }, to: { row: 1, column: 1 } }] }, html: "<p>备注</p>", format: "classic", box: note },
+  ] }));
+  const initial = s.snapshot(), ids = [...initial.metadata.workbook.objects!.map(object => object.nodeId), initial.annotations[0]!.bodyNodeId!], files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const measure = async () => (await page.evaluate(remote => remote ? window.workbookRemoteEditor.displayedDrawingBounds() : window.workbookEditor.displayedDrawingBounds(), remote));
+  const bounds = (value: Awaited<ReturnType<typeof measure>>, index: number) => { const result = value.objects.find(object => object.nodeId === ids[index]); if (!result) throw Error("The expected source object is not visible."); return result; };
+  const address = page.getByLabel("选择单元格或区域", { exact: true }), select = async (range: string) => { await address.fill(range); await address.press("Enter"); await settled(); };
+  const before = await measure(); expect(before.objects).toHaveLength(3); expect(before.columnWidthPt).toBeGreaterThan(0);
+  await select("A2:A3"); await page.getByRole("button", { name: "插入选区行", exact: true }).click(); await settled(); const moved = await measure();
+  for (let index = 0; index < 3; index++) { expect(bounds(moved, index).yPt - bounds(before, index).yPt).toBeCloseTo(40, 1); expect(bounds(moved, index).heightPt).toBeCloseTo(bounds(before, index).heightPt, 1); }
+  await select("A7"); await page.getByRole("button", { name: "插入选区行", exact: true }).click(); await settled(); const resized = await measure();
+  expect(bounds(resized, 0).heightPt).toBeCloseTo(30, 1); expect(bounds(resized, 0).yPt).toBeCloseTo(bounds(moved, 0).yPt, 1);
+  for (const index of [1, 2]) { expect(bounds(resized, index).heightPt - bounds(moved, index).heightPt).toBeCloseTo(20, 1); expect(bounds(resized, index).yPt).toBeCloseTo(bounds(moved, index).yPt, 1); }
+  await select("B1:C1"); await page.getByRole("button", { name: "插入选区列", exact: true }).click(); await settled(); const shifted = await measure();
+  for (let index = 0; index < 3; index++) { expect(bounds(shifted, index).xPt - bounds(resized, index).xPt).toBeCloseTo(2 * before.columnWidthPt!, 1); expect(bounds(shifted, index).widthPt).toBeCloseTo(bounds(resized, index).widthPt, 1); }
+  for (let index = 0; index < 3; index++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
+  const restored = await measure(); for (let index = 0; index < 3; index++) for (const field of ["xPt", "yPt", "widthPt", "heightPt"] as const) expect(bounds(restored, index)[field]).toBeCloseTo(bounds(before, index)[field], 1);
+  expect(await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote)).toMatchObject({ history: { undoSteps: 0 }, drawings: initial.metadata.workbook.objects, comments: initial.metadata.workbook.comments, errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true, hostShadowsRestored: true }); else await page.evaluate(() => window.workbookEditor.dispose());
 });
 
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} new drawing composition binds its starting revision before the first input event`, async ({ page }) => {

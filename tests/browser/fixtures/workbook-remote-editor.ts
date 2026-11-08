@@ -3,13 +3,14 @@ import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
 import type { WorkbookCell } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
-import { measureWorkbookChart, measureWorkbookDrawingText, observeWorkbookViews } from './workbook-view-observer.js';
+import { measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
   displayedDrawingText(nodeId: string): ReturnType<typeof measureWorkbookDrawingText>;
+  displayedDrawingBounds(): ReturnType<typeof measureWorkbookDrawingBounds>;
   displayedCell(row: number, column: number): string | undefined;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
 export async function mount(code: string, encoded: string, observeView = false) {
@@ -55,6 +56,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
     settled: () => editor.settled(),
     displayedChart: () => measureWorkbookChart(observed?.current()),
     displayedDrawingText: nodeId => measureWorkbookDrawingText(observed?.current(), nodeId),
+    displayedDrawingBounds: () => measureWorkbookDrawingBounds(observed?.current()),
     displayedCell: (row, column) => observed?.current()?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined,
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
     async sourceCell(row, column, sheetId = 'sheet-1') {
@@ -79,6 +81,7 @@ export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
 export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string) { return actions.displayedDrawingText(nodeId); }
+export function displayedDrawingBounds() { return actions.displayedDrawingBounds(); }
 export function displayedCell(row: number, column: number) { return actions.displayedCell(row, column); }
 export function external(text: string, wait = true) { return actions.external(text, wait); }
 export function holdReference() { actions.holdReference(); }
@@ -88,4 +91,4 @@ export function value(row: number, column: number) { return actions.value(row, c
 export function sourceCell(row: number, column: number, sheetId?: string) { return actions.sourceCell(row, column, sheetId); }
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, displayedDrawingText, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

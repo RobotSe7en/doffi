@@ -48,3 +48,14 @@ export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId:
       return { text: element.textContent, color: style.color, size: parseFloat(style.fontSize), weight: style.fontWeight };
     });
 }
+
+export function measureWorkbookDrawingBounds(view: ShadowRoot | undefined) {
+  if (!view) throw Error("The observed workbook view is unavailable.");
+  const origin = view.host.getBoundingClientRect();
+  const objects = [...view.querySelectorAll<HTMLElement>('[data-office-view="workbook-drawing"],[data-office-view="workbook-note"]')].map(node => {
+    const body = node.querySelector<HTMLElement>('[data-office-view="workbook-drawing-body"]')!, rect = body.getBoundingClientRect();
+    return { nodeId: node.dataset.sourceNodeId!, kind: node.dataset.officeView!, xPt: (rect.left - origin.left) * .75, yPt: (rect.top - origin.top) * .75, widthPt: rect.width * .75, heightPt: rect.height * .75 };
+  });
+  const first = view.querySelector<HTMLElement>('[data-office-view="workbook-cell"][data-row="0"][data-column="0"]'), second = view.querySelector<HTMLElement>('[data-office-view="workbook-cell"][data-row="0"][data-column="1"]');
+  return { objects, columnWidthPt: first && second ? (second.getBoundingClientRect().left - first.getBoundingClientRect().left) * .75 : undefined };
+}
