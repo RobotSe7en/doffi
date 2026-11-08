@@ -35,7 +35,7 @@ export const WorkbookDrawingOperationSchema = z.discriminatedUnion("op", [
     kind: z.enum(["column", "line", "pie"]), data: WorkbookChartDataInputSchema, title: html.optional(), name: z.string().max(32767).optional() }),
   z.strictObject({ op: z.literal("setWorkbookChart"), nodeId: IdentifierSchema,
     changes: WorkbookChartSchema.omit({ chartId: true, nodeId: true, series: true, categories: true, titleNodeId: true, titleReference: true, categoryAxisTitle: true, valueAxisTitle: true }).partial(),
-    clear: z.array(z.enum(["minimum", "maximum", "majorUnit", "numberFormat", "labelContents", "seriesStyles", "pointStyles", "categories"])).optional() }),
+    clear: z.array(z.enum(["minimum", "maximum", "majorUnit", "numberFormat", "labelContents", "seriesStyles", "pointStyles", "categories", "gapWidth", "overlap", "firstSliceAngle"])).optional() }),
   z.strictObject({ op: z.literal("setWorkbookChartData"), nodeId: IdentifierSchema, data: WorkbookChartDataInputSchema }),
   z.strictObject({ op: z.literal("setWorkbookChartTitle"), nodeId: IdentifierSchema, target: z.enum(["title", "categoryAxis", "valueAxis"]),
     source: z.union([z.null(), z.strictObject({ html, text: DrawingTextPropertiesSchema.optional(), cssClass: IdentifierSchema.optional() }),

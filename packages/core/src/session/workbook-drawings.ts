@@ -136,7 +136,7 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
   const chart = chartFor(current.nodeId);
   if (operation.op === "setWorkbookChart") {
     Object.assign(chart, copy(operation.changes)); for (const key of operation.clear ?? []) delete chart[key];
-    if (operation.changes.showLabels === false && operation.changes.labelContents === undefined) delete chart.labelContents;
+    if (operation.changes.showLabels === false && operation.changes.labelContents === undefined && chart.labelContents?.length) delete chart.labelContents;
     if (operation.changes.showLabels === true && operation.changes.labelContents === undefined && chart.labelContents?.length === 0) chart.labelContents = ["value"];
     if (operation.changes.labelContents !== undefined && operation.changes.showLabels === undefined) chart.showLabels = !!operation.changes.labelContents.length;
     return;
@@ -150,10 +150,12 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
   }
   if (operation.op === "setWorkbookChartTitle") {
     if (operation.target !== "title" && chart.kind === "pie" && operation.source !== null) invalid("A pie chart has no axis titles.");
-    const old = operation.target === "title" ? { nodeId: chart.titleNodeId } : operation.target === "categoryAxis" ? chart.categoryAxisTitle : chart.valueAxisTitle;
+    const old = operation.target === "title" ? { nodeId: chart.titleNodeId, reference: chart.titleReference } : operation.target === "categoryAxis" ? chart.categoryAxisTitle : chart.valueAxisTitle;
     const rich = operation.source !== null && "html" in operation.source ? operation.source : undefined;
     if (old?.nodeId) { if (rich) edit().replaceSourceContent(old.nodeId, rich.html); else edit().removeSource(old.nodeId); }
-    const value = operation.source === null ? undefined : rich ? { nodeId: old?.nodeId ?? edit().insertSource(current.nodeId, "<div>" + rich.html + "</div>").rootNodeIds[0]!, ...(rich.text ? { text: copy(rich.text) } : {}), ...(rich.cssClass ? { cssClass: rich.cssClass } : {}) } : "reference" in operation.source ? withoutCaches(operation.source) : undefined;
+    const value = operation.source === null ? undefined : rich ? { nodeId: old?.nodeId ?? edit().insertSource(current.nodeId, "<div>" + rich.html + "</div>").rootNodeIds[0]!, ...(rich.text ? { text: copy(rich.text) } : {}), ...(rich.cssClass ? { cssClass: rich.cssClass } : {}) } : "reference" in operation.source ? {
+      ...withoutCaches(operation.source), reference: old?.reference && old.reference.expression === operation.source.reference.expression && old.reference.valueType === operation.source.reference.valueType ? copy(old.reference) : withoutCaches(operation.source.reference),
+    } : undefined;
     if (operation.target === "title") {
       delete chart.titleNodeId; delete chart.titleReference; delete chart.titleText; delete chart.titleCssClass;
       if (value) { if ("nodeId" in value) { chart.titleNodeId = value.nodeId; if (value.text) chart.titleText = value.text; } else chart.titleReference = value.reference; if (value.cssClass) chart.titleCssClass = value.cssClass; }

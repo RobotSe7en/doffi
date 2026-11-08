@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, test } from "vitest";
 import { createDocumentSession, createWorkbook, openDocument } from "../src/index.js";
-import type { DocumentOperation, TransactionPrepareOptions, WorkbookChartDataInput, WorkbookDrawingAnchor, WorkbookSession } from "../src/index.js";
+import type { DocumentOperation, TransactionPrepareOptions, WorkbookChartDataInput, WorkbookDocumentMetadata, WorkbookDrawingAnchor, WorkbookSession } from "../src/index.js";
 import { assetDigest } from "../src/document/assets.js";
 
 const owned: WorkbookSession[] = [], sheetId = "sheet-1";
@@ -73,6 +73,33 @@ test("chart titles switch atomically between source text and a current reference
   expect(s.getNode(chart(s).categoryAxisTitle!.nodeId!)!.text).toBe("横轴禰󠄀");
   const current = s.serialize(); expect(() => commit(s, [{ op: "setWorkbookChart", nodeId: original.nodeId, changes: { kind: "pie" } }])).toThrow(); expect(s.serialize()).toEqual(current);
   s.undo(); expect(chart(s)).toEqual(original); expect(s.getNode(original.titleNodeId!)!.html).toBe(before);
+});
+
+test("unchanged title references preserve only their own historical caches and no-op history across all three titles", () => {
+  const source = blank(); commit(source, [{ op: "insertWorkbookChart", sheetId, anchor, kind: "column", data: values }]);
+  const id = chart(source).nodeId;
+  for (const target of ["title", "categoryAxis", "valueAxis"] as const) commit(source, [{ op: "setWorkbookChartTitle", nodeId: id, target, source: { reference: { expression: "=Sheet1!$B$1", valueType: "number" } } }]);
+  const files = new Map(source.serialize()), metadata = JSON.parse(new TextDecoder().decode(files.get("metadata.json")!)) as WorkbookDocumentMetadata, c = metadata.workbook.charts![0]!;
+  c.labelContents = [];
+  for (const [index, reference] of [c.titleReference!, c.categoryAxisTitle!.reference!, c.valueAxisTitle!.reference!].entries()) reference.cache = { state: "imported", count: 1, points: [{ index: 0, value: 40 + index }], numberFormat: "0%" };
+  files.set("metadata.json", new TextEncoder().encode(JSON.stringify(metadata)));
+  const s = createDocumentSession(openDocument(files, { kind: "workbook" })); owned.push(s); const before = s.serialize();
+  const operations: DocumentOperation[] = ["title", "categoryAxis", "valueAxis"].map(target => ({ op: "setWorkbookChartTitle", nodeId: id, target: target as "title", source: { reference: { expression: "=Sheet1!$B$1", valueType: "number", cache: { state: "valid", count: 1, points: [{ index: 0, value: -999 }] } } } }));
+  expect(commit(s, operations).changed).toBe(false); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+  expect(commit(s, [{ op: "setWorkbookChart", nodeId: id, changes: { showLabels: false } }]).changed).toBe(false); expect(s.serialize()).toEqual(before);
+  commit(s, [{ op: "setWorkbookChartTitle", nodeId: id, target: "valueAxis", source: { reference: { expression: "=Sheet1!$C$1", valueType: "number", cache: { state: "valid", count: 1, points: [{ index: 0, value: -999 }] } } } }]);
+  expect(chart(s).valueAxisTitle!.reference).toEqual({ expression: "=Sheet1!$C$1", valueType: "number" }); expect(chart(s).titleReference).toEqual(c.titleReference);
+  s.undo(); expect(s.snapshot().metadata).toEqual(openDocument(before, { kind: "workbook" }).snapshot().metadata);
+});
+
+test("type-specific chart options can be explicitly cleared during one atomic kind conversion and restored by undo", () => {
+  const s = blank(); commit(s, [{ op: "insertWorkbookChart", sheetId, anchor, kind: "column", data: values }]); const id = chart(s).nodeId;
+  commit(s, [{ op: "setWorkbookChart", nodeId: id, changes: { gapWidth: 175, overlap: 25 } }, { op: "setWorkbookChartTitle", nodeId: id, target: "categoryAxis", source: { html: "<p>分类禰󠄀</p>" } }]);
+  const before = s.snapshot();
+  commit(s, [{ op: "setWorkbookChartTitle", nodeId: id, target: "categoryAxis", source: null }, { op: "setWorkbookChart", nodeId: id, changes: { kind: "pie", firstSliceAngle: 30 }, clear: ["gapWidth", "overlap"] }]);
+  expect(chart(s)).toMatchObject({ kind: "pie", firstSliceAngle: 30 }); expect(chart(s)).not.toHaveProperty("gapWidth"); expect(chart(s)).not.toHaveProperty("categoryAxisTitle");
+  commit(s, [{ op: "setWorkbookChart", nodeId: id, changes: { kind: "line" }, clear: ["firstSliceAngle"] }]); expect(chart(s)).not.toHaveProperty("firstSliceAngle");
+  s.undo(); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().content).toEqual(before.content);
 });
 
 test("duplication allocates objects, chart titles and series while removing native identities; ordering and deletion preserve unrelated source", () => {
