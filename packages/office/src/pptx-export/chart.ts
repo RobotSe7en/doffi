@@ -51,7 +51,7 @@ export class PresentationChartWriter {
     private textStyle(style: {
         css: Css;
         raw: Css;
-    }): string { const own = Object.fromEntries(Object.keys(style.raw).filter(key => ["font-size", "font-family", "font-weight", "font-style", "color", "text-align"].includes(key) || key.startsWith("--office-font-") || key.startsWith("--office-text-")).map(key => [key, style.raw[key]!])); return '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr' + runProperties(style.css, own, style.raw) + "</a:defRPr></a:pPr><a:endParaRPr/></a:p></c:txPr>"; }
+    }): string { const own = Object.fromEntries(Object.keys(style.raw).filter(key => ["font-size", "font-family", "font-weight", "font-style", "color", "text-align", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--office-underline", "--office-strike"].includes(key) || key.startsWith("--office-font-") || key.startsWith("--office-text-")).map(key => [key, style.raw[key]!])); return '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr' + runProperties(style.css, own, style.raw) + "</a:defRPr></a:pPr><a:endParaRPr/></a:p></c:txPr>"; }
     private labels(chart: DeepReadonly<PresentationChart>, styleName: string | undefined, node: SourceElement, surface: NativeSurface, points: readonly {
         index: number;
         labelCssClass?: string | undefined;

@@ -1,5 +1,7 @@
 import type { ChartAppearance, DeepReadonly, WorkbookNumberDisplayPart } from "@doffi/core";
 import { DocumentError } from "@doffi/core";
+import type { ChartTextDecoration } from "./chart-text-decoration.js";
+import { chartFontDecoration } from "./chart-style-probe.js";
 import { markViewNode, ownViewAttribute } from "./view-nodes.js";
 import { cssStringValue, numeric, property, resolvedColor, strokeAttributes, svgFill } from "./presentation/appearance.js";
 import { svgElement as createSvgElement } from "./presentation/svg.js";
@@ -61,6 +63,7 @@ export interface BasicChartScene {
   readonly legendPosition: ChartAppearance["legend"];
   readonly labels: readonly { readonly node: SVGTextElement; readonly outsidePie: boolean; readonly anchorX: number; readonly anchorY: number; readonly leader?: Readonly<Record<string, string | number>> }[];
   readonly automaticCategoryLabels: boolean;
+  readonly textDecorations?: readonly ChartTextDecoration[];
   readonly numberTexts: readonly { readonly parts: readonly WorkbookNumberDisplayPart[]; readonly availableWidth: number; readonly fields: readonly SVGTSpanElement[] }[];
 }
 const defaultPalette = ["#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47"];
@@ -102,10 +105,14 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const font = (s: CSSStyleDeclaration): Record<string, string> => ({ "font-size": String(parseFloat(s.fontSize) * 0.75 * fontScale(s)), "font-weight": s.fontWeight, "font-style": s.fontStyle,
     "letter-spacing": String((parseFloat(s.letterSpacing) || 0) * .75 * fontScale(s)), "word-spacing": String((parseFloat(s.wordSpacing) || 0) * .75 * fontScale(s)),
     fill: property(s, "--office-text-color") ? resolvedColor(document, s, "--office-text") : s.color });
-  const numberTexts: BasicChartScene["numberTexts"][number][] = [];
+  const numberTexts: BasicChartScene["numberTexts"][number][] = [], textDecorations: ChartTextDecoration[] = [];
   const text = (value: BasicChartText, x: number, y: number, s = base, anchor = "middle"): SVGTextElement => {
     options.accountText?.(typeof value === "string" ? value.length : value.parts.reduce((sum, part) => sum + (part.kind === "text" ? part.text.length : part.character.length), 0));
-    const label = svgElement(document, "text", { x, y, "text-anchor": anchor, "dominant-baseline": "middle", ...font(s) });
+    const attributes = font(s), label = svgElement(document, "text", { x, y, "text-anchor": anchor, "dominant-baseline": "middle", ...attributes });
+    const decoration = chartFontDecoration(s, attributes.fill!);
+    label.style.textDecorationLine = "none";
+    label.dataset.sdkChartDecorationLine = decoration["text-decoration-line"]!; label.dataset.sdkChartDecorationStyle = decoration["text-decoration-style"]!; label.dataset.sdkChartDecorationColor = decoration["text-decoration-color"]!;
+    if (decoration["text-decoration-line"] !== "none") textDecorations.push({ node: label, line: decoration["text-decoration-line"]!, style: decoration["text-decoration-style"]!, color: decoration["text-decoration-color"]!, size: Number(attributes["font-size"]) });
     const run = (target: SVGTextElement | SVGTSpanElement, value: string, role: OfficeFontRole): void => {
       const family = property(s, "--office-font-" + role, property(s, "--office-minor-" + role, s.fontFamily));
       if (!document.defaultView!.CSS.supports("font-family", family)) throw new DocumentError("InvalidDocument", "Chart text has an invalid source font family.");
@@ -157,7 +164,7 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const w = Math.max(1, right - left), h = Math.max(1, bottom - top);
   const labels: BasicChartScene["labels"][number][] = [];
   const scene: BasicChartScene = { svg, serial, width, height, plot: { x: left, y: top, width: w, height: h }, legendPosition: chart.legend, ...(options.layout?.legend ? { legend: options.layout.legend } : {}), labels,
-    automaticCategoryLabels: !property(catStyle, "--office-axis-label-skip"), numberTexts };
+    automaticCategoryLabels: !property(catStyle, "--office-axis-label-skip"), numberTexts, textDecorations };
   svg.append(svgElement(document, "rect", { x: left, y: top, width: w, height: h, fill: svgFill(document, plotStyle, svg, serial + "-plot", { x: left, y: top, width: w, height: h }, "--office-fill", "none", account, options.orientation), ...strokeAttributes(document, plotStyle) }));
   if (!data.series.length) return scene;
   const seriesStyle = new Map(data.series.map(series => [series.seriesId, style(seriesDefinitions.get(series.seriesId)?.cssClass)]));

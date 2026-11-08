@@ -220,5 +220,9 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart 
   await page.getByRole("button", { name: "重新读取对象", exact: true }).click(); await expect(fill).toHaveValue("");
   for (let i = 0; i < 3; i++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
   expect(await inspect()).toMatchObject({ charts: [initial], history: { undoSteps: 0 }, errors: [] });
+  await target.selectOption("point"); await expect(page.getByLabel("图表部件文字装饰", { exact: true })).toBeDisabled();
+  await target.selectOption("pointLabel"); await expect(page.getByLabel("图表部件文字装饰", { exact: true })).toBeEnabled(); await page.getByLabel("图表部件文字装饰", { exact: true }).selectOption("none");
+  await apply.click(); await settled(); expect((await inspect()).charts[0]!.pointStyles![0]!.labelCssClass).toBeTruthy();
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect((await inspect()).charts).toEqual([initial]);
   if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
 });

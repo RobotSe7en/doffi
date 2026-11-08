@@ -1,5 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { BasicChartScene } from "./chart.js";
+import { chartTextCarrier } from "./chart-text-decoration.js";
 import { svgElement } from "./presentation/svg.js";
 
 export function chartLegendPlan(sizes: readonly { readonly width: number; readonly height: number }[], limit: number, horizontal: boolean): { readonly width: number; readonly height: number; readonly entries: readonly { readonly x: number; readonly y: number }[] } {
@@ -30,14 +31,14 @@ export function layoutBasicChartLabels(scene: BasicChartScene, account: (amount:
     overflow.add(node); node.dataset.sdkChartLabelOverflow = "true";
   };
   const box = (node: SVGGraphicsElement) => {
-    const b = node.getBBox(), shift = translations.get(node) ?? { x: 0, y: 0 };
+    const b = chartTextCarrier(node).getBBox(), shift = translations.get(node) ?? { x: 0, y: 0 };
     if (![b.x, b.y, b.width, b.height].every(Number.isFinite) || b.width < 0 || b.height < 0) throw new DocumentError("ResourceLimitExceeded", "Chart label bounds exceed finite layout geometry.");
     return { x: b.x + shift.x, y: b.y + shift.y, width: b.width, height: b.height };
   };
   const move = (node: SVGGraphicsElement, x: number, y: number): void => {
     const previous = translations.get(node) ?? { x: 0, y: 0 }, next = { x: previous.x + x, y: previous.y + y };
     if (![next.x, next.y].every(Number.isFinite)) throw new DocumentError("ResourceLimitExceeded", "Chart label placement exceeds finite coordinates.");
-    translations.set(node, next); node.setAttribute("transform", `translate(${next.x} ${next.y})`);
+    translations.set(node, next); chartTextCarrier(node).setAttribute("transform", `translate(${next.x} ${next.y})`);
   };
   for (const label of scene.labels) {
     const bounds = box(label.node);
@@ -58,7 +59,7 @@ export function layoutBasicChartLabels(scene: BasicChartScene, account: (amount:
     const labels = [...svg.querySelectorAll<SVGTextElement>('[data-sdk-chart-label="category-axis"]')].map(node => ({ node, bounds: box(node) })).sort((a, b) => a.bounds.x - b.bounds.x);
     let right = -Infinity;
     for (const entry of labels) {
-      if (entry.bounds.x < right + 2) { entry.node.setAttribute("visibility", "hidden"); entry.node.dataset.sdkChartAutomaticSkip = "true"; }
+      if (entry.bounds.x < right + 2) { entry.node.setAttribute("visibility", "hidden"); chartTextCarrier(entry.node).setAttribute("visibility", "hidden"); entry.node.dataset.sdkChartAutomaticSkip = "true"; }
       else right = entry.bounds.x + entry.bounds.width;
     }
   }
@@ -77,7 +78,7 @@ export function layoutBasicChartLabels(scene: BasicChartScene, account: (amount:
     const bounds = box(label.node), x = Math.max(bounds.x, Math.min(bounds.x + bounds.width, label.anchorX)), y = Math.max(bounds.y, Math.min(bounds.y + bounds.height, label.anchorY));
     if (Math.hypot(x - label.anchorX, y - label.anchorY) < .01) continue;
     account(1); const line = svgElement(svg.ownerDocument, "line", { x1: label.anchorX, y1: label.anchorY, x2: x, y2: y, "data-sdk-chart-leader-line": "", ...label.leader });
-    svg.insertBefore(line, label.node);
+    svg.insertBefore(line, chartTextCarrier(label.node));
   }
   let clipSerial = 0;
   for (const node of overflow) {
@@ -86,7 +87,7 @@ export function layoutBasicChartLabels(scene: BasicChartScene, account: (amount:
     clip.append(svgElement(svg.ownerDocument, "rect", { x: 0, y: 0, width, height })); defs.append(clip); svg.append(defs);
     const shift = translations.get(node);
     if (shift) clip.setAttribute("transform", `translate(${-shift.x} ${-shift.y})`);
-    node.setAttribute("clip-path", `url(#${id})`);
+    chartTextCarrier(node).setAttribute("clip-path", `url(#${id})`);
   }
   return overflow.size;
 }

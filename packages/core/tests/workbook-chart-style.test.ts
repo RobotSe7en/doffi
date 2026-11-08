@@ -54,3 +54,10 @@ test("chart style identity/marker/property errors roll back the complete batch a
   commit(s, [{ op: "setWorkbookChart", nodeId: c.nodeId, changes: { legend: "left" } }]); expect(() => s.commit(stale)).toThrowError(expect.objectContaining({ code: "RevisionConflict" }));
   const saved = s.serialize(); expect(() => commit(s, [{ op: "setWorkbookChartData", nodeId: c.nodeId, data: { series: [{ values: { kind: "literal", valueType: "number", count: 0, points: [] } }] } }, operation])).toThrow(); expect(s.serialize()).toEqual(saved);
 });
+
+test("chart variable decoration shorthands stay intact, retain no-op history and replace later longhand overrides", () => {
+  const s = fixture(), c = chart(s), operation: DocumentOperation = { op: "setWorkbookChartStyle", nodeId: c.nodeId, target: "label", properties: { "text-decoration": "var(--decor)" } };
+  commit(s, [operation]); expect(s.snapshot().styles.map(style => style.css).join("\n")).toContain("text-decoration:var(--decor)!important");
+  const saved = s.serialize(); expect(commit(s, [operation]).changed).toBe(false); expect(s.serialize()).toEqual(saved);
+  commit(s, [{ ...operation, properties: { "text-decoration-line": "none" } }]); expect(commit(s, [operation]).changed).toBe(true); expect(commit(s, [operation]).changed).toBe(false);
+});

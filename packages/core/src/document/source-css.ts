@@ -24,6 +24,7 @@ interface Compound { tag?: string; classes: string[]; attrs: { name: string; val
 type Specificity = readonly [number, number, number];
 interface Rule { compounds: Compound[]; declarations: Declaration[]; specificity: Specificity; order: number; key: string; revisionDisplay: boolean }
 interface Entry { value: string; important: boolean; specificity: Specificity; order: number }
+interface DeclarationEntry extends Entry { fallback: boolean; property: string; sourceValue: string }
 type CascadeRule = Pick<Rule,"declarations"|"specificity"|"order"> & {fallback?:boolean};
 const inherited = new Set(["color", "font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "text-align", "text-indent", "line-height", "letter-spacing", "word-spacing", "white-space", "widows", "orphans", "tab-size", "overflow-wrap", "list-style-type", "list-style-position"]);
 const inline = new Set(["span", "a", "strong", "b", "em", "i", "u", "s", "sub", "sup", "ins", "del", "code"]);
@@ -115,6 +116,7 @@ export class SourceStyleResolver {
   private readonly indexed = new Map<string, Rule[]>();
   private readonly cache = new WeakMap<SourceStyleNode, Css>();
   private readonly specifiedCache = new WeakMap<SourceStyleNode, Css>();
+  private readonly declarationCache = new WeakMap<SourceStyleNode, ReadonlyMap<string, DeclarationEntry>>();
   private readonly entriesCache = new WeakMap<SourceStyleNode, readonly CascadeRule[]>();
   private work = 0;
   private rootFont = 12;
@@ -201,7 +203,7 @@ export class SourceStyleResolver {
   }
   /** Match the preview's native inheritance fallback: a late type selector;
    * authored classes, attribute selectors, inline styles and priority still win. */
-  withFallback(node:SourceStyleNode,defaults:Css,initialDefaults:Css={},nativeDefaults:Css={}):Css {
+  withFallback(node:SourceStyleNode,defaults:Css,initialDefaults:Css={},nativeDefaults:Css={},options:Pick<SourceStyleResolverOptions,"combineDecorations">={}):Css {
     const parent = node.parent ? this.get(node.parent) : this.initial;
     const ast=parse(Object.entries(defaults).map(([name,value])=>name+":"+value).join(";"),{context:"declarationList",parseCustomProperty:true});
     if(ast.type!=="DeclarationList")throw new DocumentError("ExportFailed","Native style defaults are invalid.");
@@ -210,19 +212,57 @@ export class SourceStyleResolver {
     const nativeAst=parse(Object.entries(nativeDefaults).map(([name,value])=>name+":"+value).join(";"),{context:"declarationList",parseCustomProperty:true});
     if(nativeAst.type==="DeclarationList")entries.unshift({declarations:nativeAst.children.toArray().filter((n):n is Declaration=>n.type==="Declaration"),specificity:[0,0,1],order:-2,fallback:true});
     entries.push({declarations:ast.children.toArray().filter((n):n is Declaration=>n.type==="Declaration"),specificity:[0,0,1],order:Number.MAX_SAFE_INTEGER-1,fallback:true});
-    this.specifiedCache.set(node,this.rawDeclarations(entries));const result=this.compute(parent,entries,node);this.cache.set(node,result);return result;
+    const declared = this.declarations(entries); this.declarationCache.set(node, declared); this.specifiedCache.set(node, Object.freeze(Object.fromEntries([...declared].filter(([, entry]) => !entry.fallback).map(([name, entry]) => [name, entry.value]))));
+    const result=this.compute(parent,entries,node,options.combineDecorations);this.cache.set(node,result);return result;
   }
   private classRules(name:string):Rule[] {
     return (this.indexed.get("." + name) ?? []).filter((rule) => rule.compounds.length === 1 && rule.compounds[0]!.classes.length > 0 && rule.compounds[0]!.classes.every((value) => value === name)
       && !rule.compounds[0]!.tag && !rule.compounds[0]!.root && rule.compounds[0]!.attrs.length === 0);
   }
-  private rawDeclarations(rules:readonly CascadeRule[]):Css {
-    const winners=new Map<string,Entry & {fallback:boolean}>();let serial=0;
-    for(const rule of [...rules].sort((a,b)=>a.order-b.order))for(const declaration of rule.declarations){this.step();const property=ident.decode(declaration.property),raw=generate(declaration.value);for(const[name,value]of property.startsWith("--")?[[property,raw]]:expandSourceCssProperty(property.toLowerCase(),raw)){const entry={value:value!,important:Boolean(declaration.important),specificity:rule.specificity,order:serial++,fallback:Boolean(rule.fallback)};if(higher(entry,winners.get(name!)))winners.set(name!,entry);}}
-    return Object.freeze(Object.fromEntries([...winners].filter(([,entry])=>!entry.fallback).map(([name,entry])=>[name,entry.value])));
+  private declarations(rules: readonly CascadeRule[]): ReadonlyMap<string, DeclarationEntry> {
+    const winners = new Map<string, DeclarationEntry>(); let serial = 0;
+    for (const rule of [...rules].sort((a, b) => a.order - b.order)) for (const declaration of rule.declarations) {
+      this.step(); const decoded = ident.decode(declaration.property), property = decoded.startsWith("--") ? decoded : decoded.toLowerCase(), raw = generate(declaration.value);
+      // A variable shorthand has not been substituted yet. Keep its origin for
+      // editing/no-op checks instead of pretending that var() is only a color.
+      const keys = property.startsWith("--") ? [[property, raw]] : /\bvar\(/i.test(raw) && expandSourceCssProperty(property, "initial").some(([key]) => key !== property)
+        ? expandSourceCssProperty(property, "initial").map(([key]) => [key, raw]) : expandSourceCssProperty(property, raw);
+      for (const [name, value] of keys) {
+        const entry = { value: value!, property, sourceValue: raw, important: Boolean(declaration.important), specificity: rule.specificity, order: serial++, fallback: Boolean(rule.fallback) };
+        if (higher(entry, winners.get(name!))) winners.set(name!, entry);
+      }
+    }
+    return winners;
+  }
+  private rawDeclarations(rules: readonly CascadeRule[]): Css {
+    return Object.freeze(Object.fromEntries([...this.declarations(rules)].filter(([, entry]) => !entry.fallback).map(([name, entry]) => [name, entry.value])));
   }
   /** Winning authored declarations, retaining native role references before var(). */
-  specified(node:SourceStyleNode):Css {let result=this.specifiedCache.get(node);if(!result){result=this.rawDeclarations(this.entries(node));this.specifiedCache.set(node,result);}return result;}
+  specified(node: SourceStyleNode): Css {
+    let result = this.specifiedCache.get(node);
+    if (!result) { const entries = this.declarations(this.entries(node)); this.declarationCache.set(node, entries); result = Object.freeze(Object.fromEntries([...entries].filter(([, entry]) => !entry.fallback).map(([name, entry]) => [name, entry.value]))); this.specifiedCache.set(node, result); }
+    return result;
+  }
+  /** Compare source declarations without resolving away variable provenance.
+   * A later longhand prevents an opaque shorthand from being treated as equal. */
+  hasSpecified(node: SourceStyleNode, properties: Css): boolean {
+    this.specified(node); const entries = this.declarationCache.get(node)!;
+    let bytes = 0; const budget: CssBudget = { nodes: 0 }, expectedProperties: [string, string, boolean][] = [];
+    for (const [name, value] of Object.entries(properties)) {
+      const source = ident.encode(name) + ":" + value;
+      checkLimit(source.length, this.limits.maxFileBytes); bytes += encode(source).byteLength; checkLimit(bytes, this.limits.maxFileBytes);
+      const ast = parse(normalizeCss(source, "declarationList", this.limits, budget), { context: "declarationList", parseCustomProperty: true });
+      if (ast.type !== "DeclarationList" || ast.children.size !== 1 || ast.children.first?.type !== "Declaration") throw new DocumentError("InvalidOperation", "A source declaration query requires one value per property.");
+      const declaration = ast.children.first, decoded = ident.decode(declaration.property), property = decoded.startsWith("--") ? decoded : decoded.toLowerCase();
+      expectedProperties.push([property, generate(declaration.value), Boolean(declaration.important)]);
+    }
+    return expectedProperties.every(([property, value, important]) => {
+      const opaque = /\bvar\(/i.test(value) && expandSourceCssProperty(property, "initial").some(([key]) => key !== property);
+      return (opaque ? expandSourceCssProperty(property, "initial") : expandSourceCssProperty(property, value)).every(([name, expected]) => {
+        const entry = entries.get(name); return !!entry && !entry.fallback && (!important || entry.important) && (opaque ? entry.property === property && entry.sourceValue === value : entry.value === expected);
+      });
+    });
+  }
   specifiedClass(name:string):Css {return this.rawDeclarations(this.classRules(name));}
   classStyle(name: string, parent: Css = this.initial): Css {return this.compute(parent,this.classRules(name));}
   emptyStyle(): Css { return this.compute(this.initial, []); }
@@ -232,7 +272,7 @@ export class SourceStyleResolver {
       for (const declaration of rule.declarations) for (const [key] of expandSourceCssProperty(declaration.property, generate(declaration.value))) keys.add(key);
     return [...keys];
   }
-  private compute(parent: Css, rules: readonly { declarations: Declaration[]; specificity: Specificity; order: number }[], node?: SourceStyleNode): Css {
+  private compute(parent: Css, rules: readonly { declarations: Declaration[]; specificity: Specificity; order: number }[], node?: SourceStyleNode, combineDecorations = this.combineDecorations): Css {
     const result: Record<string, string> = { ...this.initial }, custom = new Map<string, Entry>(), winners = new Map<string, Entry>();
     for (const [name, value] of Object.entries(parent)) if (name.startsWith("--") || inherited.has(name)) result[name] = value;
     if (node?.parent && inline.has(node.parent.tag)) result["background-color"] = parent["background-color"]?.toLowerCase() === "currentcolor" ? parent.color! : parent["background-color"] ?? this.initial["background-color"]!;
@@ -277,7 +317,8 @@ export class SourceStyleResolver {
     for (const name of custom.keys()) { const value = variable(name); if (value === undefined) delete result[name]; else result[name] = value; }
     for (const rule of [...rules].sort((a, b) => a.order - b.order)) for (const declaration of rule.declarations) {
       const decoded = ident.decode(declaration.property), property = decoded.startsWith("--") ? decoded : decoded.toLowerCase(); if (property.startsWith("--")) continue;
-      const value = resolveSourceCssVariables(generate(declaration.value), (name) => result[name], 0, this.limits.maxFileBytes);
+      const resolved = resolveSourceCssVariables(generate(declaration.value), (name) => result[name], 0, this.limits.maxFileBytes);
+      const value = resolved !== undefined && !lexer.matchProperty(property, resolved).error ? resolved : undefined;
       // Invalid-at-computed-value declarations still win cascade and compute to unset.
       for (const [name, expanded] of expandSourceCssProperty(property, value ?? "unset")) {
         const entry = { value: expanded, important: Boolean(declaration.important), specificity: rule.specificity, order: serial++ };
@@ -312,7 +353,7 @@ export class SourceStyleResolver {
     // block ancestor. `none` on a descendant does not erase an ancestor's paint.
     const ownLines = result["text-decoration-line"]!, parentLines = node?.parent ? parent["text-decoration-line"] ?? "none" : "none";
     const lines = [...new Set([...parentLines.split(/\s+/), ...ownLines.split(/\s+/)].filter((line) => line !== "none"))];
-    if (lines.length && this.combineDecorations) {
+    if (lines.length && combineDecorations) {
       if (parentLines !== "none" && ownLines !== "none") {
         const parentColor = parent["text-decoration-color"]?.toLowerCase() === "currentcolor" ? parent.color : parent["text-decoration-color"];
         const ownColor = result["text-decoration-color"]?.toLowerCase() === "currentcolor" ? result.color : result["text-decoration-color"];

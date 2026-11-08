@@ -170,7 +170,11 @@ export class PresentationExportStyles {
     } {
         const layers = typeof names === "string" ? [names] : names?.length ? names : [""];
         let probe = this.ensure(node, surface), raw = this.raw(node, surface), own: Css = {};
-        for (const name of layers) { probe = this.probe("span", { class: name }, probe); own = this.css.specified(probe); raw = { ...raw, ...own }; }
+        for (const name of layers) {
+            probe = this.probe("span", { class: name }, probe);
+            if (Array.isArray(names)) this.css.withFallback(probe, {}, { "text-decoration-line": "inherit", "text-decoration-style": "inherit", "text-decoration-color": "inherit" }, {}, { combineDecorations: false });
+            own = this.css.specified(probe); raw = { ...raw, ...own };
+        }
         return { css: this.css.get(probe), own, raw };
     }
     theme(themeId: string): Css { return this.css.classStyle(this.p.themes.find(theme => theme.themeId === themeId)!.cssClass, this.css.get(this.tree.root)); }

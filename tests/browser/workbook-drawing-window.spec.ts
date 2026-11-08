@@ -289,3 +289,23 @@ test('chart point and label overrides survive later general/series edits with ex
   // are checked exactly in the transaction/native tests.
   expect(Math.abs(Number(result.paints[0]!.labels[0]!.size) - 16)).toBeLessThanOrEqual(.75 / 60); expect(Math.abs(Number(result.paints[0]!.labels[1]!.size) - 11)).toBeLessThanOrEqual(.75 / 60);
 });
+
+
+test('chart label font decorations inherit through native roles and point none clears the default', async ({ page }) => {
+  const session = createDocumentSession(openDocument(createWorkbook({ documentId: 'label-decorations' }), { kind: 'workbook' }));
+  const commit = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'label-decorations', baseRevision: session.snapshot().manifest.revision, operations }));
+  commit([{ op: 'insertWorkbookChart', sheetId: 'sheet-1', kind: 'column', anchor: { kind: 'absolute', xPt: 20, yPt: 20, widthPt: 350, heightPt: 230 }, data: { series: [{ values: { kind: 'literal', valueType: 'number', count: 3, points: [{ index: 0, value: 2 }, { index: 1, value: 4 }, { index: 2, value: 6 }] } }] } }]);
+  const chart = session.snapshot().metadata.workbook.charts![0]!, seriesId = chart.series[0]!.seriesId;
+  commit([{ op: 'setWorkbookChart', nodeId: chart.nodeId, changes: { showLabels: true } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'label', properties: { 'text-decoration': 'var(--decor)', '--office-font-ascii': '"Liberation Sans"', color: '#203040' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'seriesLabel', seriesId, properties: { 'font-weight': 'bold' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'pointLabel', seriesId, index: 0, properties: { 'text-decoration-line': 'none' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'pointLabel', seriesId, index: 1, properties: { 'text-decoration': 'line-through solid' } },
+    { op: 'setWorkbookChartStyle', nodeId: chart.nodeId, target: 'pointLabel', seriesId, index: 2, properties: { color: '#2050c0', '--office-text-lum-mod': '.5' } }]);
+  const saved = new Map(session.serialize()), stylePath = session.snapshot().manifest.styles[0]!; session.dispose();
+  saved.set(stylePath, new TextEncoder().encode(new TextDecoder().decode(saved.get(stylePath)!) + ':root{--decor:underline double currentColor}'));
+  const result = await page.evaluate(files => window.workbookDrawingWindow.currentChartWindowMeasurement(files, true), encodeTestPackage(saved));
+  expect(result).toMatchObject({ sourceUnchanged: true, released: true, unavailable: 0 }); expect(result.actualNodes).toBe(result.declaredNodes);
+  expect(result.paints[0]!.labels).toMatchObject([{ text: '2', decoration: 'none' }, { text: '4', decoration: 'line-through', decorationStyle: 'solid' }, { text: '6', decoration: 'underline', decorationStyle: 'double', decorationColor: 'rgb(16, 40, 96)', fill: 'rgba(16,40,96,1)' }]);
+  expect(result.ink[0]!.pixels).toBe(0); expect(result.ink[1]!.pixels).toBeGreaterThan(0); expect(result.ink[2]!.pixels).toBeGreaterThan(0); expect(result.ink[2]!.bands).toBe(2); expect(result.ink[2]!.colors[0]!.rgb).toBe('16,40,96');
+});

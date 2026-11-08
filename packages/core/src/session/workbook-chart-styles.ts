@@ -36,8 +36,7 @@ export function editWorkbookChartStyle(chart: WorkbookChart, operation: Operatio
   if (Object.keys(properties).length) {
     const scope: SourceStyleNode = { tag: "span", attrs: chart.textCssClass ? { class: chart.textCssClass } : {}, parent: content.styleNode(chart.nodeId) };
     const probe: SourceStyleNode = { tag: "span", attrs: current ? { class: current } : {}, parent: scope };
-    const specified = styles.resolver({ combineDecorations: false }).specified(probe);
-    if (Object.entries(properties).some(([name, value]) => specified[name] !== value)) {
+    if (!styles.resolver({ combineDecorations: false }).hasSpecified(probe, properties)) {
       cssClass = allocateClass();
       if (current) styles.aliasClass(current, cssClass, new Set(Object.keys(properties)));
       styles.overrideLocalClass(cssClass, properties, {}, "span");

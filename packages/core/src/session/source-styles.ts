@@ -16,7 +16,7 @@ export class SourceStyleEdit {
         let css = ""; for (const [name, value] of Object.entries(properties)) css = setDrawingInlineStyle(css, name, value, this.limits);
         const ast = parse(css, { context: "declarationList", parseCustomProperty: true });
         if (ast.type !== "DeclarationList") invalid("Invalid drawing appearance declarations.");
-        return Object.fromEntries(ast.children.toArray().filter((node): node is Declaration => node.type === "Declaration").flatMap(node => { const decoded = ident.decode(node.property), name = decoded.startsWith("--") ? decoded : decoded.toLowerCase(); return name.startsWith("--") ? [[name, generate(node.value)]] : expandSourceCssProperty(name, generate(node.value)); }));
+        return Object.fromEntries(ast.children.toArray().filter((node): node is Declaration => node.type === "Declaration").flatMap(node => { const decoded = ident.decode(node.property), name = decoded.startsWith("--") ? decoded : decoded.toLowerCase(); const value = generate(node.value); return name.startsWith("--") || /\bvar\(/i.test(value) ? [[name, value]] : expandSourceCssProperty(name, value); }));
     }
     snapshot(): {
         path: string;

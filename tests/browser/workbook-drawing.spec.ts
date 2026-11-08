@@ -290,12 +290,15 @@ test('chart text spacing, explicit axis alignment and wrapped legends use final 
   const model=openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-chart-labels.xlsx'),{documentId:'controlled-labels'}),{kind:'workbook'}),snapshot=model.snapshot();
   const response=await modelChartSource(model).read({...DEFAULT_CHART_READ_LIMITS,documentId:snapshot.manifest.documentId,revision:0,chartIds:snapshot.metadata.workbook.charts!.map(chart=>chart.chartId)},new AbortController().signal),formatter=createWorkbookNumberFormatter({dateSystem:snapshot.metadata.workbook.dateSystem});
   const bindings=bindWorkbookChartData(snapshot,response,formatter);formatter.dispose();
-  const result=await page.evaluate(({snapshot,bindings})=>window.workbookChartHost.measureControlledChartLabels(snapshot,bindings),{snapshot,bindings});
+  for(const decoration of [undefined,'solid','double','dotted','dashed','wavy'] as const) {
+  const result=await page.evaluate(({snapshot,bindings,decoration})=>window.workbookChartHost.measureControlledChartLabels(snapshot,bindings,decoration),{snapshot,bindings,decoration});
   expect(result).toMatchObject({unchanged:true,cleaned:true,overrideFill:'rgba(68,114,196,1)'});
   for(const item of result.results){expect(item.size).toBe('9');expect(Number(item.spacing)).toBeCloseTo(1,5);expect(item.lineOffsets).toEqual([-7.5,15]);expect(item.anchors).toEqual(Array(3).fill(item.alignment==='left'?'start':'end'));if(item.alignment==='left')expect(item.skipped).toBeGreaterThan(0);else expect(item.skipped).toBe(0);}
+  for(const item of result.results){expect(item.nodes).toBe(item.actual);if(decoration)for(const paint of item.decorationPaint){expect(paint).toMatchObject({text:'A long mixed category 中😀Second line',accessible:true,hidden:true,strokes:decoration==='double'?8:4});}}
   expect(result.legend.rect.height).toBeGreaterThan(28);
   expect(result.largeMarker.height).toBe(72);expect(result.largeMarker.rect.height).toBeGreaterThanOrEqual(72);expect(result.largeMarker.nodes).toBe(result.largeMarker.actual);
   for(const box of result.legend.groups){expect(box.x).toBeGreaterThanOrEqual(result.legend.rect.x);expect(box.y).toBeGreaterThanOrEqual(result.legend.rect.y);expect(box.x+box.width).toBeLessThanOrEqual(result.legend.rect.x+result.legend.rect.width+.01);expect(box.y+box.height).toBeLessThanOrEqual(result.legend.rect.y+result.legend.rect.height+.01);}
+  }
 });
 
 test('finite chart endpoints and subnormal values retain bounded coordinates across direct and composed scales', async ({ page }) => {

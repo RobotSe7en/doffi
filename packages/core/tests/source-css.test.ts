@@ -63,6 +63,32 @@ test("fallbacks preserve authored declarations and independent class queries sta
 test("authored declaration queries do not require native length conversion or computed variable values", () => {
   const styles = new SourceStyleResolver([".s{font-size:1vw;text-decoration:underline double var(--ink)}"], limits);
   const target = node("span", { class: "s" });
-  expect(styles.specified(target)).toMatchObject({ "font-size": "1vw", "text-decoration-line": "underline", "text-decoration-style": "double", "text-decoration-color": "var(--ink)" });
+  expect(styles.specified(target)).toMatchObject({ "font-size": "1vw", "text-decoration-line": "underline double var(--ink)", "text-decoration-style": "underline double var(--ink)", "text-decoration-color": "underline double var(--ink)" });
   expect(() => styles.get(target)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+});
+
+test("native font-role fallback inherits decoration fields while explicit none overrides without changing HTML ancestor paint semantics", () => {
+  const styles = new SourceStyleResolver([".all{text-decoration:underline double}.point{text-decoration-line:none}"], limits);
+  const parent = node("span", { class: "all" }), child = node("span", { class: "point" }, parent), fallback = { "text-decoration-line": "inherit", "text-decoration-style": "inherit", "text-decoration-color": "inherit" };
+  styles.withFallback(parent, {}, fallback, {}, { combineDecorations: false });
+  expect(styles.withFallback(child, {}, fallback, {}, { combineDecorations: false })["text-decoration-line"]).toBe("none");
+  expect(styles.get(node("span", {}, parent))["text-decoration-line"]).toBe("underline");
+});
+
+
+test("opaque variable shorthands retain provenance and later longhands prevent false source no-ops", () => {
+  const styles = new SourceStyleResolver(['.same{text-decoration:var(--decor)}.partial{text-decoration:var(--decor);text-decoration-line:none}'], limits);
+  expect(styles.hasSpecified(node("span", { class: "same" }), { "text-decoration": "var(--decor)" })).toBe(true);
+  expect(styles.hasSpecified(node("span", { class: "partial" }), { "text-decoration": "var(--decor)" })).toBe(false);
+  const invalid = node("p", { style: "--box:1pt 2pt 3pt 4pt 5pt;margin-left:9pt;margin:var(--box)" });
+  expect(styles.get(invalid)["margin-left"]).toBe("0pt");
+});
+
+
+test("source declaration matching bounds patch bytes and nesting before reparsing a value", () => {
+  const styles = new SourceStyleResolver([".s{color:red}"], { ...limits, maxFileBytes: 200, maxDepth: 16 }), target = node("span", { class: "s" });
+  expect(styles.hasSpecified(target, { color: "red" })).toBe(true);
+  expect(() => styles.hasSpecified(target, { color: "r".repeat(201) })).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
+  expect(() => styles.hasSpecified(target, { width: "calc(".repeat(25) + "1pt" + ")".repeat(25) })).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
+  expect(() => styles.hasSpecified(target, { color: "red;color:blue" })).toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
 });

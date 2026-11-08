@@ -51,7 +51,7 @@ export async function gradientWindowMeasurement(entries: TestPackage) {
   } finally { controller.dispose(); formatter.dispose(); surface.dispose(); container.remove(); }
 }
 
-export async function currentChartWindowMeasurement(entries: TestPackage) {
+export async function currentChartWindowMeasurement(entries: TestPackage, inspectInk = false) {
   const model = openDocument(decodeTestPackage(entries), { kind: 'workbook' }), snapshot = model.snapshot(), before = model.serialize();
   const container = document.createElement('div'); document.body.append(container);
   const surface = await createWorkbookSurface(container, snapshot, { widthPt: 620, heightPt: 420 }), formatter = createWorkbookNumberFormatter({ dateSystem: '1900' });
@@ -62,13 +62,39 @@ export async function currentChartWindowMeasurement(entries: TestPackage) {
     const after = model.serialize();
     const paints = [...window.element.querySelectorAll('[data-sdk-chart]')].map(chart => ({
       columns: [...chart.querySelectorAll('[data-sdk-chart-point=column]')].map(point => point.getAttribute('fill')),
-      labels: [...chart.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=data-label]')].map(label => ({ text: label.textContent, fill: label.getAttribute('fill'), size: label.getAttribute('font-size') })),
+      labels: [...chart.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=data-label]')].map(label => ({ text: label.textContent, fill: label.getAttribute('fill'), size: label.getAttribute('font-size'), decoration: label.dataset.sdkChartDecorationLine, decorationStyle: label.dataset.sdkChartDecorationStyle, decorationColor: (() => { const paint = label.closest("[data-sdk-chart-text-decoration]")?.querySelector<SVGElement>("[data-sdk-chart-decoration-paint] line,[data-sdk-chart-decoration-paint] path"); return paint ? surface.document.defaultView!.getComputedStyle(paint).stroke : label.dataset.sdkChartDecorationColor; })() })),
     }));
     const walker = surface.document.createTreeWalker(window.element, 0xffff_ffff); let actualNodes = 1; while (walker.nextNode()) actualNodes++;
-    const result = { text, paints, actualNodes, declaredNodes: window.nodes, objects: window.objects.length, diagnostics: window.diagnostics, unavailable: window.element.querySelectorAll('[data-office-view="workbook-chart-unavailable"]').length,
+    const ink = inspectInk ? await Promise.all([...window.element.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=data-label]')].map(chartLabelInk)) : [];
+    const result = { text, paints, ink, actualNodes, declaredNodes: window.nodes, objects: window.objects.length, diagnostics: window.diagnostics, unavailable: window.element.querySelectorAll('[data-office-view="workbook-chart-unavailable"]').length,
       sourceUnchanged: [...before].every(([path, bytes]) => { const saved = after.get(path)!; return bytes.length === saved.length && bytes.every((byte, index) => byte === saved[index]); }) };
     controller.dispose(); return { ...result, released: !surface.view.childNodes.length && !surface.source.childNodes.length };
   } finally { controller.dispose(); formatter.dispose(); surface.dispose(); container.remove(); }
+}
+
+/** Raster comparison observes actual SVG decoration paint, independently of
+ * the computed style and source declarations under test. */
+async function chartLabelInk(label: SVGTextElement) {
+  // At 6× even a 12pt double-line stroke covers an opaque raster pixel;
+  // a lower scale can split the entire thin stroke across two partial pixels.
+  const source = label.ownerSVGElement!, width = Math.ceil(source.viewBox.baseVal.width * 6), height = Math.ceil(source.viewBox.baseVal.height * 6);
+  const raster = async (plain: boolean) => {
+    const svg = source.cloneNode(false) as SVGSVGElement, text = (label.closest("[data-sdk-chart-text-decoration]") ?? label).cloneNode(true) as SVGGraphicsElement;
+    svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height)); svg.style.cssText = '';
+    if (plain) { for (const paint of text.querySelectorAll('[data-sdk-chart-decoration-paint]')) paint.remove(); } svg.append(text);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+    try {
+      const image = new Image(); image.src = url; await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+      return context.getImageData(0, 0, width, height).data;
+    } finally { URL.revokeObjectURL(url); }
+  };
+  const [decorated, plain] = await Promise.all([raster(false), raster(true)]), colors = new Map<string, number>(), rows = new Set<number>(); let pixels = 0;
+  for (let offset = 0; offset < decorated.length; offset += 4) if (decorated[offset + 3]! > 240 && plain[offset + 3]! < 16) {
+    const key = [decorated[offset]!, decorated[offset + 1]!, decorated[offset + 2]!].join(','); colors.set(key, (colors.get(key) ?? 0) + 1); rows.add(Math.floor(offset / 4 / width)); pixels++;
+  }
+  const ordered = [...rows].sort((a, b) => a - b); let bands = 0; for (let i = 0; i < ordered.length; i++) if (!i || ordered[i]! > ordered[i - 1]! + 1) bands++;
+  return { pixels, bands, colors: [...colors].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([rgb, count]) => ({ rgb, count })) };
 }
 
 export async function drawingWindowMeasurement(entries: TestPackage, rtl: boolean, overflow = false, pageOrientedPictures = false, fixedGradients = false) {

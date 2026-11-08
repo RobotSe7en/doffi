@@ -22,6 +22,7 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
   const input = (name: string, type = "text") => { const field = label(name, document.createElement("input")); field.type = type; fields.push(field); return field; };
   const target = choice("图表样式部件", [["plot", "绘图区"], ["legend", "图例"], ["text", "默认文字"], ["label", "所有数据标签"], ["categoryAxis", "分类轴"], ["valueAxis", "数值轴"], ["grid", "数值轴网格线"], ["categoryGrid", "分类轴网格线"], ["series", "系列"], ["point", "数据点"], ["seriesLabel", "系列数据标签"], ["pointLabel", "单点数据标签"]]);
   const series = choice("图表样式系列", []), index = input("图表样式原始数据位置（从 1 开始）", "number"); index.min = "1"; index.max = "4294967296"; index.step = "1"; index.value = "1";
+  const hasText = () => ["text", "legend", "label", "categoryAxis", "valueAxis", "seriesLabel", "pointLabel"].includes(target.value);
   const hasSeries = () => ["series", "point", "seriesLabel", "pointLabel"].includes(target.value), hasPoint = () => target.value === "point" || target.value === "pointLabel";
   const key = () => JSON.stringify([target.value, hasSeries() ? series.value : "", hasPoint() ? index.value : ""]);
   const group = (): WorkbookChartStyleDraftGroup => `chart-style:${active}`;
@@ -32,6 +33,8 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
   value("dash", choice("图表部件线型", [["", "保持原设置"], ["solid", "实线"], ["dash", "虚线"], ["dot", "点线"], ["dashDot", "点划线"]]));
   value("color", input("图表部件文字颜色")); value("latin", input("图表部件西文字体")); value("eastAsia", input("图表部件中文字体")); value("fontSize", input("图表部件字号（磅）", "number"));
   value("weight", choice("图表部件字重", [["", "保持原设置"], ["bold", "加粗"], ["normal", "常规"]])); value("italic", choice("图表部件斜体", [["", "保持原设置"], ["italic", "斜体"], ["normal", "常规"]]));
+  value("decoration", choice("图表部件文字装饰", [["", "保持原设置"], ["none", "清除装饰线"], ["underline", "下划线"], ["line-through", "删除线"], ["underline line-through", "下划线与删除线"]]));
+  value("decorationStyle", choice("图表部件装饰线样式", [["", "保持原设置"], ["solid", "单线"], ["double", "双线"]]));
   const marker = value("marker", choice("图表数据标记", [["", "保持原设置"], ["default", "恢复默认"], ["none", "无标记"], ["auto", "自动"], ["circle", "圆"], ["square", "方形"], ["diamond", "菱形"], ["triangle", "三角形"], ["x", "交叉"], ["plus", "加号"], ["star", "星形"], ["dot", "点"], ["dash", "短线"]]));
   const markerSize = value("markerSize", input("图表标记大小（2 至 72 磅，0 恢复默认）", "number"));
   const read = (name: string) => values.get(name)!.value.trim();
@@ -39,13 +42,13 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
   const apply = document.createElement("button"); apply.type = "button"; apply.textContent = "应用当前图表部件样式"; root.append(apply);
   apply.addEventListener("click", () => host.run(async () => {
     const chart = host.current(), properties: Record<string, string> = {}, font = (name: string) => { const raw = read(name); if (/[\u0000-\u001f\u007f]/.test(raw)) throw new DocumentError("InvalidOperation", "字体名称不能包含控制字符。"); return '"' + raw.replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"'; };
-    for (const [field, property] of [["fill", "--office-fill-color"], ["line", "--office-line-color"], ["color", "color"], ["weight", "font-weight"], ["italic", "font-style"], ["dash", "--office-line-dash"]] as const) if (read(field)) properties[property] = read(field);
+    for (const [field, property] of [["fill", "--office-fill-color"], ["line", "--office-line-color"], ["color", "color"], ["weight", "font-weight"], ["italic", "font-style"], ["dash", "--office-line-dash"], ["decoration", "text-decoration-line"], ["decorationStyle", "text-decoration-style"]] as const) if (read(field) && (!["color", "weight", "italic", "decoration", "decorationStyle"].includes(field) || hasText())) properties[property] = read(field);
     if (read("fillKind") || read("fill")) properties["--office-fill-kind"] = read("fillKind") || "solid";
     if (read("lineKind") || read("line") || read("lineWidth") || read("dash")) properties["--office-line-kind"] = read("lineKind") || "solid";
     if (read("lineWidth") || (values.get("lineWidth") as HTMLInputElement).validity.badInput) properties["--office-line-width"] = number("lineWidth", 0, 1584) + "pt";
-    if (read("fontSize") || (values.get("fontSize") as HTMLInputElement).validity.badInput) properties["font-size"] = number("fontSize", .1, 4000) + "pt";
-    if (read("latin")) for (const role of ["ascii", "h-ansi"]) properties["--office-font-" + role] = font("latin");
-    if (read("eastAsia")) properties["--office-font-east-asia"] = font("eastAsia");
+    if (hasText() && (read("fontSize") || (values.get("fontSize") as HTMLInputElement).validity.badInput)) properties["font-size"] = number("fontSize", .1, 4000) + "pt";
+    if (hasText() && read("latin")) for (const role of ["ascii", "h-ansi"]) properties["--office-font-" + role] = font("latin");
+    if (hasText() && read("eastAsia")) properties["--office-font-east-asia"] = font("eastAsia");
     const position = Number(index.value) - 1;
     if (hasPoint() && (index.validity.badInput || !Number.isInteger(position) || position < 0 || position > 0xffff_ffff)) throw new DocumentError("InvalidOperation", "原始数据位置须在 1 至 4294967296 之间。");
     const operation: Operation = { op: "setWorkbookChartStyle", nodeId: chart.nodeId, target: target.value as Operation["target"], properties,
@@ -66,6 +69,7 @@ export function createWorkbookChartStyleControls(document: Document, parent: HTM
     blocked = disabled; sourceStale = stale; root.hidden = !available;
     for (const field of fields) field.disabled = (disabled || !available) && field !== composing;
     series.disabled ||= !hasSeries(); index.disabled ||= !hasPoint();
+    for (const name of ["color", "latin", "eastAsia", "fontSize", "weight", "italic", "decoration", "decorationStyle"]) { const field = values.get(name)!; field.disabled ||= !hasText() && field !== composing; }
     const markersAvailable = kind === "line" && (target.value === "series" || target.value === "point");
     marker.disabled ||= !markersAvailable; markerSize.disabled ||= !markersAvailable;
     apply.disabled = disabled || stale || !available;
