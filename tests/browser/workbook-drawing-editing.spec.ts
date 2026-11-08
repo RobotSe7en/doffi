@@ -198,6 +198,46 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} drawin
 });
 
 
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart detail controls update crossings, current label formats and empty separators atomically`, async ({ page }) => {
+  const session = createDocumentSession(scalarWorkbook([]));
+  const commit = (operations: Parameters<typeof session.prepare>[0]["operations"]) => session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: session.snapshot().manifest.revision, operations }));
+  commit([{ op: "insertWorkbookChart", sheetId: "sheet-1", kind: "line", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 300, heightPt: 180 }, data: {
+    categories: { kind: "literal", valueType: "text", count: 2, points: [{ index: 0, value: "A" }, { index: 1, value: "B" }] }, series: [{ values: { kind: "literal", valueType: "number", count: 2, points: [{ index: 0, value: 2 }, { index: 1, value: 4 }] } }],
+  } }]);
+  const nodeId = session.snapshot().metadata.workbook.charts![0]!.nodeId;
+  commit([{ op: "setWorkbookChart", nodeId, changes: { showLabels: true, labelContents: ["category", "value"] } }]);
+  const initial = session.snapshot().metadata.workbook.charts![0]!, files = session.serialize(); session.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { charts: WorkbookChart[]; history: { undoSteps: number }; errors: string[] };
+  await page.getByText("图片、形状与图表", { exact: true }).click(); await page.getByLabel("选择绘图对象", { exact: true }).selectOption(nodeId);
+  const target = page.getByLabel("图表样式部件", { exact: true }), apply = page.getByRole("button", { name: "应用当前图表部件样式", exact: true });
+  await target.selectOption("categoryAxis"); await page.getByLabel("坐标轴交叉方式", { exact: true }).selectOption("at");
+  const crossing = page.getByLabel("坐标轴在另一轴上的交叉值", { exact: true }); await expect(crossing).toBeEnabled(); await crossing.fill("3.25");
+  await page.getByLabel("坐标轴主刻度线", { exact: true }).selectOption("out"); await page.getByLabel("分类轴标签间隔（0 自动）", { exact: true }).fill("2");
+  await apply.click(); await settled(); expect((await inspect()).history.undoSteps).toBe(1);
+  const paint = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.displayedChart() : window.workbookEditor.displayedChart(), remote);
+  expect((await paint()).categories).toEqual(["A"]);
+  const axes = async () => (await paint()).axes;
+  const first = await axes(); expect(first.y).toBeGreaterThan(first.top); expect(first.y).toBeLessThan(first.bottom);
+  await target.selectOption("label"); await expect(page.getByLabel("坐标轴交叉方式", { exact: true })).toBeDisabled();
+  await page.getByLabel("当前轴或标签数值格式来源", { exact: true }).selectOption("custom"); const format = page.getByLabel("当前轴或标签自定义数值格式", { exact: true }); await expect(format).toBeEnabled(); await format.fill("0.00");
+  await format.dispatchEvent("compositionstart"); await expect(format).toBeEnabled(); await expect(apply).toBeDisabled(); await format.dispatchEvent("compositionend"); await expect(format).toHaveValue("0.00");
+  await page.getByLabel("数据标签分隔符设置", { exact: true }).selectOption("custom"); await expect(page.getByLabel("数据标签分隔文字", { exact: true })).toBeEnabled();
+  await page.getByLabel("数据标签位置", { exact: true }).selectOption("r");
+  await page.getByLabel("数据标签引导线", { exact: true }).selectOption("true"); await page.getByLabel("数据标签引导线颜色", { exact: true }).fill("#207040"); await page.getByLabel("数据标签引导线宽度（磅）", { exact: true }).fill("2");
+  await apply.click(); await settled();
+  expect((await paint()).labels).toEqual(["A2.00", "B4.00"]);
+  expect((await paint()).leaders).toEqual(Array(2).fill({ color: 'rgba(32,112,64,1)', width: 2 }));
+  await target.selectOption("categoryAxis"); await page.getByLabel("坐标轴交叉方式", { exact: true }).selectOption("max"); await apply.click(); await settled();
+  const last = await axes(); expect(last.y).toBeCloseTo(last.top, 4); // The explicit old crossesAt must be cleared.
+  for (let count = 0; count < 3; count++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
+  expect(await inspect()).toMatchObject({ charts: [initial], history: { undoSteps: 0 }, errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart style controls retain part drafts, marker overrides and owning history`, async ({ page }) => {
   const session = createDocumentSession(scalarWorkbook([]));
   session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookChart", sheetId: "sheet-1", kind: "line", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 300, heightPt: 180 }, data: { series: [{ name: { kind: "text", text: "样式系列" }, values: { kind: "literal", valueType: "number", count: 2, points: [{ index: 0, value: 2 }, { index: 1, value: 4 }] } }] } }] }));

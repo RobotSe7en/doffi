@@ -4,12 +4,12 @@ import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookEditorView } from "@doffi/editor";
 import { decodeTestPackage } from "./package-transport.js";
 import type { TestPackage } from "./package-transport.js";
+import { measureWorkbookChart, observeWorkbookViews } from "./workbook-view-observer.js";
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
-let observer: MutationObserver | undefined;
-const textViews = new WeakMap<HTMLIFrameElement, ShadowRoot>(), restores: (() => void)[] = [];
+let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 const errors: string[] = [];
 export async function mount(entries: TestPackage, observeText = false): Promise<void> {
-  observer?.disconnect(); for (const restore of restores.splice(0)) restore();
+  observed?.dispose(); observed = undefined;
   editor?.dispose(); session?.dispose(); container?.remove(); errors.length = 0;
   session = createDocumentSession(openDocument(decodeTestPackage(entries), { kind: "workbook" }));
   container = document.createElement("div"); document.body.append(container);
@@ -19,28 +19,18 @@ export async function mount(entries: TestPackage, observeText = false): Promise<
   Element.prototype.attachShadow = function(init) { return attach.call(this, { ...init, mode: "open" }); };
   try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
   finally { Element.prototype.attachShadow = attach; }
-  if (observeText) {
-    const root = editor.element.shadowRoot!.querySelector(".preview")!.firstElementChild!.shadowRoot!, watched = new WeakSet<HTMLIFrameElement>();
-    const watch = () => { for (const frame of root.querySelectorAll<HTMLIFrameElement>("iframe")) {
-      if (watched.has(frame)) continue; watched.add(frame);
-      frame.addEventListener("load", () => {
-        const prototype = (frame.contentWindow as Window & typeof globalThis).Element.prototype, attach = prototype.attachShadow;
-        prototype.attachShadow = function(init) { const value = attach.call(this, init); if (this.localName === "office-workbook-view-surface") textViews.set(frame, value); return value; };
-        restores.push(() => { prototype.attachShadow = attach; });
-      }, { capture: true, once: true });
-    } };
-    observer = new MutationObserver(watch); observer.observe(root, { childList: true, subtree: true }); watch();
-  }
+  if (observeText) observed = observeWorkbookViews(editor.element);
   await editor.ready;
 }
 export async function mountObserved(entries: TestPackage): Promise<void> { await mount(entries, true); }
+export function displayedChart() { return measureWorkbookChart(observed?.current()); }
 export function displayedCell(row: number, column: number): string | undefined {
   const frame = editor.element.shadowRoot!.querySelector(".preview")!.firstElementChild!.shadowRoot!.querySelector<HTMLIFrameElement>("iframe")!;
-  return textViews.get(frame)?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined;
+  return observed?.root(frame)?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined;
 }
 export function displayedTextStyles(row: number, column: number) {
   const frame = editor.element.shadowRoot!.querySelector(".preview")!.firstElementChild!.shadowRoot!.querySelector<HTMLIFrameElement>("iframe")!;
-  const cell = textViews.get(frame)?.querySelector<HTMLElement>(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`);
+  const cell = observed?.root(frame)?.querySelector<HTMLElement>(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`);
   if (!cell) return [];
   return [cell, ...cell.querySelectorAll<HTMLElement>("[data-office-text-style]")].map(element => {
     const style = element.ownerDocument.defaultView!.getComputedStyle(element);
@@ -98,8 +88,8 @@ export function cancelPreparationAtProgress(): void {
   }); observer.observe(status, { childList: true, subtree: true });
 }
 export function dispose(): { revision: number; usable: boolean } {
-  observer?.disconnect(); for (const restore of restores.splice(0)) restore();
+  observed?.dispose(); observed = undefined;
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedChart, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

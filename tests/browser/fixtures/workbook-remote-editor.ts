@@ -3,12 +3,14 @@ import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
 import type { WorkbookCell } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
+import { measureWorkbookChart, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
   sourceCell(row: number, column: number): Promise<WorkbookCell | undefined>;
+  displayedChart(): ReturnType<typeof measureWorkbookChart>;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
-export async function mount(code: string, encoded: string) {
+export async function mount(code: string, encoded: string, observeView = false) {
   cleanup(); const host = document.createElement('div'); document.body.append(host);
   const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), worker = new Worker(url), channel = new MessageChannel();
   let holdReference = false, heldReference: unknown;
@@ -22,9 +24,10 @@ export async function mount(code: string, encoded: string) {
   let editor: WorkbookRemoteEditorView;
   try { editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, onError(error) { errors.push((error as { code?: string }).code ?? error.message); } }); }
   finally { Element.prototype.attachShadow = attach; }
+  const observed = observeView ? observeWorkbookViews(editor.element) : undefined;
   await editor.ready; let disposed = false;
   const release = () => { if (!disposed) { editor.dispose(); disposed = true; } };
-  cleanup = () => { release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
+  cleanup = () => { observed?.dispose(); release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
   actions = {
     async inspect() {
       const source = await client.view();
@@ -37,6 +40,7 @@ export async function mount(code: string, encoded: string) {
       } finally { source.dispose(); }
     },
     settled: () => editor.settled(),
+    displayedChart: () => measureWorkbookChart(observed?.current()),
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
     async sourceCell(row, column) {
       const source = await client.view(), current = client.state();
@@ -57,6 +61,7 @@ export async function mount(code: string, encoded: string) {
 }
 export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
+export function displayedChart() { return actions.displayedChart(); }
 export function external(text: string, wait = true) { return actions.external(text, wait); }
 export function holdReference() { actions.holdReference(); }
 export function referenceHeld() { return actions.referenceHeld(); }
@@ -65,4 +70,4 @@ export function value(row: number, column: number) { return actions.value(row, c
 export function sourceCell(row: number, column: number) { return actions.sourceCell(row, column); }
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
