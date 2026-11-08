@@ -317,6 +317,21 @@ test("mounted direct name manager preserves scopes, drafts, IME and exact name c
   await exerciseWorkbookNameControls(page, false, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
 });
 
+test("mounted direct worksheet manager copies names and current formulas, changes sheet properties and retains stale drafts", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-sheet-manager' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookSheetControls } = await import('./workbook-sheet-controls-cases.js');
+  await exerciseWorkbookSheetControls(page, false, model.snapshot().metadata.workbook.sheets);
+});
+
+test("mounted direct worksheet manager resolves copied name conflicts explicitly in one candidate", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookCopyNameConflictSource, exerciseWorkbookCopyNameConflict } = await import('./workbook-sheet-controls-cases.js');
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(workbookCopyNameConflictSource().serialize()));
+  await exerciseWorkbookCopyNameConflict(page, false);
+});
+
 test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
   await page.addScriptTag({ content: editorCode });
   const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },

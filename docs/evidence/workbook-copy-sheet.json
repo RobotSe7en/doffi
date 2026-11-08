@@ -1,0 +1,5992 @@
+{
+  "scope": "Ten independent native inputs, actual whole-sheet copies in pinned Calc, and stable data/name/table/chart/comment/print/hyperlink observations. Static hyperlink destinations retain their original text rather than being rewritten as formulas. Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "references": [
+    "https://support.microsoft.com/en-us/excel/get-started/move-or-copy-worksheets-or-worksheet-data",
+    "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/a469e5f5-a102-49bd-9642-8a8e8aaf1623",
+    "https://learn.microsoft.com/en-us/office/vba/api/excel.hyperlink.subaddress"
+  ],
+  "producerDifferences": [
+    "Calc clones source-bound global names as copied-sheet local definitions and removes the explicit current-workbook name prefix.",
+    "Calc creates a new table name but copied cell formulas retain the original table reference; editing copied B2 to 20 leaves D2 at 20. SDK references the copied table and calculates 200.",
+    "Calc drops modern threads on this source; SDK preserves complete copied threads with fresh identities."
+  ],
+  "cases": [
+    {
+      "name": "names",
+      "source": "packages/office/tests/fixtures/workbook-name-prefix.xlsx",
+      "sourceSha256": "cef9b05bf45d1707c76b6b73274ba899b1cc80d1809a5eee5fb3cef6eb02353c",
+      "producerSha256": "2e1cac71fb2bd79a28e5bf8114441bc3f3b59838f3fec5a0b93418579c023603",
+      "observed": {
+        "sheets": [
+          {
+            "name": "Data",
+            "state": "visible"
+          },
+          {
+            "name": "Other",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "2",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Tax",
+            "scope": null,
+            "expression": "Data!$H$1"
+          },
+          {
+            "name": "Local",
+            "scope": "0",
+            "expression": "Data!$A$6"
+          },
+          {
+            "name": "Rate",
+            "scope": "0",
+            "expression": "Data!$A$5"
+          },
+          {
+            "name": "Local",
+            "scope": "1",
+            "expression": "Other!$A$6"
+          },
+          {
+            "name": "Tax",
+            "scope": "1",
+            "expression": "Other!$H$1"
+          },
+          {
+            "name": "Local",
+            "scope": "2",
+            "expression": "Copied!$A$6"
+          },
+          {
+            "name": "Rate",
+            "scope": "2",
+            "expression": "Copied!$A$5"
+          },
+          {
+            "name": "Tax",
+            "scope": "2",
+            "expression": "Copied!$H$1"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "H1",
+                "formula": null,
+                "value": "7",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "10",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": "Rate+Tax",
+                "value": "17",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "30",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B6",
+                "formula": "$A$5+A6+Local",
+                "value": "70",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B7",
+                "formula": "Tax",
+                "value": "7",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B8",
+                "formula": "Tax",
+                "value": "7",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "7",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "8",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "H1",
+                "formula": null,
+                "value": "70",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": "rate+Tax",
+                "value": "#NAME?",
+                "type": "e",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B6",
+                "formula": "$A$5+A6+Local",
+                "value": "700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B7",
+                "formula": "Tax",
+                "value": "70",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B8",
+                "formula": "Tax",
+                "value": "70",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "7",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "8",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet3.xml": {
+            "cells": [
+              {
+                "address": "H1",
+                "formula": null,
+                "value": "88",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "99",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": "Rate+Tax",
+                "value": "187",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "123",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B6",
+                "formula": "$A$5+A6+Local",
+                "value": "345",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B7",
+                "formula": "Tax",
+                "value": "88",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B8",
+                "formula": "Tax",
+                "value": "88",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "7",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "8",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "tables",
+      "source": "packages/office/tests/fixtures/workbook-axis-tables.xlsx",
+      "sourceSha256": "25a5ac5cf409e94aa2e9fa8064e9b63d5860fd73e74c829ca1cd96b5bd8fed1e",
+      "producerSha256": "9867bbb6c0cc34d6a2a259d668b3598ae1f143135cd2604ca6fab61a10d68283",
+      "observed": {
+        "sheets": [
+          {
+            "name": "Sales",
+            "state": "visible"
+          },
+          {
+            "name": "Observer",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "2",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Sales!$A$1:$L$30"
+          }
+        ],
+        "parts": {
+          "xl/tables/table1.xml": {
+            "name": "SalesTable",
+            "displayName": "SalesTable",
+            "range": "A1:D6",
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "total": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "total": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "total": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "total": null
+              }
+            ]
+          },
+          "xl/tables/table2.xml": {
+            "name": "SalesTable_2",
+            "displayName": "SalesTable_2",
+            "range": "A1:D6",
+            "columns": [
+              {
+                "name": "产品",
+                "calculated": null,
+                "total": null
+              },
+              {
+                "name": "数量",
+                "calculated": null,
+                "total": null
+              },
+              {
+                "name": "单价",
+                "calculated": null,
+                "total": null
+              },
+              {
+                "name": "金额",
+                "calculated": null,
+                "total": null
+              }
+            ]
+          },
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "C1",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "D1",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "2",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C2",
+                "formula": null,
+                "value": "10",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D2",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "20",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "3",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C3",
+                "formula": null,
+                "value": "20",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D3",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "60",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "6",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B4",
+                "formula": null,
+                "value": "4",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C4",
+                "formula": null,
+                "value": "30",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D4",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "120",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "7",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": null,
+                "value": "1",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C5",
+                "formula": null,
+                "value": "40",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D5",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "40",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "8",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "D6",
+                "formula": "SUBTOTAL(109,SalesTable[金额])",
+                "value": "240",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": "SUM(SalesTable[数量])",
+                "value": "10",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": "Sales!D6",
+                "value": "240",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C1",
+                "formula": "SUM(SalesTable[金额])",
+                "value": "240",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.747916666666667",
+                  "right": "0.747916666666667",
+                  "top": "0.984027777777778",
+                  "bottom": "0.984027777777778",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet3.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "C1",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "D1",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "20",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C2",
+                "formula": null,
+                "value": "10",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D2",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "20",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "3",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C3",
+                "formula": null,
+                "value": "20",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D3",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "60",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "6",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B4",
+                "formula": null,
+                "value": "4",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C4",
+                "formula": null,
+                "value": "30",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D4",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "120",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "7",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": null,
+                "value": "1",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C5",
+                "formula": null,
+                "value": "40",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D5",
+                "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "value": "40",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "8",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "D6",
+                "formula": "SUBTOTAL(109,SalesTable[金额])",
+                "value": "240",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "structure",
+      "source": "examples/xlsx/03-structure.xlsx",
+      "sourceSha256": "795ab81826ff1d923379ae95bf9bac8458ee5b3165f8e6208363453c39b5485d",
+      "producerSha256": "1ce0c6c8d475a6bddfeefc9fe591cecb44d5470c3f2f75bbaee822ac2ee1c882",
+      "observed": {
+        "sheets": [
+          {
+            "name": "结构",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "结构!$A$1:$L$30"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "C2",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D2",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "3",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "4",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A256",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A257",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A258",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B260",
+                "formula": null,
+                "value": "260",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [
+              "B2:D2",
+              "A256:A258"
+            ],
+            "panes": [
+              {
+                "xSplit": "1",
+                "ySplit": "2",
+                "topLeftCell": "B3",
+                "activePane": "bottomRight",
+                "state": "frozen"
+              }
+            ],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "37.3",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "30",
+                "hidden": "false",
+                "customHeight": "true",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "true",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "256",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "true",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "257",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "258",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "260",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [
+              {
+                "collapsed": "false",
+                "customWidth": "true",
+                "hidden": "false",
+                "outlineLevel": "0",
+                "max": "1",
+                "min": "1",
+                "style": "0",
+                "width": "18"
+              },
+              {
+                "collapsed": "false",
+                "customWidth": "true",
+                "hidden": "true",
+                "outlineLevel": "0",
+                "max": "4",
+                "min": "4",
+                "style": "0",
+                "width": "10"
+              }
+            ],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "C2",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "D2",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "3",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "4",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A256",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A257",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A258",
+                "formula": null,
+                "value": null,
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "B260",
+                "formula": null,
+                "value": "260",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [
+              "B2:D2",
+              "A256:A258"
+            ],
+            "panes": [
+              {
+                "xSplit": "1",
+                "ySplit": "2",
+                "topLeftCell": "B3",
+                "activePane": "bottomRight",
+                "state": "frozen"
+              }
+            ],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "37.3",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "30",
+                "hidden": "false",
+                "customHeight": "true",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "true",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "256",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "true",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "257",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "258",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "260",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [
+              {
+                "collapsed": "false",
+                "customWidth": "true",
+                "hidden": "false",
+                "outlineLevel": "0",
+                "max": "1",
+                "min": "1",
+                "style": "0",
+                "width": "18"
+              },
+              {
+                "collapsed": "false",
+                "customWidth": "true",
+                "hidden": "true",
+                "outlineLevel": "0",
+                "max": "4",
+                "min": "4",
+                "style": "0",
+                "width": "10"
+              }
+            ],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "charts",
+      "source": "examples/xlsx/07-three-charts.xlsx",
+      "sourceSha256": "395c89fea4af3914620f4238d30eba086de4c4605aae13abcd40d15dd4a1516b",
+      "producerSha256": "5730bdf3643f617cd1054e337c714ace5ff5f6482944f59ddbb3f06dd358a7c2",
+      "observed": {
+        "sheets": [
+          {
+            "name": "Data",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Copied!$A$1:$K$35"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$K$35"
+          }
+        ],
+        "parts": {
+          "xl/charts/chart1.xml": {
+            "references": [
+              "Data!$B$1",
+              "Data!$A$2:$A$4",
+              "Data!$B$2:$B$4",
+              "Data!$C$1",
+              "Data!$A$2:$A$4",
+              "Data!$C$2:$C$4"
+            ],
+            "vectors": [
+              [
+                "交付"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "2",
+                "5",
+                "8"
+              ],
+              [
+                "计划"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "3",
+                "6",
+                "9"
+              ]
+            ]
+          },
+          "xl/charts/chart2.xml": {
+            "references": [
+              "Data!$B$1",
+              "Data!$A$2:$A$4",
+              "Data!$B$2:$B$4",
+              "Data!$C$1",
+              "Data!$A$2:$A$4",
+              "Data!$C$2:$C$4"
+            ],
+            "vectors": [
+              [
+                "交付"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "2",
+                "5",
+                "8"
+              ],
+              [
+                "计划"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "3",
+                "6",
+                "9"
+              ]
+            ]
+          },
+          "xl/charts/chart3.xml": {
+            "references": [
+              "Data!$B$1",
+              "Data!$A$2:$A$4",
+              "Data!$B$2:$B$4"
+            ],
+            "vectors": [
+              [
+                "交付"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "2",
+                "5",
+                "8"
+              ]
+            ]
+          },
+          "xl/charts/chart4.xml": {
+            "references": [
+              "Data!$B$1",
+              "Data!$A$2:$A$4",
+              "Data!$B$2:$B$4",
+              "Data!$C$1",
+              "Data!$A$2:$A$4",
+              "Data!$C$2:$C$4"
+            ],
+            "vectors": [
+              [
+                "交付"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "2",
+                "5",
+                "8"
+              ],
+              [
+                "计划"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "3",
+                "6",
+                "9"
+              ]
+            ]
+          },
+          "xl/charts/chart5.xml": {
+            "references": [
+              "Data!$B$1",
+              "Data!$A$2:$A$4",
+              "Data!$B$2:$B$4",
+              "Data!$C$1",
+              "Data!$A$2:$A$4",
+              "Data!$C$2:$C$4"
+            ],
+            "vectors": [
+              [
+                "交付"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "2",
+                "5",
+                "8"
+              ],
+              [
+                "计划"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "3",
+                "6",
+                "9"
+              ]
+            ]
+          },
+          "xl/charts/chart6.xml": {
+            "references": [
+              "Data!$B$1",
+              "Data!$A$2:$A$4",
+              "Data!$B$2:$B$4"
+            ],
+            "vectors": [
+              [
+                "交付"
+              ],
+              [
+                "第一季度",
+                "第二季度",
+                "第三季度"
+              ],
+              [
+                "2",
+                "5",
+                "8"
+              ]
+            ]
+          },
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "C1",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "2",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C2",
+                "formula": null,
+                "value": "3",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "5",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C3",
+                "formula": null,
+                "value": "6",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B4",
+                "formula": null,
+                "value": "8",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C4",
+                "formula": null,
+                "value": "9",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "C1",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "2",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C2",
+                "formula": null,
+                "value": "3",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "5",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C3",
+                "formula": null,
+                "value": "6",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B4",
+                "formula": null,
+                "value": "8",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C4",
+                "formula": null,
+                "value": "9",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 6,
+          "drawings": 2,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "pictures",
+      "source": "examples/xlsx/08-images-shapes.xlsx",
+      "sourceSha256": "a0fa81e6b17e4362b57a7d116c4f821b10ea5eb12e7ab64b07e0660dc7d2ad7a",
+      "producerSha256": "ed0b5422ec8d5cfab663e31edb295caa92528d1deca6f591a3b6618a1155b7f4",
+      "observed": {
+        "sheets": [
+          {
+            "name": "绘图",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "绘图!$A$1:$L$30"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "37.3",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "37.3",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 2,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": [
+          "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+        ]
+      }
+    },
+    {
+      "name": "classic",
+      "source": "examples/xlsx/09-classic-notes.xlsx",
+      "sourceSha256": "4e916b0f4883d663e1058ddd622305059823ab54c9ffdb4a8d1edc08e26ba09d",
+      "producerSha256": "f80188c64aa2afc6cc91ea437b1e6c36ab000d46baa3fbdbc3f76fe3d69d4b65",
+      "observed": {
+        "sheets": [
+          {
+            "name": "备注",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "备注!$A$1:$L$30"
+          }
+        ],
+        "parts": {
+          "xl/comments1.xml": {
+            "authors": [
+              "独立备注作者"
+            ],
+            "comments": [
+              {
+                "address": "B2",
+                "author": "0",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ]
+          },
+          "xl/comments2.xml": {
+            "authors": [
+              "独立备注作者"
+            ],
+            "comments": [
+              {
+                "address": "B2",
+                "author": "0",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ]
+          },
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "1200",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "1200",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 2,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "modern",
+      "source": "examples/xlsx/10-modern-threads.xlsx",
+      "sourceSha256": "cf7f6a4b981cdc2e291bda3597f46b79aedcf7e7578c556f7d3d7d9250571623",
+      "producerSha256": "b65415337b7551192575961f5372d49771f1ad3b68c816e2c3149c41bdb18ac1",
+      "observed": {
+        "sheets": [
+          {
+            "name": "线程",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "线程!$A$1:$L$30"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "1200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C3",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "1200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "C3",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "print",
+      "source": "examples/xlsx/11-print-layout.xlsx",
+      "sourceSha256": "09045c014dbb545c6f1e1aec661422d2eff59adb66e749cb359bbc83e21f1473",
+      "producerSha256": "2644deda60acd74114ad25fec21aa867a41a566adf40a00c0cbdf6f48a814bc9",
+      "observed": {
+        "sheets": [
+          {
+            "name": "打印",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Copied!$A$1:$F$45"
+          },
+          {
+            "name": "_xlnm.Print_Titles",
+            "scope": "1",
+            "expression": "Copied!$A:$A,Copied!$1:$1"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "打印!$A$1:$F$45"
+          },
+          {
+            "name": "_xlnm.Print_Titles",
+            "scope": "0",
+            "expression": "打印!$A:$A,打印!$1:$1"
+          },
+          {
+            "name": "_xlnm.Print_Titles",
+            "scope": "0",
+            "expression": "打印!$1:$1,打印!$A:$A"
+          },
+          {
+            "name": "_xlnm.Print_Titles",
+            "scope": "1",
+            "expression": "Copied!$1:$1,Copied!$A:$A"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B4",
+                "formula": null,
+                "value": "400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": null,
+                "value": "500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "6",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B6",
+                "formula": null,
+                "value": "600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A7",
+                "formula": null,
+                "value": "7",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B7",
+                "formula": null,
+                "value": "700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A8",
+                "formula": null,
+                "value": "8",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B8",
+                "formula": null,
+                "value": "800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A9",
+                "formula": null,
+                "value": "9",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B9",
+                "formula": null,
+                "value": "900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A10",
+                "formula": null,
+                "value": "10",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B10",
+                "formula": null,
+                "value": "1000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A11",
+                "formula": null,
+                "value": "11",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B11",
+                "formula": null,
+                "value": "1100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A12",
+                "formula": null,
+                "value": "12",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B12",
+                "formula": null,
+                "value": "1200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A13",
+                "formula": null,
+                "value": "13",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B13",
+                "formula": null,
+                "value": "1300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A14",
+                "formula": null,
+                "value": "14",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B14",
+                "formula": null,
+                "value": "1400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A15",
+                "formula": null,
+                "value": "15",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B15",
+                "formula": null,
+                "value": "1500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A16",
+                "formula": null,
+                "value": "16",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B16",
+                "formula": null,
+                "value": "1600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A17",
+                "formula": null,
+                "value": "17",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B17",
+                "formula": null,
+                "value": "1700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A18",
+                "formula": null,
+                "value": "18",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B18",
+                "formula": null,
+                "value": "1800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A19",
+                "formula": null,
+                "value": "19",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B19",
+                "formula": null,
+                "value": "1900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A20",
+                "formula": null,
+                "value": "20",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B20",
+                "formula": null,
+                "value": "2000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A21",
+                "formula": null,
+                "value": "21",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B21",
+                "formula": null,
+                "value": "2100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A22",
+                "formula": null,
+                "value": "22",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B22",
+                "formula": null,
+                "value": "2200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A23",
+                "formula": null,
+                "value": "23",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B23",
+                "formula": null,
+                "value": "2300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A24",
+                "formula": null,
+                "value": "24",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B24",
+                "formula": null,
+                "value": "2400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A25",
+                "formula": null,
+                "value": "25",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B25",
+                "formula": null,
+                "value": "2500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A26",
+                "formula": null,
+                "value": "26",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B26",
+                "formula": null,
+                "value": "2600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A27",
+                "formula": null,
+                "value": "27",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B27",
+                "formula": null,
+                "value": "2700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A28",
+                "formula": null,
+                "value": "28",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B28",
+                "formula": null,
+                "value": "2800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A29",
+                "formula": null,
+                "value": "29",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B29",
+                "formula": null,
+                "value": "2900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A30",
+                "formula": null,
+                "value": "30",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B30",
+                "formula": null,
+                "value": "3000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A31",
+                "formula": null,
+                "value": "31",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B31",
+                "formula": null,
+                "value": "3100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A32",
+                "formula": null,
+                "value": "32",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B32",
+                "formula": null,
+                "value": "3200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A33",
+                "formula": null,
+                "value": "33",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B33",
+                "formula": null,
+                "value": "3300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A34",
+                "formula": null,
+                "value": "34",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B34",
+                "formula": null,
+                "value": "3400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A35",
+                "formula": null,
+                "value": "35",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B35",
+                "formula": null,
+                "value": "3500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A36",
+                "formula": null,
+                "value": "36",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B36",
+                "formula": null,
+                "value": "3600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A37",
+                "formula": null,
+                "value": "37",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B37",
+                "formula": null,
+                "value": "3700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A38",
+                "formula": null,
+                "value": "38",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B38",
+                "formula": null,
+                "value": "3800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A39",
+                "formula": null,
+                "value": "39",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B39",
+                "formula": null,
+                "value": "3900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A40",
+                "formula": null,
+                "value": "40",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B40",
+                "formula": null,
+                "value": "4000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A41",
+                "formula": null,
+                "value": "41",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B41",
+                "formula": null,
+                "value": "4100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A42",
+                "formula": null,
+                "value": "42",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B42",
+                "formula": null,
+                "value": "4200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A43",
+                "formula": null,
+                "value": "43",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B43",
+                "formula": null,
+                "value": "4300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A44",
+                "formula": null,
+                "value": "44",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B44",
+                "formula": null,
+                "value": "4400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A45",
+                "formula": null,
+                "value": "45",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B45",
+                "formula": null,
+                "value": "4500",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "7",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "8",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "9",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "10",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "11",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "12",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "13",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "14",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "15",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "16",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "17",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "18",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "19",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "20",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "21",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "22",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "23",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "24",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "25",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "26",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "27",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "28",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "29",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "30",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "31",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "32",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "33",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "34",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "35",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "36",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "37",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "38",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "39",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "40",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "41",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "42",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "43",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "44",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "45",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "true",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "true",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.75",
+                  "bottom": "0.75",
+                  "header": "0.3",
+                  "footer": "0.3"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "0",
+                  "pageOrder": "downThenOver",
+                  "orientation": "landscape",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B4",
+                "formula": null,
+                "value": "400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B5",
+                "formula": null,
+                "value": "500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "6",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B6",
+                "formula": null,
+                "value": "600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A7",
+                "formula": null,
+                "value": "7",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B7",
+                "formula": null,
+                "value": "700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A8",
+                "formula": null,
+                "value": "8",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B8",
+                "formula": null,
+                "value": "800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A9",
+                "formula": null,
+                "value": "9",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B9",
+                "formula": null,
+                "value": "900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A10",
+                "formula": null,
+                "value": "10",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B10",
+                "formula": null,
+                "value": "1000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A11",
+                "formula": null,
+                "value": "11",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B11",
+                "formula": null,
+                "value": "1100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A12",
+                "formula": null,
+                "value": "12",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B12",
+                "formula": null,
+                "value": "1200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A13",
+                "formula": null,
+                "value": "13",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B13",
+                "formula": null,
+                "value": "1300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A14",
+                "formula": null,
+                "value": "14",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B14",
+                "formula": null,
+                "value": "1400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A15",
+                "formula": null,
+                "value": "15",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B15",
+                "formula": null,
+                "value": "1500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A16",
+                "formula": null,
+                "value": "16",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B16",
+                "formula": null,
+                "value": "1600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A17",
+                "formula": null,
+                "value": "17",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B17",
+                "formula": null,
+                "value": "1700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A18",
+                "formula": null,
+                "value": "18",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B18",
+                "formula": null,
+                "value": "1800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A19",
+                "formula": null,
+                "value": "19",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B19",
+                "formula": null,
+                "value": "1900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A20",
+                "formula": null,
+                "value": "20",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B20",
+                "formula": null,
+                "value": "2000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A21",
+                "formula": null,
+                "value": "21",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B21",
+                "formula": null,
+                "value": "2100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A22",
+                "formula": null,
+                "value": "22",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B22",
+                "formula": null,
+                "value": "2200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A23",
+                "formula": null,
+                "value": "23",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B23",
+                "formula": null,
+                "value": "2300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A24",
+                "formula": null,
+                "value": "24",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B24",
+                "formula": null,
+                "value": "2400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A25",
+                "formula": null,
+                "value": "25",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B25",
+                "formula": null,
+                "value": "2500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A26",
+                "formula": null,
+                "value": "26",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B26",
+                "formula": null,
+                "value": "2600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A27",
+                "formula": null,
+                "value": "27",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B27",
+                "formula": null,
+                "value": "2700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A28",
+                "formula": null,
+                "value": "28",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B28",
+                "formula": null,
+                "value": "2800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A29",
+                "formula": null,
+                "value": "29",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B29",
+                "formula": null,
+                "value": "2900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A30",
+                "formula": null,
+                "value": "30",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B30",
+                "formula": null,
+                "value": "3000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A31",
+                "formula": null,
+                "value": "31",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B31",
+                "formula": null,
+                "value": "3100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A32",
+                "formula": null,
+                "value": "32",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B32",
+                "formula": null,
+                "value": "3200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A33",
+                "formula": null,
+                "value": "33",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B33",
+                "formula": null,
+                "value": "3300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A34",
+                "formula": null,
+                "value": "34",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B34",
+                "formula": null,
+                "value": "3400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A35",
+                "formula": null,
+                "value": "35",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B35",
+                "formula": null,
+                "value": "3500",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A36",
+                "formula": null,
+                "value": "36",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B36",
+                "formula": null,
+                "value": "3600",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A37",
+                "formula": null,
+                "value": "37",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B37",
+                "formula": null,
+                "value": "3700",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A38",
+                "formula": null,
+                "value": "38",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B38",
+                "formula": null,
+                "value": "3800",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A39",
+                "formula": null,
+                "value": "39",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B39",
+                "formula": null,
+                "value": "3900",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A40",
+                "formula": null,
+                "value": "40",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B40",
+                "formula": null,
+                "value": "4000",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A41",
+                "formula": null,
+                "value": "41",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B41",
+                "formula": null,
+                "value": "4100",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A42",
+                "formula": null,
+                "value": "42",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B42",
+                "formula": null,
+                "value": "4200",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A43",
+                "formula": null,
+                "value": "43",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B43",
+                "formula": null,
+                "value": "4300",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A44",
+                "formula": null,
+                "value": "44",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B44",
+                "formula": null,
+                "value": "4400",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A45",
+                "formula": null,
+                "value": "45",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B45",
+                "formula": null,
+                "value": "4500",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "7",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "8",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "9",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "10",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "11",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "12",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "13",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "14",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "15",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "16",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "17",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "18",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "19",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "20",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "21",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "22",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "23",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "24",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "25",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "26",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "27",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "28",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "29",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "30",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "31",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "32",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "33",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "34",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "35",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "36",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "37",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "38",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "39",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "40",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "41",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "42",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "43",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "44",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "45",
+                "customFormat": "false",
+                "ht": "17.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "true",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "true",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.75",
+                  "bottom": "0.75",
+                  "header": "0.3",
+                  "footer": "0.3"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "0",
+                  "pageOrder": "downThenOver",
+                  "orientation": "landscape",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "filtered",
+      "source": "examples/xlsx/12-multi-sheet-filter.xlsx",
+      "sourceSha256": "047b9a43c7137bf621615c5bcd82eaf0618524d4b20ee001ab59e2c6e8925f00",
+      "producerSha256": "f03838c6d44f9b42cace227d3b5d2e6ee1ddc83fb517c9363d05984ea28c161f",
+      "observed": {
+        "sheets": [
+          {
+            "name": "Overview",
+            "state": "visible"
+          },
+          {
+            "name": "Input",
+            "state": "visible"
+          },
+          {
+            "name": "Hidden",
+            "state": "hidden"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "3",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "2",
+            "expression": "Hidden!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Input!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm._FilterDatabase",
+            "scope": "1",
+            "expression": "Input!$A$1:$B$3"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Overview!$A$1:$L$30"
+          },
+          {
+            "name": "Amounts",
+            "scope": null,
+            "expression": "Input!$B$2:$B$3"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": "SUM(Input!B2:B3)",
+                "value": "30",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B1",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": null,
+                "value": "10",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B3",
+                "formula": null,
+                "value": "20",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "true",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [
+              {
+                "ref": "A1:B3"
+              }
+            ],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet3.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "5",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet4.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "B2",
+                "formula": "SUM(Input!B2:B3)",
+                "value": "30",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "19.4",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 1,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    },
+    {
+      "name": "hyperlinks",
+      "source": "packages/office/tests/fixtures/workbook-copy-sheet-hyperlinks.xlsx",
+      "sourceSha256": "92dd6debd40e30f0f9b66b120c8bb1c4e317c9e34bd74311b1316f596b09a2e2",
+      "producerSha256": "f1e43320ee2eb8ad79e4e47a16df98c82975b28c708fc110b8e82b2fa5fd7125",
+      "observed": {
+        "sheets": [
+          {
+            "name": "Data",
+            "state": "visible"
+          },
+          {
+            "name": "Other",
+            "state": "visible"
+          },
+          {
+            "name": "Copied",
+            "state": "visible"
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "2",
+            "expression": "Copied!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$L$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Rate",
+            "scope": "0",
+            "expression": "Data!$A$5"
+          },
+          {
+            "name": "Rate",
+            "scope": "2",
+            "expression": "Copied!$A$5"
+          }
+        ],
+        "parts": {
+          "xl/worksheets/sheet1.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "5",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [
+              {
+                "ref": "A1",
+                "location": "Data!$A$5",
+                "display": "Internal"
+              },
+              {
+                "ref": "A2",
+                "location": "A5",
+                "display": "Here"
+              },
+              {
+                "ref": "A3",
+                "location": "Rate",
+                "display": "Named"
+              },
+              {
+                "ref": "A4",
+                "location": "Other!A1",
+                "display": "Other"
+              },
+              {
+                "ref": "A6",
+                "display": "External"
+              }
+            ],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet2.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "7",
+                "type": "n",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          },
+          "xl/worksheets/sheet3.xml": {
+            "cells": [
+              {
+                "address": "A1",
+                "formula": null,
+                "value": "0",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A2",
+                "formula": null,
+                "value": "1",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A3",
+                "formula": null,
+                "value": "2",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A4",
+                "formula": null,
+                "value": "3",
+                "type": "s",
+                "text": null
+              },
+              {
+                "address": "A5",
+                "formula": null,
+                "value": "5",
+                "type": "n",
+                "text": null
+              },
+              {
+                "address": "A6",
+                "formula": null,
+                "value": "4",
+                "type": "s",
+                "text": null
+              }
+            ],
+            "merges": [],
+            "panes": [],
+            "rows": [
+              {
+                "r": "1",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "2",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "3",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "4",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "5",
+                "customFormat": "false",
+                "ht": "15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              },
+              {
+                "r": "6",
+                "customFormat": "false",
+                "ht": "14.15",
+                "hidden": "false",
+                "customHeight": "false",
+                "outlineLevel": "0",
+                "collapsed": "false"
+              }
+            ],
+            "columns": [],
+            "filters": [],
+            "links": [
+              {
+                "ref": "A1",
+                "location": "Data!$A$5",
+                "display": "Internal"
+              },
+              {
+                "ref": "A2",
+                "location": "A5",
+                "display": "Here"
+              },
+              {
+                "ref": "A3",
+                "location": "Rate",
+                "display": "Named"
+              },
+              {
+                "ref": "A4",
+                "location": "Other!A1",
+                "display": "Other"
+              },
+              {
+                "ref": "A6",
+                "display": "External"
+              }
+            ],
+            "print": {
+              "printOptions": [
+                {
+                  "headings": "false",
+                  "gridLines": "false",
+                  "gridLinesSet": "true",
+                  "horizontalCentered": "false",
+                  "verticalCentered": "false"
+                }
+              ],
+              "pageMargins": [
+                {
+                  "left": "0.5",
+                  "right": "0.5",
+                  "top": "0.5",
+                  "bottom": "0.5",
+                  "header": "0.511811023622047",
+                  "footer": "0.511811023622047"
+                }
+              ],
+              "pageSetup": [
+                {
+                  "paperSize": "9",
+                  "scale": "100",
+                  "fitToWidth": "1",
+                  "fitToHeight": "1",
+                  "pageOrder": "downThenOver",
+                  "orientation": "portrait",
+                  "blackAndWhite": "false",
+                  "draft": "false",
+                  "cellComments": "none",
+                  "horizontalDpi": "300",
+                  "verticalDpi": "300",
+                  "copies": "1"
+                }
+              ]
+            }
+          }
+        },
+        "counts": {
+          "charts": 0,
+          "drawings": 0,
+          "classic": 0,
+          "modern": 0
+        },
+        "mediaSha256": []
+      }
+    }
+  ]
+}

@@ -5,6 +5,13 @@ import type { FormulaExpression } from "../src/workbook/formula.js";
 
 const place = (row = 0, column = 5, sheet = "Data"): FormulaLocation => ({ row, column, sheet });
 const area = (first: number, last: number, column = 0) => ({ from: { row: first, column }, to: { row: last, column } });
+it("whole-sheet copies rewrite only mapped sheet, name and table identities while preserving external references and literal strings", () => {
+  const from = place(4, 2), to = { ...from, sheet: "Copied" }, change = { kind: "copySheet", from: "Data", to: "Copied" } as const;
+  const expression = '=Data!$A1+Other!A$1+[0]!Cloned+[0]!Fixed+SUM(Sales[Amount])+"Data!A1"';
+  const bindings = { copiedNames: new Map([["clone-id", "NewLocal"]]), copiedTables: new Map([["SALES", "Sales_2"]]), resolveName: (name: string) => name === "Cloned" ? "clone-id" : "fixed-id" };
+  expect(parseFormula(rewriteFormula(expression, from, to, change, bindings), to)).toEqual(parseFormula('=Copied!$A1+Other!A$1+Copied!NewLocal+[0]!Fixed+SUM(Sales_2[Amount])+"Data!A1"', to));
+  expect(() => rewriteFormula(expression, from, { ...to, row: 5 }, change, bindings)).toThrow(); expect(bindings.copiedNames.get("clone-id")).toBe("NewLocal");
+});
 it("empty table recipes preserve relative axis offsets while absolute cells, ranges and axes still follow deleted source", () => {
   const operation = { kind: "axis", sheet: "Data", axis: "row", action: "delete", index: 1, count: 3 } as const, origin = place(1);
   const map = (source: string) => parseFormula(rewriteFormula(source, origin, origin, operation, { preserveRelativeAxis: true }), origin);

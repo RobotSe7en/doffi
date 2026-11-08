@@ -45,9 +45,11 @@ export class WorkbookCellEdit {
   private formulaEquivalent?: ReturnType<typeof createWorkbookFormulaEquivalence>;
   private readonly chunks = new Map<string, EditedChunk>();
   private readonly originals: ReadonlyMap<string, import("../workbook/chunk-index.js").ChunkIndex>;
+  private readonly baseSheets: ReadonlySet<string>;
   constructor(private readonly base: WorkbookModel, readonly manifest: WorkbookManifest,
     readonly files: Map<string, Uint8Array>, private readonly limits: DocumentReadLimits, private readonly allocate: () => string) {
     this.originals = workbookSource(base)!.chunks;
+    this.baseSheets = new Set(base.snapshot().metadata.workbook.sheets.map(sheet => sheet.sheetId));
   }
   private key(sheetId: string, row: number, column: number): string { return JSON.stringify([sheetId, Math.floor(row / CHUNK_ROWS), Math.floor(column / CHUNK_COLUMNS)]); }
   private chunk(sheetId: string, row: number, column: number): EditedChunk {
@@ -68,7 +70,7 @@ export class WorkbookCellEdit {
   }
   get(sheetId: string, row: number, column: number): WorkbookCell | undefined {
     const chunk = this.chunks.get(this.key(sheetId, row, column));
-    if (!chunk) return this.base.getCell(sheetId, row, column);
+    if (!chunk) return this.baseSheets.has(sheetId) ? this.base.getCell(sheetId, row, column) : undefined;
     const html = chunk.cells.get(coordinate(row, column)); return html === undefined ? undefined : { sheetId, row, column, html, ...decodeWorkbookCell(html) };
   }
   *entries(sheetId?: string, formulasOnly = false, ranges?: readonly WorkbookRange[]): Generator<WorkbookCell> {
@@ -146,7 +148,7 @@ export class WorkbookCellEdit {
   private patchAttributes(sheetId: string, row: number, column: number, previous: WorkbookCell, attrs: Record<string, string>, restoreReferenceSource = false): void {
     const body = cellTail(previous.html);
     let source = "<td" + Object.entries(attrs).map(([name, value]) => " " + name + '="' + escapeWorkbookText(value) + '"').join("") + ">" + body;
-    const original = this.base.getCell(sheetId, row, column);
+    const original = this.baseSheets.has(sheetId) ? this.base.getCell(sheetId, row, column) : undefined;
     if (original && body === cellTail(original.html)) {
       const originalAttrs = Object.fromEntries(parseWorkbookCellElement(original.html).attrs.map(attr => [attr.name, attr.value]));
       // A reversed structural edit can reproduce the original expression with

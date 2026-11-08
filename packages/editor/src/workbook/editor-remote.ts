@@ -20,6 +20,7 @@ import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import { createWorkbookDrawingControls } from "./drawing-controls.js";
 import { createWorkbookCommentControls } from "./comment-controls.js";
 import { createWorkbookNameControls } from "./names-controls.js";
+import { createWorkbookWorksheetControls } from "./worksheet-controls.js";
 import type { WorkbookControlsHost } from "./controls-host.js";
 
 export interface WorkbookRemoteEditorView extends Omit<WorkbookEditorView, "applyInput" | "perform" | "cancelInput" | "inputState"> {
@@ -54,6 +55,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
   let commentControls: ReturnType<typeof createWorkbookCommentControls> | undefined;
   let nameControls: ReturnType<typeof createWorkbookNameControls> | undefined;
+  let worksheetControls: ReturnType<typeof createWorkbookWorksheetControls> | undefined;
   let found: { key: string; result: WorkbookFindResult; index: number; view?: WorkbookReadConnection } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
   let preview: WorkbookPreview | undefined, source: WorkbookReadConnection | undefined, binding: WorkbookAsyncTextBinding;
@@ -88,7 +90,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     drawingControls?.refresh();
     commentControls?.refresh();
     nameControls?.refresh();
-    const pending = pendingInput() || state.applying || !!commandAbort || (nameControls?.hasPendingInput() ?? false);
+    worksheetControls?.refresh();
+    const pending = pendingInput() || state.applying || !!commandAbort || (nameControls?.hasPendingInput() ?? false) || (worksheetControls?.hasPendingInput() ?? false);
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
   }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -377,6 +380,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   });
   const idle = (): boolean => !refreshing && !commandAbort && !input.state().applying && !input.state().selecting && !pendingInput() && source?.cells.snapshot.manifest.revision === client.state().revision;
   const auxiliaryHost: WorkbookControlsHost = { signal: events.signal, snapshot: () => source?.cells.snapshot, draftChanged: controls,
+    selectSheet: sheetId => choose(sheetId, { from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }),
     selection: () => { const anchor = input.state().selection?.anchor; return anchor?.kind === "cells" ? { sheetId: anchor.sheetId, range: anchor.ranges[0]! } : undefined; },
     idle, run: queueInteraction, perform: async (operations, options, expected = source?.cells.snapshot.manifest) => {
       const current = client.state(); if (!expected || current.documentId !== expected.documentId || current.revision !== expected.revision) throw new DocumentError("RevisionConflict", "辅助表单属于旧修订。");
@@ -384,6 +388,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   drawingControls = createWorkbookDrawingControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   commentControls = createWorkbookCommentControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   nameControls = createWorkbookNameControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
+  worksheetControls = createWorkbookWorksheetControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void {
     const element = ui.element.ownerDocument.createElement("button"); element.type = "button"; element.textContent = label;
     element.addEventListener("click", () => { try { const result = action(); if (result instanceof Promise) void result.catch(report); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(element); buttons.push({ button: element, available });
@@ -440,7 +445,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     }
   }
   return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); },
-    hasPendingInput() { check(); return pendingInput() || input.state().applying || !!commandAbort || (nameControls?.hasPendingInput() ?? false); },
+    hasPendingInput() { check(); return pendingInput() || input.state().applying || !!commandAbort || (nameControls?.hasPendingInput() ?? false) || (worksheetControls?.hasPendingInput() ?? false); },
     layout() { check(); if (!preview) throw new DocumentError("InvalidOperation", "The workbook editor has no accepted view yet."); return preview.layout(); },
     setViewport: async (viewport: Parameters<WorkbookPreview["setViewport"]>[0]) => { await sourceSettled(); check(); return preview!.setViewport(viewport); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: () => binding.apply(), cancelInput: () => runInteraction(cancelInput), perform,

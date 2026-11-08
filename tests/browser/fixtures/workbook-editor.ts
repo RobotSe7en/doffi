@@ -47,6 +47,7 @@ export function inspect() {
     merges: session.snapshot().metadata.workbook.sheets[0]!.merges,
     tables: session.snapshot().metadata.workbook.sheets.map(sheet => ({ sheetId: sheet.sheetId, tables: sheet.tables ?? [] })),
     names: session.snapshot().metadata.workbook.names ?? [],
+    sheets: session.snapshot().metadata.workbook.sheets,
     frozen: session.snapshot().metadata.workbook.sheets[0]!.frozen,
     drawings: session.snapshot().metadata.workbook.objects ?? [], charts: session.snapshot().metadata.workbook.charts ?? [], content: session.snapshot().content?.html,
     annotations: session.snapshot().annotations, comments: session.snapshot().metadata.workbook.comments ?? [], stories: session.snapshot().metadata.workbook.stories ?? [],

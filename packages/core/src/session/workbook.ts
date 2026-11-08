@@ -23,6 +23,7 @@ import { validateWorkbookCandidateSteps } from "./workbook-validation.js";
 import { checkTransactionSize } from "./limits.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import { editWorkbookSheet } from "./workbook-sheets.js";
+import { copyWorkbookSheet } from "./workbook-copy-sheet.js";
 import { editWorkbookAxis, restoreWorkbookAxisSource } from "./workbook-axis.js";
 import { editWorkbookHyperlink, sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { compileNumberFormat } from "../workbook/number-format.js";
@@ -168,6 +169,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       else if (operation.op === "editWorkbookAxis") {
         for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;
+      }
+      else if (operation.op === "copyWorkbookSheet") {
+        for (const value of copyWorkbookSheet(workbook, cells, richContent, annotations, base, operation, allocate, styles)) yield { kind: "progress", value: { phase: "cells", ...value } };
       }
       else if (operation.op === "setWorkbookSettings") Object.assign(workbook, operation.changes);
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);

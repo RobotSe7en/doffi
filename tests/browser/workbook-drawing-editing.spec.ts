@@ -24,6 +24,35 @@ test.beforeAll(async () => {
   }
 });
 
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} whole worksheet copies display their own current chart references and preserve literal vectors`, async ({ page }) => {
+  const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 1, column: 0, value: { type: "text", value: "B" } },
+    { row: 0, column: 1, value: { type: "number", value: 2 } }, { row: 1, column: 1, value: { type: "number", value: 4 } }]));
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookChart", sheetId: "sheet-1", kind: "line", anchor: { kind: "absolute", xPt: 15, yPt: 20, widthPt: 300, heightPt: 180 },
+    data: { categories: { expression: "=A1:A2", valueType: "text" }, series: [{ values: { expression: "=B1:B2", valueType: "number" } },
+      { values: { kind: "literal", valueType: "number", count: 2, points: [{ index: 0, value: 7 }, { index: 1, value: 8 }] } }] } }] }));
+  const nodeId = s.snapshot().metadata.workbook.objects![0]!.nodeId;
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations: [{ op: "setWorkbookChart", nodeId, changes: { showLabels: true } }] }));
+  const initial = s.snapshot().metadata.workbook.charts!, files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote);
+  const paint = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.displayedChart() : window.workbookEditor.displayedChart(), remote);
+  expect((await paint()).labels).toEqual(["2", "4", "7", "8"]);
+  await page.getByText("工作表管理", { exact: true }).click(); await page.getByLabel("工作表操作", { exact: true }).selectOption("copy"); await page.getByLabel("工作表名称", { exact: true }).fill("Copied");
+  await page.getByRole("button", { name: "执行工作表操作", exact: true }).click(); await settled();
+  expect(await inspect()).toMatchObject({ charts: expect.arrayContaining([...initial]), history: { undoSteps: 1 }, errors: [] });
+  const address = page.getByRole("textbox", { name: "选择单元格或区域", exact: true }), input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true });
+  for (const [at, value] of [["B1", "9"], ["A1", "新类"]]) { await address.fill(at!); await address.press("Enter"); await settled(); await input.fill(value!); await input.press("Enter"); await settled(); }
+  expect(await paint()).toMatchObject({ categories: ["新类", "B"], labels: ["9", "4", "7", "8"] });
+  await page.getByRole("tab", { name: "Sheet1", exact: true }).click(); await settled(); expect(await paint()).toMatchObject({ categories: ["A", "B"], labels: ["2", "4", "7", "8"] });
+  for (let index = 0; index < 3; index++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
+  expect(await inspect()).toMatchObject({ charts: initial, history: { undoSteps: 0 }, errors: [] });
+  await expect(page.getByRole("tab", { name: "Copied", exact: true })).toHaveCount(0);
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true, hostShadowsRestored: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} copied object text retains node-ID styles and the original cascade in the actual view`, async ({ page }) => {
   const source = new Map(scalarWorkbook([]).serialize()); source.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(source.get("styles.css")!) + ".drawing-scope{}.drawing-accent{}"));
   const s = createDocumentSession(openDocument(source, { kind: "workbook" }));

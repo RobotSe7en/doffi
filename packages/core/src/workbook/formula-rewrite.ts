@@ -9,6 +9,7 @@ export interface FormulaLocation extends FormulaOrigin { readonly sheet: string 
 export interface FormulaRectangle { readonly from: FormulaOrigin; readonly to: FormulaOrigin }
 export type FormulaReferenceChange =
   | { readonly kind: "copy" }
+  | { readonly kind: "copySheet"; readonly from: string; readonly to: string }
   | { readonly kind: "axis"; readonly sheet: string; readonly axis: "row" | "column"; readonly action: "insert" | "delete"; readonly index: number; readonly count: number }
   | { readonly kind: "move"; readonly sheet: string; readonly range: FormulaRectangle; readonly target: FormulaLocation }
   | { readonly kind: "sort"; readonly sheet: string; readonly range: FormulaRectangle }
@@ -28,6 +29,10 @@ export interface FormulaRewriteBindings {
   /** Complete tables relocating with the containing range keep their native
    * structured bindings, including current-row selectors. */
   readonly movedTables?: ReadonlySet<string>;
+  /** Whole-sheet copies map the identities of cloned local/global names and
+   * tables; unrelated global definitions retain their original bindings. */
+  readonly copiedNames?: ReadonlyMap<string, string>;
+  readonly copiedTables?: ReadonlyMap<string, string>;
   readonly resolveName?: (name: string, sheet: string, explicit: boolean, workbook?: 0) => string | undefined;
   /** An empty calculated column retains relative row recipes for its future
    * data body. Absolute references still follow or invalidate source cells. */
@@ -84,6 +89,8 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     if (!Number.isInteger(change.index) || !Number.isInteger(change.count) || change.index < 0 || change.count <= 0 || change.index + change.count > bound) invalid("Invalid formula axis change.");
   }
   if (change.kind === "renameSheet" && !WorkbookSheetSchema.shape.name.safeParse(change.to).success) invalid("Invalid renamed sheet.");
+  if (change.kind === "copySheet" && (!WorkbookSheetSchema.shape.name.safeParse(change.to).success || !same(from.sheet, change.from) || !same(to.sheet, change.to)
+    || from.row !== to.row || from.column !== to.column)) invalid("A worksheet copy requires its source/destination sheets and unchanged cell coordinates.");
   if (change.kind === "renameTable" || change.kind === "renameName") {
     const token = parseFormula("=" + change.to, from);
     if (change.to.length > 255 || token.kind !== "name" || token.sheet !== undefined || token.workbook !== undefined || token.name !== change.to) invalid("A renamed definition requires an unqualified identifier.");
@@ -94,7 +101,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     absoluteRow: template.absoluteRow, absoluteColumn: template.absoluteColumn, ...(template.sheet === undefined && same(point.sheet, to.sheet) ? {} : { sheet: point.sheet }) });
   function mapSheet(sheet: string): string | undefined {
     if (change.kind === "deleteSheet" && same(sheet, change.sheet)) return undefined;
-    return change.kind === "renameSheet" && same(sheet, change.from) ? change.to : sheet;
+    return (change.kind === "renameSheet" || change.kind === "copySheet") && same(sheet, change.from) ? change.to : sheet;
   }
   function mapPosition(point: FormulaLocation): FormulaLocation | undefined {
     const sheet = mapSheet(point.sheet); if (sheet === undefined) return undefined;
@@ -192,6 +199,14 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };
     }
     if (node.kind === "name") {
+      if (change.kind === "copySheet") {
+        const binding = bindings.resolveName?.(node.name, node.sheet ?? from.sheet, node.sheet !== undefined, node.workbook);
+        const copiedName = binding === undefined ? undefined : bindings.copiedNames?.get(binding);
+        if (copiedName !== undefined) return { kind: "name", name: copiedName,
+          ...(node.sheet !== undefined || node.workbook === 0 ? { sheet: change.to } : {}) };
+        const table = node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook) ? bindings.copiedTables?.get(node.name.toUpperCase()) : undefined;
+        if (table !== undefined) return { ...node, name: table };
+      }
       if (change.kind === "copy") {
         if (node.workbook === 0 || node.sheet !== undefined) return node;
         const binding = bindings.resolveName?.(node.name, from.sheet, false), local = bindings.resolveName?.(node.name, from.sheet, true);
@@ -219,6 +234,9 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "structured") {
       const table = node.table ?? bindings.table;
+      if (change.kind === "copySheet" && node.table !== undefined) {
+        const copied = bindings.copiedTables?.get(node.table.toUpperCase()); return copied === undefined ? node : { ...node, table: copied };
+      }
       if (change.kind === "deleteColumn" && table !== undefined && same(table, change.table) && node.columns.some(column => same(column, change.column))) {
         if (node.columns.length === 1) return refError();
         const definition = bindings.tables?.find(definition => same(definition.name, table));

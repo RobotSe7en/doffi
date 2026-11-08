@@ -22,7 +22,7 @@ import { checkRange } from "../workbook/ranges.js";
 export const workbookGlobalProposalOperations: ReadonlySet<string> = new Set([
   "setWorkbookNumberFormat", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName",
   "setWorkbookDefinedName", "removeWorkbookDefinedName", "setWorkbookTableStyle", "removeWorkbookTableStyle", "setWorkbookSettings",
-  "insertWorkbookSheet", "removeWorkbookSheet", "moveWorkbookSheet",
+  "insertWorkbookSheet", "copyWorkbookSheet", "removeWorkbookSheet", "moveWorkbookSheet",
 ]);
 type Preparation = Generator<TransactionPreparationProgress, WorkbookInteractionRequest>;
 const equal = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);

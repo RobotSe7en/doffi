@@ -9,5 +9,6 @@ export interface WorkbookControlsHost {
   perform(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions, expected?: WorkbookControlsIdentity): Promise<unknown>;
   run(action: () => Promise<void>): void;
   draftChanged?(): void;
+  selectSheet?(sheetId: string): Promise<unknown>;
   readonly signal: AbortSignal;
 }

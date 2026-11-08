@@ -59,6 +59,8 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
     calculationMode: z.enum(["auto", "manual"]).optional(), activeSheetId: IdentifierSchema.optional(),
   }) }),
   z.strictObject({ op: z.literal("insertWorkbookSheet"), name: WorkbookSheetSchema.shape.name, beforeSheetId: IdentifierSchema.optional() }),
+  z.strictObject({ op: z.literal("copyWorkbookSheet"), sheetId: IdentifierSchema, name: WorkbookSheetSchema.shape.name, beforeSheetId: IdentifierSchema.optional(),
+    nameConflicts: z.array(z.strictObject({ nameId: IdentifierSchema, name: z.string().min(1).max(255) })).optional() }),
   z.strictObject({ op: z.literal("updateWorkbookSheet"), sheetId: IdentifierSchema, changes: WorkbookSheetSchema.pick({
     name: true, visibility: true, defaultRowHeightPt: true, defaultRowHeightCustom: true, defaultColumnWidth: true,
     defaultColumnWidthUnit: true, defaultRowsHidden: true, rowDimensions: true, columnDimensions: true,

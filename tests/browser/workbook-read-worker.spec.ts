@@ -334,6 +334,25 @@ test('mounted Worker name manager preserves scopes, drafts, IME and exact name c
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker worksheet manager copies names and current formulas, changes sheet properties and retains stale drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-sheet-manager' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookSheetControls } = await import('./workbook-sheet-controls-cases.js');
+  await exerciseWorkbookSheetControls(page, true, model.snapshot().metadata.workbook.sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true, reopenedEqual: true });
+});
+
+test('mounted Worker worksheet manager resolves copied name conflicts explicitly in one candidate', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookCopyNameConflictSource, exerciseWorkbookCopyNameConflict } = await import('./workbook-sheet-controls-cases.js');
+  const bytes = Buffer.from(writeDocumentZip(workbookCopyNameConflictSource().serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyNameConflict(page, true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true, reopenedEqual: true });
+});
+
 test('mounted table row insertion fills only the new row, preserves a manual exception and restores native table source on undo', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: { type: 'number', value: 3 } }, { row: 2, column: 0, value: { type: 'number', value: 4 } }]));
