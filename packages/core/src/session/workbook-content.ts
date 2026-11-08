@@ -21,7 +21,7 @@ export class WorkbookContentEdit {
       // the input package's nested paths. It is still an opaque package path.
       let path: string; do { path = "workbook-" + this.allocate() + ".html"; } while (this.files.has(path));
       this.manifest.content = path;
-      this.files.set(path, encode('<!doctype html><html><head>' + this.manifest.styles.map(path => '<link rel="stylesheet" href="' + escapeWorkbookText(path.split("/").map(encodeURIComponent).join("/")) + '">').join("")
+      this.files.set(path, encode('<!doctype html><html><head><meta charset="utf-8">' + this.manifest.styles.map(path => '<link rel="stylesheet" href="' + escapeWorkbookText(path.split("/").map(encodeURIComponent).join("/")) + '">').join("")
         + '</head><body><article data-node-id="' + this.allocate() + '" data-office-kind="workbook-content"></article></body></html>'));
     }
     const descriptor = this.descriptor(), source = decodeText(this.files.get(descriptor.entrypoint)!);

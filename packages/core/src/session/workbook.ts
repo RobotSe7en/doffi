@@ -33,6 +33,7 @@ import { reorderWorkbookRows } from "./workbook-reorder.js";
 import { moveWorkbookRange } from "./workbook-move.js";
 import { SourceStyleEdit } from "./source-styles.js";
 import { editWorkbookStyle, isWorkbookStyleOperation } from "./workbook-styles.js";
+import { editWorkbookDrawing, isWorkbookDrawingOperation, validateWorkbookDrawingTarget } from "./workbook-drawings.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -74,6 +75,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       if ("sheetId" in operation && !baseSheets.has(operation.sheetId)) invalid("Worksheet targets must belong to the base snapshot.");
       if ("targetSheetId" in operation && !baseSheets.has(operation.targetSheetId)) invalid("Worksheet destinations must belong to the base snapshot.");
       if ("beforeSheetId" in operation && operation.beforeSheetId !== undefined && !baseSheets.has(operation.beforeSheetId)) invalid("Worksheet references must belong to the base snapshot.");
+      if (isWorkbookOperation(operation) && isWorkbookDrawingOperation(operation)) validateWorkbookDrawingTarget(base, operation);
     }
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
@@ -140,6 +142,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         for (const value of editWorkbookDefinition(workbook, cells, operation, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedDefinition = true;
       }
+      else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, base, operation, allocate);
       else if (operation.op === "moveWorkbookRange") {
         for (const value of moveWorkbookRange(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;

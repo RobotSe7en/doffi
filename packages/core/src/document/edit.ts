@@ -4,6 +4,7 @@ import type { DocumentContentOperation } from "../contracts/operations.js";
 import type { DocumentReadLimits, TextOffsetMapping } from "../runtime.js";
 import { DocumentError } from "../errors.js";
 import { normalizeCss, setInlineStyle } from "./css.js";
+import { setDrawingInlineStyle } from "./drawing-css.js";
 import { bodyTags, parseHtml, supportedTags } from "./html.js";
 import { parseHtmlFragment, parseHtmlTree, serializeHtmlOuter, serializeHtmlTree } from "./html-parser.js";
 import { encode, resolveReference } from "./package.js";
@@ -179,11 +180,30 @@ export class DocumentEdit {
   sourceStyle(nodeId:string,property:string,value:string):void {
     const target=this.index().get(nodeId);if(!target)fail("The format style target is unavailable.");setAttribute(target,"style",setInlineStyle(attr(target,"style")??"",property,value,this.limits));
   }
+  sourceDrawingStyle(nodeId: string, property: string, value: string): void {
+    const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
+    setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
+  }
   removeSource(nodeId:string,contents=false):void {
     const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode)||target.parentNode.tagName==="body")fail("The document root cannot be removed.");
     const positions=textPositions(this.tree),range=positions.get(target)!;
     this.recordSplice(positions,range.from,range.to,contents?target:target.parentNode,0,true);
     if(contents)for(const child of [...target.childNodes])adapter.detachNode(child);else adapter.detachNode(target);
+  }
+
+  /** Format-owned bodies accept new fragments without exposing writable source
+   * identities. Equal canonical content retains the original nodes and bytes. */
+  replaceSourceContent(nodeId: string, source: string): boolean {
+    const target = this.index().get(nodeId); if (!target) fail("The source body is missing.");
+    const fragment = parseHtmlFragment(source, target, this.limits, bodyTags);
+    visit(fragment, node => { if (isElement(node) && (attr(node, "data-node-id") !== undefined || attr(node, "id") !== undefined)) fail("New format content cannot supply source identities."); });
+    const canonical = (fragment: Tree.DocumentFragment): string => {
+      visit(fragment, node => { if (isElement(node)) { node.attrs = node.attrs.filter(item => item.name !== "data-node-id"); const style = attr(node, "style"); if (style !== undefined) setAttribute(node, "style", normalizeCss(style, "declarationList", this.limits, { nodes: 0 })); } });
+      return serializeHtmlTree(fragment);
+    };
+    const old = parseHtmlFragment(target.childNodes.map(serializeHtmlOuter).join(""), target, this.limits, bodyTags);
+    if (canonical(fragment) === canonical(old)) return false;
+    this.removeSource(nodeId, true); this.insertSource(nodeId, source); return true;
   }
 
   /** Structural movement preserves node identity; ancestor text anchors need exact recovery. */
@@ -426,17 +446,7 @@ export class DocumentEdit {
       case "replaceText": this.replaceText(target, operation); break;
       case "reconcileFragment": this.reconcile(target, operation); break;
       case "setStyle": {
-        let style = setInlineStyle(attr(target, "style") ?? "", operation.property, operation.value, this.limits);
-        if (this.state.snapshot.metadata.presentation) {
-          const property = operation.property.toLowerCase();
-          const prefix = property === "color" ? "--office-text" : property === "background-color" ? "--office-fill" : /^--office-[a-z0-9-]+-color$/.test(operation.property) ? operation.property.slice(0, -6) : undefined;
-          if (prefix) {
-            style = setInlineStyle(style, prefix + "-color", operation.value, this.limits);
-            for (const [name, value] of Object.entries({ source: "direct", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" })) style = setInlineStyle(style, prefix + "-" + name, value, this.limits);
-            if (property === "background-color") style = setInlineStyle(style, "--office-fill-kind", "solid", this.limits);
-          }
-          if (property === "font-family") for (const role of ["ascii", "h-ansi", "east-asia", "complex-script"]) style = setInlineStyle(style, "--office-font-" + role, operation.value, this.limits);
-        }
+        const style = (this.state.snapshot.metadata.presentation ? setDrawingInlineStyle : setInlineStyle)(attr(target, "style") ?? "", operation.property, operation.value, this.limits);
         setAttribute(target, "style", style);
         break;
       }

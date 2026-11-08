@@ -6,11 +6,14 @@
 
 - main／远端 main 的基线为 `5451736`；当前分支 `feat/workbook-editing`。
 - 读取阶段已合并；CI 优化及触发频率调整分别为 `31cca2f`、`d65c0e9`，不再是待办。
-- R3-09/10/11/12/13 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`、冻结界面及实际坐标查询为 `c917075`，均已推送；R3-13 定义编辑基础随后接入。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。不能将这些进展计作完整 R3-11、R3-12、R3-13 或 R3-16。
+- R3-09/10/11/12/13/14 实施中，R3-09～16 均未完成；公共 Worker 编辑器／Playground 为 `b161098`、跨表复制为 `04ab466`、合并事务为 `5d2eb2f`、默认编辑器容量场景为 `8b64e10`、普通筛选事务为 `3bc5307`、冻结界面及实际坐标查询为 `c917075`，均已推送；R3-13 定义编辑基础随后接入。[阶段草稿 PR #31](https://github.com/RobotSe7en/doffi/pull/31) 未执行阶段最终 CI，不能合并。不能将这些进展计作完整 R3-11、R3-12、R3-13、R3-14 或 R3-16。
 - 两位授权审查者 `workbook_edit_review_one`、`workbook_edit_review_two` 已完成两轮只读基础审查。首轮 8 项、第二轮 6 项原始问题及 3 项追加边界，均由实施者修复并经原审查者复核关闭。整个阶段仍须最终差异复审，不能凭基础审查合并；详见[审查记录](workbook-editing-review.md)。
-- 不直接提交 main，不发布 npm；普通推送只执行快速检查。阶段最终验收按 [CI 执行](ci-performance.md) 显式发起。尚有 R3-09～20 共 12 项未完成验收：本阶段 8 项中 5 项实施中、3 项待实施，输出阶段另 4 项。
+- 不直接提交 main，不发布 npm；普通推送只执行快速检查。阶段最终验收按 [CI 执行](ci-performance.md) 显式发起。尚有 R3-09～20 共 12 项未完成验收：本阶段 8 项中 6 项实施中、2 项待实施，输出阶段另 4 项。
 
 ## 已有改动
+
+- 绘图类型化事务接入新增／修改／复制／删除、锚点与旋转翻转、形状预设／富内容／外观、授权图片替换和矩形裁剪、同表层级及图表系列／分类／标题／图例／轴／标签。核心分配新对象、文字和系列身份；保留原生引用与字面向量的互斥来源，不创建第二数据表，不接收缓存作为当前结果。未改引用保留原历史缓存，保留系列维持原生索引，新系列清除原生身份。经典对象来源与包资源仍由共同候选／历史持有。空工作簿首次创建富内容部件补齐 UTF-8 声明；等价替换正文保留源节点和重做；绘图直接颜色／字体语义由现有 PPT 私有实现提取共用，不复制另一套变换规则。
+- 直连及唯一 Worker 编辑器提供折叠绘图面板：对象选择、三种锚点、属性／位置尺寸／旋转翻转、文字替换、基本颜色、本地授权图片／裁剪、选区引用图表创建、类型图例标签／标题、复制层级删除。局部表单不写入源，遇到外部修订保留草稿并阻止过期应用，显式重新读取后再编辑。当前尚缺完整图表系列／分类／轴管理界面、对象文字原生输入与片段格式、绘图和备注在行列结构下的完整联动；不能把已有表单和基础 API 计作完整 R3-14。
 
 - `session/lifecycle.ts` 提取 Word／PPT／工作簿共用候选身份、修订守卫、发布、历史、事件与预算边界；既有内容事务改为适配该边界。
 - `createDocumentSession` 按工作簿／内容模型返回专属会话类型；固定 Word／PPT 测试使用已有 `openContentFixture` 保持类型准确。
@@ -49,6 +52,10 @@
 - 结构契约预检按 Schema 身份缓存是否存在数组路径，不缓存任何文档输入；没有数组的标量子树直接交给原有完整校验。这样避免逐格为无关联合分支构造错误，保留嵌套数组首错停止、未知字段拒绝和错误路径／数量边界。
 
 ## 已做检查
+
+- 绘图核心初轮 7 项全部因新建富内容部件缺少 charset 失败（`.cache/workbook-drawing-edit-unit.log`），修复后 7 项通过（`.cache/workbook-drawing-edit-rechecked-unit.log`）；随后核心／PPT／原生工作表／Worker 6 文件／71 项通过（`.cache/workbook-drawing-integration-unit.log`）。实际面板初轮只跑到 Chromium 2 项，未冒充三引擎；将新文件纳入 Firefox/WebKit 项目正则和显式日常浏览器分组后，三引擎直连／Worker 6 项通过（`.cache/workbook-drawing-controls-three-engine-browser.log`），覆盖图片输入、位置、撤销、外部修订草稿、当前图表引用与唯一会话关闭。工具类型初轮测试回执为 unknown，补齐准确报告断言后通过（`.cache/workbook-drawing-controls-types-recheck.log`）。
+- 独立原始／Calc 图表、图片／形状 4 份当前源编辑及 ZIP 重开接入；首轮导入标签列表为空时直接开启显示会被完整模型拒绝（`.cache/workbook-drawing-native-integration.log`），修复同步，并保留未变分类缓存和原生系列索引。核心及原生来源最终定向 2 文件／11 项通过（`.cache/workbook-drawing-native-rechecked-unit.log`），包含无净变化、当前图表读取为 42、拒绝提交假缓存、原生身份复制、未改对象／资源精确保留及完整历史。工具类型通过（`.cache/workbook-drawing-native-tools-types.log`）。这不是原生 XLSX 输出或 Excel/WPS 实测；提取共享绘图样式语义后的完整回归随后记录。
+- 绘图批次最终 `pnpm check` 199 文件／2123 项、架构边界、SDK／工具／Playground 类型和构建全部通过（`.cache/workbook-drawing-complete-check.log`）。最终三引擎完整输入、Worker、绘图及工作簿 Playground 144 项通过、6 项声明的非 Chromium CDP IME 跳过（`.cache/workbook-drawing-full-editor-browser.log`）；Markdown 本地链接和 `git diff --check` 通过。此次仍未运行远端阶段全量 CI／容量专项，不是 R3-14 或编辑阶段验收通过。
 
 - 智能表行列新增独立 ZIP/XML 来源、11 项固定 Calc 实际操作及摘要，见 [`workbook-axis-tables.json`](evidence/workbook-axis-tables.json)。原源与所有输出通过官方 Transitional XSD／OPC，归档 SHA 与版本精确校验，`pnpm check:workbook-axis-tables` 可复做；源及输出散列由普通验证只读检查。8 份实际生产者可重开，3 份分别因表头常量不一致或非法公式语法按声明拒绝。原始插列输出保留为负例；另一个正例明确执行插列后录入新表头两步，不修补原输出。Calc 删除列重绑定、删除汇总行提升数据、丢失计算列模板和若干过期求和缓存均原样记录，不作为 SDK／Excel 预期。SDK 当前计算按独立预期检查，历史缓存单独保留；Excel／WPS 仍未实测。
 - 表格行列核心、公式模板、既有轴／定义、Worker 和原生来源 6 文件／99 项通过，日志 `.cache/workbook-axis-tables-complete-rechecked-unit.log`；其中原生来源单独 23 项通过，日志 `.cache/workbook-axis-tables-native-integration.log`。实际生产者复做及官方结构检查通过，日志 `.cache/workbook-axis-tables-native-recheck.log`。构建／工具类型通过，日志 `.cache/workbook-axis-tables-browser-build.log`、`.cache/workbook-axis-tables-tools-types.log`。初轮 Worker 断言错误地从尚未计算的直接接口读取当前值，修正为读取该连接完成的当前规则视图；初轮界面撤销断言错误地期待规范化公式拼写，改为精确保留原来源。失败日志保留，不冒充通过；最终界面及扩展回归结果随后记载。

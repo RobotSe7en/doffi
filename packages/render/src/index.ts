@@ -6,6 +6,8 @@ export type { WorkbookViewport } from "./workbook/viewport.js";
 export type { WorkbookWindowSource, WorkbookWindowRequest, WorkbookWindowResponse } from "./workbook/window-source.js";
 export type { WorkbookAssetSource } from "./workbook/assets.js";
 export type { WorkbookChartSource } from "./workbook/chart-source.js";
+export { DEFAULT_CHART_READ_LIMITS as DEFAULT_WORKBOOK_CHART_READ_LIMITS } from "./workbook/chart-source.js";
+export type { WorkbookChartReadLimits, WorkbookChartReadRequest, WorkbookChartReadResponse, WorkbookChartReferenceData, WorkbookChartData } from "./workbook/chart-source.js";
 export type { WorkbookRuleSource } from "./workbook/rule-source.js";
 export { serveWorkbookReads } from "./workbook/read-server.js";
 export type { WorkbookReadServer } from "./workbook/read-server.js";

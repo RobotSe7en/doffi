@@ -55,6 +55,7 @@ export function inspect() {
   return { input: editor.inputState(), selection: editor.selection(), revision: session.snapshot().manifest.revision, history: session.history(), errors: [...errors],
     merges: session.snapshot().metadata.workbook.sheets[0]!.merges,
     frozen: session.snapshot().metadata.workbook.sheets[0]!.frozen,
+    drawings: session.snapshot().metadata.workbook.objects ?? [], charts: session.snapshot().metadata.workbook.charts ?? [], content: session.snapshot().content?.html,
     cells: [session.getCell("sheet-1", 0, 0), session.getCell("sheet-1", 0, 1)], calculated: session.getCalculatedCell("sheet-1", 0, 1),
     cleanSource: [...session.serialize()].filter(([path]) => path.endsWith(".html")).every(([, bytes]) => !/contenteditable|data-office-view|textarea/.test(new TextDecoder().decode(bytes))) };
 }

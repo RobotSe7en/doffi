@@ -23,6 +23,7 @@ import { WorkbookClipboard } from "./clipboard.js";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import { createWorkbookTextFormatTransaction } from "./text-format.js";
+import { createWorkbookDrawingControls } from "./drawing-controls.js";
 
 /** The host supplies its Worker connection or direct small-document session;
  * source cells, candidates and history remain behind that core boundary. */
@@ -37,6 +38,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || session.kind !== "workbook") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its owning workbook session.");
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "onError", "onSelectionChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), input = createWorkbookInputController(session), events = new view.AbortController();
   const clipboard = new WorkbookClipboard();
   let disposed = false, choosing = 0, refreshQueued = false, forceCalculation = false, latest: Promise<void> = Promise.resolve();
@@ -70,6 +72,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     ui.insertedFormat.disabled = Boolean(commandAbort);
     for (const field of ui.format.fields) field.disabled = Boolean(commandAbort);
+    drawingControls?.refresh();
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -436,6 +439,9 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     button.addEventListener("click", () => { try { action(); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(button); buttons.push({ button, available });
   };
   const idle = (): boolean => !commandAbort && !pendingInput();
+  drawingControls = createWorkbookDrawingControls(ui.element.ownerDocument, ui.preview.parentNode!, { signal: events.signal, snapshot: () => session.snapshot(),
+    selection: () => { const anchor = input.state().selection?.anchor; return anchor?.kind === "cells" ? { sheetId: anchor.sheetId, range: anchor.ranges[0]! } : undefined; },
+    idle: () => idle() && revision >= 0, run: action => { void runInteraction(action); }, perform: async (operations, options) => { const receipt = perform(operations, options); await sourceSettled(); return receipt; } });
   button("确认输入", () => binding.apply(), () => !commandAbort && Boolean(input.state().selection) && !input.state().composing);
   button("取消输入", cancelInput, () => !commandAbort && Boolean(input.state().selection));
   button("撤销", () => history("undo"), () => idle() && session.history().undoSteps > 0);

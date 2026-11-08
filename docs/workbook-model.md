@@ -588,6 +588,39 @@ Playground 宿主目前保留最近一份已接受的工作簿预览，连同宿
 仅有数据验证时，行高也向同一修订的规则提供者请求当前公式值，与实际窗口显示一致；原来的错误缓存保持原字节。来源空白没有伪造值或源偏移。固定 Calc 在其中若干条件字体和表样式探针未产生对应的行高变化；证据明确保留生产者观测，不能据此宣称其视觉无差异或 Excel/WPS 已验证。三引擎与旧 Chromium 的定向行高／当前值检查通过，完整读取及固定资源结果见对应验收记录。
 
 
+## 绘图编辑基础（R3-14 实施中）
+
+`insertWorkbookObject` 为横排文本框、已声明预设及授权图片分配核心身份；`updateWorkbookObject` 修改三种锚点、旋转翻转、名称及锁定／打印属性。`setWorkbookObjectText` 替换有界段落内容，等价内容保留原节点；`setWorkbookObjectStyle` 修改源声明，直接颜色复用 PPT 的主题变换重置语义。`replaceWorkbookImage` 和 `setWorkbookImageCrop` 保留对象与资源身份；新字节通过 `prepare` 的资源选项授权。无来源或未使用的新资源、非法裁剪、可执行内容和超限输入整批失败。
+
+```ts
+import { createDocumentSession, createWorkbook, openDocument } from "@doffi/core";
+
+const session = createDocumentSession(openDocument(
+  createWorkbook({ documentId: "host-drawing-document" }), { kind: "workbook" },
+));
+const { documentId, revision } = session.snapshot().manifest;
+const candidate = session.prepare({
+  protocolVersion: 1, documentId, baseRevision: revision,
+  operations: [{
+    op: "insertWorkbookObject", sheetId: session.snapshot().metadata.workbook.activeSheetId,
+    anchor: {
+      kind: "one-cell", from: { row: 1, column: 1, offsetXPt: 0, offsetYPt: 0 },
+      widthPt: 180, heightPt: 90,
+    },
+    object: { kind: "geometry", preset: "roundRect", html: "<p>说明<strong>中文禰󠄀</strong></p>" },
+  }],
+});
+session.commit(candidate);
+session.undo();
+session.dispose();
+```
+
+`duplicateWorkbookObjects` 在同表复制内容、标题、系列和链接并分配新身份；`reorderWorkbookObjects` 调整同表层级；`removeWorkbookObject` 清除对应内容、图表和子节点链接。原生身份不能用作操作目标，所有既有目标必须属于事务基线。资源字节复用而不转码。原生 `locked`／`locks` 是文档来源，不代替宿主的编辑权限。
+
+`insertWorkbookChart` 与 `setWorkbookChartData` 仍只有一个数据来源：引用读取当前格／名称，原生字面向量自行持有数据。新引用忽略提交方缓存；未变引用保留导入的历史缓存，当前批次始终独立求值。保留系列身份时保留其原生索引；新系列由核心分配身份。`setWorkbookChart` 管理基础外观，`setWorkbookChartTitle` 明确选择富内容、引用或删除，不能同时写两份标题来源。公共预览的 `DEFAULT_WORKBOOK_CHART_READ_LIMITS` 及对应读取契约可供宿主执行有界当前数据查询。
+
+两条编辑器的折叠绘图表单使用同一事务；表单草稿绑定当前修订，外部修改后需显式重新读取。当前已接入基本对象和选区图表命令；完整图表数据／轴管理界面、对象文字原生输入和片段格式、绘图与原生备注的结构联动继续实施。独立原始／Calc 文件的当前源修改及文档包 ZIP 重开不等于原生 XLSX 输出或 Excel/WPS 实测，完整门槛见[第三轮细则](iteration-3.md)。
+
 ## 现代提及和原始定位恢复
 
 `WorkbookCommentMention` 保留原生 mentionId、已绑定的本包现代 authorId、startIndex 和 length；主评论和回复分别保存自己的提及。依据 [MS-XLSX CT_Mention](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/b03ed619-e307-4d3e-9c67-b68612274128)逐项校验 GUID、人员引用及 unsignedInt，提及计入原生条目、元数据字节和核心对象总额。人员/provider/user 身份均为不透明来源，不授予访问权限；只读面板展示提及的姓名，没有通知或云任务入口。
