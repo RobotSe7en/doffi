@@ -317,6 +317,14 @@ test("mounted direct name manager preserves scopes, drafts, IME and exact name c
   await exerciseWorkbookNameControls(page, false, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
 });
 
+test("mounted direct hyperlink controls edit exact ranges, preserve source text and guard drafts and history", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-copy-sheet-hyperlinks.xlsx'), { documentId: 'mounted-hyperlink-controls' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookHyperlinkControls } = await import('./workbook-hyperlink-controls-cases.js');
+  await exerciseWorkbookHyperlinkControls(page, false, model.snapshot().metadata.workbook.sheets);
+});
+
 test("mounted direct worksheet manager copies names and current formulas, changes sheet properties and retains stale drafts", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-sheet-manager' }), { kind: 'workbook' });

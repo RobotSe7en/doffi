@@ -41,6 +41,7 @@ for (const remote of [false, true]) {
         { panel: "工作表管理", field: "工作表名称", discard: "放弃当前工作表草稿并重新读取" },
         { panel: "图片、形状与图表", field: "对象名称", discard: "放弃绘图表单草稿" },
         { panel: "备注与线程批注", field: "批注正文", discard: "放弃批注表单草稿" },
+        { panel: "单元格超链接", field: "超链接外部地址", discard: "放弃超链接草稿并读取选区" },
       ]) {
         await page.getByText(form.panel, { exact: true }).click(); const field = page.getByLabel(form.field, { exact: true }); await field.fill("UnsavedDraft");
         await expect(page.getByRole("button", { name: "生成工作簿请求", exact: true })).toBeDisabled();

@@ -334,6 +334,16 @@ test('mounted Worker name manager preserves scopes, drafts, IME and exact name c
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker hyperlink controls edit exact ranges, preserve source text and guard drafts and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-copy-sheet-hyperlinks.xlsx'), { documentId: 'mounted-hyperlink-controls' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookHyperlinkControls } = await import('./workbook-hyperlink-controls-cases.js');
+  await exerciseWorkbookHyperlinkControls(page, true, model.snapshot().metadata.workbook.sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
 test('mounted Worker worksheet manager copies names and current formulas, changes sheet properties and retains stale drafts', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-sheet-manager' }), { kind: 'workbook' });
