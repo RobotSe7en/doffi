@@ -20,6 +20,37 @@ test.beforeAll(async () => {
   }
 });
 interface Inspection { readonly annotations: WorkbookSnapshot["annotations"]; readonly comments: NonNullable<WorkbookSnapshot["metadata"]["workbook"]["comments"]>; readonly content: string; readonly errors: readonly string[] }
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} comment drafts retain their message, unrelated fields, IME input and revision until explicit discard`, async ({ page }) => {
+  const s = createDocumentSession(scalarWorkbook([])), manifest = s.snapshot().manifest, anchor = { kind: "cells" as const, sheetId: "sheet-1", ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }] };
+  s.commit(s.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [
+    { op: "addWorkbookComment", anchor, html: "<p>原正文</p>", author: { name: "王" } }, { op: "addWorkbookComment", anchor, html: "<p>其他批注</p>", author: { name: "李" } },
+  ] }));
+  const [first, second] = s.snapshot().annotations;
+  s.commit(s.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations: [{ op: "addWorkbookCommentReply", annotationId: first!.annotationId, html: "<p>原回复</p>", author: { name: "张" } }] }));
+  const replyId = s.snapshot().annotations[0]!.replies![0]!.replyId, files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as Inspection & { pending: boolean; history: { undoSteps: number } };
+  await page.getByText("备注与线程批注", { exact: true }).click(); const threads = page.getByLabel("选择工作簿批注", { exact: true }), replies = page.getByLabel("选择批注消息", { exact: true }), body = page.getByLabel("批注正文", { exact: true }), author = page.getByLabel("批注作者", { exact: true });
+  const save = page.getByRole("button", { name: "更新批注作者时间与状态", exact: true }), discard = page.getByRole("button", { name: "放弃批注表单草稿", exact: true });
+  await threads.selectOption(first!.annotationId); await body.fill("保存正文禰󠄀😀"); await author.fill("未保存作者"); expect(await inspect()).toMatchObject({ pending: true, history: { undoSteps: 0 } });
+  await replies.selectOption(replyId); await expect(replies).toHaveValue(""); await expect(body).toHaveValue("保存正文禰󠄀😀");
+  await threads.selectOption(second!.annotationId); await expect(threads).toHaveValue(first!.annotationId); await expect(author).toHaveValue("未保存作者");
+  await page.getByRole("button", { name: "保存批注文字", exact: true }).click(); await settled();
+  expect(await inspect()).toMatchObject({ pending: true, history: { undoSteps: 1 }, annotations: [expect.objectContaining({ author: { name: "王" } }), expect.anything()] });
+  await expect(author).toHaveValue("未保存作者"); await expect(body).toHaveValue("保存正文禰󠄀😀"); await expect(save).toBeDisabled();
+  await discard.click(); await settled(); expect(await inspect()).toMatchObject({ pending: false }); await expect(author).toHaveValue("王"); await expect(body).toHaveValue("保存正文禰󠄀😀");
+  await author.evaluate(element => { const field = element as HTMLInputElement; field.focus(); field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); field.value = "中文草稿"; field.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); });
+  await expect(author).toBeEnabled(); await expect(save).toBeDisabled(); await expect(threads).toBeDisabled(); await author.dispatchEvent("compositionend");
+  await page.evaluate(async remote => { if (remote) await window.workbookRemoteEditor.external("external"); else { window.workbookEditor.external("external"); await window.workbookEditor.settled(); } }, remote);
+  await expect(author).toHaveValue("中文草稿"); await expect(save).toBeDisabled(); expect(await inspect()).toMatchObject({ pending: true });
+  await discard.click(); await settled(); expect(await inspect()).toMatchObject({ pending: false, errors: [] });
+  await replies.selectOption(replyId); await expect(body).toHaveValue("原回复"); await expect(page.getByLabel("批注状态", { exact: true })).toBeDisabled();
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true, endpointDisposed: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} comment controls preserve rich text/CRLF/mentions and manage classic boxes, replies, recovery and history`, async ({ page, browserName }) => {
   const s = createDocumentSession(scalarWorkbook([])), html = '<p><strong>A&#13;<br>禰󠄀😀</strong><em>Z</em></p>';
   s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "addWorkbookComment", anchor: { kind: "cells", sheetId: "sheet-1", ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }] }, html, author: { name: "王" } }] }));

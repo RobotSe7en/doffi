@@ -5,7 +5,7 @@ import { reconcileWorkbookInputText, workbookInputTextView, workbookTextSplice }
 
 /** Native messages and collaboration annotations use the same owning session;
  * this panel retains only a revision-bound draft and a read-only source view. */
-export function createWorkbookCommentControls(document: Document, parent: ParentNode, host: WorkbookControlsHost): { readonly element: HTMLDetailsElement; refresh(): void } {
+export function createWorkbookCommentControls(document: Document, parent: ParentNode, host: WorkbookControlsHost): { readonly element: HTMLDetailsElement; refresh(): void; hasPendingInput(): boolean } {
   const panel = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "备注与线程批注"; panel.append(summary); parent.append(panel);
   const fields: (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)[] = [], buttons: { element: HTMLButtonElement; scope: "new" | "thread" | "reply"; extra?: () => boolean }[] = [];
   const label = <T extends HTMLElement>(name: string, element: T): T => { const wrapper = document.createElement("label"); element.setAttribute("aria-label", name); wrapper.append(name, element); panel.append(wrapper); return element; };
@@ -16,7 +16,8 @@ export function createWorkbookCommentControls(document: Document, parent: Parent
   const text = label("批注正文", document.createElement("textarea")); text.maxLength = 2 * 1024 * 1024; fields.push(text);
   const clearMentions = input("替换正文时清除原提及关联", "checkbox"), visible = input("显示经典备注框", "checkbox"), printable = input("打印经典备注框", "checkbox");
   const message = document.createElement("p"); message.setAttribute("role", "status"); message.setAttribute("aria-label", "批注编辑状态"); panel.append(message);
-  let selected: string | undefined, replyId: string | undefined, revision = -1, documentId = "", raw = "", dirty = false, composing = false, key = "", cached = "", nodes = new Map<string, Element>();
+  let selected: string | undefined, replyId: string | undefined, revision = -1, documentId = "", raw = "", dirty = false, composing: HTMLElement | undefined, applying = false, key = "", cached = "", nodes = new Map<string, Element>();
+  const draftGroups = new Set<string>();
   function sourceText(id: string): string {
     const snapshot = host.snapshot(), html = snapshot?.content?.html ?? "";
     if (html !== cached) { cached = html; const template = document.createElement("template"); template.innerHTML = html; nodes = new Map([...template.content.querySelectorAll("[data-node-id]")].map(element => [element.getAttribute("data-node-id")!, element])); }
@@ -34,8 +35,8 @@ export function createWorkbookCommentControls(document: Document, parent: Parent
   const body = (value: { readonly instruction?: string | undefined; readonly bodyNodeId?: string | undefined }) => value.instruction ?? sourceText(value.bodyNodeId!);
   function load(preserveReply = false): void {
     const snapshot = host.snapshot(); selected = threads.value || undefined; const annotation = thread(), native = binding(), oldReply = preserveReply ? replies.value : "";
-    dirty = false; clearMentions.checked = false; replies.replaceChildren(); const root = document.createElement("option"); root.value = ""; root.textContent = "主评论"; replies.append(root);
-    if (!snapshot || !annotation) { replyId = undefined; raw = ""; revision = snapshot?.manifest.revision ?? -1; documentId = snapshot?.manifest.documentId ?? ""; refresh(); return; }
+    dirty = false; draftGroups.clear(); clearMentions.checked = false; replies.replaceChildren(); const root = document.createElement("option"); root.value = ""; root.textContent = "主评论"; replies.append(root);
+    if (!snapshot || !annotation) { replyId = undefined; raw = text.value = author.value = date.value = ""; format.value = "modern"; status.value = "open"; visible.checked = printable.checked = false; revision = snapshot?.manifest.revision ?? -1; documentId = snapshot?.manifest.documentId ?? ""; refresh(); return; }
     for (const [index, reply] of (annotation.replies ?? []).entries()) { const option = document.createElement("option"); option.value = reply.replyId; option.textContent = (reply.author?.name || "回复") + " · " + (index + 1); replies.append(option); }
     replies.value = annotation.replies?.some(reply => reply.replyId === oldReply) ? oldReply : ""; replyId = replies.value || undefined;
     const value = replyId ? annotation.replies!.find(reply => reply.replyId === replyId)! : annotation;
@@ -44,10 +45,29 @@ export function createWorkbookCommentControls(document: Document, parent: Parent
     revision = snapshot.manifest.revision; documentId = snapshot.manifest.documentId; refresh();
   }
   const html = (text: string) => "<p>" + text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;").replace(/\n/g, "<br>") + "</p>";
-  async function apply(operations: readonly DocumentOperation[]): Promise<void> { const expected = host.snapshot()?.manifest; await host.perform(operations, undefined, expected); dirty = false; revision = -1; }
+  async function apply(operations: readonly DocumentOperation[]): Promise<void> {
+    const groups = new Set<string>(operations.length ? [] : ["text"]); let remove = false;
+    for (const operation of operations) {
+      if (operation.op === "replaceWorkbookCommentText" || operation.op === "setWorkbookCommentBody") groups.add("text");
+      else if (operation.op === "addWorkbookComment" || operation.op === "addWorkbookCommentReply") { groups.add("text"); groups.add("identity"); if (operation.op === "addWorkbookComment") groups.add("format"); }
+      else if (operation.op === "setWorkbookNoteBox") groups.add("box");
+      else if (operation.op === "updateWorkbookComment" || operation.op === "updateWorkbookCommentReply") {
+        if ("author" in operation.changes || "date" in operation.changes) groups.add("identity");
+        if ("status" in operation.changes) groups.add("status"); if ("format" in operation.changes) groups.add("format");
+      } else if (operation.op === "removeAnnotation" || operation.op === "removeWorkbookCommentReply") remove = true;
+    }
+    await host.perform(operations, undefined, { documentId, revision });
+    if (remove) draftGroups.clear(); else for (const group of groups) draftGroups.delete(group);
+    dirty = draftGroups.size > 0; if (!dirty) revision = -1;
+  }
   function button(name: string, action: () => Promise<void>, scope: "new" | "thread" | "reply" = "thread", extra?: () => boolean) {
     const element = document.createElement("button"); element.type = "button"; element.textContent = name; panel.append(element); buttons.push({ element, scope, ...(extra ? { extra } : {}) });
-    element.addEventListener("click", () => host.run(async () => { if (!host.idle() || composing) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。"); await action(); refresh(); }), { signal: host.signal });
+    element.addEventListener("click", () => host.run(async () => {
+      if (!host.idle() || composing || applying) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+      const current = host.snapshot()?.manifest; if (!current || current.documentId !== documentId || current.revision !== revision) throw new DocumentError("RevisionConflict", "批注表单属于旧修订，请重新读取批注。");
+      applying = true;
+      try { const submitted = action(); refresh(); host.draftChanged?.(); await submitted; } finally { applying = false; refresh(); host.draftChanged?.(); }
+    }), { signal: host.signal });
   }
   button("在选区添加批注", async () => { const selection = host.selection(); if (!selection) throw new DocumentError("InvalidOperation", "请先选择单元格区域。");
     await apply([{ op: "addWorkbookComment", anchor: { kind: "cells", sheetId: selection.sheetId, ranges: [{ from: { ...selection.range.from }, to: { ...selection.range.to } }] }, html: html(text.value), format: format.value as "modern" | "classic",
@@ -70,23 +90,31 @@ export function createWorkbookCommentControls(document: Document, parent: Parent
     await apply([{ op: "setWorkbookNoteBox", annotationId: root.annotationId, box }]); }, "thread", () => binding()?.format === "classic");
   button("删除所选回复", async () => { const root = current(); if (!replyId) throw new DocumentError("InvalidOperation", "请选择回复。"); await apply([{ op: "removeWorkbookCommentReply", annotationId: root.annotationId, replyId }]); }, "reply");
   button("删除整条批注", async () => { const root = current(); await apply([{ op: "removeAnnotation", annotationId: root.annotationId }]); });
-  const reload = document.createElement("button"); reload.type = "button"; reload.textContent = "重新读取批注"; panel.append(reload); reload.addEventListener("click", () => load(true), { signal: host.signal });
-  threads.addEventListener("change", () => load(), { signal: host.signal }); replies.addEventListener("change", () => load(true), { signal: host.signal });
-  for (const field of fields.filter(field => field !== threads && field !== replies)) field.addEventListener("input", () => { dirty = true; }, { signal: host.signal });
-  text.addEventListener("compositionstart", () => { composing = true; dirty = true; refresh(); }, { signal: host.signal });
-  text.addEventListener("compositionend", () => { composing = false; refresh(); }, { signal: host.signal });
+  const reload = document.createElement("button"); reload.type = "button"; reload.textContent = "重新读取批注"; panel.append(reload);
+  const discard = document.createElement("button"); discard.type = "button"; discard.textContent = "放弃批注表单草稿"; panel.append(discard);
+  for (const button of [reload, discard]) button.addEventListener("click", () => { if (!composing && !applying && host.idle()) { load(true); host.draftChanged?.(); } }, { signal: host.signal });
+  for (const field of [threads, replies]) field.addEventListener("change", () => {
+    if (dirty || composing || applying) { threads.value = selected ?? ""; replies.value = replyId ?? ""; message.textContent = "请先应用或放弃批注草稿，再切换线程或消息。"; return; }
+    load(field === replies); host.draftChanged?.();
+  }, { signal: host.signal });
+  const changed = (field: HTMLElement) => { dirty = true; draftGroups.add(field === text || field === clearMentions ? "text" : field === author || field === date ? "identity" : field === status ? "status" : field === format ? "format" : "box"); refresh(); host.draftChanged?.(); };
+  for (const field of fields.filter(field => field !== threads && field !== replies)) field.addEventListener("input", () => changed(field), { signal: host.signal });
+  panel.addEventListener("compositionstart", event => { if (event.target instanceof document.defaultView!.HTMLInputElement || event.target instanceof document.defaultView!.HTMLTextAreaElement) { composing = event.target; changed(composing); } }, { signal: host.signal });
+  panel.addEventListener("compositionend", () => { composing = undefined; refresh(); host.draftChanged?.(); }, { signal: host.signal });
   function refresh(): void {
     const snapshot = host.snapshot(), nextKey = JSON.stringify([snapshot?.manifest.documentId, snapshot?.annotations.map(annotation => [annotation.annotationId, annotation.author?.name, annotation.status])]);
     if (nextKey !== key) {
       key = nextKey; const previous = threads.value; threads.replaceChildren(); const empty = document.createElement("option"); empty.value = ""; empty.textContent = "请选择批注"; threads.append(empty);
       for (const [index, annotation] of (snapshot?.annotations ?? []).entries()) { const option = document.createElement("option"); option.value = annotation.annotationId; option.textContent = (annotation.author?.name || "批注") + " · " + (index + 1); threads.append(option); }
-      threads.value = snapshot?.annotations.some(annotation => annotation.annotationId === previous) ? previous : ""; if (!threads.value) selected = undefined;
+      if (dirty && selected && !snapshot?.annotations.some(annotation => annotation.annotationId === selected)) { const old = document.createElement("option"); old.value = selected; old.textContent = "已移除，草稿保留"; threads.append(old); }
+      threads.value = snapshot?.annotations.some(annotation => annotation.annotationId === previous) || dirty && previous === selected ? previous : ""; if (!threads.value && !dirty) selected = undefined;
     }
-    if (selected && snapshot && (revision !== snapshot.manifest.revision || documentId !== snapshot.manifest.documentId) && !dirty) { load(true); return; }
-    const idle = host.idle(), stale = !!selected && (snapshot?.manifest.documentId !== documentId || snapshot.manifest.revision !== revision), root = thread();
-    message.textContent = stale ? "文档已变化。批注草稿已保留，请重新读取批注后编辑。" : root?.status === "needs_reanchor" ? "批注需要显式重新定位；原正文和原生来源已保留。" : "";
-    for (const field of fields) field.disabled = !idle && !(field === text && composing); reload.disabled = !idle || !root || composing;
-    for (const button of buttons) button.element.disabled = !idle || composing || button.scope !== "new" && (!root || stale) || button.scope === "reply" && !replyId || button.extra?.() === false;
+    if (snapshot && (revision !== snapshot.manifest.revision || documentId !== snapshot.manifest.documentId) && !dirty && !composing) { load(true); return; }
+    const idle = host.idle() && !applying, stale = revision >= 0 && (snapshot?.manifest.documentId !== documentId || snapshot.manifest.revision !== revision), root = thread();
+    message.textContent = stale ? "文档已变化。批注草稿已保留，请重新读取批注后编辑。" : dirty ? "批注草稿尚未保存。" : root?.status === "needs_reanchor" ? "批注需要显式重新定位；原正文和原生来源已保留。" : "";
+    for (const field of fields) field.disabled = (!idle || !!composing) && field !== composing; reload.disabled = !idle || !root || !!composing; discard.disabled = !idle || !dirty || !!composing;
+    status.disabled ||= !root || !!replyId; format.disabled ||= !!replyId; clearMentions.disabled ||= !root; visible.disabled ||= binding()?.format !== "classic"; printable.disabled ||= binding()?.format !== "classic";
+    for (const button of buttons) button.element.disabled = !idle || !!composing || stale || button.scope !== "new" && !root || button.scope === "reply" && !replyId || button.extra?.() === false;
   }
-  return { element: panel, refresh };
+  refresh(); return { element: panel, refresh, hasPendingInput: () => dirty || !!composing || applying };
 }

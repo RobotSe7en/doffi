@@ -5,7 +5,7 @@ import { createWorkbookChartControls } from "./chart-controls.js";
 import { createWorkbookObjectTextControls } from "./object-text-controls.js";
 /** The fields are transient input. Only the owning transaction stores an
  * object, resource, anchor or chart; refresh never writes form values back. */
-export function createWorkbookDrawingControls(document: Document, parent: ParentNode, host: WorkbookControlsHost): { readonly element: HTMLDetailsElement; refresh(): void } {
+export function createWorkbookDrawingControls(document: Document, parent: ParentNode, host: WorkbookControlsHost): { readonly element: HTMLDetailsElement; refresh(): void; hasPendingInput(): boolean } {
   const panel = document.createElement("details"), summary = document.createElement("summary"), fields: (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)[] = [];
   const defaults = new Map<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, string>();
   summary.textContent = "图片、形状与图表"; panel.append(summary); parent.append(panel);
@@ -27,8 +27,13 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
   const chartKind = select("图表类型", [["column", "簇状柱状图"], ["line", "普通折线图"], ["pie", "单系列饼图"]]), legend = select("图例位置", [["bottom", "底部"], ["top", "顶部"], ["left", "左侧"], ["right", "右侧"], ["none", "隐藏"]]);
   const title = input("图表标题"), showLabels = input("显示图表值标签", "", "checkbox");
   const message = document.createElement("p"); message.setAttribute("role", "status"); message.setAttribute("aria-label", "绘图编辑状态"); panel.append(message);
-  let selected: string | undefined, boundRevision = -1, dirty = false, observed = "", composing: HTMLInputElement | HTMLTextAreaElement | undefined;
+  let selected: string | undefined, boundRevision = -1, boundDocumentId = "", dirty = false, observed = "", composing: HTMLInputElement | HTMLTextAreaElement | undefined, applying = false;
   const draftGroups = new Set<string>();
+  const stale = (): boolean => (dirty || !!selected) && boundRevision >= 0 && (boundRevision !== host.snapshot()?.manifest.revision || boundDocumentId !== host.snapshot()?.manifest.documentId);
+  const changed = (group: string): void => {
+    if (!dirty && !selected) { const manifest = host.snapshot()?.manifest; boundRevision = manifest?.revision ?? -1; boundDocumentId = manifest?.documentId ?? ""; }
+    dirty = true; draftGroups.add(group); host.draftChanged?.();
+  };
   const buttons: { element: HTMLButtonElement; needsObject: boolean; action?: () => boolean }[] = [];
   const number = (field: HTMLInputElement): number => { if (field.validity.badInput || !field.value.trim() || !Number.isFinite(Number(field.value))) throw new DocumentError("InvalidOperation", "请输入完整的有限数值。"); return Number(field.value); };
   const point = (field: HTMLInputElement) => {
@@ -43,7 +48,7 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
   function current(): DeepReadonly<WorkbookObject> {
     const snapshot = host.snapshot(), object = snapshot?.metadata.workbook.objects?.find(object => object.nodeId === selected);
     if (!snapshot || !object) throw new DocumentError("InvalidOperation", "请先选择绘图对象。");
-    if (snapshot.manifest.revision !== boundRevision) throw new DocumentError("RevisionConflict", "对象表单属于旧修订，请先重新读取对象。"); return object;
+    if (snapshot.manifest.documentId !== boundDocumentId || snapshot.manifest.revision !== boundRevision) throw new DocumentError("RevisionConflict", "对象表单属于旧修订，请先重新读取对象。"); return object;
   }
   function body(snapshot: WorkbookSnapshot, id: string): HTMLElement | undefined {
     const template = document.createElement("template"); template.innerHTML = snapshot.content?.html ?? "";
@@ -51,6 +56,7 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
   }
   function load(): void {
     const snapshot = host.snapshot(), object = snapshot?.metadata.workbook.objects?.find(object => object.nodeId === objects.value); selected = object?.nodeId; dirty = false; draftGroups.clear(); message.textContent = "";
+    boundDocumentId = snapshot?.manifest.documentId ?? "";
     if (!snapshot || !object) {
       boundRevision = snapshot?.manifest.revision ?? -1; for (const [field, value] of defaults) if (field !== objects) { if (field instanceof document.defaultView!.HTMLInputElement && field.type === "checkbox") field.checked = false; else field.value = value; }
       if (snapshot) { chartControls.load(undefined, snapshot); objectTextControls.load(undefined, snapshot); } refresh(); return;
@@ -75,11 +81,11 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
     fill.value = line.value = font.value = ""; refresh();
   }
   const html = (value: string) => "<p>" + value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;").replace(/\n/g, "<br>") + "</p>";
-  async function apply(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions, expected: WorkbookControlsIdentity | undefined = host.snapshot()?.manifest, submitted?: readonly string[]): Promise<void> {
+  async function apply(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions, expected: WorkbookControlsIdentity | undefined = dirty ? { documentId: boundDocumentId, revision: boundRevision } : host.snapshot()?.manifest, submitted?: readonly string[]): Promise<void> {
     const groups = submitted ?? operations.flatMap(operation => operation.op === "updateWorkbookObject" ? ["geometry"] : operation.op === "setWorkbookObjectText" ? ["text"]
       : operation.op === "setWorkbookObjectStyle" ? ["appearance"] : operation.op === "replaceWorkbookImage" ? ["image"] : operation.op === "setWorkbookImageCrop" ? ["crop"]
-      : operation.op === "setWorkbookChart" ? ["chart-appearance"] : operation.op === "setWorkbookChartTitle" ? operation.target === "title" ? ["new-chart-title"] : [] : operation.op === "insertWorkbookChart" ? ["new-chart-title"]
-      : operation.op === "insertWorkbookObject" ? operation.object.kind === "image" ? ["image"] : ["geometry", "text"] : []);
+      : operation.op === "setWorkbookChart" ? ["chart-appearance"] : operation.op === "setWorkbookChartTitle" ? operation.target === "title" ? ["new-chart-title"] : [] : operation.op === "insertWorkbookChart" ? ["new-chart-title", "geometry"]
+      : operation.op === "insertWorkbookObject" ? operation.object.kind === "image" ? ["image", "geometry"] : ["geometry", "text"] : []);
     await host.perform(operations, options, expected);
     for (const group of groups) draftGroups.delete(group);
     dirty = draftGroups.size > 0; if (!dirty) boundRevision = -1;
@@ -88,14 +94,21 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
     const element = document.createElement("button"); element.type = "button"; element.textContent = label; panel.append(element); buttons.push({ element, needsObject, ...(available ? { action: available } : {}) });
     element.addEventListener("click", () => run(action), { signal: host.signal });
   }
-  function run(action: () => Promise<void>): void { host.run(async () => { if (!host.idle() || composing) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。"); await action(); refresh(); }); }
+  function run(action: () => Promise<void>): void { host.run(async () => {
+    if (!host.idle() || composing || applying) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
+    if (stale()) throw new DocumentError("RevisionConflict", "绘图表单属于旧修订，请重新读取对象。");
+    applying = true;
+    // Capture the command before disabling fields: disabled is also how the
+    // nested forms distinguish applicable marker/axis inputs from other roles.
+    try { const submitted = action(); refresh(); host.draftChanged?.(); await submitted; } finally { applying = false; refresh(); host.draftChanged?.(); }
+  }); }
   const chartControls = createWorkbookChartControls(document, panel, { signal: host.signal, current: () => {
     const object = current(), chart = host.snapshot()!.metadata.workbook.charts?.find(chart => chart.nodeId === object.nodeId);
     if (!chart) throw new DocumentError("InvalidOperation", "请先选择图表。"); return chart;
-  }, perform: (operations, group) => apply(operations, undefined, undefined, [group]), run, changed: group => { dirty = true; draftGroups.add(group); } });
+  }, perform: (operations, group) => apply(operations, undefined, undefined, [group]), run, changed });
   const objectTextControls = createWorkbookObjectTextControls(document, panel, { signal: host.signal, current, snapshot: () => {
     const snapshot = host.snapshot(); if (!snapshot) throw new DocumentError("InvalidOperation", "绘图来源尚未加载。"); return snapshot;
-  }, perform: (operations, groups) => apply(operations, undefined, undefined, groups), run, changed: group => { dirty = true; draftGroups.add(group); } });
+  }, perform: (operations, groups) => apply(operations, undefined, undefined, groups), run, changed });
   const target = () => host.selection() ?? (() => { throw new DocumentError("InvalidOperation", "请先选择工作表单元格。"); })();
   button("插入文本框", async () => { const at = target(); await apply([{ op: "insertWorkbookObject", sheetId: at.sheetId, anchor: anchor(), name: name.value, object: { kind: "text", html: html(text.value) } }]); }, false);
   button("插入基础形状", async () => { const at = target(); await apply([{ op: "insertWorkbookObject", sheetId: at.sheetId, anchor: anchor(), name: name.value, object: { kind: "geometry", preset: WorkbookPresetSchema.parse(preset.value), html: html(text.value) } }]); }, false);
@@ -132,17 +145,24 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
   button("复制绘图对象", async () => { const object = current(); await apply([{ op: "duplicateWorkbookObjects", nodeIds: [object.nodeId], offset: { xPt: 12, yPt: 12 } }]); });
   for (const [position, text] of [["front", "置于顶层"], ["back", "置于底层"], ["forward", "上移一层"], ["backward", "下移一层"]] as const) button(text, async () => { const object = current(); await apply([{ op: "reorderWorkbookObjects", nodeIds: [object.nodeId], position }]); });
   button("删除绘图对象", async () => { const object = current(); await apply([{ op: "removeWorkbookObject", nodeId: object.nodeId }]); });
-  const reload = document.createElement("button"); reload.type = "button"; reload.textContent = "重新读取对象"; panel.append(reload); reload.addEventListener("click", () => { if (!composing) load(); }, { signal: host.signal });
-  const discard = document.createElement("button"); discard.type = "button"; discard.textContent = "放弃绘图表单草稿"; panel.append(discard); discard.addEventListener("click", () => { if (!composing) load(); }, { signal: host.signal });
+  const reload = document.createElement("button"); reload.type = "button"; reload.textContent = "重新读取对象"; panel.append(reload);
+  const discard = document.createElement("button"); discard.type = "button"; discard.textContent = "放弃绘图表单草稿"; panel.append(discard);
+  for (const button of [reload, discard]) button.addEventListener("click", () => { if (!composing && !applying && host.idle()) { load(); host.draftChanged?.(); } }, { signal: host.signal });
   objects.addEventListener("change", () => {
     if (dirty || composing) { objects.value = selected ?? ""; message.textContent = "请先应用或放弃当前表单草稿，再切换绘图对象。"; return; } load();
   }, { signal: host.signal });
   for (const field of fields.filter(field => field !== objects)) field.addEventListener("input", () => {
-    dirty = true; draftGroups.add(field === text ? "text" : [fill, line, font].includes(field as HTMLInputElement) ? "appearance" : [image, alt].includes(field as HTMLInputElement) ? "image"
+    changed(field === text ? "text" : [fill, line, font].includes(field as HTMLInputElement) ? "appearance" : [image, alt].includes(field as HTMLInputElement) ? "image"
       : crop.includes(field as HTMLInputElement) ? "crop" : [chartKind, legend, showLabels].includes(field as HTMLSelectElement) ? "chart-appearance" : field === title ? "new-chart-title" : "geometry");
   }, { signal: host.signal });
-  panel.addEventListener("compositionstart", event => { if (event.target instanceof document.defaultView!.HTMLInputElement || event.target instanceof document.defaultView!.HTMLTextAreaElement) composing = event.target; refresh(); }, { signal: host.signal });
-  panel.addEventListener("compositionend", () => { composing = undefined; refresh(); }, { signal: host.signal });
+  panel.addEventListener("compositionstart", event => {
+    if (event.target instanceof document.defaultView!.HTMLInputElement || event.target instanceof document.defaultView!.HTMLTextAreaElement) {
+      if (!dirty && !selected) { const manifest = host.snapshot()?.manifest; boundRevision = manifest?.revision ?? -1; boundDocumentId = manifest?.documentId ?? ""; }
+      composing = event.target; dirty = true;
+    }
+    refresh(); host.draftChanged?.();
+  }, { signal: host.signal });
+  panel.addEventListener("compositionend", () => { composing = undefined; refresh(); host.draftChanged?.(); }, { signal: host.signal });
   function selectedObject() { return host.snapshot()?.metadata.workbook.objects?.find(object => object.nodeId === selected); }
   function refresh(): void {
     const snapshot = host.snapshot(), sheetId = host.selection()?.sheetId, items = snapshot?.metadata.workbook.objects?.filter(object => object.sheetId === sheetId) ?? [];
@@ -150,16 +170,17 @@ export function createWorkbookDrawingControls(document: Document, parent: Parent
     if (key !== observed) {
       observed = key; const previous = objects.value; objects.replaceChildren(); const blank = document.createElement("option"); blank.textContent = "请选择对象"; blank.value = ""; objects.append(blank);
       for (const [index, item] of items.entries()) { const option = document.createElement("option"); option.value = item.nodeId; option.textContent = item.name || ({ text: "文本框", geometry: "形状", image: "图片", chart: "图表" }[item.kind] + " " + (index + 1)); objects.append(option); }
-      objects.value = items.some(item => item.nodeId === previous) ? previous : ""; if (!objects.value) selected = undefined;
+      if ((dirty || composing) && selected && !items.some(item => item.nodeId === selected)) { const retained = document.createElement("option"); retained.value = selected; retained.textContent = (selectedObject()?.name ?? "原对象") + " · 草稿保留"; objects.append(retained); }
+      objects.value = items.some(item => item.nodeId === previous) || (dirty || composing) && previous === selected ? previous : ""; if (!objects.value && !dirty && !composing) selected = undefined;
     }
     if (selected && snapshot && boundRevision !== snapshot.manifest.revision && !dirty && !composing) { load(); return; }
-    const idle = host.idle() && !composing, stale = !!selected && snapshot?.manifest.revision !== boundRevision;
-    message.textContent = stale ? "文档已变化。表单草稿已保留，请重新读取对象后编辑。" : "";
+    const idle = host.idle() && !composing && !applying, old = stale();
+    message.textContent = old ? "文档已变化。表单草稿已保留，请重新读取对象后编辑。" : "";
     for (const field of fields) field.disabled = !idle && field !== composing; reload.disabled = !idle || !objects.value;
     discard.disabled = !idle || !dirty;
-    for (const button of buttons) button.element.disabled = !idle || button.needsObject && (!selectedObject() || stale) || button.action?.() === false;
-    chartControls.refresh(!idle, selectedObject()?.kind === "chart", composing, stale);
-    objectTextControls.refresh(!idle, composing, stale || !selectedObject());
+    for (const button of buttons) button.element.disabled = !idle || old || button.needsObject && !selectedObject() || button.action?.() === false;
+    chartControls.refresh(!idle, selectedObject()?.kind === "chart", composing, old);
+    objectTextControls.refresh(!idle, composing, old || !selectedObject());
   }
-  return { element: panel, refresh };
+  return { element: panel, refresh, hasPendingInput: () => dirty || !!composing || applying };
 }

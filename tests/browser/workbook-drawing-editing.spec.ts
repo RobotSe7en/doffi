@@ -24,6 +24,22 @@ test.beforeAll(async () => {
   }
 });
 
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} new drawing composition binds its starting revision before the first input event`, async ({ page }) => {
+  const files = scalarWorkbook([]).serialize(); await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote);
+  await page.getByText("图片、形状与图表", { exact: true }).click(); const name = page.getByLabel("对象名称", { exact: true }), insert = page.getByRole("button", { name: "插入文本框", exact: true });
+  await name.focus(); await name.dispatchEvent("compositionstart"); expect(await inspect()).toMatchObject({ pending: true });
+  await page.evaluate(async remote => { if (remote) await window.workbookRemoteEditor.external("external"); else { window.workbookEditor.external("external"); await window.workbookEditor.settled(); } }, remote);
+  await name.evaluate(element => { const field = element as HTMLInputElement; field.value = "中文草稿"; field.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); });
+  await name.dispatchEvent("compositionend"); await expect(name).toHaveValue("中文草稿"); await expect(insert).toBeDisabled(); expect(await inspect()).toMatchObject({ pending: true, history: { undoSteps: 1 }, drawings: [] });
+  await page.getByRole("button", { name: "放弃绘图表单草稿", exact: true }).click(); await expect(name).toHaveValue(""); expect(await inspect()).toMatchObject({ pending: false });
+  await name.fill("新对象"); await insert.click(); await settled(); expect(await inspect()).toMatchObject({ pending: false, history: { undoSteps: 2 }, drawings: [expect.objectContaining({ name: "新对象", kind: "text" })], errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true, endpointDisposed: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} whole worksheet copies display their own current chart references and preserve literal vectors`, async ({ page }) => {
   const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 1, column: 0, value: { type: "text", value: "B" } },
     { row: 0, column: 1, value: { type: "number", value: 2 } }, { row: 1, column: 1, value: { type: "number", value: 4 } }]));

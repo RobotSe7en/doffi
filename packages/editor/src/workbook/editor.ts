@@ -65,6 +65,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   }
   function runInteraction<T>(action: () => Promise<T>): Promise<T> { const work = interaction.then(action); interaction = work.then(() => {}, report); return work; }
   function pendingInput(): boolean { return binding.hasPendingInput(); }
+  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls].some(controls => controls?.hasPendingInput()); }
   function report(error: unknown): void {
     if (disposed) return; const problem = error instanceof Error ? error : new Error("工作簿编辑失败。");
     ui.error.textContent = problem instanceof DocumentError && problem.code === "RevisionConflict" ? "文档已变化。当前输入已保留，请先复制输入或取消后重新选择。"
@@ -85,7 +86,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     commentControls?.refresh();
     nameControls?.refresh();
     worksheetControls?.refresh();
-    const pending = pendingInput() || Boolean(commandAbort) || (nameControls?.hasPendingInput() ?? false) || (worksheetControls?.hasPendingInput() ?? false);
+    const pending = pendingInput() || Boolean(commandAbort) || pendingForms();
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Reporting cannot change source. */ } }
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host-owned callback. */ } }
@@ -512,7 +513,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     } catch (error) { report(error); }
   }, { signal: events.signal });
   controls(); void scheduleRefresh(); const ready = sourceSettled().then(() => {}); void ready.catch(() => {});
-  return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); }, hasPendingInput() { check(); return pendingInput() || Boolean(commandAbort) || (nameControls?.hasPendingInput() ?? false) || (worksheetControls?.hasPendingInput() ?? false); },
+  return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); }, hasPendingInput() { check(); return pendingInput() || Boolean(commandAbort) || pendingForms(); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: binding.apply, cancelInput, perform,
     recalculate: async () => { commandAbort?.abort(); await scheduleRefresh(true); return settled(); },
     dispose() { if (disposed) return; disposed = true; ++generation; calculationAbort?.abort(); commandAbort?.abort(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview.dispose(); renderedSource = undefined; ui.element.remove(); },

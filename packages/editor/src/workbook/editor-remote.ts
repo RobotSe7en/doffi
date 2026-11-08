@@ -76,6 +76,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     return config.locale !== undefined && value.calculationContext?.locale === undefined ? { ...value, calculationContext: { ...value.calculationContext, locale: config.locale } } : value;
   }
   function pendingInput(): boolean { return binding?.hasPendingInput() ?? false; }
+  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls].some(controls => controls?.hasPendingInput()); }
   function controls(): void {
     if (disposed) return; const state = input.state(), busy = !!commandAbort || state.applying || state.selecting;
     // Keep the draft editable while a remote operation is preparing or its
@@ -91,7 +92,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     commentControls?.refresh();
     nameControls?.refresh();
     worksheetControls?.refresh();
-    const pending = pendingInput() || state.applying || !!commandAbort || (nameControls?.hasPendingInput() ?? false) || (worksheetControls?.hasPendingInput() ?? false);
+    const pending = pendingInput() || state.applying || !!commandAbort || pendingForms();
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
   }
   function address(range: DeepReadonly<WorkbookRange>): string {
@@ -445,7 +446,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     }
   }
   return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); },
-    hasPendingInput() { check(); return pendingInput() || input.state().applying || !!commandAbort || (nameControls?.hasPendingInput() ?? false) || (worksheetControls?.hasPendingInput() ?? false); },
+    hasPendingInput() { check(); return pendingInput() || input.state().applying || !!commandAbort || pendingForms(); },
     layout() { check(); if (!preview) throw new DocumentError("InvalidOperation", "The workbook editor has no accepted view yet."); return preview.layout(); },
     setViewport: async (viewport: Parameters<WorkbookPreview["setViewport"]>[0]) => { await sourceSettled(); check(); return preview!.setViewport(viewport); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: () => binding.apply(), cancelInput: () => runInteraction(cancelInput), perform,

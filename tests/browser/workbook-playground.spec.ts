@@ -60,14 +60,19 @@ async function workbookState(page: Page) {
   });
 }
 
-test('Playground retains an unsaved name draft on file switches until explicit discard', async ({ page }) => {
+for (const form of [
+  { kind: 'name', panel: '名称管理', field: '定义名称', discard: '放弃当前名称草稿并重新读取' },
+  { kind: 'worksheet', panel: '工作表管理', field: '工作表名称', discard: '放弃当前工作表草稿并重新读取' },
+  { kind: 'drawing', panel: '图片、形状与图表', field: '对象名称', discard: '放弃绘图表单草稿' },
+  { kind: 'comment', panel: '备注与线程批注', field: '批注正文', discard: '放弃批注表单草稿' },
+]) test(`Playground retains an unsaved ${form.kind} draft on file switches until explicit discard`, async ({ page }) => {
   await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx'); await expect(status(page)).toContainText('修订 0', { timeout: 30_000 });
-  await page.getByText('名称管理', { exact: true }).click(); const name = page.getByLabel('定义名称', { exact: true }); await name.fill('UnsavedName');
+  await page.getByText(form.panel, { exact: true }).click(); const name = page.getByLabel(form.field, { exact: true }), original = await name.inputValue(); await name.fill('UnsavedDraft');
   await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('请先确认或取消'); await expect(name).toHaveValue('UnsavedName');
-  await page.getByRole('button', { name: '新建 PPT', exact: true }).click(); await expect(name).toHaveValue('UnsavedName');
+  await expect(page.getByRole('alert')).toContainText('请先确认或取消'); await expect(name).toHaveValue('UnsavedDraft');
+  await page.getByRole('button', { name: '新建 PPT', exact: true }).click(); await expect(name).toHaveValue('UnsavedDraft');
   await expect(page.getByRole('heading', { name: '09-classic-notes.xlsx', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '放弃当前名称草稿并重新读取', exact: true }).click(); await expect(name).toHaveValue('');
+  await page.getByRole('button', { name: form.discard, exact: true }).click(); await expect(name).toHaveValue(original);
   await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click(); await expect(page.getByLabel('会话状态', { exact: true })).toContainText('修订 0');
   await page.getByRole('button', { name: '打开 09-classic-notes.xlsx', exact: true }).click(); await expect(status(page)).toContainText('修订 0');
   await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeDisabled();
