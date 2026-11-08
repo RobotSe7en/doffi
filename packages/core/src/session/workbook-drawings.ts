@@ -7,14 +7,20 @@ import type { DeepReadonly, WorkbookModel } from "../runtime.js";
 import { invalid } from "../document/validation.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import { escapeWorkbookText } from "./workbook-cells.js";
+import { WorkbookObjectTextOperationSchema } from "../contracts/workbook-object-text-operations.js";
+import type { WorkbookObjectTextOperation } from "../contracts/workbook-object-text-operations.js";
+import { editWorkbookObjectText, pruneWorkbookObjectLinks, sourceDescendants, validateWorkbookObjectTextTarget } from "./workbook-object-text.js";
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const names = new Set<string>(WorkbookDrawingOperationSchema.options.map(schema => schema.shape.op.value));
+const textOperations = new Set<string>(WorkbookObjectTextOperationSchema.options.map(schema => schema.shape.op.value));
+function isObjectTextOperation(operation: WorkbookDrawingOperation): operation is WorkbookObjectTextOperation { return textOperations.has(operation.op); }
 export function isWorkbookDrawingOperation(operation: WorkbookOperation): operation is WorkbookDrawingOperation { return names.has(operation.op); }
 export function validateWorkbookDrawingTarget(base: WorkbookModel, operation: WorkbookDrawingOperation): void {
   const objects = new Set(base.snapshot().metadata.workbook.objects?.map(object => object.nodeId));
   const ids = "nodeIds" in operation ? operation.nodeIds : "nodeId" in operation ? [operation.nodeId] : [];
   if (new Set(ids).size !== ids.length || ids.some(id => !objects.has(id))) invalid("Drawing targets must be distinct object identities in the base snapshot.");
+  if (isObjectTextOperation(operation)) validateWorkbookObjectTextTarget(base, operation);
 }
 function withoutCaches<T>(input: T): T {
   const value = copy(input);
@@ -106,6 +112,7 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
     let index = 0; workbook.objects = all.map(value => sheets.has(value.sheetId) ? result[index++]! : value); return;
   }
   const current = object(operation.nodeId), source = parse();
+  if (isObjectTextOperation(operation)) { editWorkbookObjectText(workbook, content, operation); return; }
   if (operation.op === "removeWorkbookObject") {
     const descendants = new Set<string>(), pending = [current.nodeId];
     while (pending.length) { const id = pending.pop()!; descendants.add(id); pending.push(...source.peekNode(id)!.childNodeIds); }
@@ -116,13 +123,16 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
   if (operation.op === "updateWorkbookObject") {
     const { rotation, flipH, flipV, hidden, preset, ...changes } = operation.changes;
     if (preset !== undefined) { if (current.kind !== "geometry") invalid("Only a shape can change its preset."); current.preset = preset; }
+    if (changes.text !== undefined && current.kind !== "text" && current.kind !== "geometry") invalid("Text body properties require a text box or shape.");
     for (const [key, value] of Object.entries(changes)) { if (value === null) Reflect.deleteProperty(current, key); else if (value !== undefined) Reflect.set(current, key, copy(value)); }
     for (const [key, value] of [["rotation", rotation], ["flip-h", flipH], ["flip-v", flipV], ["hidden", hidden]] as const) if (value !== undefined) edit().attributes(current.nodeId, { ["data-office-" + key]: String(value) }); return;
   }
   if (operation.op === "setWorkbookObjectStyle") { appearance(current.nodeId, operation.properties); return; }
   if (operation.op === "setWorkbookObjectText") {
     if (current.kind !== "text" && current.kind !== "geometry") invalid("Text editing requires a text box or shape.");
+    const previousIds = sourceDescendants(source, current.nodeId);
     edit().replaceSourceContent(current.nodeId, operation.html);
+    pruneWorkbookObjectLinks(workbook, content, previousIds);
     if (operation.text === null) delete current.text; else if (operation.text !== undefined) current.text = copy(operation.text); return;
   }
   if (operation.op === "replaceWorkbookImage") {
@@ -151,6 +161,7 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
   if (operation.op === "setWorkbookChartTitle") {
     if (operation.target !== "title" && chart.kind === "pie" && operation.source !== null) invalid("A pie chart has no axis titles.");
     const old = operation.target === "title" ? { nodeId: chart.titleNodeId, reference: chart.titleReference } : operation.target === "categoryAxis" ? chart.categoryAxisTitle : chart.valueAxisTitle;
+    const previousIds = old?.nodeId ? sourceDescendants(source, old.nodeId) : undefined;
     const rich = operation.source !== null && "html" in operation.source ? operation.source : undefined;
     if (old?.nodeId) { if (rich) edit().replaceSourceContent(old.nodeId, rich.html); else edit().removeSource(old.nodeId); }
     const value = operation.source === null ? undefined : rich ? { nodeId: old?.nodeId ?? edit().insertSource(current.nodeId, "<div>" + rich.html + "</div>").rootNodeIds[0]!, ...(rich.text ? { text: copy(rich.text) } : {}), ...(rich.cssClass ? { cssClass: rich.cssClass } : {}) } : "reference" in operation.source ? {
@@ -160,5 +171,6 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
       delete chart.titleNodeId; delete chart.titleReference; delete chart.titleText; delete chart.titleCssClass;
       if (value) { if ("nodeId" in value) { chart.titleNodeId = value.nodeId; if (value.text) chart.titleText = value.text; } else chart.titleReference = value.reference; if (value.cssClass) chart.titleCssClass = value.cssClass; }
     } else { const key = operation.target === "categoryAxis" ? "categoryAxisTitle" : "valueAxisTitle"; if (value) chart[key] = value; else delete chart[key]; }
+    if (previousIds) pruneWorkbookObjectLinks(workbook, content, previousIds);
   }
 }

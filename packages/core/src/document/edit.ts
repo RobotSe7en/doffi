@@ -5,6 +5,8 @@ import type { DocumentReadLimits, TextOffsetMapping } from "../runtime.js";
 import { DocumentError } from "../errors.js";
 import { normalizeCss, setInlineStyle } from "./css.js";
 import { setDrawingInlineStyle } from "./drawing-css.js";
+import { styleSourceText } from "./text-style.js";
+import type { SourceTextRange } from "./text-style.js";
 import { bodyTags, parseHtml, supportedTags } from "./html.js";
 import { parseHtmlFragment, parseHtmlTree, serializeHtmlOuter, serializeHtmlTree } from "./html-parser.js";
 import { encode, resolveReference } from "./package.js";
@@ -25,7 +27,8 @@ function fail(message: string): never { throw new DocumentError("InvalidOperatio
 export interface EditableHtmlSource {
   readonly files: DocumentPackage;
   readonly snapshot: { readonly html: string; readonly manifest: HtmlSourceDescriptor;
-    readonly metadata: { readonly presentation?: { readonly hyperlinks: readonly { readonly nodeId: string }[] } } };
+    readonly metadata: { readonly presentation?: { readonly hyperlinks: readonly { readonly nodeId: string }[] };
+      readonly workbook?: { readonly objectHyperlinks?: readonly { readonly nodeId: string }[] | undefined } } };
   readonly html: ParsedHtml;
 }
 
@@ -184,6 +187,10 @@ export class DocumentEdit {
     const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
     setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
   }
+  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>): void {
+    const target = this.index().get(nodeId); if (!target) fail("The text format target is unavailable.");
+    styleSourceText(target, range, properties, this.limits, this.allocate);
+  }
   /** A format adapter has already checked the owning source identity. */
   replaceSourceText(nodeId: string, edit: { readonly from: number; readonly to: number; readonly expectedText: string; readonly text: string }): void {
     const target = this.index().get(nodeId); if (!target) fail("The source text target is unavailable.");
@@ -289,11 +296,11 @@ export class DocumentEdit {
     if (selected.some((leaf) => ancestors(leaf.node).some((node) => attr(node, "data-word-tab") !== undefined
       || attr(node, "data-word-break") !== undefined))) fail("Native tabs and explicit page breaks require structural operations.");
     const context = (node: Node) => ancestors(node).find((item) => blocks.has(item.tagName));
-    const presentationLinks = new Set(this.state.snapshot.metadata.presentation?.hyperlinks.map(link => link.nodeId));
+    const nativeLinks = new Set([...(this.state.snapshot.metadata.presentation?.hyperlinks ?? []), ...(this.state.snapshot.metadata.workbook?.objectHyperlinks ?? [])].map(link => link.nodeId));
     const semantic = (node: Node) => ancestors(node).find((item) => ["ins", "del"].includes(item.tagName)
       || attr(item, "data-word-link") !== undefined || attr(item, "data-word-field") !== undefined
       || attr(item, "data-word-field-result") !== undefined || attr(item, "data-office-field") !== undefined
-      || attr(item, "data-office-link") !== undefined || presentationLinks.has(attr(item, "data-node-id")!));
+      || attr(item, "data-office-link") !== undefined || nativeLinks.has(attr(item, "data-node-id")!));
     if (start && selected.some((leaf) => context(leaf.node) !== context(start.node) || semantic(leaf.node) !== semantic(start.node))) {
       fail("Text replacement cannot cross paragraphs, cells, stories or native semantic boundaries.");
     }

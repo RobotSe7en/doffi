@@ -13,12 +13,12 @@ interface Host {
 export type ChartDraftGroup = "chart-data" | "chart-axis" | "chart-title" | "chart-categoryAxis" | "chart-valueAxis";
 type DataSeries = { seriesId?: string; nameKind: "none" | "text" | "reference"; name: string; nameValueType: "text" | "number"; values: WorkbookChartVectorDraft };
 type Appearance = Extract<DocumentOperation, { op: "setWorkbookChart" }>;
-interface Controls { load(chart: DeepReadonly<WorkbookChart> | undefined, snapshot: WorkbookSnapshot): void; refresh(disabled: boolean, available?: boolean, composing?: HTMLElement): void }
+interface Controls { load(chart: DeepReadonly<WorkbookChart> | undefined, snapshot: WorkbookSnapshot): void; refresh(disabled: boolean, available?: boolean, composing?: HTMLElement, stale?: boolean): void }
 /** A source editor: references and literals are distinct inputs, with no copied
  * cache values, independently writable data set or partial source submission. */
 export function createWorkbookChartControls(document: Document, parent: HTMLElement, host: Host): Controls {
   const root = document.createElement("fieldset"), legend = document.createElement("legend"); legend.textContent = "图表数据、坐标轴与标题"; root.append(legend); parent.append(root);
-  let series: DataSeries[] = [], selected = 0, available = false, blocked = true, kind: WorkbookChart["kind"] = "column";
+  let series: DataSeries[] = [], selected = 0, available = false, blocked = true, sourceStale = false, kind: WorkbookChart["kind"] = "column";
   const fields: (HTMLInputElement | HTMLSelectElement)[] = [], buttons: HTMLButtonElement[] = [];
   const label = <T extends HTMLElement>(name: string, field: T, container = root): T => { const wrapper = document.createElement("label"); field.setAttribute("aria-label", name); wrapper.append(name, field); container.append(wrapper); return field; };
   const input = (name: string, type = "text", container = root) => { const field = label(name, document.createElement("input"), container); field.type = type; fields.push(field); return field; };
@@ -111,9 +111,10 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
       item.mode.value = source?.reference ? "reference" : source?.nodeId ? "text" : "none"; item.value.value = source?.reference?.expression ?? node?.textContent ?? ""; item.valueType.value = source?.reference?.valueType ?? "text"; item.reset();
     }
   }
-  function refresh(disabled: boolean, isAvailable = available, composing?: HTMLElement): void {
-    available = isAvailable; blocked = disabled; root.hidden = !available;
-    for (const field of [...fields, ...buttons]) field.disabled = (disabled || !available) && field !== composing;
+  function refresh(disabled: boolean, isAvailable = available, composing?: HTMLElement, stale = sourceStale): void {
+    available = isAvailable; blocked = disabled; sourceStale = stale; root.hidden = !available;
+    for (const field of fields) field.disabled = (disabled || !available) && field !== composing;
+    for (const field of buttons) field.disabled = disabled || stale || !available;
     labels.get("percent")!.disabled ||= kind !== "pie";
     for (const key of ["gapWidth", "overlap", "firstSliceAngle"] as const) settings.get(key)!.disabled ||= key === "firstSliceAngle" ? kind !== "pie" : kind !== "column";
     name.disabled ||= nameKind.value === "none"; nameValueType.disabled ||= nameKind.value !== "reference"; remove.disabled ||= series.length < 2; up.disabled ||= selected === 0; down.disabled ||= selected >= series.length - 1;

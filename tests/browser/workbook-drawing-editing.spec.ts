@@ -24,6 +24,51 @@ test.beforeAll(async () => {
   }
 });
 
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} object paragraph input keeps rich runs, exact text, per-paragraph drafts and owning history`, async ({ page, browserName }) => {
+  const session = createDocumentSession(scalarWorkbook([]));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 30, yPt: 30, widthPt: 240, heightPt: 120 }, name: "富文本框",
+    object: { kind: "text", html: '<p style="text-align:right">A&#13;<br><strong>禰󠄀😀</strong>Z</p><p><em>第二段</em></p>', text: { wrap: true } } },
+    { op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 300, yPt: 30, widthPt: 120, heightPt: 60 }, name: "另一对象", object: { kind: "text", html: "<p>其他</p>" } }] }));
+  const object = session.snapshot().metadata.workbook.objects![0]!, first = session.getNode(object.nodeId)!.childNodeIds[0]!, second = session.getNode(object.nodeId)!.childNodeIds[1]!, strong = session.getNode(first)!.childNodeIds.find(id => session.getNode(id)!.tagName === "strong")!, before = session.snapshot().content!.html, files = session.serialize(); session.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { content: string; revision: number; history: { undoSteps: number }; drawings: { text?: { wrap?: boolean; autoFit?: string; fontScale?: number } }[]; errors: string[] };
+  await page.getByText("图片、形状与图表", { exact: true }).click(); await page.getByLabel("选择绘图对象", { exact: true }).selectOption(object.nodeId);
+  const paragraphs = page.getByLabel("对象文字段落", { exact: true }), text = page.getByLabel("所选对象段落文字", { exact: true }), save = page.getByRole("button", { name: "保存对象段落文字", exact: true });
+  await expect(text).toHaveValue("A\n禰󠄀😀Z");
+  if (browserName === "chromium") {
+    const cdp = await page.context().newCDPSession(page); await text.focus(); await text.evaluate(element => (element as HTMLTextAreaElement).setSelectionRange(0, 0));
+    await cdp.send("Input.imeSetComposition", { text: "预编辑", selectionStart: 3, selectionEnd: 3 }); await expect(save).toBeDisabled(); await expect(text).toBeEnabled(); expect((await inspect()).content).toBe(before);
+    await cdp.send("Input.insertText", { text: "中文" }); await cdp.detach();
+  } else { await text.dispatchEvent("compositionstart"); await expect(save).toBeDisabled(); await text.dispatchEvent("compositionend"); await text.fill("中文A\n禰󠄀😀Z"); }
+  await save.click(); await settled(); expect(await inspect()).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  expect((await inspect()).content).toContain("中文A&#13;<br"); expect((await inspect()).content).toContain('<strong data-node-id="' + strong + '">');
+  await page.getByLabel("对象段落西文字体", { exact: true }).fill("Liberation Sans"); await page.getByLabel("对象段落中文字体", { exact: true }).fill("Noto Sans CJK SC");
+  await page.getByLabel("对象段落文字颜色", { exact: true }).fill("#a02030"); await page.getByLabel("对象段落字号（磅）", { exact: true }).fill("18");
+  await text.focus(); await text.evaluate(element => { const field = element as HTMLTextAreaElement, from = field.value.indexOf("禰"); field.setSelectionRange(from, from + "禰󠄀😀".length); });
+  await page.getByRole("button", { name: "应用对象选中文字字体", exact: true }).click(); await settled();
+  expect((await inspect()).content).toContain("--office-text-source:direct"); expect((await inspect()).content).toContain("--office-font-east-asia"); expect((await inspect()).content).toContain('<strong data-node-id="' + strong + '">');
+  await text.fill("未提交的第一段草稿");
+  await page.getByLabel("选择绘图对象", { exact: true }).selectOption({ label: "另一对象" }); await expect(page.getByLabel("选择绘图对象", { exact: true })).toHaveValue(object.nodeId); await expect(text).toHaveValue("未提交的第一段草稿");
+  await paragraphs.selectOption(second); await text.fill("已提交的第二段"); await paragraphs.selectOption(first); await expect(text).toHaveValue("未提交的第一段草稿");
+  await paragraphs.selectOption(second); await save.click(); await settled(); await expect(save).toBeDisabled();
+  await paragraphs.selectOption(first); await expect(text).toHaveValue("未提交的第一段草稿"); expect((await inspect()).content).toContain("已提交的第二段"); expect((await inspect()).content).not.toContain("未提交的第一段草稿");
+  await page.getByRole("button", { name: "重新读取对象", exact: true }).click(); await expect(text).toHaveValue("中文A\n禰󠄀😀Z");
+  await page.getByRole("button", { name: "新增空对象段落", exact: true }).click(); await settled(); await expect(text).toHaveValue(""); await expect(paragraphs.locator("option")).toHaveCount(3);
+  await text.fill("新增段落禰󠄀😀"); await save.click(); await settled(); await page.getByRole("button", { name: "删除当前对象段落", exact: true }).click(); await settled(); await expect(paragraphs.locator("option")).toHaveCount(2);
+  for (let index = 0; index < 6; index++) { await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); }
+  expect(await inspect()).toMatchObject({ content: before, history: { undoSteps: 0 }, errors: [] });
+  await page.getByLabel("对象文字自动换行", { exact: true }).selectOption("false"); await page.getByLabel("对象文字自适应", { exact: true }).selectOption("normal"); await page.getByLabel("对象文字缩放比例", { exact: true }).fill("0.8");
+  await page.getByRole("button", { name: "应用对象文字换行与自适应", exact: true }).click(); await settled(); expect((await inspect()).drawings[0]).toMatchObject({ text: { wrap: false, autoFit: "normal", fontScale: .8 } });
+  await page.getByLabel("对象段落对齐", { exact: true }).selectOption("center"); await page.getByRole("button", { name: "应用对象段落排版", exact: true }).click(); await settled(); expect((await inspect()).content).toContain("text-align:center");
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect((await inspect()).content).toBe(before);
+  expect((await inspect()).errors).toEqual([]);
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+  else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart source controls retain sparse literals and native caches while series, axes and titles share guarded history`, async ({ page, browserName }) => {
   const session = createDocumentSession(openDocument(await importXlsx(readFileSync("examples/xlsx/07-three-charts.xlsx"), { documentId: "chart-controls" }), { kind: "workbook" }));
   const original = WorkbookChartSchema.parse(session.snapshot().metadata.workbook.charts![0]!), sheet = session.snapshot().metadata.workbook.sheets[0]!;
@@ -62,6 +107,8 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart 
   await page.getByRole("button", { name: "应用坐标轴与标签", exact: true }).click(); await settled();
   expect((await inspect()).charts[0]).toMatchObject({ minimum: -60, maximum: 240, majorUnit: 30, reverseCategories: true, showLabels: true, labelContents: expect.arrayContaining(["category"]) });
   await expect(page.getByLabel("系列名称或引用", { exact: true })).toHaveValue("未提交的系列草稿"); await expect(page.getByRole("button", { name: "应用图表数据", exact: true })).toBeDisabled();
+  await page.getByLabel("编辑图表系列", { exact: true }).selectOption("0"); await expect(page.getByRole("button", { name: "应用图表数据", exact: true })).toBeDisabled();
+  await page.getByLabel("编辑图表系列", { exact: true }).selectOption("1"); await expect(page.getByLabel("系列名称或引用", { exact: true })).toHaveValue("未提交的系列草稿");
   expect((await inspect()).charts[0]!.series[1]!.name).toEqual({ kind: "text", text: "新系列" });
   await page.getByRole("button", { name: "重新读取对象", exact: true }).click();
   const reference = "='" + sheet.name.replace(/'/g, "''") + "'!$A$1";

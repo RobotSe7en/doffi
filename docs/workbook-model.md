@@ -590,7 +590,9 @@ Playground 宿主目前保留最近一份已接受的工作簿预览，连同宿
 
 ## 绘图编辑基础（R3-14 实施中）
 
-`insertWorkbookObject` 为横排文本框、已声明预设及授权图片分配核心身份；`updateWorkbookObject` 修改三种锚点、旋转翻转、名称及锁定／打印属性。`setWorkbookObjectText` 替换有界段落内容，等价内容保留原节点；`setWorkbookObjectStyle` 修改源声明，直接颜色复用 PPT 的主题变换重置语义。`replaceWorkbookImage` 和 `setWorkbookImageCrop` 保留对象与资源身份；新字节通过 `prepare` 的资源选项授权。无来源或未使用的新资源、非法裁剪、可执行内容和超限输入整批失败。
+`insertWorkbookObject` 为横排文本框、已声明预设及授权图片分配核心身份；`updateWorkbookObject` 修改三种锚点、旋转翻转、名称、锁定／打印属性及文本框／形状的 `text` 排版属性。`setWorkbookObjectText` 明确替换有界段落内容，等价内容保留原节点；实际替换清理本对象中消失节点的原生链接，其他对象及对象本身的链接保留。`setWorkbookObjectStyle` 修改源声明，直接颜色复用 PPT 的主题变换重置语义。`replaceWorkbookImage` 和 `setWorkbookImageCrop` 保留对象与资源身份；新字节通过 `prepare` 的资源选项授权。无来源或未使用的新资源、非法裁剪、可执行内容和超限输入整批失败。
+
+`replaceWorkbookObjectText` 对所属段落执行原文守卫的精确 UTF-16 替换，保留未改字体片段及 CRLF，拒绝断开代理对／变体序列或跨越原生链接。`formatWorkbookObjectText` 只在所选原始文字叶片引入核心身份的字体包装，不重建原段落／片段；重复相同直接字体保留来源和历史。`insertWorkbookObjectParagraph`、`removeWorkbookObjectParagraph` 和 `setWorkbookObjectParagraphStyle` 提供段落结构及基本排版；目标段落必须是基线对象的直接子段落，新增段落不能注入身份。删除最后一段清空该段并保留输入位置，删除或明确替换的链接也在同一候选内清理。
 
 ```ts
 import { createDocumentSession, createWorkbook, openDocument } from "@doffi/core";
@@ -621,7 +623,9 @@ session.dispose();
 
 两条编辑器的折叠绘图表单使用同一事务；表单草稿绑定当前修订，外部修改后需显式重新读取。图表管理提供分类来源、系列增删／重排、名称文字／引用及类型、引用／常量切换、三类标题、轴范围／刻度／逆序、可见性、空白、标签和类型专属间距／角度。常量按已有点分页，保留声明长度、空缺、空值／错误及逐点格式，不枚举隐含空白，也不把引用缓存作为常量。坐标轴只提交用户改过的设置。提交一组设置不会清除其他未提交的草稿；若源已产生新修订，保留旧草稿并要求显式重新读取。IME 期间禁止提交及重载，保持正在输入的字段启用；外部修订同样保留草稿并阻止旧表单写入。
 
-当前已接入基本对象、选区图表及上述数据管理命令；完整图表样式管理、对象文字原生输入和片段格式、绘图与原生备注的结构联动继续实施。独立原始／Calc 文件的当前源修改及文档包 ZIP 重开不等于原生 XLSX 输出或 Excel/WPS 实测，完整门槛见[第三轮细则](iteration-3.md)。
+对象段落面板使用原生 textarea 暂存 LF 显示投影，确认时复用共同富内容编辑器及上述事务；中文 IME 期间不提交。选区字体可与尚未确认的文字合成一个原子候选，保留中西文字体角色和精确原文范围。各段草稿分别保留，提交某段后其余旧修订草稿仍可查看／复制，不能继续写入；绘图对象之间的切换也不会悄悄丢弃草稿，须先应用或显式放弃。段落对齐／行距、换行和自适应仍只有源 HTML/CSS／metadata 一份可写内容。
+
+当前已接入基本对象、选区图表、上述数据管理及段落输入命令；完整图表样式管理、继承装饰线的源级清除及绘图与原生备注的结构联动继续实施。后续清除须保持未选文字的原装饰，不得以在子 span 中设置 none 冒充已取消父级装饰，也不是本轮范围缩减。独立原始／Calc 文件的当前源修改及文档包 ZIP 重开不等于原生 XLSX 输出或 Excel/WPS 实测，完整门槛见[第三轮细则](iteration-3.md)。
 
 ## 批注编辑基础（R3-15 实施中）
 

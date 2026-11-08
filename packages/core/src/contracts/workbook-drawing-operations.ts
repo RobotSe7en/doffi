@@ -3,6 +3,8 @@ import { IdentifierSchema, PackagePathSchema } from "./primitives.js";
 import { DrawingPresetSchema, DrawingTextPropertiesSchema } from "./drawing.js";
 import { WorkbookDrawingAnchorSchema, WorkbookDrawingLocksSchema } from "./workbook-drawing.js";
 import { WorkbookChartSchema, WorkbookChartVectorSchema, WorkbookChartLabelSchema } from "./workbook-charts.js";
+import { WorkbookObjectTextOperationSchema } from "./workbook-object-text-operations.js";
+export * from "./workbook-object-text-operations.js";
 
 const html = z.string().max(2 * 1024 * 1024), properties = z.record(z.string(), z.string().min(1));
 export const WorkbookObjectInputSchema = z.discriminatedUnion("kind", [
@@ -19,10 +21,11 @@ export const WorkbookChartDataInputSchema = z.strictObject({
 });
 export type WorkbookChartDataInput = z.infer<typeof WorkbookChartDataInputSchema>;
 export const WorkbookDrawingOperationSchema = z.discriminatedUnion("op", [
+  ...WorkbookObjectTextOperationSchema.options,
   z.strictObject({ op: z.literal("insertWorkbookObject"), sheetId: IdentifierSchema, anchor: WorkbookDrawingAnchorSchema, object: WorkbookObjectInputSchema, name: z.string().max(32767).optional(), properties: properties.optional() }),
   z.strictObject({ op: z.literal("updateWorkbookObject"), nodeId: IdentifierSchema, changes: z.strictObject({
     anchor: WorkbookDrawingAnchorSchema.optional(), name: z.string().max(32767).nullable().optional(), locked: z.boolean().optional(), printable: z.boolean().optional(), locks: WorkbookDrawingLocksSchema.nullable().optional(),
-    rotation: z.number().optional(), flipH: z.boolean().optional(), flipV: z.boolean().optional(), hidden: z.boolean().optional(), preset: DrawingPresetSchema.optional(),
+    rotation: z.number().optional(), flipH: z.boolean().optional(), flipV: z.boolean().optional(), hidden: z.boolean().optional(), preset: DrawingPresetSchema.optional(), text: DrawingTextPropertiesSchema.nullable().optional(),
   }) }),
   z.strictObject({ op: z.literal("setWorkbookObjectText"), nodeId: IdentifierSchema, html, text: DrawingTextPropertiesSchema.nullable().optional() }),
   z.strictObject({ op: z.literal("setWorkbookObjectStyle"), nodeId: IdentifierSchema, properties }),

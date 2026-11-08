@@ -1,5 +1,6 @@
 import type { WorkbookManifest } from "../contracts/document.js";
 import type { DocumentReadLimits } from "../runtime.js";
+import type { WorkbookMetadata } from "../contracts/workbook.js";
 import { DocumentEdit } from "../document/edit.js";
 import { parseHtml } from "../document/html.js";
 import type { HtmlSourceDescriptor } from "../document/html.js";
@@ -10,7 +11,7 @@ import { escapeWorkbookText } from "./workbook-cells.js";
 export class WorkbookContentEdit {
   private editor?: DocumentEdit;
   constructor(private readonly manifest: WorkbookManifest, private readonly files: Map<string, Uint8Array>,
-    private readonly limits: DocumentReadLimits, private readonly allocate: () => string) {}
+    private readonly limits: DocumentReadLimits, private readonly allocate: () => string, private readonly workbook: WorkbookMetadata) {}
   private descriptor(): HtmlSourceDescriptor {
     return { kind: "workbook-content", entrypoint: this.manifest.content!, styles: this.manifest.styles, assets: this.manifest.assets };
   }
@@ -26,7 +27,7 @@ export class WorkbookContentEdit {
     }
     const descriptor = this.descriptor(), source = decodeText(this.files.get(descriptor.entrypoint)!);
     const html = parseHtml(source, descriptor, this.files, this.limits, { nodes: 0 });
-    return this.editor = new DocumentEdit({ files: this.files, snapshot: { html: html.html, manifest: descriptor, metadata: {} }, html }, this.limits, this.allocate);
+    return this.editor = new DocumentEdit({ files: this.files, snapshot: { html: html.html, manifest: descriptor, metadata: { workbook: this.workbook } }, html }, this.limits, this.allocate);
   }
   parse() { return parseHtml(this.edit().html(), this.descriptor(), this.files, this.limits, { nodes: 0 }); }
   root(): string { const html = this.parse(); return html.nodeIds().find(id => html.peekNode(id)?.parentNodeId === null)!; }

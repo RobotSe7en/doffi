@@ -82,7 +82,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     }
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
-    const richContent = new WorkbookContentEdit(manifest, files, limits, allocate), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
+    const richContent = new WorkbookContentEdit(manifest, files, limits, allocate, workbook), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
     const commentMapping = new WorkbookCommentMapping();
     function annotation(operation: AnnotationOperation): void {
       if (operation.op === "addAnnotation") {
