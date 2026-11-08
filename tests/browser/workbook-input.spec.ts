@@ -645,3 +645,11 @@ test("mounted direct validation confirmations retain drafts and atomically apply
   await page.evaluate(({ entries, options }) => window.workbookEditor.mount(entries, false, options, true), { entries: encodeTestPackage(validationConfirmationSource()), options: validationPreparation });
   await exerciseValidationConfirmation(page, false);
 });
+
+test("mounted direct custom table styles isolate regions, retain native associations and manage defaults and drafts", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookTableStyleControlsSource, exerciseWorkbookTableStyleControls } = await import('./workbook-table-style-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-table-style.xlsx'), { documentId: 'mounted-table-style-controls' }), { kind: 'workbook' });
+  const { source, workbook } = workbookTableStyleControlsSource(model); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
+  await exerciseWorkbookTableStyleControls(page, false, workbook);
+});

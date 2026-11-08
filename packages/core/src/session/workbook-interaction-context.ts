@@ -21,7 +21,7 @@ import { checkRange } from "../workbook/ranges.js";
 
 export const workbookGlobalProposalOperations: ReadonlySet<string> = new Set([
   "setWorkbookNumberFormat", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName",
-  "setWorkbookDefinedName", "removeWorkbookDefinedName", "setWorkbookTableStyle", "removeWorkbookTableStyle", "setWorkbookSettings",
+  "setWorkbookDefinedName", "removeWorkbookDefinedName", "setWorkbookTableStyle", "removeWorkbookTableStyle", "formatWorkbookTableStyleElement", "setWorkbookSettings",
   "insertWorkbookSheet", "copyWorkbookSheet", "removeWorkbookSheet", "moveWorkbookSheet",
 ]);
 type Preparation = Generator<TransactionPreparationProgress, WorkbookInteractionRequest>;

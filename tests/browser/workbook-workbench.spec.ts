@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { expect, test } from "@playwright/test";
-import { writeDocumentZip } from "@doffi/office";
+import { readDocumentZip, writeDocumentZip } from "@doffi/office";
+import type { WorkbookDocumentMetadata } from "@doffi/core";
 import { openSdkHost } from "./sdk-host.js";
 import type * as fixture from "./fixtures/workbook-workbench.js";
 declare global { interface Window { workbookWorkbench: typeof fixture } }
@@ -43,6 +44,7 @@ for (const remote of [false, true]) {
         { panel: "备注与线程批注", field: "批注正文", discard: "放弃批注表单草稿" },
         { panel: "单元格超链接", field: "超链接外部地址", discard: "放弃超链接草稿并读取选区" },
         { panel: "智能表管理", field: "智能表名称", discard: "放弃智能表草稿并重新读取" },
+        { panel: "自定义智能表样式", field: "自定义智能表样式名称", discard: "放弃表样式草稿并重新读取" },
         { panel: "筛选管理", field: "筛选区域", discard: "放弃筛选草稿并重新读取" },
         { panel: "条件格式与数据验证", field: "规则公式一", discard: "放弃规则草稿并重新读取" },
       ]) {
@@ -113,4 +115,32 @@ for (const remote of [false, true]) test(`React workbook wrapper owns view clean
   await page.getByRole("button", { name: "提交工作簿批注", exact: true }).click(); await expect(page.getByRole("button", { name: "整批应用工作簿提案", exact: true })).toBeEnabled();
   expect(await page.evaluate(() => window.workbookWorkbench.disposeView())).toMatchObject({ disposed: true, revision: 1, cells: [{ value: { value: 42 } }, { formula: { expression: "=A1+1" }, value: { value: 999 } }], annotations: [{ status: "open" }] });
   const audit = await page.evaluate(() => window.workbookWorkbench.finish()); if (remote) expect(audit).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+function warningSource(): string {
+  const files = new Map(readDocumentZip(Buffer.from(encoded, 'base64'))), metadata = JSON.parse(new TextDecoder().decode(files.get('metadata.json')!)) as WorkbookDocumentMetadata;
+  metadata.workbook.sheets[0]!.dataValidations = [{ ruleId: 'warning', kind: 'decimal', operator: 'lessThan', formulas: ['=5'], origin: { row: 0, column: 0 },
+    ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }], allowBlank: true, errorStyle: 'warning', showErrorMessage: true, showInputMessage: true,
+    errorTitle: '范围', error: '必须小于五', promptTitle: '', prompt: '' }];
+  files.set('metadata.json', new TextEncoder().encode(JSON.stringify(metadata))); return Buffer.from(writeDocumentZip(files)).toString('base64');
+}
+for (const mode of ['direct', 'worker', 'react'] as const) test(`${mode} workbench forwards warning decisions to human input and isolated proposals`, async ({ page }) => {
+  await openSdkHost(page); await page.addScriptTag({ content: code });
+  await page.evaluate(({ source, worker, react }) => window.workbookWorkbench.mount(source, worker || undefined, react, true), { source: warningSource(), worker: mode === 'direct' ? '' : worker, react: mode === 'react' });
+  try {
+    const settled = () => page.evaluate(() => window.workbookWorkbench.settled());
+    const inspect = async () => { await settled(); return page.evaluate(() => window.workbookWorkbench.inspect()); }, original = await inspect();
+    const afterChange = async (previous: number) => { await expect.poll(() => page.evaluate(() => window.workbookWorkbench.revision())).toBe(previous + 1); await settled(); };
+    const button = (name: string) => page.getByRole('button', { name, exact: true }), input = page.getByLabel('单元格或公式输入', { exact: true });
+    await input.fill('9'); page.once('dialog', dialog => dialog.accept()); await button('确认输入').click();
+    await afterChange(original.revision); expect((await inspect()).history.undoSteps).toBe(1); expect((await inspect()).cells[0]?.value).toEqual({ type: 'number', value: 9 });
+    await button('撤销').click(); await afterChange(original.revision + 1); expect((await inspect()).history.undoSteps).toBe(0); expect((await inspect()).cells[0]?.value).toEqual(original.cells[0]?.value);
+    page.once('dialog', dialog => dialog.dismiss()); await button('提交工作簿批注').click(); await expect(button('生成工作簿请求')).toBeEnabled();
+    expect(await inspect()).toMatchObject({ history: { undoSteps: 0 }, cells: [{ value: original.cells[0]!.value }, {}], annotations: [{ status: 'open' }] }); await expect(button('整批应用工作簿提案')).toBeDisabled();
+    page.once('dialog', dialog => dialog.accept()); await button('提交工作簿批注').click(); await expect(button('整批应用工作簿提案')).toBeEnabled();
+    expect(await inspect()).toMatchObject({ history: { undoSteps: 0 }, cells: [{ value: original.cells[0]!.value }, {}], annotations: [{ status: 'open' }] });
+    await button('整批应用工作簿提案').click(); await afterChange(original.revision + 2); expect((await inspect()).history.undoSteps).toBe(1);
+    expect(await inspect()).toMatchObject({ cells: [{ value: { type: 'number', value: 10 } }, {}], annotations: [{ status: 'resolved' }] });
+    await button('撤销').click(); await afterChange(original.revision + 3); expect((await inspect()).history.undoSteps).toBe(0); expect((await inspect()).cells[0]?.value).toEqual(original.cells[0]?.value);
+  } finally { await page.evaluate(() => window.workbookWorkbench.finish()); }
 });

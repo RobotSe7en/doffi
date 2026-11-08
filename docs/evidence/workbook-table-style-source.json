@@ -1,0 +1,19 @@
+{
+  "generator": "Python standard-library ZIP/XML; no SDK exporter",
+  "base": "examples/xlsx/05-native-table.xlsx",
+  "baseSha256": "54e8874468f2de1ce03fde8686f8af55b21768c444249a4fbda8bde7ab529c31",
+  "source": "packages/office/tests/fixtures/workbook-table-style.xlsx",
+  "sha256": "e8e03d3434fe92f05267485684fe94c752a43682d901c2d2059cfb0258a8c0f6",
+  "styles": [
+    "CustomBand",
+    "SharedPaint"
+  ],
+  "regions": [
+    "wholeTable",
+    "headerRow",
+    "totalRow",
+    "firstRowStripe"
+  ],
+  "scope": "Independent native input; producer observations are recorded separately",
+  "producerEvidence": "docs/evidence/workbook-table-style-native.json"
+}

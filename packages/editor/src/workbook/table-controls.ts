@@ -51,6 +51,7 @@ export function createWorkbookTableControls(document: Document, parent: ParentNo
       columns: Array.from({ length: at.to.column - at.from.column + 1 }, (_, index) => ({ columnId: fresh("column"), name: "列" + (index + 1), totalFunction: "none" })),
       autoFilter: { range: { from: { ...at.from }, to: { ...at.to } }, columns: [] },
       rowStripes: true, columnStripes: false, showFirstColumn: false, showLastColumn: false,
+      ...(snapshot.metadata.workbook.defaultTableStyle ? { style: { ...snapshot.metadata.workbook.defaultTableStyle } } : {}),
     };
     draft = { identity: { documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision }, sheetId, existing: !!original, table, range: workbookControlRangeText(table.range), dirty: false };
     name.value = table.name; objectName.value = table.objectName ?? ""; description.value = table.description ?? ""; range.value = draft.range;

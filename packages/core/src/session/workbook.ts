@@ -173,7 +173,11 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       else if (operation.op === "copyWorkbookSheet") {
         for (const value of copyWorkbookSheet(workbook, cells, richContent, annotations, base, operation, allocate, styles)) yield { kind: "progress", value: { phase: "cells", ...value } };
       }
-      else if (operation.op === "setWorkbookSettings") Object.assign(workbook, operation.changes);
+      else if (operation.op === "setWorkbookSettings") {
+        const { defaultTableStyle, ...changes } = operation.changes; Object.assign(workbook, changes);
+        if (defaultTableStyle === null) delete workbook.defaultTableStyle;
+        else if (defaultTableStyle !== undefined) workbook.defaultTableStyle = defaultTableStyle;
+      }
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };
     }

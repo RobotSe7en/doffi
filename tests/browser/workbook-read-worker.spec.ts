@@ -528,3 +528,13 @@ test('mounted Worker validation confirmations retain drafts and atomically apply
   await exerciseValidationConfirmation(page, true);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
 });
+
+test('mounted Worker custom table styles isolate regions, retain native associations and manage defaults and drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookTableStyleControlsSource, exerciseWorkbookTableStyleControls } = await import('./workbook-table-style-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-table-style.xlsx'), { documentId: 'mounted-table-style-controls' }), { kind: 'workbook' });
+  const { source, workbook } = workbookTableStyleControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookTableStyleControls(page, true, workbook);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});

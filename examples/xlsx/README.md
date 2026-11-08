@@ -61,3 +61,10 @@ pnpm check:xlsx-reference
 ```
 
 只有 `record:xlsx-reference` 更新参考。普通检查验证已保存摘要并重新打开/重存；始终比较源结构、重存结构及已记录的外部差异，相同环境才比较页数与像素，不同环境明确报告未进行像素等同性比较。Office CI 执行两项检查并上传 `.cache/xlsx-reference/result.json`，不将生产者本身已记录的丢失算作 SDK 无损验收。
+
+
+## 编辑阶段的自定义表样式来源
+
+新增来源保存在 `packages/office/tests/fixtures/workbook-table-style.xlsx`，由 `scripts/generate-workbook-table-style-fixture.py` 使用 Python 标准 ZIP/XML 从不可变的 `05-native-table.xlsx` 派生，包含两份共享差异格式的自定义定义、四类区域、条纹及默认／表关联；原始十六份样例字节不变。[源摘要](../../docs/evidence/workbook-table-style-source.json)记录基准和新增文件 SHA-256。
+
+[固定 LibreOffice 重存与实际 B2 修改](../../docs/evidence/workbook-table-style-native.json)另外记录官方 25.8.1.1 归档摘要及生产者差异：Calc 移除自定义定义、默认值和样式关联。源及两份输出均通过官方 Transitional XSD／OPC 检查，原始来源和生产者损失分别保留；不将其称为原生 XLSX 导出或 Excel/WPS 实机验收。复现使用 `pnpm check:workbook-table-style-source` 和 `pnpm check:workbook-table-style-native`。

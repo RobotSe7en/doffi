@@ -1,0 +1,146 @@
+{
+  "scope": "Independent native custom table styles, pinned Calc resave and an actual B2 edit. Producer loss of custom definitions/default/associations is retained explicitly; not an SDK lossless-export or Excel/WPS runtime claim.",
+  "source": "packages/office/tests/fixtures/workbook-table-style.xlsx",
+  "sourceSha256": "e8e03d3434fe92f05267485684fe94c752a43682d901c2d2059cfb0258a8c0f6",
+  "sourceObserved": {
+    "customStyles": [
+      {
+        "attributes": {
+          "name": "CustomBand",
+          "table": "1",
+          "pivot": "0",
+          "count": "4"
+        },
+        "elements": [
+          {
+            "type": "wholeTable",
+            "dxfId": "0"
+          },
+          {
+            "type": "headerRow",
+            "dxfId": "1"
+          },
+          {
+            "type": "totalRow"
+          },
+          {
+            "type": "firstRowStripe",
+            "size": "2",
+            "dxfId": "0"
+          }
+        ]
+      },
+      {
+        "attributes": {
+          "name": "SharedPaint",
+          "table": "1",
+          "pivot": "0",
+          "count": "1"
+        },
+        "elements": [
+          {
+            "type": "wholeTable",
+            "dxfId": "0"
+          }
+        ]
+      }
+    ],
+    "defaultStyle": "CustomBand",
+    "tables": [
+      {
+        "name": "SalesTable",
+        "displayName": "SalesTable",
+        "range": "A1:D6",
+        "style": {
+          "name": "CustomBand",
+          "showFirstColumn": "0",
+          "showLastColumn": "0",
+          "showRowStripes": "1",
+          "showColumnStripes": "0"
+        }
+      }
+    ],
+    "cells": {
+      "B2": {
+        "type": "n",
+        "style": "0",
+        "value": "2",
+        "formula": ""
+      },
+      "D2": {
+        "type": "n",
+        "style": "2",
+        "value": "20",
+        "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]"
+      }
+    }
+  },
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "nativeLocale": "C.UTF-8",
+  "officialSchemasSha256": "d34187520749998af306faf1b730e568b0ca6d88ad24638a407c0a9bb4ca04fc",
+  "cases": [
+    {
+      "name": "resave",
+      "output": "packages/office/tests/fixtures/workbook-table-style-resave-calc.xlsx",
+      "sha256": "7093a597616ccb2f746ced427ff54de6d3b9de79d0bfb8d25b10dfafa66903f9",
+      "observed": {
+        "customStyles": [],
+        "defaultStyle": null,
+        "tables": [
+          {
+            "name": "SalesTable",
+            "displayName": "SalesTable",
+            "range": "A1:D6",
+            "style": null
+          }
+        ],
+        "cells": {
+          "B2": {
+            "type": "n",
+            "style": "0",
+            "value": "2",
+            "formula": ""
+          },
+          "D2": {
+            "type": "n",
+            "style": "3",
+            "value": "20",
+            "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]"
+          }
+        }
+      }
+    },
+    {
+      "name": "edit",
+      "output": "packages/office/tests/fixtures/workbook-table-style-edit-calc.xlsx",
+      "sha256": "cd3944f09ae8dc4959407e3c67b212a0c4b42bf9f4372d690c83c2c6d092c249",
+      "observed": {
+        "customStyles": [],
+        "defaultStyle": null,
+        "tables": [
+          {
+            "name": "SalesTable",
+            "displayName": "SalesTable",
+            "range": "A1:D6",
+            "style": null
+          }
+        ],
+        "cells": {
+          "B2": {
+            "type": "n",
+            "style": "0",
+            "value": "9",
+            "formula": ""
+          },
+          "D2": {
+            "type": "n",
+            "style": "3",
+            "value": "90",
+            "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]"
+          }
+        }
+      }
+    }
+  ]
+}

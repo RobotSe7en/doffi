@@ -23,6 +23,7 @@ import { createWorkbookCommentControls } from "./comment-controls.js";
 import { createWorkbookNameControls } from "./names-controls.js";
 import { createWorkbookWorksheetControls } from "./worksheet-controls.js";
 import { createWorkbookHyperlinkControls } from "./hyperlink-controls.js";
+import { createWorkbookTableStyleControls } from "./table-style-controls.js";
 import { createWorkbookTableControls } from "./table-controls.js";
 import { createWorkbookFilterControls } from "./filter-controls.js";
 import { createWorkbookRulesControls } from "./rules-controls.js";
@@ -64,6 +65,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   let worksheetControls: ReturnType<typeof createWorkbookWorksheetControls> | undefined;
   let hyperlinkControls: ReturnType<typeof createWorkbookHyperlinkControls> | undefined;
   let tableControls: ReturnType<typeof createWorkbookTableControls> | undefined;
+  let tableStyleControls: ReturnType<typeof createWorkbookTableStyleControls> | undefined;
   let filterControls: ReturnType<typeof createWorkbookFilterControls> | undefined;
   let rulesControls: ReturnType<typeof createWorkbookRulesControls> | undefined;
   let found: { key: string; result: WorkbookFindResult; index: number; view?: WorkbookReadConnection } | undefined;
@@ -96,7 +98,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     return config.locale !== undefined && value.calculationContext?.locale === undefined ? { ...value, calculationContext: { ...value.calculationContext, locale: config.locale } } : value;
   }
   function pendingInput(): boolean { return binding?.hasPendingInput() ?? false; }
-  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls, tableControls, filterControls, rulesControls].some(controls => controls?.hasPendingInput()); }
+  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls, tableControls, tableStyleControls, filterControls, rulesControls].some(controls => controls?.hasPendingInput()); }
   function controls(): void {
     if (disposed) return; const state = input.state(), busy = !!commandAbort || state.applying || state.selecting;
     // Keep the draft editable while a remote operation is preparing or its
@@ -114,6 +116,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     worksheetControls?.refresh();
     hyperlinkControls?.refresh();
     tableControls?.refresh();
+    tableStyleControls?.refresh();
     filterControls?.refresh();
     rulesControls?.refresh();
     const pending = pendingInput() || state.applying || !!commandAbort || pendingForms();
@@ -420,6 +423,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   worksheetControls = createWorkbookWorksheetControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   hyperlinkControls = createWorkbookHyperlinkControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   tableControls = createWorkbookTableControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
+  tableStyleControls = createWorkbookTableStyleControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   filterControls = createWorkbookFilterControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   rulesControls = createWorkbookRulesControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void {

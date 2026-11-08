@@ -4,7 +4,7 @@ import { WorkbookDrawingOperationSchema } from "./workbook-drawing-operations.js
 import { WorkbookCommentOperationSchema } from "./workbook-comment-operations.js";
 export * from "./workbook-drawing-operations.js";
 export * from "./workbook-comment-operations.js";
-import { WorkbookAutoFilterSchema, WorkbookCellStylesSchema, WorkbookConditionalRuleSchema, WorkbookCoordinateSchema, WorkbookDataValidationSchema, WorkbookDefinedNameSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookTableSchema, WorkbookTableStyleSchema, WorkbookValueSchema } from "./workbook.js";
+import { WorkbookAutoFilterSchema, WorkbookCellStylesSchema, WorkbookConditionalRuleSchema, WorkbookCoordinateSchema, WorkbookDataValidationSchema, WorkbookDefinedNameSchema, WorkbookHyperlinkSchema, WorkbookNumberFormatSchema, WorkbookRangeSchema, WorkbookSheetSchema, WorkbookTableSchema, WorkbookTableStyleReferenceSchema, WorkbookTableStyleSchema, WorkbookValueSchema } from "./workbook.js";
 
 export const WorkbookCellSourceSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("value"), value: WorkbookValueSchema }),
@@ -31,6 +31,7 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("setWorkbookStyleClass"), cssClass: IdentifierSchema, properties: z.record(z.string(), z.string().min(1)) }),
   z.strictObject({ op: z.literal("formatWorkbookRanges"), sheetId: IdentifierSchema, ranges: z.array(WorkbookRangeSchema).min(1), properties: z.record(z.string(), z.string().min(1)), numberFormatId: IdentifierSchema.optional() }),
   z.strictObject({ op: z.literal("formatWorkbookConditionalRule"), sheetId: IdentifierSchema, ruleId: IdentifierSchema, stopIndex: z.number().int().min(0).max(2).optional(), properties: z.record(z.string(), z.string().min(1)), numberFormatId: IdentifierSchema.nullable().optional() }),
+  z.strictObject({ op: z.literal("formatWorkbookTableStyleElement"), styleId: IdentifierSchema, region: WorkbookTableStyleSchema.shape.elements.element.shape.region, properties: z.record(z.string(), z.string().min(1)), numberFormatId: IdentifierSchema.nullable().optional() }),
   z.strictObject({ op: z.literal("formatWorkbookText"), sheetId: IdentifierSchema, at: WorkbookCoordinateSchema, from: z.number().int().min(0).max(32767), to: z.number().int().min(0).max(32767), expectedText: z.string().max(32767), properties: z.record(z.string(), z.string().min(1)) }),
   z.strictObject({ op: z.literal("setWorkbookCellStyleDefinition"), definition: WorkbookCellStylesSchema.shape.definitions.element.omit({ cssClass: true }), properties: z.record(z.string(), z.string().min(1)) }),
   z.strictObject({ op: z.literal("setWorkbookCellStyleName"), name: WorkbookCellStylesSchema.shape.names.element }),
@@ -57,7 +58,7 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("moveWorkbookRange"), sheetId: IdentifierSchema, range: WorkbookRangeSchema, targetSheetId: IdentifierSchema,
     target: WorkbookCoordinateSchema, overwrittenContent: z.enum(["reject", "clear"]).optional() }),
   z.strictObject({ op: z.literal("setWorkbookSettings"), changes: z.strictObject({
-    calculationMode: z.enum(["auto", "manual"]).optional(), activeSheetId: IdentifierSchema.optional(),
+    calculationMode: z.enum(["auto", "manual"]).optional(), activeSheetId: IdentifierSchema.optional(), defaultTableStyle: WorkbookTableStyleReferenceSchema.nullable().optional(),
   }) }),
   z.strictObject({ op: z.literal("insertWorkbookSheet"), name: WorkbookSheetSchema.shape.name, beforeSheetId: IdentifierSchema.optional() }),
   z.strictObject({ op: z.literal("copyWorkbookSheet"), sheetId: IdentifierSchema, name: WorkbookSheetSchema.shape.name, beforeSheetId: IdentifierSchema.optional(),

@@ -12,12 +12,12 @@ let cleanup = () => {}, workbench: WorkbookWorkbenchView, session: WorkbookSessi
 let releaseHost: ((value: WorkbookEditProposal) => void) | undefined, submitted: WorkbookInteractionRequest | undefined, hostMode = "return", worker: Worker | undefined;
 let errors: string[] = [], disposed = false, unmount: (() => void) | undefined;
 function edit(request: WorkbookInteractionRequest, value: number, column = 0): WorkbookEditProposal { return { protocolVersion: 1, requestId: request.requestId, documentId: request.documentId, baseRevision: request.baseRevision, proposalId: "reviewed-proposal", annotationIds: request.annotations.map(annotation => annotation.annotationId), summary: "将 A1 改为 " + value + "，核对只读公式当前结果。", operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column, source: { kind: "value", value: { type: "number", value } } }] }] }; }
-export async function mount(encoded: string, workerCode?: string, react = false) {
+export async function mount(encoded: string, workerCode?: string, react = false, confirmWarnings = false) {
   cleanup(); errors = []; hostMode = "return"; releaseHost = undefined; submitted = undefined; disposed = false;
   const host = document.createElement("div"); document.body.append(host); let url: string | undefined;
   if (workerCode) { url = URL.createObjectURL(new Blob([workerCode], { type: "text/javascript" })); worker = new Worker(url); const channel = new MessageChannel(), bytes = decodeTestBytes(encoded); worker.postMessage({ kind: "open", format: "package", bytes, port: channel.port1 }, [bytes.buffer, channel.port1]); session = await connectWorkbookSession(channel.port2); }
   else { worker = undefined; session = createDocumentSession(openDocument(readDocumentZip(decodeTestBytes(encoded)), { kind: "workbook" }), { sessionLimits: { maxCandidates: 1 } }); }
-  const config: WorkbookWorkbenchOptions = { widthPt: 420, heightPt: 240, allowGlobalScope: true, onError: error => errors.push((error as { code?: string }).code ?? error.message), onSubmitAnnotations: async request => {
+  const config: WorkbookWorkbenchOptions = { widthPt: 420, heightPt: 240, ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用工作簿验证警告？") } : {}), allowGlobalScope: true, onError: error => errors.push((error as { code?: string }).code ?? error.message), onSubmitAnnotations: async request => {
     submitted = request as WorkbookInteractionRequest; if (hostMode === "fail") throw Error("private host error");
     if (hostMode === "hold") return new Promise<WorkbookEditProposal>(resolve => { releaseHost = resolve; });
     return hostMode === "void" ? undefined : edit(submitted, 10);

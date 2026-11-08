@@ -8,7 +8,7 @@ import { SourceStyleEdit } from "./source-styles.js";
 import { checkRange } from "../workbook/ranges.js";
 import { formatWorkbookCellText } from "./workbook-text-format.js";
 
-type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookText" | "formatWorkbookRanges" | "formatWorkbookConditionalRule" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
+type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookText" | "formatWorkbookRanges" | "formatWorkbookConditionalRule" | "formatWorkbookTableStyleElement" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
 type Group = keyof WorkbookStyleApplication;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
 function group(property: string): Group {
@@ -51,7 +51,7 @@ function validateNativeAppearance(properties: Readonly<Record<string, string>>, 
   }
 }
 export function isWorkbookStyleOperation(operation: WorkbookOperation): operation is StyleOperation {
-  return ["formatWorkbookText", "formatWorkbookRanges", "formatWorkbookConditionalRule", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName"].includes(operation.op);
+  return ["formatWorkbookText", "formatWorkbookRanges", "formatWorkbookConditionalRule", "formatWorkbookTableStyleElement", "setWorkbookStyleClass", "setWorkbookCellStyleDefinition", "setWorkbookCellStyleName", "removeWorkbookCellStyleName"].includes(operation.op);
 }
 /** Style identities and update flags remain metadata; effective appearance
  * stays solely in existing CSS and cell/row/column number-format sources. */
@@ -86,6 +86,26 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
   const groups = new Map(Object.keys(properties).map(property => [property, group(property)]));
   const classes = new Set<string>();
   for (const sheet of styles.snapshot()) walk(parse(sheet.css, { context: "stylesheet" }), node => { if (node.type === "ClassSelector") classes.add(ident.decode(node.name)); });
+  if (operation.op === "formatWorkbookTableStyleElement") {
+    const style = workbook.tableStyles?.find(style => style.styleId === operation.styleId), element = style?.elements.find(element => element.region === operation.region);
+    if (!element) invalid("Table formatting requires an existing custom style region.");
+    const target: { cssClass?: string | undefined; numberFormatId?: string | undefined } = element.style ?? {};
+    if (operation.numberFormatId !== undefined && operation.numberFormatId !== null && !workbook.numberFormats.some(format => format.formatId === operation.numberFormatId))
+      invalid("Table formatting requires a defined number format.");
+    if (Object.keys(properties).length && (!target.cssClass || !styles.resolver({ combineDecorations: false }).hasSpecifiedClass(target.cssClass, properties, "td"))) {
+      let local: string; do { local = "workbook-table-" + allocate(); } while (classes.has(local));
+      if (target.cssClass) styles.aliasClass(target.cssClass, local, new Set(Object.keys(properties)));
+      styles.overrideLocalClass(local, properties, {}, ""); target.cssClass = local;
+    }
+    if (operation.numberFormatId === null) delete target.numberFormatId;
+    else if (operation.numberFormatId !== undefined) target.numberFormatId = operation.numberFormatId;
+    if (!target.cssClass && target.numberFormatId !== undefined) {
+      let local: string; do { local = "workbook-table-" + allocate(); } while (classes.has(local));
+      styles.addClass(local, {}); target.cssClass = local;
+    }
+    if (target.cssClass) element.style = { cssClass: target.cssClass, ...(target.numberFormatId !== undefined ? { numberFormatId: target.numberFormatId } : {}) };
+    return;
+  }
   if (operation.op === "formatWorkbookConditionalRule") {
     const rule = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId)?.conditionalRules?.find(rule => rule.ruleId === operation.ruleId)
       ?? invalid("Conditional formatting requires an existing rule.");

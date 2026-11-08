@@ -48,6 +48,8 @@
     "check:workbook-filter-calculation": "python3 scripts/check-workbook-filter-calculation.py --verify-native",
     "check:workbook-axis": "/usr/bin/python3 scripts/check-workbook-axis.py --verify-native",
     "check:workbook-axis-tables": "/usr/bin/python3 scripts/check-workbook-axis-tables.py --verify-native",
+    "check:workbook-table-style-source": "python3 scripts/generate-workbook-table-style-fixture.py --check",
+    "check:workbook-table-style-native": "/usr/bin/python3 scripts/check-workbook-table-style.py --verify-native",
     "check:workbook-axis-drawings": "/usr/bin/python3 scripts/check-workbook-axis-drawings.py --verify-native",
     "check:workbook-sort": "/usr/bin/python3 scripts/check-workbook-sort.py --verify-native",
     "check:workbook-copy-merges": "/usr/bin/python3 scripts/check-workbook-copy-merges.py --verify-native",

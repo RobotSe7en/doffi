@@ -30,6 +30,7 @@ import { createWorkbookCommentControls } from "./comment-controls.js";
 import { createWorkbookNameControls } from "./names-controls.js";
 import { createWorkbookWorksheetControls } from "./worksheet-controls.js";
 import { createWorkbookHyperlinkControls } from "./hyperlink-controls.js";
+import { createWorkbookTableStyleControls } from "./table-style-controls.js";
 import { createWorkbookTableControls } from "./table-controls.js";
 import { createWorkbookFilterControls } from "./filter-controls.js";
 import { createWorkbookRulesControls } from "./rules-controls.js";
@@ -54,6 +55,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   let worksheetControls: ReturnType<typeof createWorkbookWorksheetControls> | undefined;
   let hyperlinkControls: ReturnType<typeof createWorkbookHyperlinkControls> | undefined;
   let tableControls: ReturnType<typeof createWorkbookTableControls> | undefined;
+  let tableStyleControls: ReturnType<typeof createWorkbookTableStyleControls> | undefined;
   let filterControls: ReturnType<typeof createWorkbookFilterControls> | undefined;
   let rulesControls: ReturnType<typeof createWorkbookRulesControls> | undefined;
   if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
@@ -85,7 +87,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   }
   function runInteraction<T>(action: () => Promise<T>): Promise<T> { const work = interaction.then(action); interaction = work.then(() => {}, report); return work; }
   function pendingInput(): boolean { return binding.hasPendingInput(); }
-  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls, tableControls, filterControls, rulesControls].some(controls => controls?.hasPendingInput()); }
+  function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls, tableControls, tableStyleControls, filterControls, rulesControls].some(controls => controls?.hasPendingInput()); }
   function report(error: unknown): void {
     if (disposed) return; const problem = error instanceof Error ? error : new Error("工作簿编辑失败。");
     ui.error.textContent = problem instanceof DocumentError && problem.code === "RevisionConflict" ? "文档已变化。当前输入已保留，请先复制输入或取消后重新选择。"
@@ -108,6 +110,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     worksheetControls?.refresh();
     hyperlinkControls?.refresh();
     tableControls?.refresh();
+    tableStyleControls?.refresh();
     filterControls?.refresh();
     rulesControls?.refresh();
     const pending = pendingInput() || Boolean(commandAbort) || pendingForms();
@@ -501,6 +504,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   worksheetControls = createWorkbookWorksheetControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   hyperlinkControls = createWorkbookHyperlinkControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   tableControls = createWorkbookTableControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
+  tableStyleControls = createWorkbookTableStyleControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   filterControls = createWorkbookFilterControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   rulesControls = createWorkbookRulesControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   button("确认输入", () => binding.apply(), () => !commandAbort && Boolean(input.state().selection) && !input.state().composing);

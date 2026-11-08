@@ -61,6 +61,7 @@ export function external(value: string, at = { row: 0, column: 0 }): void {
   session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision,
     operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ ...at, source: { kind: "value", value: { type: "text", value } } }] }] }));
 }
+export function tableStyleSource() { const workbook = session.snapshot().metadata.workbook; return { tableStyles: workbook.tableStyles, defaultTableStyle: workbook.defaultTableStyle }; }
 export function cell(sheetId: string, row: number, column: number) { return session.getCell(sheetId, row, column); }
 export function paste(text: string): boolean {
   const input = editor.element.shadowRoot!.querySelector("textarea")!, data = new DataTransfer(); data.setData("text/plain", text);
@@ -98,4 +99,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

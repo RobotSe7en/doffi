@@ -21,13 +21,14 @@ export function WorkbookWorkbench(props: WorkbookWorkbenchProps): ReactElement {
       ...(props.locale !== undefined ? { locale: props.locale } : {}), ...(props.limits ? { limits: props.limits } : {}), ...(props.scope ? { scope: props.scope } : {}), ...(props.allowGlobalScope !== undefined ? { allowGlobalScope: props.allowGlobalScope } : {}),
       ...(props.readRanges ? { readRanges: props.readRanges } : {}), ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}), ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
       ...(props.prepareOptions ? { prepareOptions: () => latest.current.prepareOptions!() } : {}),
+      ...(props.confirmValidationWarnings ? { confirmValidationWarnings: confirmation => latest.current.confirmValidationWarnings!(confirmation) } : {}),
       ...(hasSubmission ? { onSubmitAnnotations: (request, context) => latest.current.onSubmitAnnotations!(request, context) } : {}),
       onError: error => latest.current.onError?.(error), onSelectionChange: selection => latest.current.onSelectionChange?.(selection), onPendingChange: pending => latest.current.onPendingChange?.(pending), onEvent: event => latest.current.onEvent?.(event),
     });
     try { latest.current.onViewChange?.(view); } catch (error) { view.dispose(); throw error; }
     void view.ready.catch(() => { /* The ordinary workbench reports errors. */ });
     return () => { view.dispose(); latest.current.onViewChange?.(undefined); };
-  }, [props.session, props.title, props.widthPt, props.heightPt, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), hasSubmission]);
+  }, [props.session, props.title, props.widthPt, props.heightPt, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), Boolean(props.confirmValidationWarnings), hasSubmission]);
   return createElement("div", { ref: container, className: props.className });
 }
 import { mountDocumentWorkbench } from "./workbench.js";
