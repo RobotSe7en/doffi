@@ -248,10 +248,18 @@ export class SourceStyleResolver {
   hasSpecified(node: SourceStyleNode, properties: Css): boolean {
     this.specified(node); return this.specifiedMatches(this.declarationCache.get(node)!, properties);
   }
-  /** Metadata-owned differential styles use the same class-only cascade as
-   * classStyle; a synthetic HTML tag must not change their no-op decisions. */
-  hasSpecifiedClass(name: string, properties: Css): boolean {
-    return this.specifiedMatches(this.declarations(this.classRules(name)), properties);
+  /** Compare the class baseline, conservatively checking each possible target
+   * context. Mutually exclusive contexts must not hide one another's paints. */
+  hasSpecifiedClass(name: string, properties: Css, tag?: string): boolean {
+    const baseline = this.classRules(name);
+    if (!this.specifiedMatches(this.declarations(baseline), properties)) return false;
+    const plain = new Set(baseline);
+    for (const rule of [...this.indexed.values()].flat()) {
+      this.step(); const tail = rule.compounds.at(-1)!;
+      if (plain.has(rule) || !tail.classes.every(value => value === name) || tag !== undefined && (tail.tag !== undefined && tail.tag !== tag || tail.root && tag !== "html")) continue;
+      if (!this.specifiedMatches(this.declarations([...baseline, rule]), properties)) return false;
+    }
+    return true;
   }
   private specifiedMatches(entries: ReadonlyMap<string, DeclarationEntry>, properties: Css): boolean {
     let bytes = 0; const budget: CssBudget = { nodes: 0 }, expectedProperties: [string, string, boolean][] = [];

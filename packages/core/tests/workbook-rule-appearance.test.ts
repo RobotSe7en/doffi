@@ -40,7 +40,7 @@ test("indexed color stops isolate their shared paint and number formats can be s
   const session = fixture(), snapshot = session.snapshot();
   apply(session, [{ ...operation, ruleId: "scale", stopIndex: 1, properties: { "background-color": "#ff8800" } }]);
   const scale = rule(session, "scale"); if (scale.kind !== "colorScale") throw Error("Missing scale");
-  expect(scale.stops[0]).toEqual((snapshot.metadata.workbook.sheets[0]!.conditionalRules![2] as Extract<WorkbookConditionalRule, { kind: "colorScale" }>).stops[0]); expect(appearance(session, scale.stops[1]!.cssClass)["background-color"]).toBe("#ff8800");
+  expect(scale.stops[0]).toEqual((snapshot.metadata.workbook.sheets[0]!.conditionalRules![2] as Extract<WorkbookConditionalRule, { kind: "colorScale" }>).stops[0]); expect(appearance(session, scale.stops[1]!.cssClass)).toMatchObject({ "--office-scale-color": "#ff8800", "--office-scale-tint": "0" });
   expect(apply(session, [{ ...operation, ruleId: "scale", stopIndex: 1, properties: { "background-color": "#ff8800" } }]).changed).toBe(false);
   const format = snapshot.metadata.workbook.numberFormats[0]!.formatId, styles = session.snapshot().styles;
   apply(session, [{ ...operation, properties: {}, numberFormatId: format }]); expect(rule(session)).toMatchObject({ numberFormatId: format, cssClass: "shared-rule" }); expect(session.snapshot().styles).toEqual(styles);
@@ -72,4 +72,27 @@ test("continued conditional painting retains bounded CSS growth and no-op histor
   const session = fixture(); let first = 0;
   for (let index = 0; index < 100; index++) { apply(session, [{ ...operation, properties: { "background-color": "#" + (0x100000 + index).toString(16) } }]); if (index === 49) first = session.snapshot().styles.reduce((size, style) => size + style.css.length, 0); }
   expect(session.snapshot().styles.reduce((size, style) => size + style.css.length, 0)).toBeLessThan(first * 2.5); expect(session.history().undoSteps).toBe(100);
+});
+test("contextual native paint cannot make a differing visible rule look like a no-op", () => {
+  const initial = fixture(), files = new Map(initial.serialize()), snapshot = initial.snapshot(), style = snapshot.styles[0]!;
+  files.set(style.path, encoder.encode(style.css + ".shared-rule{--office-cell-foreground-color:#112233;--office-cell-foreground-tint:0;--office-cell-foreground-native-alpha:initial}td.shared-rule{--office-cell-foreground-color:#ffffff!important}.shared-rule[data-column=\"0\"]{--office-cell-foreground-color:#aabbcc!important}"));
+  const session = createDocumentSession(openDocument(files, { kind: "workbook" })); sessions.push(session);
+  const edit = { ...operation, properties: { color: "#112233" } }, resolver = new SourceStyleResolver(session.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS, new Set());
+  expect(resolver.hasSpecifiedClass("shared-rule", { "--office-cell-foreground-color": "#112233" })).toBe(false);
+  expect(apply(session, [edit]).changed).toBe(true); const selected = rule(session); if (!("cssClass" in selected)) throw Error("Missing rule class");
+  const after = new SourceStyleResolver(session.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS, new Set());
+  expect(after.specified({ tag: "td", attrs: { class: selected.cssClass!, "data-column": "0" }, parent: undefined })["--office-cell-foreground-color"]).toBe("#112233");
+  const saved = session.serialize(); expect(apply(session, [edit]).changed).toBe(false); expect(session.serialize()).toEqual(saved);
+  const global = new SourceStyleResolver([".paint{color:#112233}td{color:#ffffff!important}"], DEFAULT_DOCUMENT_READ_LIMITS, new Set());
+  expect(global.hasSpecifiedClass("paint", { color: "#112233" }, "td")).toBe(false); expect(global.hasSpecifiedClass("paint", { color: "#112233" }, "span")).toBe(true);
+});
+test("a local decoration longhand wins a contextual important shorthand and keeps repeated history unchanged", () => {
+  const initial = fixture(), files = new Map(initial.serialize()), style = initial.snapshot().styles[0]!;
+  files.set(style.path, encoder.encode(style.css + ".shared-rule{text-decoration-line:none}td.shared-rule{text-decoration:underline!important}"));
+  const session = createDocumentSession(openDocument(files, { kind: "workbook" })); sessions.push(session);
+  const edit = { ...operation, properties: { "text-decoration-line": "none" } }; expect(apply(session, [edit]).changed).toBe(true);
+  const selected = rule(session); if (!("cssClass" in selected)) throw Error("Missing rule class");
+  const resolver = new SourceStyleResolver(session.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS, new Set());
+  expect(resolver.specified({ tag: "td", attrs: { class: selected.cssClass! }, parent: undefined })["text-decoration-line"]).toBe("none");
+  const saved = session.serialize(); expect(apply(session, [edit]).changed).toBe(false); expect(session.serialize()).toEqual(saved);
 });

@@ -93,8 +93,12 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
     if (rule.kind === "colorScale") {
       if (operation.stopIndex === undefined || !rule.stops[operation.stopIndex] || operation.numberFormatId !== undefined)
         invalid("A color scale requires an existing stop and cannot carry a number format.");
-      if (Object.keys(properties).some(property => property !== "background-color" && !/^--office-cell-fill-(?:kind|color|tint|native-alpha)$/.test(property))
-        || properties["--office-cell-fill-kind"] !== undefined && properties["--office-cell-fill-kind"].trim() !== "solid") invalid("Color-scale stops accept a solid background color.");
+      if (Object.keys(operation.properties).some(property => property !== "background-color")) invalid("Color-scale stops accept a solid background color.");
+      const color = properties["background-color"];
+      for (const property of Object.keys(properties)) delete properties[property];
+      // Color scales consume their native scale paint, rather than the cell
+      // fill used by ordinary differentials. Keep one authoritative stop color.
+      if (color !== undefined && !color.includes("--office-scale-color")) Object.assign(properties, { "--office-scale-color": color, "--office-scale-tint": "0", "--office-scale-native-alpha": "initial" });
       target = rule.stops[operation.stopIndex]!;
     } else {
       if (operation.stopIndex !== undefined) invalid("Only color-scale rules have indexed stops.");
@@ -104,7 +108,7 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
     }
     if (Object.keys(properties).length) {
       const current = target.cssClass;
-      if (!current || !styles.resolver({ combineDecorations: false }).hasSpecifiedClass(current, properties)) {
+      if (!current || !styles.resolver({ combineDecorations: false }).hasSpecifiedClass(current, properties, "td")) {
         let local: string; do { local = "workbook-rule-" + allocate(); } while (classes.has(local));
         if (current) styles.aliasClass(current, local, new Set(Object.keys(properties)));
         styles.overrideLocalClass(local, properties, {}, ""); target.cssClass = local;

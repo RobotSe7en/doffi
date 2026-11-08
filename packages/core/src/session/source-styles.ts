@@ -122,7 +122,7 @@ export class SourceStyleEdit {
             if (classes > maximum) { maximum = classes; tagsAtMaximum = tags; }
             else if (classes === maximum) tagsAtMaximum = Math.max(tagsAtMaximum, tags);
         });
-        const selector = ("." + ident.encode(name)).repeat(Math.max(1, maximum + Number(tag !== "" && tagsAtMaximum > 1)));
+        const selector = ("." + ident.encode(name)).repeat(Math.max(1, maximum + Number(tagsAtMaximum > (tag ? 1 : 0))));
         const declarations = (input: Readonly<Record<string, string>>): string => {
             let css = ""; for (const [property, value] of Object.entries(input)) css = setInlineStyle(css, property, value, this.limits);
             const ast = parse(css, { context: "declarationList" });

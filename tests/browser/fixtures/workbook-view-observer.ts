@@ -41,6 +41,11 @@ export function measureWorkbookChart(view: ShadowRoot | undefined) {
     frames: [...svg.querySelectorAll('[data-sdk-chart-label-frame]')].map(frame => ({ fill: frame.getAttribute('fill'), color: frame.getAttribute('stroke'), width: Number(frame.getAttribute('stroke-width')) })),
     axes: { y: category.y1.baseVal.value, top: value.y1.baseVal.value, bottom: value.y2.baseVal.value } };
 }
+export function measureWorkbookCellAppearance(view: ShadowRoot | undefined, row: number, column: number) {
+  const cell = view?.querySelector<HTMLElement>(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`), fill = view?.querySelector<HTMLElement>(`[data-office-fill-key$=":${row}:${column}"]`);
+  return { fill: fill ? fill.ownerDocument.defaultView!.getComputedStyle(fill).backgroundColor : undefined,
+    text: (cell ? [cell, ...cell.querySelectorAll<HTMLElement>("*")] : []).filter(element => !element.children.length && element.textContent).map(element => { const style = element.ownerDocument.defaultView!.getComputedStyle(element); return { text: element.textContent, color: style.color, weight: style.fontWeight, italic: style.fontStyle, font: style.fontFamily, size: style.fontSize }; }) };
+}
 export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId: string) {
   return [...view?.querySelectorAll<HTMLElement>('[data-office-text-style][data-source-node-id]') ?? []]
     .filter(element => element.dataset.sourceNodeId === nodeId).map(element => {

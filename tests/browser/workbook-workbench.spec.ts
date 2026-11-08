@@ -44,6 +44,7 @@ for (const remote of [false, true]) {
         { panel: "单元格超链接", field: "超链接外部地址", discard: "放弃超链接草稿并读取选区" },
         { panel: "智能表管理", field: "智能表名称", discard: "放弃智能表草稿并重新读取" },
         { panel: "筛选管理", field: "筛选区域", discard: "放弃筛选草稿并重新读取" },
+        { panel: "条件格式与数据验证", field: "规则公式一", discard: "放弃规则草稿并重新读取" },
       ]) {
         await page.getByText(form.panel, { exact: true }).click(); const field = page.getByLabel(form.field, { exact: true }); await field.fill("UnsavedDraft");
         await expect(page.getByRole("button", { name: "生成工作簿请求", exact: true })).toBeDisabled();

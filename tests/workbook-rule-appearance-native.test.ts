@@ -12,7 +12,7 @@ for (const index of [0, 1, 2, 3]) test(`native conditional definition ${index + 
     const manifest = session.snapshot().manifest;
     session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [operation] }));
     const after = session.snapshot(), next = after.metadata.workbook.sheets[0]!.conditionalRules![index]!, cssClass = next.kind === "colorScale" ? next.stops.at(-1)!.cssClass : next.cssClass!, resolver = new SourceStyleResolver(after.styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS, new Set());
-    expect(cssClass).not.toBe(original); expect(resolver.classStyle(cssClass)["background-color"]).toBe("#33bb88"); expect(resolver.classStyle(original)).toEqual(expected);
+    expect(cssClass).not.toBe(original); expect(resolver.classStyle(cssClass)[next.kind === "colorScale" ? "--office-scale-color" : "background-color"]).toBe("#33bb88"); expect(resolver.classStyle(original)).toEqual(expected);
     expect(after.manifest.chunks).toEqual(before.manifest.chunks); expect(after.metadata.workbook.sheets[0]!.dataValidations).toEqual(before.metadata.workbook.sheets[0]!.dataValidations);
     expect(after.metadata.workbook.sheets[0]!.conditionalRules!.filter((_, at) => at !== index)).toEqual(before.metadata.workbook.sheets[0]!.conditionalRules!.filter((_, at) => at !== index));
     expect(openDocument(readDocumentZip(writeDocumentZip(session.serialize())), { kind: "workbook" }).snapshot()).toEqual(after);

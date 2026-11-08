@@ -508,3 +508,14 @@ test('mounted Worker filter controls preserve native criteria, paged text, hidde
   await exerciseWorkbookFilterControls(page, true, sheets);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
 });
+
+
+test('mounted Worker rule controls paint native conditions and scales, enforce validation warnings and preserve drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookRulesControlsSource, workbookRuleHostPreparation, exerciseWorkbookRulesControls } = await import('./workbook-rules-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-rule-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookRulesControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes, options }) => window.workbookRemoteEditor.mount(code, bytes, true, options), { code: sessionWorkerCode, bytes, options: workbookRuleHostPreparation });
+  await exerciseWorkbookRulesControls(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});

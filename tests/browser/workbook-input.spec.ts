@@ -628,3 +628,13 @@ test("mounted direct filter controls preserve native criteria, paged text, hidde
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
   await exerciseWorkbookFilterControls(page, false, sheets);
 });
+
+
+test("mounted direct rule controls paint native conditions and scales, enforce validation warnings and preserve drafts", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookRulesControlsSource, workbookRuleHostPreparation, exerciseWorkbookRulesControls } = await import('./workbook-rules-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-rule-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookRulesControlsSource(model);
+  await page.evaluate(({ entries, options }) => window.workbookEditor.mountObserved(entries, options), { entries: encodeTestPackage(source), options: workbookRuleHostPreparation });
+  await exerciseWorkbookRulesControls(page, false, sheets);
+});

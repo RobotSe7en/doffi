@@ -1,14 +1,14 @@
 import { createDocumentSession, openDocument } from "@doffi/core";
-import type { WorkbookSession } from "@doffi/core";
+import type { TransactionPrepareOptions, WorkbookSession } from "@doffi/core";
 import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookEditorView } from "@doffi/editor";
 import { decodeTestPackage } from "./package-transport.js";
 import type { TestPackage } from "./package-transport.js";
-import { measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
+import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
 let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 const errors: string[] = [];
-export async function mount(entries: TestPackage, observeText = false): Promise<void> {
+export async function mount(entries: TestPackage, observeText = false, prepareOptions?: TransactionPrepareOptions): Promise<void> {
   observed?.dispose(); observed = undefined;
   editor?.dispose(); session?.dispose(); container?.remove(); errors.length = 0;
   session = createDocumentSession(openDocument(decodeTestPackage(entries), { kind: "workbook" }));
@@ -17,12 +17,13 @@ export async function mount(entries: TestPackage, observeText = false): Promise<
   // automation. Production source and render surfaces remain closed.
   const attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function(init) { return attach.call(this, { ...init, mode: "open" }); };
-  try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
+  try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
   finally { Element.prototype.attachShadow = attach; }
   if (observeText) observed = observeWorkbookViews(editor.element);
   await editor.ready;
 }
-export async function mountObserved(entries: TestPackage): Promise<void> { await mount(entries, true); }
+export async function mountObserved(entries: TestPackage, prepareOptions?: TransactionPrepareOptions): Promise<void> { await mount(entries, true, prepareOptions); }
+export function displayedCellAppearance(row: number, column: number) { return measureWorkbookCellAppearance(observed?.current(), row, column); }
 export function displayedChart() { return measureWorkbookChart(observed?.current()); }
 export function displayedDrawingText(nodeId: string) { return measureWorkbookDrawingText(observed?.current(), nodeId); }
 export function displayedCell(row: number, column: number): string | undefined {
@@ -97,4 +98,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

@@ -1,19 +1,20 @@
 import { connectWorkbookSession, mountWorkbookEditor } from '@doffi/editor';
 import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
-import type { WorkbookCell } from '@doffi/core';
+import type { TransactionPrepareOptions, WorkbookCell } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
-import { measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
+import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean, at?: { row: number; column: number }): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
+  displayedCellAppearance(row: number, column: number): ReturnType<typeof measureWorkbookCellAppearance>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
   displayedDrawingText(nodeId: string): ReturnType<typeof measureWorkbookDrawingText>;
   displayedDrawingBounds(): ReturnType<typeof measureWorkbookDrawingBounds>;
   displayedCell(row: number, column: number): string | undefined;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
-export async function mount(code: string, encoded: string, observeView = false) {
+export async function mount(code: string, encoded: string, observeView = false, prepareOptions?: TransactionPrepareOptions) {
   cleanup(); const host = document.createElement('div'); document.body.append(host);
   const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), worker = new Worker(url), channel = new MessageChannel();
   let holdReference = false, heldReference: unknown;
@@ -27,7 +28,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
   let editor: WorkbookRemoteEditorView;
   let observed: ReturnType<typeof observeWorkbookViews> | undefined;
   try {
-    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
+    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
     if (observeView) {
       Element.prototype.attachShadow = attach;
       observed = observeWorkbookViews(editor.element, { openHostShadows: true });
@@ -54,6 +55,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
       } finally { source.dispose(); }
     },
     settled: () => editor.settled(),
+    displayedCellAppearance: (row, column) => measureWorkbookCellAppearance(observed?.current(), row, column),
     displayedChart: () => measureWorkbookChart(observed?.current()),
     displayedDrawingText: nodeId => measureWorkbookDrawingText(observed?.current(), nodeId),
     displayedDrawingBounds: () => measureWorkbookDrawingBounds(observed?.current()),
@@ -79,6 +81,7 @@ export async function mount(code: string, encoded: string, observeView = false) 
 }
 export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
+export function displayedCellAppearance(row: number, column: number) { return actions.displayedCellAppearance(row, column); }
 export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string) { return actions.displayedDrawingText(nodeId); }
 export function displayedDrawingBounds() { return actions.displayedDrawingBounds(); }
@@ -91,4 +94,4 @@ export function value(row: number, column: number) { return actions.value(row, c
 export function sourceCell(row: number, column: number, sheetId?: string) { return actions.sourceCell(row, column, sheetId); }
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

@@ -6,6 +6,8 @@ export interface WorkbookControlsHost {
   snapshot(): WorkbookSnapshot | undefined;
   selection(): { sheetId: string; range: DeepReadonly<WorkbookRange> } | undefined;
   idle(): boolean;
+  prepareOptions?(): TransactionPrepareOptions;
+  readonly locale?: string;
   perform(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions, expected?: WorkbookControlsIdentity): Promise<unknown>;
   run(action: () => Promise<void>): void;
   draftChanged?(): void;
