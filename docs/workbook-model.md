@@ -709,3 +709,12 @@ session.dispose();
 `createWorkbookFillTransaction` 的普通来源格式复制会按原始模板重复完整合并，目标边界截断重复模板或与既有合并错位时整批失败。几何枚举只访问与目标相交的模板副本，和单元格生成共用来源预算、修订守卫及取消；不以输出作为后续种子。直连与 Worker 的向下／向右填充都把首行／首列种子扩展到跨越该带的完整合并，保持一个候选及一次撤销。
 
 [独立原生记录](evidence/workbook-copy-merges.json)包含 Python ZIP/XML 来源、固定 Calc 的三组实际复制、两组实际 `fillAuto` 及一组尺寸冲突差异，另保存六份原生生产者。`pnpm check:workbook-copy-merges` 验证归档摘要、实际操作及官方 XSD／OPC，已加入完整 Office 验收。Calc 在目标合并尺寸不一致时保留旧合并，本 SDK 对此拒绝；该项不是 Excel/WPS 实机验收。微软的[移动／复制说明](https://support.microsoft.com/en-gb/excel/move-or-copy-cells-rows-and-columns)和[合并单元格值说明](https://learn.microsoft.com/en-us/office/vba/api/excel.range.merge)提供一般规则，未把它们当成尺寸冲突或合并首行／首列删除的精确实测证据。
+
+
+### 完整智能表与筛选剪切（R3-12／13 实施中）
+
+`moveWorkbookRange` 现在可以在同表或跨表移动完整原生智能表和普通筛选定义。表、列、命名样式及配方身份保留；范围、筛选列、排序列和排序区域平移。引用改写先使用旧表位置，随后才移动定义。随整张表移动的当前行结构引用仍为原生结构引用，计算列模板与实际格／人工例外分开维护，后续插入仅填充新增行。目标既有表／筛选冲突、部分表／筛选剪切仍整批拒绝，其他组合继续实施。
+
+跨表公式保留原表的未移动输入与局部名称；无目标遮蔽的全局名称保持全局绑定。目标局部名称遮蔽全局名称时，当前语法还不能表达工作簿限定名称，命令明确失败；这属于后续上下文名称工作，不能改成目标名称。精确源恢复使用相对／绝对意图和名称身份，且只在公式的最终位置执行移动恢复；同批移出再移回不因多余限定符、括号或空定义列表新增修订，也不丢失重做。
+
+[独立智能表剪切记录](evidence/workbook-move-definitions.json)复用未修改的 Python ZIP/XML 表来源，记录固定 Calc 的两组实际 `moveRange` 和原生生产者。SDK 当前值／引用、包 ZIP 重开、隔离候选及一次撤销分别经直连和唯一 Worker 对照。SDK 保留原始数据区筛选及计算列模板，Calc 重存则把汇总行加入筛选并省略模板，差异保留；不是原生 XLSX 输出、Excel/WPS 实机结论或整个结构阶段验收。`pnpm check:workbook-move-definitions` 同时验证固定生产者与官方 XSD／OPC，并加入完整 Office 验收。

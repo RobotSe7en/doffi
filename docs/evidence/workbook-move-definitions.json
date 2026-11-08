@@ -1,0 +1,165 @@
+{
+  "scope": "Independent ZIP/XML source reused without rewriting, actual pinned Calc whole-table moveRange. SDK preserves its source data-only filter and calculated-column recipe; Calc includes totals in its filter and drops the stored recipe. Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "25a5ac5cf409e94aa2e9fa8064e9b63d5860fd73e74c829ca1cd96b5bd8fed1e",
+  "cases": [
+    {
+      "name": "same-sheet",
+      "producerSha256": "ad3c1bf523f26a5a66177a5c29a4b65f681b23d3f2da2b007417ecbf753af8f1",
+      "observed": {
+        "tables": [
+          {
+            "name": "SalesTable",
+            "range": "H260:K265",
+            "columns": [
+              "产品",
+              "数量",
+              "单价",
+              "金额"
+            ],
+            "filter": "H260:K265"
+          }
+        ],
+        "sheets": [
+          {
+            "tables": 1,
+            "formulas": [
+              {
+                "address": "K261",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "20"
+              },
+              {
+                "address": "K262",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "60"
+              },
+              {
+                "address": "K263",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "120"
+              },
+              {
+                "address": "K264",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "40"
+              },
+              {
+                "address": "K265",
+                "expression": "SUBTOTAL(109,SalesTable[金额])",
+                "type": "n",
+                "value": "240"
+              }
+            ]
+          },
+          {
+            "tables": 0,
+            "formulas": [
+              {
+                "address": "A1",
+                "expression": "SUM(SalesTable[数量])",
+                "type": "n",
+                "value": "10"
+              },
+              {
+                "address": "B1",
+                "expression": "Sales!K265",
+                "type": "n",
+                "value": "240"
+              },
+              {
+                "address": "C1",
+                "expression": "SUM(SalesTable[金额])",
+                "type": "n",
+                "value": "240"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "other-sheet",
+      "producerSha256": "076be621c098020fc21f2c0afda162d7c8818de7223dd5a9ef3caaad12577e98",
+      "observed": {
+        "tables": [
+          {
+            "name": "SalesTable",
+            "range": "H260:K265",
+            "columns": [
+              "产品",
+              "数量",
+              "单价",
+              "金额"
+            ],
+            "filter": "H260:K265"
+          }
+        ],
+        "sheets": [
+          {
+            "tables": 0,
+            "formulas": []
+          },
+          {
+            "tables": 1,
+            "formulas": [
+              {
+                "address": "A1",
+                "expression": "SUM(SalesTable[数量])",
+                "type": "n",
+                "value": "10"
+              },
+              {
+                "address": "B1",
+                "expression": "Observer!K265",
+                "type": "n",
+                "value": "240"
+              },
+              {
+                "address": "C1",
+                "expression": "SUM(SalesTable[金额])",
+                "type": "n",
+                "value": "240"
+              },
+              {
+                "address": "K261",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "20"
+              },
+              {
+                "address": "K262",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "60"
+              },
+              {
+                "address": "K263",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "120"
+              },
+              {
+                "address": "K264",
+                "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                "type": "n",
+                "value": "40"
+              },
+              {
+                "address": "K265",
+                "expression": "SUBTOTAL(109,SalesTable[金额])",
+                "type": "n",
+                "value": "240"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

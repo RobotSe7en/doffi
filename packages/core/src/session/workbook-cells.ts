@@ -7,6 +7,7 @@ import { decodeText, encode } from "../document/package.js";
 import { checkLimit, invalid } from "../document/validation.js";
 import { CHUNK_COLUMNS, CHUNK_ROWS, decodeWorkbookCell, indexWorkbookChunk, parseWorkbookCellElement } from "../workbook/chunk-index.js";
 import { parseFormula } from "../workbook/formula.js";
+import { createWorkbookFormulaEquivalence } from "../workbook/formula-equivalence.js";
 import { checkRange } from "../workbook/ranges.js";
 import { workbookSource } from "../workbook/source.js";
 
@@ -41,6 +42,7 @@ function cellTail(html: string): string {
 
 /** A preparation owns only touched, bounded cell blocks. Other bytes stay shared. */
 export class WorkbookCellEdit {
+  private formulaEquivalent?: ReturnType<typeof createWorkbookFormulaEquivalence>;
   private readonly chunks = new Map<string, EditedChunk>();
   private readonly originals: ReadonlyMap<string, import("../workbook/chunk-index.js").ChunkIndex>;
   constructor(private readonly base: WorkbookModel, readonly manifest: WorkbookManifest,
@@ -118,14 +120,14 @@ export class WorkbookCellEdit {
   }
   /** A structural edit changes the reference source, not its historical cached
    * value or rich-text representation. Current calculation never trusts it. */
-  rewriteFormula(sheetId: string, row: number, column: number, expression: string): void {
+  rewriteFormula(sheetId: string, row: number, column: number, expression: string, restoreReferenceSource = true): void {
     const previous = this.get(sheetId, row, column);
     if (!previous?.formula || previous.formula.expression === expression) return;
     parseFormula(expression, { row, column });
     const attrs = Object.fromEntries(parseWorkbookCellElement(previous.html).attrs.map(attr => [attr.name, attr.value]));
     attrs["data-formula"] = expression;
     if (previous.formula.cacheState !== "unavailable") attrs["data-cache-state"] = "stale";
-    this.patchAttributes(sheetId, row, column, previous, attrs, true);
+    this.patchAttributes(sheetId, row, column, previous, attrs, restoreReferenceSource);
   }
   /** Relocates captured, validated source without converting rich text or a
    * historical formula value through the public typed-input representation. */
@@ -153,7 +155,7 @@ export class WorkbookCellEdit {
       if (Object.keys(attrs).length === Object.keys(originalAttrs).length && Object.entries(attrs).every(([key, value]) =>
         originalAttrs[key] === value || key === "data-cache-state" && attrs["data-formula"] !== undefined
         || restoreReferenceSource && key === "data-formula" && original.formula
-          && JSON.stringify(parseFormula(value, { row, column })) === JSON.stringify(parseFormula(original.formula.expression, { row, column })))) source = original.html;
+          && (this.formulaEquivalent ??= createWorkbookFormulaEquivalence(this.base.snapshot().metadata.workbook))(value, original.formula.expression, { row, column }, sheetId))) source = original.html;
     }
     this.store(sheetId, row, column, source, false);
   }

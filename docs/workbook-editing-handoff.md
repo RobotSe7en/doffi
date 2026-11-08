@@ -4,6 +4,8 @@
 
 ## 基线与当前状态
 
+- 完整智能表／筛选剪切本批最终 `pnpm check` 216 文件／2250 项、边界、类型及 SDK／Playground 构建通过（`.cache/workbook-table-move-complete-check.log`）。三引擎 48 项来源对应的实现未再改变。后续名称遮蔽可依据微软 Names 与 MS-XLSX Formulas 的 `[0]!name` 当前工作簿前缀实施，尚未在本批开放或声称实机通过。
+- `9e3c0da` 已推送，快速检查 `42481711127` 成功。后续完整智能表／普通筛选剪切接入同表与跨表定义、筛选／排序和计算列配方；结构引用随表保留，原始全局／局部名称不改绑。候选实际单元格引用只在最终位置恢复来源，修复跨表限定符被旧位置恢复去除及往返多余历史；全局名称遭目标局部遮蔽继续明确拒绝，尚需工作簿限定语法。核心及独立原生／Worker 5 文件／37 项通过（`.cache/workbook-table-move-source-preservation-unit.log`），工具类型通过；固定 Calc 两组实际剪切及 XSD／OPC 复核通过（`.cache/workbook-move-definitions-native-verified.log`），保留两份原生生产者及筛选／模板差异。新三引擎 6 项及既有剪贴板／填充／行列／排序／表格／合并三引擎 48 项全部通过（`.cache/workbook-table-move-source-preservation-browser.log`、`.cache/workbook-table-move-related-browser.log`）。初轮新浏览器测试的计算列多余括号与异步预览 Shadow DOM 夹具问题日志 `.cache/workbook-table-move-browser.log` 保留，该失败本地定向运行被停止后修复复测；生产预览封闭边界未改。后续完整本地检查另记，未启动远端完整 CI。
 - 完整合并复制／填充本批最终 `pnpm check` 214 文件／2237 项、边界、类型及 SDK／Playground 构建通过（`.cache/workbook-merged-copy-fill-complete-check.log`）。末次新增交错合并种子闭包及非法选区检查也包含在该完整运行内；此前三引擎 6 项通过的 SDK 实现未再改变。没有发起远端完整 CI，R3-09～20 仍继续实施。
 - `4e6ce08` 的远端快速检查 `42479856523` 成功，未启动完整远端 CI。后续完整合并复制与模板填充正在验证：核心普通复制／来源格式填充支持完整合并，错位目标与部分合并整批拒绝；直连／Worker 按完整首带确定种子。5 文件／40 项核心、Worker、独立源／生产者对照通过（`.cache/workbook-merged-copy-fill-native-rechecked-unit.log`），三引擎界面 6 项通过（`.cache/workbook-merged-copy-fill-browser.log`）。首轮原生对照仅因合并集合顺序比较失败，已改为比较完整有序集合而保留 SDK 原始元数据顺序；原失败日志 `.cache/workbook-merged-copy-fill-native-unit.log` 保留。实际固定 Calc 六组操作及官方 XSD／OPC 重跑通过（`.cache/workbook-copy-merges-native-verified.log`），新脚本加入完整 Office 验收。选择性合并粘贴、其他结构组合及阶段最终审查／容量仍未完成，后续完整本地检查另记。
 - main／远端 main 的基线为 `5451736`；当前分支 `feat/workbook-editing`。

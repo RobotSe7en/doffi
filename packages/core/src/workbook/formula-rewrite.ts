@@ -24,6 +24,9 @@ export interface FormulaRewriteBindings {
   /** Required only when a bare identifier might name the table being renamed. */
   readonly isTableName?: (name: string, sheet: string) => boolean;
   readonly tables?: readonly FormulaTableDefinition[];
+  /** Complete tables relocating with the containing range keep their native
+   * structured bindings, including current-row selectors. */
+  readonly movedTables?: ReadonlySet<string>;
   readonly resolveName?: (name: string, sheet: string, explicit: boolean) => string | undefined;
   /** An empty calculated column retains relative row recipes for its future
    * data body. Absolute references still follow or invalidate source cells. */
@@ -187,6 +190,11 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "name") {
       const sheet = mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
+      if (change.kind === "move" && node.sheet === undefined && bindings.resolveName) {
+        const binding = bindings.resolveName(node.name, from.sheet, false);
+        if (binding !== undefined && binding === bindings.resolveName(node.name, to.sheet, false)) return node;
+        if (binding !== undefined && binding !== bindings.resolveName(node.name, from.sheet, true)) invalid("Moving a workbook name into a conflicting local scope requires a workbook-qualified name.");
+      }
       if (change.kind === "renameName" && bindings.resolveName?.(node.name, node.sheet ?? from.sheet, node.sheet !== undefined) === change.nameId) return { ...node, name: change.to };
       if (change.kind === "convertTable" && same(node.name, change.table) && bindings.isTableName?.(node.name, node.sheet ?? from.sheet))
         return visit({ kind: "structured", table: node.name, columns: [], selectors: [] });
@@ -220,6 +228,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
       }
       if (change.kind === "deleteSheet" && table !== undefined && bindings.tables?.some(definition => same(definition.name, table) && same(definition.sheet, change.sheet))) return refError();
       if (change.kind === "move" && (!same(from.sheet, to.sheet) || from.row !== to.row || from.column !== to.column)) {
+        if (table !== undefined && bindings.movedTables?.has(table.toUpperCase())) return node;
         if (node.selectors.includes("thisRow")) {
           if (!bindings.tables) invalid("Moving a current-row table formula requires table geometry.");
           const bound = bindStructuredReference(node, from, bindings.tables, bindings.table);
@@ -249,7 +258,8 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
   const rewritten = visit(ast);
   // Unaffected formulas retain their exact source bytes, so a small structural
   // edit does not rewrite every workbook chunk merely to canonicalize syntax.
-  if (from.row === to.row && from.column === to.column && JSON.stringify(rewritten) === JSON.stringify(ast)) return source;
+  if (JSON.stringify(rewritten) === JSON.stringify(ast) && (from.row === to.row && from.column === to.column
+    || JSON.stringify(parseFormula(source, to)) === JSON.stringify(rewritten))) return source;
   const output = printFormula(rewritten, to);
   // The parser rechecks generated identifiers, grammar, depth and token budgets.
   parseFormula(output, to); return output;

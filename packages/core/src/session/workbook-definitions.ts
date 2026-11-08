@@ -103,6 +103,10 @@ export function restoreWorkbookDefinitionSource(workbook: WorkbookMetadata, befo
   }
   for (const sheet of workbook.sheets) {
     const previous = before.sheets.find(value => value.sheetId === sheet.sheetId); if (!previous) continue;
+    if (previous.tables?.length === sheet.tables?.length && previous.tables && sheet.tables) {
+      const byId = new Map(sheet.tables.map(table => [table.tableId, table]));
+      if (previous.tables.every(table => same(byId.get(table.tableId), table))) sheet.tables = previous.tables.map(table => byId.get(table.tableId)!);
+    }
     for (const key of ["tables", "conditionalRules", "dataValidations"] as const) {
       if (previous[key] === undefined && sheet[key]?.length === 0) delete sheet[key];
       else if (same(sheet[key], previous[key])) Object.assign(sheet, { [key]: previous[key] });

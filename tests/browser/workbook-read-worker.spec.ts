@@ -4,9 +4,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { createHash } from 'node:crypto';
-import { writeDocumentZip } from '@doffi/office';
+import { importXlsx, writeDocumentZip } from '@doffi/office';
 import { scalarWorkbook } from '../../packages/core/tests/workbook-scalar-fixture.js';
-import { createDocumentSession } from '@doffi/core';
+import { createDocumentSession, openDocument } from '@doffi/core';
 import type * as editorFixture from './fixtures/workbook-remote-editor.js';
 import type * as fixture from './fixtures/workbook-read-host.js';
 import type * as sessionFixture from './fixtures/workbook-session-host.js';
@@ -265,6 +265,26 @@ test('mounted remote axis controls move cross-chunk cells and formulas through o
     .toEqual(['7', '8', '=SUM(AF2:AG3)']);
   for (let index = 0; index < 4; index++) { await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); }
   expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 8, history: { undoSteps: 0, redoSteps: 4 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
+test('mounted Worker native whole-table cut keeps its definition across sheets and restores it in one undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-native-table-cut' }), { kind: 'workbook' });
+  const [source, target] = model.snapshot().metadata.workbook.sheets, table = source!.tables![0]!;
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A1:D6'); await page.getByRole('button', { name: '剪切选区', exact: true }).click();
+  await page.getByRole('tab', { name: target!.name, exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('H260'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], tables: [
+    { sheetId: source!.sheetId, tables: [] }, { sheetId: target!.sheetId, tables: [{ tableId: table.tableId, range: { from: { row: 259, column: 7 }, to: { row: 264, column: 10 } }, columns: table.columns }] },
+  ] });
+  expect(await page.evaluate(sheetId => window.workbookRemoteEditor.sourceCell(260, 10, sheetId), target!.sheetId)).toMatchObject({ value: { type: 'number', value: 20 } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], tables: [{ tables: [table] }, { tables: [] }] });
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 

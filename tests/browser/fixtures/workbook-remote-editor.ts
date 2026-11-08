@@ -7,7 +7,7 @@ import { measureWorkbookChart, observeWorkbookViews } from './workbook-view-obse
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
-  sourceCell(row: number, column: number): Promise<WorkbookCell | undefined>;
+  sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
 export async function mount(code: string, encoded: string, observeView = false) {
@@ -22,10 +22,14 @@ export async function mount(code: string, encoded: string, observeView = false) 
   const attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function(init) { return attach.call(this, { ...init, mode: 'open' }); };
   let editor: WorkbookRemoteEditorView;
-  try { editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, onError(error) { errors.push((error as { code?: string }).code ?? error.message); } }); }
+  let observed: ReturnType<typeof observeWorkbookViews> | undefined;
+  try {
+    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
+    observed = observeView ? observeWorkbookViews(editor.element) : undefined;
+    await editor.ready;
+  }
   finally { Element.prototype.attachShadow = attach; }
-  const observed = observeView ? observeWorkbookViews(editor.element) : undefined;
-  await editor.ready; let disposed = false;
+  let disposed = false;
   const release = () => { if (!disposed) { editor.dispose(); disposed = true; } };
   cleanup = () => { observed?.dispose(); release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
   actions = {
@@ -36,16 +40,17 @@ export async function mount(code: string, encoded: string, observeView = false) 
           sheetId: 'sheet-1', includeCurrent: true, coordinates: [{ row: 0, column: 1 }] }, new AbortController().signal);
         return { ...client.state(), source: await client.readInput('sheet-1', { row: 0, column: 0 }), input: editor.inputState(), selection: editor.selection(), current: current.cells[0]?.current, merges: source.cells.snapshot.metadata.workbook.sheets[0]!.merges, frozen: source.cells.snapshot.metadata.workbook.sheets[0]!.frozen,
           drawings: source.cells.snapshot.metadata.workbook.objects ?? [], charts: source.cells.snapshot.metadata.workbook.charts ?? [], content: source.cells.snapshot.content?.html,
+          tables: source.cells.snapshot.metadata.workbook.sheets.map(sheet => ({ sheetId: sheet.sheetId, tables: sheet.tables ?? [] })),
           annotations: source.cells.snapshot.annotations, comments: source.cells.snapshot.metadata.workbook.comments ?? [], stories: source.cells.snapshot.metadata.workbook.stories ?? [], errors: [...errors] };
       } finally { source.dispose(); }
     },
     settled: () => editor.settled(),
     displayedChart: () => measureWorkbookChart(observed?.current()),
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
-    async sourceCell(row, column) {
+    async sourceCell(row, column, sheetId = 'sheet-1') {
       const source = await client.view(), current = client.state();
       try { return (await source.cells.read({ documentId: current.documentId, revision: current.revision, maxCells: 1, maxCodeUnits: 65536,
-        windows: [{ sheetId: 'sheet-1', row, column, rows: 1, columns: 1 }] }, new AbortController().signal)).cells[0]; }
+        windows: [{ sheetId, row, column, rows: 1, columns: 1 }] }, new AbortController().signal)).cells[0]; }
       finally { source.dispose(); }
     },
     async external(text, wait = true) { const state = client.state(); const candidate = await client.prepare({ kind: 'input', documentId: state.documentId, revision: state.revision, sheetId: 'sheet-1', at: { row: 0, column: 0 }, text, mode: 'text' }); await client.commit(candidate); if (wait) await editor.settled(); },
@@ -67,7 +72,7 @@ export function holdReference() { actions.holdReference(); }
 export function referenceHeld() { return actions.referenceHeld(); }
 export function releaseReference() { actions.releaseReference(); }
 export function value(row: number, column: number) { return actions.value(row, column); }
-export function sourceCell(row: number, column: number) { return actions.sourceCell(row, column); }
+export function sourceCell(row: number, column: number, sheetId?: string) { return actions.sourceCell(row, column, sheetId); }
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
 Object.assign(window, { workbookRemoteEditor: { mount, inspect, settled, displayedChart, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

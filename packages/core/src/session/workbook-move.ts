@@ -10,6 +10,7 @@ import { checkRange } from "../workbook/ranges.js";
 import { rangeContains, rangesIntersect, WorkbookCellEdit } from "./workbook-cells.js";
 import { createWorkbookReferenceRewriter, rewriteWorkbookReferenceSteps } from "./workbook-references.js";
 import { planWorkbookRuleMove } from "./workbook-rule-move.js";
+import { planWorkbookDefinitionMove } from "./workbook-move-definitions.js";
 
 type Move = Extract<WorkbookOperation, { op: "moveWorkbookRange" }>;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
@@ -26,10 +27,9 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
   const destination = { from: { ...operation.target }, to: { row: operation.target.row + rows - 1, column: operation.target.column + columns - 1 } }; checkRange(destination);
   if (source === target && range.from.row === destination.from.row && range.from.column === destination.from.column) return;
   cells.checkExpandedCells(rows * columns);
+  const moveDefinitions = planWorkbookDefinitionMove(source, target, range, destination);
   const covered = (sheetId: string, value: WorkbookRange) => sheetId === source.sheetId && rangesIntersect(value, range) || sheetId === target.sheetId && rangesIntersect(value, destination);
   for (const sheet of workbook.sheets) {
-    if (sheet.tables?.some(table => covered(sheet.sheetId, table.range))) invalid("Cutting native table regions is not yet connected.");
-    if (sheet.autoFilter && covered(sheet.sheetId, sheet.autoFilter.range)) invalid("Cutting auto-filter definitions is not yet connected.");
     for (const merge of sheet.merges) if (sheet === source && rangesIntersect(merge, range) && !contains(range, merge)
       || sheet === target && rangesIntersect(merge, destination) && !contains(destination, merge)) invalid("A cut cannot split a merged region.");
   }
@@ -86,6 +86,7 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
     if (sheet.hyperlinks) sheet.hyperlinks = [];
   }
   target.merges.push(...merges);
+  moveDefinitions();
   for (const { sheet, link } of links) for (const fragment of mapWorkbookRanges([{ sheetId: sheet.sheetId, range: link.range }], [step])) {
     const owner = workbook.sheets.find(sheet => sheet.sheetId === fragment.sheetId)!;
     (owner.hyperlinks ??= []).push({ ...link, range: fragment.range,

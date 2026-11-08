@@ -18,9 +18,11 @@ export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, chan
     else { const owner = sheetNames.get(name.sheetId)!, scope = locals.get(owner) ?? new Map<string, string>(); scope.set(token, name.nameId); locals.set(owner, scope); localNames.add(token); }
   }
   const tableNames = new Set(tables.map(table => table.name.toUpperCase()));
+  const movedTables = new Set(change.kind === "move" ? tables.filter(table => table.sheet.toUpperCase() === change.sheet.toUpperCase()
+    && rangeContains(change.range, table.range.from.row, table.range.from.column) && rangeContains(change.range, table.range.to.row, table.range.to.column)).map(table => table.name.toUpperCase()) : []);
   return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, globalContext = false): string {
     const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
-    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, ...(table ? { table } : {}),
+    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, movedTables, ...(table ? { table } : {}),
       resolveName: (name, owner, explicit) => {
         const token = name.toUpperCase();
         // A workbook definition whose nested name is locally shadowed has no
@@ -41,7 +43,10 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
     const destination = change.kind === "move" && sheet.name.toUpperCase() === change.sheet.toUpperCase() && rangeContains(change.range, cell.row, cell.column)
       ? { sheet: change.target.sheet, row: cell.row + change.target.row - change.range.from.row, column: cell.column + change.target.column - change.range.from.column } : undefined;
     const expression = rewrite(cell.formula!.expression, sheet.name, cell, sheet.tables?.find(table => rangeContains(table.range, cell.row, cell.column))?.name, destination);
-    if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression);
+    // A moved formula is already printed for its destination. Restoring at
+    // the old coordinate could remove a qualifier required by the new sheet.
+    // Relocation performs the same source check at the final coordinate.
+    if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression, destination === undefined);
     if (++completed % 256 === 0) yield { completed, total: 0 };
   }
   for (const name of workbook.names ?? []) {
@@ -56,8 +61,12 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
       if (rule.kind === "colorScale") for (const stop of rule.stops) if (stop.kind === "formula") stop.expression = rewrite(stop.expression, sheet.name, rule.origin);
     }
     for (const table of sheet.tables ?? []) if (!options.skipTableFormulas?.has(table.tableId)) for (const [index, column] of table.columns.entries()) {
-      if (column.calculatedFormula) column.calculatedFormula = rewrite(column.calculatedFormula, sheet.name, { row: table.range.from.row + Number(table.header), column: table.range.from.column + index }, table.name);
-      if (column.totalFormula) column.totalFormula = rewrite(column.totalFormula, sheet.name, { row: table.range.to.row, column: table.range.from.column + index }, table.name);
+      const destination = (at: WorkbookCoordinate): FormulaLocation | undefined => change.kind === "move" && sheet.name.toUpperCase() === change.sheet.toUpperCase()
+        && rangeContains(change.range, table.range.from.row, table.range.from.column) && rangeContains(change.range, table.range.to.row, table.range.to.column)
+        ? { sheet: change.target.sheet, row: at.row + change.target.row - change.range.from.row, column: at.column + change.target.column - change.range.from.column } : undefined;
+      const data = { row: table.range.from.row + Number(table.header), column: table.range.from.column + index }, total = { row: table.range.to.row, column: table.range.from.column + index };
+      if (column.calculatedFormula) column.calculatedFormula = rewrite(column.calculatedFormula, sheet.name, data, table.name, destination(data));
+      if (column.totalFormula) column.totalFormula = rewrite(column.totalFormula, sheet.name, total, table.name, destination(total));
     }
     for (const link of sheet.hyperlinks ?? []) if (link.location) link.location = rewrite("=" + link.location, sheet.name, { row: 0, column: 0 }).slice(1);
   }

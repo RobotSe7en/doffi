@@ -262,6 +262,23 @@ test("mounted direct merged clipboard and both fill axes retain complete templat
   }
 });
 
+test("mounted direct native whole-table cut keeps its definition across sheets and restores it in one undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-native-table-cut' }), { kind: 'workbook' });
+  const [source, target] = model.snapshot().metadata.workbook.sheets, table = source!.tables![0]!;
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(model.serialize()));
+  await page.evaluate(() => window.workbookEditor.select(0, 0, 5, 3)); await page.getByRole('button', { name: '剪切选区', exact: true }).click();
+  await page.getByRole('tab', { name: target!.name, exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('H260'); await address.press('Enter'); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], tables: [
+    { sheetId: source!.sheetId, tables: [] }, { sheetId: target!.sheetId, tables: [{ tableId: table.tableId, range: { from: { row: 259, column: 7 }, to: { row: 264, column: 10 } }, columns: table.columns }] },
+  ] });
+  expect(await page.evaluate(sheetId => window.workbookEditor.cell(sheetId, 260, 10), target!.sheetId)).toMatchObject({ value: { type: 'number', value: 20 } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], tables: [{ tables: [table] }, { tables: [] }] });
+});
+
 test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
   await page.addScriptTag({ content: editorCode });
   const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },

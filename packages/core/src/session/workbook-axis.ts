@@ -6,6 +6,7 @@ import { DocumentError } from "../errors.js";
 import { MAX_SHEET_COLUMNS, MAX_SHEET_ROWS } from "../workbook/chunk-index.js";
 import { copyFormula } from "../workbook/formula-rewrite.js";
 import { parseFormula, type FormulaExpression } from "../workbook/formula.js";
+import { createWorkbookFormulaEquivalence } from "../workbook/formula-equivalence.js";
 import { mapWorkbookCommentAnchors } from "./workbook-comment-mapping.js";
 import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
 import { WorkbookCellEdit } from "./workbook-cells.js";
@@ -27,8 +28,7 @@ function contextualName(node: FormulaExpression, global: boolean): boolean {
 /** Reversed structure changes must not publish canonicalized formula syntax or
  * split equivalent dimension spans as a new authoritative revision. */
 export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: DeepReadonly<WorkbookMetadata>, annotations: Annotation[], priorAnnotations: readonly DeepReadonly<Annotation>[]): void {
-  const sameFormula = (a: string, b: string, origin: WorkbookCoordinate): boolean =>
-    a === b || JSON.stringify(parseFormula(a, origin)) === JSON.stringify(parseFormula(b, origin));
+  const sameFormula = createWorkbookFormulaEquivalence(workbook);
   function dimensionKey(input: readonly { readonly from: number; readonly to: number }[]): string {
     const result: { from: number; to: number; settings: string }[] = [];
     for (const span of input) {
@@ -49,12 +49,12 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
     for (const rule of [...sheet.conditionalRules ?? [], ...sheet.dataValidations ?? []]) {
       const previous = priorRules.get(rule.ruleId);
       if (!previous || previous.origin.row !== rule.origin.row || previous.origin.column !== rule.origin.column) continue;
-      if ("expression" in rule && "expression" in previous && sameFormula(rule.expression, previous.expression, rule.origin)) rule.expression = previous.expression;
+      if ("expression" in rule && "expression" in previous && sameFormula(rule.expression, previous.expression, rule.origin, sheet.sheetId)) rule.expression = previous.expression;
       if ("formulas" in rule && "formulas" in previous) rule.formulas = rule.formulas.map((formula, index) =>
-        previous.formulas[index] !== undefined && sameFormula(formula, previous.formulas[index]!, rule.origin) ? previous.formulas[index]! : formula);
+        previous.formulas[index] !== undefined && sameFormula(formula, previous.formulas[index]!, rule.origin, sheet.sheetId) ? previous.formulas[index]! : formula);
       if (rule.kind === "colorScale" && previous.kind === "colorScale") for (const [index, stop] of rule.stops.entries()) {
         const prior = previous.stops[index];
-        if (stop.kind === "formula" && prior?.kind === "formula" && sameFormula(stop.expression, prior.expression, rule.origin)) stop.expression = prior.expression;
+        if (stop.kind === "formula" && prior?.kind === "formula" && sameFormula(stop.expression, prior.expression, rule.origin, sheet.sheetId)) stop.expression = prior.expression;
       }
     }
     const priorTables = new Map(old.tables?.map(table => [table.tableId, table]));
@@ -66,7 +66,7 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
         for (const key of ["calculatedFormula", "totalFormula"] as const) {
           const row = key === "calculatedFormula" ? table.range.from.row + Number(table.header) : table.range.to.row,
             oldRow = key === "calculatedFormula" ? previous.range.from.row + Number(previous.header) : previous.range.to.row;
-          if (row === oldRow && column[key] !== undefined && prior.column[key] !== undefined && sameFormula(column[key]!, prior.column[key]!, { row, column: table.range.from.column + index })) column[key] = prior.column[key];
+          if (row === oldRow && column[key] !== undefined && prior.column[key] !== undefined && sameFormula(column[key]!, prior.column[key]!, { row, column: table.range.from.column + index }, sheet.sheetId)) column[key] = prior.column[key];
         }
       }
     }
@@ -74,7 +74,7 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
   const priorNames = new Map(before.names?.map(name => [name.nameId, name]));
   for (const name of workbook.names ?? []) {
     const old = priorNames.get(name.nameId);
-    if (old && old.origin.row === name.origin.row && old.origin.column === name.origin.column && sameFormula(name.expression, old.expression, name.origin)) name.expression = old.expression;
+    if (old && old.origin.row === name.origin.row && old.origin.column === name.origin.column && sameFormula(name.expression, old.expression, name.origin, name.sheetId)) name.expression = old.expression;
   }
   const prior = new Map(priorAnnotations.map(annotation => [annotation.annotationId, annotation]));
   const bounds = (ranges: readonly DeepReadonly<WorkbookRange>[]): string => JSON.stringify(ranges.reduce((span, range) =>
