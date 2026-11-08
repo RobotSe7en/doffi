@@ -60,6 +60,20 @@ async function workbookState(page: Page) {
   });
 }
 
+test('Playground retains an unsaved name draft on file switches until explicit discard', async ({ page }) => {
+  await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx'); await expect(status(page)).toContainText('修订 0', { timeout: 30_000 });
+  await page.getByText('名称管理', { exact: true }).click(); const name = page.getByLabel('定义名称', { exact: true }); await name.fill('UnsavedName');
+  await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('请先确认或取消'); await expect(name).toHaveValue('UnsavedName');
+  await page.getByRole('button', { name: '新建 PPT', exact: true }).click(); await expect(name).toHaveValue('UnsavedName');
+  await expect(page.getByRole('heading', { name: '09-classic-notes.xlsx', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '放弃当前名称草稿并重新读取', exact: true }).click(); await expect(name).toHaveValue('');
+  await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click(); await expect(page.getByLabel('会话状态', { exact: true })).toContainText('修订 0');
+  await page.getByRole('button', { name: '打开 09-classic-notes.xlsx', exact: true }).click(); await expect(status(page)).toContainText('修订 0');
+  await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => ({ created: window.workbookHostProbe.created, terminated: window.workbookHostProbe.terminated }))).toEqual({ created: 1, terminated: 0 });
+});
+
 for (const large of [false, true]) test(`Playground opens a ${large ? 'ten-thousand-row' : 'small'} workbook and switches between isolated Word, PPT and workbook views`, { tag: large ? '@scale' : [] }, async ({ page }, info) => {
   test.setTimeout(120_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));

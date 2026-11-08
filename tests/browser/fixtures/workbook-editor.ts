@@ -42,7 +42,7 @@ export async function select(fromRow: number, fromColumn = 0, toRow = fromRow, t
   await editor.selectRange("sheet-1", { from: { row: fromRow, column: fromColumn }, to: { row: toRow, column: toColumn } }); editor.focusInput();
 }
 export function inspect() {
-  return { input: editor.inputState(), selection: editor.selection(), revision: session.snapshot().manifest.revision, history: session.history(), errors: [...errors],
+  return { input: editor.inputState(), selection: editor.selection(), revision: session.snapshot().manifest.revision, history: session.history(), errors: [...errors], pending: editor.hasPendingInput(),
     merges: session.snapshot().metadata.workbook.sheets[0]!.merges,
     tables: session.snapshot().metadata.workbook.sheets.map(sheet => ({ sheetId: sheet.sheetId, tables: sheet.tables ?? [] })),
     names: session.snapshot().metadata.workbook.names ?? [],

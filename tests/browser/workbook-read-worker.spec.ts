@@ -324,6 +324,16 @@ test('mounted Worker native local-name copy creates the missing target scope and
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true });
 });
 
+test('mounted Worker name manager preserves scopes, drafts, IME and exact name consumers through one-step history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-manager' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookNameControls } = await import('./workbook-name-controls-cases.js');
+  await exerciseWorkbookNameControls(page, true, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
 test('mounted table row insertion fills only the new row, preserves a manual exception and restores native table source on undo', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: { type: 'number', value: 3 } }, { row: 2, column: 0, value: { type: 'number', value: 4 } }]));

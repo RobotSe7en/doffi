@@ -309,6 +309,14 @@ test("mounted direct native local-name copy creates the missing target scope and
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
 });
 
+test("mounted direct name manager preserves scopes, drafts, IME and exact name consumers through one-step history", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-manager' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookNameControls } = await import('./workbook-name-controls-cases.js');
+  await exerciseWorkbookNameControls(page, false, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
+});
+
 test("mounted workbook axis controls preserve cross-chunk cells, current formulas and four undo steps", async ({ page }) => {
   await page.addScriptTag({ content: editorCode });
   const model = scalarWorkbook([{ row: 1, column: 31, value: { type: "number", value: 7 } }, { row: 2, column: 32, value: { type: "number", value: 8 } },

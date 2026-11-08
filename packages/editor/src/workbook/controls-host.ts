@@ -8,5 +8,6 @@ export interface WorkbookControlsHost {
   idle(): boolean;
   perform(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions, expected?: WorkbookControlsIdentity): Promise<unknown>;
   run(action: () => Promise<void>): void;
+  draftChanged?(): void;
   readonly signal: AbortSignal;
 }

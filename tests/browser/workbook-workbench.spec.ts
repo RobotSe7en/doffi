@@ -36,6 +36,10 @@ for (const remote of [false, true]) {
       await page.evaluate(() => window.workbookWorkbench.focusInput()); const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }); await input.fill("draft😀");
       await expect(page.getByRole("button", { name: "生成工作簿请求", exact: true })).toBeDisabled(); expect(await page.evaluate(() => window.workbookWorkbench.build().then(() => "accepted", (error: { code: string }) => error.code))).toBe("InvalidOperation"); await expect(input).toHaveValue("draft😀"); await page.evaluate(() => window.workbookWorkbench.cancelInput());
       expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, annotations: [{ status: "open" }] });
+      await page.getByText("名称管理", { exact: true }).click(); const name = page.getByLabel("定义名称", { exact: true }); await name.fill("UnsavedName");
+      await expect(page.getByRole("button", { name: "生成工作簿请求", exact: true })).toBeDisabled();
+      expect(await page.evaluate(() => window.workbookWorkbench.build().then(() => "accepted", (error: { code: string }) => error.code))).toBe("InvalidOperation"); await expect(name).toHaveValue("UnsavedName");
+      await page.getByRole("button", { name: "放弃当前名称草稿并重新读取", exact: true }).click(); await expect(page.getByRole("button", { name: "生成工作簿请求", exact: true })).toBeEnabled();
     });
     test("host-returned proposals stay candidates and late host results cannot overwrite a newer revision", async ({ page }) => {
       await page.getByRole("button", { name: "提交工作簿批注", exact: true }).click(); await expect(page.getByRole("button", { name: "整批应用工作簿提案", exact: true })).toBeEnabled();
