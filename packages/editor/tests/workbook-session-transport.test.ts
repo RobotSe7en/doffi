@@ -199,7 +199,9 @@ test("cross-sheet Worker copy validates the destination, cancels privately and s
   })); cleanups.push(() => s.dispose()); const { client } = await pair(s), before = s.serialize();
   const copy = { kind: "copy" as const, documentId: "scalar-kernel", revision: 0, sheetId, targetSheetId: "destination",
     source: { from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }, target: { row: 0, column: 0 } };
-  await expect(client.prepare(copy)).rejects.toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
+  // Selective values retain destination validation; ordinary contents now copy
+  // source validation as well, including clearing a destination-only rule.
+  await expect(client.prepare({ ...copy, mode: "values" })).rejects.toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
   expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
   const abort = new AbortController();
   await expect(client.prepare({ ...copy, source: { from: { row: 0, column: 0 }, to: { row: 600, column: 0 } }, target: { row: 400, column: 0 } }, undefined, {

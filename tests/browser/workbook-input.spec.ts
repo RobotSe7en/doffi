@@ -661,3 +661,11 @@ test("mounted direct copy keeps hyperlink fragments, skip blanks, selective mode
   const { source, sheets } = workbookCopyHyperlinksSource(model); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
   await exerciseWorkbookCopyHyperlinks(page, false, sheets);
 });
+
+test("mounted direct copy keeps conditional and validation templates, masks and history", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const { workbookCopyRulesSource, exerciseWorkbookCopyRules } = await import('./workbook-copy-rules-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-copy-rules' }), { kind: 'workbook' });
+  const { source, sheets } = workbookCopyRulesSource(model); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
+  await exerciseWorkbookCopyRules(page, false, sheets);
+});

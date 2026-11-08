@@ -1,7 +1,7 @@
 import { generate, ident, parse, walk } from "css-tree";
 import type { DeepReadonly, TransactionPrepareOptions, WorkbookCandidateChange, WorkbookModel } from "../runtime.js";
 import type { WorkbookEditProposal, WorkbookInteractionRequest } from "../contracts/workbook-interaction.js";
-import type { WorkbookHyperlink, WorkbookRange } from "../contracts/workbook.js";
+import type { WorkbookConditionalRule, WorkbookDataValidation, WorkbookHyperlink, WorkbookRange } from "../contracts/workbook.js";
 import { DocumentError } from "../errors.js";
 import { resolveReference } from "../document/package.js";
 import { workbookSource } from "../workbook/source.js";
@@ -10,6 +10,7 @@ import type { WorkbookInteractionBudget } from "./workbook-interaction-budget.js
 import { workbookContextCovers, workbookContextIntersects } from "./workbook-interaction-scope.js";
 import { subtractWorkbookRange } from "../workbook/range-mapping.js";
 import { sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
+import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 function invalid(message: string): never { throw new DocumentError("InvalidProposal", message); }
@@ -41,7 +42,7 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
         const original = workbook.sheets.find(sheet => sheet.sheetId === op.sheetId)?.conditionalRules?.find(rule => rule.ruleId === op.ruleId), proposed = proposedRules.get(JSON.stringify([op.sheetId, op.ruleId]));
         for (const range of [...original?.ranges ?? [], ...proposed?.ranges ?? []]) requireRange(op.sheetId, range); break;
       }
-      case "formatWorkbookRanges": case "clearWorkbookRanges": for (const range of op.ranges) requireRange(op.sheetId, range); break;
+      case "formatWorkbookRanges": case "clearWorkbookRanges": case "replaceWorkbookRules": for (const range of op.ranges) requireRange(op.sheetId, range); break;
       case "setWorkbookHyperlink": case "replaceWorkbookHyperlinks": case "mergeWorkbookCells": case "unmergeWorkbookCells": case "reorderWorkbookRows": requireRange(op.sheetId, op.range); break;
       case "moveWorkbookRange": requireRange(op.sheetId, op.range); requireRange(op.targetSheetId, { from: op.target, to: { row: op.target.row + op.range.to.row - op.range.from.row, column: op.target.column + op.range.to.column - op.range.from.column } }); break;
       case "editWorkbookAxis": requireRange(op.sheetId, { from: { row: op.axis === "row" ? op.index : 0, column: op.axis === "column" ? op.index : 0 }, to: fullSheet.to }); break;
@@ -123,8 +124,8 @@ export function validateWorkbookProposalSource(model: WorkbookModel, request: Wo
       sheets: workbook.sheets.map(sheet => rangeOwned(sheet.sheetId, fullSheet) ? { sheetId: sheet.sheetId } : { ...sheet,
         merges: sheet.merges.filter(range => !rangeOwned(sheet.sheetId, range)),
         tables: (sheet.tables ?? []).filter(table => !rangeOwned(sheet.sheetId, table.range)),
-        conditionalRules: (sheet.conditionalRules ?? []).filter(rule => !rule.ranges.every(range => rangeOwned(sheet.sheetId, range))),
-        dataValidations: (sheet.dataValidations ?? []).filter(rule => !rule.ranges.every(range => rangeOwned(sheet.sheetId, range))),
+        conditionalRules: undefined,
+        dataValidations: undefined,
         hyperlinks: undefined,
         autoFilter: sheet.autoFilter && !rangeOwned(sheet.sheetId, sheet.autoFilter.range) ? sheet.autoFilter : undefined,
       }),
@@ -139,25 +140,40 @@ export function validateWorkbookProposalSource(model: WorkbookModel, request: Wo
   // A link crossing the write boundary can split without changing any outside
   // target. Compare exact outside coverage and attributes, rather than its
   // original bounding rectangle or the ordering of equivalent fragments.
-  const outsideLinks = (sheetId: string, links: readonly DeepReadonly<WorkbookHyperlink>[]): DeepReadonly<WorkbookHyperlink>[] => {
+  const outsideRanges = (sheetId: string, ranges: readonly DeepReadonly<WorkbookRange>[]): DeepReadonly<WorkbookRange>[] => {
     if (workbookContextCovers(context.writableRanges, { sheetId, range: fullSheet }, budget.step)) return [];
-    const result: DeepReadonly<WorkbookHyperlink>[] = [];
-    for (const link of links) {
-      budget.step(); let remaining: DeepReadonly<WorkbookRange>[] = [link.range];
+    const result: DeepReadonly<WorkbookRange>[] = [];
+    for (const range of ranges) {
+      budget.step(); let remaining: DeepReadonly<WorkbookRange>[] = [range];
       for (const cover of context.writableRanges) {
         budget.step(); if (cover.sheetId !== sheetId) continue;
         const next: DeepReadonly<WorkbookRange>[] = [];
         for (const range of remaining) { budget.step(); if (workbookContextIntersects(range, cover.range)) next.push(...subtractWorkbookRange(range, cover.range)); else next.push(range); }
         remaining = next; if (!remaining.length) break;
       }
-      if (remaining.length === 1 && remaining[0] === link.range) { budget.step(); result.push(link); }
-      else for (const range of remaining) { budget.step(); result.push({ ...link, range: { from: { ...range.from }, to: { ...range.to } } }); }
+      for (const range of remaining) { budget.step(); result.push(range); }
+    }
+    return result;
+  };
+  const outsideLinks = (sheetId: string, links: readonly DeepReadonly<WorkbookHyperlink>[]): DeepReadonly<WorkbookHyperlink>[] => links.flatMap(link => outsideRanges(sheetId, [link.range]).map(range => range === link.range ? link : { ...link, range }));
+  const outsideRules = (sheetId: string, rules: readonly DeepReadonly<WorkbookConditionalRule | WorkbookDataValidation>[]) => {
+    const result = new Map<string, { template: unknown; ranges: DeepReadonly<WorkbookRange>[] }>();
+    for (const rule of rules) {
+      budget.step(); const ranges = outsideRanges(sheetId, rule.ranges);
+      if (ranges.length) result.set(rule.ruleId, { template: { ...rule, ranges: undefined }, ranges });
     }
     return result;
   };
   for (const sheet of before.metadata.workbook.sheets) {
     const current = after.metadata.workbook.sheets.find(value => value.sheetId === sheet.sheetId);
     if (!current || !sameWorkbookHyperlinks(outsideLinks(sheet.sheetId, sheet.hyperlinks ?? []), outsideLinks(sheet.sheetId, current.hyperlinks ?? []))) invalid("The workbook candidate changes hyperlinks outside its frozen write scope.");
+    for (const key of ["conditionalRules", "dataValidations"] as const) {
+      const original = outsideRules(sheet.sheetId, sheet[key] ?? []), proposed = outsideRules(sheet.sheetId, current[key] ?? []);
+      if (original.size !== proposed.size || [...original].some(([id, value]) => {
+        budget.step(); const other = proposed.get(id);
+        return !other || !equal(value.template, other.template) || !sameWorkbookRangeCoverage(value.ranges as WorkbookRange[], other.ranges as WorkbookRange[]);
+      })) invalid("The workbook candidate changes rules outside its frozen write scope.");
+    }
   }
   const annotationSource = (snapshot: typeof before) => snapshot.annotations.filter(annotation => !annotationIds.has(annotation.annotationId));
   if (!equal(annotationSource(before), annotationSource(after))) invalid("The workbook candidate remaps an annotation outside its frozen write scope.");

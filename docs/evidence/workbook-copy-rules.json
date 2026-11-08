@@ -1,0 +1,4326 @@
+{
+  "scope": "Immutable independent ZIP/XML source, six actual pinned Calc copies and official Transitional XSD/OPC. SDK uses uniform transaction validation: copied stop violations are rejected even though native copy accepts them. Native conditional-rule grouping and producer changes are preserved. No Excel/WPS runtime claim.",
+  "source": "examples/xlsx/06-rules-validation.xlsx",
+  "sourceSha256": "254402f42113d0ee7da083c4afaa0f44a45fa89f78d9d3658dc404555ec59be0",
+  "sourceObserved": {
+    "xl/worksheets/sheet1.xml": {
+      "conditionalRules": [
+        {
+          "kind": "conditionalFormatting",
+          "attributes": {
+            "sqref": "A2:A6"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "cfRule",
+              "attributes": {
+                "type": "cellIs",
+                "dxfId": "0",
+                "priority": "1",
+                "operator": "greaterThan"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula",
+                  "attributes": {},
+                  "text": "100",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "conditionalFormatting",
+          "attributes": {
+            "sqref": "B2:B6"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "cfRule",
+              "attributes": {
+                "type": "expression",
+                "dxfId": "1",
+                "priority": "2"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula",
+                  "attributes": {},
+                  "text": "AND(B2>=50,B2<=150)",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "conditionalFormatting",
+          "attributes": {
+            "sqref": "C2:C6"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "cfRule",
+              "attributes": {
+                "type": "colorScale",
+                "priority": "3"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "colorScale",
+                  "attributes": {},
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "cfvo",
+                      "attributes": {
+                        "type": "min"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "cfvo",
+                      "attributes": {
+                        "type": "max"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "color",
+                      "attributes": {
+                        "rgb": "FFF8696B"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "color",
+                      "attributes": {
+                        "rgb": "FF63BE7B"
+                      },
+                      "text": "",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "conditionalFormatting",
+          "attributes": {
+            "sqref": "D2:D6"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "cfRule",
+              "attributes": {
+                "type": "colorScale",
+                "priority": "4"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "colorScale",
+                  "attributes": {},
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "cfvo",
+                      "attributes": {
+                        "type": "min"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "cfvo",
+                      "attributes": {
+                        "type": "percentile",
+                        "val": "50"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "cfvo",
+                      "attributes": {
+                        "type": "max"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "color",
+                      "attributes": {
+                        "rgb": "FFF8696B"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "color",
+                      "attributes": {
+                        "rgb": "FFFFEB84"
+                      },
+                      "text": "",
+                      "children": []
+                    },
+                    {
+                      "kind": "color",
+                      "attributes": {
+                        "rgb": "FF63BE7B"
+                      },
+                      "text": "",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "dataValidations": [
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "list",
+            "errorStyle": "stop",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E2",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "\"甲,乙,丙\"",
+              "children": []
+            }
+          ]
+        },
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "whole",
+            "errorStyle": "stop",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E3",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "1",
+              "children": []
+            },
+            {
+              "kind": "formula2",
+              "attributes": {},
+              "text": "10",
+              "children": []
+            }
+          ]
+        },
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "decimal",
+            "errorStyle": "warning",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E4",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "0",
+              "children": []
+            },
+            {
+              "kind": "formula2",
+              "attributes": {},
+              "text": "1",
+              "children": []
+            }
+          ]
+        },
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "date",
+            "errorStyle": "stop",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E5",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "45000",
+              "children": []
+            },
+            {
+              "kind": "formula2",
+              "attributes": {},
+              "text": "47000",
+              "children": []
+            }
+          ]
+        },
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "time",
+            "errorStyle": "stop",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E6",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "0",
+              "children": []
+            },
+            {
+              "kind": "formula2",
+              "attributes": {},
+              "text": "1",
+              "children": []
+            }
+          ]
+        },
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "textLength",
+            "errorStyle": "stop",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E7",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "1",
+              "children": []
+            },
+            {
+              "kind": "formula2",
+              "attributes": {},
+              "text": "5",
+              "children": []
+            }
+          ]
+        },
+        {
+          "kind": "dataValidation",
+          "attributes": {
+            "type": "custom",
+            "errorStyle": "stop",
+            "operator": "between",
+            "allowBlank": "1",
+            "showErrorMessage": "1",
+            "showInputMessage": "1",
+            "sqref": "E8",
+            "errorTitle": "输入不符",
+            "error": "请检查范围",
+            "promptTitle": "填写提示",
+            "prompt": "保留来源违规值"
+          },
+          "text": "",
+          "children": [
+            {
+              "kind": "formula1",
+              "attributes": {},
+              "text": "E8>0",
+              "children": []
+            }
+          ]
+        }
+      ],
+      "copiedValues": []
+    }
+  },
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "officialSchemasSha256": "d34187520749998af306faf1b730e568b0ca6d88ad24638a407c0a9bb4ca04fc",
+  "nativeLocale": "C.UTF-8",
+  "cases": [
+    {
+      "name": "ordinary",
+      "sourceRange": "A2:E2",
+      "destination": "AG257",
+      "sdkCopy": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-rules-ordinary-calc.xlsx",
+      "sha256": "1d55a3a844dd5e61c395db6497d14595421fb1217cb2854acb026fe59e327a15",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6 AG257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6 AH257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "AI257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "6"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "AJ257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "7"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2 AK257",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": [
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AH257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AI257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AJ257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AK257",
+                "s": "2",
+                "t": "s"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "partial-scale",
+      "sourceRange": "A3:D4",
+      "destination": "AG257",
+      "sdkCopy": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-rules-partial-scale-calc.xlsx",
+      "sha256": "40a70621c4409520a03e05b56a239cf57dd121a3b63298ae1f94aae57cbbc1dc",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6 AG257:AG258"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6 AH257:AH258"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "AI257:AI258"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "6"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "AJ257:AJ258"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "7"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": [
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "50",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AH257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "50",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AI257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "50",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AJ257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "50",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG258",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "100",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AH258",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "100",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AI258",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "100",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AJ258",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "100",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "overlap",
+      "sourceRange": "B2:B4",
+      "destination": "B3",
+      "sdkCopy": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-rules-overlap-calc.xlsx",
+      "sha256": "83c9bb1cc92f3f9ce04ba2f9f241eebcc8c2388ad864e48c1cc9230dfbea870e",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": []
+        }
+      }
+    },
+    {
+      "name": "validations",
+      "sourceRange": "E4:E8",
+      "destination": "AG257",
+      "sdkCopy": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-rules-validations-calc.xlsx",
+      "sha256": "16235fba0d8b4b69f142d74e3cd08b8c28cd4764154e26628df8a36ea94d564b",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4 AG257",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5 AG258",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6 AG259",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7 AG260",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8 AG261",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": [
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "0.5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG258",
+                "s": "3",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "46000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG259",
+                "s": "4",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "0.5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG260",
+                "s": "2",
+                "t": "s"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "6",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG261",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "other",
+      "sourceRange": "A2:E2",
+      "destination": "AG257",
+      "sdkCopy": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-rules-other-calc.xlsx",
+      "sha256": "723116befa958a12853bbb5fd75ba6f8165aaa1c7c337ebde81f55866ea2acf7",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": []
+        },
+        "xl/worksheets/sheet2.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6 AG257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6 AH257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "AI257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "6"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "AJ257"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "7"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2 AK257",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": [
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AH257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AI257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AJ257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AK257",
+                "s": "2",
+                "t": "s"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "invalid-stop",
+      "sourceRange": "E3",
+      "destination": "AG257",
+      "sdkCopy": "rejected: copied stop violation",
+      "output": "packages/office/tests/fixtures/workbook-copy-rules-invalid-stop-calc.xlsx",
+      "sha256": "029f59fd78eeee2429365d749f5048f1fa15b623013d65faae798a02a9f6aaab",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "conditionalRules": [
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "A2:A6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "cellIs",
+                    "priority": "2",
+                    "operator": "greaterThan",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "0"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "100",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "B2:B6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "expression",
+                    "priority": "3",
+                    "aboveAverage": "0",
+                    "equalAverage": "0",
+                    "bottom": "0",
+                    "percent": "0",
+                    "rank": "0",
+                    "text": "",
+                    "dxfId": "1"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "formula",
+                      "attributes": {},
+                      "text": "AND(B2>=50,B2<=150)",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "C2:C6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "4"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "conditionalFormatting",
+              "attributes": {
+                "sqref": "D2:D6"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "cfRule",
+                  "attributes": {
+                    "type": "colorScale",
+                    "priority": "5"
+                  },
+                  "text": "",
+                  "children": [
+                    {
+                      "kind": "colorScale",
+                      "attributes": {},
+                      "text": "",
+                      "children": [
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "min",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "percentile",
+                            "val": "50"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "cfvo",
+                          "attributes": {
+                            "type": "max",
+                            "val": "0"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFF8696B"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FFFFEB84"
+                          },
+                          "text": "",
+                          "children": []
+                        },
+                        {
+                          "kind": "color",
+                          "attributes": {
+                            "rgb": "FF63BE7B"
+                          },
+                          "text": "",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dataValidations": [
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E2",
+                "type": "list"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "\"甲,乙,丙\"",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E3 AG257",
+                "type": "whole"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "10",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "warning",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E4",
+                "type": "decimal"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E5",
+                "type": "date"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "45000",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "47000",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E6",
+                "type": "time"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E7",
+                "type": "textLength"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "1",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "5",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "kind": "dataValidation",
+              "attributes": {
+                "allowBlank": "true",
+                "error": "请检查范围",
+                "errorStyle": "stop",
+                "errorTitle": "输入不符",
+                "operator": "between",
+                "prompt": "保留来源违规值",
+                "promptTitle": "填写提示",
+                "showDropDown": "false",
+                "showErrorMessage": "true",
+                "showInputMessage": "true",
+                "sqref": "E8",
+                "type": "custom"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "formula1",
+                  "attributes": {},
+                  "text": "E8>0",
+                  "children": []
+                },
+                {
+                  "kind": "formula2",
+                  "attributes": {},
+                  "text": "0",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "copiedValues": [
+            {
+              "kind": "c",
+              "attributes": {
+                "r": "AG257",
+                "s": "0",
+                "t": "n"
+              },
+              "text": "",
+              "children": [
+                {
+                  "kind": "v",
+                  "attributes": {},
+                  "text": "99",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

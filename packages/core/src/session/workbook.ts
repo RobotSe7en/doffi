@@ -30,6 +30,7 @@ import { compileNumberFormat } from "../workbook/number-format.js";
 import { WorkbookRegionIndex } from "../workbook/region-index.js";
 import { editWorkbookMerge, sameWorkbookMerges } from "./workbook-merges.js";
 import { editWorkbookDefinition, isWorkbookDefinitionOperation, restoreWorkbookDefinitionSource } from "./workbook-definitions.js";
+import { replaceWorkbookRules } from "./workbook-rule-replace.js";
 import { reorderWorkbookRows } from "./workbook-reorder.js";
 import { moveWorkbookRange } from "./workbook-move.js";
 import { SourceStyleEdit } from "./source-styles.js";
@@ -144,6 +145,10 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         if (operation.op === "setWorkbookHyperlink") editWorkbookHyperlink(sheet, operation, limits.maxNodes);
         else for (const value of replaceWorkbookHyperlinks(sheet, operation, limits.maxNodes)) yield { kind: "progress", value: { phase: "cells", ...value } };
         hyperlinkSheets.add(sheet.sheetId);
+      } else if (operation.op === "replaceWorkbookRules") {
+        const sheet = workbook.sheets.find(item => item.sheetId === operation.sheetId) ?? invalid("An earlier operation removed the worksheet.");
+        for (const value of replaceWorkbookRules(sheet, operation, limits.maxNodes)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        changedDefinition = true;
       } else if (operation.op === "clearWorkbookRanges") {
         if (!workbook.sheets.some(sheet => sheet.sheetId === operation.sheetId)) invalid("An earlier operation removed the worksheet.");
         for (const value of cells.clearSteps(operation.sheetId, operation.ranges, operation.mode)) yield { kind: "progress", value: { phase: "cells", ...value } };

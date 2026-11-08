@@ -548,3 +548,13 @@ test('mounted Worker copy keeps hyperlink fragments, skip blanks, selective mode
   await exerciseWorkbookCopyHyperlinks(page, true, sheets);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
 });
+
+test('mounted Worker copy keeps conditional and validation templates, masks and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookCopyRulesSource, exerciseWorkbookCopyRules } = await import('./workbook-copy-rules-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-copy-rules' }), { kind: 'workbook' });
+  const { source, sheets } = workbookCopyRulesSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyRules(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});

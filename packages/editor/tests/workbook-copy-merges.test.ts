@@ -77,7 +77,10 @@ test("partial merges, unsupported selective modes, failed validation, cancellati
   expect(session.serialize()).toEqual(incompatible);
   session.undo(); session.clearHistory();
   const generated = await createWorkbookRangeCopyTransaction(session, "sheet-1", range(255, 31, 256, 32), { row: 0, column: 0 });
-  apply(session, [{ op: "setWorkbookDataValidation", sheetId: "sheet-1", rule: { ruleId: "stop", kind: "textLength", operator: "lessThan", origin: { row: 0, column: 0 }, ranges: [range(0, 0)], formulas: ["=1"], allowBlank: true, showInputMessage: false, showErrorMessage: true, errorStyle: "stop", errorTitle: "", error: "", promptTitle: "", prompt: "" } }]);
+  // Ordinary paste replaces destination validation. This source rule is valid
+  // in row 256 and invalid after its template moves to row 1, so the complete
+  // cell/merge/rule candidate must still fail without publishing topology.
+  apply(session, [{ op: "setWorkbookDataValidation", sheetId: "sheet-1", rule: { ruleId: "stop", kind: "custom", origin: { row: 0, column: 0 }, ranges: [range(0, 0), range(255, 31)], expression: "=ROW()>1", allowBlank: true, showInputMessage: false, showErrorMessage: true, errorStyle: "stop", errorTitle: "", error: "", promptTitle: "", prompt: "" } }]);
   expect(() => session.prepare(generated)).toThrowError(expect.objectContaining({ code: "RevisionConflict" }));
   const protectedSource = session.serialize(), blocked = await createWorkbookRangeCopyTransaction(session, "sheet-1", range(255, 31, 256, 32), { row: 0, column: 0 });
   expect(() => session.prepare(blocked)).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(session.serialize()).toEqual(protectedSource);

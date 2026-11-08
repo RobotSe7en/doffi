@@ -3,12 +3,14 @@ import type { DeepReadonly, DocumentTransaction, WorkbookCalculationResult, Work
 import { workbookTextSplice } from "./text-projection.js";
 import { createWorkbookHyperlinkCopy } from "./copy-hyperlinks.js";
 import { createWorkbookNameCopyPlan } from "./copy-names.js";
+import { copyWorkbookRules, createWorkbookCopyFootprint } from "./copy-rules.js";
 
 export interface WorkbookRangeCopyOptions {
   /** Defaults to the source worksheet; both belong to the same workbook. */
   readonly targetSheetId?: string;
-  /** Contents includes rich source, cell formats and hyperlink targets. Values and formulas keep
-   * destination formats; formats leaves destination content and caches intact. */
+  /** Contents includes rich source, formats, hyperlinks and both rule categories.
+   * Values/formulas keep destination formats and rules. Formats copies conditional
+   * formats while retaining destination validation, content and formula caches. */
   readonly mode?: "contents" | "values" | "formulas" | "formats";
   readonly calculation?: WorkbookCalculationResult;
   /** Only true blank constants are skipped; empty text and formulas remain. */
@@ -65,6 +67,13 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
   const account = (amount: number): void => { units += amount; if (units > config.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its text budget."); };
   let names: Awaited<ReturnType<typeof createWorkbookNameCopyPlan>> | undefined;
   const step = (): void => { if (++steps > config.maxSteps) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its preparation work budget."); };
+  const copyExpression = async (expression: string, from: WorkbookCoordinate, to: WorkbookCoordinate): Promise<string> => {
+    if (sheetId !== targetSheetId && snapshot.metadata.workbook.names?.length) {
+      names ??= await createWorkbookNameCopyPlan(snapshot.metadata.workbook, sheet, targetSheet, { guard, account, step, ...(config.yield ? { yield: config.yield } : {}) });
+      const result = await names.copy(expression, from, to); guard(); return result;
+    }
+    return copyWorkbookFormula(expression, from, to);
+  };
   const evaluator = config.calculation === undefined ? undefined : createWorkbookCalculatedEvaluator(model, config.calculation, { maxSteps: config.maxSteps, maxCells: config.maxCells, maxCodeUnits: config.maxCodeUnits });
   const cells: WorkbookCellInput[] = [], formats: WorkbookCellFormatInput[] = [];
   let general = snapshot.metadata.workbook.numberFormats.find(format => "builtinId" in format ? format.builtinId === 0 : format.code.toUpperCase() === "GENERAL")?.formatId, registerGeneral = false;
@@ -72,11 +81,14 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     guard();
     const hyperlinks = config.mode === "contents" && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column) && (sheet.hyperlinks?.length || targetSheet.hyperlinks?.length)
       ? createWorkbookHyperlinkCopy(sheet.hyperlinks ?? [], targetSheet.hyperlinks ?? [], source, target, step) : undefined;
+    const footprint = (config.mode === "contents" || config.mode === "formats") && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column)
+      && (sheet.conditionalRules?.length || targetSheet.conditionalRules?.length || config.mode === "contents" && (sheet.dataValidations?.length || targetSheet.dataValidations?.length)) ? createWorkbookCopyFootprint() : undefined;
     for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
       guard(); const from = { row: source.from.row + row, column: source.from.column + column }, to = { row: destination.row + row, column: destination.column + column };
       const raw = model.getCell(sheetId, from.row, from.column), same = sheetId === targetSheetId && from.row === to.row && from.column === to.column;
       const copied = !(config.skipBlanks && (!raw || raw.value.type === "blank" && !raw.formula)) && !same;
       hyperlinks?.cell(from.row, from.column, to.row, to.column, copied);
+      footprint?.cell(to.row, to.column, copied);
       if (copied || config.mode === "values" && same && raw?.formula) {
         const format = resolveWorkbookCellFormat(sheet, from, raw), previous = model.getCell(targetSheetId, to.row, to.column);
         if (config.mode === "formats" || config.mode === "contents") {
@@ -103,10 +115,7 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
           else content = readWorkbookCellSource(model, { sheetId, ...from });
           account(JSON.stringify(content).length);
           if (content.kind === "formula") {
-            if (sheetId !== targetSheetId && snapshot.metadata.workbook.names?.length) {
-              names ??= await createWorkbookNameCopyPlan(snapshot.metadata.workbook, sheet, targetSheet, { guard, account, step, ...(config.yield ? { yield: config.yield } : {}) });
-              content = { kind: "formula", expression: await names.copy(content.expression, from, to) }; guard();
-            } else content = { kind: "formula", expression: copyWorkbookFormula(content.expression, from, to) };
+            content = { kind: "formula", expression: await copyExpression(content.expression, from, to) };
           }
           let unchanged = false;
           if (config.mode !== "contents" && content.kind === "value" && content.value.type === "text" && previous?.value.type === "text" && !previous.formula) {
@@ -128,6 +137,7 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
         guard(); if (completed < total && config.yield) { await config.yield(); guard(); }
       }
     }
+    const ruleCopy = footprint ? await copyWorkbookRules(snapshot.metadata.workbook, sheet, targetSheet, source, target, footprint.finish(), config.mode === "contents", copyExpression, { guard, step, account, ...(config.yield ? { yield: config.yield } : {}) }) : undefined;
     guard(); const operations: DocumentTransaction["operations"] = [];
     for (const name of names?.names ?? []) {
       const operation = { op: "setWorkbookDefinedName" as const, name }; account(JSON.stringify(operation).length); operations.push(operation);
@@ -143,6 +153,7 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     if (formats.length) operations.push({ op: "setWorkbookCellFormats", sheetId: targetSheetId, cells: formats });
     const copiedLinks = hyperlinks?.finish();
     if (copiedLinks) { const operation = { op: "replaceWorkbookHyperlinks" as const, sheetId: targetSheetId, range: target, links: copiedLinks }; account(JSON.stringify(operation).length); operations.push(operation); }
+    if (ruleCopy) { account(JSON.stringify(ruleCopy).length); operations.push(ruleCopy); }
     for (const range of copiedMerges) {
       const operation = { op: "mergeWorkbookCells" as const, sheetId: targetSheetId, range, coveredContent: "reject" as const };
       account(JSON.stringify(operation).length); operations.push(operation);
