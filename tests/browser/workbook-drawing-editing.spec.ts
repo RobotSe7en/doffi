@@ -40,6 +40,28 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} object
   await page.getByRole("button", { name: "重做", exact: true }).click(); await settled(); expect((await inspect()).content).toBe(current.content);
   if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
 });
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} partial object formatting keeps unrequested fonts against existing important span rules`, async ({ page }) => {
+  const s = createDocumentSession(scalarWorkbook([]));
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 240, heightPt: 100 }, object: { kind: "text", html: '<p style="font-family:&quot;Liberation Sans&quot;;font-size:18pt;--office-font-ascii:&quot;Liberation Sans&quot;"><strong style="background-color:#ddeeff">GlyphAB</strong></p>' } }] }));
+  const object = s.snapshot().metadata.workbook.objects![0]!, paragraph = s.getNode(object.nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraph)!.childNodeIds[0]!, source = new Map(s.serialize()); s.dispose();
+  source.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(source.get("styles.css")!) + 'span{font-family:"Liberation Serif"!important;font-size:40pt!important;font-weight:normal!important;font-style:italic!important;vertical-align:super!important;background-color:yellow!important;--office-font-ascii:"Liberation Serif"!important}'));
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(source)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { content: string; history: { undoSteps: number }; errors: string[] };
+  const paint = (id: string) => page.evaluate(({ remote, id }) => remote ? window.workbookRemoteEditor.displayedDrawingText(id, true) : window.workbookEditor.displayedDrawingText(id, true), { remote, id });
+  const before = await inspect(), original = await paint(strong); expect(original).toMatchObject([{ size: 24, weight: "700", italic: "normal" }]);
+  await page.getByText("图片、形状与图表", { exact: true }).click(); await page.getByLabel("选择绘图对象", { exact: true }).selectOption(object.nodeId);
+  await page.getByLabel("对象段落文字颜色", { exact: true }).fill("#a02030"); const text = page.getByLabel("所选对象段落文字", { exact: true }); await text.focus(); await text.evaluate(element => (element as HTMLTextAreaElement).setSelectionRange(1, 4));
+  await page.getByRole("button", { name: "应用对象选中文字字体", exact: true }).click(); await settled(); const current = await inspect();
+  const wrapper = await page.evaluate(({ content, strong }) => { const doc = new DOMParser().parseFromString(content, "text/html"); return [...doc.querySelectorAll("[data-node-id]")].find(element => element.getAttribute("data-node-id") === strong)!.querySelector("span")!.getAttribute("data-node-id")!; }, { content: current.content, strong });
+  await expect.poll(() => paint(wrapper)).toMatchObject([{ text: "lyp", color: "rgb(160, 32, 48)", size: 24, weight: "700", italic: "normal", font: original[0]!.font }]);
+  const selected = (await paint(wrapper))[0]!; expect(selected.topPt).toBeCloseTo(original[0]!.topPt!, 3); expect(selected.background).toBe("rgba(0, 0, 0, 0)"); expect((await paint(strong))[0]!.background).toBe(original[0]!.background);
+  expect(current.history.undoSteps).toBe(1); expect(current.errors).toEqual([]);
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect((await inspect()).content).toBe(before.content);
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
 test.beforeEach(async ({ page }) => { await openSdkHost(page); });
 test.beforeAll(async () => {
   for (const name of ["workbook-editor", "workbook-remote-editor", "workbook-session-worker"]) {

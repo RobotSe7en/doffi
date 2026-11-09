@@ -25,7 +25,7 @@ export async function mount(entries: TestPackage, observeText = false, prepareOp
 export async function mountObserved(entries: TestPackage, prepareOptions?: TransactionPrepareOptions): Promise<void> { await mount(entries, true, prepareOptions); }
 export function displayedCellAppearance(row: number, column: number) { return measureWorkbookCellAppearance(observed?.current(), row, column); }
 export function displayedChart() { return measureWorkbookChart(observed?.current()); }
-export function displayedDrawingText(nodeId: string) { return measureWorkbookDrawingText(observed?.current(), nodeId); }
+export function displayedDrawingText(nodeId: string, includeBounds = false) { return measureWorkbookDrawingText(observed?.current(), nodeId, includeBounds); }
 export function displayedCell(row: number, column: number): string | undefined {
   const frame = editor.element.shadowRoot!.querySelector(".preview")!.firstElementChild!.shadowRoot!.querySelector<HTMLIFrameElement>("iframe")!;
   return observed?.root(frame)?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined;

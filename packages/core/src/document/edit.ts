@@ -9,7 +9,7 @@ import { styleSourceText } from "./text-style.js";
 import type { SourceTextRange } from "./text-style.js";
 import { bodyTags, parseHtml, supportedTags } from "./html.js";
 import { parseHtmlFragment, parseHtmlTree, serializeHtmlOuter, serializeHtmlTree } from "./html-parser.js";
-import { encode, resolveReference } from "./package.js";
+import { decodeText, encode, resolveReference } from "./package.js";
 import type { HtmlSourceDescriptor, ParsedHtml } from "./html.js";
 import type { DocumentPackage } from "../runtime.js";
 import { checkLimit } from "./validation.js";
@@ -189,7 +189,8 @@ export class DocumentEdit {
   }
   formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>): void {
     const target = this.index().get(nodeId); if (!target) fail("The text format target is unavailable.");
-    styleSourceText(target, range, properties, this.limits, this.allocate);
+    const styles = this.state.snapshot.manifest.styles.map(path => decodeText(this.state.files.get(path)!));
+    styleSourceText(target, range, properties, this.limits, this.allocate, styles);
   }
   /** A format adapter has already checked the owning source identity. */
   replaceSourceText(nodeId: string, edit: { readonly from: number; readonly to: number; readonly expectedText: string; readonly text: string }): void {

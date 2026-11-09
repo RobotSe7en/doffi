@@ -46,13 +46,15 @@ export function measureWorkbookCellAppearance(view: ShadowRoot | undefined, row:
   return { fill: fill ? fill.ownerDocument.defaultView!.getComputedStyle(fill).backgroundColor : undefined,
     text: (cell ? [cell, ...cell.querySelectorAll<HTMLElement>("*")] : []).filter(element => !element.children.length && element.textContent).map(element => { const style = element.ownerDocument.defaultView!.getComputedStyle(element); return { text: element.textContent, color: style.color, weight: style.fontWeight, italic: style.fontStyle, font: style.fontFamily, size: style.fontSize }; }) };
 }
-export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId: string) {
+export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId: string, includeBounds = false) {
   return [...view?.querySelectorAll<HTMLElement>('[data-office-text-style][data-source-node-id]') ?? []]
     .filter(element => element.dataset.sourceNodeId === nodeId).map(element => {
       const style = element.ownerDocument.defaultView!.getComputedStyle(element);
       const decoration = element.ownerDocument.defaultView!.getComputedStyle(element.querySelector<HTMLElement>("[data-office-script]") ?? element);
+      const owner = element.closest<HTMLElement>('[data-office-view="workbook-drawing"],[data-office-view="workbook-note"]');
       return { text: element.textContent, color: style.color, size: parseFloat(style.fontSize), weight: style.fontWeight,
-        decoration: decoration.textDecorationLine, decorationStyle: decoration.textDecorationStyle };
+        decoration: decoration.textDecorationLine, decorationStyle: decoration.textDecorationStyle, font: decoration.fontFamily, italic: decoration.fontStyle,
+        ...(includeBounds ? { topPt: (element.getBoundingClientRect().top - (owner?.getBoundingClientRect().top ?? 0)) * .75, background: style.backgroundColor } : {}) };
     });
 }
 

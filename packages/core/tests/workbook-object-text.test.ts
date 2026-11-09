@@ -52,6 +52,92 @@ test("explicit important none records a full clear and paragraph resets are pers
   s.undo(); commit(s, [{ op: "setWorkbookObjectParagraphStyle", nodeId, paragraphId, properties: { "text-decoration": "none" } }]); expect(s.getNode(paragraphId)!.attributes.style).toContain("--office-font-decoration-reset:all");
 });
 
+test("partial font formatting preserves unrequested fonts when new spans match existing source CSS", () => {
+  const { session: initial, nodeId } = fixture();
+  commit(initial, [{ op: "setWorkbookObjectText", nodeId, html: '<p style="font-family:&quot;Liberation Sans&quot;;font-size:18pt;--office-font-ascii:&quot;Liberation Sans&quot;;--office-font-east-asia:&quot;Noto Sans CJK SC&quot;"><strong>Glyph禰󠄀😀</strong></p>' }]);
+  const files = new Map(initial.serialize()); files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + 'span{font-family:"Liberation Serif"!important;font-size:40pt!important;font-weight:normal!important;font-style:italic!important;--office-font-ascii:"Liberation Serif"!important;--office-font-east-asia:"Liberation Serif"!important}'));
+  const s = createDocumentSession(openDocument(files, { kind: "workbook" })); owned.push(s);
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!;
+  const project = (id: string): SourceStyleNode => { const node = s.getNode(id)!; return { tag: node.tagName, attrs: node.attributes, parent: node.parentNodeId ? project(node.parentNodeId) : undefined }; };
+  const before = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS).get(project(strong));
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 1, to: 4, expectedText: "lyp", properties: { color: "#a02030" } }]);
+  const wrapper = s.getNode(strong)!.childNodeIds[0]!, after = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS).get(project(wrapper));
+  expect(after.color).toBe("#a02030");
+  for (const key of ["font-family", "font-size", "font-weight", "font-style", "--office-font-ascii", "--office-font-east-asia"]) expect(after[key], key).toBe(before[key]);
+  expect(s.getNode(wrapper)!.text).toBe("lyp"); expect(s.getNode(strong)!.text).toBe("Glyph禰󠄀😀"); expect(s.history().undoSteps).toBe(1);
+});
+
+test("font no-op checks use winning declarations rather than an overridden inline value", () => {
+  const { session: initial, nodeId } = fixture(); commit(initial, [{ op: "setWorkbookObjectText", nodeId, html: '<p><span style="font-size:18pt">AB</span></p>' }]);
+  const files = new Map(initial.serialize()); files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + 'span{font-size:40pt!important}'));
+  const s = createDocumentSession(openDocument(files, { kind: "workbook" })); owned.push(s);
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, original = s.getNode(paragraphId)!.childNodeIds[0]!, untouched = s.getNode(original)!.attributes;
+  const operation: DocumentOperation = { op: "formatWorkbookObjectText", nodeId, paragraphId, from: 0, to: 1, expectedText: "A", properties: { "font-size": "18pt" } };
+  commit(s, [operation]); const wrapper = s.getNode(s.getNode(original)!.childNodeIds[0]!)!;
+  const parent: SourceStyleNode = { tag: "span", attrs: untouched, parent: undefined }, resolver = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS);
+  expect(resolver.get(parent)["font-size"]).toBe("40pt"); expect(resolver.get({ tag: "span", attrs: wrapper.attributes, parent })["font-size"]).toBe("18pt");
+  expect(s.getNode(original)!.attributes).toEqual(untouched); expect(commit(s, [operation]).changed).toBe(false); expect(s.history().undoSteps).toBe(1);
+});
+
+test("requested font variables retain the original source scope rather than a new span's defaults", () => {
+  const { session: initial, nodeId } = fixture(); commit(initial, [{ op: "setWorkbookObjectText", nodeId, html: '<p style="--paint:#123456"><strong>AB</strong></p>' }]);
+  const files = new Map(initial.serialize()); files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + 'span{--paint:#fedcba!important}'));
+  const s = createDocumentSession(openDocument(files, { kind: "workbook" })); owned.push(s); const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!;
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 0, to: 1, expectedText: "A", properties: { color: "var(--paint)" } }]);
+  const wrapper = s.getNode(s.getNode(strong)!.childNodeIds[0]!)!, paragraph: SourceStyleNode = { tag: "p", attrs: s.getNode(paragraphId)!.attributes, parent: undefined }, owner: SourceStyleNode = { tag: "strong", attrs: s.getNode(strong)!.attributes, parent: paragraph };
+  const css = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS).get({ tag: "span", attrs: wrapper.attributes, parent: owner });
+  expect(css.color).toBe("#123456"); expect(wrapper.attributes.style).toContain("--paint:inherit!important");
+});
+
+test("one hundred edits of the same font range keep bounded source structure and one hundred undo steps", () => {
+  const { session: s, nodeId } = fixture(); commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p><strong>ABCDEF</strong></p>' }]); s.clearHistory();
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!, before = s.snapshot().content!.html; let wrapper: string | undefined;
+  for (let index = 0; index < 100; index++) {
+    commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 1, to: 5, expectedText: "BCDE", properties: { color: index % 2 ? "#102030" : "#203040" } }]);
+    wrapper ??= s.getNode(strong)!.childNodeIds[0]!; expect(s.getNode(strong)!.childNodeIds).toEqual([wrapper]); expect(s.getNode(wrapper)!.childNodeIds).toEqual([]);
+  }
+  expect(s.history().undoSteps).toBe(100); expect(s.getNode(strong)!.text).toBe("ABCDEF"); for (let index = 0; index < 100; index++) s.undo(); expect(s.snapshot().content!.html).toBe(before);
+}, 20_000);
+
+test("updating a partial range inside a protected font span retains the surrounding source formatting", () => {
+  const { session: s, nodeId } = fixture(); commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p><strong>ABCDEF</strong></p>' }]); s.clearHistory();
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!;
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 1, to: 5, expectedText: "BCDE", properties: { color: "#102030" } }]);
+  const outer = s.getNode(strong)!.childNodeIds[0]!, original = s.getNode(outer)!.attributes;
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 2, to: 3, expectedText: "C", properties: { color: "#506070" } }]);
+  expect(s.getNode(outer)!.attributes).toEqual(original); expect(s.getNode(outer)!.text).toBe("BCDE"); expect(s.getNode(s.getNode(outer)!.childNodeIds[0]!)!.text).toBe("C"); expect(s.history().undoSteps).toBe(2);
+  s.undo(); expect(s.getNode(outer)!.childNodeIds).toEqual([]); expect(s.getNode(outer)!.attributes).toEqual(original);
+});
+
+test.each([["font-family", "--office-font-ascii", '"Liberation Sans"'], ["color", "--office-text-color", "#123456"]] as const)("native %s variables do not become self-referential during partial formatting", (property, variable, expected) => {
+  const { session: s, nodeId } = fixture(); commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p style="font-family:&quot;Noto Sans CJK SC&quot;;--office-font-ascii:&quot;Liberation Sans&quot;;--office-text-color:#123456"><strong>ABC</strong></p>' }]); s.clearHistory();
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, strong = s.getNode(paragraphId)!.childNodeIds[0]!;
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 1, to: 2, expectedText: "B", properties: { [property]: "var(" + variable + ")" } }]);
+  const wrapper = s.getNode(s.getNode(strong)!.childNodeIds[0]!)!, paragraph: SourceStyleNode = { tag: "p", attrs: s.getNode(paragraphId)!.attributes, parent: undefined }, owner: SourceStyleNode = { tag: "strong", attrs: s.getNode(strong)!.attributes, parent: paragraph };
+  const css = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS).get({ tag: "span", attrs: wrapper.attributes, parent: owner });
+  expect(css[property]).toBe(expected); expect(css[variable]).toBe(expected);
+});
+
+test("a missing native font variable uses its requested fallback ahead of the old theme family", () => {
+  const { session: s, nodeId } = fixture(); commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p style="font-family:&quot;Noto Sans CJK SC&quot;;--office-minor-ascii:&quot;Liberation Serif&quot;"><strong style="--office-font-ascii:&quot;Liberation Sans&quot;">AB</strong><em>CD</em></p>' }]);
+  const paragraphId = s.getNode(nodeId)!.childNodeIds[0]!, original = s.getNode(paragraphId)!.childNodeIds;
+  commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId, from: 0, to: 4, expectedText: "ABCD", properties: { "font-family": 'var(--office-font-ascii,"Liberation Sans")' } }]);
+  for (const [index, id] of original.entries()) {
+    const item = s.getNode(id)!, wrapper = s.getNode(item.childNodeIds[0]!)!, paragraph: SourceStyleNode = { tag: "p", attrs: s.getNode(paragraphId)!.attributes, parent: undefined }, owner: SourceStyleNode = { tag: item.tagName, attrs: item.attributes, parent: paragraph };
+    const css = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS).get({ tag: "span", attrs: wrapper.attributes, parent: owner });
+    expect(css["font-family"]).toBe('"Liberation Sans"'); expect(css["--office-font-ascii"]).toBe(index === 0 ? '"Liberation Sans"' : undefined); expect(css["--office-minor-ascii"]).toBeUndefined();
+  }
+});
+
+test("unrepresentable native self-reference expressions reject earlier text changes atomically", () => {
+  const { session: s, nodeId, paragraphId } = fixture(), original = s.serialize(), before = s.getNode(paragraphId)!.text;
+  const invalid: Record<string, string>[] = [{ "--office-text-color": "var(--office-text-color)" }, { color: "var(--missing,var(--office-text-color))" }, { "font-family": "var(--missing,var(--office-font-ascii))" }];
+  for (const properties of invalid) {
+    expect(() => commit(s, [{ op: "replaceWorkbookObjectText", nodeId, paragraphId, from: 0, to: 1, expectedText: before.slice(0, 1), text: "X" }, { op: "formatWorkbookObjectText", nodeId, paragraphId, from: 0, to: 1, expectedText: "X", properties }])).toThrowError(expect.objectContaining({ code: expect.stringMatching(/InvalidOperation|UnsupportedFeature/) }));
+    expect(s.serialize()).toEqual(original);
+  }
+});
+
 test("paragraph text and partial fonts retain native source runs, CRLF, UTF-16 and one atomic history step", () => {
   const { session: s, nodeId, paragraphId, other } = fixture(), before = s.serialize(), paragraph = s.getNode(paragraphId)!, strong = paragraph.childNodeIds.find(id => s.getNode(id)!.tagName === "strong")!, unrelated = s.getNode(other.nodeId)!.html;
   const font = { "--office-font-ascii": '"Liberation Sans"', "--office-font-east-asia": '"Noto Sans CJK SC"', color: "#c02030", "font-size": "16pt" };
@@ -87,12 +173,12 @@ test("font formatting retains already matching source spans while changing diffe
   const operation: DocumentOperation = { op: "formatWorkbookObjectText", nodeId, paragraphId, from: 0, to: 3, expectedText: "ABC", properties: { "font-size": "18pt" } };
   commit(s, [operation]); expect(s.getNode(spans[0]!)!.html).toBe(a); expect(s.getNode(spans[2]!)!.html).toBe(c);
   expect(s.getNode(spans[1]!)!.attributes.style).toContain("color:blue"); expect(s.getNode(spans[1]!)!.childNodeIds).toHaveLength(1);
-  expect(s.getNode(s.getNode(spans[1]!)!.childNodeIds[0]!)!.attributes.style).toBe("font-size:18pt");
+  expect(s.getNode(s.getNode(spans[1]!)!.childNodeIds[0]!)!.attributes.style).toContain("font-size:18pt!important");
   const before = s.serialize(); expect(commit(s, [operation]).changed).toBe(false); expect(s.serialize()).toEqual(before);
   commit(s, [{ op: "setWorkbookObjectText", nodeId, html: '<p><span style="text-decoration-line:underline;text-decoration:none">ABC</span></p>' }]);
   const decoratedParagraph = s.getNode(nodeId)!.childNodeIds[0]!, parent = s.getNode(decoratedParagraph)!.childNodeIds[0]!;
   commit(s, [{ op: "formatWorkbookObjectText", nodeId, paragraphId: decoratedParagraph, from: 0, to: 3, expectedText: "ABC", properties: { "text-decoration-line": "underline" } }]);
-  expect(s.getNode(parent)!.childNodeIds).toHaveLength(1); expect(s.getNode(s.getNode(parent)!.childNodeIds[0]!)!.attributes.style).toBe("text-decoration-line:underline");
+  expect(s.getNode(parent)!.childNodeIds).toHaveLength(1); expect(s.getNode(s.getNode(parent)!.childNodeIds[0]!)!.attributes.style).toContain("text-decoration-line:underline!important");
 });
 
 test("font ranges and paragraph operations reject foreign identities, broken IVS, unsafe styles and earlier removals atomically", () => {

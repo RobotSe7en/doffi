@@ -11,7 +11,7 @@ let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; externa
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedCellAppearance(row: number, column: number): ReturnType<typeof measureWorkbookCellAppearance>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
-  displayedDrawingText(nodeId: string): ReturnType<typeof measureWorkbookDrawingText>;
+  displayedDrawingText(nodeId: string, includeBounds?: boolean): ReturnType<typeof measureWorkbookDrawingText>;
   displayedDrawingBounds(): ReturnType<typeof measureWorkbookDrawingBounds>;
   displayedCell(row: number, column: number): string | undefined;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
@@ -59,7 +59,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
     settled: () => editor.settled(),
     displayedCellAppearance: (row, column) => measureWorkbookCellAppearance(observed?.current(), row, column),
     displayedChart: () => measureWorkbookChart(observed?.current()),
-    displayedDrawingText: nodeId => measureWorkbookDrawingText(observed?.current(), nodeId),
+    displayedDrawingText: (nodeId, includeBounds) => measureWorkbookDrawingText(observed?.current(), nodeId, includeBounds),
     displayedDrawingBounds: () => measureWorkbookDrawingBounds(observed?.current()),
     displayedCell: (row, column) => observed?.current()?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined,
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
@@ -85,7 +85,7 @@ export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
 export function displayedCellAppearance(row: number, column: number) { return actions.displayedCellAppearance(row, column); }
 export function displayedChart() { return actions.displayedChart(); }
-export function displayedDrawingText(nodeId: string) { return actions.displayedDrawingText(nodeId); }
+export function displayedDrawingText(nodeId: string, includeBounds = false) { return actions.displayedDrawingText(nodeId, includeBounds); }
 export function displayedDrawingBounds() { return actions.displayedDrawingBounds(); }
 export function displayedCell(row: number, column: number) { return actions.displayedCell(row, column); }
 export function external(text: string, wait = true, at = { row: 0, column: 0 }) { return actions.external(text, wait, at); }

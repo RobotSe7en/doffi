@@ -64,7 +64,7 @@ function createTextBody(source: HTMLElement, nodeId: string, maxNodes: number, p
   // compositor for documents without the source override.
   const reset = "--office-font-decoration-reset", elements = [source, ...source.querySelectorAll<HTMLElement>("*")];
   if (elements.length > maxNodes) throw new DocumentError("ResourceLimitExceeded", "Drawing text exceeds its source node budget.");
-  const explicit = elements.some(element => Boolean(view.getComputedStyle(element).getPropertyValue(reset).trim()));
+  const explicit = elements.some(element => { const value = view.getComputedStyle(element).getPropertyValue(reset).trim().toLowerCase(); return value !== "" && value !== "none"; });
   const resolver = explicit ? createSourceStyleResolver(document) : undefined;
   const decoration = new WeakMap<HTMLElement, Readonly<Record<string, string>>>();
   const effective = (original: HTMLElement): Readonly<Record<string, string>> => {
