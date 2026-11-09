@@ -110,9 +110,10 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
             ...(command.mode === undefined ? {} : { mode: command.mode }), ...(command.skipBlanks === undefined ? {} : { skipBlanks: command.skipBlanks }),
             ...(calculation ? { calculation } : {}), onProgress: value => progress({ phase: "copy", ...value }) });
         } else if (command.kind === "fill") {
-          if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "source", "target", "mode", "axis"])) invalidSessionTransport("Invalid workbook fill command.");
+          if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "source", "target", "mode", "axis", "format"])) invalidSessionTransport("Invalid workbook fill command.");
           transaction = await createWorkbookFillTransaction(session, command.sheetId, command.source, command.target, { ...common,
-            ...(command.mode === undefined ? {} : { mode: command.mode }), ...(command.axis === undefined ? {} : { axis: command.axis }), onProgress: value => progress({ phase: "fill", ...value }) });
+            ...(command.mode === undefined ? {} : { mode: command.mode }), ...(command.axis === undefined ? {} : { axis: command.axis }),
+            ...(command.format === undefined ? {} : { format: command.format }), onProgress: value => progress({ phase: "fill", ...value }) });
         } else if (command.kind === "sort") {
           if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "sort", "locale"])) invalidSessionTransport("Invalid workbook sort command.");
           const calculation = await calculate(base, abort, progress, preparation, guard); guard();

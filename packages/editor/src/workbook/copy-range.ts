@@ -30,7 +30,7 @@ function contains(a: DeepReadonly<WorkbookRange>, b: DeepReadonly<WorkbookRange>
   return a.from.row <= b.from.row && a.from.column <= b.from.column && a.to.row >= b.to.row && a.to.column >= b.to.column;
 }
 /** Copy one fixed source rectangle, including complete merged regions for
- * ordinary content copies; clipboard lifetime and structural
+ * content/format copies; values/formulas retain target geometry. Clipboard lifetime and structural
  * copy are composed separately. No output is read back as a later seed. */
 export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, sheetId: string, range: DeepReadonly<WorkbookRange>, origin: WorkbookCoordinate, options: WorkbookRangeCopyOptions = {}): Promise<DocumentTransaction> {
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["targetSheetId", "mode", "calculation", "skipBlanks", "maxCells", "maxCodeUnits", "maxSteps", "signal", "yield", "onProgress"].includes(key))) invalid("Invalid workbook range-copy options.");
@@ -49,24 +49,53 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
   if (total > config.maxCells) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its cell budget.");
   const target = { from: destination, to: { row: destination.row + rows - 1, column: destination.column + columns - 1 } };
   if (target.to.row >= 1_048_576 || target.to.column >= 16_384) invalid("Range copy exceeds the destination worksheet bounds.");
-  const sourceMerges = sheet.merges.filter(merge => overlap(merge, source)), targetMerges = targetSheet.merges.filter(merge => overlap(merge, target));
-  if (sourceMerges.some(merge => !contains(source, merge)) || targetMerges.some(merge => !contains(target, merge))) invalid("Range copy cannot split a merged region.");
-  if ((sourceMerges.length || targetMerges.length) && (config.mode !== "contents" || config.skipBlanks)) invalid("Merged range copy requires ordinary contents without skipping blanks.");
-  const copiedMerges = sourceMerges.map(merge => ({
-    from: { row: destination.row + merge.from.row - source.from.row, column: destination.column + merge.from.column - source.from.column },
-    to: { row: destination.row + merge.to.row - source.from.row, column: destination.column + merge.to.column - source.from.column },
-  }));
-  const mergeKey = (range: DeepReadonly<WorkbookRange>): string => [range.from.row, range.from.column, range.to.row, range.to.column].join(":");
-  const mergeKeys = new Set(copiedMerges.map(mergeKey));
-  if (targetMerges.some(merge => !mergeKeys.has(mergeKey(merge)))) invalid("Range copy requires identically sized and aligned destination merges.");
   let units = 0, steps = 0, completed = 0;
   const guard = (): void => {
     if (config.signal?.aborted) throw new DocumentError("OperationCancelled", "Workbook range copy was cancelled.");
     if (captureWorkbookModel(input) !== model) throw new DocumentError("RevisionConflict", "Workbook range-copy source changed before completion.");
   };
   const account = (amount: number): void => { units += amount; if (units > config.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its text budget."); };
-  let names: Awaited<ReturnType<typeof createWorkbookNameCopyPlan>> | undefined;
   const step = (): void => { if (++steps > config.maxSteps) throw new DocumentError("ResourceLimitExceeded", "Range copy exceeds its preparation work budget."); };
+  const copiesTopology = config.mode === "contents" || config.mode === "formats";
+  const mappedMerges: WorkbookRange[] = [], copiedMerges: WorkbookRange[] = [], targetMerges: DeepReadonly<WorkbookRange>[] = [];
+  for (const merge of sheet.merges) {
+    guard(); step();
+    if (overlap(merge, source)) {
+      if (!contains(source, merge)) invalid("Range copy cannot split a merged region.");
+      const mapped = { from: { row: destination.row + merge.from.row - source.from.row, column: destination.column + merge.from.column - source.from.column },
+        to: { row: destination.row + merge.to.row - source.from.row, column: destination.column + merge.to.column - source.from.column } };
+      account(JSON.stringify(mapped).length); mappedMerges.push(mapped);
+      let include = copiesTopology && !config.skipBlanks;
+      if (copiesTopology && config.skipBlanks) {
+        // Native imports retain populated covered cells too. A blank anchor
+        // alone does not make the complete merged seed blank. Disjoint merges
+        // keep this scan within the selected rectangle's existing cell budget.
+        content: for (let row = merge.from.row; row <= merge.to.row; row++) for (let column = merge.from.column; column <= merge.to.column; column++) {
+          guard(); step(); const cell = model.getCell(sheetId, row, column);
+          if (cell && (cell.formula !== undefined || cell.value.type !== "blank")) { include = true; break content; }
+          if (steps % 256 === 0 && config.yield) { await config.yield(); guard(); }
+        }
+      }
+      if (include) copiedMerges.push(mapped);
+    }
+    if (steps % 256 === 0 && config.yield) { await config.yield(); guard(); }
+  }
+  const mergeKey = (range: DeepReadonly<WorkbookRange>): string => [range.from.row, range.from.column, range.to.row, range.to.column].join(":");
+  const mergeKeys = new Set(mappedMerges.map(mergeKey));
+  for (const merge of targetSheet.merges) {
+    guard(); step();
+    if (overlap(merge, target)) {
+      if (!contains(target, merge)) invalid("Range copy cannot split a merged region.");
+      if (!mergeKeys.has(mergeKey(merge))) invalid("Range copy requires identically sized and aligned destination merges.");
+      targetMerges.push(merge);
+    }
+    if (steps % 256 === 0 && config.yield) { await config.yield(); guard(); }
+  }
+  // Matching target merges already have exactly the required geometry. Keep
+  // them in place, including native covered content and skipped blank seeds;
+  // only newly constructed merges require the explicit covered-content check.
+  const targetMergeKeys = new Set(targetMerges.map(mergeKey)), addedMerges = copiedMerges.filter(merge => !targetMergeKeys.has(mergeKey(merge)));
+  let names: Awaited<ReturnType<typeof createWorkbookNameCopyPlan>> | undefined;
   const copyExpression = async (expression: string, from: WorkbookCoordinate, to: WorkbookCoordinate): Promise<string> => {
     if (sheetId !== targetSheetId && snapshot.metadata.workbook.names?.length) {
       names ??= await createWorkbookNameCopyPlan(snapshot.metadata.workbook, sheet, targetSheet, { guard, account, step, ...(config.yield ? { yield: config.yield } : {}) });
@@ -94,7 +123,7 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     const footprint = (config.mode === "contents" || config.mode === "formats") && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column)
       && (sheet.conditionalRules?.length || targetSheet.conditionalRules?.length || config.mode === "contents" && (comments || sheet.dataValidations?.length || targetSheet.dataValidations?.length)) ? createWorkbookCopyFootprint() : undefined;
     for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
-      guard(); const from = { row: source.from.row + row, column: source.from.column + column }, to = { row: destination.row + row, column: destination.column + column };
+      guard(); step(); const from = { row: source.from.row + row, column: source.from.column + column }, to = { row: destination.row + row, column: destination.column + column };
       const raw = model.getCell(sheetId, from.row, from.column), same = sheetId === targetSheetId && from.row === to.row && from.column === to.column;
       const copied = !(config.skipBlanks && (!raw || raw.value.type === "blank" && !raw.formula)) && !same;
       hyperlinks?.cell(from.row, from.column, to.row, to.column, copied);
@@ -167,10 +196,6 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     for (const name of names?.names ?? []) {
       const operation = { op: "setWorkbookDefinedName" as const, name }; account(JSON.stringify(operation).length); operations.push(operation);
     }
-    if (targetMerges.length) {
-      const operation = { op: "unmergeWorkbookCells" as const, sheetId: targetSheetId, range: target };
-      account(JSON.stringify(operation).length); operations.push(operation);
-    }
     if (registerGeneral && (cells.some(cell => cell.formatId === general) || formats.some(cell => cell.formatId === general))) {
       const operation = { op: "setWorkbookNumberFormat" as const, format: { formatId: general!, builtinId: 0 } }; account(JSON.stringify(operation).length); operations.push(operation);
     }
@@ -179,7 +204,7 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     const copiedLinks = hyperlinks?.finish();
     if (copiedLinks) { const operation = { op: "replaceWorkbookHyperlinks" as const, sheetId: targetSheetId, range: target, links: copiedLinks }; account(JSON.stringify(operation).length); operations.push(operation); }
     if (ruleCopy) { account(JSON.stringify(ruleCopy).length); operations.push(ruleCopy); }
-    for (const range of copiedMerges) {
+    for (const range of addedMerges) {
       const operation = { op: "mergeWorkbookCells" as const, sheetId: targetSheetId, range, coveredContent: "reject" as const };
       account(JSON.stringify(operation).length); operations.push(operation);
     }

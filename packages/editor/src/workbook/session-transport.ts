@@ -32,7 +32,7 @@ export type WorkbookSessionCommand =
   | (WorkbookSessionIdentity & { readonly kind: "copy"; readonly sheetId: string; readonly source: WorkbookRange; readonly target: WorkbookCoordinate;
       readonly targetSheetId?: string; readonly mode?: WorkbookRangeCopyOptions["mode"]; readonly skipBlanks?: boolean })
   | (WorkbookSessionIdentity & { readonly kind: "fill"; readonly sheetId: string; readonly source: WorkbookRange; readonly target: WorkbookRange;
-      readonly mode?: WorkbookFillOptions["mode"]; readonly axis?: WorkbookFillOptions["axis"] })
+      readonly mode?: WorkbookFillOptions["mode"]; readonly axis?: WorkbookFillOptions["axis"]; readonly format?: WorkbookFillOptions["format"] })
   | (WorkbookSessionIdentity & { readonly kind: "sort"; readonly sheetId: string; readonly sort: WorkbookSort; readonly locale?: string })
   | (WorkbookSessionIdentity & { readonly kind: "replace"; readonly query: WorkbookFindQuery; readonly replacement: string; readonly valueMode?: WorkbookReplaceOptions["valueMode"]; readonly only?: WorkbookReplaceOptions["only"] });
 export interface WorkbookSessionProgress { readonly phase: TransactionPreparationProgress["phase"] | "copy" | "fill" | "find" | "sort"; readonly completed: number; readonly total: number }

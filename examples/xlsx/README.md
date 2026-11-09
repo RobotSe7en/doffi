@@ -75,3 +75,5 @@ pnpm check:xlsx-reference
 [编辑阶段系统剪贴板接收](../../docs/evidence/workbook-system-clipboard.json)使用同一不可变独立输入，在 SDK 中修改当前源后生成 HTML，由固定 Calc 原生控制器插入并再次修改值验证公式重算。生产者文件 `packages/office/tests/fixtures/workbook-system-clipboard-calc.xlsx` 保留精确字节及摘要，记录小数精度、日期序列、Boolean 公式、字面等号、长编号、合并，以及 CR／LF、制表符和常量错误的生产者差异。官方 XSD／OPC、SDK 再编辑、Worker 当前值、包 ZIP 重开与撤销分别核对。复现命令为 `pnpm check:workbook-system-clipboard`，不称为 Excel/WPS 实机验收。
 
 [名称行列编辑](../../docs/evidence/workbook-axis-names.json)由独立 Python ZIP/XML 生成源和五份固定 Calc 实际插删结果，保存在 `packages/office/tests/fixtures/workbook-axis-names*.xlsx`。相对配方、绝对分量、混合整轴范围、局部／全局 bang、别名及生产者缓存均保留；Calc 的 bang 和插删列后嵌套相对别名差异单独记录。源及原生输出经官方 XSD／OPC，SDK 当前计算、唯一 Worker 候选、再编辑、包 ZIP 重开及撤销分别验证；`pnpm check:workbook-axis-names` 重现原生操作。这不代替 Excel/WPS 结构编辑实机验收。
+
+[合并区域选择性粘贴与数列](../../docs/evidence/workbook-merged-special.json)使用独立 ZIP/XML 来源及二十份固定 Calc 原生输出，文件前缀为 `packages/office/tests/fixtures/workbook-merged-special`。十八次实际控制器粘贴明确覆盖、先重算，两次 `fillAuto` 验证纵向／横向合并数列；保留 Calc 取消目标合并和保存非空覆盖格的差异。全部生产者字节、官方 XSD／OPC、当前值、SDK 再编辑重开及历史分别检查；`pnpm check:workbook-merged-special` 实际复现，不改已有独立样例或宣称 Excel/WPS 实机通过。

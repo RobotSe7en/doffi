@@ -5,6 +5,7 @@ interface WorkbookEditorUi {
   readonly find: HTMLInputElement; readonly replacement: HTMLInputElement; readonly findField: HTMLSelectElement; readonly findScope: HTMLSelectElement;
   readonly matchCase: HTMLInputElement; readonly entireCell: HTMLInputElement; readonly replacementMode: HTMLSelectElement; readonly searchTools: HTMLDivElement;
   readonly insertedFormat: HTMLSelectElement;
+  readonly fillFormat: HTMLSelectElement;
   readonly sortColumns: HTMLInputElement; readonly sortHeader: HTMLInputElement; readonly sortCase: HTMLInputElement; readonly sortMethod: HTMLSelectElement;
   readonly clipboardMode: HTMLSelectElement; readonly clipboardOverwrite: HTMLInputElement; readonly clipboardSkipBlanks: HTMLInputElement;
   readonly format: ReturnType<typeof createWorkbookFormatUi>;
@@ -16,7 +17,7 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   const status = document.createElement("p"), error = document.createElement("p");
   const search = document.createElement("div"), searchTools = document.createElement("div"), find = document.createElement("input"), replacement = document.createElement("input");
   const findField = document.createElement("select"), findScope = document.createElement("select"), replacementMode = document.createElement("select"), matchCase = document.createElement("input"), entireCell = document.createElement("input");
-  const insertedFormat = document.createElement("select");
+  const insertedFormat = document.createElement("select"), fillFormat = document.createElement("select");
   const sortColumns = document.createElement("input"), sortHeader = document.createElement("input"), sortCase = document.createElement("input"), sortMethod = document.createElement("select");
   const clipboardMode = document.createElement("select"), clipboardOverwrite = document.createElement("input"), clipboardSkipBlanks = document.createElement("input");
   const format = createWorkbookFormatUi(document);
@@ -36,6 +37,7 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   choices(replacementMode, "替换类型", [["preserve", "保留原类型"], ["auto", "自动识别新类型"], ["text", "常量转为文本"]]);
   choices(insertedFormat, "插入行列的格式", [["before", "继承前一行／列格式"], ["after", "继承后一行／列格式"], ["none", "使用工作表默认格式"]]);
   tools.append(insertedFormat);
+  choices(fillFormat, "填充格式", [["source", "复制来源格式"], ["preserve", "保留目标格式"]]); tools.append(fillFormat);
   sortColumns.setAttribute("aria-label", "排序列"); sortColumns.placeholder = "排序列 A,C"; sortColumns.maxLength = 255;
   choices(sortMethod, "排序文字顺序", [["none", "地区默认顺序"], ["pinYin", "拼音顺序"], ["stroke", "笔画顺序"]]);
   tools.append(sortColumns, sortMethod);
@@ -56,5 +58,5 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   status.setAttribute("role", "status"); status.setAttribute("aria-label", "工作簿编辑状态"); status.setAttribute("aria-live", "polite"); status.textContent = "正在打开工作簿…";
   error.setAttribute("role", "alert"); error.className = "error"; error.hidden = true; preview.className = "preview";
   bar.append(address, input, mode); shadow.append(style, heading, tools, bar, search, format.element, status, error, preview); container.append(element);
-  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite, clipboardSkipBlanks, format };
+  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, fillFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite, clipboardSkipBlanks, format };
 }

@@ -1,5 +1,7 @@
-import { captureWorkbookModel, copyWorkbookFormula, DocumentError, readWorkbookCellSource, resolveWorkbookCellFormat, WorkbookRangeSchema } from "@doffi/core";
+import { captureWorkbookModel, copyWorkbookFormula, DocumentError, readWorkbookCellSource, replaceWorkbookCellText, resolveWorkbookCellFormat, WorkbookRangeSchema } from "@doffi/core";
 import type { DeepReadonly, DocumentTransaction, WorkbookCellInput, WorkbookCellSource, WorkbookCoordinate, WorkbookModel, WorkbookRange } from "@doffi/core";
+import { workbookSeriesAxis, workbookSeriesUnit } from "./fill-selection.js";
+import { workbookTextSplice } from "./text-projection.js";
 
 export interface WorkbookFillOptions {
   readonly mode?: "copy" | "series";
@@ -39,7 +41,6 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   if (total > config.maxCells || rows * columns > config.maxCells) throw new DocumentError("ResourceLimitExceeded", "Workbook fill exceeds its cell budget.");
   const sourceMerges = sheet.merges.filter(merge => overlap(merge, seeds)), targetMerges = sheet.merges.filter(merge => overlap(merge, destination));
   if (sourceMerges.some(merge => !contains(seeds, merge)) || targetMerges.some(merge => !contains(destination, merge))) invalid("Range fill cannot split a merged region.");
-  if ((sourceMerges.length || targetMerges.length) && (config.mode !== "copy" || config.format !== "source")) invalid("Merged range fill requires copying the source content and format.");
   const guard = (): void => {
     if (config.signal?.aborted) throw new DocumentError("OperationCancelled", "Workbook fill was cancelled.");
     if (captureWorkbookModel(input) !== model) throw new DocumentError("RevisionConflict", "The workbook changed while preparing fill.");
@@ -54,8 +55,9 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
         guard();
         const range = { from: { row: merge.from.row + row * rows, column: merge.from.column + column * columns },
           to: { row: merge.to.row + row * rows, column: merge.to.column + column * columns } };
-        if (!contains(destination, range)) invalid("Range fill would create an incomplete merged region.");
-        account(JSON.stringify(range).length); copiedMerges.push(range);
+        if (!contains(destination, range)) {
+          if (config.format === "source") invalid("Range fill would create an incomplete merged region.");
+        } else { account(JSON.stringify(range).length); copiedMerges.push(range); }
         if (++topologySteps % 256 === 0 && config.yield) { await config.yield(); guard(); }
       }
     }
@@ -64,6 +66,7 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   const mergeKey = (range: DeepReadonly<WorkbookRange>): string => [range.from.row, range.from.column, range.to.row, range.to.column].join(":");
   const mergeKeys = new Set(copiedMerges.map(mergeKey));
   if (targetMerges.some(merge => !mergeKeys.has(mergeKey(merge)))) invalid("Range fill requires identically sized and aligned destination merges.");
+  const targetMergeKeys = new Set(targetMerges.map(mergeKey));
   function read(row: number, column: number) {
     guard(); const key = row * 16_384 + column, known = cache.get(key); if (known) return known;
     const at = { row, column }, source = readWorkbookCellSource(model, { sheetId, ...at }), format = resolveWorkbookCellFormat(sheet!, at, model.getCell(sheetId, row, column));
@@ -72,14 +75,18 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   }
   const progress = (completed: number, total: number): void => { try { config.onProgress?.(Object.freeze({ completed, total })); } catch { /* Host reporting cannot alter source. */ } };
   let base = 0, increment = 0;
-  const axis = config.axis ?? (columns === 1 ? "row" : "column");
+  const axis = config.axis ?? workbookSeriesAxis(seeds, sourceMerges);
+  const unit = config.mode === "series" ? workbookSeriesUnit(seeds, sourceMerges, axis) : 1;
   if (config.mode === "series") {
-    if (axis === "row" ? columns !== 1 || destination.from.column !== seeds.from.column || destination.to.column !== seeds.to.column
-      : rows !== 1 || destination.from.row !== seeds.from.row || destination.to.row !== seeds.to.row) invalid("Numeric series fill requires aligned one-dimensional seeds and targets.");
-    const count = axis === "row" ? rows : columns;
+    const other = axis === "row" ? "column" : "row", span = axis === "row" ? rows : columns;
+    if (destination.from[other] !== seeds.from[other] || destination.to[other] !== seeds.to[other] || span % unit !== 0
+      || sourceMerges.some(merge => merge.from[other] !== seeds.from[other] || merge.to[other] !== seeds.to[other]
+        || merge.to[axis] - merge.from[axis] + 1 !== unit || (merge.from[axis] - seeds.from[axis]) % unit !== 0)
+      || sourceMerges.length && sourceMerges.length !== span / unit) invalid("Numeric series fill requires uniform, aligned logical seed cells.");
+    const count = span / unit;
     const values: number[] = [];
     for (let index = 0; index < count; index++) {
-      const value = read(seeds.from.row + (axis === "row" ? index : 0), seeds.from.column + (axis === "column" ? index : 0)).source;
+      const value = read(seeds.from.row + (axis === "row" ? index * unit : 0), seeds.from.column + (axis === "column" ? index * unit : 0)).source;
       if (value.kind !== "value" || value.value.type !== "number") invalid("Series fill requires numeric constants as seeds."); values.push(value.value.value);
       if (index % 256 === 255 && config.yield) { await config.yield(); guard(); }
     }
@@ -96,10 +103,20 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
     guard(); const template = read(seeds.from.row + modulo(row - seeds.from.row, rows), seeds.from.column + modulo(column - seeds.from.column, columns));
     let source = template.source;
     if (config.mode === "series") {
-      const value = base + ((axis === "row" ? row - seeds.from.row : column - seeds.from.column)) * increment;
-      if (!Number.isFinite(value)) invalid("A filled series value exceeds its finite range."); source = { kind: "value", value: { type: "number", value } };
+      if ((axis === "row" ? column === seeds.from.column : row === seeds.from.row) && modulo((axis === "row" ? row - seeds.from.row : column - seeds.from.column), unit) === 0) {
+        const value = base + (axis === "row" ? row - seeds.from.row : column - seeds.from.column) / unit * increment;
+        if (!Number.isFinite(value)) invalid("A filled series value exceeds its finite range."); source = { kind: "value", value: { type: "number", value } };
+      } else source = { kind: "value", value: { type: "blank" } };
     } else if (source.kind === "formula") source = { kind: "formula", expression: copyWorkbookFormula(source.expression, template.at, { row, column }) };
     if (row !== template.at.row || column !== template.at.column) {
+      if (config.format === "preserve" && config.mode === "copy" && source.kind !== "formula") {
+        const value = model.getCell(sheetId, template.at.row, template.at.column)?.value ?? { type: "blank" as const }, previous = model.getCell(sheetId, row, column);
+        source = { kind: "value", value };
+        if (value.type === "text" && previous?.value.type === "text" && !previous.formula) {
+          const edit = workbookTextSplice(previous.text, value.value);
+          source = edit ? replaceWorkbookCellText(model, { sheetId, row, column }, [edit]) : readWorkbookCellSource(model, { sheetId, row, column });
+        }
+      }
       const cell: WorkbookCellInput = { row, column, source };
       let unchangedBlank = false;
       if (config.format === "source") {
@@ -118,14 +135,12 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   }
   guard();
   const operations: DocumentTransaction["operations"] = [];
-  if (targetMerges.length) {
-    const operation = { op: "unmergeWorkbookCells" as const, sheetId, range: destination }; account(JSON.stringify(operation).length); operations.push(operation);
-  }
   if (registerGeneral && cells.some(cell => cell.formatId === general)) {
     const definition = { op: "setWorkbookNumberFormat" as const, format: { formatId: general!, builtinId: 0 } }; account(JSON.stringify(definition).length); operations.push(definition);
   }
   if (cells.length) operations.push({ op: "setWorkbookCells", sheetId, cells });
-  for (const range of copiedMerges) {
+  for (const range of config.format === "source" ? copiedMerges : []) {
+    if (targetMergeKeys.has(mergeKey(range))) continue;
     const operation = { op: "mergeWorkbookCells" as const, sheetId, range, coveredContent: "reject" as const }; account(JSON.stringify(operation).length); operations.push(operation);
   }
   return { protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision,

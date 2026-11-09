@@ -11,7 +11,7 @@ import { createWorkbookPasteTransaction } from "./text-input.js";
 import { createWorkbookHtmlPastePlan } from "./html-paste.js";
 import type { WorkbookTextInputMode } from "./text-input.js";
 import { createWorkbookFillTransaction } from "./fill.js";
-import { workbookFillSeedCount } from "./fill-selection.js";
+import { workbookFillSeedCount, workbookSeriesAxis, workbookSeriesUnit } from "./fill-selection.js";
 import { findWorkbookText } from "./find.js";
 import { createWorkbookReplaceTransaction } from "./replace.js";
 import type { WorkbookFindMatch, WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
@@ -82,7 +82,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   });
   let found: { readonly key: string; readonly result: WorkbookFindResult; index: number } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
-  const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks];
+  const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.fillFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks];
   const buttons: { readonly button: HTMLButtonElement; readonly available: () => boolean }[] = [];
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook editor has been disposed."); }
   function validationContext(draftKey?: string, signal?: AbortSignal) {
@@ -354,22 +354,23 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     const selected = input.state().selection;
     if (selected?.anchor.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择填充区域。");
     const range = selected.anchor.ranges[0]!, count = range.to[axis] - range.from[axis] + 1;
-    if (series && range.from.row !== range.to.row && range.from.column !== range.to.column) throw new DocumentError("InvalidOperation", "数列填充请选择单行或单列。");
     if (count < 2) throw new DocumentError("InvalidOperation", axis === "row" ? "向下填充需要至少两行。" : "向右填充需要至少两列。");
     const model = captureWorkbookModel(session), manifest = model.snapshot().manifest, sheetId = selected.anchor.sheetId;
     if (selected.documentId !== manifest.documentId || selected.baseRevision !== manifest.revision) throw new DocumentError("RevisionConflict", "Fill selection belongs to a previous source.");
-    let seeds = series ? 1 : workbookFillSeedCount(range, model.snapshot().metadata.workbook.sheets.find(sheet => sheet.sheetId === sheetId)!.merges, axis);
+    const merges = model.snapshot().metadata.workbook.sheets.find(sheet => sheet.sheetId === sheetId)!.merges, format = ui.fillFormat.value as "source" | "preserve";
+    let seeds = series ? workbookSeriesUnit(range, merges, axis) : workbookFillSeedCount(range, merges, axis);
+    if (range.from[axis] + seeds > range.to[axis]) return;
     if (series) {
-      const next = { ...range.from, [axis]: range.from[axis] + 1 }, value = model.getCell(sheetId, next.row, next.column);
+      const next = { ...range.from, [axis]: range.from[axis] + seeds }, value = model.getCell(sheetId, next.row, next.column);
       if (value?.formula || value && value.value.type !== "number" && value.value.type !== "blank") throw new DocumentError("InvalidOperation", "数列填充的种子必须是数字或空白。");
-      if (value?.value.type === "number") seeds = 2;
+      if (value?.value.type === "number") seeds *= 2;
     }
     const source = { from: { ...range.from }, to: { ...range.to, [axis]: range.from[axis] + seeds - 1 } };
     const target = { from: { ...range.from, [axis]: range.from[axis] + seeds }, to: { ...range.to } };
     if (target.from[axis] > target.to[axis]) return;
     const abort = new view!.AbortController(); commandAbort = abort; ui.input.disabled = true; controls(); ui.error.hidden = true;
     try {
-      const transaction = await createWorkbookFillTransaction(session, sheetId, source, target, { mode: series ? "series" : "copy", axis, signal: abort.signal,
+      const transaction = await createWorkbookFillTransaction(session, sheetId, source, target, { mode: series ? "series" : "copy", axis, format, signal: abort.signal,
         yield: () => new Promise<void>(resolve => setTimeout(resolve, 0)), onProgress: progress => { if (!disposed) ui.status.textContent = `正在填充 ${progress.completed} / ${progress.total}`; } });
       if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Workbook fill was cancelled.");
       const receipt = await commitCommand(transaction, abort); readCurrentSelection();
@@ -554,7 +555,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("重新计算", () => { void scheduleRefresh(true).catch(() => {}); }, idle);
   button("向下填充", () => { void runInteraction(() => fill("row")); }, idle);
   button("向右填充", () => { void runInteraction(() => fill("column")); }, idle);
-  button("数列填充", () => { void runInteraction(() => { const anchor = input.state().selection?.anchor; return fill(anchor?.kind === "cells" && anchor.ranges[0]!.from.column === anchor.ranges[0]!.to.column ? "row" : "column", true); }); }, idle);
+  button("数列填充", () => { void runInteraction(() => { const anchor = input.state().selection?.anchor; return fill(anchor?.kind === "cells" ? workbookSeriesAxis(anchor.ranges[0]!, session.snapshot().metadata.workbook.sheets.find(sheet => sheet.sheetId === anchor.sheetId)!.merges) : "row", true); }); }, idle);
   button("合并单元格", () => { void runInteraction(() => changeMerge()); }, idle);
   button("合并并清除覆盖内容", () => { void runInteraction(() => changeMerge(false, true)); }, idle);
   button("取消合并", () => { void runInteraction(() => changeMerge(true)); }, idle);

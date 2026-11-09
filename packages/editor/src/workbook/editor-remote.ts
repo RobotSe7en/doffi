@@ -11,7 +11,7 @@ import { bindWorkbookAsyncTextInput } from "./text-binding.js";
 import type { WorkbookAsyncTextBinding } from "./text-binding.js";
 import type { WorkbookSessionCommand, WorkbookSessionConnection, WorkbookSessionReceipt } from "./session-transport.js";
 import { parseWorkbookTextInput } from "./text-input.js";
-import { workbookFillSeedCount } from "./fill-selection.js";
+import { workbookFillSeedCount, workbookSeriesAxis, workbookSeriesUnit } from "./fill-selection.js";
 import type { WorkbookTextInputMode } from "./text-input.js";
 import type { WorkbookFindMatch, WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
 import { workbookInputTextView } from "./text-projection.js";
@@ -119,7 +119,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     ui.input.disabled = !state.selection || state.selecting || !!commandAbort;
     ui.mode.value = state.mode; ui.mode.disabled = busy || state.composing || !state.selection; ui.address.disabled = busy || refreshing || !source;
     for (const field of searchFields) field.disabled = busy;
-    for (const field of [ui.insertedFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks]) field.disabled = busy;
+    for (const field of [ui.insertedFormat, ui.fillFormat, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks]) field.disabled = busy;
     ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardSkipBlanks.disabled ||= clipboard.kind === "cut"; ui.clipboardOverwrite.disabled ||= clipboard.kind !== "cut";
     for (const field of ui.format.fields) field.disabled = busy;
     for (const { button, available } of buttons) button.disabled = !available();
@@ -276,19 +276,20 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     const selected = input.state().selection, anchor = selected?.anchor;
     if (!selected || anchor?.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择填充区域。");
     const range = anchor.ranges[0]!, count = range.to[axis] - range.from[axis] + 1;
-    if (series && range.from.row !== range.to.row && range.from.column !== range.to.column) throw new DocumentError("InvalidOperation", "数列填充请选择单行或单列。");
     if (count < 2) throw new DocumentError("InvalidOperation", axis === "row" ? "向下填充需要至少两行。" : "向右填充需要至少两列。");
     const snapshot = source?.cells.snapshot;
     if (!snapshot || snapshot.manifest.documentId !== selected.documentId || snapshot.manifest.revision !== selected.baseRevision)
       throw new DocumentError("RevisionConflict", "Fill selection belongs to a previous source.");
-    let seeds = series ? 1 : workbookFillSeedCount(range, snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === anchor.sheetId)!.merges, axis);
+    const merges = snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === anchor.sheetId)!.merges, format = ui.fillFormat.value as "source" | "preserve";
+    let seeds = series ? workbookSeriesUnit(range, merges, axis) : workbookFillSeedCount(range, merges, axis);
+    if (range.from[axis] + seeds > range.to[axis]) return;
     if (series) {
-      const at = { ...range.from, [axis]: range.from[axis] + 1 }, value = await client.readInput(anchor.sheetId, at), parsed = parseWorkbookTextInput(value.text, at);
+      const at = { ...range.from, [axis]: range.from[axis] + seeds }, value = await client.readInput(anchor.sheetId, at), parsed = parseWorkbookTextInput(value.text, at);
       if (parsed.kind !== "value" || parsed.value.type !== "number" && parsed.value.type !== "blank") throw new DocumentError("InvalidOperation", "数列填充的种子必须是数字或空白。");
-      if (parsed.value.type === "number") seeds = 2;
+      if (parsed.value.type === "number") seeds *= 2;
     }
     const target = { from: { ...range.from, [axis]: range.from[axis] + seeds }, to: { ...range.to } }; if (target.from[axis] > target.to[axis]) return;
-    await commitCommand({ kind: "fill", documentId: selected.documentId, revision: selected.baseRevision, sheetId: anchor.sheetId, axis, mode: series ? "series" : "copy",
+    await commitCommand({ kind: "fill", documentId: selected.documentId, revision: selected.baseRevision, sheetId: anchor.sheetId, axis, mode: series ? "series" : "copy", format,
       source: { from: { ...range.from }, to: { ...range.to, [axis]: range.from[axis] + seeds - 1 } }, target });
     await sourceSettled();
   }
@@ -463,7 +464,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("重新计算", recalculate, idle);
   button("向下填充", () => queueInteraction(() => fill("row")), idle);
   button("向右填充", () => queueInteraction(() => fill("column")), idle);
-  button("数列填充", () => queueInteraction(() => { const anchor = input.state().selection?.anchor; return fill(anchor?.kind === "cells" && anchor.ranges[0]!.from.column === anchor.ranges[0]!.to.column ? "row" : "column", true); }), idle);
+  button("数列填充", () => queueInteraction(() => { const anchor = input.state().selection?.anchor; return fill(anchor?.kind === "cells" && source ? workbookSeriesAxis(anchor.ranges[0]!, source.cells.snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === anchor.sheetId)!.merges) : "row", true); }), idle);
   button("合并单元格", () => queueInteraction(() => changeMerge()), idle);
   button("合并并清除覆盖内容", () => queueInteraction(() => changeMerge(false, true)), idle);
   button("取消合并", () => queueInteraction(() => changeMerge(true)), idle);

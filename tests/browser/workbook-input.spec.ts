@@ -332,6 +332,12 @@ test("mounted direct native local-name copy creates the missing target scope and
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
 });
 
+test("mounted direct merged selective paste, skip blanks and logical numeric fill preserve target format and history", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-special.xlsx'), { documentId: 'mounted-merged-special' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookMergedSpecial } = await import('./workbook-merged-special-cases.js'); await exerciseWorkbookMergedSpecial(page, false);
+});
 test("mounted direct contextual names follow row and column edits with actual cross-sheet results and undo", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-names.xlsx'), { documentId: 'mounted-axis-names' }), { kind: 'workbook' });
