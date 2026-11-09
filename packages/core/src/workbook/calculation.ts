@@ -6,7 +6,6 @@ import { workbookExpressionDependencies } from "./expression-dependencies.js";
 import { copyWorkbookScalarContext, createWorkbookScalarKernel } from "./scalar.js";
 import type { ScalarResolved, WorkbookScalarContext, WorkbookScalarUnavailable } from "./scalar.js";
 import { WorkbookDependencyIndex } from "./dependency-index.js";
-import type { WorkbookDependencyEntry } from "./dependency-index.js";
 import { currentWorkbookModel, workbookSource } from "./source.js";
 import type { ChunkIndex } from "./chunk-index.js";
 import { checkLimit, freeze } from "../document/validation.js";
@@ -43,7 +42,7 @@ export interface WorkbookCalculator {
 interface FormulaRecord { readonly key: string; readonly location: WorkbookReferenceLocation; readonly expression: string; readonly ast: FormulaExpression;
   readonly dependencies: readonly DeepReadonly<WorkbookReferenceArea>[]; readonly lazy: boolean; readonly volatile: boolean; readonly subtotal: boolean }
 interface Graph { readonly model: WorkbookModel; readonly namespace: string; readonly records: Map<string, FormulaRecord>; readonly chunks: Map<ChunkIndex, readonly FormulaRecord[]>;
-  readonly reverse: WorkbookDependencyIndex; readonly points: WorkbookDependencyIndex; readonly dependencies: number }
+  readonly reverse: WorkbookDependencyIndex; readonly points: WorkbookDependencyIndex; readonly dependencies: number; readonly volatile: boolean }
 interface CalculationSeed { readonly graph: Graph; readonly values: ReadonlyMap<string, ScalarResolved>; readonly contextKey: string; readonly localeKey: string }
 const calculationSeeds = new WeakMap<WorkbookCalculationResult, CalculationSeed>();
 const key = (location: WorkbookReferenceLocation): string => JSON.stringify([location.sheetId, location.row, location.column]);
@@ -99,29 +98,30 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
         calculationSeeds.set(result, { graph: next, values: calculatedValues, contextKey, localeKey });
         return result;
       };
-      if (graph?.model === model && !changedLocale && (JSON.stringify(calculationContext) === contextKey || ![...graph.records.values()].some(record => record.volatile))) {
+      if (graph?.model === model && !changedLocale && (JSON.stringify(calculationContext) === contextKey || !graph.volatile)) {
         checkLimit(graph.records.size, limits.maxFormulas); checkLimit(graph.dependencies, limits.maxDependencies);
         let scanned = 0;
         for (const record of graph.records.values()) { step(); account(record.expression.length); if (++scanned % 256 === 0) yield* checkpoint(); }
         reused = graph.records.size; return publish(graph, values);
       }
       const namespace = JSON.stringify([snapshot.metadata.workbook.dateSystem, snapshot.metadata.workbook.sheets.map(sheet => [sheet.sheetId, sheet.name, sheet.tables]), snapshot.metadata.workbook.names]);
-      const records = new Map<string, FormulaRecord>(), chunks = new Map<ChunkIndex, readonly FormulaRecord[]>(), dependencies: WorkbookDependencyEntry[] = [];
+      const chunks = new Map<ChunkIndex, readonly FormulaRecord[]>(), compatibleGraph = graph?.namespace === namespace ? graph : undefined;
+      const previousRecords = compatibleGraph?.records, previousOrder = previousRecords?.values();
+      let dependencyCount = 0, recordCount = 0, sameTopology = previousRecords !== undefined, volatile = false;
       for (const descriptor of manifest.chunks) {
-        step(); const index = privateSource.chunks.get(descriptor.path)!, known = graph?.namespace === namespace ? graph.chunks.get(index) : undefined;
-        const items: FormulaRecord[] = [];
-        if (known) items.push(...known);
-        else for (const formula of index.formulaLocations()) {
-          step(); checkLimit(records.size + items.length + 1, limits.maxFormulas);
+        step(); const index = privateSource.chunks.get(descriptor.path)!, known = compatibleGraph?.chunks.get(index);
+        const parsed: FormulaRecord[] = [], items: readonly FormulaRecord[] = known ?? parsed;
+        if (!known) for (const formula of index.formulaLocations()) {
+          step(); checkLimit(recordCount + items.length + 1, limits.maxFormulas);
           const location = { sheetId: descriptor.sheetId, row: formula.row, column: formula.column }, cell = model.getCell(location.sheetId, location.row, location.column)!;
-          const previous = graph?.namespace === namespace ? graph.records.get(key(location)) : undefined;
+          const previous = previousRecords?.get(key(location));
           if (previous?.expression === cell.formula!.expression) {
-            account(cell.formula!.expression.length); items.push(previous); yield* checkpoint(); continue;
+            account(cell.formula!.expression.length); parsed.push(previous); yield* checkpoint(); continue;
           }
           const areas: DeepReadonly<WorkbookReferenceArea>[] = [];
           let lazy = false, volatile = false, subtotal = false;
           workbookExpressionDependencies(model, formula.expression, location, step, area => {
-            checkLimit(dependencies.length + areas.length + 1, limits.maxDependencies); areas.push(area);
+            checkLimit(dependencyCount + areas.length + 1, limits.maxDependencies); areas.push(area);
           }, name => {
               lazy ||= ["IF", "IFS", "IFERROR", "IFNA", "INDEX", "MATCH", "VLOOKUP", "HLOOKUP", "SUMIF", "SUMIFS", "COUNTIF", "COUNTIFS", "AVERAGEIF", "AVERAGEIFS", "SUBTOTAL", "COUNTA", "ISBLANK", "ROW", "COLUMN", "ROWS", "COLUMNS"].includes(name);
               volatile ||= name === "TODAY" || name === "NOW" || name === "SUBTOTAL"; subtotal ||= name === "SUBTOTAL";
@@ -129,17 +129,29 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           // A changed chunk may contain an unchanged formula. Keep its learned
           // reference areas (for example SUMIF's expanded sum_range), so edits
           // in that same chunk still invalidate the formula before evaluation.
-          account(cell.formula!.expression.length); items.push({ key: key(location), location, expression: cell.formula!.expression, ast: formula.expression, dependencies: areas, lazy, volatile, subtotal });
+          account(cell.formula!.expression.length); parsed.push({ key: key(location), location, expression: cell.formula!.expression, ast: formula.expression, dependencies: areas, lazy, volatile, subtotal });
           yield* checkpoint();
         }
         chunks.set(index, items);
-        for (const record of items) { step(); checkLimit(records.size + 1, limits.maxFormulas); records.set(record.key, record); for (const area of record.dependencies) { checkLimit(dependencies.length + 1, limits.maxDependencies); dependencies.push({ area, owner: record.key }); } }
-        progress("index", records.size, limits.maxFormulas); yield* checkpoint();
+        for (const record of items) {
+          step(); checkLimit(++recordCount, limits.maxFormulas);
+          sameTopology &&= previousOrder!.next().value === record;
+          volatile ||= record.volatile;
+          dependencyCount += record.dependencies.length; checkLimit(dependencyCount, limits.maxDependencies);
+        }
+        progress("index", recordCount, limits.maxFormulas); yield* checkpoint();
       }
-      const sameTopology = graph?.namespace === namespace && graph.records.size === records.size && [...records].every(([key, record]) => graph!.records.get(key) === record);
-      const reverse = sameTopology ? graph!.reverse : new WorkbookDependencyIndex(dependencies, step), points = sameTopology ? graph!.points : new WorkbookDependencyIndex([...records.values()].map(record => ({ owner: record.key, area: { sheetId: record.location.sheetId, from: record.location, to: record.location } })), step);
-      let next: Graph = { model, namespace, records, chunks, reverse, points, dependencies: dependencies.length };
-      const calculatedValues = new Map<string, ScalarResolved>();
+      sameTopology &&= recordCount === previousRecords!.size;
+      const sharedRecords = sameTopology ? previousRecords : undefined;
+      let records = sharedRecords ?? new Map<string, FormulaRecord>();
+      if (!sharedRecords) for (const items of chunks.values()) for (const record of items) records.set(record.key, record);
+      // Validate the complete edge count even when reusing a graph. Materialize
+      // edge records only for a changed topology, avoiding large throwaway
+      // arrays on every small input edit and its committed view calculation.
+      const reverse = sameTopology ? graph!.reverse : new WorkbookDependencyIndex([...records.values()].flatMap(record => record.dependencies.map(area => ({ area, owner: record.key }))), step);
+      const points = sameTopology ? graph!.points : new WorkbookDependencyIndex([...records.values()].map(record => ({ owner: record.key, area: { sheetId: record.location.sheetId, from: record.location, to: record.location } })), step);
+      let next: Graph = { model, namespace, records, chunks, reverse, points, dependencies: dependencyCount, volatile };
+      let calculatedValues = new Map<string, ScalarResolved>();
       const dirty = new Set<string>(), changedContext = JSON.stringify(calculationContext) !== contextKey;
       if (graph && graph.namespace === namespace && graph.model.snapshot().manifest.documentId === manifest.documentId) {
         const changes: readonly WorkbookRangeChange[] = graph.model === model ? [] : compareWorkbooks(graph.model, model).changedRanges;
@@ -152,10 +164,15 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           step(); const changed = queue[cursor]!;
           for (const owner of reverse.query({ sheetId: changed.sheetId, ...changed.range }, step)) if (!dirty.has(owner)) { dirty.add(owner); const record = records.get(owner)!; queue.push({ sheetId: record.location.sheetId, range: { from: record.location, to: record.location } }); }
         }
-        for (const record of records.values()) if (!dirty.has(record.key) && values.has(record.key)) { calculatedValues.set(record.key, values.get(record.key)!); reused++; }
+        if (sameTopology) {
+          // A completed batch contains every record of this identical table.
+          // Let the native Map copy allocate once, then drop only dirty values.
+          calculatedValues = new Map(values); for (const id of dirty) calculatedValues.delete(id);
+          reused = records.size - dirty.size;
+        } else for (const record of records.values()) if (!dirty.has(record.key) && values.has(record.key)) { calculatedValues.set(record.key, values.get(record.key)!); reused++; }
       }
       const active = new Set<string>();
-      let evaluating: FormulaRecord | undefined, dependencyCount = dependencies.length, newDependencies = false;
+      let evaluating: FormulaRecord | undefined, newDependencies = false;
       function rememberDependency(area: DeepReadonly<WorkbookReferenceArea>): void {
         if (!evaluating) return;
         const record = records.get(evaluating.key)!;
@@ -163,6 +180,10 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           step(); if (known.sheetId === area.sheetId && known.from.row <= area.from.row && known.to.row >= area.to.row && known.from.column <= area.from.column && known.to.column >= area.to.column) return;
         }
         checkLimit(++dependencyCount, limits.maxDependencies); account(area.sheetId.length + 64);
+        // Completed graphs are immutable seeds, including their learned
+        // dependencies. A later lazy lookup gets its own table before adding
+        // an edge; cancellation cannot modify any previously published batch.
+        if (records === sharedRecords) { records = new Map(records); next = { ...next, records }; }
         records.set(record.key, { ...record, dependencies: [...record.dependencies, area] }); newDependencies = true;
       }
       function refreshDependencies(): void {
@@ -191,7 +212,8 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
       }
       function* prerequisites(record: FormulaRecord): Generator<string> { if (!record.lazy) for (const area of record.dependencies) yield* points.query(area, step); }
       try {
-        for (const root of records.values()) {
+        for (const id of records.keys()) {
+          const root = records.get(id)!;
           if (calculatedValues.has(root.key)) continue;
           const stack = [{ record: root, dependencies: prerequisites(root) }]; active.add(root.key);
           while (stack.length) {
@@ -215,7 +237,8 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
         // that an earlier formula error/condition never actually reads. A
         // provisional circular result must be reconciled with the now-stable
         // values before publication; genuine cycles remain unavailable.
-        const provisional = new Set([...calculatedValues].filter(([, value]) => !("type" in value) && value.reason === "circular-reference").map(([id]) => id));
+        const provisional = new Set<string>();
+        calculatedValues.forEach((value, id) => { if (!("type" in value) && value.reason === "circular-reference") provisional.add(id); });
         const retry = new Set(provisional);
         while (retry.size) {
           step(); const id = retry.values().next().value!; retry.delete(id);

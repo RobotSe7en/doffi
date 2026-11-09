@@ -4,6 +4,16 @@
 
 ## 基线与当前状态
 
+- 最新生产源码完整 `pnpm check` 已通过：265 文件／2949 项、架构、工具／应用类型及 SDK／Playground 构建（`.cache/workbook-editing-calculation-caches-complete-check.log`）。同一源码的完整固定 Firefox 编辑首次通过：首屏 23.584 秒、全量计算 3.274 秒、编辑 p95 494ms，全部 100 次样本保留（最大 11.645 秒）、两组各 30 次真实反馈、100 步完整历史、两类万行取消、克隆包重开及宿主释放写入通过；浏览器高水位合计约 1797.5 MiB（`-editing-firefox-value-map-copy-full.log`）。这只是单引擎通过；最新 Chromium／WebKit／旧 Chromium 和严格四引擎汇总、阶段剩余组合／独立审查及最终 HEAD 远端验收仍未完成。
+
+- 有序公式记录共享后的完整 Firefox p95 528ms 仍失败（`.cache/workbook-editing-firefox-shared-records-full.log`），全量／历史／取消及内存仍通过。继续把完全相同记录表的已完成值一次复制后移除脏值，并在图中保存易变函数标志，避免每次物化公式数组。5 文件／32 项及 SDK 构建通过（`-calculation-value-map-copy-{unit,build}.log`）；当前完整 Firefox 运行中（`-editing-firefox-value-map-copy-full.log`），最后两项优化后的工具类型和整个最新源码的完整工程复核待做。
+
+- 当前未提交计算优化减少未变拓扑的临时依赖对象、结果展开和公式记录复制。字体探针后的完整 Firefox p95 620ms 仍失败；去除前两类临时分配后为 530ms 仍失败（`.cache/workbook-editing-firefox-{drawing-probes,edge-allocation}-full.log`）。20 次分阶段诊断确认通常准备约 190～280ms、当前视图约 40～70ms，诊断不计验收（`-firefox-phases-diagnostic.log`）。
+- 随后相同有序公式记录与分块公式列表直接共享，真正新增动态依赖前复制记录表；新回归在 SUMIF+INDEX 扩展区域后取消，再从旧批次重试并修改扩展区域，必须重新计算。临时去除隔离守卫确实漏算并导致该回归失败，源码已恢复（`.cache/workbook-calculation-shared-records-guard-negative.log`）。更紧边预算、后续依赖缩小、取消、原生函数及 Worker 布局 5 文件／32 项和 SDK 构建通过（`-shared-records-final-{unit,build}.log`），工具类型在最后一处分块列表复用前通过。当前完整 Firefox 固定资源复测进行中（`-editing-firefox-shared-records-full.log`）。本批整个源码的完整工程复核、固定四引擎、阶段剩余组合及两位最终独立审查仍未完成。
+
+- 最新已推送检查点为 `36be87f28636602726d7d38e1c39612543309f6a`，Quick `42675159714` 成功，#31 草稿说明已同步。该提交完整 Firefox 首屏 23.624 秒、全量计算 3.436 秒、编辑 p95 595ms，历史／取消／实际宿主写入／克隆 Map 完整重开通过、浏览器高水位合计约 1794.7 MiB；500ms 仍失败（`.cache/workbook-editing-firefox-bounded-source-full.log`）。
+- 后续未提交修改把绘图、图表标题和图表标签的字体检查接入实际渲染面拥有的原有有界探针；不新增全局文字缓存。首轮构建因参数与局部 DOM 探针重名失败，改名后 SDK 构建、工具类型、缓存 3 项和三引擎真实几何／缺省度量／混合字形／字体集变化 18 项通过（`.cache/workbook-drawing-shared-font-probes-{rechecked-build,types,unit,browser}.log`）。新增真实 FontFaceSet 变化、显式清理后的重新测量与源／UTF-16／字体报告／几何等价检查；这不是该源码完整工程或容量验收，下一轮固定 Firefox 后记。
+
 - 当前生产源码已通过最新完整本地检查：265 文件／2947 项、架构、工具／应用类型及 SDK／Playground 构建（`.cache/workbook-editing-bounded-source-complete-check.log`）。首次完整 2934 通过／13 失败来自新增测量守卫下四处旧夹具未提供测量，补齐后定向 58 项通过并完整重跑。其后三引擎 33 项为 27 通过／6 失败，失败在真实几何断言结束后的宿主释放写入探针；探针现显式提供标注为仅所有权检查的合成点度量，原生字体／画布断言仍使用生产测量服务，六项三引擎复核通过（`-grid-guard-host-probe-browser.log`）。容量汇总亦显式核对释放后的实际宿主写入值；该探针不作为字体或几何证据。最新工具类型亦通过（`.cache/workbook-grid-guard-host-probe-types.log`）。本批准备提交为实现检查点，阶段容量和双人审查仍未完成。
 
 - 规范纯文本块后的完整 Firefox p95 632ms 仍失败，内存仍通过（`.cache/workbook-editing-firefox-plain-chunks-full.log`）；未放宽 500ms。随后同一候选内按实际修改失效复用分块序列化与摘要，定向 42 项通过；补齐固定响应绘图／经典备注缺少测量器的实际网格修改守卫，并保留空操作、纯元数据及无净变化。初轮新增夹具遗漏列单位、使用不存在类和沿用旧轴错误文字的失败已修正，旧轴专用测量守卫保留。当前最新源码完整 `pnpm check` 运行中（`.cache/workbook-editing-plain-chunks-measurement-complete-check.log`），不提前记作通过。

@@ -83,6 +83,7 @@ export async function ordinaryMountedWorkerEdits(code: string, encoded: string, 
   let client: WorkbookSessionConnection | undefined, editor: WorkbookRemoteEditorView | undefined, snapshot: WorkbookSnapshot | undefined;
   let captureRows = false, maximumReadRow = -1, largestReplyUnits = 0, sameFrame = true, ticks = 0;
   const failures: unknown[] = [], samples: { inputMs: number; previewMs: number; totalMs: number }[] = [], surfaces = observeSurfaces();
+  const phases: { operation: string; start: number; elapsed: number; measurements?: number[]; progress?: { phase: string; at: number }[] }[] = [];
   let opening: Record<string, number> | undefined;
   let selectionChanged = () => {};
   let phase = 'native-open', fail!: (error: unknown) => void, progress: unknown;
@@ -104,6 +105,26 @@ export async function ordinaryMountedWorkerEdits(code: string, encoded: string, 
     const start = performance.now(), bytes = decodeTestBytes(encoded);
     worker.postMessage({ kind: 'open', documentId, bytes, performance: options.performance, port: channel.port1 }, [bytes.buffer, channel.port1]);
     client = await Promise.race([connectWorkbookSession(channel.port2), fatal]); phase = 'mounting-editor';
+    if (options.iterations !== undefined) {
+      const owned = client;
+      client = Object.freeze({ ...owned,
+        async prepare(...args: Parameters<WorkbookSessionConnection['prepare']>) {
+          const start = performance.now(), measurements: number[] = [], progress: { phase: string; at: number }[] = [], execution = args[2]; let previous = '';
+          const measureLayout = execution?.measureLayout;
+          try { return await owned.prepare(args[0], args[1], { ...execution,
+            ...(measureLayout ? { measureLayout: async request => { const before = performance.now(); try { return await measureLayout(request); } finally { measurements.push(performance.now() - before); } } } : {}),
+            onProgress(value) { if (value.phase !== previous || value.completed === 0) { previous = value.phase; progress.push({ phase: value.phase, at: performance.now() - start }); } execution?.onProgress?.(value); },
+          }); }
+          finally { phases.push({ operation: 'prepare', start, elapsed: performance.now() - start, measurements, progress }); }
+        },
+        async view(...args: Parameters<WorkbookSessionConnection['view']>) {
+          const start = performance.now(); try { return await owned.view(...args); } finally { phases.push({ operation: 'view', start, elapsed: performance.now() - start }); }
+        },
+        async commit(...args: Parameters<WorkbookSessionConnection['commit']>) {
+          const start = performance.now(); try { return await owned.commit(...args); } finally { phases.push({ operation: 'commit', start, elapsed: performance.now() - start }); }
+        },
+      });
+    }
     editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240,
       prepareOptions: () => ({ calculationContext: { now: { unixMilliseconds: Date.now(), utcOffsetMinutes: -new Date().getTimezoneOffset() } } }),
       onSelectionChange() { selectionChanged(); },
@@ -164,7 +185,7 @@ export async function ordinaryMountedWorkerEdits(code: string, encoded: string, 
       sameFrame &&= surfaces.frame() === originalFrame;
       samples.push({ inputMs: committed - before, previewMs: shown - committed, totalMs: shown - before });
       if (options.iterations !== undefined) performance.mark('doffi-edit-' + index + '-end');
-      if (options.iterations !== undefined) console.info('Editing diagnostic sample', index, samples.at(-1));
+      if (options.iterations !== undefined) console.info('Editing diagnostic sample', index, JSON.stringify({ ...samples.at(-1), phases: phases.filter(value => value.start >= before) }));
     }
     if (options.iterations !== undefined) console.info('Editing diagnostic edits complete');
     captureRows = false; const fullHistory = client.state().history;
@@ -203,7 +224,8 @@ export async function ordinaryMountedWorkerEdits(code: string, encoded: string, 
     return { scope: 'Actual mounted public Worker editor and visible dependent formulas; its owner records execution resource constraints separately.',
       firstScreenMs, opening, setupMs, samples, editAndPreviewP95Ms: sorted[Math.ceil(sorted.length * .95) - 1]!, maximumMs: sorted.at(-1)!,
       maximumReadRow, maximumFragments, largestReplyUnits, sameFrame, originalChunksRestored, restoredInput, undoneText, redoneText, restoredText, finalRevision,
-      fullHistory, undoneHistory, redoneHistory, nativeFeedback, cancellations, audit, ticks, failures, userAgent: navigator.userAgent };
+      fullHistory, undoneHistory, redoneHistory, nativeFeedback, cancellations, audit, ticks, failures, userAgent: navigator.userAgent,
+      ...(options.iterations === undefined ? {} : { diagnosticPhases: phases }) };
   } finally { lastStatus = status!(); status = undefined; stop = undefined; clearInterval(timer); editor?.dispose(); client?.dispose(); surfaces.dispose(); channel.port2.close(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); }
 }
 Object.assign(window, { workbookEditorPerformance: { ordinaryMountedWorkerEdits, feedbackReady, feedbackPoint, feedbackSample, feedbackFocus, feedbackComplete, feedbackCancel, capacityStatus, capacityCancel } });

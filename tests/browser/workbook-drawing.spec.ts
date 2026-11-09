@@ -17,7 +17,7 @@ import type { measureContentSource, rejectContentSource } from './fixtures/workb
 import type { measureImageView, measurePictureFills, disposeImageView } from './fixtures/workbook-image-view.js';
 import type { measureObjectGeometry } from './fixtures/workbook-object-geometry.js';
 import type { measureDrawingGradients } from './fixtures/drawing-gradient.js';
-import type { measureDrawingText, measureDrawingTextLayout, measureNativeDrawingText, measureDrawingTextFallback, measureDrawingTextOverflow, measureDrawingOverflowEdges } from './fixtures/workbook-drawing-text.js';
+import type { measureDrawingFontProbeReuse, measureDrawingText, measureDrawingTextLayout, measureNativeDrawingText, measureDrawingTextFallback, measureDrawingTextOverflow, measureDrawingOverflowEdges } from './fixtures/workbook-drawing-text.js';
 import type { measureWorkbookSurface, mountWorkbookSurfacePixels, disposeWorkbookSurfacePixels } from './fixtures/workbook-surface.js';
 import type { measureWorkbookShadows, mountWorkbookShadowPixels, disposeWorkbookShadowPixels } from './fixtures/workbook-shadow.js';
 import type { measureWorkbookCharts, measureWorkbookChartAxes, measureWorkbookChartFiniteScales, measureNativeFiniteCharts, measureWorkbookChartTextFonts, measureWorkbookChartMarkers, measureWorkbookChartGrid, measureWorkbookChartColors, measureWorkbookChartTitles, measureWorkbookChartPositions, measureWorkbookChartTitleContents, measureWorkbookComposedChart, measureWorkbookChartFormats } from './fixtures/workbook-chart.js';
@@ -29,7 +29,7 @@ declare global { interface Window { workbookChartHost: { measureChartNumberField
 
 declare global { interface Window { workbookShadowHost: { measureWorkbookShadows: typeof measureWorkbookShadows; mountWorkbookShadowPixels: typeof mountWorkbookShadowPixels; disposeWorkbookShadowPixels: typeof disposeWorkbookShadowPixels } } }
 
-declare global { interface Window { workbookContentHost: { measureContentSource: typeof measureContentSource; rejectContentSource: typeof rejectContentSource; measureImageView: typeof measureImageView; measurePictureFills: typeof measurePictureFills; disposeImageView: typeof disposeImageView; measureObjectGeometry: typeof measureObjectGeometry; measureDrawingGradients: typeof measureDrawingGradients; measureDrawingText: typeof measureDrawingText; measureDrawingTextLayout: typeof measureDrawingTextLayout; measureNativeDrawingText: typeof measureNativeDrawingText; measureDrawingTextFallback: typeof measureDrawingTextFallback; measureDrawingTextOverflow: typeof measureDrawingTextOverflow; measureDrawingOverflowEdges: typeof measureDrawingOverflowEdges; measureWorkbookSurface: typeof measureWorkbookSurface; mountWorkbookSurfacePixels: typeof mountWorkbookSurfacePixels; disposeWorkbookSurfacePixels: typeof disposeWorkbookSurfacePixels } } }
+declare global { interface Window { workbookContentHost: { measureContentSource: typeof measureContentSource; rejectContentSource: typeof rejectContentSource; measureImageView: typeof measureImageView; measurePictureFills: typeof measurePictureFills; disposeImageView: typeof disposeImageView; measureObjectGeometry: typeof measureObjectGeometry; measureDrawingGradients: typeof measureDrawingGradients; measureDrawingFontProbeReuse: typeof measureDrawingFontProbeReuse; measureDrawingText: typeof measureDrawingText; measureDrawingTextLayout: typeof measureDrawingTextLayout; measureNativeDrawingText: typeof measureNativeDrawingText; measureDrawingTextFallback: typeof measureDrawingTextFallback; measureDrawingTextOverflow: typeof measureDrawingTextOverflow; measureDrawingOverflowEdges: typeof measureDrawingOverflowEdges; measureWorkbookSurface: typeof measureWorkbookSurface; mountWorkbookSurfacePixels: typeof mountWorkbookSurfacePixels; disposeWorkbookSurfacePixels: typeof disposeWorkbookSurfacePixels } } }
 const inputs: { name: string; snapshot: WorkbookSnapshot; text: Record<string, string>; resources: Record<string, string> }[] = [];
 const chartPlots = new Map<string, BasicChartData[]>();
 let referenceTitles: { snapshot: WorkbookSnapshot; bindings: ReturnType<typeof bindWorkbookChartData> };
@@ -890,4 +890,14 @@ test('chart numeric spaces preserve actual glyph advances and bounded fills afte
     if(index===4){expect(item.fills.filter(fill=>fill.text==='')).toHaveLength(8);expect(item.fills.filter(fill=>fill.text!==''&&/^y+$/.test(fill.text!))).toHaveLength(8);}
     for(const label of item.labels)expect(label).not.toMatch(/[)中😀]/u);
   }
+});
+
+
+test('drawing font probes reuse one owner and invalidate after actual font-set changes without changing source or projections', async ({ page }) => {
+  const snapshot = inputs.find(input => input.name === '08-images-shapes')!.snapshot;
+  const result = await page.evaluate(snapshot => window.workbookContentHost.measureDrawingFontProbeReuse(snapshot), snapshot);
+  expect(result).toMatchObject({ unchanged: true, cleaned: true });
+  expect(result.firstCreated).toBeGreaterThan(0); expect(result.secondCreated).toBe(result.firstCreated);
+  expect(result.changedCreated).toBeGreaterThan(result.secondCreated); expect(result.clearedCreated).toBeGreaterThan(result.changedCreated);
+  expect(result.second).toEqual(result.first); expect(result.changed).toEqual(result.first); expect(result.cleared).toEqual(result.first);
 });

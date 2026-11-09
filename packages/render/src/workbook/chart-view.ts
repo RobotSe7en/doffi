@@ -6,6 +6,7 @@ import type { BasicChartData, BasicChartLayout, BasicChartOptions } from "../cha
 import type { BasicChartTextRun } from "../chart.js";
 import { markViewNode } from "../view-nodes.js";
 import { resolvePreviewFontsInScope } from "../fonts.js";
+import type { FontProbeCache } from "../font-probe-cache.js";
 import type { FontResolution } from "../contracts.js";
 import { workbookDrawingOrientation } from "./drawing-view.js";
 import { prepareChartTextDecorations } from "../chart-text-decoration.js";
@@ -22,6 +23,7 @@ export interface WorkbookChartViewOptions {
   readonly title?: HTMLElement;
   readonly layout?: BasicChartLayout;
   readonly maxNodes?: number; readonly maxPoints?: number; readonly maxCodeUnits?: number;
+  readonly probes?: FontProbeCache;
 }
 export type WorkbookChartViewDiagnostic = { readonly code: "negative-pie-magnitude"; readonly chartId: string; readonly negativePoints: number }
   | { readonly code: "chart-label-overflow"; readonly chartId: string; readonly labels: number };
@@ -96,7 +98,7 @@ export function createWorkbookChartView(source: HTMLElement, chart: DeepReadonly
         fontScope!.append(probe); return { run, probe };
       });
       source.append(fontScope);
-      fonts = resolvePreviewFontsInScope(document, fontScope, "[data-office-script]");
+      fonts = resolvePreviewFontsInScope(document, fontScope, "[data-office-script]", options.probes);
       for (const { run, probe } of pairs) run.node.setAttribute("font-family", view.getComputedStyle(probe).fontFamily);
     }
     // A private shadow measurement keeps source-wide SVG/text selectors out

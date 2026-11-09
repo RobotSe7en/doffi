@@ -3,6 +3,45 @@ import { createDocumentSession, createWorkbookCalculator, createWorkbookScalarEv
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 const location = (row: number, column = 0) => ({ sheetId: "sheet-1", row, column });
 const number = (value: number) => ({ type: "number" as const, value });
+test('cancelling a reused graph after learning an expanded lookup range cannot corrupt a completed seed', async () => {
+  const session = createDocumentSession(scalarWorkbook([
+    ...[0, 1].map(row => ({ row, column: 0, value: { type: 'text' as const, value: 'keep' } })),
+    ...[[0, 10], [1, 20], [3, 40], [4, 50]].map(([row, value]) => ({ row: row!, column: 1, value: number(value!) })),
+    { row: 5, column: 3, value: number(1) }, { row: 0, column: 4, value: number(999), formula: '=SUMIF(A1:A2,"keep",INDEX(B1:D4,D6,1))' },
+  ]));
+  const original = createWorkbookCalculator(session), seed = original.calculateSync(); expect(seed.cells[0]).toMatchObject({ value: number(30) });
+  const set = (row: number, column: number, value: number) => {
+    const m = session.snapshot().manifest;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: m.documentId, baseRevision: m.revision,
+      operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row, column, source: { kind: 'value', value: number(value) } }] }] }));
+  };
+  set(5, 3, 4); const cancelled = createWorkbookCalculator(session, {}, seed), signal = { aborted: false }; let reached = false;
+  await expect(cancelled.calculate({ signal, onProgress(value) { if (value.phase === 'calculate' && value.completed) { reached = true; signal.aborted = true; } } })).rejects.toMatchObject({ code: 'OperationCancelled' });
+  expect(reached).toBe(true); expect(seed.cells[0]).toMatchObject({ value: number(30), revision: 0 });
+  const current = createWorkbookCalculator(session, {}, seed), learned = current.calculateSync();
+  expect(learned.dependencies).toBeGreaterThan(seed.dependencies); expect(current.getCell(location(0, 4))).toMatchObject({ value: number(90) });
+  set(4, 1, 90); expect(current.calculateSync().calculated).toBe(1); expect(current.getCell(location(0, 4))).toMatchObject({ value: number(130) });
+  original.dispose(); cancelled.dispose(); current.dispose(); session.dispose();
+});
+test('reused dependency topology still honors tighter edge budgets and a later formula removal rebuilds its exact graph', () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(2) },
+    { row: 0, column: 1, value: number(999), formula: '=A1+1' }, { row: 0, column: 2, value: number(999), formula: '=B1*2' }]));
+  const original = createWorkbookCalculator(session), seed = original.calculateSync();
+  const set = (column: number, source: { kind: 'value'; value: ReturnType<typeof number> } | { kind: 'formula'; expression: string }) => {
+    const m = session.snapshot().manifest;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: m.documentId, baseRevision: m.revision,
+      operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row: 0, column, source }] }] }));
+  };
+  set(0, { kind: 'value', value: number(3) }); const before = session.serialize();
+  const bounded = createWorkbookCalculator(session, { maxDependencies: 1 }, seed);
+  expect(() => bounded.calculateSync()).toThrowError(expect.objectContaining({ code: 'ResourceLimitExceeded' }));
+  expect(bounded.getCell(location(0, 2)).state).toBe('stale'); expect(session.serialize()).toEqual(before);
+  const current = createWorkbookCalculator(session, { maxDependencies: 2 }, seed), changed = current.calculateSync();
+  expect(changed).toMatchObject({ dependencies: 2, calculated: 2 }); expect(current.getCell(location(0, 2))).toMatchObject({ value: number(8) });
+  set(1, { kind: 'formula', expression: '=7' }); const smaller = createWorkbookCalculator(session, { maxDependencies: 1 }, changed);
+  expect(smaller.calculateSync()).toMatchObject({ dependencies: 1, calculated: 2 }); expect(smaller.getCell(location(0, 2))).toMatchObject({ value: number(14) });
+  original.dispose(); bounded.dispose(); current.dispose(); smaller.dispose(); session.dispose();
+});
 test("completed result projections remain immutable and bound to their original batch after later calculation and disposal", () => {
   const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(2) }, { row: 0, column: 1, value: number(999), formula: '=A1+1' }]));
   const calculator = createWorkbookCalculator(session), first = calculator.calculateSync();

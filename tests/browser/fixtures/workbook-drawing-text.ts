@@ -5,6 +5,7 @@ import { resolvePreviewFontsInScope } from '../../../packages/render/src/fonts.j
 import { layoutWorkbookDrawingTexts } from '../../../packages/render/src/workbook/drawing-text-layout.js';
 import { createWorkbookDrawingFragment, workbookDrawingOrientation } from '../../../packages/render/src/workbook/drawing-view.js';
 import { applyDrawingTextOverflow } from '../../../packages/render/src/workbook/drawing-text-overflow.js';
+import { FontProbeCache } from '../../../packages/render/src/font-probe-cache.js';
 
 function surface(snapshot: WorkbookSnapshot) {
   const host = document.createElement('div'), scope = document.createElement('div'), style = document.createElement('style');
@@ -12,6 +13,33 @@ function surface(snapshot: WorkbookSnapshot) {
   style.textContent = ':host{all:initial;display:block}' + snapshot.styles.map(style => style.css).join('\n');
   root.append(style, scope); document.body.append(host);
   return { scope, dispose: () => host.remove() };
+}
+
+export async function measureDrawingFontProbeReuse(snapshot: WorkbookSnapshot) {
+  await document.fonts.ready;
+  const { scope, dispose } = surface(snapshot), sources = new WorkbookContentSources(document, snapshot);
+  const object = snapshot.metadata.workbook.objects!.find(object => object.kind === 'text')!, projection = sources.project(scope, [object.nodeId]), source = projection.get(object.nodeId)!;
+  let created = 0;
+  const probes = new class extends FontProbeCache {
+    override available(key: string, measure: () => boolean) { return super.available(key, () => { created++; return measure(); }); }
+    override glyph(key: string, measure: () => number) { return super.glyph(key, () => { created++; return measure(); }); }
+  }();
+  const face = new FontFace('doffi-cache-epoch-marker', 'local("Liberation Sans")'), before = source.outerHTML;
+  const measure = () => {
+    const text = createWorkbookDrawingText(source, object), batch = layoutWorkbookDrawingTexts(scope, [{ source, object, text, widthPt: 120, heightPt: 90 }], {}, probes);
+    const item = batch.objects[0]!;
+    return { fonts: batch.fonts, nodes: item.nodes, width: item.widthPt, height: item.heightPt, bounds: item.paintBounds,
+      text: text.projections.map(part => ({ text: part.node.data, sourceNodeId: part.sourceNodeId, from: part.from, to: part.to })) };
+  };
+  try {
+    const first = measure(), firstCreated = created, second = measure(), secondCreated = created;
+    // Changing the actual owner FontFaceSet invalidates the probe cache even
+    // when this unused local face does not alter the document's selected font.
+    document.fonts.add(face); const changed = measure(), changedCreated = created;
+    probes.clear(); const cleared = measure();
+    return { first, second, changed, cleared, firstCreated, secondCreated, changedCreated, clearedCreated: created,
+      unchanged: before === source.outerHTML, cleaned: !scope.querySelector('[data-office-view="workbook-drawing-text-measurement"]') };
+  } finally { document.fonts.delete(face); probes.clear(); sources.dispose(); dispose(); }
 }
 
 export async function measureDrawingTextOverflow(snapshot: WorkbookSnapshot) {
