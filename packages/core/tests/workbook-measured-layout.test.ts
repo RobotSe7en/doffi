@@ -134,6 +134,13 @@ test("measurement digests also bind frozen calculation time and locale", () => {
   expect(digests).toHaveLength(4); expect(digests[0]).not.toBe(digests[2]);
 });
 
+test("one candidate freezes available fonts across all operations, including changes between two otherwise stable measurement pairs", () => {
+  const s = blank(), before = s.serialize(); let calls = 0;
+  expect(() => commit(s, [{ op: "updateWorkbookSheet", sheetId, changes: { defaultRowHeightPt: 20 } }, { op: "updateWorkbookSheet", sheetId, changes: { defaultRowHeightPt: 25 } }], request => ({ ...metrics(request), fontEnvironment: ++calls <= 2 ? "first-font-environment" : "different-font-environment" })))
+    .toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
+  expect(calls).toBe(3); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+});
+
 test("late measurement cannot overwrite an external commit", async () => {
   const s = blank(); let release!: () => void, started!: () => void;
   const begin = new Promise<void>(resolve => { started = resolve; }), wait = new Promise<void>(resolve => { release = resolve; });

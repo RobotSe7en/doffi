@@ -970,3 +970,11 @@ DrawingML 正文片段的显式 `u="none"`／`strike="noStrike"` 读入时保留
 剪切先保留来源，目标提交时才执行原有原子移动。来自同编辑器且两种内容精确匹配的原生粘贴可复用私有区域能力，保留规则、批注及单步历史；外部内容通过公开 HTML 映射，不能凭相同文档 ID 获得内部能力。过期来源、非法合并、不可用计算和超限明确失败。
 
 [实际固定 Calc 接收记录](evidence/workbook-system-clipboard.json)由独立 XLSX 导入、当前源事务修改、HTML 输出、原生控制器插入和再次修改值组成。接收后公式重算、精确小数、日期序列、Boolean 公式、长文字编号、字面等号和合并均核对，原生输出通过官方 XSD／OPC 并由 SDK 编辑、包 ZIP 重开及撤销。Calc 的 CR／LF 与制表符规范化、常量错误转换为公式另外记录，不改写 SDK 的精确来源。`pnpm check:workbook-system-clipboard` 重现原生链路；普通校验不更新已提交证据。三引擎的真实 Ctrl+X／Ctrl+V 检查另覆盖浏览器系统剪贴板路径。这些结果不代替完整编辑组合、容量或 Excel/WPS 实机验收。
+
+### 绘图的单元格剪切与排序（R3-12／14／16 实施中）
+
+单点绘图及 `moveWithCells=true` 的双点绘图以起点标记所在格跟随剪切和排序记录；绝对定位和禁止移动的双点绘图保持独立。只覆盖终点或框内其他格不取得绘图归属；覆盖目标格也不删除原有绘图。显式搬移保留实际物理尺寸及相对起点格的位移，源响应标志继续控制后续行列变化。源／目标使用同一冻结字体环境的实际布局，两个原生标记保持边界内的身份与必要偏移；批内往返能恢复原标记，不制造无净变化修订。对象、图片资源、正文／段落、图表／系列身份和原层次顺序保留。该搬移约定依据微软 [oneCellAnchor](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.onecellanchor?view=openxml-3.0.1) 与 [EditAs](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.editasvalues?view=openxml-3.0.1) 的响应语义推导；不声称 Excel 实际剪切／排序已验收。
+
+跨表图表的普通 A1、显式结构引用和局部名称保持原输入绑定，实际移动的数据仍按精确片段跟随；一维向量的片段维持原始数据点次序，字面常量向量保持唯一来源。导入缓存仅保留历史字段，不替代当前引用求值。往返恢复等价的原表达式和未更动的历史缓存，显式移除的缓存不复活。范围提案须同时授权实际格足迹和发生源变化的绘图身份。调用工作表参与求值的全局名称，其跨表搬移仍需补齐明确的表达式原点绑定；此处不据普通名称通过而关闭该组合。
+
+[六份固定 Calc 记录](evidence/workbook-drawing-transport.json)保留两份独立原始 XLSX、实际 `moveRange`／排序、字体摘要和官方 XSD／OPC。生产者会规范化旋转框／容器、调整层次，并在该图表来源上保留原图表再复制第四张图表；这是生产者行为，不能当 SDK 剪切或 Excel 验收。独立源、生产者导入再编辑、文档包 ZIP、唯一 Worker 取消／丢弃／旧修订及三引擎实际字体画面分别验证。后续原生 XLSX 输出仍属 R3-17，完整图表名称绑定、区域对象复制及阶段容量／审查继续实施。

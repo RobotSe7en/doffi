@@ -161,13 +161,18 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
       const rectangle = { from: { row: Math.min(first.row, last.row), column: Math.min(first.column, last.column) }, to: { row: Math.max(first.row, last.row), column: Math.max(first.column, last.column) } };
       const overlap = intersect(rectangle, change.range);
       if (overlap) {
-        const fragments = subtract(rectangle, change.range).map(value => ({ range: value, sheet }));
+        const fragments = subtract(rectangle, change.range).map(value => ({ range: value, sheet, origin: value.from }));
         const delta = { row: change.target.row - change.range.from.row, column: change.target.column - change.range.from.column };
         const moved = { from: { row: overlap.from.row + delta.row, column: overlap.from.column + delta.column }, to: { row: overlap.to.row + delta.row, column: overlap.to.column + delta.column } };
         // Overlapping destinations must not introduce a duplicated reference.
         let additions = [moved];
         for (const fragment of fragments) if (same(fragment.sheet, change.target.sheet)) additions = additions.flatMap(value => subtract(value, fragment.range));
-        fragments.push(...additions.map(value => ({ range: value, sheet: change.target.sheet })));
+        fragments.push(...additions.map(value => ({ range: value, sheet: change.target.sheet, origin: { row: value.from.row - delta.row, column: value.from.column - delta.column } })));
+        // A chart/name vector observes union order. Keep a one-dimensional
+        // source's leading, middle and trailing values in their original order
+        // when only part of it is cut to another address or worksheet.
+        if (rectangle.from.row === rectangle.to.row || rectangle.from.column === rectangle.to.column)
+          fragments.sort((a, b) => a.origin.row - b.origin.row || a.origin.column - b.origin.column);
         checkLimit(fragments.length, 32);
         const expressions = fragments.map(value => rectangleExpression(value.range, value.sheet, node.from, node.to));
         return expressions.slice(1).reduce<FormulaExpression>((left, right) => ({ kind: "binary", operator: ",", left, right }), expressions[0]!);
@@ -225,6 +230,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
       }
       const sheet = node.workbook === 0 ? from.sheet : mapSheet(node.sheet || from.sheet); if (sheet === undefined) return refError();
       if (change.kind === "move" && node.workbook === undefined && node.sheet === undefined && bindings.resolveName) {
+        if (bindings.isTableName?.(node.name, from.sheet)) return bindings.isTableName(node.name, to.sheet) ? node : { ...node, workbook: 0 };
         const binding = bindings.resolveName(node.name, from.sheet, false);
         if (binding !== undefined && binding === bindings.resolveName(node.name, to.sheet, false)) return node;
         if (binding !== undefined && binding !== bindings.resolveName(node.name, from.sheet, true, undefined, true)) return { ...node, workbook: 0 };

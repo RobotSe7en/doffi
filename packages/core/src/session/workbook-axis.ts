@@ -1,5 +1,5 @@
 import type { Annotation } from "../contracts/annotations.js";
-import type { WorkbookAutoFilter, WorkbookCoordinate, WorkbookMetadata, WorkbookRange, WorkbookSort } from "../contracts/workbook.js";
+import type { WorkbookAutoFilter, WorkbookChartVector, WorkbookCoordinate, WorkbookMetadata, WorkbookRange, WorkbookSort } from "../contracts/workbook.js";
 import type { WorkbookOperation } from "../contracts/workbook-operations.js";
 import type { DeepReadonly, WorkbookCell, WorkbookStructureMapping } from "../runtime.js";
 import { DocumentError } from "../errors.js";
@@ -66,6 +66,31 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
   for (const name of workbook.names ?? []) {
     const old = priorNames.get(name.nameId);
     if (old && old.origin.row === name.origin.row && old.origin.column === name.origin.column && sameFormula(name.expression, old.expression, name.origin, name.sheetId, true)) name.expression = old.expression;
+  }
+  const priorObjects = new Map(before.objects?.map(object => [object.nodeId, object])), objects = new Map(workbook.objects?.map(object => [object.nodeId, object]));
+  const priorCharts = new Map(before.charts?.map(chart => [chart.chartId, chart]));
+  for (const chart of workbook.charts ?? []) {
+    const old = priorCharts.get(chart.chartId), owner = objects.get(chart.nodeId), priorOwner = priorObjects.get(chart.nodeId);
+    if (!old || !owner || owner.sheetId !== priorOwner?.sheetId) continue;
+    const restore = (value: WorkbookChartVector | undefined, previous: DeepReadonly<WorkbookChartVector> | undefined): void => {
+      if (!value || !previous || !("expression" in value) || !("expression" in previous)
+        || !sameFormula(value.expression, previous.expression, { row: 0, column: 0 }, owner.sheetId)) return;
+      value.expression = previous.expression;
+      // Restore only an untouched historical cache with its original binding.
+      // An explicitly removed cache or changed literal/vector is never revived.
+      if (value.cache && previous.cache) {
+        const { state: _state, ...current } = value.cache, { state: _previousState, ...prior } = previous.cache;
+        if (JSON.stringify(current) === JSON.stringify(prior)) value.cache.state = previous.cache.state;
+      }
+    };
+    restore(chart.categories, old.categories); restore(chart.titleReference, old.titleReference);
+    restore(chart.categoryAxisTitle?.reference, old.categoryAxisTitle?.reference); restore(chart.valueAxisTitle?.reference, old.valueAxisTitle?.reference);
+    const priorSeries = new Map(old.series.map(series => [series.seriesId, series]));
+    for (const series of chart.series) {
+      const previous = priorSeries.get(series.seriesId); if (!previous) continue;
+      restore(series.values, previous.values);
+      if (series.name?.kind === "reference" && previous.name?.kind === "reference") restore(series.name.reference, previous.name.reference);
+    }
   }
   const prior = new Map(priorAnnotations.map(annotation => [annotation.annotationId, annotation]));
   const bounds = (ranges: readonly DeepReadonly<WorkbookRange>[]): string => JSON.stringify(ranges.reduce((span, range) =>

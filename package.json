@@ -66,6 +66,7 @@
     "check:workbook-structured-fill": "/usr/bin/python3 scripts/check-workbook-structured-fill.py --verify-native",
     "check:workbook-copy-tables": "/usr/bin/python3 scripts/check-workbook-copy-tables.py --verify-native",
     "check:workbook-note-transport": "/usr/bin/python3 scripts/check-workbook-note-transport.py --verify-native",
+    "check:workbook-drawing-transport": "/usr/bin/python3 scripts/check-workbook-drawing-transport.py --verify-native",
     "check:workbook-name-prefix": "/usr/bin/python3 scripts/check-workbook-name-prefix.py --verify-native",
     "check:workbook-copy-sheet": "/usr/bin/python3 scripts/check-workbook-copy-sheet.py --verify-native",
     "typecheck:built": "tsc --project apps/playground/tsconfig.json && tsc --project tsconfig.tools.json",

@@ -19,7 +19,7 @@ const contains = (a: WorkbookRange, b: WorkbookRange) => rangeContains(a, b.from
  * old containing sheet and final destination; overlapping cuts never consume
  * cells produced earlier in the same operation. */
 export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCellEdit, annotations: Annotation[], operation: Move,
-  mappings: WorkbookStructureMapping[]): Generator<{ completed: number; total: number }, void> {
+  mappings: WorkbookStructureMapping[], drawingDestinations?: ReadonlyMap<string, string>): Generator<{ completed: number; total: number }, void> {
   const source = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId) ?? invalid("The cut source worksheet does not exist."),
     target = workbook.sheets.find(sheet => sheet.sheetId === operation.targetSheetId) ?? invalid("The cut destination worksheet does not exist.");
   const range = operation.range; checkRange(range);
@@ -28,12 +28,10 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
   if (source === target && range.from.row === destination.from.row && range.from.column === destination.from.column) return;
   cells.checkExpandedCells(rows * columns);
   const moveDefinitions = planWorkbookDefinitionMove(source, target, range, destination);
-  const covered = (sheetId: string, value: WorkbookRange) => sheetId === source.sheetId && rangesIntersect(value, range) || sheetId === target.sheetId && rangesIntersect(value, destination);
   for (const sheet of workbook.sheets) {
     for (const merge of sheet.merges) if (sheet === source && rangesIntersect(merge, range) && !contains(range, merge)
       || sheet === target && rangesIntersect(merge, destination) && !contains(destination, merge)) invalid("A cut cannot split a merged region.");
   }
-  for (const object of workbook.objects ?? []) if (object.anchor.kind !== "absolute" && covered(object.sheetId, { from: object.anchor.from, to: object.anchor.from })) invalid("Cutting cell-bound drawings is not yet connected.");
   let removedDestination = 0;
   for (const cell of cells.entries(target.sheetId, false, [destination])) {
     if (source === target && rangeContains(range, cell.row, cell.column)) continue;
@@ -47,7 +45,7 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
   const links = workbook.sheets.flatMap(sheet => (sheet.hyperlinks ?? []).map(link => ({ sheet, link: { ...link, range: { from: { ...link.range.from }, to: { ...link.range.to } } } }))), rewrite = createWorkbookReferenceRewriter(workbook, change);
   const rules = planWorkbookRuleMove(workbook, operation, destination, rewrite);
   const merges = source.merges.filter(merge => rangesIntersect(merge, range)).map(merge => ({ from: { row: merge.from.row + delta.row, column: merge.from.column + delta.column }, to: { row: merge.to.row + delta.row, column: merge.to.column + delta.column } }));
-  yield* rewriteWorkbookReferenceSteps(workbook, cells, change);
+  yield* rewriteWorkbookReferenceSteps(workbook, cells, change, { ...(drawingDestinations ? { drawingDestinations } : {}) });
   for (const [sheet, lists] of rules) {
     if (lists.conditionalRules) sheet.conditionalRules = lists.conditionalRules;
     if (lists.dataValidations) sheet.dataValidations = lists.dataValidations;

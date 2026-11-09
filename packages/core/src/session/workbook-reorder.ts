@@ -41,8 +41,6 @@ export function* reorderWorkbookRows(workbook: WorkbookMetadata, cells: Workbook
     if ((target - range.from.row) % rowsPerRecord) invalid("Row sorting cannot split a merged record.");
     for (let row = 1; row < rowsPerRecord; row++) if (rows[offset + row] !== target + row) invalid("Row sorting must preserve the order inside each merged record.");
   }
-  for (const object of workbook.objects ?? []) if (object.sheetId === sheet.sheetId && object.anchor.kind !== "absolute" && rangeContains(range, object.anchor.from.row, object.anchor.from.column))
-    invalid("Sorting cell-bound drawings is not yet connected.");
   const step: WorkbookStructureMapping = { kind: "sort", sheetId: sheet.sheetId, range, rows };
   const moving: { cell?: WorkbookCell; row: number; column: number; cssClass: string; formatId?: string }[] = [];
   let completed = 0, additional = 0;

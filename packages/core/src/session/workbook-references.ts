@@ -34,7 +34,7 @@ export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, chan
   };
 }
 export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange,
-  options: { readonly skipTableFormulas?: ReadonlySet<string> } = {}): Generator<{ completed: number; total: number }, void> {
+  options: { readonly skipTableFormulas?: ReadonlySet<string>; readonly drawingDestinations?: ReadonlyMap<string, string> } = {}): Generator<{ completed: number; total: number }, void> {
   let completed = 0; const rewrite = createWorkbookReferenceRewriter(workbook, change);
   for (const cell of cells.entries(undefined, true)) {
     const sheet = workbook.sheets.find(sheet => sheet.sheetId === cell.sheetId)!;
@@ -77,20 +77,21 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
     for (const link of sheet.hyperlinks ?? []) if (link.location) link.location = rewrite("=" + link.location, sheet.name, { row: 0, column: 0 }).slice(1);
   }
   for (const sheet of workbook.sheets) if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) sheetReferences(sheet);
-  function chartReferences(value: unknown, sheet: string): void {
+  function chartReferences(value: unknown, sheet: string, destination?: FormulaLocation): void {
     if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) { for (const item of value) chartReferences(item, sheet); return; }
+    if (Array.isArray(value)) { for (const item of value) chartReferences(item, sheet, destination); return; }
     const object = value as Record<string, unknown>;
     if (typeof object.expression === "string") {
-      const expression = rewrite(object.expression, sheet, { row: 0, column: 0 });
-      if (expression !== object.expression && object.cache && typeof object.cache === "object") (object.cache as { state: string }).state = "stale";
+      const expression = rewrite(object.expression, sheet, { row: 0, column: 0 }, undefined, destination);
+      if ((expression !== object.expression || destination !== undefined && destination.sheet !== sheet) && object.cache && typeof object.cache === "object") (object.cache as { state: string }).state = "stale";
       object.expression = expression;
     }
-    for (const [name, item] of Object.entries(object)) if (name !== "cache") chartReferences(item, sheet);
+    for (const [name, item] of Object.entries(object)) if (name !== "cache") chartReferences(item, sheet, destination);
   }
   for (const chart of workbook.charts ?? []) {
     const owner = workbook.objects!.find(object => object.nodeId === chart.nodeId)!, sheet = workbook.sheets.find(sheet => sheet.sheetId === owner.sheetId)!;
-    if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) chartReferences(chart, sheet.name);
+    const targetId = options.drawingDestinations?.get(owner.nodeId), target = targetId === undefined ? undefined : workbook.sheets.find(sheet => sheet.sheetId === targetId);
+    if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) chartReferences(chart, sheet.name, target ? { sheet: target.name, row: 0, column: 0 } : undefined);
   }
   for (const link of workbook.objectHyperlinks ?? []) if (link.location) {
     // Object hyperlinks may target child text nodes, so their owning sheet is

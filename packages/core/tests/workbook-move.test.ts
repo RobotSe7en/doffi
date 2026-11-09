@@ -39,7 +39,7 @@ test("cross-sheet cuts retain unmoved formula inputs on their original sheet and
   expect(s.getCell("other", 3, 1)).toMatchObject({ value: number(999), formula: { expression: "=(A4+'Sheet1'!Z1)", cacheState: "stale" } });
   expect(s.getCalculatedCell("other", 3, 1)).toMatchObject({ value: number(10) }); expect(s.getCalculatedCell(sheetId, 2, 0)).toMatchObject({ value: number(22) });
   const areas = s.resolveReference("=AllValues", { sheetId, row: 0, column: 0 });
-  expect(areas).toEqual({ kind: "ranges", areas: [{ sheetId, ...range(0, 2) }, { sheetId: "other", ...range(3, 0, 3, 1) }] });
+  expect(areas).toEqual({ kind: "ranges", areas: [{ sheetId: "other", ...range(3, 0, 3, 1) }, { sheetId, ...range(0, 2) }] });
   expect(s.snapshot().metadata.workbook.sheets[0]!.hyperlinks).toEqual([{ range: range(0, 2), location: "Z1" }]);
   expect(s.snapshot().metadata.workbook.sheets[1]!.hyperlinks).toEqual([{ range: range(3, 0, 3, 1), location: "'Sheet1'!Z1" }]);
   const reopened = openDocument(s.serialize(), { kind: "workbook" }); expect(reopened.snapshot()).toEqual(s.snapshot());

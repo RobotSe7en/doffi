@@ -16,6 +16,46 @@ declare global { interface Window { workbookEditor: typeof directFixture; workbo
 declare global { interface Window { workbookImageReadGate: { readonly started: boolean; release(): void; restore(): void } } }
 const bundles = new Map<string, string>();
 
+for (const remote of [false, true]) for (const fixture of ["08-images-shapes", "07-three-charts"]) test(`${remote ? "Worker" : "direct"} native ${fixture} cut and sort transport physical geometry and retain source inputs`, async ({ page }) => {
+  const s = createDocumentSession(openDocument(await importXlsx(readFileSync(`examples/xlsx/${fixture}.xlsx`), { documentId: "browser-drawing-transport" }), { kind: "workbook" }));
+  const apply = (operations: Parameters<typeof s.prepare>[0]["operations"]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
+  const source = s.snapshot().metadata.workbook.sheets[0]!, object = s.snapshot().metadata.workbook.objects![0]!, anchor = object.anchor;
+  if (anchor.kind !== "one-cell") throw Error("Expected an independent one-cell source"); const { row, column } = anchor.from;
+  apply([{ op: "insertWorkbookSheet", name: "Other" }, { op: "setWorkbookCells", sheetId: source.sheetId, cells: [3, 1, 2].map((value, index) => ({ row: row + index, column, source: { kind: "value" as const, value: { type: "number" as const, value } } })) }]);
+  const otherId = s.snapshot().metadata.workbook.sheets.at(-1)!.sheetId;
+  apply([{ op: "updateWorkbookSheet", sheetId: otherId, changes: { defaultRowHeightPt: 30, defaultRowHeightCustom: true, defaultColumnWidth: 12 } }]);
+  const files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { drawings: { nodeId: string; sheetId: string }[]; charts: WorkbookChart[]; content: string; history: { undoSteps: number }; errors: string[] };
+  const choose = async (value: string) => { const address = page.getByLabel("选择单元格或区域", { exact: true }); await address.fill(value); await address.press("Enter"); await settled(); };
+  const geometry = (row: number, column: number) => page.evaluate(({ remote, row, column, id }) => {
+    const view = remote ? window.workbookRemoteEditor : window.workbookEditor, bounds = view.displayedDrawingBounds().objects.find(object => object.nodeId === id);
+    if (!bounds) throw Error("The transported drawing is outside the viewport"); const cell = view.displayedCellBounds(row, column);
+    return { ...bounds, offsetX: bounds.xPt - cell.xPt, offsetY: bounds.yPt - cell.yPt };
+  }, { remote, row, column, id: object.nodeId });
+  const address = `${String.fromCharCode(65 + column)}${row + 1}`;
+  await choose(address); const before = await geometry(row, column), beforeState = await inspect();
+  await page.getByRole("button", { name: "剪切选区", exact: true }).click(); await page.getByRole("tab", { name: "Other", exact: true }).click(); await settled();
+  await choose("H20"); await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await settled();
+  const after = await geometry(19, 7); for (const key of ["offsetX", "offsetY", "widthPt", "heightPt"] as const) expect(after[key]).toBeCloseTo(before[key], 1);
+  const current = await inspect(); expect(current).toMatchObject({ errors: [], content: beforeState.content, history: { undoSteps: 1 } });
+  expect(current.drawings.find(drawing => drawing.nodeId === object.nodeId)!.sheetId).toBe(otherId); expect(current.drawings.map(drawing => drawing.nodeId)).toEqual(beforeState.drawings.map(drawing => drawing.nodeId));
+  if (fixture === "07-three-charts") {
+    expect(current.charts[0]!.series.map(series => series.seriesId)).toEqual(beforeState.charts[0]!.series.map(series => series.seriesId));
+    expect(current.charts[0]!.series[0]!.values).toMatchObject({ expression: expect.stringContaining(source.name) });
+  }
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await inspect()).toMatchObject({ drawings: beforeState.drawings, charts: beforeState.charts, history: { undoSteps: 0 }, errors: [] });
+  await page.getByRole("tab", { name: source.name, exact: true }).click(); await settled(); await choose(`${address}:${String.fromCharCode(66 + column)}${row + 3}`);
+  await page.getByRole("button", { name: "升序排序", exact: true }).click(); await settled(); await choose(`${String.fromCharCode(65 + column)}${row + 3}`);
+  const sorted = await geometry(row + 2, column); for (const key of ["offsetX", "offsetY", "widthPt", "heightPt"] as const) expect(sorted[key]).toBeCloseTo(before[key], 1);
+  expect(await inspect()).toMatchObject({ charts: beforeState.charts, history: { undoSteps: 1 }, errors: [] });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await inspect()).toMatchObject({ drawings: beforeState.drawings, charts: beforeState.charts, history: { undoSteps: 0 }, errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 test("default Worker commands capture operations before host pending callbacks", async ({ page }) => {
   await page.addScriptTag({ content: bundles.get("workbook-remote-editor")! });
   await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(scalarWorkbook([]).serialize())).toString("base64") });
