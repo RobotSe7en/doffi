@@ -73,9 +73,11 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
     const old = priorCharts.get(chart.chartId), owner = objects.get(chart.nodeId), priorOwner = priorObjects.get(chart.nodeId);
     if (!old || !owner || owner.sheetId !== priorOwner?.sheetId) continue;
     const restore = (value: WorkbookChartVector | undefined, previous: DeepReadonly<WorkbookChartVector> | undefined): void => {
-      if (!value || !previous || !("expression" in value) || !("expression" in previous)
-        || !sameFormula(value.expression, previous.expression, { row: 0, column: 0 }, owner.sheetId)) return;
+      if (!value || !previous || !("expression" in value) || !("expression" in previous)) return;
+      const origin = value.originSheetId ?? owner.sheetId, priorOrigin = previous.originSheetId ?? priorOwner!.sheetId;
+      if (origin !== priorOrigin || !sameFormula(value.expression, previous.expression, { row: 0, column: 0 }, origin)) return;
       value.expression = previous.expression;
+      if (previous.originSheetId === undefined) delete value.originSheetId; else value.originSheetId = previous.originSheetId;
       // Restore only an untouched historical cache with its original binding.
       // An explicitly removed cache or changed literal/vector is never revived.
       if (value.cache && previous.cache) {

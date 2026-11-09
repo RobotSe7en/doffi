@@ -2,6 +2,7 @@ import type { WorkbookCoordinate, WorkbookMetadata, WorkbookSheet } from "../con
 import { rewriteFormula } from "../workbook/formula-rewrite.js";
 import type { FormulaLocation, FormulaReferenceChange } from "../workbook/formula-rewrite.js";
 import { WorkbookCellEdit, rangeContains } from "./workbook-cells.js";
+import { DocumentError } from "../errors.js";
 
 /** Every formula-bearing source participates in a structural reference edit.
  * Cached values are never rewritten into independent authoritative content. */
@@ -77,21 +78,29 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
     for (const link of sheet.hyperlinks ?? []) if (link.location) link.location = rewrite("=" + link.location, sheet.name, { row: 0, column: 0 }).slice(1);
   }
   for (const sheet of workbook.sheets) if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) sheetReferences(sheet);
-  function chartReferences(value: unknown, sheet: string, destination?: FormulaLocation): void {
+  const sheetsById = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet]));
+  function chartReferences(value: unknown, owner: WorkbookSheet, destination = owner): void {
     if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) { for (const item of value) chartReferences(item, sheet, destination); return; }
+    if (Array.isArray(value)) { for (const item of value) chartReferences(item, owner, destination); return; }
     const object = value as Record<string, unknown>;
+    if (object.kind === "literal") return;
     if (typeof object.expression === "string") {
-      const expression = rewrite(object.expression, sheet, { row: 0, column: 0 }, undefined, destination);
-      if ((expression !== object.expression || destination !== undefined && destination.sheet !== sheet) && object.cache && typeof object.cache === "object") (object.cache as { state: string }).state = "stale";
+      const origin = object.originSheetId === undefined ? owner : sheetsById.get(object.originSheetId as string);
+      if (!origin) throw new DocumentError("InvalidOperation", "A chart expression origin requires an existing worksheet.");
+      // A drawing move preserves the expression's caller context. Qualifying a
+      // global name would remove the worksheet for its nested bang recipes.
+      const expression = rewrite(object.expression, origin.name, { row: 0, column: 0 });
+      if ((expression !== object.expression || destination.sheetId !== owner.sheetId) && object.cache && typeof object.cache === "object") (object.cache as { state: string }).state = "stale";
       object.expression = expression;
+      if (change.kind === "deleteSheet" && origin.name === change.sheet || origin.sheetId === destination.sheetId) delete object.originSheetId;
+      else object.originSheetId = origin.sheetId;
     }
-    for (const [name, item] of Object.entries(object)) if (name !== "cache") chartReferences(item, sheet, destination);
+    for (const [name, item] of Object.entries(object)) if (name !== "cache") chartReferences(item, owner, destination);
   }
   for (const chart of workbook.charts ?? []) {
     const owner = workbook.objects!.find(object => object.nodeId === chart.nodeId)!, sheet = workbook.sheets.find(sheet => sheet.sheetId === owner.sheetId)!;
     const targetId = options.drawingDestinations?.get(owner.nodeId), target = targetId === undefined ? undefined : workbook.sheets.find(sheet => sheet.sheetId === targetId);
-    if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) chartReferences(chart, sheet.name, target ? { sheet: target.name, row: 0, column: 0 } : undefined);
+    if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) chartReferences(chart, sheet, target);
   }
   for (const link of workbook.objectHyperlinks ?? []) if (link.location) {
     // Object hyperlinks may target child text nodes, so their owning sheet is

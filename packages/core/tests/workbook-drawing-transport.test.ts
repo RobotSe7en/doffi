@@ -98,10 +98,10 @@ test("cross-sheet chart transport retains its input bindings, literals, identiti
   const { s, targetId } = chartExample(), before = s.snapshot().metadata.workbook, chart = before.charts![0]!, literal = chart.series[1]!.values;
   apply(s, [move(targetId)]); const current = s.snapshot().metadata.workbook.charts![0]!;
   expect(s.snapshot().metadata.workbook.objects!.find(o => o.nodeId === chart.nodeId)!.sheetId).toBe(targetId);
-  expect(current.categories).toMatchObject({ expression: "='Sheet1'!A2:A4" }); expect(current.series[0]!.values).toMatchObject({ expression: "='Sheet1'!B2:B4", cache: { state: "stale", count: 3, points: [{ index: 0, value: 999 }], numberFormat: "0.00" } });
-  expect(current.series[0]!.name).toMatchObject({ reference: { expression: "='Sheet1'!B1" } }); expect(current.series[1]!.values).toEqual(literal);
+  expect(current.categories).toMatchObject({ expression: "=A2:A4", originSheetId: sourceId }); expect(current.series[0]!.values).toMatchObject({ expression: "=B2:B4", originSheetId: sourceId, cache: { state: "stale", count: 3, points: [{ index: 0, value: 999 }], numberFormat: "0.00" } });
+  expect(current.series[0]!.name).toMatchObject({ reference: { expression: "=B1", originSheetId: sourceId } }); expect(current.series[1]!.values).toEqual(literal);
   expect(current.series.map(series => series.seriesId)).toEqual(chart.series.map(series => series.seriesId));
-  const evaluate = createWorkbookScalarEvaluator(s); expect(evaluate.evaluate("=SUM(" + (current.series[0]!.values as DeepReadonly<WorkbookChartReference>).expression.slice(1) + ")", { sheetId: targetId, ...point(0, 0) })).toMatchObject({ value: { type: "number", value: 9 } }); evaluate.dispose();
+  const evaluate = createWorkbookScalarEvaluator(s); expect(evaluate.evaluate("=SUM(" + (current.series[0]!.values as DeepReadonly<WorkbookChartReference>).expression.slice(1) + ")", { sheetId: sourceId, ...point(0, 0) })).toMatchObject({ value: { type: "number", value: 9 } }); evaluate.dispose();
   s.undo(); const bytes = s.serialize(); expect(apply(s, [move(targetId), move(targetId, true)]).changed).toBe(false); expect(s.serialize()).toEqual(bytes);
 });
 test("cancelling after the final drawing projection leaves source, rich text and history untouched", async () => {
@@ -130,9 +130,9 @@ test("chart transport preserves local names and distinguishes global names from 
     { op: "setWorkbookChartData", nodeId: chart.nodeId, data: { series: [{ seriesId: chart.series[0]!.seriesId, values: { expression: "=Amounts", valueType: "number" } },
       { seriesId: chart.series[1]!.seriesId, values: { expression: "=GlobalAmounts", valueType: "number" } }] } }]); s.clearHistory();
   apply(s, [move(targetId)]); const current = s.snapshot().metadata.workbook.charts![0]!;
-  expect(current.series[0]!.values).toMatchObject({ expression: "='Sheet1'!Amounts" }); expect(current.series[1]!.values).toMatchObject({ expression: "=[0]!GlobalAmounts" });
+  expect(current.series[0]!.values).toMatchObject({ expression: "=Amounts", originSheetId: sourceId }); expect(current.series[1]!.values).toMatchObject({ expression: "=GlobalAmounts", originSheetId: sourceId });
   const references = new WorkbookReferences(s.snapshot().metadata.workbook);
-  for (const series of current.series) expect(references.resolve((series.values as DeepReadonly<WorkbookChartReference>).expression, { sheetId: targetId, ...point(0, 0) })).toMatchObject({ kind: "ranges", areas: [{ sheetId: sourceId, from: point(1, 1), to: point(3, 1) }] });
+  for (const series of current.series) expect(references.resolve((series.values as DeepReadonly<WorkbookChartReference>).expression, { sheetId: sourceId, ...point(0, 0) })).toMatchObject({ kind: "ranges", areas: [{ sheetId: sourceId, from: point(1, 1), to: point(3, 1) }] });
 });
 test("a scoped cell cut cannot indirectly move a drawing without its frozen object permission", () => {
   const { s, targetId } = example(anchors[5]!), m = s.snapshot().manifest;

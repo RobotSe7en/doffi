@@ -92,7 +92,7 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
       account(chartId.length + sheetId.length);
       references(chart, (slot, reference) => {
         if (++count > budget.maxReferences) throw new DocumentError("ResourceLimitExceeded", "The chart batch exceeds its reference budget.");
-        account(("expression" in reference ? reference.expression.length : 0) + ("seriesId" in slot ? slot.seriesId.length : 0));
+        account(("expression" in reference ? reference.expression.length + (reference.originSheetId?.length ?? 0) : 0) + ("seriesId" in slot ? slot.seriesId.length : 0));
         entries.push({ slot, reference });
       });
       return { chartId, sheetId, entries };
@@ -104,7 +104,7 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
       const entries: { slot: WorkbookChartReferenceSlot; resolved: ResolvedVector }[] = [];
       for (const { slot, reference } of chart.entries) {
         cancelled(signal);
-        const resolved = "expression" in reference ? model.resolveReference(reference.expression, { sheetId: chart.sheetId, row: 0, column: 0 }) : reference;
+        const resolved = "expression" in reference ? model.resolveReference(reference.expression, { sheetId: reference.originSheetId ?? chart.sheetId, row: 0, column: 0 }) : reference;
         if (resolved.kind === "literal") {
           points += resolved.count;
           if (points > budget.maxPoints) throw new DocumentError("ResourceLimitExceeded", "Chart literals exceed their cumulative point budget.");

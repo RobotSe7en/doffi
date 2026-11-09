@@ -120,7 +120,7 @@ export function* reviewWorkbookProposalSteps(model: WorkbookModel, capture: Work
       const chart = next.snapshot().metadata.workbook.charts!.find(chart => chart.chartId === object.chartId)!;
       const references = [chart.categories, ...chart.series.flatMap(series => [series.values, series.name?.kind === "reference" ? series.name.reference : undefined]), chart.titleReference, chart.categoryAxisTitle?.reference, chart.valueAxisTitle?.reference];
       for (const reference of references) if (reference && "expression" in reference) {
-        const origin = { sheetId: object.sheetId, row: 0, column: 0 }; discover(reference.expression, origin); const bound = kernel.referenceAreas(reference.expression, origin); if (bound.kind === "ranges") for (const area of bound.areas) check(area);
+        const origin = { sheetId: reference.originSheetId ?? object.sheetId, row: 0, column: 0 }; discover(reference.expression, origin); const bound = kernel.referenceAreas(reference.expression, origin); if (bound.kind === "ranges") for (const area of bound.areas) check(area);
       }
     }
     const review = { requestId: request.requestId, proposalId: proposal.proposalId, summary: proposal.summary, calculatedChanges: changed };

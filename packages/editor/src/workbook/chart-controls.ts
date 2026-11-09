@@ -13,7 +13,7 @@ interface Host {
   changed(group: ChartDraftGroup): void;
 }
 export type ChartDraftGroup = WorkbookChartStyleDraftGroup | "chart-data" | "chart-axis" | "chart-title" | "chart-categoryAxis" | "chart-valueAxis";
-type DataSeries = { seriesId?: string; nameKind: "none" | "text" | "reference"; name: string; nameValueType: "text" | "number"; values: WorkbookChartVectorDraft };
+type DataSeries = { seriesId?: string; nameKind: "none" | "text" | "reference"; name: string; nameValueType: "text" | "number"; nameOriginSheetId?: string; values: WorkbookChartVectorDraft };
 type Appearance = Extract<DocumentOperation, { op: "setWorkbookChart" }>;
 interface Controls { load(chart: DeepReadonly<WorkbookChart> | undefined, snapshot: WorkbookSnapshot): void; refresh(disabled: boolean, available?: boolean, composing?: HTMLElement, stale?: boolean): void }
 /** A source editor: references and literals are distinct inputs, with no copied
@@ -22,6 +22,10 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
   const root = document.createElement("fieldset"), legend = document.createElement("legend"); legend.textContent = "图表数据、坐标轴与标题"; root.append(legend); parent.append(root);
   const styleControls = createWorkbookChartStyleControls(document, root, host);
   let series: DataSeries[] = [], selected = 0, available = false, blocked = true, sourceStale = false, kind: WorkbookChart["kind"] = "column";
+  let originSheets: readonly { readonly sheetId: string; readonly name: string }[] = [];
+  const loadOrigins = (field: HTMLSelectElement, selected?: string) => {
+    field.replaceChildren(...[{ sheetId: "", name: "图表所在工作表" }, ...originSheets].map(sheet => { const option = document.createElement("option"); option.value = sheet.sheetId; option.textContent = sheet.name; return option; })); field.value = selected ?? "";
+  };
   const fields: (HTMLInputElement | HTMLSelectElement)[] = [], buttons: HTMLButtonElement[] = [];
   const label = <T extends HTMLElement>(name: string, field: T, container = root): T => { const wrapper = document.createElement("label"); field.setAttribute("aria-label", name); wrapper.append(name, field); container.append(wrapper); return field; };
   const input = (name: string, type = "text", container = root) => { const field = label(name, document.createElement("input"), container); field.type = type; fields.push(field); return field; };
@@ -32,19 +36,20 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
   const categoryContainer = document.createElement("div"); root.append(categoryContainer);
   const dataChanged = () => host.changed("chart-data");
   const categoryControls = createWorkbookChartVectorControls(document, categoryContainer, "分类数据", false, host.signal, dataChanged);
-  const seriesChoice = select("编辑图表系列", []), nameKind = select("系列名称来源", [["none", "使用默认名称"], ["text", "文字"], ["reference", "单元格或名称引用"]]), name = input("系列名称或引用"), nameValueType = select("系列名称引用类型", [["text", "文字"], ["number", "数值"]]);
+  const seriesChoice = select("编辑图表系列", []), nameKind = select("系列名称来源", [["none", "使用默认名称"], ["text", "文字"], ["reference", "单元格或名称引用"]]), name = input("系列名称或引用"), nameValueType = select("系列名称引用类型", [["text", "文字"], ["number", "数值"]]), nameOrigin = select("系列名称引用工作表", []);
   const valueControls = createWorkbookChartVectorControls(document, root, "系列数值", true, host.signal, dataChanged);
   function showSeries(): void {
     seriesChoice.replaceChildren(...series.map((item, index) => { const option = document.createElement("option"); option.value = String(index); option.textContent = item.nameKind === "text" && item.name ? item.name : "系列 " + (index + 1); return option; }));
     selected = Math.max(0, Math.min(selected, series.length - 1)); seriesChoice.value = String(selected);
     const item = series[selected]; nameKind.value = item?.nameKind ?? "none"; name.value = item?.name ?? ""; nameValueType.value = item?.nameValueType ?? "text";
-    if (item) valueControls.load(item.values);
+    loadOrigins(nameOrigin, item?.nameOriginSheetId); if (item) valueControls.load(item.values, originSheets);
     refresh(blocked, available);
   }
   seriesChoice.addEventListener("change", () => { selected = Number(seriesChoice.value); showSeries(); }, { signal: host.signal });
   nameKind.addEventListener("change", () => { const item = series[selected]; if (item) item.nameKind = nameKind.value as DataSeries["nameKind"]; dataChanged(); refresh(blocked, available); }, { signal: host.signal });
   nameValueType.addEventListener("change", () => { const item = series[selected]; if (item) item.nameValueType = nameValueType.value as DataSeries["nameValueType"]; dataChanged(); }, { signal: host.signal });
   name.addEventListener("input", () => { const item = series[selected]; if (item) { item.name = name.value; const option = seriesChoice.options[selected]; if (option) option.textContent = item.nameKind === "text" && item.name ? item.name : "系列 " + (selected + 1); } dataChanged(); }, { signal: host.signal });
+  nameOrigin.addEventListener("change", () => { const item = series[selected]; if (item) { if (nameOrigin.value) item.nameOriginSheetId = nameOrigin.value; else delete item.nameOriginSheetId; } dataChanged(); }, { signal: host.signal });
   categoryMode.addEventListener("change", () => { categoryContainer.hidden = categoryMode.value !== "source"; dataChanged(); }, { signal: host.signal });
   const add = button("新增图表系列", () => { series.push({ nameKind: "text", name: "新系列", nameValueType: "text", values: { ...workbookChartVectorDraft(), mode: "literal" } }); selected = series.length - 1; dataChanged(); showSeries(); });
   const remove = button("删除当前图表系列", () => { if (series.length === 1) throw new DocumentError("InvalidOperation", "图表至少需要一个系列。"); series.splice(selected, 1); dataChanged(); showSeries(); });
@@ -53,7 +58,8 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
   button("应用图表数据", async () => {
     const chart = host.current();
     const data: WorkbookChartDataInput = { ...(categoryMode.value === "source" ? { categories: readWorkbookChartVectorDraft(categories) } : {}), series: series.map(item => ({
-      ...(item.seriesId ? { seriesId: item.seriesId } : {}), ...(item.nameKind === "none" ? {} : item.nameKind === "text" ? { name: { kind: "text" as const, text: item.name } } : { name: { kind: "reference" as const, reference: { expression: item.name, valueType: item.nameValueType } } }), values: readWorkbookChartVectorDraft(item.values),
+      ...(item.seriesId ? { seriesId: item.seriesId } : {}), ...(item.nameKind === "none" ? {} : item.nameKind === "text" ? { name: { kind: "text" as const, text: item.name } } : { name: { kind: "reference" as const, reference: { expression: item.name, valueType: item.nameValueType,
+        ...(item.nameOriginSheetId !== undefined ? { originSheetId: item.nameOriginSheetId } : {}) } } }), values: readWorkbookChartVectorDraft(item.values),
     })) };
     await host.perform([{ op: "setWorkbookChartData", nodeId: chart.nodeId, data }], "chart-data");
   });
@@ -82,23 +88,25 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
   }, appearance);
 
   const titleDrafts = ([ ["title", "主标题"], ["categoryAxis", "分类轴标题"], ["valueAxis", "数值轴标题"] ] as const).map(([target, text]) => {
-    const mode = select(text + "来源", [["none", "无标题"], ["text", "文字"], ["reference", "单元格或名称引用"]]), value = input(text + "文字或引用"), valueType = select(text + "引用类型", [["text", "文字"], ["number", "数值"]]);
+    const mode = select(text + "来源", [["none", "无标题"], ["text", "文字"], ["reference", "单元格或名称引用"]]), value = input(text + "文字或引用"), valueType = select(text + "引用类型", [["text", "文字"], ["number", "数值"]]), origin = select(text + "引用工作表", []);
     let changed = false;
-    for (const field of [mode, value, valueType]) field.addEventListener("input", () => { changed = true; host.changed("chart-" + target as ChartDraftGroup); }, { signal: host.signal });
+    for (const field of [mode, value, valueType, origin]) field.addEventListener("input", () => { changed = true; host.changed("chart-" + target as ChartDraftGroup); }, { signal: host.signal });
     button("应用" + text, async () => {
       if (!changed) return;
-      const chart = host.current(), prior = target === "title" ? { cssClass: chart.titleCssClass, text: chart.titleText } : target === "categoryAxis" ? chart.categoryAxisTitle : chart.valueAxisTitle;
-      const source = mode.value === "none" ? null : mode.value === "reference" ? { reference: { expression: value.value, valueType: valueType.value as "text" | "number" }, ...(prior?.cssClass ? { cssClass: prior.cssClass } : {}) }
+      const chart = host.current(), prior = target === "title" ? { cssClass: chart.titleCssClass, text: chart.titleText, reference: chart.titleReference } : target === "categoryAxis" ? chart.categoryAxisTitle : chart.valueAxisTitle;
+      const source = mode.value === "none" ? null : mode.value === "reference" ? { reference: { expression: value.value, valueType: valueType.value as "text" | "number",
+        ...(origin.value ? { originSheetId: origin.value } : {}) }, ...(prior?.cssClass ? { cssClass: prior.cssClass } : {}) }
         : { html: "<p>" + value.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;").replace(/\n/g, "<br>") + "</p>", ...(prior?.text ? { text: prior.text } : {}), ...(prior?.cssClass ? { cssClass: prior.cssClass } : {}) };
       await host.perform([{ op: "setWorkbookChartTitle", nodeId: chart.nodeId, target, source }], "chart-" + target as ChartDraftGroup);
     });
-    return { target, mode, value, valueType, reset() { changed = false; } };
+    return { target, mode, value, valueType, origin, reset() { changed = false; } };
   });
   function load(chart: DeepReadonly<WorkbookChart> | undefined, snapshot: WorkbookSnapshot): void {
     styleControls.load(chart);
-    available = !!chart; edited.clear(); if (!chart) { refresh(blocked, false); return; } kind = chart.kind;
-    categories = workbookChartVectorDraft(chart.categories); if (!chart.categories) categories.valueType = "text"; categoryControls.load(categories); categoryMode.value = chart.categories ? "source" : "automatic"; categoryContainer.hidden = !chart.categories;
-    series = chart.series.map(item => ({ seriesId: item.seriesId, nameKind: item.name?.kind ?? "none", name: item.name?.kind === "text" ? item.name.text : item.name?.reference.expression ?? "", nameValueType: item.name?.kind === "reference" ? item.name.reference.valueType : "text", values: workbookChartVectorDraft(item.values) }));
+    available = !!chart; edited.clear(); if (!chart) { refresh(blocked, false); return; } kind = chart.kind; originSheets = snapshot.metadata.workbook.sheets;
+    categories = workbookChartVectorDraft(chart.categories); if (!chart.categories) categories.valueType = "text"; categoryControls.load(categories, originSheets); categoryMode.value = chart.categories ? "source" : "automatic"; categoryContainer.hidden = !chart.categories;
+    series = chart.series.map(item => ({ seriesId: item.seriesId, nameKind: item.name?.kind ?? "none", name: item.name?.kind === "text" ? item.name.text : item.name?.reference.expression ?? "", nameValueType: item.name?.kind === "reference" ? item.name.reference.valueType : "text",
+      ...(item.name?.kind === "reference" && item.name.reference.originSheetId !== undefined ? { nameOriginSheetId: item.name.reference.originSheetId } : {}), values: workbookChartVectorDraft(item.values) }));
     showSeries();
     for (const [key, field] of settings) {
       if (key === "labels") continue;
@@ -112,7 +120,7 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
       const source = item.target === "title" ? { nodeId: chart.titleNodeId, reference: chart.titleReference } : item.target === "categoryAxis" ? chart.categoryAxisTitle : chart.valueAxisTitle;
       const node = source?.nodeId ? [...template.content.querySelectorAll<HTMLElement>("[data-node-id]")].find(node => node.getAttribute("data-node-id") === source.nodeId) : undefined;
       if (node) for (const br of node.querySelectorAll("br")) br.replaceWith("\n");
-      item.mode.value = source?.reference ? "reference" : source?.nodeId ? "text" : "none"; item.value.value = source?.reference?.expression ?? node?.textContent ?? ""; item.valueType.value = source?.reference?.valueType ?? "text"; item.reset();
+      item.mode.value = source?.reference ? "reference" : source?.nodeId ? "text" : "none"; item.value.value = source?.reference?.expression ?? node?.textContent ?? ""; item.valueType.value = source?.reference?.valueType ?? "text"; loadOrigins(item.origin, source?.reference?.originSheetId); item.reset();
     }
   }
   function refresh(disabled: boolean, isAvailable = available, composing?: HTMLElement, stale = sourceStale): void {
@@ -122,7 +130,9 @@ export function createWorkbookChartControls(document: Document, parent: HTMLElem
     for (const field of buttons) field.disabled = disabled || stale || !available;
     labels.get("percent")!.disabled ||= kind !== "pie";
     for (const key of ["gapWidth", "overlap", "firstSliceAngle"] as const) settings.get(key)!.disabled ||= key === "firstSliceAngle" ? kind !== "pie" : kind !== "column";
-    name.disabled ||= nameKind.value === "none"; nameValueType.disabled ||= nameKind.value !== "reference"; remove.disabled ||= series.length < 2; up.disabled ||= selected === 0; down.disabled ||= selected >= series.length - 1;
+    name.disabled ||= nameKind.value === "none"; nameValueType.disabled ||= nameKind.value !== "reference"; nameOrigin.disabled ||= nameKind.value !== "reference";
+    for (const item of titleDrafts) item.origin.disabled ||= item.mode.value !== "reference";
+    remove.disabled ||= series.length < 2; up.disabled ||= selected === 0; down.disabled ||= selected >= series.length - 1;
     add.disabled ||= !available; categoryControls.refresh(disabled || !available, composing); valueControls.refresh(disabled || !available, composing);
   }
   return { load, refresh };

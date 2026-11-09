@@ -36,16 +36,16 @@ function withoutCaches<T>(input: T): T {
   }
   visit(value); return value;
 }
-function data(input: WorkbookChartDataInput, allocate: () => string, original?: DeepReadonly<WorkbookChart>): Pick<WorkbookChart, "categories" | "series"> {
+function data(input: WorkbookChartDataInput, allocate: () => string, original?: DeepReadonly<WorkbookChart>, ownerSheetId?: string): Pick<WorkbookChart, "categories" | "series"> {
   const previous = original && WorkbookChartSchema.parse(original);
   const allowed = new Set(original?.series.map(series => series.seriesId)), retained = input.series.flatMap(series => series.seriesId ? [series.seriesId] : []);
   if (new Set(retained).size !== retained.length || retained.some(id => !allowed.has(id))) invalid("Retained series must be distinct identities in the base chart.");
   const preserve = (value: WorkbookChartDataInput["series"][number]["values"], old: DeepReadonly<WorkbookChartDataInput["series"][number]["values"]> | undefined) =>
-    "expression" in value && old && "expression" in old && value.expression === old.expression && value.valueType === old.valueType
+    "expression" in value && old && "expression" in old && value.expression === old.expression && value.valueType === old.valueType && (value.originSheetId ?? ownerSheetId) === (old.originSheetId ?? ownerSheetId)
       ? WorkbookChartVectorSchema.parse(old) : withoutCaches(value);
   return { ...(input.categories ? { categories: preserve(input.categories, original?.categories) } : {}), series: input.series.map(series => {
     const old = previous?.series.find(item => item.seriesId === series.seriesId);
-    const name = series.name?.kind === "reference" && old?.name?.kind === "reference" && series.name.reference.expression === old.name.reference.expression && series.name.reference.valueType === old.name.reference.valueType
+    const name = series.name?.kind === "reference" && old?.name?.kind === "reference" && series.name.reference.expression === old.name.reference.expression && series.name.reference.valueType === old.name.reference.valueType && (series.name.reference.originSheetId ?? ownerSheetId) === (old.name.reference.originSheetId ?? ownerSheetId)
       ? { kind: "reference" as const, reference: WorkbookChartVectorSchema.options[0].parse(old.name.reference) } : series.name && withoutCaches(series.name);
     const item = old ? { ...old } : { seriesId: series.seriesId ?? allocate(), values: withoutCaches(series.values) };
     item.values = preserve(series.values, old?.values); if (name) item.name = name; else delete item.name; return item;
@@ -75,7 +75,7 @@ export function cloneWorkbookDrawing(workbook: WorkbookMetadata, content: Workbo
   for (const link of [...workbook.objectHyperlinks ?? []]) if (cloned.identities.has(link.nodeId)) workbook.objectHyperlinks!.push({ ...copy(link), nodeId: cloned.identities.get(link.nodeId)! });
   return { object: value, identities: cloned.identities };
 }
-export function editWorkbookDrawing(workbook: WorkbookMetadata, content: WorkbookContentEdit, base: WorkbookModel, operation: WorkbookDrawingOperation, allocate: () => string, styles: SourceStyleEdit): void {
+export function editWorkbookDrawing(workbook: WorkbookMetadata, content: WorkbookContentEdit, operation: WorkbookDrawingOperation, allocate: () => string, styles: SourceStyleEdit): void {
   const edit = () => content.edit(), parse = () => content.parse(), object = (id: string) => workbook.objects?.find(object => object.nodeId === id) ?? invalid("An earlier operation removed this drawing.");
   const chartFor = (id: string) => { if (object(id).kind !== "chart") invalid("Chart editing requires a chart drawing."); return workbook.charts?.find(chart => chart.nodeId === id) ?? invalid("The chart definition is missing."); };
   function appearance(nodeId: string, properties: Readonly<Record<string, string>>): void {
@@ -166,7 +166,7 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
     return;
   }
   if (operation.op === "setWorkbookChartData") {
-    const original = base.snapshot().metadata.workbook.charts?.find(value => value.nodeId === current.nodeId), updated = data(operation.data, allocate, original);
+    const updated = data(operation.data, allocate, chart, current.sheetId);
     delete chart.categories; Object.assign(chart, updated);
     const retained = new Set(chart.series.map(series => series.seriesId));
     if (chart.seriesStyles) chart.seriesStyles = chart.seriesStyles.filter(style => retained.has(style.seriesId));
@@ -179,7 +179,7 @@ export function editWorkbookDrawing(workbook: WorkbookMetadata, content: Workboo
     const rich = operation.source !== null && "html" in operation.source ? operation.source : undefined;
     if (old?.nodeId) { if (rich) edit().replaceSourceContent(old.nodeId, rich.html); else edit().removeSource(old.nodeId); }
     const value = operation.source === null ? undefined : rich ? { nodeId: old?.nodeId ?? edit().insertSource(current.nodeId, "<div>" + rich.html + "</div>").rootNodeIds[0]!, ...(rich.text ? { text: copy(rich.text) } : {}), ...(rich.cssClass ? { cssClass: rich.cssClass } : {}) } : "reference" in operation.source ? {
-      ...withoutCaches(operation.source), reference: old?.reference && old.reference.expression === operation.source.reference.expression && old.reference.valueType === operation.source.reference.valueType ? copy(old.reference) : withoutCaches(operation.source.reference),
+      ...withoutCaches(operation.source), reference: old?.reference && old.reference.expression === operation.source.reference.expression && old.reference.valueType === operation.source.reference.valueType && (old.reference.originSheetId ?? current.sheetId) === (operation.source.reference.originSheetId ?? current.sheetId) ? copy(old.reference) : withoutCaches(operation.source.reference),
     } : undefined;
     if (operation.target === "title") {
       delete chart.titleNodeId; delete chart.titleReference; delete chart.titleText; delete chart.titleCssClass;

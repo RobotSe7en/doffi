@@ -87,7 +87,7 @@ export function* buildWorkbookRequestSteps(model: WorkbookModel, input: Workbook
       for (const reference of references) {
         budget.step(); if (!reference) continue;
         if ("expression" in reference) {
-          const at = { sheetId: object.sheetId, row: 0, column: 0 }; discover(reference.expression, at);
+          const at = { sheetId: reference.originSheetId ?? object.sheetId, row: 0, column: 0 }; discover(reference.expression, at);
           const bound = evaluator.referenceAreas(reference.expression, at); if (bound.kind === "ranges") for (const area of bound.areas) add(area);
         } else for (const _point of reference.points) budget.node();
       }

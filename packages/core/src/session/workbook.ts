@@ -206,7 +206,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         for (const value of editWorkbookDefinition(workbook, cells, operation, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedDefinition = true;
       }
-      else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, base, operation, allocate, styles);
+      else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, operation, allocate, styles);
       else if (isWorkbookCommentOperation(operation)) editWorkbookComment(workbook, annotations, richContent, base, operation, allocate);
       else if (operation.op === "copyWorkbookComments") {
         for (const value of copyWorkbookComments(workbook, annotations, richContent, base, operation, allocate, styles, layoutBefore)) yield { kind: "progress", value: { phase: "cells", ...value } };

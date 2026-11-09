@@ -91,7 +91,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     if (!Number.isInteger(change.index) || !Number.isInteger(change.count) || change.index < 0 || change.count <= 0 || change.index + change.count > bound) invalid("Invalid formula axis change.");
   }
   if (change.kind === "renameSheet" && !WorkbookSheetSchema.shape.name.safeParse(change.to).success) invalid("Invalid renamed sheet.");
-  if (change.kind === "copySheet" && (!WorkbookSheetSchema.shape.name.safeParse(change.to).success || !same(from.sheet, change.from) || !same(to.sheet, change.to)
+  if (change.kind === "copySheet" && (!WorkbookSheetSchema.shape.name.safeParse(change.to).success || !(same(from.sheet, change.from) ? same(to.sheet, change.to) : same(to.sheet, from.sheet))
     || from.row !== to.row || from.column !== to.column)) invalid("A worksheet copy requires its source/destination sheets and unchanged cell coordinates.");
   if (change.kind === "renameTable" || change.kind === "renameName") {
     const token = parseFormula("=" + change.to, from);
@@ -215,7 +215,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         const binding = bindings.resolveName?.(node.name, node.sheet || from.sheet, node.sheet !== undefined, node.workbook, node.sheet === "");
         const copiedName = binding === undefined ? undefined : bindings.copiedNames?.get(binding);
         if (copiedName !== undefined) return { kind: "name", name: copiedName,
-          ...(node.sheet === "" ? { sheet: "" } : bindings.definedName || node.sheet !== undefined || node.workbook === 0 ? { sheet: change.to } : {}) };
+          ...(node.sheet === "" ? { sheet: "" } : bindings.definedName || node.sheet !== undefined || node.workbook === 0 || !same(from.sheet, change.from) ? { sheet: change.to } : {}) };
         const table = node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook) ? bindings.copiedTables?.get(node.name.toUpperCase()) : undefined;
         if (table !== undefined) return { ...node, name: table };
       }

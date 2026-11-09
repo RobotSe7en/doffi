@@ -15,9 +15,12 @@ export function chartReferenceExpression(expression: string): FormulaExpression 
   return result;
 }
 export function validateWorkbookCharts(workbook: WorkbookMetadata, objects: ReadonlyMap<string, WorkbookObject>, html: ParsedHtml | undefined, classes: ReadonlySet<string>, maxItems: number): number {
-  const charts = new Map<string, string>(); let items = 0;
+  const charts = new Map<string, string>(), sheets = new Set(workbook.sheets.map(sheet => sheet.sheetId)); let items = 0;
   const vector = (source: WorkbookChartVector): void => {
-    if ("expression" in source) chartReferenceExpression(source.expression);
+    if ("expression" in source) {
+      chartReferenceExpression(source.expression);
+      if (source.originSheetId !== undefined && !sheets.has(source.originSheetId)) invalid("A chart expression origin requires an existing worksheet.");
+    }
     checkLimit(++items, maxItems);
     const cache = "expression" in source ? source.cache : source; if (!cache) return;
     items += cache.count; checkLimit(items, maxItems);

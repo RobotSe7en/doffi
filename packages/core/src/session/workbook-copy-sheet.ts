@@ -86,10 +86,10 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
     if (++work % 256 === 0) yield { completed: work, total: 0 };
   }
   for (const rule of [...added.conditionalRules ?? [], ...added.dataValidations ?? []]) { rule.ruleId = allocate(); if (++work % 256 === 0) yield { completed: work, total: 0 }; }
-  const rewrite = (expression: string, origin: WorkbookCoordinate, named = false) => {
+  const rewrite = (expression: string, origin: WorkbookCoordinate, named = false, contextSheet = source.name) => {
     const bindings: FormulaRewriteBindings = { copiedNames, copiedTables, definedName: named, resolveName: (name, owner, explicit, book, localOnly) => resolve(name, owner, explicit, book, named, localOnly)?.nameId,
       isTableName: (name, owner, book) => !globals?.has(upper(name)) && (book === 0 || named || !scopes.get(sheets.get(upper(owner)))?.has(upper(name))) && tableSheets.has(upper(name)) };
-    return rewriteFormula(expression, { ...origin, sheet: source.name }, { ...origin, sheet: added.name }, { kind: "copySheet", from: source.name, to: added.name }, bindings);
+    return rewriteFormula(expression, { ...origin, sheet: contextSheet }, { ...origin, sheet: contextSheet === source.name ? added.name : contextSheet }, { kind: "copySheet", from: source.name, to: added.name }, bindings);
   };
   for (const definition of definitions) if (copiedNames.has(definition.nameId)) {
     const value = copy(definition); value.nameId = allocate(); value.name = copiedNames.get(definition.nameId)!; value.sheetId = added.sheetId;
@@ -118,7 +118,11 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
   }
   const identities = new Map<string, string>();
   const reference = (value: WorkbookChartReference | undefined): void => {
-    if (!value) return; value.expression = rewrite(value.expression, { row: 0, column: 0 });
+    if (!value) return;
+    const origin = value.originSheetId === undefined ? source : workbook.sheets.find(sheet => sheet.sheetId === value.originSheetId);
+    if (!origin) invalid("A copied chart expression requires its current origin worksheet.");
+    value.expression = rewrite(value.expression, { row: 0, column: 0 }, false, origin.name);
+    if (value.originSheetId === source.sheetId) value.originSheetId = added.sheetId;
     // Unqualified references acquire a new owning worksheet even if their
     // spelling is unchanged. Their historical vectors are never current data.
     if (value.cache) value.cache.state = "stale";

@@ -11,6 +11,9 @@ it("whole-sheet copies rewrite only mapped sheet, name and table identities whil
   const bindings = { copiedNames: new Map([["clone-id", "NewLocal"]]), copiedTables: new Map([["SALES", "Sales_2"]]), resolveName: (name: string) => name === "Cloned" ? "clone-id" : "fixed-id" };
   expect(parseFormula(rewriteFormula(expression, from, to, change, bindings), to)).toEqual(parseFormula('=Copied!$A1+Other!A$1+Copied!NewLocal+[0]!Fixed+SUM(Sales_2[Amount])+"Data!A1"', to));
   expect(() => rewriteFormula(expression, from, { ...to, row: 5 }, change, bindings)).toThrow(); expect(bindings.copiedNames.get("clone-id")).toBe("NewLocal");
+  const external = place(4, 2, "Outside");
+  expect(parseFormula(rewriteFormula('=Data!A1+A1+Cloned+SUM(Sales[Amount])', external, external, change, bindings), external)).toEqual(parseFormula('=Copied!A1+A1+Copied!NewLocal+SUM(Sales_2[Amount])', external));
+  expect(() => rewriteFormula(expression, external, to, change, bindings)).toThrow();
 });
 it("bang names retain local-only identity when native tables are renamed or converted", () => {
   const bindings = { isTableName: () => true };

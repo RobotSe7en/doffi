@@ -20,6 +20,12 @@ test("reference inputs never copy imported cache points into literal data", () =
   draft.expression = "=AnotherName"; draft.mode = "reference";
   expect(readWorkbookChartVectorDraft(draft)).toEqual({ expression: "=AnotherName", valueType: "number" });
 });
+test("reference drafts keep their selected worksheet through expression edits and literal mode does not persist a competing origin", () => {
+  const draft = workbookChartVectorDraft({ expression: "=CallerName", valueType: "number", originSheetId: "original-sheet" });
+  draft.expression = "=AnotherName"; expect(readWorkbookChartVectorDraft(draft)).toEqual({ expression: "=AnotherName", valueType: "number", originSheetId: "original-sheet" });
+  delete draft.originSheetId; expect(readWorkbookChartVectorDraft(draft)).toEqual({ expression: "=AnotherName", valueType: "number" });
+  draft.originSheetId = "explicit-sheet"; draft.mode = "literal"; expect(readWorkbookChartVectorDraft(draft)).toEqual({ kind: "literal", valueType: "number", count: 0, points: [] });
+});
 
 test("literal edits validate exact positions, length and finite values before submission", () => {
   const draft = workbookChartVectorDraft({ kind: "literal", valueType: "number", count: 2, points: [{ index: 1, value: 3 }] });

@@ -16,6 +16,39 @@ declare global { interface Window { workbookEditor: typeof directFixture; workbo
 declare global { interface Window { workbookImageReadGate: { readonly started: boolean; release(): void; restore(): void } } }
 const bundles = new Map<string, string>();
 
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart reference worksheet keeps nested global inputs and supports explicit rebinding with undo`, async ({ page }) => {
+  const cells = ["来源分类", 10, "来源标题", "来源系列"].map((value, column) => ({ row: 0, column, value: typeof value === "number" ? { type: "number" as const, value } : { type: "text" as const, value } }));
+  const s = createDocumentSession(scalarWorkbook(cells)), apply = (operations: Parameters<typeof s.prepare>[0]["operations"]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
+  apply([{ op: "insertWorkbookSheet", name: "Other" }]); const other = s.snapshot().metadata.workbook.sheets[1]!;
+  apply([{ op: "setWorkbookCells", sheetId: other.sheetId, cells: ["目标分类", 99, "目标标题", "目标系列"].map((value, column) => ({ row: 0, column, source: { kind: "value" as const, value: typeof value === "number" ? { type: "number" as const, value } : { type: "text" as const, value } } })) },
+    { op: "setWorkbookDefinedName", name: { nameId: "caller", name: "CallerValue", origin: { row: 0, column: 0 }, expression: "=!$B$1" } },
+    { op: "setWorkbookDefinedName", name: { nameId: "nested", name: "Nested", origin: { row: 0, column: 0 }, expression: "=CallerValue" } },
+    { op: "insertWorkbookChart", sheetId: "sheet-1", anchor: { kind: "one-cell", from: { row: 2, column: 0, offsetXPt: 0, offsetYPt: 0 }, widthPt: 250, heightPt: 150 }, kind: "line", data: {
+      categories: { expression: "=A1", valueType: "text" }, series: [{ name: { kind: "reference", reference: { expression: "=D1", valueType: "text" } }, values: { expression: "=Nested", valueType: "number" } }] } }]);
+  const id = s.snapshot().metadata.workbook.charts![0]!.nodeId;
+  apply([{ op: "setWorkbookChart", nodeId: id, changes: { showLabels: true, labelContents: ["value"] } }, { op: "setWorkbookChartTitle", nodeId: id, target: "title", source: { reference: { expression: "=C1", valueType: "text" } } }]);
+  const files = s.serialize(); s.dispose(); await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { charts: WorkbookChart[]; errors: string[]; history: { undoSteps: number } };
+  const paint = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.displayedChart() : window.workbookEditor.displayedChart(), remote);
+  const choose = async (value: string) => { const input = page.getByLabel("选择单元格或区域", { exact: true }); await input.fill(value); await input.press("Enter"); await settled(); };
+  await choose("A3"); await page.getByRole("button", { name: "剪切选区", exact: true }).click(); await page.getByRole("tab", { name: "Other", exact: true }).click(); await settled();
+  await choose("H20"); await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await settled(); expect(await paint()).toMatchObject({ labels: ["10"], categories: ["来源分类"] });
+  const transported = (await inspect()).charts[0]!; expect(transported.titleReference).toMatchObject({ expression: "=C1", originSheetId: "sheet-1" });
+  await page.getByText("图片、形状与图表", { exact: true }).click(); await page.getByLabel("选择绘图对象", { exact: true }).selectOption(id);
+  for (const name of ["分类数据引用工作表", "系列数值引用工作表", "系列名称引用工作表", "主标题引用工作表"]) await expect(page.getByLabel(name, { exact: true })).toHaveValue("sheet-1");
+  await page.getByLabel("系列数值引用工作表", { exact: true }).selectOption(other.sheetId); await page.getByRole("button", { name: "应用图表数据", exact: true }).click(); await settled();
+  expect(await paint()).toMatchObject({ labels: ["99"], categories: ["来源分类"] }); const updated = (await inspect()).charts[0]!;
+  expect(updated.titleReference).toEqual(transported.titleReference); expect(updated.categories).toEqual(transported.categories); expect(updated.series[0]!.name).toEqual(transported.series[0]!.name);
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await inspect()).toMatchObject({ charts: [transported], errors: [], history: { undoSteps: 1 } }); expect(await paint()).toMatchObject({ labels: ["10"] });
+  await page.getByLabel("主标题引用工作表", { exact: true }).selectOption(other.sheetId); await page.getByRole("button", { name: "应用主标题", exact: true }).click(); await settled();
+  expect((await inspect()).charts[0]!.titleReference).toMatchObject({ originSheetId: other.sheetId });
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await inspect()).toMatchObject({ charts: [transported], errors: [], history: { undoSteps: 1 } });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) for (const fixture of ["08-images-shapes", "07-three-charts"]) test(`${remote ? "Worker" : "direct"} native ${fixture} cut and sort transport physical geometry and retain source inputs`, async ({ page }) => {
   const s = createDocumentSession(openDocument(await importXlsx(readFileSync(`examples/xlsx/${fixture}.xlsx`), { documentId: "browser-drawing-transport" }), { kind: "workbook" }));
   const apply = (operations: Parameters<typeof s.prepare>[0]["operations"]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
