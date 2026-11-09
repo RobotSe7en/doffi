@@ -17,9 +17,9 @@ import { mapWorkbookAxisAnchors } from "./workbook-axis-anchors.js";
 type AxisEdit = Extract<WorkbookOperation, { op: "editWorkbookAxis" }>;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
 function contextualName(node: FormulaExpression, global: boolean): boolean {
-  if (node.kind === "cell") return !node.absoluteRow || !node.absoluteColumn || global && node.sheet === undefined;
+  if (node.kind === "cell") return !node.absoluteRow || !node.absoluteColumn || global && (node.sheet === undefined || node.sheet === "");
   if (node.kind === "range") return contextualName(node.from, global) || contextualName(node.to, global);
-  if (node.kind === "axisRange") return !node.from.absolute || !node.to.absolute || global && node.sheet === undefined;
+  if (node.kind === "axisRange") return !node.from.absolute || !node.to.absolute || global && (node.sheet === undefined || node.sheet === "");
   if (node.kind === "unary") return contextualName(node.operand, global);
   if (node.kind === "binary") return contextualName(node.left, global) || contextualName(node.right, global);
   if (node.kind === "call") return node.arguments.some(argument => argument !== null && contextualName(argument, global));
@@ -75,7 +75,7 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
   const priorNames = new Map(before.names?.map(name => [name.nameId, name]));
   for (const name of workbook.names ?? []) {
     const old = priorNames.get(name.nameId);
-    if (old && old.origin.row === name.origin.row && old.origin.column === name.origin.column && sameFormula(name.expression, old.expression, name.origin, name.sheetId)) name.expression = old.expression;
+    if (old && old.origin.row === name.origin.row && old.origin.column === name.origin.column && sameFormula(name.expression, old.expression, name.origin, name.sheetId, true)) name.expression = old.expression;
   }
   const prior = new Map(priorAnnotations.map(annotation => [annotation.annotationId, annotation]));
   const bounds = (ranges: readonly DeepReadonly<WorkbookRange>[]): string => JSON.stringify(ranges.reduce((span, range) =>

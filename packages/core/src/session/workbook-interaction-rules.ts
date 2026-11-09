@@ -1,3 +1,4 @@
+import { workbookReferences } from "../workbook/reference.js";
 import type { DeepReadonly, TransactionPreparationProgress, WorkbookModel } from "../runtime.js";
 import type { WorkbookInteractionRange } from "../contracts/workbook-interaction.js";
 import type { WorkbookReferenceLocation } from "../workbook/reference.js";
@@ -65,5 +66,5 @@ export function createWorkbookInteractionRuleReader(model: WorkbookModel, budget
 export function workbookInteractionExpression(model: WorkbookModel, expression: string, origin: WorkbookReferenceLocation, at: WorkbookReferenceLocation,
   step: () => void, add: Parameters<typeof workbookExpressionDependencies>[4], onName: NonNullable<Parameters<typeof workbookExpressionDependencies>[7]>["onName"], kernel?: WorkbookScalarKernel): void {
   workbookExpressionDependencies(model, parseFormula(expression, origin), at, step, add, undefined,
-    (text, location) => { const bound = model.resolveReference(text, location); return bound.kind === "unresolved" && kernel ? kernel.referenceAreas(text, location) : bound; }, { includeFilterRanges: false, ...(onName ? { onName } : {}) });
+    (expression, location, context) => { const bound = workbookReferences(model.snapshot().metadata.workbook).resolveExpression(expression, location, context); return bound.kind === "unresolved" && kernel ? kernel.referenceExpression(expression, location, context) : bound; }, { includeFilterRanges: false, ...(onName ? { onName } : {}) });
 }

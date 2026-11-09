@@ -89,14 +89,19 @@ test("copied rule identities, explicit self references and stop validation share
   try { const before = invalid.serialize(); expect(() => apply(invalid, [{ op: "copyWorkbookSheet", sheetId: "sheet-1", name: "Copied" }])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(invalid.serialize()).toEqual(before); expect(invalid.history().undoSteps).toBe(0); } finally { invalid.dispose(); }
 });
 
-test("a new local definition cannot silently make an existing outside global alias ambiguous", () => {
+test("copied aliases bind cloned definitions explicitly while outside global aliases retain their workbook binding", () => {
   const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: value(3) }, { row: 0, column: 1, value: value(999), formula: "=Alias" }], metadata => {
     metadata.workbook.names = [name("Tax", "=Sheet1!$A$1"), name("Alias", "=Tax")];
   }));
   try {
-    s.calculateSync(); expect(s.getCalculatedCell("sheet-1", 0, 1)).toMatchObject({ state: "valid", value: value(3) }); const before = s.serialize();
-    expect(() => apply(s, [{ op: "copyWorkbookSheet", sheetId: "sheet-1", name: "Copied" }])).toThrowError(expect.objectContaining({ code: "InvalidOperation", details: [expect.objectContaining({ code: "copy-name-binding" })] })); expect(s.serialize()).toEqual(before);
-    apply(s, [{ op: "setWorkbookDefinedName", name: name("Alias", "=[0]!Tax") }, { op: "copyWorkbookSheet", sheetId: "sheet-1", name: "Copied" }]); s.calculateSync();
-    expect(s.getCalculatedCell("sheet-1", 0, 1)).toMatchObject({ state: "valid", value: value(3) }); expect(s.history().undoSteps).toBe(1);
+    s.calculateSync(); expect(s.getCalculatedCell("sheet-1", 0, 1)).toMatchObject({ state: "valid", value: value(3) }); const before = s.snapshot();
+    apply(s, [{ op: "copyWorkbookSheet", sheetId: "sheet-1", name: "Copied" }]);
+    const copied = s.snapshot().metadata.workbook.sheets.at(-1)!;
+    expect(s.snapshot().metadata.workbook.names!.find(name => name.nameId === "global-Alias")!.expression).toBe("=Tax");
+    expect(s.snapshot().metadata.workbook.names!.find(name => name.sheetId === copied.sheetId && name.name === "Alias")!.expression).toBe("='Copied'!Tax");
+    apply(s, [{ op: "setWorkbookCells", sheetId: copied.sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: value(19) } }] }]); s.calculateSync();
+    expect(s.getCalculatedCell("sheet-1", 0, 1)).toMatchObject({ state: "valid", value: value(3) });
+    expect(s.getCalculatedCell(copied.sheetId, 0, 1)).toMatchObject({ state: "valid", value: value(19) }); expect(s.history().undoSteps).toBe(2);
+    s.undo(); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
   } finally { s.dispose(); }
 });

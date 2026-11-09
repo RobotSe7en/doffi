@@ -115,7 +115,7 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
     : value.kind === "name" && value.workbook === undefined ? axisOperand(value.name, origin, value.sheet) : value.kind === "number" ? axisOperand(numericTokens.get(value) ?? "", origin) : undefined;
   function sheetReference(input: string): Operand {
     const sheet = input.replace(/^\[0+\]/, "");
-    if (!sheet || /[\[\]\\/:?*\u0000-\u001f]/.test(sheet)) unsupported("Unsupported formula sheet reference.");
+    if (/[\[\]\\/:?*\u0000-\u001f]/.test(sheet)) unsupported("Unsupported formula sheet reference.");
     spaces(); const target = take();
     if (target.kind === "error" && target.text === "#REF!") return { kind: "error", value: "#REF!" };
     if (target.kind === "number") { const axis = axisOperand(target.text, origin, sheet); if (!axis) invalid("Invalid whole-row reference."); return axis; }
@@ -124,7 +124,10 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
   function expression(minimum: number, depth: number, union = true): Operand {
     checkLimit(depth, 128); checkLimit(++nodes, 4096);
     spaces(); const token = take(); let left: Operand;
-    if (token.kind === "operator" && (token.text === "+" || token.text === "-")) left = { kind: "unary", operator: token.text, operand: operand(expression(70, depth + 1, union)) };
+    // The empty sheet denotes the current name-evaluation worksheet (!A1,
+    // !Name). Keep it distinct from an ordinary unqualified identifier.
+    if (token.kind === "operator" && token.text === "!") left = sheetReference("");
+    else if (token.kind === "operator" && (token.text === "+" || token.text === "-")) left = { kind: "unary", operator: token.text, operand: operand(expression(70, depth + 1, union)) };
     else if (token.kind === "operator" && token.text === "(") { left = expression(0, depth + 1); spaces(); consume(")"); }
     else if (token.kind === "number") {
       const value = Number(token.text); if (!Number.isFinite(value)) invalid("Invalid formula numeric constant.");
@@ -139,11 +142,12 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
         if (target.kind !== "word") invalid("A workbook-qualified name requires a name token.");
         const name = reference(target.text, origin); if (name.kind !== "name") invalid("A workbook prefix without a sheet requires a defined name.");
         left = peek().kind === "structured" ? parseStructuredReference(take().text, name.name) : { ...name, workbook: 0 };
-      } else { const sheet = take(); consume("!"); left = sheetReference(sheet.text); }
+      } else { const sheet = take(); if (!sheet.text) invalid("An explicit worksheet qualifier cannot be empty."); consume("!"); left = sheetReference(sheet.text); }
     }
     else if (token.kind === "structured") left = parseStructuredReference(token.text);
     else if (token.kind === "word" || token.kind === "quoted") {
       if (peek().text === "!") {
+        if (!token.text) invalid("An explicit worksheet qualifier cannot be empty.");
         take(); left = sheetReference(token.text);
       } else if (token.kind === "quoted") invalid("Quoted formula sheet names require a reference.");
       else if (peek().kind === "structured") {
@@ -169,7 +173,7 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
     while (true) {
       if (peek().kind === "space") {
         const next = tokens[index + 1]!;
-        if (!(isReference(left) && (["word", "quoted", "structured"].includes(next.kind) || next.text === "("))) { take(); continue; }
+        if (!(isReference(left) && (["word", "quoted", "structured"].includes(next.kind) || next.text === "(" || next.text === "!"))) { take(); continue; }
       }
       if (peek().text === "%" && 60 >= minimum) { take(); left = { kind: "unary", operator: "%", operand: operand(left) }; continue; }
       const operator = peek().text, precedence = operators[operator];

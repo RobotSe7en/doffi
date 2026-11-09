@@ -6,7 +6,7 @@ import { WorkbookDependencyIndex } from "../workbook/dependency-index.js";
 import type { WorkbookDependencyEntry } from "../workbook/dependency-index.js";
 import { workbookExpressionDependencies } from "../workbook/expression-dependencies.js";
 import { parseFormula } from "../workbook/formula.js";
-import { printFormula } from "../workbook/formula-print.js";
+import { workbookReferences, type WorkbookNameContext } from "../workbook/reference.js";
 import type { WorkbookReferenceArea, WorkbookReferenceLocation } from "../workbook/reference.js";
 import { workbookSource } from "../workbook/source.js";
 import type { WorkbookInteractionBudget } from "./workbook-interaction-budget.js";
@@ -41,35 +41,35 @@ export function* workbookInteractionDependencies(model: WorkbookModel, writable:
       for (const formula of source.chunks.get(descriptor.path)!.formulaLocations()) {
         budget.dependency(); const at = { sheetId: descriptor.sheetId, row: formula.row, column: formula.column }, owner = workbookInteractionCellKey(at);
         record = { at, areas: [], nameIds: new Set(), seen: new Set() };
-        const pending = [{ ast: formula.expression, at }], names = new Set<string>();
-        workbookExpressionDependencies(model, formula.expression, at, budget.step, add, undefined, (text, location) => {
-          const bound = model.resolveReference(text, location); return bound.kind === "unresolved" ? kernel.referenceAreas(text, location) : bound;
+        const pending = [{ ast: formula.expression, at, context: {} as WorkbookNameContext }], names = new Set<string>();
+        workbookExpressionDependencies(model, formula.expression, at, budget.step, add, undefined, (expression, location, context) => {
+          const bound = workbookReferences(workbook).resolveExpression(expression, location, context); return bound.kind === "unresolved" ? kernel.referenceExpression(expression, location, context) : bound;
         }, {
-          includeFilterRanges: false, onName: (definition, location) => {
-            record.nameIds.add(definition.nameId); const key = JSON.stringify([definition.nameId, location.sheetId, location.row, location.column]);
-            if (!names.has(key)) { names.add(key); pending.push({ ast: parseFormula(definition.expression, definition.origin), at: { ...location, sheetId: definition.sheetId ?? location.sheetId } }); }
+          includeFilterRanges: false, onName: (definition, location, context) => {
+            record.nameIds.add(definition.nameId); const key = JSON.stringify([definition.nameId, location.sheetId, location.row, location.column, context.unboundSheet === true]);
+            if (!names.has(key)) { names.add(key); pending.push({ ast: parseFormula(definition.expression, definition.origin), at: location, context }); }
           },
         });
         while (pending.length) {
-          budget.step(); const { ast, at: location } = pending.pop()!;
+          budget.step(); const { ast, at: location, context } = pending.pop()!;
           if (ast.kind === "call") {
             const name = ast.name.toUpperCase().replace(/^_XLFN\./, "");
             if (["OFFSET", "INDIRECT", "INDEX"].includes(name)) {
-              const resolved = kernel.referenceAreas(printFormula(ast, location), location);
+              const resolved = kernel.referenceExpression(ast, location, context);
               if (resolved.kind === "ranges") for (const area of resolved.areas) add(area);
             }
             if (name === "SUBTOTAL") {
               const areas: DeepReadonly<WorkbookReferenceArea>[] = [];
               for (const argument of ast.arguments.slice(1)) if (argument) workbookExpressionDependencies(model, argument, location, budget.step, area => areas.push(area), undefined,
-                (text, origin) => kernel.referenceAreas(text, origin), { includeFilterRanges: false });
+                (expression, origin, context) => kernel.referenceExpression(expression, origin, context), { includeFilterRanges: false, context });
               for (const sheet of workbook.sheets) for (const filter of [...sheet.autoFilter ? [sheet.autoFilter] : [], ...sheet.tables?.flatMap(table => table.autoFilter ? [table.autoFilter] : []) ?? []]) {
                 budget.step(); if (!areas.some(area => area.sheetId === sheet.sheetId && workbookContextIntersects(area, filter.range))) continue;
                 for (const column of filter.columns) if (column.criterion && filter.range.from.row < filter.range.to.row) add({ sheetId: sheet.sheetId, from: { row: filter.range.from.row + 1, column: column.column }, to: { row: filter.range.to.row, column: column.column } });
               }
             }
-            for (const argument of ast.arguments) if (argument) pending.push({ ast: argument, at: location });
-          } else if (ast.kind === "unary") pending.push({ ast: ast.operand, at: location });
-          else if (ast.kind === "binary") pending.push({ ast: ast.left, at: location }, { ast: ast.right, at: location });
+            for (const argument of ast.arguments) if (argument) pending.push({ ast: argument, at: location, context });
+          } else if (ast.kind === "unary") pending.push({ ast: ast.operand, at: location, context });
+          else if (ast.kind === "binary") pending.push({ ast: ast.left, at: location, context }, { ast: ast.right, at: location, context });
           else if (ast.kind === "structured") for (const entry of editableTables) {
             budget.step(); const matches = ast.table ? entry.table.name.toUpperCase() === ast.table.toUpperCase() : entry.sheetId === location.sheetId && workbookContextContains([{ sheetId: entry.sheetId, range: entry.table.range }], location.sheetId, location.row, location.column, budget.step);
             if (matches) add({ sheetId: entry.sheetId, from: entry.table.range.from, to: entry.table.range.to });

@@ -4,6 +4,9 @@
 
 ## 基线与当前状态
 
+- Excel 名称批次最终三引擎直连／唯一 Worker 的名称管理、全局剪切、局部复制、整表复制与冲突选择 30 项全部通过（`.cache/workbook-excel-names-three-engine-browser.log`）。完整本地 239 文件／2481 项通过，已完成输入及截图摘要、生成器复核和本次文档链接检查；上下文结构操作、其他编辑组合及最终固定资源门槛继续实施。
+- `0411140a422b942d2ea829c25c0969332b221b03` 已推送，Quick `42558142001` 成功。名称首轮完整本地检查 239 文件／2479 项及全部类型／边界／构建通过（`.cache/workbook-excel-names-complete-check.log`）。随后补 bang 不参与表名改写、上下文标记与实际 `!` 表名的源比较；补测夹具误带名称原点的 sheetId，完整 2481 项中该一项严格校验失败（`.cache/workbook-excel-names-final-complete-check.log`），已修正夹具并通过 2 文件／21 项复核（`.cache/workbook-excel-names-boundary-rechecked-unit.log`）。修正后的最终完整检查 239 文件／2481 项、全部类型／边界／SDK 与 Playground 构建通过（`.cache/workbook-excel-names-rechecked-complete-check.log`），不将失败轮算通过。
+- 当前继续 Excel 实测名称语义：四份独立输入／95 格／八画面无修复的观测已归档；共享原始 AST 的引用／标量／依赖上下文、bang 语法、相对边界回绕、精确全局／局部改名及别名复制已实施。原来的歧义拒绝被实测求值语义替代；上下文名称结构插删守卫保留，尚未宣称 R3-10／12／13 完成。首轮三份原生导入语法失败见 `.cache/workbook-excel-name-semantics-before.log`，实际源与编辑冲突／撤销等 5 文件／42 项及上下文核心 5 文件／50 项通过；跨表编辑器复制及原生检查 6 文件／47 项通过（`.cache/workbook-excel-names-copy-final-unit.log`）。
 - `dc533c31a6d37be9ab8f69a87aac7ccb42b3dd45` 已推送，Quick `42555775296` 成功。实际 Excel 网页版以 `16.0.20706.42304` 对独立最小输入完成 47 格重算观测，所有缓存 999 均改变，四个画面均无修复；来源、摘要、截图及转录存于 [名称求值观测](evidence/excel-web-name-semantics/README.md)。继续补显式限定的上下文与相对引用边界探针；此证据只覆盖求值，未关闭任何结构编辑或桌面 Excel 门槛。
 - `668fc96564a8b0fb65b8aceaae3b4564d8e00b9e` 已推送，Quick `42553558447` 成功，草稿 PR #31 同步提案测量。为 R3-10 名称依据补充实际微软路线：公开 Excel Web Viewer 已打开仓库既有公开样例；既有 workbook-calculation.xlsx 的 C1/C2 缓存 999 在网页显示 3/6，确认重算，但该文件出现 WORKBOOK REPAIRED，只记探测、不作未修复验收（截图 `.cache/office-web-calculation-probe.png`；名称前缀初探 `.cache/office-web-name-prefix-probe.png`）。网页只读入口不等于桌面 Excel 或编辑能力，合并首行／首列删除实测门槛仍在。
 - 新增独立 Python ZIP/XML 生成器 `scripts/generate-excel-web-name-probes.py` 与 `docs/evidence/excel-web-inputs/` 两份最小原生输入及清单；一份故意缓存 999 测重算，另一份 3 张表／45 个消费者区分显式当前表 bang、相对名称及嵌套／局部阴影。输入状态明确 unverified-input，未更改任何旧独立源。生成器 check、Python 编译及官方 Transitional XSD／OPC（两份均通过）已核对。需将公开输入固定在提交 SHA 后用 Microsoft Viewer 打开，先核对修复提示与实际重算，再记录来源、服务版本／日期、结果和修复信息；不能提前删除嵌套全局名歧义守卫。
@@ -256,7 +259,7 @@
 | 编号 | 剩余实现及验收 |
 | --- | --- |
 | R3-09 | 补齐剩余组合的原子事务、结构映射、授权资源、撤销、冲突及取消验证，使用同一会话和历史。 |
-| R3-10 | 相对／未限定及嵌套名称、全局名称上下文和 bang 语法；完整函数参数／类型／错误、1904 与 Unicode／日期边界，以及筛选显示格式和多列／表组合的独立对照；完成 2 万公式与增量编辑验收。 |
+| R3-10 | 相对／嵌套／全局名称和 bang 求值及编辑绑定已补 Excel 网页版 95 格证据，完整上下文结构操作仍待完成；完整函数参数／类型／错误、1904 与 Unicode／日期边界，以及筛选显示格式和多列／表组合的独立对照；完成 2 万公式与增量编辑验收。 |
 | R3-11 | 系统富文本剪贴板、复制经典／现代批注和完整智能表身份；合并区域的选择性粘贴／跳过空白／填充等剩余组合；复杂继承文字格式及跨表名称／结构引用的独立对照。已完成的超链接、条件格式／验证复制及字体中性修复继续保留。 |
 | R3-12 | 上下文名称的行列映射、多行合并排序、部分智能表剪切、表头／筛选表头删除等组合；合并首行／首列删除以 Microsoft Excel 为准，补明确微软依据或实际 Excel 对照后完成验收。该决定已作出，缺少的是证据。 |
 | R3-13 | 智能表、名称、条件格式、验证和全部修改入口的组合及独立验收；当前管理界面和默认／自定义表样式基础继续复用。 |

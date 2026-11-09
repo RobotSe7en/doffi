@@ -28,25 +28,23 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
   for (const definition of definitions) { const scope = scopes.get(definition.sheetId) ?? new Map<string, WorkbookDefinedName>(); scope.set(upper(definition.name), definition); scopes.set(definition.sheetId, scope); if (++work % 256 === 0) yield { completed: work, total: 0 }; }
   const globals = scopes.get(undefined), locals = scopes.get(source.sheetId), tableSheets = new Map(workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => [upper(table.name), sheet.sheetId] as const)));
   const tableObjectTokens = new Set(workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => upper(table.objectName ?? table.name))));
-  const localTokens = new Set(definitions.filter(name => name.sheetId !== undefined).map(name => upper(name.name))), globalTokens = new Map<string, Set<string>>();
-  const resolve = (name: string, owner: string, explicit: boolean, book: 0 | undefined, global: boolean) => {
+  const resolve = (name: string, owner: string, explicit: boolean, book: 0 | undefined, named: boolean, localOnly = false) => {
     if (book === 0) return globals?.get(upper(name));
     const sheetId = sheets.get(upper(owner)), local = sheetId === undefined ? undefined : scopes.get(sheetId)?.get(upper(name));
-    return explicit ? local : global && localTokens.has(upper(name)) ? undefined : (global ? undefined : local) ?? globals?.get(upper(name));
+    return named && !explicit ? globals?.get(upper(name)) : local ?? (localOnly ? undefined : globals?.get(upper(name)));
   };
   const selected = new Set([...locals?.values() ?? []].map(name => name.nameId)), reverse = new Map<string, Set<string>>();
   // A global definition is copied only when its references reach an identity
   // that is being copied. Work through aliases and cycles without evaluation.
   for (const definition of globals?.values() ?? []) {
-    const pending: FormulaExpression[] = [parseFormula(definition.expression, definition.origin)], tokens = new Set<string>(); let direct = false;
+    const pending: FormulaExpression[] = [parseFormula(definition.expression, definition.origin)]; let direct = false;
     while (pending.length) {
       const node = pending.pop()!; if (++work % 256 === 0) yield { completed: work, total: 0 };
       if ((node.kind === "cell" || node.kind === "axisRange") && node.sheet !== undefined && upper(node.sheet) === upper(source.name)) direct = true;
       else if (node.kind === "range") pending.push(node.from, node.to);
       else if (node.kind === "structured" && node.table !== undefined && tableSheets.get(upper(node.table)) === source.sheetId) direct = true;
       else if (node.kind === "name") {
-        if (node.workbook === undefined && node.sheet === undefined) tokens.add(upper(node.name));
-        const dependency = resolve(node.name, node.sheet ?? source.name, node.sheet !== undefined, node.workbook, true);
+        const dependency = resolve(node.name, node.sheet || source.name, node.sheet !== undefined, node.workbook, true, node.sheet === "");
         if (dependency && (dependency.sheetId === undefined || dependency.sheetId === source.sheetId)) {
           const consumers = reverse.get(dependency.nameId) ?? new Set<string>(); consumers.add(definition.nameId); reverse.set(dependency.nameId, consumers);
         } else if (!dependency && node.sheet === undefined && tableSheets.get(upper(node.name)) === source.sheetId) direct = true;
@@ -54,7 +52,6 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
       else if (node.kind === "unary") pending.push(node.operand);
       else if (node.kind === "call") for (const argument of node.arguments) if (argument) pending.push(argument);
     }
-    globalTokens.set(definition.nameId, tokens);
     if (direct) selected.add(definition.nameId);
   }
   const queue = [...selected]; for (let at = 0; at < queue.length; at++) for (const consumer of reverse.get(queue[at]!) ?? []) {
@@ -79,12 +76,6 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
     copiedNames.set(definition.nameId, name); usedLocal.add(upper(name));
   }
   if (choices.size) invalid("Name choices must refer only to actual copied global/local conflicts.");
-  const targetTokens = new Set([...copiedNames.values()].map(upper));
-  // The reader deliberately preserves ambiguous unqualified global aliases.
-  // A copy must not guess a new lexical binding or turn an existing valid
-  // global alias into that unavailable state merely by adding local names.
-  for (const [nameId, tokens] of globalTokens) for (const token of tokens) if (localTokens.has(token) ? selected.has(nameId) : targetTokens.has(token))
-    throw new DocumentError("InvalidOperation", "Copying this sheet requires an explicit workbook or worksheet qualifier in the global name formula.", [{ code: "copy-name-binding", path: [nameId], message: "An unqualified global alias has no verified copied binding." }]);
   const added = copy(source), copiedTables = new Map<string, string>(); added.sheetId = allocate(); added.name = operation.name;
   for (const table of added.tables ?? []) {
     const original = table.name; let serial = 2, name: string;
@@ -94,14 +85,14 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
     if (++work % 256 === 0) yield { completed: work, total: 0 };
   }
   for (const rule of [...added.conditionalRules ?? [], ...added.dataValidations ?? []]) { rule.ruleId = allocate(); if (++work % 256 === 0) yield { completed: work, total: 0 }; }
-  const rewrite = (expression: string, origin: WorkbookCoordinate, global = false) => {
-    const bindings: FormulaRewriteBindings = { copiedNames, copiedTables, resolveName: (name, owner, explicit, book) => resolve(name, owner, explicit, book, global)?.nameId,
-      isTableName: (name, owner, book) => !globals?.has(upper(name)) && (book === 0 || global || !scopes.get(sheets.get(upper(owner)))?.has(upper(name))) && tableSheets.has(upper(name)) };
+  const rewrite = (expression: string, origin: WorkbookCoordinate, named = false) => {
+    const bindings: FormulaRewriteBindings = { copiedNames, copiedTables, definedName: named, resolveName: (name, owner, explicit, book, localOnly) => resolve(name, owner, explicit, book, named, localOnly)?.nameId,
+      isTableName: (name, owner, book) => !globals?.has(upper(name)) && (book === 0 || named || !scopes.get(sheets.get(upper(owner)))?.has(upper(name))) && tableSheets.has(upper(name)) };
     return rewriteFormula(expression, { ...origin, sheet: source.name }, { ...origin, sheet: added.name }, { kind: "copySheet", from: source.name, to: added.name }, bindings);
   };
   for (const definition of definitions) if (copiedNames.has(definition.nameId)) {
     const value = copy(definition); value.nameId = allocate(); value.name = copiedNames.get(definition.nameId)!; value.sheetId = added.sheetId;
-    value.expression = rewrite(definition.expression, definition.origin, definition.sheetId === undefined); (workbook.names ??= []).push(value);
+    value.expression = rewrite(definition.expression, definition.origin, true); (workbook.names ??= []).push(value);
     if (++work % 256 === 0) yield { completed: work, total: 0 };
   }
   for (const rule of [...added.conditionalRules ?? [], ...added.dataValidations ?? []]) {

@@ -11,27 +11,25 @@ export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: Wor
 export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, change: FormulaReferenceChange, options: { readonly preserveRelativeAxis?: boolean } = {}) {
   const tables = workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => ({ name: table.name, sheet: sheet.name,
     range: table.range, header: table.header, totals: table.totals, columns: table.columns.map(column => column.name) })));
-  const sheetNames = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet.name.toUpperCase()])), globalNames = new Map<string, string>(), locals = new Map<string, Map<string, string>>(), localNames = new Set<string>();
+  const sheetNames = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet.name.toUpperCase()])), globalNames = new Map<string, string>(), locals = new Map<string, Map<string, string>>();
   for (const name of workbook.names ?? []) {
     const token = name.name.toUpperCase();
     if (name.sheetId === undefined) globalNames.set(token, name.nameId);
-    else { const owner = sheetNames.get(name.sheetId)!, scope = locals.get(owner) ?? new Map<string, string>(); scope.set(token, name.nameId); locals.set(owner, scope); localNames.add(token); }
+    else { const owner = sheetNames.get(name.sheetId)!, scope = locals.get(owner) ?? new Map<string, string>(); scope.set(token, name.nameId); locals.set(owner, scope); }
   }
   const tableNames = new Set(tables.map(table => table.name.toUpperCase()));
   const movedTables = new Set(change.kind === "move" ? tables.filter(table => table.sheet.toUpperCase() === change.sheet.toUpperCase()
     && rangeContains(change.range, table.range.from.row, table.range.from.column) && rangeContains(change.range, table.range.to.row, table.range.to.column)).map(table => table.name.toUpperCase()) : []);
-  return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, globalContext = false): string {
+  return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, nameContext = false): string {
     const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
-    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, movedTables, ...(table ? { table } : {}),
-      resolveName: (name, owner, explicit, workbook) => {
+    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, movedTables, definedName: nameContext, ...(table ? { table } : {}),
+      resolveName: (name, owner, explicit, workbook, localOnly) => {
         const token = name.toUpperCase();
         if (workbook === 0) return globalNames.get(token);
-        // A workbook definition whose nested name is locally shadowed has no
-        // verified caller scope. Preserve that ambiguity instead of rebinding.
-        if (globalContext && localNames.has(token)) return undefined;
-        return locals.get(owner.toUpperCase())?.get(token) ?? (explicit ? undefined : globalNames.get(token));
+        if (nameContext && !explicit) return globalNames.get(token);
+        return locals.get(owner.toUpperCase())?.get(token) ?? (localOnly ? undefined : globalNames.get(token));
       },
-      isTableName: (name, owner, workbook) => !globalNames.has(name.toUpperCase()) && (workbook === 0 || !locals.get(owner.toUpperCase())?.has(name.toUpperCase())) && tableNames.has(name.toUpperCase()),
+      isTableName: (name, owner, workbook) => !globalNames.has(name.toUpperCase()) && (workbook === 0 || nameContext || !locals.get(owner.toUpperCase())?.has(name.toUpperCase())) && tableNames.has(name.toUpperCase()),
     });
   };
 }
@@ -53,7 +51,7 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
   for (const name of workbook.names ?? []) {
     const sheet = name.sheetId === undefined ? "$workbook" : workbook.sheets.find(sheet => sheet.sheetId === name.sheetId)!.name;
     if (change.kind === "deleteSheet" && sheet === change.sheet) continue;
-    name.expression = rewrite(name.expression, sheet, name.origin, undefined, undefined, name.sheetId === undefined);
+    name.expression = rewrite(name.expression, sheet, name.origin, undefined, undefined, true);
   }
   function sheetReferences(sheet: WorkbookSheet): void {
     for (const rule of [...sheet.conditionalRules ?? [], ...sheet.dataValidations ?? []]) {

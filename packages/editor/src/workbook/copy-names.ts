@@ -28,21 +28,23 @@ export async function createWorkbookNameCopyPlan(workbook: DeepReadonly<Workbook
   }
   const sourceNames = scopes.get(source.sheetId), targetNames = scopes.get(target.sheetId) ?? new Map<string, DeepReadonly<WorkbookDefinedName>>(); scopes.set(target.sheetId, targetNames);
   const planned: WorkbookDefinedName[] = [], originals: DeepReadonly<WorkbookDefinedName>[] = [];
-  const bindings: WorkbookFormulaRewriteBindings = {
-    resolveName: (name, owner, explicit, workbook) => {
+  const bindingsFor = (definedName = false): WorkbookFormulaRewriteBindings => ({
+    definedName,
+    resolveName: (name, owner, explicit, workbook, localOnly) => {
       const token = name.toUpperCase(), local = scopes.get(sheets.get(owner.toUpperCase()) ?? "")?.get(token);
-      return (workbook === 0 ? scopes.get(undefined)?.get(token) : local ?? (explicit ? undefined : scopes.get(undefined)?.get(token)))?.nameId;
+      return (workbook === 0 || definedName && !explicit ? scopes.get(undefined)?.get(token) : local ?? (localOnly ? undefined : scopes.get(undefined)?.get(token)))?.nameId;
     },
-    isTableName: (name, owner, workbook) => !scopes.get(undefined)?.has(name.toUpperCase()) && (workbook === 0 || !scopes.get(sheets.get(owner.toUpperCase()) ?? "")?.has(name.toUpperCase())) && tables.has(name.toUpperCase()),
-  };
-  const copy = (expression: string, from: WorkbookCoordinate, to: WorkbookCoordinate): string => rewriteWorkbookFormula(expression, { ...from, sheet: source.name }, { ...to, sheet: target.name }, { kind: "copy" }, bindings);
+    isTableName: (name, owner, workbook) => !scopes.get(undefined)?.has(name.toUpperCase()) && (workbook === 0 || definedName || !scopes.get(sheets.get(owner.toUpperCase()) ?? "")?.has(name.toUpperCase())) && tables.has(name.toUpperCase()),
+  });
+  const bindings = bindingsFor(), namedBindings = bindingsFor(true);
+  const copy = (expression: string, from: WorkbookCoordinate, to: WorkbookCoordinate, definedName = false): string => rewriteWorkbookFormula(expression, { ...from, sheet: source.name }, { ...to, sheet: target.name }, { kind: "copy" }, definedName ? namedBindings : bindings);
   async function discover(expression: string, origin: WorkbookCoordinate): Promise<void> {
     const pending = [{ expression, origin, includeExplicit: false }];
     while (pending.length) {
       const input = pending.pop()!, stack: WorkbookFormulaExpression[] = [parseWorkbookFormula(input.expression, input.origin)];
       while (stack.length) {
         const waiting = tick(); if (waiting) await waiting; const node = stack.pop()!;
-        if (node.kind === "name" && node.workbook === undefined && (node.sheet === undefined || input.includeExplicit && node.sheet.toUpperCase() === source.name.toUpperCase())) {
+        if (node.kind === "name" && node.workbook === undefined && (node.sheet === "" || node.sheet === undefined && !input.includeExplicit || input.includeExplicit && node.sheet?.toUpperCase() === source.name.toUpperCase())) {
           const token = node.name.toUpperCase(), original = sourceNames?.get(token);
           if (original && !targetNames.has(token)) {
             let nameId: string; do { const waiting = tick(); if (waiting) await waiting; nameId = "copied-name-" + ++serial; } while (used.has(nameId)); used.add(nameId);
@@ -62,7 +64,7 @@ export async function createWorkbookNameCopyPlan(workbook: DeepReadonly<Workbook
       await discover(expression, from);
       while (completed < planned.length) {
         const original = originals[completed]!, clone = planned[completed]!, waiting = tick(); if (waiting) await waiting;
-        clone.expression = rewriteWorkbookFormula(copy(original.expression, original.origin, original.origin), { ...original.origin, sheet: source.name }, { ...original.origin, sheet: target.name }, { kind: "renameSheet", from: source.name, to: target.name }, bindings);
+        clone.expression = rewriteWorkbookFormula(copy(original.expression, original.origin, original.origin, true), { ...original.origin, sheet: source.name }, { ...original.origin, sheet: target.name }, { kind: "renameSheet", from: source.name, to: target.name }, namedBindings);
         budget.account(JSON.stringify(clone).length); completed++;
       }
       budget.guard(); return copy(expression, from, to);

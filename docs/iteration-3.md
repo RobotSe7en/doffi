@@ -6,6 +6,8 @@
 
 当前分支、PR、最近验证和下一步实施位置见[读取交接](workbook-reading-handoff.md)与[编辑计算交接](workbook-editing-handoff.md)，新 session 从这两份记录继续；本文保留完整范围、产品决策和验收门槛。
 
+2026-11-09 补充[实际 Excel 网页版名称求值观测](evidence/excel-web-name-semantics/README.md)：四份独立 Python ZIP/XML 输入、95 格重算和八个无修复提示画面，覆盖全局／局部／嵌套、显式限定与相对边界。它支持 R3-10 的求值实现；上下文名称结构编辑、桌面 Excel/WPS 和阶段容量／审查门槛保持待完成。
+
 ## 目标与已定决策
 
 交付新建或打开 XLSX、人工编辑、区域批注、宿主请求、固定提案审阅应用、撤销重做、XLSX/PDF/PNG/文档包导出，以及外部实际修改后的重新导入。

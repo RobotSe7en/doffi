@@ -12,6 +12,11 @@ it("whole-sheet copies rewrite only mapped sheet, name and table identities whil
   expect(parseFormula(rewriteFormula(expression, from, to, change, bindings), to)).toEqual(parseFormula('=Copied!$A1+Other!A$1+Copied!NewLocal+[0]!Fixed+SUM(Sales_2[Amount])+"Data!A1"', to));
   expect(() => rewriteFormula(expression, from, { ...to, row: 5 }, change, bindings)).toThrow(); expect(bindings.copiedNames.get("clone-id")).toBe("NewLocal");
 });
+it("bang names retain local-only identity when native tables are renamed or converted", () => {
+  const bindings = { isTableName: () => true };
+  expect(rewriteFormula("=SUM(!Sales)", place(), place(), { kind: "renameTable", from: "Sales", to: "Renamed" }, bindings)).toBe("=SUM(!Sales)");
+  expect(rewriteFormula("=SUM(!Sales)", place(), place(), { kind: "convertTable", table: "Sales" }, bindings)).toBe("=SUM(!Sales)");
+});
 it("empty table recipes preserve relative axis offsets while absolute cells, ranges and axes still follow deleted source", () => {
   const operation = { kind: "axis", sheet: "Data", axis: "row", action: "delete", index: 1, count: 3 } as const, origin = place(1);
   const map = (source: string) => parseFormula(rewriteFormula(source, origin, origin, operation, { preserveRelativeAxis: true }), origin);

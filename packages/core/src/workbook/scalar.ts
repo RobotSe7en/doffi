@@ -4,8 +4,7 @@ import type { WorkbookDefinedName } from "../contracts/workbook.js";
 import { checkLimit, freeze } from "../document/validation.js";
 import { parseFormula } from "./formula.js";
 import type { FormulaExpression, FormulaOrigin } from "./formula.js";
-import { printFormula } from "./formula-print.js";
-import type { WorkbookReferenceArea, WorkbookReferenceLocation } from "./reference.js";
+import { workbookReferences, type WorkbookNameContext, type WorkbookReferenceArea, type WorkbookReferenceLocation, type WorkbookReferenceResult } from "./reference.js";
 import { scalarBinary, scalarBlank, scalarError, scalarNumber, scalarToNumber } from "./scalar-values.js";
 import type { ScalarValue } from "./scalar-values.js";
 import { evaluateScalarFunction } from "./scalar-functions.js";
@@ -35,7 +34,8 @@ export interface WorkbookScalarEvaluator {
 }
 /** Internal reference-valued query uses this same evaluator and its budgets. */
 export interface WorkbookScalarKernel extends WorkbookScalarEvaluator {
-  referenceAreas(expression: string, origin: WorkbookReferenceLocation): { readonly kind: "ranges"; readonly areas: readonly DeepReadonly<WorkbookReferenceArea>[] } | { readonly kind: "unresolved"; readonly reason: "calculation-required" };
+  referenceAreas(expression: string, origin: WorkbookReferenceLocation): WorkbookReferenceResult;
+  referenceExpression(expression: FormulaExpression, origin: WorkbookReferenceLocation, context?: WorkbookNameContext): WorkbookReferenceResult;
 }
 export type ScalarEvaluation = ScalarValue | WorkbookScalarUnavailable | { readonly kind: "references"; readonly areas: readonly DeepReadonly<WorkbookReferenceArea>[] };
 export type ScalarResolved = ScalarValue | WorkbookScalarUnavailable;
@@ -73,7 +73,6 @@ export function copyWorkbookScalarContext(context: WorkbookScalarContext = {}): 
 }
 const defaults: WorkbookScalarLimits = Object.freeze({ maxSteps: 1_000_000, maxCells: 250_000, maxDepth: 128, maxCodeUnits: 8 * 1024 * 1024, maxWindowCells: 4096 });
 type SourceCell = Pick<WorkbookCell, "value" | "formula">;
-type Name = DeepReadonly<WorkbookDefinedName>;
 const unavailable = (reason: WorkbookScalarUnavailable["reason"]): WorkbookScalarUnavailable => ({ kind: "unavailable", reason });
 
 /** A bounded, read-only expression kernel shared by rule reading and later
@@ -107,9 +106,8 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
   if (limits.maxDepth > 128) throw new DocumentError("InvalidOperation", "This scalar kernel supports a maximum evaluation depth of 128.");
   let sourceModel: WorkbookModel | undefined = model;
   const documentId = snapshot.manifest.documentId, revision = snapshot.manifest.revision;
-  const sheets = new Map(workbook.sheets.map((sheet, index) => [sheet.sheetId, { sheet, index }])), sheetNames = new Map(workbook.sheets.map(sheet => [sheet.name.toUpperCase(), sheet.sheetId]));
-  const names = new Map((workbook.names ?? []).map(name => [JSON.stringify([name.sheetId ?? null, name.name.toUpperCase()]), name]));
-  const localNames = new Set((workbook.names ?? []).filter(name => name.sheetId !== undefined).map(name => name.name.toUpperCase()));
+  const sheets = new Map(workbook.sheets.map((sheet, index) => [sheet.sheetId, { sheet, index }]));
+  const references = workbookReferences(workbook);
   const chunks = new Map<string, (typeof snapshot.manifest.chunks)[number][]>(workbook.sheets.map(sheet => [sheet.sheetId, []]));
   for (const chunk of snapshot.manifest.chunks) chunks.get(chunk.sheetId)!.push(chunk);
   const parsed = new Map<string, { readonly ast: FormulaExpression; readonly units: number }>(); let parseUnits = 0, disposed = false;
@@ -126,7 +124,7 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
     if (units <= 2 * 1024 * 1024) { parsed.set(key, { ast, units }); parseUnits += units; }
     return ast;
   };
-  function query(start: (visit: (node: FormulaExpression, location: WorkbookReferenceLocation, depth: number, nameContext?: Name) => ScalarEvaluation,
+  function query(start: (visit: (node: FormulaExpression, location: WorkbookReferenceLocation, depth: number, nameContext?: WorkbookNameContext) => ScalarEvaluation,
     readCell: (location: WorkbookReferenceLocation, depth: number) => ScalarResolved) => ScalarEvaluation, location: WorkbookReferenceLocation, options: WorkbookScalarQueryOptions, initialUnits = 0, preserveBlank = false): WorkbookScalarResult {
     checkLocation(location);
     if (Object.keys(options).some(key => !["at", "signal", "maxSteps", "maxCodeUnits"].includes(key)) || options.maxSteps !== undefined
@@ -200,16 +198,8 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
         if (missing) yield { value: scalarBlank, count: missing, reference: true, hasContent: false };
       }
     }
-    function reference(node: FormulaExpression, at: WorkbookReferenceLocation, nameContext?: Name): ScalarEvaluation {
-      if (nameContext && nameContext.sheetId === undefined) {
-        const pending = [node];
-        while (pending.length) {
-          step(); const part = pending.pop()!;
-          if (part.kind === "name" && part.workbook === undefined && part.sheet === undefined && localNames.has(part.name.toUpperCase())) return unavailable("ambiguous-name-scope");
-          if (part.kind === "binary" && [",", " ", ":"].includes(part.operator)) pending.push(part.right, part.left);
-        }
-      }
-      const result = sourceModel!.resolveReference(printFormula(node, at), at);
+    function reference(node: FormulaExpression, at: WorkbookReferenceLocation, nameContext?: WorkbookNameContext): ScalarEvaluation {
+      const result = references.resolveExpression(node, at, nameContext);
       return result.kind === "ranges" ? { kind: "references", areas: result.areas } : result.kind === "error" ? scalarError(result.code) : unavailable(result.reason);
     }
     function* stored(area: DeepReadonly<WorkbookReferenceArea>): Generator<WorkbookReferenceLocation> {
@@ -239,24 +229,22 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
         if (cursor < total) yield { value: scalarBlank, count: total - cursor, reference: true, hasContent: false };
       }
     }
-    function visit(node: FormulaExpression, at: WorkbookReferenceLocation, depth: number, nameContext?: Name): ScalarEvaluation {
+    function visit(node: FormulaExpression, at: WorkbookReferenceLocation, depth: number, nameContext?: WorkbookNameContext): ScalarEvaluation {
       step(depth);
       if (node.kind === "number") return scalarNumber(node.value);
       if (node.kind === "string") { account(node.value.length); return { type: "text", value: node.value }; }
       if (node.kind === "boolean") return { type: "boolean", value: node.value };
       if (node.kind === "error") return scalarError(node.value as Extract<ScalarValue, { type: "error" }>["value"]);
       if (node.kind === "name") {
-        if (node.workbook === undefined && node.sheet === undefined && nameContext?.sheetId === undefined && nameContext && localNames.has(node.name.toUpperCase())) return unavailable("ambiguous-name-scope");
-        const explicit = node.sheet === undefined ? undefined : sheetNames.get(node.sheet.toUpperCase()); if (node.sheet !== undefined && !explicit) return scalarError("#REF!");
-        const scope = explicit ?? nameContext?.sheetId ?? at.sheetId;
-        const definition = node.workbook === 0 ? names.get(JSON.stringify([null, node.name.toUpperCase()]))
-          : names.get(JSON.stringify([scope, node.name.toUpperCase()])) ?? (explicit ? undefined : names.get(JSON.stringify([null, node.name.toUpperCase()])));
-        if (!definition) return reference(node, at, nameContext);
+        const bound = references.bindName(node, at, nameContext);
+        if (bound?.kind === "error") return scalarError(bound.code);
+        if (!bound) return reference(node, at, nameContext);
+        const definition = bound.definition;
         hooks.name?.(definition);
-        const id = key(at), active = namePath.get(definition.nameId) ?? new Set<number>();
+        const id = key(bound.location) * 2 + Number(bound.context.unboundSheet), active = namePath.get(definition.nameId) ?? new Set<number>();
         if (active.has(id)) return unavailable("circular-name");
         active.add(id); namePath.set(definition.nameId, active);
-        try { return visit(parse(definition.expression, definition.origin), { ...at, sheetId: definition.sheetId ?? at.sheetId }, depth + 1, definition); }
+        try { return visit(parse(definition.expression, definition.origin), bound.location, depth + 1, bound.context); }
         finally { active.delete(id); }
       }
       if (node.kind === "cell" || node.kind === "range" || node.kind === "axisRange" || node.kind === "structured"
@@ -288,15 +276,21 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
     step(); const result = scalar(start(visit, readCell), location, 0), identity = { documentId, revision, steps, readCells, codeUnits: units };
     return freeze("type" in result ? { ...identity, kind: "value", value: result.type === "blank" && !preserveBlank ? scalarNumber(0) : result } : { ...identity, ...result });
   }
+  function referenceExpression(expression: FormulaExpression, origin: WorkbookReferenceLocation, context: WorkbookNameContext = {}, units = 0): WorkbookReferenceResult {
+    checkLocation(origin); let result: WorkbookReferenceResult = { kind: "unresolved", reason: "calculation-required" };
+    query(visit => {
+      const value = visit(expression, origin, 0, context);
+      if (!("type" in value) && value.kind === "references") result = { kind: "ranges", areas: value.areas };
+      else if ("type" in value && value.type === "error" && ["#REF!", "#NAME?", "#VALUE!", "#NULL!"].includes(value.value))
+        result = { kind: "error", code: value.value as Extract<WorkbookReferenceResult, { kind: "error" }>["code"] };
+      return scalarBlank;
+    }, origin, {}, units);
+    return freeze(result);
+  }
   return Object.freeze({
+    referenceExpression,
     referenceAreas(expression: string, origin: WorkbookReferenceLocation) {
-      checkLocation(origin); let references: readonly DeepReadonly<WorkbookReferenceArea>[] | undefined;
-      query(visit => {
-        const value = visit(parse(expression, origin), origin, 0);
-        if (!("type" in value) && value.kind === "references") references = value.areas;
-        return scalarBlank;
-      }, origin, {}, expression.length);
-      return references ? { kind: "ranges" as const, areas: references } : { kind: "unresolved" as const, reason: "calculation-required" as const };
+      checkLocation(origin); return referenceExpression(parse(expression, origin), origin, {}, expression.length);
     },
     evaluate(expression: string, origin: WorkbookReferenceLocation, options: WorkbookScalarQueryOptions = {}) {
       if (typeof expression !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new DocumentError("InvalidOperation", "Scalar evaluation requires an expression and query options.");
@@ -307,6 +301,6 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
       if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => key !== "signal" && key !== "maxSteps" && key !== "maxCodeUnits")) throw new DocumentError("InvalidOperation", "Scalar cell query received unsupported options.");
       return query((_visit, readCell) => readCell(location, 0), location, options, 0, true);
     },
-    dispose() { disposed = true; sourceModel = undefined; parsed.clear(); parseUnits = 0; sheets.clear(); sheetNames.clear(); names.clear(); localNames.clear(); chunks.clear(); },
+    dispose() { disposed = true; sourceModel = undefined; parsed.clear(); parseUnits = 0; sheets.clear(); chunks.clear(); },
   });
 }

@@ -1,3 +1,4 @@
+import { workbookReferences, type WorkbookNameContext } from "../workbook/reference.js";
 import type { DeepReadonly, TransactionPrepareOptions, WorkbookModel, WorkbookRangeChange } from "../runtime.js";
 import type { WorkbookDataValidation } from "../contracts/workbook.js";
 import type { WorkbookReferenceLocation } from "../workbook/reference.js";
@@ -11,7 +12,7 @@ import { checkLimit } from "../document/validation.js";
 import { DocumentError } from "../errors.js";
 import { rangeContains } from "./workbook-cells.js";
 import { workbookExpressionDependencies } from "../workbook/expression-dependencies.js";
-import { parseFormula } from "../workbook/formula.js";
+import { parseFormula, type FormulaExpression } from "../workbook/formula.js";
 import { WorkbookDependencyIndex } from "../workbook/dependency-index.js";
 import { workbookExpressionIdentity } from "../workbook/expression-identity.js";
 import type { WorkbookReferenceArea } from "../workbook/reference.js";
@@ -107,9 +108,12 @@ export function* validateWorkbookCandidateSteps(previous: WorkbookModel, model: 
         },
       });
     }
-    function reference(expression: string, at: WorkbookReferenceLocation, collect: (area: DeepReadonly<WorkbookReferenceArea>) => void) {
+    function reference(expression: FormulaExpression, at: WorkbookReferenceLocation, context: WorkbookNameContext, collect: (area: DeepReadonly<WorkbookReferenceArea>) => void) {
       const outer = referenceRead; referenceRead = collect;
-      try { return evaluator.referenceAreas(expression, at); } finally { referenceRead = outer; }
+      try {
+        const bound = workbookReferences(model.snapshot().metadata.workbook).resolveExpression(expression, at, context);
+        return bound.kind === "unresolved" ? evaluator.referenceExpression(expression, at, context) : bound;
+      } finally { referenceRead = outer; }
     }
     function current(location: WorkbookReferenceLocation, kernel = evaluator): WorkbookRuleValue {
       step(); const value = kernel.cell(location); return value.kind === "value" ? { kind: "value", value: value.value } : { kind: "unavailable", reason: value.reason, ...(value.functionName ? { functionName: value.functionName } : {}) };
@@ -151,7 +155,7 @@ export function* validateWorkbookCandidateSteps(previous: WorkbookModel, model: 
       const collect = (area: DeepReadonly<WorkbookReferenceArea>): void => { dependencies.push(area); if (affected.query(area, step).next().done === false) match = true; };
       const expressions = "expression" in rule ? [rule.expression] : rule.formulas;
       for (const expression of expressions) workbookExpressionDependencies(model, parseFormula(expression, rule.origin), location, step, collect,
-        name => { subtotal ||= name === "SUBTOTAL"; }, (expression, at) => reference(expression, at, collect));
+        name => { subtotal ||= name === "SUBTOTAL"; }, (expression, at, context) => reference(expression, at, context, collect));
       if (subtotal && dependencies.some(area => visibility.query(area, step).next().done === false)) match = true;
       return match;
     }

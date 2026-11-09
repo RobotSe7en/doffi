@@ -106,6 +106,22 @@ test("reverse references inside a defined name retain only the used name and its
   expect(request.context.metadata.workbook.names?.map(name => name.nameId)).toEqual(["chosen"]);
 });
 
+test.each([range(0, 0), range(0, 1)])("nested names in unions retain exact native bindings in forward and reverse request context: %j", selected => {
+  const session = setup(scalarWorkbook([
+    { row: 0, column: 0, value: number(999), formula: "=SUM((Alias,$A$2))" }, { row: 0, column: 1, value: number(2) },
+    { row: 1, column: 0, value: number(3) }, { row: 0, column: 2, value: { type: "text", value: "unused local private value" } },
+  ], metadata => { metadata.workbook.names = [
+    { nameId: "inner-global", name: "Inner", expression: "=Sheet1!$B$1", origin: { row: 0, column: 0 } },
+    { nameId: "inner-local", name: "Inner", expression: "=Sheet1!$C$1", sheetId: "sheet-1", origin: { row: 0, column: 0 } },
+    { nameId: "alias", name: "Alias", expression: "=Inner", origin: { row: 0, column: 0 } },
+  ]; }), selected);
+  const before = session.serialize(), request = build(session);
+  expect(request.context.metadata.workbook.names?.map(name => name.nameId).sort()).toEqual(["alias", "inner-global"]);
+  expect(request.context.cells.find(cell => cell.row === 0 && cell.column === 0)?.current).toEqual({ kind: "value", value: number(5) });
+  expect(JSON.stringify(request)).not.toContain("unused local private value");
+  expect(request.context.cells.some(cell => cell.column === 2)).toBe(false); expect(session.serialize()).toEqual(before);
+});
+
 test("outside validation targets and their relative thresholds are read-only dependencies of a threshold edit", () => {
   const session = setup(scalarWorkbook([{ row: 0, column: 0, value: number(4) }, { row: 0, column: 1, value: number(5) }], metadata => {
     metadata.workbook.sheets[0]!.dataValidations = [{ ruleId: "limit", ranges: [range(0, 0, 2, 0)], origin: { row: 0, column: 0 }, kind: "custom", expression: "=A1<=B1", allowBlank: true,

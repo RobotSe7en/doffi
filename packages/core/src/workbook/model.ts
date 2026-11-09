@@ -12,7 +12,7 @@ import { validateWorkbookContent } from "./content.js";
 import { createFormulaTemplatePool } from "./formula.js";
 import { CHUNK_ROWS, CHUNK_COLUMNS, MAX_SHEET_COLUMNS, MAX_SHEET_ROWS, indexWorkbookChunk } from "./chunk-index.js";
 import type { ChunkIndex } from "./chunk-index.js";
-import { WorkbookReferences } from "./reference.js";
+import { workbookReferences } from "./reference.js";
 import { WorkbookCellReadCache } from "./cell-read-cache.js";
 import { WorkbookChunkTextCache } from "./chunk-text-cache.js";
 import { registerWorkbookSource, workbookSource } from "./source.js";
@@ -83,7 +83,7 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
   }
   const snapshot: WorkbookSnapshot = freeze({ manifest, metadata, annotations, styles, ...(content ? { content: { path: manifest.content!, html: content.html } } : {}) });
   const assetPaths = new Set(manifest.assets.map(asset => asset.path));
-  const references = new WorkbookReferences(snapshot.metadata.workbook);
+  const references = workbookReferences(snapshot.metadata.workbook);
   if (content) files.set(manifest.content!, encode(content.html));
   files.set("manifest.json", encode(JSON.stringify(manifest)));
   files.set(manifest.metadata, encode(JSON.stringify(metadata))); files.set(manifest.annotations, encode(JSON.stringify(annotations)));

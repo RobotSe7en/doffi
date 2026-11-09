@@ -12,7 +12,7 @@ export function formulaColumn(column: number): string {
   for (let value = column + 1; value > 0; value = Math.floor((value - 1) / 26)) output = String.fromCharCode(65 + (value - 1) % 26) + output;
   return output;
 }
-const sheetPrefix = (sheet: string | undefined): string => sheet === undefined ? "" : "'" + sheet.replaceAll("'", "''") + "'!";
+const sheetPrefix = (sheet: string | undefined): string => sheet === undefined ? "" : sheet === "" ? "!" : "'" + sheet.replaceAll("'", "''") + "'!";
 
 /** Canonical, fully parenthesized expressions preserve reference precedence. */
 export function printFormula(expression: FormulaExpression, origin: FormulaOrigin): string {

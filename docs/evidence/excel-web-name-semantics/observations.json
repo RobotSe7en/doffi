@@ -389,6 +389,398 @@
           "observed": "#NAME?"
         }
       ]
+    },
+    {
+      "status": "capture-only",
+      "scope": "Synthetic public read-only Excel web view; rendered values require independent inspection. No editing, desktop, WPS or fixed-font visual acceptance.",
+      "source": "https://raw.githubusercontent.com/RobotSe7en/doffi/0411140a422b942d2ea829c25c0969332b221b03/docs/evidence/excel-web-inputs/qualified-context.xlsx",
+      "sourceCommit": "0411140a422b942d2ea829c25c0969332b221b03",
+      "sourceSha256": "488e3b4f377c2f23d3dbe3424854c3da34d64f59209928a14b58412ae4e3d9ff",
+      "observedAt": "2026-11-09T03:46:31.668Z",
+      "officeVersions": [
+        "16.0.20706.42304"
+      ],
+      "states": [
+        {
+          "sheet": "Data",
+          "repair": false,
+          "screenshot": "qualified-context-Data.png",
+          "screenshotSha256": "05b3f4151678481887e49b831a5c57ac937dd8d40b3d158188d52766743a9bc2"
+        },
+        {
+          "sheet": "Other",
+          "repair": false,
+          "screenshot": "qualified-context-Other.png",
+          "screenshotSha256": "a7baffc63255621e627521d9f35032ff7ae26e7822b083ba0e49e7852b403f18"
+        }
+      ],
+      "input": "../excel-web-inputs/qualified-context.xlsx",
+      "cells": [
+        {
+          "sheet": "Data",
+          "cell": "C5",
+          "formula": "Data!ProbeCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C6",
+          "formula": "Other!ProbeCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C7",
+          "formula": "Data!ProbeRelCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C8",
+          "formula": "Other!ProbeRelCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C9",
+          "formula": "Data!ProbeBangAlias",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C10",
+          "formula": "Other!ProbeBangAlias",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C11",
+          "formula": "[0]!ProbeCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C12",
+          "formula": "Data!ProbeLocalCaller",
+          "cache": 999,
+          "observed": 11
+        },
+        {
+          "sheet": "Data",
+          "cell": "C13",
+          "formula": "Data!ProbeLocalRelCaller",
+          "cache": 999,
+          "observed": 23
+        },
+        {
+          "sheet": "Data",
+          "cell": "C14",
+          "formula": "[0]!ProbePlainAlias",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Other",
+          "cell": "C5",
+          "formula": "Data!ProbeCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C6",
+          "formula": "Other!ProbeCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C7",
+          "formula": "Data!ProbeRelCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C8",
+          "formula": "Other!ProbeRelCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C9",
+          "formula": "Data!ProbeBangAlias",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C10",
+          "formula": "Other!ProbeBangAlias",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C11",
+          "formula": "[0]!ProbeCaller",
+          "cache": 999,
+          "observed": "#REF!"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C12",
+          "formula": "Data!ProbeLocalCaller",
+          "cache": 999,
+          "observed": 11
+        },
+        {
+          "sheet": "Other",
+          "cell": "C13",
+          "formula": "Data!ProbeLocalRelCaller",
+          "cache": 999,
+          "observed": 23
+        },
+        {
+          "sheet": "Other",
+          "cell": "C14",
+          "formula": "[0]!ProbePlainAlias",
+          "cache": 999,
+          "observed": 30
+        }
+      ]
+    },
+    {
+      "status": "capture-only",
+      "scope": "Synthetic public read-only Excel web view; rendered values require independent inspection. No editing, desktop, WPS or fixed-font visual acceptance.",
+      "source": "https://raw.githubusercontent.com/RobotSe7en/doffi/0411140a422b942d2ea829c25c0969332b221b03/docs/evidence/excel-web-inputs/relative-bounds.xlsx",
+      "sourceCommit": "0411140a422b942d2ea829c25c0969332b221b03",
+      "sourceSha256": "9ca16f907a2f8cb873cd83397b0c81b855ea7334cc6963fa57273c1fbc4dcbb0",
+      "observedAt": "2026-11-09T03:46:59.108Z",
+      "officeVersions": [
+        "16.0.20706.42304"
+      ],
+      "states": [
+        {
+          "sheet": "Data",
+          "repair": false,
+          "screenshot": "relative-bounds-Data.png",
+          "screenshotSha256": "ff4dbd0f8898dbcd41f03308bf81566c553fb3c86128b061c73e6286188aa442"
+        },
+        {
+          "sheet": "Other",
+          "repair": false,
+          "screenshot": "relative-bounds-Other.png",
+          "screenshotSha256": "5f3f51c466b6ef3caa865966c7b348a6b5866ca3f078577fe7a25bd2a422e4c7"
+        }
+      ],
+      "input": "../excel-web-inputs/relative-bounds.xlsx",
+      "cells": [
+        {
+          "sheet": "Data",
+          "cell": "C5",
+          "formula": "ProbeNegRow",
+          "cache": 999,
+          "observed": 14
+        },
+        {
+          "sheet": "Data",
+          "cell": "C6",
+          "formula": "ProbeNegColumn",
+          "cache": 999,
+          "observed": 210
+        },
+        {
+          "sheet": "Data",
+          "cell": "C7",
+          "formula": "ProbeNegBoth",
+          "cache": 999,
+          "observed": "ProbeNegColumn"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C8",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 33
+        },
+        {
+          "sheet": "Data",
+          "cell": "C9",
+          "formula": "ROW(ProbeNegWholeRow)",
+          "cache": 999,
+          "observed": 8
+        },
+        {
+          "sheet": "Data",
+          "cell": "C10",
+          "formula": "ROWS(ProbeNegWholeRow)",
+          "cache": 999,
+          "observed": 1
+        },
+        {
+          "sheet": "Data",
+          "cell": "C11",
+          "formula": "COLUMNS(ProbeNegWholeRow)",
+          "cache": 999,
+          "observed": 16384
+        },
+        {
+          "sheet": "Data",
+          "cell": "G1",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 1665
+        },
+        {
+          "sheet": "Data",
+          "cell": "G2",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 3833
+        },
+        {
+          "sheet": "Data",
+          "cell": "G3",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 23
+        },
+        {
+          "sheet": "Data",
+          "cell": "G4",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 25
+        },
+        {
+          "sheet": "Data",
+          "cell": "B2",
+          "formula": "SUM(ProbeNegColumns)",
+          "cache": 999,
+          "observed": 3289
+        },
+        {
+          "sheet": "Data",
+          "cell": "C2",
+          "formula": "SUM(ProbeNegColumns)",
+          "cache": 999,
+          "observed": 221
+        },
+        {
+          "sheet": "Data",
+          "cell": "A31",
+          "formula": "SUM(ProbeNegColumns)",
+          "cache": 999,
+          "observed": 1403
+        },
+        {
+          "sheet": "Other",
+          "cell": "C5",
+          "formula": "ProbeNegRow",
+          "cache": 999,
+          "observed": 14
+        },
+        {
+          "sheet": "Other",
+          "cell": "C6",
+          "formula": "ProbeNegColumn",
+          "cache": 999,
+          "observed": 210
+        },
+        {
+          "sheet": "Other",
+          "cell": "C7",
+          "formula": "ProbeNegBoth",
+          "cache": 999,
+          "observed": "ProbeNegColumn"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C8",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 33
+        },
+        {
+          "sheet": "Other",
+          "cell": "C9",
+          "formula": "ROW(ProbeNegWholeRow)",
+          "cache": 999,
+          "observed": 8
+        },
+        {
+          "sheet": "Other",
+          "cell": "C10",
+          "formula": "ROWS(ProbeNegWholeRow)",
+          "cache": 999,
+          "observed": 1
+        },
+        {
+          "sheet": "Other",
+          "cell": "C11",
+          "formula": "COLUMNS(ProbeNegWholeRow)",
+          "cache": 999,
+          "observed": 16384
+        },
+        {
+          "sheet": "Other",
+          "cell": "G1",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 1665
+        },
+        {
+          "sheet": "Other",
+          "cell": "G2",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 3833
+        },
+        {
+          "sheet": "Other",
+          "cell": "G3",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 23
+        },
+        {
+          "sheet": "Other",
+          "cell": "G4",
+          "formula": "SUM(ProbeNegRange)",
+          "cache": 999,
+          "observed": 25
+        },
+        {
+          "sheet": "Other",
+          "cell": "B2",
+          "formula": "SUM(ProbeNegColumns)",
+          "cache": 999,
+          "observed": 3289
+        },
+        {
+          "sheet": "Other",
+          "cell": "C2",
+          "formula": "SUM(ProbeNegColumns)",
+          "cache": 999,
+          "observed": 221
+        },
+        {
+          "sheet": "Other",
+          "cell": "A31",
+          "formula": "SUM(ProbeNegColumns)",
+          "cache": 999,
+          "observed": 1403
+        }
+      ]
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { workbookReferences } from "../workbook/reference.js";
 import type { DeepReadonly, TransactionPreparationProgress, WorkbookModel } from "../runtime.js";
 import type { WorkbookReferenceArea } from "../workbook/reference.js";
 import type { WorkbookScalarContext } from "../workbook/scalar.js";
@@ -45,7 +46,7 @@ export function* workbookInteractionRuleImpact(model: WorkbookModel, impact: rea
         budget.dependency(); seen.add(key); references = []; let subtotal = false;
         const at = { sheetId: sheet.sheetId, row, column };
         for (const ast of parsed) workbookExpressionDependencies(model, ast, at, budget.step, collect, name => { subtotal ||= name === "SUBTOTAL"; },
-          (text, location) => { const bound = model.resolveReference(text, location); return bound.kind === "unresolved" ? kernel.referenceAreas(text, location) : bound; }, { includeFilterRanges: false });
+          (expression, location, context) => { const bound = workbookReferences(workbook).resolveExpression(expression, location, context); return bound.kind === "unresolved" ? kernel.referenceExpression(expression, location, context) : bound; }, { includeFilterRanges: false });
         if (subtotal) {
           const inputs = [...references];
           for (const source of workbook.sheets) for (const filter of [...source.autoFilter ? [source.autoFilter] : [], ...source.tables?.flatMap(table => table.autoFilter ? [table.autoFilter] : []) ?? []]) {

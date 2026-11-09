@@ -21,13 +21,13 @@ function setup(expression: string, names: WorkbookDefinedName[]) {
 }
 test("copied local alias graphs rebase their own sheet, retain external and global bindings, and reuse existing target locals", async () => {
   const main = { ...definition("Main", "=Sheet1!Branch+Tax+Outside!$A$1", "sheet-1"), hidden: true, description: "中文禰󠄀" };
-  const s = setup("=Sheet1!Leaf+[0]!Tax+Main+A1", [main, definition("Branch", "=Leaf+Sheet1!$A$1", "sheet-1"), definition("Leaf", "=$A$1+1", "sheet-1"), definition("Tax", "=3"), definition("Tax", "=900", "target"), definition("Leaf", "=17", "target")]);
+  const s = setup("=Sheet1!Leaf+[0]!Tax+Main+A1", [main, definition("Branch", "=!Leaf+Sheet1!$A$1", "sheet-1"), definition("Leaf", "=$A$1+1", "sheet-1"), definition("Tax", "=3"), definition("Tax", "=900", "target"), definition("Leaf", "=17", "target")]);
   try {
     const before = s.snapshot(), tx = await createWorkbookRangeCopyTransaction(s, "sheet-1", area, destination, { targetSheetId: "target" });
     const names = tx.operations.flatMap(op => op.op === "setWorkbookDefinedName" ? [op.name] : []); expect(names.map(name => name.name)).toEqual(["Main", "Branch"]);
     expect(names[0]).toMatchObject({ hidden: true, description: main.description, sheetId: "target", origin: main.origin });
-    expect(parseWorkbookFormula(names[0]!.expression, main.origin)).toEqual(parseWorkbookFormula("=Target!Branch+[0]!Tax+Outside!$A$1", main.origin));
-    expect(parseWorkbookFormula(names[1]!.expression, main.origin)).toEqual(parseWorkbookFormula("=Leaf+Target!$A$1", main.origin));
+    expect(parseWorkbookFormula(names[0]!.expression, main.origin)).toEqual(parseWorkbookFormula("=Target!Branch+Tax+Outside!$A$1", main.origin));
+    expect(parseWorkbookFormula(names[1]!.expression, main.origin)).toEqual(parseWorkbookFormula("=!Leaf+Target!$A$1", main.origin));
     s.commit(s.prepare(tx)); s.calculateSync(); expect(s.getCalculatedCell("target", destination.row, destination.column)).toMatchObject({ value: number(45) });
     expect(s.snapshot().metadata.workbook.names!.filter(name => before.metadata.workbook.names!.some(old => old.nameId === name.nameId))).toEqual(before.metadata.workbook.names);
     expect(s.history().undoSteps).toBe(1); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
@@ -40,8 +40,18 @@ test("explicit source locals and existing target aliases do not clone unused nam
     s.commit(s.prepare(tx)); s.calculateSync(); expect(s.getCalculatedCell("target", destination.row, destination.column)).toMatchObject({ value: number(21) });
   } finally { s.dispose(); }
 });
+test("bare names inside cloned local definitions retain global binding without cloning a same-named local", async () => {
+  const s = setup("=Main", [definition("Main", "=Leaf", "sheet-1"), definition("Leaf", "=4", "sheet-1"), definition("Leaf", "=9")]);
+  try {
+    const before = s.snapshot(), tx = await createWorkbookRangeCopyTransaction(s, "sheet-1", area, destination, { targetSheetId: "target" });
+    const names = tx.operations.flatMap(op => op.op === "setWorkbookDefinedName" ? [op.name] : []);
+    expect(names.map(name => name.name)).toEqual(["Main"]); expect(names[0]!.expression).toBe("=Leaf");
+    s.commit(s.prepare(tx)); s.calculateSync(); expect(s.getCalculatedCell("target", destination.row, destination.column)).toMatchObject({ value: number(9) });
+    s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+  } finally { s.dispose(); }
+});
 test("cyclic aliases reserve distinct identities once and preserve the cycle in one undo", async () => {
-  const s = setup("=CycleA", [definition("CycleA", "=CycleB", "sheet-1"), definition("CycleB", "=Sheet1!CycleA", "sheet-1"), { ...definition("Unused", "=1"), nameId: "copied-name-1" }]);
+  const s = setup("=CycleA", [definition("CycleA", "=!CycleB", "sheet-1"), definition("CycleB", "=Sheet1!CycleA", "sheet-1"), { ...definition("Unused", "=1"), nameId: "copied-name-1" }]);
   try {
     const before = s.snapshot(), tx = await createWorkbookRangeCopyTransaction(s, "sheet-1", area, destination, { targetSheetId: "target" });
     const names = tx.operations.flatMap(op => op.op === "setWorkbookDefinedName" ? [op.name] : []); expect(names.map(name => name.nameId)).toEqual(["copied-name-2", "copied-name-3"]);
@@ -50,7 +60,7 @@ test("cyclic aliases reserve distinct identities once and preserve the cycle in 
   } finally { s.dispose(); }
 });
 test("large local-name graph work is cancellable, bounded and revision guarded before any edits publish", async () => {
-  const names = Array.from({ length: 320 }, (_, index) => definition("Alias_" + index, index === 319 ? "=$A$1" : "=Alias_" + (index + 1), "sheet-1"));
+  const names = Array.from({ length: 320 }, (_, index) => definition("Alias_" + index, index === 319 ? "=$A$1" : "=!Alias_" + (index + 1), "sheet-1"));
   const s = setup("=Alias_0", names);
   try {
     const before = s.serialize(), signal = { aborted: false };

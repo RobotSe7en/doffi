@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorkbook, openDocument } from "../src/index.js";
 import type { WorkbookMetadata, WorkbookDocumentMetadata } from "../src/index.js";
+import { createWorkbookFormulaEquivalence } from "../src/workbook/formula-equivalence.js";
 
 const origin = { sheetId: 'sheet-1', row: 0, column: 0 };
 const area = (row: number, column: number, endRow = row, endColumn = column, sheetId = 'sheet-1') => ({ sheetId, from: { row, column }, to: { row: endRow, column: endColumn } });
@@ -36,8 +37,8 @@ describe('bounded current-source reference binding', () => {
     expect(book.resolveReference('=Unqualified', caller)).toEqual(ranges(area(3, 0, 3, 0, 'second')));
     expect(book.resolveReference('=Scoped', origin)).toEqual(ranges(area(1, 0)));
     expect(book.resolveReference('=Scoped', caller)).toEqual(ranges(area(0, 0, 0, 0, 'second')));
-    expect(book.resolveReference('=Data!LocalChain', caller)).toEqual(ranges(area(1, 0)));
-    expect(book.resolveReference('=Data!Unqualified', caller)).toEqual({ kind: 'error', code: '#NAME?' });
+    expect(book.resolveReference('=Data!LocalChain', caller)).toEqual(ranges(area(0, 0)));
+    expect(book.resolveReference('=Data!Unqualified', caller)).toEqual(ranges(area(3, 0, 3, 0, 'second')));
     const result = book.resolveReference('=Relative', caller); expect(Object.isFrozen(result)).toBe(true);
     if (result.kind === 'ranges') expect(Object.isFrozen(result.areas[0]?.from)).toBe(true);
     expect(openDocument(book.serialize(), { kind: 'workbook' }).resolveReference('=Relative', caller)).toEqual(result);
@@ -62,21 +63,41 @@ describe('bounded current-source reference binding', () => {
     expect(book.resolveReference('=Sales[@Amount]', origin)).toEqual({ kind: 'error', code: '#VALUE!' });
     expect(book.resolveReference('=Sales[Missing]', origin)).toEqual({ kind: 'error', code: '#REF!' });
   });
-  it('reports computation, cycles and uncertain global nested-name scope without guessing results', () => {
+  it('reports computation and cycles while binding native nested names to the workbook', () => {
     const book = model(workbook => { workbook.names = [
       { nameId: 'cycle-a', name: 'CycleA', expression: '=CycleB', origin }, { nameId: 'cycle-b', name: 'CycleB', expression: '=CycleA', origin },
       { nameId: 'chain', name: 'Chain', expression: '=Scoped', origin }, { nameId: 'scoped', name: 'Scoped', sheetId: 'sheet-1', expression: '=$A$1', origin },
       { nameId: 'relative', name: 'Relative', expression: '=A1', origin: { row: 10, column: 10 } },
     ].map(name => ({ ...name, origin: { row: name.origin.row, column: name.origin.column } })); });
     expect(book.resolveReference('=CycleA', origin)).toEqual({ kind: 'unresolved', reason: 'circular-name' });
-    expect(book.resolveReference('=Chain', origin)).toEqual({ kind: 'unresolved', reason: 'ambiguous-name-scope' });
+    expect(book.resolveReference('=Chain', origin)).toEqual({ kind: 'error', code: '#NAME?' });
     expect(book.resolveReference('=OFFSET(A1,1,0)', origin)).toEqual({ kind: 'unresolved', reason: 'calculation-required' });
     expect(book.resolveReference('=MissingName', origin)).toEqual({ kind: 'error', code: '#NAME?' });
-    expect(book.resolveReference('=Relative', origin)).toEqual({ kind: 'error', code: '#REF!' });
+    expect(book.resolveReference('=Relative', origin)).toEqual(ranges(area(1_048_566, 16_374)));
   });
   it('bounds recursive unions before expanding an exponential name graph', () => {
     const book = model(workbook => { workbook.names = Array.from({ length: 15 }, (_, i) => ({ nameId: `n-${i}`, name: `Range_${i}`, origin: { row: 0, column: 0 }, expression: i ? `=(Range_${i - 1},Range_${i - 1})` : '=A1' })); });
     expect(() => book.resolveReference('=Range_14', origin)).toThrowError(expect.objectContaining({ code: 'ResourceLimitExceeded' }));
     expect(book.resolveReference('=Range_0', origin)).toEqual(ranges(area(0, 0)));
+  });
+  it('distinguishes changing name contexts from cycles', () => {
+    const book = model(workbook => { workbook.names = [
+      { nameId: 'global', name: 'Parent', expression: '=!Local', origin },
+      { nameId: 'local', name: 'Local', sheetId: 'sheet-1', expression: '=[0]!Parent', origin },
+    ].map(name => ({ ...name, origin: { row: 0, column: 0 } })); });
+    expect(book.resolveReference('=Parent', origin)).toEqual({ kind: 'error', code: '#REF!' });
+    expect(book.resolveReference('=Parent', { ...origin, sheetId: 'second' })).toEqual({ kind: 'error', code: '#NAME?' });
+  });
+  it('source restoration distinguishes bang context, a worksheet named bang and explicitly qualified global names', () => {
+    const book = model(workbook => {
+      workbook.sheets[1]!.name = '!';
+      workbook.names = [{ nameId: 'global', name: 'Caller', expression: '=!$A$1', origin: { row: 0, column: 0 } }];
+    });
+    const equal = createWorkbookFormulaEquivalence(book.snapshot().metadata.workbook);
+    expect(equal('=!$A$1', "='!'!$A$1", origin, origin.sheetId)).toBe(false);
+    expect(equal('=SUM(!A:A)', "=SUM('!'!A:A)", origin, origin.sheetId)).toBe(false);
+    expect(equal('=Caller', '=[0]!Caller', origin, origin.sheetId)).toBe(false);
+    expect(equal('=Caller', '=Data!Caller', origin, origin.sheetId)).toBe(false);
+    expect(equal('=[0]!Caller', '=Data!Caller', origin, origin.sheetId)).toBe(true);
   });
 });
