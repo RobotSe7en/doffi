@@ -19,6 +19,7 @@ import type { WorkbookReferenceArea } from "../workbook/reference.js";
 import type { WorkbookScalarKernel } from "../workbook/scalar.js";
 import type { WorkbookCalculationResult } from "../workbook/calculation.js";
 import type { WorkbookPreparation, WorkbookPreparationStep } from "./workbook-preparation.js";
+import { workbookFilterFormatImpact } from "./workbook-filter-format-impact.js";
 
 /** All cell-writing entry points validate the final candidate through this
  * shared rule implementation. Unsupported stop conditions never mean pass. */
@@ -50,11 +51,15 @@ export function* validateWorkbookCandidateSteps(previous: WorkbookModel, model: 
     if (signature(previous, before) !== signature(model, after)) changes.push({ sheetId: change.sheetId, range: { from: { row, column }, to: { row, column } } });
     yield* checkpoint();
   }
-  if (!changes.length && !changedRules.size && !visibilityChanges.length) return true;
   const limits = DEFAULT_WORKBOOK_RULE_LIMITS;
   let steps = 0, units = 0, cells = 0;
   const step = (): void => checkLimit(++steps, limits.maxSteps);
   const account = (amount: number): void => { units += amount; checkLimit(units, limits.maxCodeUnits); };
+  const formatImpact = workbookFilterFormatImpact(previous, model, sourceRanges, step); let formatVisibility: WorkbookRangeChange[];
+  try {
+    for (;;) { const next = formatImpact.next(); if (next.done) { formatVisibility = next.value; break; } yield* checkpoint(); }
+  } finally { formatImpact.return([]); }
+  if (!changes.length && !changedRules.size && !visibilityChanges.length && !formatVisibility.length) return true;
   let currentModel = previous;
   const calculator = createWorkbookCalculator(() => currentModel, { maxSteps: limits.maxSteps, maxReadCells: limits.maxValues, maxCodeUnits: limits.maxCodeUnits });
   let disposableEvaluator: WorkbookScalarKernel | undefined, previousEvaluator: WorkbookScalarKernel | undefined;
@@ -68,7 +73,7 @@ export function* validateWorkbookCandidateSteps(previous: WorkbookModel, model: 
     const beforeValues = new Map(beforeCalculation.cells.map(cell => [cellKey(cell), cell.state === "valid" ? JSON.stringify(cell.value) : cell.state === "unavailable" ? JSON.stringify(cell.issue) : "stale"]));
     const derived = calculation.cells.filter(cell => beforeValues.get(cellKey(cell)) !== (cell.state === "valid" ? JSON.stringify(cell.value) : cell.state === "unavailable" ? JSON.stringify(cell.issue) : "stale"));
     const affected = new WorkbookDependencyIndex([...changes.map(change => ({ area: { sheetId: change.sheetId, ...change.range }, owner: "source" })), ...derived.map(cell => ({ area: { sheetId: cell.sheetId, from: cell, to: cell }, owner: "calculated" }))], step);
-    const visibilityRanges: WorkbookRangeChange[] = [];
+    const visibilityRanges: WorkbookRangeChange[] = [...formatVisibility];
     for (const sheet of visibilityChanges) {
       const old = prior.metadata.workbook.sheets.find(item => item.sheetId === sheet.sheetId);
       const left = old?.rowDimensions.filter(span => span.hidden !== undefined) ?? [], right = sheet.rowDimensions.filter(span => span.hidden !== undefined);

@@ -23,17 +23,25 @@ test.beforeAll(async () => {
 interface Inspection { readonly annotations: WorkbookSnapshot["annotations"]; readonly comments: NonNullable<WorkbookSnapshot["metadata"]["workbook"]["comments"]>; readonly content: string; readonly errors: readonly string[] }
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} native dual note boxes follow sorted and cross-sheet cut cells through actual font measurement`, async ({ page }) => {
   const s = createDocumentSession(openDocument(await importXlsx(readFileSync("packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx"), { documentId: "browser-note-transport" }), { kind: "workbook" }));
-  const apply = (operations: Parameters<typeof s.prepare>[0]["operations"]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
   const source = s.snapshot().metadata.workbook.sheets[0]!, original = s.snapshot().metadata.workbook.comments![0]!;
   if (original.format !== "classic") throw Error("Expected original native classic note");
-  apply([{ op: "insertWorkbookSheet", name: "Other" }, { op: "setWorkbookNoteBox", annotationId: original.annotationId, box: { ...original.box!, visible: true } },
-    { op: "setWorkbookCells", sheetId: source.sheetId, cells: [3, 1, 2].map((value, index) => ({ row: index + 1, column: 1, source: { kind: "value" as const, value: { type: "number" as const, value } } })) }]);
-  const otherId = s.snapshot().metadata.workbook.sheets.at(-1)!.sheetId;
-  apply([{ op: "updateWorkbookSheet", sheetId: otherId, changes: { defaultRowHeightPt: 30, defaultRowHeightCustom: true, defaultColumnWidth: 12 } }]);
   const initial = s.snapshot(), bodyId = initial.annotations[0]!.bodyNodeId!, files = s.serialize(); s.dispose();
   await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
   if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
   else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  // Prepare the sort keys and destination through the mounted production
+  // measurer too: the imported alternate note box has a fixed size response.
+  await page.evaluate(({ remote, sheetId, original }) => {
+    const view = remote ? window.workbookRemoteEditor : window.workbookEditor;
+    return view.perform([{ op: "insertWorkbookSheet", name: "Other" }, { op: "setWorkbookNoteBox", annotationId: original.annotationId, box: { ...original.box!, visible: true } },
+      { op: "setWorkbookCells", sheetId, cells: [3, 1, 2].map((value, index) => ({ row: index + 1, column: 1, source: { kind: "value" as const, value: { type: "number" as const, value } } })) }]).then(() => {});
+  }, { remote, sheetId: source.sheetId, original });
+  const state = await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { sheets: WorkbookSnapshot["metadata"]["workbook"]["sheets"] };
+  const otherId = state.sheets.at(-1)!.sheetId;
+  await page.evaluate(({ remote, otherId }) => {
+    const view = remote ? window.workbookRemoteEditor : window.workbookEditor;
+    return view.perform([{ op: "updateWorkbookSheet", sheetId: otherId, changes: { defaultRowHeightPt: 30, defaultRowHeightCustom: true, defaultColumnWidth: 12 } }]).then(() => {});
+  }, { remote, otherId });
   const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
   const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as Inspection & { history: { undoSteps: number } };
   const choose = async (value: string) => { const address = page.getByLabel("选择单元格或区域", { exact: true }); await address.fill(value); await address.press("Enter"); await settled(); };
@@ -46,21 +54,21 @@ for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} native
   await choose("B2"); const before = await geometry(1, 1), beforeState = await inspect();
   await page.getByRole("button", { name: "剪切选区", exact: true }).click(); await page.getByRole("tab", { name: "Other", exact: true }).click(); await settled();
   await choose("H20"); await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await settled();
-  expect(await inspect()).toMatchObject({ errors: [], history: { undoSteps: 1 }, annotations: [{ anchor: { sheetId: otherId } }] });
+  expect(await inspect()).toMatchObject({ errors: [], history: { undoSteps: beforeState.history.undoSteps + 1 }, annotations: [{ anchor: { sheetId: otherId } }] });
   // The box starts to the right of H20; reveal it while keeping its owning
   // cell visible, rather than measuring an object outside the viewport.
   await choose("L24");
   const after = await geometry(19, 7);
   for (const key of ["offsetX", "offsetY", "widthPt", "heightPt"] as const) expect(after[key]).toBeCloseTo(before[key], 1);
-  expect(await inspect()).toMatchObject({ errors: [], content: beforeState.content, history: { undoSteps: 1 }, annotations: [{ bodyNodeId: bodyId, anchor: { sheetId: otherId, ranges: [{ from: { row: 19, column: 7 }, to: { row: 19, column: 7 } }] } }] });
+  expect(await inspect()).toMatchObject({ errors: [], content: beforeState.content, history: { undoSteps: beforeState.history.undoSteps + 1 }, annotations: [{ bodyNodeId: bodyId, anchor: { sheetId: otherId, ranges: [{ from: { row: 19, column: 7 }, to: { row: 19, column: 7 } }] } }] });
   const current = (await inspect()).comments[0]!; if (current.format !== "classic") throw Error("Native binding changed kind");
   expect(current.commentPrBox).toMatchObject({ anchor: { kind: "two-cell", moveWithCells: true, sizeWithCells: false } });
-  expect(current.boxSource).toBe("vml"); await undo(); expect(await inspect()).toMatchObject({ comments: beforeState.comments, history: { undoSteps: 0 } });
+  expect(current.boxSource).toBe("vml"); await undo(); expect(await inspect()).toMatchObject({ comments: beforeState.comments, history: { undoSteps: beforeState.history.undoSteps } });
   await page.getByRole("tab", { name: source.name, exact: true }).click(); await settled(); await choose("B2:C4");
   await page.getByRole("button", { name: "升序排序", exact: true }).click(); await settled(); await choose("B4");
   const sorted = await geometry(3, 1); for (const key of ["offsetX", "offsetY", "widthPt", "heightPt"] as const) expect(sorted[key]).toBeCloseTo(before[key], 1);
-  expect(await inspect()).toMatchObject({ errors: [], history: { undoSteps: 1 }, annotations: [{ bodyNodeId: bodyId, anchor: { ranges: [{ from: { row: 3, column: 1 }, to: { row: 3, column: 1 } }] } }] });
-  await undo(); expect(await inspect()).toMatchObject({ comments: beforeState.comments, history: { undoSteps: 0 }, errors: [] });
+  expect(await inspect()).toMatchObject({ errors: [], history: { undoSteps: beforeState.history.undoSteps + 1 }, annotations: [{ bodyNodeId: bodyId, anchor: { ranges: [{ from: { row: 3, column: 1 }, to: { row: 3, column: 1 } }] } }] });
+  await undo(); expect(await inspect()).toMatchObject({ comments: beforeState.comments, history: { undoSteps: beforeState.history.undoSteps }, errors: [] });
   if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
 });
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} comment drafts retain their message, unrelated fields, IME input and revision until explicit discard`, async ({ page }) => {

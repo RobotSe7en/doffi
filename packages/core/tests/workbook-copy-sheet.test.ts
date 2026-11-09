@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { createDocumentSession, parseContract, parseWorkbookFormula } from "../src/index.js";
-import type { DocumentOperation, WorkbookDefinedName, WorkbookEditProposal, WorkbookSession } from "../src/index.js";
+import type { DocumentOperation, WorkbookDefinedName, WorkbookEditProposal, WorkbookSession, WorkbookTable } from "../src/index.js";
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 
 const value = (value: number) => ({ type: "number" as const, value });
@@ -14,6 +14,24 @@ function namesFixture() {
       name("CycleA", "=[0]!CycleB+Sheet1!$A$1"), name("CycleB", "=[0]!CycleA"), { ...name("HiddenX", "=SUM(Sheet1!$A$1:$A$2)"), hidden: true, description: "原名禰󠄀😀" }, name("DataValue", "=99", "sheet-1"), name("Local", "=Sheet1!$A$1*3", "sheet-1")];
   })); apply(s, [{ op: "setWorkbookCells", sheetId: "other", cells: [{ row: 0, column: 0, source: { kind: "value", value: value(5) } }] }]); s.clearHistory(); return s;
 }
+test.each([252, 251])("copied table names never split a supplementary ideograph at the suffix boundary: %s", prefix => {
+  const original = "列".repeat(prefix) + "𠀀" + "a".repeat(253 - prefix), s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: value(3) }]));
+  const table: WorkbookTable = { tableId: "long-table", name: original, objectName: original, range: { from: { row: 0, column: 0 }, to: { row: 1, column: 1 } }, header: true, totals: false, totalsPreviouslyShown: false,
+    columns: [{ columnId: "price", name: "Price", totalFunction: "none" }, { columnId: "double", name: "Double", calculatedFormula: `=${original}[@Price]*2`, totalFunction: "none" }], rowStripes: true, columnStripes: false, showFirstColumn: false, showLastColumn: false };
+  try {
+    expect(original.length).toBe(255); apply(s, [{ op: "setWorkbookTable", sheetId: "sheet-1", table }]); s.clearHistory(); const before = s.snapshot();
+    for (let index = 0; index < 9; index++) apply(s, [{ op: "copyWorkbookSheet", sheetId: "sheet-1", name: "Copy" + index }]);
+    for (const copy of s.snapshot().metadata.workbook.sheets.slice(1)) {
+      const copied = copy.tables![0]!; expect(copied.name.length).toBeLessThanOrEqual(255); expect(copied.name).not.toMatch(/[\uD800-\uDFFF]/u);
+      expect(copied.objectName).toBe(copied.name); expect(parseWorkbookFormula(`=${copied.name}[Price]`, { row: 0, column: 0 })).toMatchObject({ kind: "structured", table: copied.name });
+      expect(copied.columns[1]!.calculatedFormula).toContain(copied.name);
+    }
+    s.calculateSync(); const copy = s.snapshot().metadata.workbook.sheets.at(-1)!;
+    expect(s.getCalculatedCell(copy.sheetId, 1, 1)).toMatchObject({ value: value(6) });
+    for (let index = 0; index < 9; index++) s.undo();
+    expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+  } finally { s.dispose(); }
+});
 test("whole-sheet named graphs clone reachable definitions, resolve explicit conflicts and keep unrelated globals and cycles", () => {
   const s = namesFixture();
   try {

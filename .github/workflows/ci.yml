@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [ready_for_review, labeled]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       stage_acceptance:
@@ -23,7 +23,7 @@ env:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || github.event.action == 'ready_for_review' || github.event.label.name == 'run-ci' || github.event.label.name == 'stage-acceptance'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-ci' || github.event.label.name == 'stage-acceptance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -53,7 +53,7 @@ jobs:
   browser-engine:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.suite == 'workbook' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -195,7 +195,7 @@ jobs:
     needs: build
     if: contains(github.event.pull_request.labels.*.name, 'stage-acceptance') || inputs.stage_acceptance == true
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       DOFFI_CI_MODE: full
     steps:
@@ -223,6 +223,7 @@ jobs:
             .cache/workbook-reading-matrix-modern/
             .cache/workbook-reading-matrix-legacy/
             .cache/workbook-reading-budget/
+            .cache/workbook-editing-budget/
             .cache/xlsx-reference/result.json
             .cache/acceptance-office/environment.json
             .cache/acceptance-fonts/environment.json

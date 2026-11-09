@@ -10,6 +10,7 @@ import type { ScalarValue } from "./scalar-values.js";
 import { evaluateScalarFunction } from "./scalar-functions.js";
 import { currentWorkbookModel } from "./source.js";
 import { createWorkbookRowFilter } from "./filters.js";
+import { createWorkbookFilterDisplay } from "./filter-display.js";
 
 export type WorkbookScalarUnavailable = { readonly kind: "unavailable"; readonly reason: "unsupported-function" | "circular-reference" | "circular-name" | "ambiguous-name-scope" | "calculation-required"; readonly functionName?: string };
 export type WorkbookScalarResult = ({ readonly kind: "value"; readonly value: ScalarValue } | WorkbookScalarUnavailable) & {
@@ -141,8 +142,10 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
     const account = (amount: number): void => { units += amount; checkLimit(units, maxCodeUnits); hooks.account?.(amount); };
     const key = (at: WorkbookReferenceLocation): number => sheets.get(at.sheetId)!.index * 17_179_869_184 + at.row * 16_384 + at.column;
     let filterDepth = 0;
+    let filterDisplay: ReturnType<typeof createWorkbookFilterDisplay> | undefined;
     const rowFilters = new Map(workbook.sheets.map(sheet => [sheet.sheetId, createWorkbookRowFilter(sheet, {
       ...calculationContext, dateSystem: workbook.dateSystem, read: at => readCell(at, filterDepth + 1), stored, step,
+      display: (at, value) => (filterDisplay ??= createWorkbookFilterDisplay(model, calculationContext, account, step)).text(at, value),
     })]));
     function remember(at: WorkbookReferenceLocation, cell: SourceCell | undefined): void {
       const id = key(at); if (sources.has(id)) return;
@@ -273,8 +276,10 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
         hasContent: location => { const cell = sourceModel!.getCell(location.sheetId, location.row, location.column); return !!cell?.formula || cell !== undefined && cell.value.type !== "blank"; },
       });
     }
-    step(); const result = scalar(start(visit, readCell), location, 0), identity = { documentId, revision, steps, readCells, codeUnits: units };
-    return freeze("type" in result ? { ...identity, kind: "value", value: result.type === "blank" && !preserveBlank ? scalarNumber(0) : result } : { ...identity, ...result });
+    try {
+      step(); const result = scalar(start(visit, readCell), location, 0), identity = { documentId, revision, steps, readCells, codeUnits: units };
+      return freeze("type" in result ? { ...identity, kind: "value", value: result.type === "blank" && !preserveBlank ? scalarNumber(0) : result } : { ...identity, ...result });
+    } finally { filterDisplay?.dispose(); }
   }
   function referenceExpression(expression: FormulaExpression, origin: WorkbookReferenceLocation, context: WorkbookNameContext = {}, units = 0): WorkbookReferenceResult {
     checkLocation(origin); let result: WorkbookReferenceResult = { kind: "unresolved", reason: "calculation-required" };

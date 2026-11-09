@@ -22,7 +22,7 @@ run(process.execPath, [pnpm, 'run', 'check:xlsx-reference']);
 const unitReport = resolve(directory, 'unit-scale.json');
 run(process.execPath, [pnpm, 'exec', 'vitest', 'run', '--testNamePattern=@scale', '--reporter=default', '--reporter=json', '--outputFile=' + unitReport]);
 const unit = JSON.parse(readFileSync(unitReport, 'utf8'));
-if (unit.numFailedTests !== 0 || unit.numPassedTests < 6) throw Error('The six declared native-capacity unit cases must actually execute.');
+if (unit.numFailedTests !== 0 || unit.numPassedTests < 8) throw Error('The six native-capacity and two editing-capacity unit cases must actually execute.');
 const files = ['workbook-storage', 'workbook-preview', 'workbook-read-worker', 'workbook-playground'].map(name => name + '.spec.ts');
 const selection = '@scale|completes the public reading matrix';
 run(process.execPath, ['scripts/playwright.mjs', 'test', ...files, '--grep=' + selection, '--reporter=list', '--output=.cache/workbook-reading-matrix-modern']);

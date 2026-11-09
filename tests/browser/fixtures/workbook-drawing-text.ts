@@ -8,11 +8,14 @@ import { applyDrawingTextOverflow } from '../../../packages/render/src/workbook/
 import { FontProbeCache } from '../../../packages/render/src/font-probe-cache.js';
 
 function surface(snapshot: WorkbookSnapshot) {
-  const host = document.createElement('div'), scope = document.createElement('div'), style = document.createElement('style');
+  const host = document.createElement('div'), scope = document.createElement('div'), style = document.createElement('style'), sourceStyles = document.createElement('style');
   const root = host.attachShadow({ mode: 'open' });
   style.textContent = ':host{all:initial;display:block}' + snapshot.styles.map(style => style.css).join('\n');
+  // Mirror the production frame's admitted source styles for the decoration
+  // resolver; the shadow owns paint, so keep this host copy inactive.
+  sourceStyles.dataset.officeSourceStyles = ''; sourceStyles.media = 'not all'; sourceStyles.textContent = snapshot.styles.map(style => style.css).join('\n'); document.head.append(sourceStyles);
   root.append(style, scope); document.body.append(host);
-  return { scope, dispose: () => host.remove() };
+  return { scope, dispose: () => { host.remove(); sourceStyles.remove(); } };
 }
 
 export async function measureDrawingFontProbeReuse(snapshot: WorkbookSnapshot) {

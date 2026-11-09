@@ -1,6 +1,6 @@
 # 工作簿编辑计算阶段验收
 
-本页将 R3-09～16 的已声明范围对应到实现和可复现检查，供完整阶段审查使用。实现核对完成；阶段尚未验收，PR #31 仍为草稿。最终双人独立审查、问题修复复核、最终 HEAD 日常 CI 和 `workbook-scale` 均通过后才能合并。它不包括 R3-17～20 的原生 XLSX、PDF／PNG、Node 输出和独立打包闭环。
+本页将 R3-09～16 的已声明范围对应到实现和可复现检查，供完整阶段审查使用。实现核对及恰好两位完整阶段独立审查、问题修复复核已完成；阶段尚待最终 HEAD 日常 CI 和 `workbook-scale`，通过后才能合并 PR #31。它不包括 R3-17～20 的原生 XLSX、PDF／PNG、Node 输出和独立打包闭环。
 
 唯一延期项是用户于 2026-11-09 明确暂缓的“删除合并区域首行／首列”的 Excel 对照。当前缩小行为及 Calc 差异保留，Excel 兼容性未验证；其他门槛保持。名称求值另有[实际 Excel 网页版观测](evidence/excel-web-name-semantics/README.md)，不得将这份观测推广为 Excel 结构编辑或 WPS 验收。
 
@@ -11,7 +11,7 @@
 | 编号 | 实现范围 | 独立来源及组合检查入口 |
 | --- | --- | --- |
 | R3-09 | 同一 prepare／commit、不可变块、资源授权、整批校验、精确结构映射、无净变化、撤销、冲突、异步取消和预算 | [会话](../packages/core/tests/workbook-session.test.ts)、[异步准备](../packages/core/tests/workbook-preparation.test.ts)、[混合原生候选](../tests/workbook-editing-combinations-native.test.ts)、[读取快照](../tests/workbook-session-read-snapshot.test.ts)；失败、取消和过期候选不写源或历史 |
-| R3-10 | 第一方参数转换／函数求值、两种日期、名称／结构引用、依赖图、循环、增量计算、宿主时间／地区、来源缓存分离和取消 | [公式矩阵](evidence/workbook-calculation-functions.json)、[基础类型矩阵](evidence/xlsx-scalar-semantics.json)、[268 项边界](evidence/workbook-function-boundaries.json)、[筛选当前小计](evidence/workbook-filter-calculation.json)、[Excel 名称](evidence/excel-web-name-semantics/README.md)、[增量／长链](../packages/core/tests/workbook-calculation.test.ts)、[补充容量](../tests/workbook-editing-scale.test.ts) |
+| R3-10 | 第一方参数转换／函数求值、两种日期、名称／结构引用、依赖图、循环、增量计算、宿主时间／地区、来源缓存分离和取消 | [公式矩阵](evidence/workbook-calculation-functions.json)、[基础类型矩阵](evidence/xlsx-scalar-semantics.json)、[268 项边界](evidence/workbook-function-boundaries.json)、[筛选当前小计](evidence/workbook-filter-calculation.json)、[显示格式筛选](evidence/workbook-filter-display.json)、[Excel 名称](evidence/excel-web-name-semantics/README.md)、[增量／长链](../packages/core/tests/workbook-calculation.test.ts)、[补充容量](../tests/workbook-editing-scale.test.ts) |
 | R3-11 | 键盘／IME／公式栏、类型与富文本、TSV／系统 HTML、复制／延迟剪切、选择性粘贴、逻辑填充、查找替换、外观／命名样式 | [系统剪贴板](evidence/workbook-system-clipboard.json)、[HTML 来源](evidence/workbook-html-clipboard.json)、[合并粘贴与填充](evidence/workbook-merged-special.json)、[结构引用填充](evidence/workbook-structured-fill.json)、[名称复制](../tests/workbook-copy-names-native.test.ts)、[原生格式](../tests/workbook-formatting-native.test.ts)、[直连输入](../tests/browser/workbook-input.spec.ts)、[唯一 Worker](../tests/browser/workbook-read-worker.spec.ts) |
 | R3-12 | 工作表／行列、维度／隐藏、冻结、合并、剪切、稳定多键排序、普通及表内筛选、各来源引用维护 | [行列](evidence/workbook-axis.json)、[名称](evidence/workbook-axis-names.json)、[智能表](evidence/workbook-axis-tables.json)、[多行合并排序](evidence/workbook-merged-sort.json)、[普通筛选表头删除](evidence/workbook-filter-headers.json)、[局部表剪切](evidence/workbook-partial-table-move.json)、[规则搬移](evidence/workbook-move-definitions.json)；外围排序公式保留地址，剪切精确拆分引用 |
 | R3-13 | 表创建／扩展、列身份与配方、汇总、表样式、名称、条件格式及七类验证；所有修改入口共用最终候选验证 | [定义](../packages/core/tests/workbook-definitions.test.ts)、[验证](../packages/core/tests/workbook-validation.test.ts)、[表样式](evidence/workbook-table-style-native.json)、[规则复制](evidence/workbook-copy-rules.json)、[整表复制](evidence/workbook-copy-tables.json)、[混合来源](evidence/workbook-editing-combinations.json)、[人工规则与警告](../tests/browser/workbook-workbench.spec.ts)；停止规则的未知结果拒绝，警告要求明确确认 |
@@ -28,6 +28,8 @@
 核心组合测试显式使用点度量，仅证明核心测量协议与事务组成；浏览器测试使用实际服务。释放编辑器后的独立宿主写入探针在表外空格进行，合成度量只证明宿主所有权，不计字体／原生几何验收。
 
 `check:workbook-editing-combinations` 固定官方 LibreOffice 25.8.1.1 归档摘要，实际修改 B2、重算并保存。该生产者为三份经典兼容记录生成重复 VML 类型／形状标识；[原字节](../packages/office/tests/fixtures/workbook-editing-combinations-calc.xlsx)和[拒绝原因](evidence/workbook-editing-combinations.json)保持。官方 XSD／OPC 不验证完整 VML，不能把其成功当作合法 VML 或无损现代线程重开。原生正例及其他实际编辑复现仍由上表各独立语料覆盖。
+
+显示格式列表筛选另外覆盖 12 份普通／表内原生来源、金额／舍入／百分比／日期／文本前缀；第一方格式器支持继承及地区优先序。格式改变会更新可见性、小计和相关停止验证，同格式行高拆段不会误触验证。原生 Calc 的数值强转及格式规范化差异独立记录，未声明 Excel／WPS 实机验收。核心、导入／历史／包重开及直连／唯一 Worker 均有回归，见[原生记录](evidence/workbook-filter-display.json)和[复核记录](workbook-editing-review.md)。
 
 ## 容量与阶段状态
 

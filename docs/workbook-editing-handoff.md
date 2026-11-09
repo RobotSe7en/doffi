@@ -4,6 +4,15 @@
 
 ## 基线与当前状态
 
+- 完整阶段差异 `5451736..b87098d` 已由恰好两位 `workbook_edit_review_one`／`workbook_edit_review_two` 分别独立审查，均覆盖整个范围，没有委派实施或再建子代理。审查者一发现显示格式筛选及长表名代理对两项 P2，审查者二无新增；修复复核中追加同格式行区间拆段的 P2。表名已独立 8/8 复核关闭；筛选／分段与预算的最新源码已由两位原审查者认可，三项 P2 全部关闭；审查者一另独立 32/32 通过，无新增 P0／P1／P2，详见[记录](workbook-editing-review.md)。
+- `b87098d1a2e7f366e2ebabd422299fbe628697e8` 已推送，Quick `42687107818` 成功，草稿 PR 已同步。该源码完整本地 `pnpm check` 268 文件／2973 项、架构／类型／SDK 和 Playground 构建全部通过（`.cache/workbook-editing-combinations-complete-check.log`）。当前审查修复后的完整 `pnpm check` 已通过：270 文件／3013 项及所有类型／架构／构建（`.cache/workbook-editing-review-fixes-complete-check.log`）；最终远端验收仍待执行。
+- 显示列表匹配保留精确原值，另外使用第一方数字格式器读取单元格／行／列／默认格式及格式／宿主／文档地区，供 SUBTOTAL 与行可见性共用。只改格式也进入停止验证的影响检查；维度的原始分段仅作扫描提示，实际格的有效格式相同则不产生格式影响。新目录预算用例先复现无计量全目录构建，现按需扫描、每步计量、局部 256 项缓存，结束清理。最新源 3 文件／44 项通过（`.cache/workbook-filter-display-effective-coverage-unit.log`），包含相同格式区间拆段与 UNKNOWN/SUBTOTAL 规则的复核反例；此前广泛 7 文件／69 项属于这两项细化前。
+- 另补[12 个普通／表内显示筛选原生场景](evidence/workbook-filter-display.json)，独立 ZIP/XML、两次固定 Calc 实际重筛选与官方 XSD／OPC 通过（`.cache/workbook-filter-display-{record,replay}-native.log`）；SDK 当前结果／源缓存／清除及撤销／包重开 14 项通过（`-native-unit.log`）。Calc 数值强转与格式规范化单独保留，未把它们当作 Excel 实机事实。直连／唯一 Worker 的显示格式改变、可见行小计及一次撤销三引擎 6 项通过（`-browser.log`），目录步数细化后的最终阶段回归仍须执行。
+- `b87098d` 的完整 Firefox 日常诊断为 348 通过／3 声明跳过／6 失败，约 16.4 分钟（`.cache/workbook-editing-daily-firefox-complete.log`）。四个备注场景在挂载前准备源时遗漏实际布局测量，两个文字场景缺少源样式标记；现在准备动作也通过实际挂载服务、源样式正确标识。三引擎复核 18 项先 15 通过／3 失败；剩余仅在全部实际复制／几何／历史断言后的宿主存活探针，合法负偏移超出合成点尺度。探针计入有符号标记跨度后，三引擎 3 项通过（`.cache/workbook-host-probe-negative-offsets-browser.log`），实际字体／几何断言未替换。临时调试锚点输出已移除。
+- 原生验收完整本机运行已通过（`.cache/workbook-editing-office-configured-complete.log`），不含随后新增、已单独重现的显示筛选命令。初两次启动分别因本机 Python 缺 lxml 和固定 Office 动态库环境未配置失败，日志保留；最终显式使用现有 `.cache/xlsx-venv` 与固定 Office 依赖环境，没有修改系统 Python 或安装依赖。CI 自带的系统环境保持。
+- 基于完整 Firefox 的实际时长，工作簿浏览器 job 总时限从 15 调至 30 分钟；串行加入四引擎编辑及两项补充容量后，阶段总时限为 60 分钟。六项原生和两项补充容量必须实际执行，收集器最低八项成功。所有 SDK 的 CPU／内存、首屏／全算／编辑与交互 p95、DOM 和取消门槛保持。完整 CI 仅由显式标签／手动请求触发，草稿转待审不重复启动，读取及编辑原始容量记录均归档；两位原审查者认可该 CI 调整，actionlint 通过。最终远端全量尚未请求。
+
+
 - 本轮已完成 R3-09～16 的逐项实施核对，集中入口为[编辑验收矩阵](workbook-editing-acceptance.md)；阶段仍未验收，完整双人审查及最终 HEAD 日常／容量待做。新增独立混合原生来源将表、规则、名称、富文本、四类绘图／锚定、经典备注和有效现代线程放在同一文档；同一命令／跨表复制剪切／全局提案、原子失败／取消／冲突／唯一 Worker 共 7 项通过。与两日期边界和补充容量合跑 3 文件／16 项通过（`.cache/workbook-editing-closure-targeted-unit.log`）；新增 1000 扇出与万行智能表扩展标为 `@scale`，日常 CI 按既定决定排除。
 - 混合来源直连／唯一 Worker 的实际测量命令和全局工作台提案三引擎 12 项通过（`.cache/workbook-editing-combinations-settled-browser.log`）。首轮直连仅在最后宿主探针误写 A1 表头而失败，现与 Worker 一样在表外空格验证；随后的 WebKit 请求检查曾在异步点击完成前读取空请求，改为等待实际“请求已生成”状态后全部复核，不改生产行为或削弱断言。当前源码完整 `pnpm check` 运行中（`.cache/workbook-editing-combinations-complete-check.log`）。
 - 混合原生固定 Calc 编辑两次实际复现及官方 XSD／OPC 通过（`.cache/workbook-editing-combinations-replay-native.log`），但 Calc 对三份兼容备注生成重复 VML 标识，因此重存原字节明确作为拒绝负例保留：[观测与拒绝原因](evidence/workbook-editing-combinations.json)。SDK 正向组合检查使用独立合法来源，不修补生产者文件、不将 XSD／OPC 成功当成 VML 语义成功。

@@ -5,6 +5,7 @@ import { copyWorkbookScalarContext, createWorkbookScalarEvaluator } from "./scal
 import { createWorkbookCalculatedEvaluator } from "./calculated-evaluator.js";
 import { workbookCalculationSource } from "./calculation-source.js";
 import { createWorkbookRowFilter } from "./filters.js";
+import { createWorkbookFilterDisplay } from "./filter-display.js";
 import { currentWorkbookModel } from "./source.js";
 import { checkLimit, freeze } from "../document/validation.js";
 import { DocumentError } from "../errors.js";
@@ -51,7 +52,9 @@ export async function readWorkbookRowVisibility(input: WorkbookModel, supplied: 
     if (currentWorkbookModel(input) !== model) throw new DocumentError("RevisionConflict", "Workbook changed while reading row visibility.");
   }
   const step = () => { checkLimit(++steps, limits.maxSteps); if (steps % 256 === 0) guard(); };
+  let display: ReturnType<typeof createWorkbookFilterDisplay> | undefined;
   const filter = createWorkbookRowFilter(sheet, { ...context, dateSystem: snapshot.metadata.workbook.dateSystem, step,
+    display: (at, value) => (display ??= createWorkbookFilterDisplay(model, context, units => { codeUnits += units; checkLimit(codeUnits, limits.maxCodeUnits); }, step)).text(at, value),
     read(location) {
       step(); guard();
       const result = evaluator.cell(location, { maxSteps: Math.max(1, limits.maxSteps - steps), maxCodeUnits: Math.max(0, limits.maxCodeUnits - codeUnits), ...(options.signal ? { signal: options.signal } : {}) });
@@ -78,5 +81,5 @@ export async function readWorkbookRowVisibility(input: WorkbookModel, supplied: 
       if (rows.length % 256 === 0 && options.yield) { await options.yield(); guard(); }
     }
     guard(); return freeze({ documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision, sheetId: sheet.sheetId, rows, steps, readCells, codeUnits });
-  } finally { evaluator.dispose(); }
+  } finally { display?.dispose(); evaluator.dispose(); }
 }

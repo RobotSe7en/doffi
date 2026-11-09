@@ -80,7 +80,11 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
   const added = copy(source), copiedTables = new Map<string, string>(); added.sheetId = allocate(); added.name = operation.name;
   for (const table of added.tables ?? []) {
     const original = table.name; let serial = 2, name: string;
-    do { const suffix = "_" + serial++; name = original.slice(0, 255 - suffix.length) + suffix; } while (allTokens.has(upper(name)) || tableObjectTokens.has(upper(name)));
+    do {
+      const suffix = "_" + serial++; let stem = original.slice(0, 255 - suffix.length);
+      if (/[\uD800-\uDBFF]$/.test(stem)) stem = stem.slice(0, -1);
+      name = stem + suffix;
+    } while (allTokens.has(upper(name)) || tableObjectTokens.has(upper(name)));
     allTokens.add(upper(name)); tableObjectTokens.add(upper(name)); copiedTables.set(upper(original), name); table.name = name; if (table.objectName !== undefined) table.objectName = name;
     table.tableId = allocate(); for (const column of table.columns) column.columnId = allocate();
     if (++work % 256 === 0) yield { completed: work, total: 0 };

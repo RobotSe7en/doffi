@@ -1,5 +1,5 @@
 import type { DeepReadonly } from "../runtime.js";
-import type { WorkbookAutoFilter, WorkbookFilterCriterion, WorkbookFilterDate, WorkbookSheet } from "../contracts/workbook.js";
+import type { WorkbookAutoFilter, WorkbookFilterCriterion, WorkbookFilterDate, WorkbookSheet, WorkbookValue } from "../contracts/workbook.js";
 import type { WorkbookReferenceArea, WorkbookReferenceLocation } from "./reference.js";
 import type { ScalarResolved, WorkbookScalarContext, WorkbookScalarUnavailable } from "./scalar.js";
 import { workbookSerialDate } from "./calendar.js";
@@ -10,6 +10,7 @@ import { scalarToText } from "./scalar-values.js";
 export interface WorkbookFilterContext extends WorkbookScalarContext {
   readonly dateSystem: "1900" | "1904";
   read(location: WorkbookReferenceLocation): ScalarResolved;
+  display(location: WorkbookReferenceLocation, value: DeepReadonly<WorkbookValue>): string | undefined;
   stored(area: DeepReadonly<WorkbookReferenceArea>): Generator<WorkbookReferenceLocation>;
   step(): void;
 }
@@ -72,6 +73,10 @@ export function createWorkbookRowFilter(sheet: DeepReadonly<WorkbookSheet>, cont
       if (value.type === "blank" || value.type === "text" && value.value === "") return criterion.blank;
       const text = value.type === "error" ? value.value : scalarToText(value);
       if (typeof text === "string" && criterion.values.some(item => { context.step(); return item.toUpperCase() === text.toUpperCase(); })) return true;
+      if (criterion.values.length) {
+        const displayed = context.display({ sheetId: sheet.sheetId, row, column }, value);
+        if (displayed !== undefined && criterion.values.some(item => { context.step(); return item.toUpperCase() === displayed.toUpperCase(); })) return true;
+      }
       return value.type === "number" && criterion.dates.some(group => { context.step(); return dateMatches(value.value, group, context.dateSystem); });
     }
     if (criterion.kind === "custom") {

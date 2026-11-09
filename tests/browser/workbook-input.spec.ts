@@ -374,6 +374,7 @@ test("mounted direct copy preserves native note size, both boxes, threaded repli
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx'), { documentId: 'copy-comments-editor' }), { kind: 'workbook' });
   const { workbookCopyCommentsSource, exerciseWorkbookCopyComments } = await import('./workbook-copy-comments-cases.js'), prepared = workbookCopyCommentsSource(model);
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(prepared.source));
+  await page.evaluate(operations => window.workbookEditor.perform(operations), prepared.preparationOperations);
   await exerciseWorkbookCopyComments(page, false, [...prepared.original.annotations], prepared.classicId, prepared.modernId);
 });
 
@@ -740,4 +741,15 @@ test("mounted direct copy keeps conditional and validation templates, masks and 
   const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-copy-rules' }), { kind: 'workbook' });
   const { source, sheets } = workbookCopyRulesSource(model); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source));
   await exerciseWorkbookCopyRules(page, false, sheets);
+});
+
+
+test('mounted direct formatted value filters share displayed rows, SUBTOTAL, format changes and undo', async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-display.xlsx'), { documentId: 'display-filter-editor' }), { kind: 'workbook' });
+  const workbook = model.snapshot().metadata.workbook, sheets = workbook.sheets.filter(sheet => ['Rangedecimal', 'Tabledecimal'].includes(sheet.name)).map(sheet => ({ name: sheet.name, sheetId: sheet.sheetId }));
+  const formatId = workbook.numberFormats.find(format => 'code' in format && format.code === '0%')!.formatId;
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookFilterDisplay } = await import('./workbook-filter-display-cases.js'); await exerciseWorkbookFilterDisplay(page, false, sheets, formatId);
+  await page.evaluate(() => window.workbookEditor.dispose());
 });

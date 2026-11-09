@@ -49,6 +49,7 @@
     "check:workbook-editing-combinations": "/usr/bin/python3 scripts/check-workbook-editing-combinations.py --verify-native",
     "check:workbook-function-boundaries": "/usr/bin/python3 scripts/check-workbook-function-boundaries.py --verify-native",
     "check:workbook-filter-calculation": "python3 scripts/check-workbook-filter-calculation.py --verify-native",
+    "check:workbook-filter-display": "/usr/bin/python3 scripts/check-workbook-filter-display.py --verify-native",
     "check:workbook-filter-headers": "/usr/bin/python3 scripts/check-workbook-filter-headers.py --verify-native",
     "check:workbook-axis": "/usr/bin/python3 scripts/check-workbook-axis.py --verify-native",
     "check:workbook-axis-names": "/usr/bin/python3 scripts/check-workbook-axis-names.py --verify-native",

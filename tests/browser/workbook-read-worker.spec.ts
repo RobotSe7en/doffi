@@ -395,6 +395,7 @@ test('mounted Worker copy preserves native note size, both boxes, threaded repli
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx'), { documentId: 'copy-comments-editor' }), { kind: 'workbook' });
   const { workbookCopyCommentsSource, exerciseWorkbookCopyComments } = await import('./workbook-copy-comments-cases.js'), prepared = workbookCopyCommentsSource(model), bytes = Buffer.from(writeDocumentZip(prepared.source)).toString('base64');
   await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await page.evaluate(operations => window.workbookRemoteEditor.perform(operations), prepared.preparationOperations);
   await exerciseWorkbookCopyComments(page, true, [...prepared.original.annotations], prepared.classicId, prepared.modernId);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
@@ -622,4 +623,15 @@ test('mounted Worker copy keeps conditional and validation templates, masks and 
   await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
   await exerciseWorkbookCopyRules(page, true, sheets);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+
+test('mounted Worker formatted value filters share displayed rows, SUBTOTAL, format changes and undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-display.xlsx'), { documentId: 'display-filter-editor' }), { kind: 'workbook' });
+  const workbook = model.snapshot().metadata.workbook, sheets = workbook.sheets.filter(sheet => ['Rangedecimal', 'Tabledecimal'].includes(sheet.name)).map(sheet => ({ name: sheet.name, sheetId: sheet.sheetId }));
+  const formatId = workbook.numberFormats.find(format => 'code' in format && format.code === '0%')!.formatId;
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes: Buffer.from(writeDocumentZip(model.serialize())).toString('base64') });
+  const { exerciseWorkbookFilterDisplay } = await import('./workbook-filter-display-cases.js'); await exerciseWorkbookFilterDisplay(page, true, sheets, formatId);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
