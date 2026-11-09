@@ -77,3 +77,5 @@ pnpm check:xlsx-reference
 [名称行列编辑](../../docs/evidence/workbook-axis-names.json)由独立 Python ZIP/XML 生成源和五份固定 Calc 实际插删结果，保存在 `packages/office/tests/fixtures/workbook-axis-names*.xlsx`。相对配方、绝对分量、混合整轴范围、局部／全局 bang、别名及生产者缓存均保留；Calc 的 bang 和插删列后嵌套相对别名差异单独记录。源及原生输出经官方 XSD／OPC，SDK 当前计算、唯一 Worker 候选、再编辑、包 ZIP 重开及撤销分别验证；`pnpm check:workbook-axis-names` 重现原生操作。这不代替 Excel/WPS 结构编辑实机验收。
 
 [合并区域选择性粘贴与数列](../../docs/evidence/workbook-merged-special.json)使用独立 ZIP/XML 来源及二十份固定 Calc 原生输出，文件前缀为 `packages/office/tests/fixtures/workbook-merged-special`。十八次实际控制器粘贴明确覆盖、先重算，两次 `fillAuto` 验证纵向／横向合并数列；保留 Calc 取消目标合并和保存非空覆盖格的差异。全部生产者字节、官方 XSD／OPC、当前值、SDK 再编辑重开及历史分别检查；`pnpm check:workbook-merged-special` 实际复现，不改已有独立样例或宣称 Excel/WPS 实机通过。
+
+[智能表局部剪切](../../docs/evidence/workbook-partial-table-move.json)复用不可变 `workbook-axis-tables.xlsx` 独立源，保留五份实际固定 Calc 剪切和五份再次原生重开输出，前缀为 `packages/office/tests/fixtures/workbook-partial-table-move`。记录列配方和原生筛选差异，以及表外当前行公式初次缓存与重开后错误的差异；SDK 按精确输入映射求当前值，不改生产者字节。复现命令为 `pnpm check:workbook-partial-table-move`，包含官方 XSD／OPC；不称为 Excel/WPS 实机验收。

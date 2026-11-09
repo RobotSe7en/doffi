@@ -295,6 +295,13 @@ test('mounted Worker native whole-table cut keeps its definition across sheets a
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker partial table cuts keep native identities, current inputs, totals and overwrite protection', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-partial-table' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookPartialTableMove } = await import('./workbook-partial-table-move-cases.js'); await exerciseWorkbookPartialTableMove(page, true);
+});
 test('mounted Worker merged selective paste, skip blanks and logical numeric fill preserve target format and history', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-special.xlsx'), { documentId: 'mounted-worker-merged-special' }), { kind: 'workbook' });

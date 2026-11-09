@@ -332,6 +332,12 @@ test("mounted direct native local-name copy creates the missing target scope and
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
 });
 
+test("mounted direct partial table cuts keep native identities, current inputs, totals and overwrite protection", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-partial-table' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookPartialTableMove } = await import('./workbook-partial-table-move-cases.js'); await exerciseWorkbookPartialTableMove(page, false);
+});
 test("mounted direct merged selective paste, skip blanks and logical numeric fill preserve target format and history", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-special.xlsx'), { documentId: 'mounted-merged-special' }), { kind: 'workbook' });

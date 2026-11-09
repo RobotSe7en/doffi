@@ -62,6 +62,7 @@
     "check:workbook-copy-hyperlinks": "/usr/bin/python3 scripts/check-workbook-copy-hyperlinks.py --verify-native",
     "check:workbook-copy-rules": "/usr/bin/python3 scripts/check-workbook-copy-rules.py --verify-native",
     "check:workbook-move-definitions": "/usr/bin/python3 scripts/check-workbook-move-definitions.py --verify-native",
+    "check:workbook-partial-table-move": "/usr/bin/python3 scripts/check-workbook-partial-table-move.py --verify-native",
     "check:workbook-name-prefix": "/usr/bin/python3 scripts/check-workbook-name-prefix.py --verify-native",
     "check:workbook-copy-sheet": "/usr/bin/python3 scripts/check-workbook-copy-sheet.py --verify-native",
     "typecheck:built": "tsc --project apps/playground/tsconfig.json && tsc --project tsconfig.tools.json",

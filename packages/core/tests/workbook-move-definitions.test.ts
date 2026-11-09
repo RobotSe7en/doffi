@@ -58,6 +58,96 @@ test("the relocated calculated template still fills only newly inserted rows in 
   expect(s.getCalculatedCell("other", 261, 8)).toMatchObject({ state: "valid", value: number(8) }); expect(s.getCell("other", 262, 8)!.value).toEqual(number(99));
 });
 
+test.each(["sheet-1", "other"])("partial table data cuts keep the definition and move current-row inputs exactly (%s)", targetSheetId => {
+  const s = workbook(), before = s.snapshot(), table = before.metadata.workbook.sheets[0]!.tables![0]!;
+  apply(s, [move(targetSheetId, range(1, 0, 2, 1))]); s.calculateSync();
+  expect(s.snapshot().metadata.workbook.sheets[0]!.tables).toEqual([table]);
+  expect(s.getCell("sheet-1", 1, 0)).toBeUndefined(); expect(s.getCell("sheet-1", 1, 1)).toBeUndefined();
+  expect(s.getCell(targetSheetId, 259, 7)).toMatchObject({ value: number(2) });
+  expect(s.getCalculatedCell(targetSheetId, 259, 8)).toMatchObject({ state: "valid", value: number(8) });
+  expect(s.getCell(targetSheetId, 260, 8)).toMatchObject({ value: number(99) });
+  expect(s.getCell(targetSheetId, 259, 8)!.formula!.expression).not.toContain("[@");
+  expect(s.getCalculatedCell("sheet-1", 0, 7)).toMatchObject({ value: number(0) });
+  expect(s.getCalculatedCell("sheet-1", 1, 7)).toMatchObject({ value: number(2) });
+  expect(s.history().undoSteps).toBe(1); expect(openDocument(s.serialize(), { kind: "workbook" }).snapshot()).toEqual(s.snapshot());
+  s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+});
+
+test("a partial calculated-column cut preserves unmoved source inputs and original table recipes", () => {
+  const s = workbook(), before = s.snapshot();
+  apply(s, [move("other", range(1, 1))]); s.calculateSync();
+  expect(s.snapshot().metadata.workbook.sheets[0]!.tables).toEqual(before.metadata.workbook.sheets[0]!.tables);
+  expect(s.getCell("sheet-1", 1, 0)).toMatchObject({ value: number(2) });
+  expect(s.getCalculatedCell("other", 259, 7)).toMatchObject({ value: number(8) });
+  expect(s.getCell("other", 259, 7)!.formula!.expression).toContain("'Sheet1'!$A2");
+  expect(s.getCalculatedCell("sheet-1", 0, 7)).toMatchObject({ value: number(99) });
+});
+
+test("partial moves within a table retain identity, calculated exceptions and explicit overwrite protection", () => {
+  const s = workbook(), before = s.serialize(), operation: DocumentOperation = { op: "moveWorkbookRange", sheetId: "sheet-1", range: range(1, 0, 1, 1), targetSheetId: "sheet-1", target: { row: 2, column: 0 } };
+  expect(() => apply(s, [operation])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(before);
+  apply(s, [{ ...operation, overwrittenContent: "clear" }]); s.calculateSync();
+  expect(s.getCalculatedCell("sheet-1", 2, 1)).toMatchObject({ value: number(8) });
+  expect(s.getCalculatedCell("sheet-1", 0, 7)).toMatchObject({ value: number(8) });
+  expect(s.snapshot().metadata.workbook.sheets[0]!.tables).toEqual(openDocument(before, { kind: "workbook" }).snapshot().metadata.workbook.sheets[0]!.tables);
+  s.undo(); expect(s.snapshot().manifest.chunks).toEqual(openDocument(before, { kind: "workbook" }).snapshot().manifest.chunks);
+});
+
+test("a partial totals-cell cut keeps the table and its recipe while the actual source cell becomes empty", () => {
+  const s = workbook(), before = s.snapshot(); apply(s, [move("other", range(3, 1))]); s.calculateSync();
+  expect(s.getCalculatedCell("other", 259, 7)).toMatchObject({ value: number(107) });
+  expect(s.getCell("sheet-1", 3, 1)).toBeUndefined();
+  expect(s.snapshot().metadata.workbook.sheets[0]!.tables).toEqual(before.metadata.workbook.sheets[0]!.tables);
+});
+
+test("partial auto-filter body moves preserve both source and target definitions", () => {
+  const s = workbook();
+  apply(s, [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 11, column: 2, source: { kind: "value", value: number(42) } }] },
+    { op: "setWorkbookAutoFilter", sheetId: "sheet-1", filter: { range: range(10, 2, 13, 3), columns: [] } },
+    { op: "setWorkbookAutoFilter", sheetId: "other", filter: { range: range(258, 7, 262, 8), columns: [] } }]);
+  s.clearHistory(); const before = s.snapshot(); apply(s, [move("other", range(11, 2, 12, 3))]);
+  expect(s.snapshot().metadata.workbook.sheets.map(sheet => sheet.autoFilter)).toEqual(before.metadata.workbook.sheets.map(sheet => sheet.autoFilter));
+  expect(s.getCell("other", 259, 7)).toMatchObject({ value: number(42) }); expect(s.history().undoSteps).toBe(1);
+  s.undo(); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks); expect(s.snapshot().metadata).toEqual(before.metadata);
+});
+
+test("an overlapping whole range can move both its table and worksheet filter together", () => {
+  const s = workbook();
+  apply(s, [{ op: "setWorkbookAutoFilter", sheetId: "sheet-1", filter: { range: range(10, 2, 13, 3), columns: [] } },
+    { op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 11, column: 2, source: { kind: "value", value: number(42) } }] }]);
+  s.clearHistory(); const before = s.snapshot();
+  apply(s, [{ op: "moveWorkbookRange", sheetId: "sheet-1", range: range(0, 0, 13, 3), targetSheetId: "sheet-1", target: { row: 1, column: 0 } }]); s.calculateSync();
+  expect(s.snapshot().metadata.workbook.sheets[0]!.tables![0]!.range).toEqual(range(1, 0, 4, 1));
+  expect(s.snapshot().metadata.workbook.sheets[0]!.autoFilter).toMatchObject({ range: range(11, 2, 14, 3) });
+  expect(s.getCell("sheet-1", 12, 2)).toMatchObject({ value: number(42) });
+  expect(s.getCalculatedCell("sheet-1", 0, 7)).toMatchObject({ value: number(107) });
+  expect(s.history().undoSteps).toBe(1); s.undo(); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks); expect(s.snapshot().metadata).toEqual(before.metadata);
+});
+
+test("table data cuts map host annotations while retaining the table, outside anchors and history", () => {
+  const s = workbook(), m = s.snapshot().manifest;
+  apply(s, [{ op: "addAnnotation", annotation: { annotationId: "records", documentId: m.documentId, baseRevision: m.revision, status: "resolved", instruction: "移动记录禰󠄀😀",
+    anchor: { kind: "cells", sheetId: "sheet-1", ranges: [range(1, 0, 2, 1)] } } },
+    { op: "addAnnotation", annotation: { annotationId: "header", documentId: m.documentId, baseRevision: m.revision, status: "open", instruction: "保留表头",
+      anchor: { kind: "cells", sheetId: "sheet-1", ranges: [range(0, 0)] } } }]);
+  s.clearHistory(); const before = s.snapshot(); apply(s, [move("other", range(1, 0, 2, 1))]);
+  expect(s.getAnnotations().find(note => note.annotationId === "records")).toMatchObject({ status: "resolved", instruction: "移动记录禰󠄀😀", anchor: { kind: "cells", sheetId: "other", ranges: [range(259, 7, 260, 8)] } });
+  expect(s.getAnnotations().find(note => note.annotationId === "header")!.anchor).toEqual(before.annotations.find(note => note.annotationId === "header")!.anchor);
+  expect(s.snapshot().metadata.workbook.sheets[0]!.tables).toEqual(before.metadata.workbook.sheets[0]!.tables); expect(s.history().undoSteps).toBe(1);
+  s.undo(); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+  expect(s.getAnnotations().map(note => ({ id: note.annotationId, anchor: note.anchor, status: note.status, instruction: note.instruction })))
+    .toEqual(before.annotations.map(note => ({ id: note.annotationId, anchor: note.anchor, status: note.status, instruction: note.instruction })));
+});
+
+test("cancelling a partial table cut leaves definitions and source untouched and releases the candidate slot", async () => {
+  const s = workbook(), before = s.serialize(), signal = { aborted: false };
+  await expect(s.prepareAsync(transaction(s, [move("other", range(1, 0, 800, 1))]), undefined, {
+    signal, yield: async () => {}, onProgress(progress) { if (progress.phase === "cells" && progress.completed === 256) signal.aborted = true; },
+  })).rejects.toMatchObject({ code: "OperationCancelled" });
+  expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+  const candidate = await s.prepareAsync(transaction(s, [move("other", range(1, 0, 2, 1))])); s.discard(candidate); expect(s.serialize()).toEqual(before);
+});
+
 test("whole auto-filters move with criteria and sort but cannot replace an unrelated target definition", () => {
   const s = workbook(); apply(s, [{ op: "setWorkbookAutoFilter", sheetId: "sheet-1", filter: { range: range(10, 2, 13, 3), columns: [{ column: 2, hiddenButton: false, showButton: true }], sort: { range: range(11, 2, 13, 3), keys: [{ column: 3, descending: true }], method: "none", caseSensitive: false } } }]); s.clearHistory();
   const before = s.snapshot(); apply(s, [move("other", range(10, 2, 13, 3))]);
@@ -69,12 +159,15 @@ test("whole auto-filters move with criteria and sort but cannot replace an unrel
 
 test("partial definitions, destination collisions and stale candidates retain source and full history", () => {
   const s = workbook(), before = s.serialize();
-  expect(() => apply(s, [move("other", range(1, 0, 2, 1))])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(before);
+  expect(() => apply(s, [move("other", range(0, 0, 1, 1))])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(before);
   const table = JSON.parse(JSON.stringify(s.snapshot().metadata.workbook.sheets[0]!.tables![0]!)) as WorkbookTable; table.tableId = "collision"; table.name = "Collision"; delete table.objectName; table.range = range(259, 7, 262, 8);
   delete table.autoFilter; delete table.sort;
   table.columns = table.columns.map(column => ({ ...column, columnId: "collision-" + column.columnId }));
   apply(s, [{ op: "setWorkbookTable", sheetId: "other", table }]); const protectedSource = s.serialize();
   expect(() => apply(s, [move("other")])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(protectedSource);
+  expect(() => apply(s, [move("other", range(1, 0, 2, 1))])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(protectedSource);
+  expect(() => apply(s, [{ op: "moveWorkbookRange", sheetId: "sheet-1", range: range(1, 0, 2, 1), targetSheetId: "sheet-1", target: { row: 0, column: 0 }, overwrittenContent: "clear" }]))
+    .toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(protectedSource);
   const candidate = s.prepare(transaction(s, [move("sheet-1")])); apply(s, [{ op: "setWorkbookSettings", changes: { calculationMode: "manual" } }]);
   expect(() => s.commit(candidate)).toThrowError(expect.objectContaining({ code: "RevisionConflict" })); s.discard(candidate);
 });
