@@ -5,7 +5,6 @@ import type { WorkbookOperation } from "../contracts/workbook-operations.js";
 import type { DeepReadonly, WorkbookModel } from "../runtime.js";
 import { DocumentError } from "../errors.js";
 import { subtractWorkbookRange } from "../workbook/range-mapping.js";
-import { checkNonOverlappingRanges, checkRange } from "../workbook/ranges.js";
 import { WorkbookDependencyIndex } from "../workbook/dependency-index.js";
 import { createWorkbookCommentCloner } from "./workbook-comment-copy.js";
 import { removeWorkbookCommentSources, reanchorWorkbookCommentSources } from "./workbook-comments.js";
@@ -13,6 +12,7 @@ import type { WorkbookMeasuredLayout } from "./workbook-layout.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import type { SourceStyleEdit } from "./source-styles.js";
 import { translateWorkbookAnchor } from "./workbook-anchor-translation.js";
+import { planWorkbookRegionCopy } from "./workbook-copy-region.js";
 
 type Copy = Extract<WorkbookOperation, { op: "copyWorkbookComments" }>;
 const invalid = (message: string): never => { throw new DocumentError("InvalidOperation", message); };
@@ -22,19 +22,7 @@ const intersection = (a: WorkbookRange, b: WorkbookRange): WorkbookRange | undef
   to: { row: Math.min(a.to.row, b.to.row), column: Math.min(a.to.column, b.to.column) },
 } : undefined;
 export function workbookCommentCopyPlan(operation: Copy) {
-  checkRange(operation.range);
-  const delta = { row: operation.target.row - operation.range.from.row, column: operation.target.column - operation.range.from.column };
-  const translate = (range: WorkbookRange, sign = 1): WorkbookRange => ({ from: { row: range.from.row + delta.row * sign, column: range.from.column + delta.column * sign }, to: { row: range.to.row + delta.row * sign, column: range.to.column + delta.column * sign } });
-  const target = translate(operation.range);
-  if (!WorkbookCoordinateSchema.safeParse(target.to).success) invalid("Comment copying exceeds the destination worksheet bounds.");
-  const footprint = operation.ranges ?? [target];
-  for (const range of footprint) {
-    checkRange(range);
-    if (range.from.row < target.from.row || range.to.row > target.to.row || range.from.column < target.from.column || range.to.column > target.to.column)
-      invalid("The comment-copy footprint must lie inside its destination rectangle.");
-  }
-  checkNonOverlappingRanges(footprint);
-  const source = footprint.map(range => translate(range, -1));
+  const plan = planWorkbookRegionCopy(operation), { footprint, source, translate } = plan;
   let work = 0;
   const step = (): void => { if (++work > 10_000_000) throw new DocumentError("ResourceLimitExceeded", "Comment copying exceeds its range-work budget."); };
   const index = (ranges: readonly WorkbookRange[], sheetId: string) => new WorkbookDependencyIndex(ranges.map((range, index) => ({ area: { ...range, sheetId }, owner: String(index) })), step);
@@ -62,7 +50,7 @@ export function workbookCommentCopyPlan(operation: Copy) {
     }
     return result;
   };
-  return { delta, footprint, source, translate, affected, clipped, remainder, unchanged: operation.sheetId === operation.targetSheetId && delta.row === 0 && delta.column === 0 };
+  return { ...plan, affected, clipped, remainder };
 }
 export function workbookCommentCopySheets(workbook: WorkbookMetadata, annotations: readonly Annotation[], operation: Copy): readonly string[] {
   const plan = workbookCommentCopyPlan(operation);

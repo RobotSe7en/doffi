@@ -9,7 +9,7 @@ import { createWorkbookTableCopyPlan } from "./copy-tables.js";
 export interface WorkbookRangeCopyOptions {
   /** Defaults to the source worksheet; both belong to the same workbook. */
   readonly targetSheetId?: string;
-  /** Contents includes rich source, formats, hyperlinks, comments and both rule categories.
+  /** Contents includes rich source, formats, hyperlinks, drawings, comments and both rule categories.
    * Values/formulas keep destination formats and rules. Formats copies conditional
    * formats while retaining destination validation, content and formula caches. */
   readonly mode?: "contents" | "values" | "formulas" | "formats";
@@ -124,8 +124,14 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
       }
       if (comments) break;
     }
+    const drawingIds: string[] = [];
+    if (config.mode === "contents" && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column)) for (const object of snapshot.metadata.workbook.objects ?? []) {
+      guard(); step();
+      if (object.sheetId === sheetId && (object.anchor.kind === "absolute" || contains(source, { from: object.anchor.from, to: object.anchor.from }))) drawingIds.push(object.nodeId);
+      if (steps % 256 === 0 && config.yield) { await config.yield(); guard(); }
+    }
     const footprint = (config.mode === "contents" || config.mode === "formats") && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column)
-      && (sheet.conditionalRules?.length || targetSheet.conditionalRules?.length || config.mode === "contents" && (comments || sheet.dataValidations?.length || targetSheet.dataValidations?.length)) ? createWorkbookCopyFootprint() : undefined;
+      && (sheet.conditionalRules?.length || targetSheet.conditionalRules?.length || config.mode === "contents" && (drawingIds.length || comments || sheet.dataValidations?.length || targetSheet.dataValidations?.length)) ? createWorkbookCopyFootprint() : undefined;
     for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
       guard(); step(); const from = { row: source.from.row + row, column: source.from.column + column }, to = { row: destination.row + row, column: destination.column + column };
       const raw = model.getCell(sheetId, from.row, from.column), same = sheetId === targetSheetId && from.row === to.row && from.column === to.column;
@@ -215,6 +221,13 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     if (ruleCopy) { account(JSON.stringify(ruleCopy).length); operations.push(ruleCopy); }
     for (const range of addedMerges) {
       const operation = { op: "mergeWorkbookCells" as const, sheetId: targetSheetId, range, coveredContent: "reject" as const };
+      account(JSON.stringify(operation).length); operations.push(operation);
+    }
+    if (drawingIds.length && copiedRanges?.length) {
+      const operation = { op: "copyWorkbookObjects" as const, nodeIds: drawingIds, sheetId, range: source, targetSheetId, target: destination, ranges: copiedRanges,
+        maxSourceCodeUnits: 0 };
+      const overhead = JSON.stringify(operation).length + String(config.maxCodeUnits).length - 1;
+      operation.maxSourceCodeUnits = Math.max(0, config.maxCodeUnits - units - overhead);
       account(JSON.stringify(operation).length); operations.push(operation);
     }
     return { protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations };

@@ -25,6 +25,7 @@ import { WorkbookContentEdit } from "./workbook-content.js";
 import { editWorkbookSheet } from "./workbook-sheets.js";
 import { copyWorkbookSheet } from "./workbook-copy-sheet.js";
 import { copyWorkbookComments, workbookCommentCopyPlan, workbookCommentCopySheets } from "./workbook-copy-comments.js";
+import { bindWorkbookObjectCopies, copyWorkbookObjects, createWorkbookObjectCopyState, workbookObjectCopySheets } from "./workbook-copy-objects.js";
 import { editWorkbookAxis, restoreWorkbookAxisSource } from "./workbook-axis.js";
 import { editWorkbookHyperlink, replaceWorkbookHyperlinks, sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { compileNumberFormat } from "../workbook/number-format.js";
@@ -96,7 +97,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
     const richContent = new WorkbookContentEdit(manifest, files, limits, allocate, workbook), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
-    const commentMapping = new WorkbookCommentMapping(), noteTransports = new WorkbookNoteTransportTracker(), drawingTransports = new WorkbookDrawingTransportTracker();
+    const commentMapping = new WorkbookCommentMapping(), noteTransports = new WorkbookNoteTransportTracker(), drawingTransports = new WorkbookDrawingTransportTracker(), copiedObjects = createWorkbookObjectCopyState();
     let measuredModel = base;
     function* projectLayoutModel(): WorkbookPreparation<WorkbookModel> {
       const projectedManifest = parseContract("document-manifest", manifest); if (projectedManifest.kind !== "workbook") invalid("Expected a workbook candidate.");
@@ -146,7 +147,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       for (;;) { const value = noteCapture.next(); if (value.done) { noteTransport = value.value; break; } yield { kind: "progress", value: { phase: "validation", ...value.value } }; }
       const drawingCapture = drawingTransports.capture(workbook, operation); let drawingTransport: import("./workbook-drawing-transport.js").WorkbookDrawingTransport | undefined;
       for (;;) { const value = drawingCapture.next(); if (value.done) { drawingTransport = value.value; break; } yield { kind: "progress", value: { phase: "validation", ...value.value } }; }
-      const copySheets = [...new Set([...(operation.op === "copyWorkbookComments" ? workbookCommentCopySheets(workbook, annotations, operation) : []), ...noteTransport?.sheetIds ?? [], ...drawingTransport?.sheetIds ?? []])];
+      const copySheets = [...new Set([...(operation.op === "copyWorkbookComments" ? workbookCommentCopySheets(workbook, annotations, operation) : operation.op === "copyWorkbookObjects" ? workbookObjectCopySheets(workbook, operation) : []), ...noteTransport?.sheetIds ?? [], ...drawingTransport?.sheetIds ?? []])];
       if (copySheets.length && !measureLayout) invalid("Copying or transporting cell-bound objects and notes requires a workbook layout measurer.");
       if (measureLayout) {
         const owners = (yield* workbookLayoutOwners(workbook, annotations))!;
@@ -210,6 +211,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       else if (isWorkbookCommentOperation(operation)) editWorkbookComment(workbook, annotations, richContent, base, operation, allocate);
       else if (operation.op === "copyWorkbookComments") {
         for (const value of copyWorkbookComments(workbook, annotations, richContent, base, operation, allocate, styles, layoutBefore)) yield { kind: "progress", value: { phase: "cells", ...value } };
+      }
+      else if (operation.op === "copyWorkbookObjects") {
+        for (const value of copyWorkbookObjects(workbook, richContent, operation, allocate, styles, layoutBefore, copiedObjects, limits)) yield { kind: "progress", value: { phase: "cells", ...value } };
       }
       else if (operation.op === "moveWorkbookRange") {
         for (const value of moveWorkbookRange(workbook, cells, annotations, operation, mapping, drawingTransport?.destinations)) yield { kind: "progress", value: { phase: "cells", ...value } };
@@ -312,6 +316,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     } finally { comparison.return(undefined); }
     yield* validateWorkbookCandidateSteps(base, next, diff.changedRanges, captured);
     yield { kind: "progress", value: { phase: "validation", completed: 1, total: 1 } };
+    bindWorkbookObjectCopies(next, copiedObjects.sources);
     return { state: next, mapping: diff.mapping, diff };
   }
   const prepare = (base: WorkbookModel, transaction: DocumentTransaction, allocate: () => string, resolvedIds?: readonly string[], preparation?: TransactionPrepareOptions) => finishWorkbookPreparation(preparationSteps(base, transaction, allocate, resolvedIds, preparation));

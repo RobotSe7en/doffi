@@ -12,6 +12,8 @@ import { subtractWorkbookRange } from "../workbook/range-mapping.js";
 import { sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
 import { workbookCommentCopyPlan } from "./workbook-copy-comments.js";
+import { planWorkbookRegionCopy } from "./workbook-copy-region.js";
+import { workbookObjectCopies } from "./workbook-copy-objects.js";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 function invalid(message: string): never { throw new DocumentError("InvalidProposal", message); }
@@ -43,6 +45,14 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
     }
     if (global) continue;
     switch (op.op) {
+      case "copyWorkbookObjects": {
+        const plan = planWorkbookRegionCopy(op);
+        const readable = [...context.writableRanges, ...context.requestedReadRanges, ...context.dependencies];
+        for (const range of plan.source) if (!workbookContextCovers(readable, { sheetId: op.sheetId, range }, budget.step)) invalid("A workbook proposal cannot copy drawings from undisclosed source cells.");
+        for (const range of plan.footprint) requireRange(op.targetSheetId, range);
+        if (!context.writableNewObjectSheetIds.includes(op.targetSheetId)) invalid("Copying workbook drawings requires explicit destination creation scope.");
+        break;
+      }
       case "copyWorkbookComments": break; // Exact read/write masks and disclosed bodies were checked above.
       case "setWorkbookCells": case "setWorkbookCellFormats": for (const at of op.cells) requireRange(op.sheetId, { from: at, to: at }); break;
       case "formatWorkbookText": requireRange(op.sheetId, { from: op.at, to: op.at }); break;
@@ -89,6 +99,14 @@ export function validateWorkbookProposalSource(model: WorkbookModel, request: Wo
   for (const entry of candidate.changedRanges ?? []) if (!workbookContextCovers(context.writableRanges, entry, budget.step)) invalid("The workbook candidate indirectly rewrites cell source outside its frozen write scope.");
   const objectIds = new Set(context.writableObjectIds), annotationIds = new Set(context.writableAnnotationIds);
   const originalObjects = new Set(before.metadata.workbook.objects?.map(object => object.nodeId));
+  const copied = workbookObjectCopies(candidate.model);
+  for (const object of after.metadata.workbook.objects ?? []) {
+    budget.step(); let source = copied?.get(object.nodeId); const seen = new Set<string>();
+    while (source !== undefined && copied?.has(source)) {
+      budget.step(); if (seen.has(source)) invalid("A workbook drawing copy has invalid source provenance."); seen.add(source); source = copied.get(source);
+    }
+    if (source !== undefined && originalObjects.has(source) && !context.writableObjectIds.includes(source)) invalid("A workbook proposal cannot copy an undisclosed drawing source.");
+  }
   const duplicateSheets = new Set(proposal.operations.flatMap(op => op.op === "duplicateWorkbookObjects" ? op.nodeIds.flatMap(id => before.metadata.workbook.objects?.find(object => object.nodeId === id)?.sheetId ?? []) : []));
   for (const object of after.metadata.workbook.objects ?? []) if (!originalObjects.has(object.nodeId) && (context.writableNewObjectSheetIds.includes(object.sheetId) || duplicateSheets.has(object.sheetId))) objectIds.add(object.nodeId);
   const originalAnnotations = new Set(before.annotations.map(annotation => annotation.annotationId));

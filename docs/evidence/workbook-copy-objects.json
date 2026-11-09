@@ -1,0 +1,3204 @@
+{
+  "scope": "Two immutable independent ZIP/XML sources and eight actual native range copies, with pictures, shapes, absolute boxes and three basic charts. Complete and partial direct input vectors are observed separately. Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "fontManifest": {
+    "source": "examples/xlsx/reference.json#environment.fonts",
+    "sha256": "bda037c50b31e342e0e460755840725d14dd8bfaeccca8de54269277342a5119"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/office/vba/api/excel.range.copy",
+    "https://support.microsoft.com/en-au/excel/paste-options?nochrome=true"
+  ],
+  "producerDifferences": [
+    "Calc redirects a complete copied direct chart vector, but keeps the whole original vector when only some or none of its cells are copied; these are observations, not an Excel runtime claim.",
+    "Calc normalizes native anchor containers, transformed frames, marker offsets and drawing names. SDK copies retain source kinds/flags, measured extents and inert rich source with fresh identities.",
+    "SDK keeps symbolic defined-name and structured-reference bindings rather than guessing rewritten definitions; this probe covers direct native vectors, not producer verification of every symbolic-reference copy.",
+    "Absolute SDK boxes require complete measured footprint coverage; cell-anchored objects follow their logical start marker. Original source markers and the producer's normalized geometry remain separate."
+  ],
+  "sources": [
+    {
+      "name": "charts",
+      "source": "examples/xlsx/07-three-charts.xlsx",
+      "sourceSha256": "395c89fea4af3914620f4238d30eba086de4c4605aae13abcd40d15dd4a1516b",
+      "original": {
+        "drawings": [
+          {
+            "name": "Chart 1",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "0",
+              "colOff": "0",
+              "row": "6",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "2413000"
+            },
+            "frame": {
+              "attributes": {},
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "0",
+                  "cy": "0"
+                }
+              }
+            }
+          },
+          {
+            "name": "Chart 2",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "5",
+              "colOff": "0",
+              "row": "6",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "2413000"
+            },
+            "frame": {
+              "attributes": {},
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "0",
+                  "cy": "0"
+                }
+              }
+            }
+          },
+          {
+            "name": "Chart 3",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "0",
+              "colOff": "0",
+              "row": "20",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "2413000"
+            },
+            "frame": {
+              "attributes": {},
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "0",
+                  "cy": "0"
+                }
+              }
+            }
+          }
+        ],
+        "notes": [],
+        "charts": [
+          [
+            "Data!$B$1",
+            "Data!$A$2:$A$4",
+            "Data!$B$2:$B$4",
+            "Data!$C$1",
+            "Data!$A$2:$A$4",
+            "Data!$C$2:$C$4"
+          ],
+          [
+            "Data!$B$1",
+            "Data!$A$2:$A$4",
+            "Data!$B$2:$B$4",
+            "Data!$C$1",
+            "Data!$A$2:$A$4",
+            "Data!$C$2:$C$4"
+          ],
+          [
+            "Data!$B$1",
+            "Data!$A$2:$A$4",
+            "Data!$B$2:$B$4"
+          ]
+        ],
+        "comments": [],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              },
+              {
+                "r": "2"
+              },
+              {
+                "r": "3"
+              },
+              {
+                "r": "4"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": []
+      },
+      "cases": [
+        {
+          "name": "full-same",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 39,
+              "column": 14
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": false,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-charts-full-same-calc.xlsx",
+          "outputSha256": "1a28959d6e1909e6229dbb32a0d6490da076ad52aa7843eabd1bc24fb5652183",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "20",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3866040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 4",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "65",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "90720",
+                  "row": "77",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "6507360",
+                      "y": "12494160"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 5",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "12",
+                  "colOff": "0",
+                  "row": "65",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "16",
+                  "colOff": "91080",
+                  "row": "77",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "11155680",
+                      "y": "12494160"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 6",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "79",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "90720",
+                  "row": "91",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "6507360",
+                      "y": "15161400"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Data!$I$60",
+                "Data!$H$61:$H$63",
+                "Data!$I$61:$I$63",
+                "Data!$J$60",
+                "Data!$H$61:$H$63",
+                "Data!$J$61:$J$63"
+              ],
+              [
+                "Data!$I$60",
+                "Data!$H$61:$H$63",
+                "Data!$I$61:$I$63",
+                "Data!$J$60",
+                "Data!$H$61:$H$63",
+                "Data!$J$61:$J$63"
+              ],
+              [
+                "Data!$I$60",
+                "Data!$H$61:$H$63",
+                "Data!$I$61:$I$63"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "60",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "full-other",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 39,
+              "column": 14
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": true,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-charts-full-other-calc.xlsx",
+          "outputSha256": "628b7598258f84a83f8bf39c7096f33e072f68014cba74ec19505140cc71e201",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "70560"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3809880"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 4",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "65",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "558000",
+                  "row": "78",
+                  "rowOff": "134280"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "5689440",
+                      "y": "10713600"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 5",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "12",
+                  "colOff": "0",
+                  "row": "65",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "16",
+                  "colOff": "558360",
+                  "row": "78",
+                  "rowOff": "134280"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "9753480",
+                      "y": "10713600"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 6",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "79",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "558000",
+                  "row": "92",
+                  "rowOff": "134280"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "5689440",
+                      "y": "13167360"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Other!$I$60",
+                "Other!$H$61:$H$63",
+                "Other!$I$61:$I$63",
+                "Other!$J$60",
+                "Other!$H$61:$H$63",
+                "Other!$J$61:$J$63"
+              ],
+              [
+                "Other!$I$60",
+                "Other!$H$61:$H$63",
+                "Other!$I$61:$I$63",
+                "Other!$J$60",
+                "Other!$H$61:$H$63",
+                "Other!$J$61:$J$63"
+              ],
+              [
+                "Other!$I$60",
+                "Other!$H$61:$H$63",
+                "Other!$I$61:$I$63"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "60",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "64",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "65",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "66",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "67",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "68",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "69",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "70",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "71",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "72",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "73",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "74",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "75",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "76",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "77",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "78",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "79",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "80",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "81",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "82",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "83",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "84",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "85",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "86",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "87",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "88",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "89",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "90",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "91",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "92",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "93",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "94",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "95",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "96",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "97",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "98",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "99",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "chart-only",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 6,
+              "column": 0
+            },
+            "to": {
+              "row": 18,
+              "column": 4
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": true,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-charts-chart-only-calc.xlsx",
+          "outputSha256": "68310dc7d5b72a9a9aae5598a74e4af3e115236df1a663b7dfb9dcca6e7b0bcf",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "70560"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3809880"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 4",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "59",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "558000",
+                  "row": "72",
+                  "rowOff": "134280"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "5689440",
+                      "y": "9591120"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "60",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "64",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "65",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "66",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "67",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "68",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "69",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "70",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "71",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "72",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "partial-vector",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 2,
+              "column": 0
+            },
+            "to": {
+              "row": 18,
+              "column": 4
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": true,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-charts-partial-vector-calc.xlsx",
+          "outputSha256": "da4abcbe39a66a59648bb483cd45b83f42d01116373fe91085e06f755c33341d",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "70560"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3809880"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 4",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "63",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "558000",
+                  "row": "76",
+                  "rowOff": "134280"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "5689440",
+                      "y": "10292040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "60",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "64",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "65",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "66",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "67",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "68",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "69",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "70",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "71",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "72",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "73",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "74",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "75",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "76",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "single-full",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 18,
+              "column": 4
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": true,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-charts-single-full-calc.xlsx",
+          "outputSha256": "9233aae3f86846c3c6cfea7169bee5496aaaf57b2943be1c56b8585a695d8077",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "70560"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3809880"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 4",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "65",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "558000",
+                  "row": "78",
+                  "rowOff": "134280"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "5689440",
+                      "y": "10713600"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Other!$I$60",
+                "Other!$H$61:$H$63",
+                "Other!$I$61:$I$63",
+                "Other!$J$60",
+                "Other!$H$61:$H$63",
+                "Other!$J$61:$J$63"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "60",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "64",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "65",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "66",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "67",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "68",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "69",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "70",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "71",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "72",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "73",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "74",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "75",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "76",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "77",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "78",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "images-shapes",
+      "source": "examples/xlsx/08-images-shapes.xlsx",
+      "sourceSha256": "a0fa81e6b17e4362b57a7d116c4f821b10ea5eb12e7ab64b07e0660dc7d2ad7a",
+      "original": {
+        "drawings": [
+          {
+            "name": "独立蓝色位图",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "1",
+              "colOff": "0",
+              "row": "2",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "2032000",
+              "cy": "1524000"
+            },
+            "frame": {
+              "attributes": {
+                "rot": "900000"
+              },
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "1524000",
+                  "cy": "1143000"
+                }
+              }
+            }
+          },
+          {
+            "name": "Shape 2",
+            "kind": "twoCellAnchor",
+            "editAs": "twoCell",
+            "from": {
+              "col": "4",
+              "colOff": "0",
+              "row": "2",
+              "rowOff": "0"
+            },
+            "to": {
+              "col": "8",
+              "colOff": "0",
+              "row": "9",
+              "rowOff": "0"
+            },
+            "frame": {
+              "attributes": {
+                "rot": "600000",
+                "flipH": "0"
+              },
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "2286000",
+                  "cy": "1143000"
+                }
+              }
+            }
+          },
+          {
+            "name": "Shape 3",
+            "kind": "absoluteAnchor",
+            "editAs": null,
+            "pos": {
+              "x": "762000",
+              "y": "2857500"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "1143000"
+            },
+            "frame": {
+              "attributes": {
+                "rot": "600000",
+                "flipH": "0"
+              },
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "2286000",
+                  "cy": "1143000"
+                }
+              }
+            }
+          }
+        ],
+        "notes": [],
+        "charts": [],
+        "comments": [],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": [
+          "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+        ]
+      },
+      "cases": [
+        {
+          "name": "full-same",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 39,
+              "column": 14
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": false,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-images-shapes-full-same-calc.xlsx",
+          "outputSha256": "b672fd2991759fa8941b9acdaa2e262d512558046d3234e3e1971b0c59076f19",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "3",
+                  "colOff": "920880",
+                  "row": "0",
+                  "rowOff": "429480"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "8280",
+                  "row": "8",
+                  "rowOff": "141120"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "684600"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3675240",
+                      "y": "422280"
+                    },
+                    "ext": {
+                      "cx": "3735720",
+                      "cy": "1518840"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "独立蓝色位图 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "8",
+                  "colOff": "0",
+                  "row": "59",
+                  "rowOff": "380520"
+                },
+                "to": {
+                  "col": "10",
+                  "colOff": "172440",
+                  "row": "67",
+                  "rowOff": "96840"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "7436880",
+                      "y": "11903400"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 1",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "11",
+                  "colOff": "107280",
+                  "row": "59",
+                  "rowOff": "429840"
+                },
+                "to": {
+                  "col": "15",
+                  "colOff": "24120",
+                  "row": "67",
+                  "rowOff": "139680"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "703800"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "10292040",
+                      "y": "11944080"
+                    },
+                    "ext": {
+                      "cx": "3635280",
+                      "cy": "1517040"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 4",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "7",
+                  "colOff": "762120",
+                  "row": "72",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "852840",
+                  "row": "78",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "7269480",
+                      "y": "14379840"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "60",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "full-other",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 39,
+              "column": 14
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": true,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-images-shapes-full-other-calc.xlsx",
+          "outputSha256": "061f868a023003065bb7aeaf921963f1181183545cf3e8c63d83e3bd015314e3",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "0",
+                  "row": "0",
+                  "rowOff": "380520"
+                },
+                "to": {
+                  "col": "7",
+                  "colOff": "929520",
+                  "row": "7",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3718080",
+                      "y": "380520"
+                    },
+                    "ext": {
+                      "cx": "3718440",
+                      "cy": "1333440"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "独立蓝色位图 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "8",
+                  "colOff": "20520",
+                  "row": "59",
+                  "rowOff": "449640"
+                },
+                "to": {
+                  "col": "10",
+                  "colOff": "426240",
+                  "row": "67",
+                  "rowOff": "45360"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "6522480",
+                      "y": "10040760"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 1",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "11",
+                  "colOff": "82440",
+                  "row": "59",
+                  "rowOff": "475920"
+                },
+                "to": {
+                  "col": "15",
+                  "colOff": "33480",
+                  "row": "67",
+                  "rowOff": "86040"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "817800"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "8940600",
+                      "y": "10046880"
+                    },
+                    "ext": {
+                      "cx": "3202200",
+                      "cy": "1537920"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 4",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "7",
+                  "colOff": "675000",
+                  "row": "72",
+                  "rowOff": "115200"
+                },
+                "to": {
+                  "col": "12",
+                  "colOff": "420480",
+                  "row": "79",
+                  "rowOff": "30960"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "6364440",
+                      "y": "12510360"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "60",
+                    "ht": "55.2",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "64",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "65",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "66",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "67",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "68",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "69",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "70",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "71",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "72",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "73",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "74",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "75",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "76",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "77",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "78",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "79",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "80",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "81",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "82",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "83",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "84",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "85",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "86",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "87",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "88",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "89",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "90",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "91",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "92",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "93",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "94",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "95",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "96",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "97",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "98",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "99",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "partial-box",
+          "producerAction": "UNO copyRange",
+          "sourceRange": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 10,
+              "column": 8
+            }
+          },
+          "target": {
+            "row": 59,
+            "column": 7
+          },
+          "otherSheet": true,
+          "outputFile": "packages/office/tests/fixtures/workbook-copy-objects-images-shapes-partial-box-calc.xlsx",
+          "outputSha256": "d7e1a05ca94a705e8cfe525faab9dd023f7fe69d3d7ca4f3afcca288cda9bca7",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "0",
+                  "row": "0",
+                  "rowOff": "380520"
+                },
+                "to": {
+                  "col": "7",
+                  "colOff": "929520",
+                  "row": "7",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3718080",
+                      "y": "380520"
+                    },
+                    "ext": {
+                      "cx": "3718440",
+                      "cy": "1333440"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "独立蓝色位图 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "8",
+                  "colOff": "20520",
+                  "row": "59",
+                  "rowOff": "449640"
+                },
+                "to": {
+                  "col": "10",
+                  "colOff": "426240",
+                  "row": "67",
+                  "rowOff": "45360"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "6522480",
+                      "y": "10040760"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 1",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "11",
+                  "colOff": "82440",
+                  "row": "59",
+                  "rowOff": "475920"
+                },
+                "to": {
+                  "col": "15",
+                  "colOff": "33480",
+                  "row": "67",
+                  "rowOff": "86040"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "817800"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "8940600",
+                      "y": "10046880"
+                    },
+                    "ext": {
+                      "cx": "3202200",
+                      "cy": "1537920"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "60",
+                    "ht": "55.2",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "61",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "62",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "63",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "64",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "65",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "66",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "67",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "68",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "69",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "70",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

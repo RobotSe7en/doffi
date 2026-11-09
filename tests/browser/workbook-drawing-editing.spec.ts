@@ -16,6 +16,52 @@ declare global { interface Window { workbookEditor: typeof directFixture; workbo
 declare global { interface Window { workbookImageReadGate: { readonly started: boolean; release(): void; restore(): void } } }
 const bundles = new Map<string, string>();
 
+for (const remote of [false, true]) for (const fixture of ["08-images-shapes", "07-three-charts"]) test(`${remote ? "Worker" : "direct"} native ${fixture} range copy preserves measured drawings and connects copied current chart cells`, async ({ page }) => {
+  const s = createDocumentSession(openDocument(await importXlsx(readFileSync(`examples/xlsx/${fixture}.xlsx`), { documentId: "browser-object-copy" }), { kind: "workbook" }));
+  const apply = (operations: Parameters<typeof s.prepare>[0]["operations"]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
+  apply([{ op: "insertWorkbookSheet", name: "Other" }]); const other = s.snapshot().metadata.workbook.sheets.at(-1)!;
+  apply([{ op: "updateWorkbookSheet", sheetId: other.sheetId, changes: { defaultRowHeightPt: 30, defaultRowHeightCustom: true, defaultColumnWidth: 12 } }]);
+  if (fixture === "07-three-charts") apply([{ op: "setWorkbookChart", nodeId: s.snapshot().metadata.workbook.charts![1]!.nodeId, changes: { showLabels: true, labelContents: ["value"] } }]);
+  const initial = s.snapshot(), source = initial.metadata.workbook.sheets[0]!, original = initial.metadata.workbook.objects![0]!, anchor = original.anchor;
+  if (anchor.kind !== "one-cell") throw Error("Expected the independent native one-cell source"); const files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = async () => await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote) as { drawings: NonNullable<typeof initial.metadata.workbook.objects>; charts: NonNullable<typeof initial.metadata.workbook.charts>; errors: string[]; history: { undoSteps: number } };
+  const choose = async (value: string) => { const field = page.getByLabel("选择单元格或区域", { exact: true }); await field.fill(value); await field.press("Enter"); await settled(); };
+  const bounds = (id: string, row: number, column: number) => page.evaluate(({ remote, id, row, column }) => {
+    const view = remote ? window.workbookRemoteEditor : window.workbookEditor, value = view.displayedDrawingBounds().objects.find(object => object.nodeId === id); if (!value) throw Error("The copied drawing is outside the observed view");
+    const cell = view.displayedCellBounds(row, column); return { ...value, offsetX: value.xPt - cell.xPt, offsetY: value.yPt - cell.yPt };
+  }, { remote, id, row, column });
+  const paint = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.displayedChart() : window.workbookEditor.displayedChart(), remote);
+  await choose(`${String.fromCharCode(65 + anchor.from.column)}${anchor.from.row + 1}`); const before = await bounds(original.nodeId, anchor.from.row, anchor.from.column), beforeState = await inspect();
+  let labels: Awaited<ReturnType<typeof paint>> | undefined;
+  if (fixture === "07-three-charts") { await choose("F7"); labels = await paint(); }
+  await page.getByRole("tab", { name: "Other", exact: true }).click(); await settled(); await choose("A1");
+  // Other has uniform columns; its empty preview need only render A1.
+  const targetX = await page.evaluate(remote => { const view = remote ? window.workbookRemoteEditor : window.workbookEditor; return view.displayedCellBounds(0, 0).widthPt * 7; }, remote);
+  await page.getByRole("tab", { name: source.name, exact: true }).click(); await settled(); await choose("A1:O40");
+  await page.getByRole("button", { name: "复制选区", exact: true }).click(); await page.getByRole("tab", { name: "Other", exact: true }).click(); await settled(); await choose("H60");
+  await page.getByRole("button", { name: "粘贴选区", exact: true }).click(); await settled(); const copied = await inspect();
+  expect(copied).toMatchObject({ errors: [], history: { undoSteps: 1 } }); expect(copied.drawings).toHaveLength(6); expect(copied.drawings.slice(0, 3)).toEqual(beforeState.drawings);
+  const added = copied.drawings.filter(object => object.sheetId === other.sheetId), copy = added[0]!, row = anchor.from.row + 59, column = anchor.from.column + 7;
+  expect(added).toHaveLength(3); expect(new Set(copied.drawings.map(object => object.nodeId)).size).toBe(6); await choose(`${String.fromCharCode(65 + column)}${row + 1}`);
+  const after = await bounds(copy.nodeId, row, column); for (const key of ["offsetX", "offsetY", "widthPt", "heightPt"] as const) expect(after[key]).toBeCloseTo(before[key], 1);
+  if (fixture === "08-images-shapes") {
+    const absolute = initial.metadata.workbook.objects![2]!.anchor, moved = added[2]!.anchor;
+    if (absolute.kind !== "absolute" || moved.kind !== "absolute") throw Error("The absolute source box changed kind");
+    expect(moved.widthPt).toBe(absolute.widthPt); expect(moved.heightPt).toBe(absolute.heightPt); expect(moved.xPt - absolute.xPt).toBeCloseTo(targetX, 1); expect(moved.yPt - absolute.yPt).toBeCloseTo(59 * 30, 1);
+  } else {
+    await choose("M66"); expect(await paint()).toMatchObject({ categories: labels!.categories, labels: labels!.labels });
+    await choose("I61"); const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }); await input.fill("12345.678"); await input.press("Enter"); await settled(); await choose("M66");
+    expect((await paint()).labels).not.toEqual(labels!.labels); expect(await inspect()).toMatchObject({ history: { undoSteps: 2 }, errors: [] });
+    await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await paint()).toMatchObject({ labels: labels!.labels });
+  }
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await settled(); expect(await inspect()).toMatchObject({ drawings: beforeState.drawings, charts: beforeState.charts, history: { undoSteps: 0 }, errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} chart reference worksheet keeps nested global inputs and supports explicit rebinding with undo`, async ({ page }) => {
   const cells = ["来源分类", 10, "来源标题", "来源系列"].map((value, column) => ({ row: 0, column, value: typeof value === "number" ? { type: "number" as const, value } : { type: "text" as const, value } }));
   const s = createDocumentSession(scalarWorkbook(cells)), apply = (operations: Parameters<typeof s.prepare>[0]["operations"]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
