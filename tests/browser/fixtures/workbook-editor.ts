@@ -120,7 +120,7 @@ export function cancelPreparationAtProgress(): void {
 export function dispose(): { revision: number; usable: boolean } {
   observed?.dispose(); observed = undefined;
   editor.dispose(); const revision = session.snapshot().manifest.revision;
-  external("host remains usable", undefined, { measureWorkbookLayout: hostOwnershipProbeLayout }); container.remove();
-  return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
+  external("host remains usable", { row: 13000, column: 35 }, { measureWorkbookLayout: hostOwnershipProbeLayout }); container.remove();
+  return { revision, usable: session.getCell("sheet-1", 13000, 35)?.value.type === "text" };
 }
 (window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCellBounds, displayedCell, displayedTextStyles, settled, perform, mutateInputOnPending, performWithPendingMutation, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

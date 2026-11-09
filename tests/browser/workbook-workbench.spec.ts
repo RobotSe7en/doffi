@@ -2,7 +2,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { expect, test } from "@playwright/test";
-import { readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { importXlsx, readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { openDocument } from "@doffi/core";
+import { mixedEditingOperations } from "../workbook-combination-operations.js";
 import type { WorkbookDocumentMetadata } from "@doffi/core";
 import { openSdkHost } from "./sdk-host.js";
 import type * as fixture from "./fixtures/workbook-workbench.js";
@@ -21,6 +23,27 @@ for (const remote of [false, true]) {
   test.describe(name, () => {
     test.beforeEach(async ({ page }) => { await openSdkHost(page); await page.addScriptTag({ content: code }); await page.evaluate(({ encoded, worker }) => window.workbookWorkbench.mount(encoded, worker || undefined), { encoded, worker: remote ? worker : "" }); });
     test.afterEach(async ({ page }) => { await page.evaluate(() => window.workbookWorkbench.finish()); });
+    test("mixed native proposal freezes full context and reviews table, rules, drawings and thread changes before one apply", async ({ page }) => {
+      const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-editing-combinations.xlsx'), { documentId: 'mixed-workbench' }), { kind: 'workbook' });
+      const operations = mixedEditingOperations(model.snapshot()), bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+      await page.evaluate(({ encoded, worker }) => window.workbookWorkbench.mount(encoded, worker || undefined), { encoded: bytes, worker: remote ? worker : '' });
+      await page.getByLabel('请求写入范围', { exact: true }).selectOption('global');
+      await page.getByRole('button', { name: '生成工作簿请求', exact: true }).click(); await expect(page.getByRole('status', { name: '工作簿协作状态', exact: true })).toContainText('请求已生成');
+      const before = await page.evaluate(() => window.workbookWorkbench.inspect()), request = before.request!;
+      expect(request.context.scope.kind).toBe('global'); expect(request.context.metadata.workbook.objects).toHaveLength(4); expect(request.context.metadata.workbook.sheets[0]!.tables).toHaveLength(1);
+      expect(request.context.cells.find(cell => cell.sheetId === 'sheet-1' && cell.row === 1 && cell.column === 3)).toMatchObject({ value: { value: 999 }, current: { value: { value: 20 } } });
+      await page.evaluate(operations => window.workbookWorkbench.loadOperations(operations), operations);
+      expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, request });
+      const details = page.getByText('结构、规则、绘图、批注锚点与样式', { exact: true }); await details.click();
+      const diff = JSON.parse((await details.locator('..').locator('pre').textContent())!) as { after: { metadata: WorkbookDocumentMetadata } };
+      expect(diff.after.metadata.workbook.names).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'CurrentAmounts' })]));
+      expect(diff.after.metadata.workbook.sheets[0]!.tables![0]!.autoFilter!.columns).toHaveLength(2);
+      await page.getByRole('button', { name: '整批应用工作簿提案', exact: true }).click(); await expect.poll(() => page.evaluate(() => window.workbookWorkbench.revision())).toBe(1); await page.evaluate(() => window.workbookWorkbench.settled());
+      expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+      await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect.poll(() => page.evaluate(() => window.workbookWorkbench.revision())).toBe(2); await page.evaluate(() => window.workbookWorkbench.settled());
+      const undone = await page.evaluate(() => window.workbookWorkbench.inspect()); expect(undone).toMatchObject({ drawings: before.drawings, history: { undoSteps: 0 }, errors: [] });
+      expect(undone.annotations.map(root => [root.status, root.anchor, root.replies])).toEqual(before.annotations.map(root => [root.status, root.anchor, root.replies]));
+    });
     test("reviews isolated source and consumer results, then applies once and undoes the instruction and content", async ({ page }) => {
       await page.getByRole("button", { name: "生成工作簿请求", exact: true }).click(); await expect(page.getByRole("status", { name: "工作簿协作状态", exact: true })).toContainText("请求已生成");
       const original = await page.evaluate(() => window.workbookWorkbench.inspect()); expect(original.request!.context.cells[1]).toMatchObject({ access: "read-only", value: { value: 999 }, current: { value: { value: 5 } } });

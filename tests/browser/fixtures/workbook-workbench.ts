@@ -1,5 +1,5 @@
 import { createDocumentSession, openDocument } from "@doffi/core";
-import type { WorkbookEditProposal, WorkbookInteractionRequest, WorkbookSession } from "@doffi/core";
+import type { WorkbookEditProposal, WorkbookInteractionRequest, WorkbookOperation, WorkbookSession } from "@doffi/core";
 import { readDocumentZip } from "@doffi/office";
 import { connectWorkbookSession, mountDocumentWorkbench } from "@doffi/editor";
 import type { WorkbookSessionConnection, WorkbookWorkbenchOptions, WorkbookWorkbenchView } from "@doffi/editor";
@@ -43,6 +43,7 @@ export async function inspect() {
 }
 export function build() { return workbench.buildRequest(); }
 export function load(value = 10, column = 0) { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, edit(request, value, column)).then(() => {}); }
+export function loadOperations(operations: WorkbookOperation[]) { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, { ...edit(request, 10), summary: "复核表、规则、绘图与批注组合", operations }).then(() => {}); }
 export function loadNoop() { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, { ...edit(request, 10), operations: [{ op: "setWorkbookCellFormats", sheetId: "sheet-1", cells: [{ row: 0, column: 1 }] }] }).then(() => {}); }
 export async function selectRows(rows: number) { await workbench.editor.selectRange("sheet-1", { from: { row: 0, column: 0 }, to: { row: rows - 1, column: 0 } }); }
 export function formatRows(rows: number) { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, { ...edit(request, 10), operations: [{ op: "formatWorkbookRanges", sheetId: "sheet-1", ranges: [{ from: { row: 0, column: 0 }, to: { row: rows - 1, column: 0 } }], properties: { color: "red" } }] }).then(() => {}); }
@@ -80,4 +81,4 @@ export async function finish() {
   session.dispose(); const active = worker;
   const result = await new Promise<unknown>(resolve => { const timer = setTimeout(() => resolve({ error: "audit timeout" }), 10000); active.onmessage = event => { clearTimeout(timer); resolve(event.data); }; active.postMessage({ kind: "closed-audit" }); }); cleanup(); return result;
 }
-Object.assign(window, { workbookWorkbench: { mount, inspect, build, load, loadNoop, selectRows, formatRows, formatFont, drawingBounds, addFixedObject, addObject, replaceObject, mode, deliver, external, focusInput, cancelInput, settled, revision, disposeView, applyAndDispose, finish } });
+Object.assign(window, { workbookWorkbench: { mount, inspect, build, load, loadOperations, loadNoop, selectRows, formatRows, formatFont, drawingBounds, addFixedObject, addObject, replaceObject, mode, deliver, external, focusInput, cancelInput, settled, revision, disposeView, applyAndDispose, finish } });

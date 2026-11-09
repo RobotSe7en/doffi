@@ -17,6 +17,7 @@ describe("selected first-party workbook calculation functions", () => {
       ['=UPPER("abc中国")', text("ABC中国")], ['=LOWER("AbC中国")', text("abc中国")], ['=EXACT("ABC","abc")', { type: "boolean", value: false }],
       ['=CONCAT("a",1,TRUE)', text("a1TRUE")], ['=CONCATENATE("a","b",3)', text("ab3")], ['=TEXTJOIN("-",TRUE,"a","","b")', text("a-b")],
       ['=TEXTJOIN("-",FALSE,"a","","b")', text("a--b")], ['=SUBSTITUTE("a-a-a","a","x",2)', text("a-x-a")],
+      ['=TEXTJOIN(",",TRUE,"a","","b")', text("a,b")], ['=CONCAT(")","(","!","%",":","+"," ")', text(")(!%:+ ")],
       ['=SUBSTITUTE("a-a-a","a","x")', text("x-x-x")], ['=REPLACE("abcdef",2,3,"X")', text("aXef")],
       ['=FIND("B","aBcB",3)', number(4)], ['=SEARCH("b?","aBcB")', number(2)], ['=SEARCH("~*","a*b")', number(2)],
       ['=TEXT(1234.5,"#,##0.00")', text("1,234.50")], ['=VALUE("$1,234.50")', number(1234.5)], ['=VALUE("15%")', number(0.15)],

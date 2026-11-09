@@ -128,7 +128,8 @@ function parseWithStyle(source: string, origin: FormulaOrigin, referenceStyle: "
   const peek = (): Token => tokens[index]!;
   const take = (): Token => tokens[index++]!;
   const spaces = (): void => { if (peek().kind === "space") take(); };
-  const consume = (text: string): void => { if (take().text !== text) invalid("Unexpected formula token."); };
+  const at = (text: string): boolean => peek().kind === "operator" && peek().text === text;
+  const consume = (text: string): void => { if (!at(text)) invalid("Unexpected formula token."); take(); };
   const operand = (value: Operand): FormulaExpression => { if (value.kind === "axis") invalid("A whole-axis reference requires a range."); return value; };
   const isReference = (value: Operand): boolean => ["cell", "range", "axisRange", "name", "structured", "axis"].includes(value.kind)
     || value.kind === "error" && value.value === "#REF!" || value.kind === "binary" && [",", " ", ":"].includes(value.operator)
@@ -156,10 +157,10 @@ function parseWithStyle(source: string, origin: FormulaOrigin, referenceStyle: "
       left = { kind: "number", value }; numericTokens.set(left, token.text);
     } else if (token.kind === "string") left = { kind: "string", value: token.text };
     else if (token.kind === "error") left = { kind: "error", value: token.text };
-    else if (token.kind === "structured" && /^\[\d+\]$/.test(token.text) && (peek().text === "!"
-      || ["word", "quoted"].includes(peek().kind) && tokens[index + 1]?.text === "!")) {
+    else if (token.kind === "structured" && /^\[\d+\]$/.test(token.text) && (at("!")
+      || ["word", "quoted"].includes(peek().kind) && tokens[index + 1]?.kind === "operator" && tokens[index + 1]?.text === "!")) {
       if (!/^\[0+\]$/.test(token.text)) unsupported("External workbook references are not supported.");
-      if (peek().text === "!") {
+      if (at("!")) {
         take(); spaces(); const target = take();
         if (target.kind !== "word") invalid("A workbook-qualified name requires a name token.");
         const name = ref(target.text); if (name.kind !== "name") invalid("A workbook prefix without a sheet requires a defined name.");
@@ -168,7 +169,7 @@ function parseWithStyle(source: string, origin: FormulaOrigin, referenceStyle: "
     }
     else if (token.kind === "structured") left = parseStructuredReference(token.text);
     else if (token.kind === "word" || token.kind === "quoted") {
-      if (peek().text === "!") {
+      if (at("!")) {
         if (!token.text) invalid("An explicit worksheet qualifier cannot be empty.");
         take(); left = sheetReference(token.text);
       } else if (token.kind === "quoted") invalid("Quoted formula sheet names require a reference.");
@@ -176,14 +177,14 @@ function parseWithStyle(source: string, origin: FormulaOrigin, referenceStyle: "
         if (token.text.includes("$")) invalid("Invalid table name.");
         left = parseStructuredReference(take().text, token.text);
       }
-      else if (peek().text === "(") {
+      else if (at("(")) {
         if (token.text.includes("$") || token.text.includes("\\")) invalid("Invalid formula function name.");
         take(); spaces(); const args: (FormulaExpression | null)[] = [];
-        if (peek().text !== ")") {
+        if (!at(")")) {
           while (true) {
-            spaces(); args.push(peek().text === "," || peek().text === ")" ? null : operand(expression(0, depth + 1, false))); spaces();
+            spaces(); args.push(at(",") || at(")") ? null : operand(expression(0, depth + 1, false))); spaces();
             checkLimit(args.length, 255);
-            if (peek().text !== ",") break;
+            if (!at(",")) break;
             take();
           }
         }
@@ -195,10 +196,10 @@ function parseWithStyle(source: string, origin: FormulaOrigin, referenceStyle: "
     while (true) {
       if (peek().kind === "space") {
         const next = tokens[index + 1]!;
-        if (!(isReference(left) && (["word", "quoted", "structured"].includes(next.kind) || next.kind === "number" && tokens[index + 2]?.text === ":" || next.text === "(" || next.text === "!"))) { take(); continue; }
+        if (!(isReference(left) && (["word", "quoted", "structured"].includes(next.kind) || next.kind === "number" && tokens[index + 2]?.text === ":" || next.kind === "operator" && (next.text === "(" || next.text === "!")))) { take(); continue; }
       }
-      if (peek().text === "%" && 60 >= minimum) { take(); left = { kind: "unary", operator: "%", operand: operand(left) }; continue; }
-      const operator = peek().text, precedence = operators[operator];
+      if (at("%") && 60 >= minimum) { take(); left = { kind: "unary", operator: "%", operand: operand(left) }; continue; }
+      const operator = peek().kind === "operator" || peek().kind === "space" ? peek().text : "", precedence = operators[operator];
       if (precedence === undefined || precedence < minimum || operator === "," && !union) break;
       take(); const right = expression(precedence + 1, depth + 1, union);
       if (operator === ":") {

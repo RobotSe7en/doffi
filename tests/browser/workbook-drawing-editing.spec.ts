@@ -10,11 +10,40 @@ import type { WorkbookRenderReport } from "@doffi/render";
 import { scalarWorkbook } from "../../packages/core/tests/workbook-scalar-fixture.js";
 import { encodeTestPackage } from "./package-transport.js";
 import { openSdkHost } from "./sdk-host.js";
+import { mixedEditingOperations } from "../workbook-combination-operations.js";
 import type * as directFixture from "./fixtures/workbook-editor.js";
 import type * as remoteFixture from "./fixtures/workbook-remote-editor.js";
 declare global { interface Window { workbookEditor: typeof directFixture; workbookRemoteEditor: typeof remoteFixture } }
 declare global { interface Window { workbookImageReadGate: { readonly started: boolean; release(): void; restore(): void } } }
 const bundles = new Map<string, string>();
+
+for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} mixed native command composes table filters, rich fonts, drawings and both comment kinds with exact undo`, async ({ page }) => {
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-editing-combinations.xlsx'), { documentId: 'browser-mixed-native' }), { kind: 'workbook' });
+  const initial = model.snapshot(), files = model.serialize(), operations = mixedEditingOperations(initial);
+  const shape = initial.metadata.workbook.objects!.find(object => object.kind === 'geometry')!;
+  await page.addScriptTag({ content: bundles.get(remote ? 'workbook-remote-editor' : 'workbook-editor')! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get('workbook-session-worker')!, bytes: Buffer.from(writeDocumentZip(files)).toString('base64') });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const settled = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  const inspect = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote);
+  const choose = async (address: string) => { const input = page.getByLabel('选择单元格或区域', { exact: true }); await input.fill(address); await input.press('Enter'); await settled(); };
+  const display = (row: number, column: number) => page.evaluate(({ remote, row, column }) => remote ? window.workbookRemoteEditor.displayedCell(row, column) : window.workbookEditor.displayedCell(row, column), { remote, row, column });
+  const bounds = () => page.evaluate(({ remote, id }) => (remote ? window.workbookRemoteEditor : window.workbookEditor).displayedDrawingBounds().objects.find(object => object.nodeId === id), { remote, id: shape.nodeId });
+  const prior = await bounds(); expect(prior).toBeDefined(); const before = await inspect();
+  await page.evaluate(async ({ remote, operations }) => { await (remote ? window.workbookRemoteEditor.perform(operations) : window.workbookEditor.perform(operations)); }, { remote, operations });
+  expect(await inspect()).toMatchObject({ errors: [], history: { undoSteps: 1 }, names: expect.arrayContaining([expect.objectContaining({ name: 'CurrentAmounts' })]) });
+  const after = await bounds(); expect(after).toBeDefined(); expect(after!.widthPt).toBeCloseTo(prior!.widthPt, 1); expect(after!.heightPt).toBeCloseTo(prior!.heightPt, 1);
+  await choose('D6'); expect(await display(5, 3)).toBe('120.00');
+  await choose('A2'); expect(await display(1, 0)).toBe('甲禰󠄀 Latin😀');
+  await page.getByRole('tab', { name: 'Observer', exact: true }).click(); await settled(); await choose('A1'); expect(await display(0, 0)).toBe('280'); expect(await display(1, 0)).toBe('14');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await settled();
+  const restored = await inspect() as { drawings: unknown; tables: unknown; names: unknown; comments: unknown; annotations: { status: string; anchor: unknown }[]; history: { undoSteps: number }; errors: string[] };
+  const original = before as typeof restored;
+  expect(restored).toMatchObject({ drawings: original.drawings, tables: original.tables, names: original.names, comments: original.comments, errors: [], history: { undoSteps: 0 } });
+  expect(restored.annotations.map(root => [root.status, root.anchor])).toEqual(original.annotations.map(root => [root.status, root.anchor]));
+  await choose('A1'); expect(await display(0, 0)).toBe('240');
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+});
 
 for (const remote of [false, true]) for (const fixture of ["08-images-shapes", "07-three-charts"]) test(`${remote ? "Worker" : "direct"} native ${fixture} range copy preserves measured drawings and connects copied current chart cells`, async ({ page }) => {
   const s = createDocumentSession(openDocument(await importXlsx(readFileSync(`examples/xlsx/${fixture}.xlsx`), { documentId: "browser-object-copy" }), { kind: "workbook" }));

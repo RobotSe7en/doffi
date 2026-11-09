@@ -6,7 +6,7 @@ R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射�
 
 单元格公式仍保存为分块 HTML 中的 `data-formula`。缓存值及状态继续与公式分开；AST、名称/表格绑定和共享模板都是派生状态。原始表达式不会因读取自动规范化。
 
-[解析器](../packages/core/src/workbook/formula.ts)支持数值、字符串、布尔、错误、缺省参数、函数调用、标量运算、相对/绝对/混合 A1 引用、跨表引用、普通矩形、整行整列、名称、联合与交叉区域。函数参数逗号与引用联合逗号区分；括号保持引用运算优先级。前缀正负号、百分号和乘方遵循 Excel 的优先级和结合规则。
+[解析器](../packages/core/src/workbook/formula.ts)支持数值、字符串、布尔、错误、缺省参数、函数调用、标量运算、相对/绝对/混合 A1 引用、跨表引用、普通矩形、整行整列、名称、联合与交叉区域。函数参数逗号与引用联合逗号区分；分隔、括号及运算符均检查标记类型，字符串中的同名标点仍是字面量；括号保持引用运算优先级。前缀正负号、百分号和乘方遵循 Excel 的优先级和结合规则。
 
 [结构化引用](../packages/core/src/workbook/structured-reference.ts)覆盖表名/省略表名、列/列区间、All/Data/Headers/Totals/This Row、Headers+Data、Data+Totals、`[@Column]` 简写和列名特殊字符转义。省略表名时需提供实际所属表，不能根据可见 DOM 猜测。绑定器按源表几何、列名和表头/汇总行计算至多一个矩形；空数据区显式表示为空，未知表/列和无效当前行返回相应公式错误。
 
@@ -73,3 +73,12 @@ R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射�
 93 个针对性测试覆盖分块/模型、解析、输出、共享组、表格绑定和引用映射；其中原生来源检查处理 16 个独立源及其 Calc 重存的四万余个公式/引用表达式，包括一万行样例、共享公式、表计算列、验证、图表及打印名称。独立点映射检查剪切重叠与删除边界，不只比较重写器自己的中间结构。类型和包依赖边界检查通过。测试不宣称计算结果或 SDK 原生导入已通过。
 
 规范依据：[MS-XLSX 公式语法](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/3d025add-118d-4413-9856-ab65712ec1b0)、[Excel 运算优先级](https://support.microsoft.com/en-us/excel/calculation-operators-and-precedence-in-excel)、[结构化引用](https://support.microsoft.com/en-gb/excel/using-structured-references-with-excel-tables)、[复制与移动公式](https://support.microsoft.com/en-us/excel/move-or-copy-a-formula-in-excel)。剪切部分范围及排序外部公式的具体选择以本轮用户决策为准，Excel/WPS 未实机验证。
+
+
+## 编辑阶段当前计算与独立边界
+
+`createWorkbookCalculator(source, limits?, previous?)` 在同一不可变模型或来源提供者上执行当前公式。`calculateSync()`／异步 `calculate()` 发布带文档、修订、批次与引擎身份的完整结果；`getCell()` 区分当前、过期和不可用。会话的计算接口复用该内核。实际输入及结构变化沿依赖闭包失效，图的区域边不展开成百万个点；迭代处理长链。取消或来源修订变化不发布半批结果，重算不添加历史。完整第一方批次可作为隔离分支的复用证明，复制的 JSON 对象不具备该证明。
+
+第三轮[已选函数表](iteration-3.md#自研公式范围与语义)中的聚合／条件统计、逻辑／类型、数值、文本、日期／时间及查找函数均已实现。上文只读基础的函数清单记录较早检查点，不代表当前只支持该子集。地区与 TODAY／NOW 使用复制的宿主上下文，同一批不读取系统时间。当前结果不采用故意错误的来源缓存；历史缓存和来源正文继续保留，输出缓存另属后续阶段。
+
+[边界记录](evidence/workbook-function-boundaries.json)增加两种日期系统共 268 项独立预期、无缓存输入及未修改的固定 Calc 重存，包括十进制舍入、参数数量与类型、错误传播、空串／空白、最大参数、历史日期及 Unicode。UTF-16 案例声明为旧版 Version 1；微软[兼容版本文档](https://support.microsoft.com/en-gb/excel/compatibility-versions)明确区分其与 Version 2 的代理对计数，当前不会把未知的兼容版本扩展当作旧版静默读取。这份语料不是 Excel 当前通道新工作簿的实机观测。两种日历的独立源／无缓存参考／实际 Calc 文件共六份，经过官方 XSD／OPC；`pnpm check:workbook-function-boundaries` 重新执行固定生产者并核对所有观测。阶段总状态和范围核对见[编辑验收](workbook-editing-acceptance.md)。
