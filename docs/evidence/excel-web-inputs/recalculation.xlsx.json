@@ -1,0 +1,19 @@
+{
+  "status": "unverified-input",
+  "producer": "independent Python ZIP/XML, without SDK conversion",
+  "sha256": "d76be0140e72f64fb61d329be7e6d0b7e09035a924e3ed6d66d2c415c0f91c1a",
+  "cells": [
+    {
+      "sheet": "Data",
+      "cell": "C1",
+      "formula": "A1+1",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C2",
+      "formula": "C1*2",
+      "cache": 999
+    }
+  ]
+}
