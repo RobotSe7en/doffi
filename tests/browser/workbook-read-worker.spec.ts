@@ -333,6 +333,14 @@ test('mounted Worker name manager preserves scopes, drafts, IME and exact name c
   await exerciseWorkbookNameControls(page, true, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
+test('mounted Worker sorting moves uniform multi-row merged records through one session and restores their actual display', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-sort.xlsx'), { documentId: 'merged-sort-editor' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookMergedSort } = await import('./workbook-merged-sort-cases.js'); await exerciseWorkbookMergedSort(page, true, model.snapshot().metadata.workbook.sheets[0]!.merges);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
 
 test('mounted Worker hyperlink controls edit exact ranges, preserve source text and guard drafts and history', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });

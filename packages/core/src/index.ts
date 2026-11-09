@@ -40,6 +40,8 @@ export { printFormula as printWorkbookFormula } from "./workbook/formula-print.j
 export { copyFormula as copyWorkbookFormula } from "./workbook/formula-rewrite.js";
 export { rewriteFormula as rewriteWorkbookFormula } from "./workbook/formula-rewrite.js";
 export type { FormulaLocation as WorkbookFormulaLocation, FormulaReferenceChange as WorkbookFormulaReferenceChange, FormulaRewriteBindings as WorkbookFormulaRewriteBindings } from "./workbook/formula-rewrite.js";
+export { resolveWorkbookSortLayout } from "./workbook/sort-layout.js";
+export type { WorkbookSortLayout } from "./workbook/sort-layout.js";
 export { readWorkbookCellSource } from "./workbook/cell-source.js";
 export { replaceWorkbookCellText } from "./workbook/cell-text.js";
 export type { WorkbookCellTextEdit } from "./workbook/cell-text.js";

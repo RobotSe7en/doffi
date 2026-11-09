@@ -29,6 +29,36 @@ test("sorting uses current formula results, stable multiple keys and keeps actua
     expect(s.history().undoSteps).toBe(1); s.undo(); expect(s.snapshot().manifest.chunks).toEqual(original.manifest.chunks);
   } finally { s.dispose(); }
 });
+test.each([false, true])("uniform multi-row merge blocks use leading current keys and stable multi-key order: %s", async tied => {
+  const s = createDocumentSession(scalarWorkbook([
+    { row: 0, column: 0, value: { type: "number", value: 999 }, formula: "=3" }, { row: 0, column: 2, value: { type: "number", value: 30 } },
+    { row: 2, column: 0, value: { type: "number", value: 999 }, formula: "=1" }, { row: 2, column: 2, value: { type: "number", value: 20 } },
+    { row: 4, column: 0, value: { type: "number", value: 999 }, formula: "=1" }, { row: 4, column: 2, value: { type: "number", value: tied ? 20 : 25 } },
+  ], metadata => { metadata.workbook.sheets[0]!.merges = [0, 2, 4].flatMap(row => [0, 2].map(column => ({ from: { row, column }, to: { row: row + 1, column: column + 1 } }))); }));
+  try {
+    const before = s.snapshot(), sort = definition(6); sort.range.to.column = 3; sort.keys = [{ column: 1, descending: false }, { column: 3, descending: true }];
+    const tx = await createWorkbookSortTransaction(s, sheetId, sort, { calculation: s.calculateSync() });
+    expect(tx.operations[0]).toMatchObject({ rows: tied ? [4, 5, 0, 1, 2, 3] : [4, 5, 2, 3, 0, 1] }); expect(s.snapshot()).toEqual(before);
+    s.commit(s.prepare(tx)); s.calculateSync();
+    expect([0, 2, 4].map(row => s.getCalculatedCell(sheetId, row, 0))).toMatchObject([1, 1, 3].map(value => ({ state: "valid", value: { type: "number", value } })));
+    expect(s.history().undoSteps).toBe(1); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+  } finally { s.dispose(); }
+});
+test("merged sorting preserves fully hidden blocks and rejects partially hidden blocks before any write", async () => {
+  for (const partial of [false, true]) {
+    const s = createDocumentSession(scalarWorkbook([3, 99, 1].map((value, index) => ({ row: index * 2, column: 0, value: { type: "number", value } })), metadata => {
+      const sheet = metadata.workbook.sheets[0]!;
+      sheet.merges = [0, 2, 4].flatMap(row => [0, 1].map(column => ({ from: { row, column }, to: { row: row + 1, column } })));
+      sheet.rowDimensions = [{ from: 2, to: partial ? 2 : 3, hidden: true }];
+    }));
+    try {
+      const before = s.serialize(), operation = createWorkbookSortTransaction(s, sheetId, definition(6), { calculation: s.calculateSync() });
+      if (partial) await expect(operation).rejects.toMatchObject({ code: "InvalidOperation" });
+      else expect((await operation).operations[0]).toMatchObject({ rows: [4, 5, 2, 3, 0, 1] });
+      expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+    } finally { s.dispose(); }
+  }
+});
 test("manual-hidden and currently filtered rows stay at their addresses; old filter hidden bytes do not drive the sort", async () => {
   const s = createDocumentSession(scalarWorkbook([9, 100, 7, 50, 3].map((value, row) => ({ row, column: 0, value: { type: "number", value } })), metadata => {
     const sheet = metadata.workbook.sheets[0]!; sheet.rowDimensions = [{ from: 1, to: 1, hidden: true }];

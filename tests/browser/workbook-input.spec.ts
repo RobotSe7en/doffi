@@ -334,6 +334,12 @@ test("mounted direct name manager preserves scopes, drafts, IME and exact name c
   const { exerciseWorkbookNameControls } = await import('./workbook-name-controls-cases.js');
   await exerciseWorkbookNameControls(page, false, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
 });
+test("mounted direct sorting moves uniform multi-row merged records and restores their actual display", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-sort.xlsx'), { documentId: 'merged-sort-editor' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookMergedSort } = await import('./workbook-merged-sort-cases.js'); await exerciseWorkbookMergedSort(page, false, model.snapshot().metadata.workbook.sheets[0]!.merges);
+});
 
 test("mounted direct hyperlink controls edit exact ranges, preserve source text and guard drafts and history", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });

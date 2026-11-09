@@ -7,6 +7,7 @@ import { copyFormula } from "../workbook/formula-rewrite.js";
 import { resolveWorkbookCellFormat } from "../workbook/cell-format.js";
 import { mapWorkbookRanges } from "../workbook/range-mapping.js";
 import { checkRange } from "../workbook/ranges.js";
+import { resolveWorkbookSortLayout } from "../workbook/sort-layout.js";
 import { mapWorkbookCommentAnchors } from "./workbook-comment-mapping.js";
 import { rangeContains, rangesIntersect, WorkbookCellEdit } from "./workbook-cells.js";
 
@@ -34,14 +35,11 @@ export function* reorderWorkbookRows(workbook: WorkbookMetadata, cells: Workbook
       invalid("Table row sorting must move complete records within the data body.");
   }
   const merges = sheet.merges.filter(merge => rangesIntersect(merge, range));
-  if (merges.length) {
-    const shapes = new Map<number, string[]>();
-    for (const merge of merges) {
-      if (!contains(range, merge) || merge.from.row !== merge.to.row) invalid("Row sorting cannot split a merged region.");
-      const shape = shapes.get(merge.from.row) ?? []; shape.push(merge.from.column + ":" + merge.to.column); shapes.set(merge.from.row, shape);
-    }
-    const first = JSON.stringify((shapes.get(range.from.row) ?? []).sort());
-    for (let row = range.from.row; row <= range.to.row; row++) if (JSON.stringify((shapes.get(row) ?? []).sort()) !== first) invalid("Sorted records must have the same merge topology.");
+  const { rowsPerRecord } = resolveWorkbookSortLayout(sheet, range);
+  for (let offset = 0; offset < height; offset += rowsPerRecord) {
+    const target = rows[offset]!;
+    if ((target - range.from.row) % rowsPerRecord) invalid("Row sorting cannot split a merged record.");
+    for (let row = 1; row < rowsPerRecord; row++) if (rows[offset + row] !== target + row) invalid("Row sorting must preserve the order inside each merged record.");
   }
   for (const object of workbook.objects ?? []) if (object.sheetId === sheet.sheetId && object.anchor.kind !== "absolute" && rangeContains(range, object.anchor.from.row, object.anchor.from.column))
     invalid("Sorting cell-bound drawings is not yet connected.");
@@ -81,7 +79,7 @@ export function* reorderWorkbookRows(workbook: WorkbookMetadata, cells: Workbook
       formatId: item.formatId ?? (targetFormat.numberFormatId ? general! : null) });
     if (++completed % 256 === 0) yield { completed, total: moving.length };
   }
-  for (const merge of merges) merge.from.row = merge.to.row = rows[merge.from.row - range.from.row]!;
+  for (const merge of merges) { merge.from.row = rows[merge.from.row - range.from.row]!; merge.to.row = merge.from.row + rowsPerRecord - 1; }
   if (sheet.hyperlinks) sheet.hyperlinks = sheet.hyperlinks.flatMap(link => mapWorkbookRanges([{ sheetId: sheet.sheetId, range: link.range }], [step]).map(value => ({ ...link, range: value.range })));
   for (const rule of [...sheet.conditionalRules ?? [], ...sheet.dataValidations ?? []]) {
     rule.ranges = mapWorkbookRanges(rule.ranges.map(range => ({ sheetId: sheet.sheetId, range })), [step]).map(value => ({ from: { ...value.range.from }, to: { ...value.range.to } }));

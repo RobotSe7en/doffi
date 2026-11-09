@@ -58,6 +58,47 @@ test("illegal permutations and incompatible/partial merges reject atomically; ma
   expect(s.history().undoSteps).toBe(1);
 });
 
+test("uniform multi-row merged records move intact with formulas and outside addresses, and reject split permutations", () => {
+  const s = session(scalarWorkbook([
+    { row: 0, column: 0, value: number(3) }, { row: 0, column: 1, value: number(999), formula: "=A1*2" },
+    { row: 2, column: 0, value: number(1) }, { row: 2, column: 1, value: number(999), formula: "=A3*2" },
+    { row: 0, column: 3, value: number(999), formula: "=A1" },
+  ], metadata => { metadata.workbook.sheets[0]!.merges = [range(0, 0, 1, 0), range(0, 1, 1, 1), range(2, 0, 3, 0), range(2, 1, 3, 1)]; }));
+  const before = s.snapshot(), bytes = s.serialize();
+  for (const rows of [[3, 2, 0, 1], [2, 0, 3, 1]]) {
+    expect(() => apply(s, [reorder(rows)])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(bytes);
+  }
+  apply(s, [reorder([2, 3, 0, 1])]); s.calculateSync();
+  expect(s.getCell(sheetId, 0, 0)?.value).toEqual(number(1)); expect(s.getCell(sheetId, 2, 0)?.value).toEqual(number(3));
+  expect(s.getCell(sheetId, 0, 1)?.formula?.expression).toBe("=A1*2"); expect(s.getCell(sheetId, 0, 3)?.formula?.expression).toBe("=A1");
+  expect(s.getCalculatedCell(sheetId, 0, 1)).toMatchObject({ value: number(2) }); expect(s.getCalculatedCell(sheetId, 0, 3)).toMatchObject({ value: number(1) });
+  expect(s.snapshot().metadata.workbook.sheets[0]!.merges).toEqual(before.metadata.workbook.sheets[0]!.merges);
+  expect(openDocument(s.serialize(), { kind: "workbook" }).snapshot()).toEqual(s.snapshot()); expect(s.history().undoSteps).toBe(1);
+  s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+});
+
+test("Office's incompatible merged and unmerged columns reject the whole sort", () => {
+  const s = session(scalarWorkbook([{ row: 0, column: 0, value: number(3) }, { row: 1, column: 0, value: number(7) }], metadata => {
+    metadata.workbook.sheets[0]!.merges = [range(0, 0, 0, 1), range(1, 0, 1, 1)];
+  })), before = s.serialize();
+  expect(() => apply(s, [reorder([1, 0], range(0, 0, 1, 2))])).toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
+  expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+});
+test("multi-row records straddling both chunk axes preserve their formulas, coverage and exact source on undo", () => {
+  const s = session(scalarWorkbook([
+    { row: 255, column: 31, value: number(3) }, { row: 255, column: 32, value: number(999), formula: "=AF256*2" },
+    { row: 257, column: 31, value: number(1) }, { row: 257, column: 32, value: number(999), formula: "=AF258*2" },
+    { row: 0, column: 0, value: number(999), formula: "=AF256" },
+  ], metadata => { metadata.workbook.sheets[0]!.merges = [255, 257].flatMap(row => [31, 32].map(column => range(row, column, row + 1, column))); }));
+  const before = s.snapshot();
+  apply(s, [reorder([257, 258, 255, 256], range(255, 31, 258, 32))]); s.calculateSync();
+  expect(s.getCalculatedCell(sheetId, 255, 32)).toMatchObject({ state: "valid", value: number(2) });
+  expect(s.getCalculatedCell(sheetId, 257, 32)).toMatchObject({ state: "valid", value: number(6) });
+  expect(s.getCell(sheetId, 0, 0)?.formula?.expression).toBe("=AF256"); expect(s.getCalculatedCell(sheetId, 0, 0)).toMatchObject({ value: number(1) });
+  expect(s.snapshot().metadata.workbook.sheets[0]!.merges).toEqual(before.metadata.workbook.sheets[0]!.merges);
+  s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
+});
+
 test("table sorting keeps header/total positions and only permits complete body records", () => {
   const s = session(scalarWorkbook([{ row: 1, column: 0, value: number(3) }, { row: 2, column: 0, value: number(7) }]));
   apply(s, [{ op: "setWorkbookTable", sheetId, table: { tableId: "t", name: "Data", range: range(0, 0, 3, 1), header: true, totals: true, totalsPreviouslyShown: true,

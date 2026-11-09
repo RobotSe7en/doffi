@@ -1,4 +1,4 @@
-import { captureWorkbookModel, createWorkbookCalculatedEvaluator, DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS, DocumentError, readWorkbookRowVisibility, WorkbookSortSchema } from "@doffi/core";
+import { captureWorkbookModel, createWorkbookCalculatedEvaluator, DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS, DocumentError, readWorkbookRowVisibility, resolveWorkbookSortLayout, WorkbookSortSchema } from "@doffi/core";
 import type { DeepReadonly, DocumentTransaction, WorkbookCalculationResult, WorkbookModel, WorkbookSort, WorkbookValue } from "@doffi/core";
 import { workbookSortComparison } from "./sort-order.js";
 
@@ -23,6 +23,7 @@ export async function createWorkbookSortTransaction(input: WorkbookModel, sheetI
     || sort.keys.some(key => key.column < range.from.column || key.column > range.to.column) || new Set(sort.keys.map(key => key.column)).size !== sort.keys.length)
     throw new DocumentError("InvalidOperation", "Sorting requires an existing worksheet, valid keys and positive budgets.");
   if ((range.to.row - range.from.row + 1) * sort.keys.length > limits.maxReadCells || range.to.row - range.from.row + 1 > limits.maxRows) throw new DocumentError("ResourceLimitExceeded", "Sorting exceeds its key/row budget.");
+  const { rowsPerRecord, columnsPerCell } = resolveWorkbookSortLayout(sheet, range);
   let steps = 0, readCells = 0, codeUnits = 0;
   function guard(): void {
     if (options.signal?.aborted) throw new DocumentError("OperationCancelled", "Workbook sorting was cancelled.");
@@ -41,19 +42,30 @@ export async function createWorkbookSortTransaction(input: WorkbookModel, sheetI
     steps += visibility.steps; readCells += visibility.readCells; codeUnits += visibility.codeUnits; guard();
     type Record = { row: number; keys: DeepReadonly<WorkbookValue>[] };
     let records: Record[] = []; const positions: number[] = [];
-    for (const visible of visibility.rows) {
-      guard(); if (typeof visible.filtered !== "boolean") throw new DocumentError("UnsupportedFeature", "Sorting requires evaluable current filter results.");
-      if (!visible.hidden && !visible.filtered) {
+    let nextProgress = 256;
+    for (let offset = 0; offset < visibility.rows.length; offset += rowsPerRecord) {
+      const visible = visibility.rows[offset]!; let shown = 0;
+      for (let index = offset; index < offset + rowsPerRecord; index++) {
+        guard(); const row = visibility.rows[index]!;
+        if (typeof row.filtered !== "boolean") throw new DocumentError("UnsupportedFeature", "Sorting requires evaluable current filter results.");
+        if (!row.hidden && !row.filtered) shown++;
+      }
+      if (shown && shown !== rowsPerRecord) throw new DocumentError("InvalidOperation", "Sorting cannot split a merged record between visible and hidden rows.");
+      if (shown) {
         const keys: DeepReadonly<WorkbookValue>[] = [];
         for (const key of sort.keys) {
-          guard(); const result = evaluator.cell({ sheetId, row: visible.row, column: key.column }, { maxSteps: Math.max(1, limits.maxSteps - steps), maxCodeUnits: Math.max(0, limits.maxCodeUnits - codeUnits), ...(options.signal ? { signal: options.signal } : {}) });
+          const column = range.from.column + Math.floor((key.column - range.from.column) / columnsPerCell) * columnsPerCell;
+          guard(); const result = evaluator.cell({ sheetId, row: visible.row, column }, { maxSteps: Math.max(1, limits.maxSteps - steps), maxCodeUnits: Math.max(0, limits.maxCodeUnits - codeUnits), ...(options.signal ? { signal: options.signal } : {}) });
           steps += result.steps; readCells += result.readCells; codeUnits += result.codeUnits;
           if (steps > limits.maxSteps || readCells > limits.maxReadCells || codeUnits > limits.maxCodeUnits) throw new DocumentError("ResourceLimitExceeded", "Sorting exceeds its evaluation budget.");
           if (result.kind !== "value") throw new DocumentError("UnsupportedFeature", "Sorting requires valid current key values."); keys.push(result.value);
         }
         records.push({ row: visible.row, keys }); positions.push(visible.row);
       }
-      if ((visible.row - range.from.row + 1) % 256 === 0) { progress(visible.row - range.from.row + 1, visibility.rows.length); if (options.yield) await options.yield(); guard(); }
+      if (offset + rowsPerRecord >= nextProgress || offset + rowsPerRecord === visibility.rows.length) {
+        progress(offset + rowsPerRecord, visibility.rows.length); nextProgress = offset + rowsPerRecord + 256;
+        if (options.yield) await options.yield(); guard();
+      }
     }
     let work = 0;
     for (let width = 1; width < records.length; width *= 2) {
@@ -70,7 +82,7 @@ export async function createWorkbookSortTransaction(input: WorkbookModel, sheetI
       records = sorted;
     }
     const rows = Array.from({ length: range.to.row - range.from.row + 1 }, (_, offset) => range.from.row + offset);
-    records.forEach((record, index) => { rows[record.row - range.from.row] = positions[index]!; }); guard();
+    records.forEach((record, index) => { for (let offset = 0; offset < rowsPerRecord; offset++) rows[record.row - range.from.row + offset] = positions[index]! + offset; }); guard();
     return { protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations: [{ op: "reorderWorkbookRows", sheetId, range, rows }] };
   } finally { evaluator.dispose(); }
 }
