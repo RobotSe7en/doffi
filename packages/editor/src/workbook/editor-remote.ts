@@ -244,7 +244,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   async function perform(operations: readonly DocumentOperation[], supplied?: TransactionPrepareOptions): Promise<WorkbookSessionReceipt> {
     check(); const { documentId, revision } = client.state();
     const value = { protocolVersion: 1 as const, documentId, baseRevision: revision, operations: [...operations] };
-    return commitCommand({ kind: "transaction", transaction: config.confirmValidationWarnings ? parseContract("document-transaction", value) : value }, supplied);
+    return commitCommand({ kind: "transaction", transaction: parseContract("document-transaction", value) }, supplied);
   }
   async function cancelInput(): Promise<void> {
     check(); input.cancel(); binding.refresh(); await sourceSettled();

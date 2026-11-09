@@ -8,6 +8,7 @@ import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDra
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean, at?: { row: number; column: number }): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
   perform(operations: readonly DocumentOperation[]): Promise<void>;
+  performWithPendingMutation(): Promise<{ callerValue: string }>;
   tableStyleSource(): Promise<{ tableStyles: WorkbookSnapshot["metadata"]["workbook"]["tableStyles"]; defaultTableStyle: WorkbookSnapshot["metadata"]["workbook"]["defaultTableStyle"] }>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedCellAppearance(row: number, column: number): ReturnType<typeof measureWorkbookCellAppearance>;
@@ -20,6 +21,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
   cleanup(); const host = document.createElement('div'); document.body.append(host);
   const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), worker = new Worker(url), channel = new MessageChannel();
   let holdReference = false, heldReference: unknown;
+  let pendingAction: (() => void) | undefined;
   channel.port2.addEventListener('message', event => {
     if (holdReference && event.data.value?.reference) { holdReference = false; heldReference = event.data; event.stopImmediatePropagation(); }
   });
@@ -30,7 +32,8 @@ export async function mount(code: string, encoded: string, observeView = false, 
   let editor: WorkbookRemoteEditorView;
   let observed: ReturnType<typeof observeWorkbookViews> | undefined;
   try {
-    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用验证警告？") } : {}), onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
+    editor = mountWorkbookEditor(host, client, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用验证警告？") } : {}),
+      onPendingChange(value) { if (value && pendingAction) { const action = pendingAction; pendingAction = undefined; action(); } }, onError(error) { errors.push((error as { code?: string }).code ?? error.message); } });
     if (observeView) {
       Element.prototype.attachShadow = attach;
       observed = observeWorkbookViews(editor.element, { openHostShadows: true });
@@ -43,6 +46,11 @@ export async function mount(code: string, encoded: string, observeView = false, 
   cleanup = () => { observed?.dispose(); release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
   actions = {
     async perform(operations) { await editor.perform(operations); await editor.settled(); },
+    async performWithPendingMutation() {
+      const cell = { row: 0, column: 0, source: { kind: "value" as const, value: { type: "text" as const, value: "captured" } } };
+      pendingAction = () => { cell.source.value.value = "changed-by-host"; };
+      await editor.perform([{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [cell] }]); await editor.settled(); return { callerValue: cell.source.value.value };
+    },
     async inspect() {
       const source = await client.view();
       try {
@@ -86,6 +94,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
 export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
 export function perform(operations: readonly DocumentOperation[]) { return actions.perform(operations); }
+export function performWithPendingMutation() { return actions.performWithPendingMutation(); }
 export function displayedCellAppearance(row: number, column: number) { return actions.displayedCellAppearance(row, column); }
 export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string, includeBounds = false) { return actions.displayedDrawingText(nodeId, includeBounds); }
@@ -100,4 +109,4 @@ export function sourceCell(row: number, column: number, sheetId?: string) { retu
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
 export const tableStyleSource = () => actions.tableStyleSource();
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, performWithPendingMutation, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

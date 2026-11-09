@@ -1,7 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { DocumentSelection, TransactionPrepareOptions, TransactionReceipt } from "@doffi/core";
 import type { WorkbookInputController } from "./input-controller.js";
-import type { WorkbookRemoteInputController } from "./remote-input.js";
 import type { WorkbookSessionReceipt } from "./session-transport.js";
 import { reconcileWorkbookInputText, workbookInputTextView } from "./text-projection.js";
 
@@ -23,8 +22,8 @@ export interface WorkbookTextBinding {
   apply(): TransactionReceipt | undefined;
   dispose(): void;
 }
-export interface WorkbookAsyncTextBindingOptions extends Omit<WorkbookTextBindingOptions, "onApplied"> { readonly onApplied?: (receipt: WorkbookSessionReceipt) => void }
-export interface WorkbookAsyncTextBinding extends Omit<WorkbookTextBinding, "apply"> { apply(): Promise<WorkbookSessionReceipt | undefined> }
+export interface WorkbookAsyncTextBindingOptions<Receipt = WorkbookSessionReceipt> extends Omit<WorkbookTextBindingOptions, "onApplied"> { readonly onApplied?: (receipt: Receipt) => void }
+export interface WorkbookAsyncTextBinding<Receipt = WorkbookSessionReceipt> extends Omit<WorkbookTextBinding, "apply"> { apply(): Promise<Receipt | undefined> }
 type InputDriver<Receipt> = Pick<WorkbookInputController, "state" | "setText" | "compositionStart" | "compositionEnd" | "cancel"> & { apply(options?: TransactionPrepareOptions): Receipt | Promise<Receipt> };
 type BindingOptions<Receipt> = Omit<WorkbookTextBindingOptions, "onApplied"> & { readonly onApplied?: (receipt: Receipt) => void };
 type InputBinding<Receipt> = Omit<WorkbookTextBinding, "apply"> & { apply(): Receipt | undefined | Promise<Receipt | undefined> };
@@ -36,8 +35,8 @@ export function bindWorkbookTextInput(input: HTMLTextAreaElement, controller: Wo
   // preserves the existing synchronous return contract.
   return bindInput(input, controller, options, false) as WorkbookTextBinding;
 }
-export function bindWorkbookAsyncTextInput(input: HTMLTextAreaElement, controller: WorkbookRemoteInputController, options: WorkbookAsyncTextBindingOptions = {}): WorkbookAsyncTextBinding {
-  return bindInput(input, controller, options, true) as WorkbookAsyncTextBinding;
+export function bindWorkbookAsyncTextInput<Receipt = WorkbookSessionReceipt>(input: HTMLTextAreaElement, controller: InputDriver<Receipt>, options: WorkbookAsyncTextBindingOptions<Receipt> = {}): WorkbookAsyncTextBinding<Receipt> {
+  return bindInput(input, controller, options, true) as WorkbookAsyncTextBinding<Receipt>;
 }
 function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<Receipt>, options: BindingOptions<Receipt>, asynchronous: boolean): InputBinding<Receipt> {
   const view = input?.ownerDocument?.defaultView;

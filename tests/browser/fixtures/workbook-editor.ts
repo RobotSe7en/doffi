@@ -9,16 +9,18 @@ import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDra
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
 let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 const errors: string[] = [];
+let pendingAction: (() => void) | undefined;
 export async function mount(entries: TestPackage, observeText = false, prepareOptions?: TransactionPrepareOptions, confirmWarnings = false): Promise<void> {
   observed?.dispose(); observed = undefined;
-  editor?.dispose(); session?.dispose(); container?.remove(); errors.length = 0;
+  editor?.dispose(); session?.dispose(); container?.remove(); errors.length = 0; pendingAction = undefined;
   session = createDocumentSession(openDocument(decodeTestPackage(entries), { kind: "workbook" }));
   container = document.createElement("div"); document.body.append(container);
   // The fixture opens only its own parent-realm UI shadows for browser
   // automation. Production source and render surfaces remain closed.
   const attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function(init) { return attach.call(this, { ...init, mode: "open" }); };
-  try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用验证警告？") } : {}), onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
+  try { editor = mountWorkbookEditor(container, session, { widthPt: 420, heightPt: 240, ...(prepareOptions ? { prepareOptions: () => prepareOptions } : {}), ...(confirmWarnings ? { confirmValidationWarnings: () => window.confirm("应用验证警告？") } : {}),
+    onPendingChange(value) { if (value && pendingAction) { const action = pendingAction; pendingAction = undefined; action(); } }, onError: error => errors.push((error as { code?: string }).code ?? error.message) }); }
   finally { Element.prototype.attachShadow = attach; }
   if (observeText) observed = observeWorkbookViews(editor.element);
   await editor.ready;
@@ -41,6 +43,15 @@ export function displayedTextStyles(row: number, column: number) {
   });
 }
 export async function settled() { return editor.settled(); }
+export async function perform(operations: readonly DocumentOperation[]) { const receipt = await editor.perform(operations); await editor.settled(); return receipt; }
+export function mutateInputOnPending(text: string): void { pendingAction = () => {
+  const field = editor.element.shadowRoot!.querySelector("textarea")!; field.value = text; field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+}; }
+export async function performWithPendingMutation() {
+  const cell = { row: 0, column: 0, source: { kind: "value" as const, value: { type: "text" as const, value: "captured" } } };
+  pendingAction = () => { cell.source.value.value = "changed-by-host"; };
+  const receipt = await editor.perform([{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [cell] }]); await editor.settled(); return { receipt, callerValue: cell.source.value.value };
+}
 export async function measuredApply(operations: readonly DocumentOperation[]) {
   const layout = createWorkbookLayoutService(container, { widthPt: 420, heightPt: 240 });
   try {
@@ -108,4 +119,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, perform, mutateInputOnPending, performWithPendingMutation, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

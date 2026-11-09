@@ -4,6 +4,12 @@
 
 ## 基线与当前状态
 
+- 默认直连异步／测量批次最终完整 `pnpm check` 238 文件／2468 项通过，架构边界、工具／应用类型及 SDK／Playground 构建通过（`.cache/workbook-direct-async-complete-check.log`）。最终几何／字体／命令捕获三引擎 27 项通过；Firefox／WebKit 输入 90 项通过、6 项按既有浏览器能力声明跳过；Chromium 46 项在宿主重入修复前通过，新增三项在最终源码 Chromium 通过。默认两种编辑器现在共用异步候选准备及布局测量，公开工作簿直连 applyInput／perform 为 Promise；低层同步核心和 input.apply 保持。继续工作台提案测量与权限范围、容量及其他编辑余项，未进行阶段双人审查或最终远端全量验收。
+- 直连异步最终三引擎命令捕获／默认几何／旧行列及字体 27 项通过（`.cache/workbook-direct-async-final-three-engine-browser.log`）。随后完整 `pnpm check` 已启动（`.cache/workbook-direct-async-complete-check.log`，执行会话以实际工具返回为准），严格冻结全部源码／测试。必须等完成并核对真实计数和退出码，再提交默认直连批次；最近已提交完整基线仍为 `8fa6fb3` 的 237／2455，`6c8483f` 只记录其本批定向，不将旧全量移作当前源证明。
+- 默认直连异步入口的最终 Firefox／WebKit 完整输入文件：90 项通过、6 项按既有浏览器能力声明跳过（`.cache/workbook-direct-async-input-firefox-webkit-browser.log`）；此前 Chromium 46 项在宿主重入补强前通过，新宿主重入三项在最终源码上 Chromium 通过。当前进行三引擎命令捕获／默认混合几何／旧行列及字体复核（`.cache/workbook-direct-async-final-three-engine-browser.log`，会话以工具实际返回为准），冻结所有源码／测试；结束后运行完整 pnpm check 再提交本批。用户询问剩余量，已明确答复 R3-09～16 八项仍未验收、R3-17～20 四项尚未实施，不给虚假的接近合并结论。
+- 直连异步大回归：Chromium 完整输入文件 46 项通过（`.cache/workbook-direct-async-input-chromium-browser.log`）。随后新增宿主 pending 重入用例，两项首次失败证明操作被改写为 changed-by-host、空闲确认把新稿提交（`.cache/workbook-direct-async-pending-first-browser.log`）。操作改为始终先 parseContract，输入先捕获上下文；首轮只捕获未主动核对，空闲确认仍失败（`-pending-recheck-browser.log`）。现已在每次 input.applyAsync 前显式 assertCurrent，两个直连及相同 Worker 操作捕获共 3 项 Chromium 复核通过（`.cache/workbook-direct-async-pending-second-browser.log`）；SDK 构建及工具类型通过（`-pending-second-build.log`、`-pending-second-types.log`）。Firefox／WebKit 完整输入文件正在运行（`.cache/workbook-direct-async-input-firefox-webkit-browser.log`），冻结全部源码／测试，之后复核三引擎几何／字体及完整 pnpm check。此前待处理的两项 pending 自查已修复；当前直连异步批次仍未提交，不能声称阶段退出。
+- `6c8483f887ff31e6c4768cb0835c958d361c1b8a` 已推送，Quick `42549032524` 成功，草稿 PR #31 同步默认 Worker 测量。当前继续默认直连：`WorkbookInputController.applyAsync` 接入候选取消／新草稿／IME／外部提交与已知提交回执绑定；保留低层同步 apply。公开直连编辑器 `applyInput`／`perform` 改为 Promise，通用异步文字绑定复用到直连，格式／辅助管理／粘贴／清除和选区切换等待同一异步事务，并默认带共享测量器。输入／验证／远程输入 3 文件／30 项、类型及 SDK 构建通过（`.cache/workbook-direct-async-editor-second-unit.log`、`-second-types.log`、`-first-build.log`）；新默认直连／Worker 几何与旧字体／行列 Chromium 8 项通过（`.cache/workbook-direct-async-editor-first-browser.log`）。完整 Chromium 输入文件正在运行（`.cache/workbook-direct-async-input-chromium-browser.log`，执行会话以工具实际返回为准），冻结源码／测试。本批未提交，尚需完整三引擎及阶段验收。
+- 直连异步自查待处理（需等当前浏览器结束再改源码）：perform 在发布 pending 回调前应始终 parseContract 捕获操作，不仅限于带警告确认的情况；boundInput 应在 controls/onPendingChange 前捕获 validationContext 和输入指纹，避免宿主 pending 回调改了草稿后提交新草稿。修改后补宿主重入用例并复核。默认直连测量仍使用挂载时固定视口（直连没有公开 setViewport），默认 Worker 跟随当前视口。提案接线／范围及固定资源容量继续待完成；共享测量器当前每次测量完整自动行高，后续容量必须核对有绘图时的编辑时延，不能把没有绘图的绿灯当作所有组合通过。
 - Worker 布局协议与默认入口最终定向：工具类型通过（`.cache/workbook-worker-layout-editor-second-types.log`），协议／远程输入 3 文件／46 项通过（`.cache/workbook-worker-layout-regression-unit.log`），新几何／旧行列／文字字体三引擎 24 项通过（`.cache/workbook-worker-layout-three-engine-browser.log`）；最终 SDK 构建为 `.cache/workbook-worker-layout-editor-second-build.log`。本批未跑新的完整检查，不把前一提交 237／2455 当作当前源全量；继续默认直连异步入口、提案和容量等剩余工作。
 - `8fa6fb3ea19e5c0fb1a7eef11d160fb9fc04df58` 已推送，Quick `42547590165` 成功，草稿 PR #31 已同步显式测量接口；完整本地基线 237 文件／2455 项。随后接入 Worker 私有测量：`WorkbookSessionPreparationExecution.measureLayout` 是仅本地函数能力，准备消息只传布尔开关；核心每次测量提供独立的有界读取／单次答复端口，来源和冻结计算上下文绑定私有候选，自动模式提供当前规则值。取消、关闭、失败和完成均收回端口，不保留测量闭包到公开候选。新增协议及旧会话 2 文件／40 项、SDK 构建和首轮类型通过（`.cache/workbook-worker-layout-first-unit.log`、`-second-build.log`、`-first-types.log`）。
 - 默认远程编辑器现在为每个准备命令提供共享测量服务，跟随当前预览视口；视口与本地字体环境共同进入前后环境核对，释放编辑器会取消测量。Chromium 显式直连／默认 Worker 字体换行及旧行列画布 4 项通过（`.cache/workbook-worker-layout-first-browser.log`）。初始化包装曾缺少回调参数类型，已改显式参数元组；测试曾把 `void` 和事务回执作为同一 evaluate 的返回，已统一 await 后不返回。当前重做工具类型（`.cache/workbook-worker-layout-editor-second-types.log`）、三引擎文字／字体／混合几何／行列回归（`.cache/workbook-worker-layout-three-engine-browser.log`）和协议／远程输入单位回归（`.cache/workbook-worker-layout-regression-unit.log`）；浏览器运行期间冻结全部源码／测试。本批未提交。默认直连仍须异步接线，工作台使用原连接的提案入口也须显式测量能力；完整提案范围、外部 Office 组合和固定资源编辑容量仍未完成。
@@ -239,10 +245,25 @@
 
 2026-11-08 接入结构操作前增加公式缓存回归，先复现改名重写会把历史数字／文本值清空为 blank（`.cache/workbook-structural-cache-before.log`），再改用保留正文／格式的属性重写：历史缓存标为 stale，原本 unavailable 保持不可用，当前计算仍独立求值。同批改名后改回的初轮检查仍因规范化引号／括号新增修订，失败日志 `.cache/workbook-structural-cache-noop-before.log` 保留；最终只在原语义、其他属性和正文均与基线相同时还原原公式及缓存来源，保留重做且不发事件。最终核心 8 文件／73 项通过，日志 `.cache/workbook-structural-cache-final-core.log`；最终构建、类型和架构边界通过，日志 `.cache/workbook-structural-cache-final-{build,types,boundaries}.log`。原生改名／格式／复制／合并及 Worker 通道／输入 6 文件／49 项通过，日志 `.cache/workbook-structural-cache-final-integration.log`。独立 `04-formulas-names.xlsx` 改名所引用工作表后保留导入的历史值，当前重算、文档包 ZIP 重开及一次撤销均通过；这不是原生 XLSX 输出或完整行列操作验收。
 
-1. 完成 R3-09：验证共享生命周期回归、资源编辑的成功路径与结构映射全面接入；补齐原子失败、历史和冲突边界。工作表元数据及普通区域行列基础已有，继续上下文名称、智能表、绘图及原生备注／线程的行列联动，并完成剪切和排序；合并首行／首列删除已按用户决定以 Microsoft Excel 为准，取得明确微软依据／Excel 实测后修正实现及回归，不能把证据缺口继续列为待用户选择。验收范围见[行列插删](workbook-model.md#行列插删基础r3-12-实施中)。异步准备、专属 Worker 会话及远端输入／IME／TSV 基础已有，默认 Worker 编辑器／Playground 已接入，继续完整结构命令及其界面；候选最终提交仍为同步原子边界。不能将当前直连小型路径或不受限 Node 诊断当作完整大表命令验收。
-2. 完成 R3-10 的剩余边界和验收：补足函数参数／类型／错误／1904 系统与 Unicode、数值文本日期边界，以及筛选显示格式与多列／表组合的独立验收；补齐固定资源 2 万公式及普通编辑／100 步历史的完整门槛。现有 `workbook-scale` 的固定资源脚本仍只覆盖读取，新增默认编辑器 `@scale` 是容量集成；还须实现并运行默认编辑器的四引擎固定 CPU／内存／500ms 普通编辑 p95 验收，不能凭本机 247.5ms 或既有读取绿灯替代。现有函数／依赖调度及筛选小计基础不代表整个 R3-10 退出条件通过。
-3. 完成 R3-11 的复制剪切、选择性粘贴、填充剩余边界、富文本格式、超链接和完整外观编辑；跨表名称／未限定结构引用还须独立生产者实际复制对照，不能用 SDK 自身的目标上下文断言代替原生复制行为证据。查找替换已有命令和直连界面，仍需阶段容量与 Worker 取消验收。再推进 R3-12～16 的结构、规则表格、绘图、批注、工作台协作，保持一个编辑计算阶段 PR。现有直连网格／公式栏与键盘导航不是完整退出条件，仍须固定资源和容量验收。来源差异与增量失效基础已接入直连预览和 Worker 视图，继续默认 Worker 界面的大表时延验证；复杂字体／样式仍保留完整测量路径，不能凭小型输入回归声称 200,000 格编辑时延已通过。
-4. 阶段完成后、正式提 PR 前使用两位子智能体独立审查整个基线差异，逐项修复与复核，再将已有草稿转为正式 PR，在最终 HEAD 发起日常 CI＋容量专项并以 SHA 守卫合并。
+当前编辑阶段余项如下；各项继续保留原编号，基础 API 和局部检查已有的部分见上方记录。
+
+| 编号 | 剩余实现及验收 |
+| --- | --- |
+| R3-09 | 补齐剩余组合的原子事务、结构映射、授权资源、撤销、冲突及取消验证，使用同一会话和历史。 |
+| R3-10 | 相对／未限定及嵌套名称、全局名称上下文和 bang 语法；完整函数参数／类型／错误、1904 与 Unicode／日期边界，以及筛选显示格式和多列／表组合的独立对照；完成 2 万公式与增量编辑验收。 |
+| R3-11 | 系统富文本剪贴板、复制经典／现代批注和完整智能表身份；合并区域的选择性粘贴／跳过空白／填充等剩余组合；复杂继承文字格式及跨表名称／结构引用的独立对照。已完成的超链接、条件格式／验证复制及字体中性修复继续保留。 |
+| R3-12 | 上下文名称的行列映射、多行合并排序、部分智能表剪切、表头／筛选表头删除等组合；合并首行／首列删除以 Microsoft Excel 为准，补明确微软依据或实际 Excel 对照后完成验收。该决定已作出，缺少的是证据。 |
+| R3-13 | 智能表、名称、条件格式、验证和全部修改入口的组合及独立验收；当前管理界面和默认／自定义表样式基础继续复用。 |
+| R3-14 | 绘图和两份经典备注框在排序／剪切／筛选／字体／换行及自动行高变化中的完整联动、来源身份和原生对照；验证有绘图大表的普通编辑时延及测量资源总量。默认编辑器测量及异步输入本批先完成最终检查。 |
+| R3-15 | 复制、排序、剪切、结构变更和跨表多片段组合中的两类批注映射、失效／重定位、线程及历史恢复完整验收。 |
+| R3-16 | 工作台提案测量接线，区域外确定性几何补偿与显式写入权限范围；完成冻结上下文、候选差异、冲突、迟到结果、取消和界面组合验收。 |
+
+容量验收保留一万行／20 万实际格、2 万公式、100 步历史和四引擎固定资源目标。`workbook-scale` 现有固定资源脚本主要覆盖读取，编辑脚本及完整 500ms 普通编辑 p95 等门槛仍需落地并运行，见[CI 执行](ci-performance.md)与[第三轮细则](iteration-3.md)。本机小型结果、无绘图结果及读取验收分别记录。
+
+完整 R3-09～16 实施结束后，由恰好两位子智能体分别独立审查整个基线差异；实施者修复并交原审查者复核，再将草稿 PR #31 转正式。在最终 HEAD 运行日常 CI、完整原生参考、容量单元／集成、128 公开矩阵和固定资源四引擎编辑验收，全部成功后按 SHA 守卫合并。
+
+编辑阶段之后继续 R3-17～20：当前源可编辑 XLSX、共享打印 PDF／PNG、Node／CLI／Playground 输出和独立 JS／React／Node 打包闭环。整个 R3 是当前用户授权的目标。
+
 
 Playground 原服务为 5174；5173 属于另一个项目，勿操作。读取的滚动准备优化与全部已定门槛保持。
 

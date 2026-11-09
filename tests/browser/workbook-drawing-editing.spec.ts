@@ -16,6 +16,15 @@ declare global { interface Window { workbookEditor: typeof directFixture; workbo
 declare global { interface Window { workbookImageReadGate: { readonly started: boolean; release(): void; restore(): void } } }
 const bundles = new Map<string, string>();
 
+test("default Worker commands capture operations before host pending callbacks", async ({ page }) => {
+  await page.addScriptTag({ content: bundles.get("workbook-remote-editor")! });
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(scalarWorkbook([]).serialize())).toString("base64") });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.performWithPendingMutation())).toEqual({ callerValue: "changed-by-host" });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0))).toMatchObject({ value: { type: "text", value: "captured" } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true });
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} object text clears ancestor underline while preserving strike, fonts and undo`, async ({ page }) => {
   const s = createDocumentSession(scalarWorkbook([]));
   s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [{ op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 240, heightPt: 100 }, object: { kind: "text", html: '<p style="font-size:18pt;text-decoration:underline line-through double red;--office-font-ascii:&quot;Liberation Sans&quot;;--office-font-east-asia:&quot;Noto Sans CJK SC&quot;"><strong>A禰󠄀😀Z</strong></p>' } }] }));
@@ -71,7 +80,7 @@ test.beforeAll(async () => {
   }
 });
 
-for (const remote of [false, true]) test(`${remote ? "default Worker" : "explicit direct"} measured fixed and mixed objects and note boxes follow actual font and wrapped-row layout without geometry drift`, async ({ page }) => {
+for (const remote of [false, true]) test(`${remote ? "default Worker" : "default direct"} measured fixed and mixed objects and note boxes follow actual font and wrapped-row layout without geometry drift`, async ({ page }) => {
   const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 0, column: 1, value: { type: "text", value: "B" } },
     { row: 3, column: 0, value: { type: "text", value: "Wrapped text with several words on multiple lines" } }]));
   const at = (row: number, column: number) => ({ row, column, offsetXPt: 2, offsetYPt: 3 });
@@ -91,7 +100,7 @@ for (const remote of [false, true]) test(`${remote ? "default Worker" : "explici
   const before = await measure(); expect(before.objects).toHaveLength(5);
   await page.evaluate(async remote => {
     const operations = [{ op: "setWorkbookStyleClass" as const, cssClass: "cell-default", properties: { "font-size": "20pt", "white-space": "pre-wrap" } }];
-    if (remote) await window.workbookRemoteEditor.perform(operations); else await window.workbookEditor.measuredApply(operations);
+    if (remote) await window.workbookRemoteEditor.perform(operations); else await window.workbookEditor.perform(operations);
   }, remote);
   const after = await measure(); expect(after.objects).toHaveLength(5); expect(after.columnWidthPt!).toBeGreaterThan(before.columnWidthPt!);
   for (const index of [0, 4]) for (const field of ["xPt", "yPt", "widthPt", "heightPt"] as const) expect(bounds(after, index)[field]).toBeCloseTo(bounds(before, index)[field], 1);

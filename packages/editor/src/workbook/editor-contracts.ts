@@ -40,9 +40,9 @@ export interface WorkbookEditorView {
   hasPendingInput(): boolean;
   selectRange(sheetId: string, range: DeepReadonly<WorkbookRange>): Promise<DocumentSelection>;
   focusInput(selectAll?: boolean): void;
-  applyInput(): TransactionReceipt | undefined;
+  applyInput(): Promise<TransactionReceipt | undefined>;
   cancelInput(): void;
-  perform(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions): TransactionReceipt;
+  perform(operations: readonly DocumentOperation[], options?: TransactionPrepareOptions): Promise<TransactionReceipt>;
   recalculate(): Promise<WorkbookRenderReport>;
   dispose(): void;
 }

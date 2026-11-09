@@ -88,6 +88,24 @@ function editorSource(rtl = false, structure = true) {
     metadata.workbook.sheets.push({ ...sheet, sheetId: "second", name: "Second", rowDimensions: [], columnDimensions: [], merges: [] });
   }).serialize());
 }
+test("mounted direct commands capture their source before host pending callbacks mutate caller operations", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(scalarWorkbook([]).serialize()));
+  const result = await page.evaluate(() => window.workbookEditor.performWithPendingMutation()); expect(result.callerValue).toBe("changed-by-host");
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 0))).toMatchObject({ value: { type: "text", value: "captured" } });
+});
+
+test("mounted direct idle apply preserves a new draft produced by a host pending callback", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mount(entries), encodeTestPackage(scalarWorkbook([]).serialize()));
+  await page.evaluate(() => window.workbookEditor.mutateInputOnPending("next draft 禰󠄀😀"));
+  await page.getByRole("button", { name: "确认输入", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await expect(page.getByRole("textbox", { name: "单元格或公式输入", exact: true })).toHaveValue("next draft 禰󠄀😀");
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, input: { dirty: true, text: "next draft 禰󠄀😀" }, errors: ["OperationCancelled"] });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 0))).toBeUndefined();
+});
+
 test("mounted workbook formula input, calculation, address selection and toolbar history share source", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode }); await page.evaluate(entries => window.workbookEditor.mount(entries), editorSource());
   await page.evaluate(() => window.workbookEditor.select(0)); const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true });

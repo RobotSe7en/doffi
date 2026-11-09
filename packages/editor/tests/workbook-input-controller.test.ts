@@ -5,6 +5,50 @@ import { createWorkbookInputController } from "../src/workbook/input-controller.
 function session(): WorkbookSession { return createDocumentSession(openDocument(createWorkbook({ documentId: "input-controller" }), { kind: "workbook" })); }
 function selection(session: WorkbookSession, row = 0, column = 0): DocumentSelection { return { documentId: "input-controller", baseRevision: session.snapshot().manifest.revision,
   anchor: { kind: "cells", sheetId: "sheet-1", ranges: [{ from: { row, column }, to: { row, column } }] } }; }
+test("async input preserves rich UTF-16 text and returns one committed history step", async () => {
+  const source = session(), controller = createWorkbookInputController(source);
+  try {
+    controller.select(selection(source)); controller.setText("中文禰󠄀😀\nnext"); const receipt = await controller.applyAsync();
+    expect(receipt.changed).toBe(true); expect(source.getCell("sheet-1", 0, 0)?.value).toEqual({ type: "text", value: "中文禰󠄀😀\nnext" });
+    expect(controller.state()).toMatchObject({ dirty: false, selection: { baseRevision: receipt.revision } }); expect(source.history().undoSteps).toBe(1);
+    source.undo(); expect(source.getCell("sheet-1", 0, 0)).toBeUndefined();
+  } finally { controller.dispose(); source.dispose(); }
+});
+test.each(["text", "composition", "cancel", "dispose"] as const)("%s during async input cancels the old candidate and preserves the new transient state", async action => {
+  const source = session(), controller = createWorkbookInputController(source); controller.select(selection(source)); controller.setText("old draft");
+  let started!: () => void, release!: () => void;
+  const begin = new Promise<void>(resolve => { started = resolve; }), wait = new Promise<void>(resolve => { release = resolve; });
+  try {
+    const job = controller.applyAsync(undefined, { yield: async () => { started(); await wait; } }); await begin;
+    if (action === "text") controller.setText("new 禰󠄀😀"); else if (action === "composition") controller.compositionStart(); else controller[action]();
+    release(); await expect(job).rejects.toMatchObject({ code: "OperationCancelled" }); expect(source.history().undoSteps).toBe(0); expect(source.getCell("sheet-1", 0, 0)).toBeUndefined();
+    if (action === "text") expect(controller.state()).toMatchObject({ text: "new 禰󠄀😀", dirty: true });
+    if (action === "composition") expect(controller.state()).toMatchObject({ text: "old draft", composing: true });
+    if (action === "cancel") expect(controller.state()).toMatchObject({ text: "", dirty: false });
+    const next = createWorkbookInputController(source); next.select(selection(source)); next.setText("usable"); await next.applyAsync(); next.dispose();
+    expect(source.getCell("sheet-1", 0, 0)?.value).toEqual({ type: "text", value: "usable" });
+  } finally { controller.dispose(); source.dispose(); }
+});
+test("external source commits reject late async input and retain the recoverable draft", async () => {
+  const source = session(), controller = createWorkbookInputController(source); controller.select(selection(source)); controller.setText("local draft");
+  let started!: () => void, release!: () => void;
+  const begin = new Promise<void>(resolve => { started = resolve; }), wait = new Promise<void>(resolve => { release = resolve; });
+  try {
+    const job = controller.applyAsync(undefined, { yield: async () => { started(); await wait; } }); await begin;
+    source.commit(source.prepare({ protocolVersion: 1, documentId: "input-controller", baseRevision: 0, operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "text", value: "external" } } }] }] }));
+    release(); await expect(job).rejects.toMatchObject({ code: "RevisionConflict" });
+    expect(controller.state()).toMatchObject({ text: "local draft", dirty: true, selection: { baseRevision: 0 } }); expect(source.history().undoSteps).toBe(1);
+    expect(source.getCell("sheet-1", 0, 0)?.value).toEqual({ type: "text", value: "external" });
+  } finally { controller.dispose(); source.dispose(); }
+});
+test("continued typing from the known commit callback becomes a new draft bound to that receipt", async () => {
+  const source = session(), controller = createWorkbookInputController(source); controller.select(selection(source)); controller.setText("submitted");
+  const stop = source.subscribe(event => { if (event.type === "documentChanged") controller.setText("next draft"); });
+  try {
+    const receipt = await controller.applyAsync(); expect(controller.state()).toMatchObject({ text: "next draft", dirty: true, selection: { baseRevision: receipt.revision } });
+    expect(source.getCell("sheet-1", 0, 0)?.value).toEqual({ type: "text", value: "submitted" }); controller.cancel(); expect(controller.state()).toMatchObject({ text: "submitted", dirty: false });
+  } finally { stop(); controller.dispose(); source.dispose(); }
+});
 test("composition is transient and publishes exactly one atomic undo step", () => {
   const source = session(), controller = createWorkbookInputController(source); controller.select(selection(source)); controller.compositionStart();
   controller.setText("中"); expect(() => controller.apply()).toThrow(); expect(source.history().undoSteps).toBe(0);
