@@ -29,8 +29,8 @@ export interface FormulaRewriteBindings {
   /** Complete tables relocating with the containing range keep their native
    * structured bindings, including current-row selectors. */
   readonly movedTables?: ReadonlySet<string>;
-  /** Whole-sheet copies map the identities of cloned local/global names and
-   * tables; unrelated global definitions retain their original bindings. */
+  /** Copies map explicitly cloned table identities and whole-sheet copies
+   * also map local/global names; unrelated definitions retain their bindings. */
   readonly copiedNames?: ReadonlyMap<string, string>;
   readonly copiedTables?: ReadonlyMap<string, string>;
   readonly resolveName?: (name: string, sheet: string, explicit: boolean, workbook?: 0, localOnly?: boolean) => string | undefined;
@@ -176,7 +176,7 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     return { kind: "range", from: cellAt({ ...first, sheet }, node.from), to: cellAt({ ...last, sheet }, node.to) };
   }
   function visit(node: FormulaExpression): FormulaExpression {
-    if (change.kind === "copy" && ["cell", "range", "axisRange", "structured"].includes(node.kind)) return node;
+    if (change.kind === "copy" && ["cell", "range", "axisRange"].includes(node.kind)) return node;
     if (node.kind === "cell") {
       const original = location(node), relative = change.kind === "axis" && bindings.preserveRelativeAxis && (change.axis === "row" ? !node.absoluteRow : !node.absoluteColumn);
       const point = relative && change.kind === "axis" ? { ...original, [change.axis]: original[change.axis] + to[change.axis] - from[change.axis] } : mapPosition(original);
@@ -215,6 +215,8 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         if (table !== undefined) return { ...node, name: table };
       }
       if (change.kind === "copy") {
+        const copiedTable = node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook) ? bindings.copiedTables?.get(node.name.toUpperCase()) : undefined;
+        if (copiedTable !== undefined) return { ...node, name: copiedTable };
         if (node.workbook === 0 || node.sheet !== undefined) return node;
         const binding = bindings.resolveName?.(node.name, from.sheet, false), local = bindings.resolveName?.(node.name, from.sheet, true, undefined, true);
         if (binding !== undefined && binding !== local && binding !== bindings.resolveName?.(node.name, to.sheet, false)
@@ -241,6 +243,10 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     }
     if (node.kind === "structured") {
       const table = node.table ?? bindings.table;
+      if (change.kind === "copy") {
+        const copied = node.table === undefined ? undefined : bindings.copiedTables?.get(node.table.toUpperCase());
+        return copied === undefined ? node : { ...node, table: copied };
+      }
       if (change.kind === "copySheet" && node.table !== undefined) {
         const copied = bindings.copiedTables?.get(node.table.toUpperCase()); return copied === undefined ? node : { ...node, table: copied };
       }

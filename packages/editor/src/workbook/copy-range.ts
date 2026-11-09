@@ -4,6 +4,7 @@ import { workbookTextSplice } from "./text-projection.js";
 import { createWorkbookHyperlinkCopy } from "./copy-hyperlinks.js";
 import { createWorkbookNameCopyPlan } from "./copy-names.js";
 import { copyWorkbookRules, createWorkbookCopyFootprint } from "./copy-rules.js";
+import { createWorkbookTableCopyPlan } from "./copy-tables.js";
 
 export interface WorkbookRangeCopyOptions {
   /** Defaults to the source worksheet; both belong to the same workbook. */
@@ -95,6 +96,9 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
   // them in place, including native covered content and skipped blank seeds;
   // only newly constructed merges require the explicit covered-content check.
   const targetMergeKeys = new Set(targetMerges.map(mergeKey)), addedMerges = copiedMerges.filter(merge => !targetMergeKeys.has(mergeKey(merge)));
+  const tables = config.mode === "contents" && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column)
+    && sheet.tables?.some(table => contains(source, table.range))
+    ? await createWorkbookTableCopyPlan(snapshot.metadata.workbook, sheet, targetSheet, source, target, { guard, account, step, ...(config.yield ? { yield: config.yield } : {}) }) : undefined;
   let names: Awaited<ReturnType<typeof createWorkbookNameCopyPlan>> | undefined;
   const copyExpression = async (expression: string, from: WorkbookCoordinate, to: WorkbookCoordinate): Promise<string> => {
     if (sheetId !== targetSheetId && snapshot.metadata.workbook.names?.length) {
@@ -154,7 +158,8 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
           else content = readWorkbookCellSource(model, { sheetId, ...from });
           account(JSON.stringify(content).length);
           if (content.kind === "formula") {
-            content = { kind: "formula", expression: await copyExpression(content.expression, from, to) };
+            const expression = await copyExpression(content.expression, from, to);
+            content = { kind: "formula", expression: tables?.bind(expression, from, to) ?? expression };
           }
           let unchanged = false;
           if (config.mode !== "contents" && content.kind === "value" && content.value.type === "text" && previous?.value.type === "text" && !previous.formula) {
@@ -178,6 +183,7 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     }
     const copiedRanges = footprint?.finish();
     const ruleCopy = copiedRanges ? await copyWorkbookRules(snapshot.metadata.workbook, sheet, targetSheet, source, target, copiedRanges, config.mode === "contents", copyExpression, { guard, step, account, ...(config.yield ? { yield: config.yield } : {}) }) : undefined;
+    const copiedTables = await tables?.finish(copyExpression) ?? [];
     guard(); const operations: DocumentTransaction["operations"] = [];
     if (comments && copiedRanges?.length) {
       const sourceMasks = copiedRanges.map(range => ({ from: { row: range.from.row - destination.row + source.from.row, column: range.from.column - destination.column + source.from.column }, to: { row: range.to.row - destination.row + source.from.row, column: range.to.column - destination.column + source.from.column } }));
@@ -201,6 +207,9 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     }
     if (cells.length) operations.push({ op: "setWorkbookCells", sheetId: targetSheetId, cells });
     if (formats.length) operations.push({ op: "setWorkbookCellFormats", sheetId: targetSheetId, cells: formats });
+    for (const table of copiedTables) {
+      const operation = { op: "setWorkbookTable" as const, sheetId: targetSheetId, table, cellPolicy: "preserve" as const }; account(JSON.stringify(operation).length); operations.push(operation);
+    }
     const copiedLinks = hyperlinks?.finish();
     if (copiedLinks) { const operation = { op: "replaceWorkbookHyperlinks" as const, sheetId: targetSheetId, range: target, links: copiedLinks }; account(JSON.stringify(operation).length); operations.push(operation); }
     if (ruleCopy) { account(JSON.stringify(ruleCopy).length); operations.push(ruleCopy); }

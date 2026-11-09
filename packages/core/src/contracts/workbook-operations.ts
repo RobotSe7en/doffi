@@ -49,7 +49,7 @@ export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("setWorkbookAutoFilter"), sheetId: IdentifierSchema, filter: WorkbookAutoFilterSchema.nullable() }),
   z.strictObject({ op: z.literal("setWorkbookDefinedName"), name: WorkbookDefinedNameSchema }),
   z.strictObject({ op: z.literal("removeWorkbookDefinedName"), nameId: IdentifierSchema }),
-  z.strictObject({ op: z.literal("setWorkbookTable"), sheetId: IdentifierSchema, table: WorkbookTableSchema }),
+  z.strictObject({ op: z.literal("setWorkbookTable"), sheetId: IdentifierSchema, table: WorkbookTableSchema, cellPolicy: z.enum(["materialize", "preserve"]).optional() }),
   z.strictObject({ op: z.literal("removeWorkbookTable"), sheetId: IdentifierSchema, tableId: IdentifierSchema }),
   z.strictObject({ op: z.literal("setWorkbookTableStyle"), style: WorkbookTableStyleSchema }),
   z.strictObject({ op: z.literal("removeWorkbookTableStyle"), styleId: IdentifierSchema }),

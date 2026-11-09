@@ -85,7 +85,7 @@ export function* editWorkbookDefinition(workbook: WorkbookMetadata, cells: Workb
     }
   }
   replace(sheet.tables ??= [], table, value => value.tableId === table.tableId);
-  yield* materializeTable(cells, sheet.sheetId, table, previous);
+  if (operation.cellPolicy !== "preserve") yield* materializeTable(cells, sheet.sheetId, table, previous);
 }
 
 /** Replacing/removing a definition and restoring it in one batch must not

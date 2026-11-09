@@ -1,0 +1,781 @@
+{
+  "scope": "Immutable independent ZIP/XML native table source, two actual pinned Calc whole-range copyRange edits and two actual reopens with official XSD/OPC. Producer copies cells without a new table definition, retains original structured references and yields VALUE errors for copied current-row formulas outside the original table. SDK complete contents copies create independent table/column identities and map self references to the new table; partial and selective copies keep ordinary bindings. Table recipes remain metadata, actual copied exceptions and rich headers remain source cells. Producer loss of original calculated recipes/filter differences remains explicit. Excel/WPS whole-table copy runtime unverified.",
+  "source": "packages/office/tests/fixtures/workbook-axis-tables.xlsx",
+  "sourceSha256": "25a5ac5cf409e94aa2e9fa8064e9b63d5860fd73e74c829ca1cd96b5bd8fed1e",
+  "sourceObserved": {
+    "tables": [
+      {
+        "name": "SalesTable",
+        "range": "A1:D6",
+        "columns": [
+          "产品",
+          "数量",
+          "单价",
+          "金额"
+        ],
+        "filter": "A1:D5"
+      }
+    ],
+    "sheets": [
+      {
+        "tables": 1,
+        "formulas": [
+          {
+            "address": "D2",
+            "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "type": "n",
+            "value": "20"
+          },
+          {
+            "address": "D3",
+            "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "type": "n",
+            "value": "60"
+          },
+          {
+            "address": "D4",
+            "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "type": "n",
+            "value": "120"
+          },
+          {
+            "address": "D5",
+            "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "type": "n",
+            "value": "40"
+          },
+          {
+            "address": "D6",
+            "expression": "SUBTOTAL(109,SalesTable[金额])",
+            "type": "n",
+            "value": "240"
+          }
+        ]
+      },
+      {
+        "tables": 0,
+        "formulas": [
+          {
+            "address": "A1",
+            "expression": "SUM(SalesTable[数量])",
+            "type": "n",
+            "value": "10"
+          },
+          {
+            "address": "B1",
+            "expression": "Sales!D6",
+            "type": "n",
+            "value": "240"
+          },
+          {
+            "address": "C1",
+            "expression": "SUM(SalesTable[金额])",
+            "type": "n",
+            "value": "240"
+          }
+        ]
+      }
+    ],
+    "nativeDefinitions": [
+      {
+        "ref": "A1:D6",
+        "header": "1",
+        "totals": "1",
+        "headerCells": [
+          {
+            "address": "A1",
+            "type": "inlineStr",
+            "constantText": "产品"
+          },
+          {
+            "address": "B1",
+            "type": "inlineStr",
+            "constantText": "数量"
+          },
+          {
+            "address": "C1",
+            "type": "inlineStr",
+            "constantText": "单价"
+          },
+          {
+            "address": "D1",
+            "type": "inlineStr",
+            "constantText": "金额"
+          }
+        ],
+        "columns": [
+          {
+            "name": "产品",
+            "calculated": null,
+            "totalFormula": null
+          },
+          {
+            "name": "数量",
+            "calculated": null,
+            "totalFormula": null
+          },
+          {
+            "name": "单价",
+            "calculated": null,
+            "totalFormula": null
+          },
+          {
+            "name": "金额",
+            "calculated": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "totalFormula": null
+          }
+        ]
+      }
+    ]
+  },
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "cases": [
+    {
+      "name": "same-sheet",
+      "copied": {
+        "file": "packages/office/tests/fixtures/workbook-copy-tables-same-sheet-copied-calc.xlsx",
+        "sha256": "ccd831c749faa04e533d7e0bfa1ff9075ae25d94e6f90c43a0abfbe4da07d260",
+        "observed": {
+          "tables": [
+            {
+              "name": "SalesTable",
+              "range": "A1:D6",
+              "columns": [
+                "产品",
+                "数量",
+                "单价",
+                "金额"
+              ],
+              "filter": "A1:D6"
+            }
+          ],
+          "sheets": [
+            {
+              "tables": 1,
+              "formulas": [
+                {
+                  "address": "D2",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "20"
+                },
+                {
+                  "address": "D3",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "60"
+                },
+                {
+                  "address": "D4",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "120"
+                },
+                {
+                  "address": "D5",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "40"
+                },
+                {
+                  "address": "D6",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "K261",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K262",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K263",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K264",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K265",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            },
+            {
+              "tables": 0,
+              "formulas": [
+                {
+                  "address": "A1",
+                  "expression": "SUM(SalesTable[数量])",
+                  "type": "n",
+                  "value": "10"
+                },
+                {
+                  "address": "B1",
+                  "expression": "Sales!D6",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "C1",
+                  "expression": "SUM(SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            }
+          ],
+          "nativeDefinitions": [
+            {
+              "ref": "A1:D6",
+              "header": "1",
+              "totals": "1",
+              "headerCells": [
+                {
+                  "address": "A1",
+                  "type": "s",
+                  "constantText": "产品"
+                },
+                {
+                  "address": "B1",
+                  "type": "s",
+                  "constantText": "数量"
+                },
+                {
+                  "address": "C1",
+                  "type": "s",
+                  "constantText": "单价"
+                },
+                {
+                  "address": "D1",
+                  "type": "s",
+                  "constantText": "金额"
+                }
+              ],
+              "columns": [
+                {
+                  "name": "产品",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "数量",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "单价",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "金额",
+                  "calculated": null,
+                  "totalFormula": null
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "reopened": {
+        "file": "packages/office/tests/fixtures/workbook-copy-tables-same-sheet-reopened-calc.xlsx",
+        "sha256": "6492caaaf9a582fdc54d39d82c0f737d87aaae036e400d50fe79517b636b1eaf",
+        "observed": {
+          "tables": [
+            {
+              "name": "SalesTable",
+              "range": "A1:D6",
+              "columns": [
+                "产品",
+                "数量",
+                "单价",
+                "金额"
+              ],
+              "filter": "A1:D6"
+            }
+          ],
+          "sheets": [
+            {
+              "tables": 1,
+              "formulas": [
+                {
+                  "address": "D2",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "20"
+                },
+                {
+                  "address": "D3",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "60"
+                },
+                {
+                  "address": "D4",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "120"
+                },
+                {
+                  "address": "D5",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "40"
+                },
+                {
+                  "address": "D6",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "K261",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K262",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K263",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K264",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K265",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            },
+            {
+              "tables": 0,
+              "formulas": [
+                {
+                  "address": "A1",
+                  "expression": "SUM(SalesTable[数量])",
+                  "type": "n",
+                  "value": "10"
+                },
+                {
+                  "address": "B1",
+                  "expression": "Sales!D6",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "C1",
+                  "expression": "SUM(SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            }
+          ],
+          "nativeDefinitions": [
+            {
+              "ref": "A1:D6",
+              "header": "1",
+              "totals": "1",
+              "headerCells": [
+                {
+                  "address": "A1",
+                  "type": "s",
+                  "constantText": "产品"
+                },
+                {
+                  "address": "B1",
+                  "type": "s",
+                  "constantText": "数量"
+                },
+                {
+                  "address": "C1",
+                  "type": "s",
+                  "constantText": "单价"
+                },
+                {
+                  "address": "D1",
+                  "type": "s",
+                  "constantText": "金额"
+                }
+              ],
+              "columns": [
+                {
+                  "name": "产品",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "数量",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "单价",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "金额",
+                  "calculated": null,
+                  "totalFormula": null
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "other-sheet",
+      "copied": {
+        "file": "packages/office/tests/fixtures/workbook-copy-tables-other-sheet-copied-calc.xlsx",
+        "sha256": "1a6244c7f349c5ecd85263b2d689d2dd72889d97a60df3ab8a2b3f978de970f7",
+        "observed": {
+          "tables": [
+            {
+              "name": "SalesTable",
+              "range": "A1:D6",
+              "columns": [
+                "产品",
+                "数量",
+                "单价",
+                "金额"
+              ],
+              "filter": "A1:D6"
+            }
+          ],
+          "sheets": [
+            {
+              "tables": 1,
+              "formulas": [
+                {
+                  "address": "D2",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "20"
+                },
+                {
+                  "address": "D3",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "60"
+                },
+                {
+                  "address": "D4",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "120"
+                },
+                {
+                  "address": "D5",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "40"
+                },
+                {
+                  "address": "D6",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            },
+            {
+              "tables": 0,
+              "formulas": [
+                {
+                  "address": "A1",
+                  "expression": "SUM(SalesTable[数量])",
+                  "type": "n",
+                  "value": "10"
+                },
+                {
+                  "address": "B1",
+                  "expression": "Sales!D6",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "C1",
+                  "expression": "SUM(SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "K261",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K262",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K263",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K264",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K265",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            }
+          ],
+          "nativeDefinitions": [
+            {
+              "ref": "A1:D6",
+              "header": "1",
+              "totals": "1",
+              "headerCells": [
+                {
+                  "address": "A1",
+                  "type": "s",
+                  "constantText": "产品"
+                },
+                {
+                  "address": "B1",
+                  "type": "s",
+                  "constantText": "数量"
+                },
+                {
+                  "address": "C1",
+                  "type": "s",
+                  "constantText": "单价"
+                },
+                {
+                  "address": "D1",
+                  "type": "s",
+                  "constantText": "金额"
+                }
+              ],
+              "columns": [
+                {
+                  "name": "产品",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "数量",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "单价",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "金额",
+                  "calculated": null,
+                  "totalFormula": null
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "reopened": {
+        "file": "packages/office/tests/fixtures/workbook-copy-tables-other-sheet-reopened-calc.xlsx",
+        "sha256": "63a636a532c7fe8053ee8647f9c5d596c0ef8e63cb4c484cfe275fedec352146",
+        "observed": {
+          "tables": [
+            {
+              "name": "SalesTable",
+              "range": "A1:D6",
+              "columns": [
+                "产品",
+                "数量",
+                "单价",
+                "金额"
+              ],
+              "filter": "A1:D6"
+            }
+          ],
+          "sheets": [
+            {
+              "tables": 1,
+              "formulas": [
+                {
+                  "address": "D2",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "20"
+                },
+                {
+                  "address": "D3",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "60"
+                },
+                {
+                  "address": "D4",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "120"
+                },
+                {
+                  "address": "D5",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "n",
+                  "value": "40"
+                },
+                {
+                  "address": "D6",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            },
+            {
+              "tables": 0,
+              "formulas": [
+                {
+                  "address": "A1",
+                  "expression": "SUM(SalesTable[数量])",
+                  "type": "n",
+                  "value": "10"
+                },
+                {
+                  "address": "B1",
+                  "expression": "Sales!D6",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "C1",
+                  "expression": "SUM(SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                },
+                {
+                  "address": "K261",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K262",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K263",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K264",
+                  "expression": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+                  "type": "e",
+                  "value": "#VALUE!"
+                },
+                {
+                  "address": "K265",
+                  "expression": "SUBTOTAL(109,SalesTable[金额])",
+                  "type": "n",
+                  "value": "240"
+                }
+              ]
+            }
+          ],
+          "nativeDefinitions": [
+            {
+              "ref": "A1:D6",
+              "header": "1",
+              "totals": "1",
+              "headerCells": [
+                {
+                  "address": "A1",
+                  "type": "s",
+                  "constantText": "产品"
+                },
+                {
+                  "address": "B1",
+                  "type": "s",
+                  "constantText": "数量"
+                },
+                {
+                  "address": "C1",
+                  "type": "s",
+                  "constantText": "单价"
+                },
+                {
+                  "address": "D1",
+                  "type": "s",
+                  "constantText": "金额"
+                }
+              ],
+              "columns": [
+                {
+                  "name": "产品",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "数量",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "单价",
+                  "calculated": null,
+                  "totalFormula": null
+                },
+                {
+                  "name": "金额",
+                  "calculated": null,
+                  "totalFormula": null
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

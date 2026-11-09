@@ -541,6 +541,12 @@ test("workbook search identifies hidden-sheet matches without changing visibilit
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
   await expect(page.getByRole("tab", { name: "Hidden", exact: true })).toHaveCount(0);
 });
+test("mounted direct whole native table copy owns independent identities and inputs in one history step", async ({ page }) => {
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-table-copy' }), { kind: 'workbook' });
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookTableCopy } = await import('./workbook-copy-tables-cases.js'); await exerciseWorkbookTableCopy(page, false);
+});
 test("mounted direct structured formula fill differs from copy and retains locked columns and history", async ({ page }) => {
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-structured-fill' }), { kind: 'workbook' });
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });

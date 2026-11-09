@@ -63,6 +63,17 @@ test("table creation materializes headers and actual calculated-column formulas,
   s.undo(); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata); expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks);
 });
 
+test("preserved table definitions retain exact actual cells while final validation still requires consistent headers", () => {
+  const s = session(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "Amount" } }, { row: 0, column: 1, value: { type: "text", value: "Double" } },
+    { row: 1, column: 0, value: number(7) }, { row: 1, column: 1, value: number(99) }]));
+  const before = s.snapshot(), definition = table();
+  apply(s, [{ op: "setWorkbookTable", sheetId, table: definition, cellPolicy: "preserve" }]);
+  expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks); expect(s.getCell(sheetId, 1, 1)?.value).toEqual(number(99)); expect(s.getCell(sheetId, 3, 1)).toBeUndefined();
+  const original = s.serialize();
+  expect(() => apply(s, [{ op: "setWorkbookTable", sheetId, table: { ...definition, columns: [{ ...definition.columns[0]!, name: "Renamed" }, definition.columns[1]!] }, cellPolicy: "preserve" }])).toThrow();
+  expect(s.serialize()).toEqual(original); expect(s.history().undoSteps).toBe(1); s.undo(); expect(s.snapshot().metadata).toEqual(before.metadata);
+});
+
 test("table column swaps and table rename follow stable identities across cells, rules and names", () => {
   const s = session(scalarWorkbook([{ row: 1, column: 0, value: number(3) }, { row: 8, column: 0, value: number(999), formula: "=SUM(Sales[Amount])" }]));
   const definition = table(); apply(s, [{ op: "setWorkbookTable", sheetId, table: definition },

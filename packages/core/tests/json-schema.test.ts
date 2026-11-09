@@ -8,6 +8,17 @@ import { invalidCases, manifest, repository, validCases } from "./fixtures.js";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validators = new Map(CONTRACT_NAMES.map((name) => [name, ajv.compile(getContractJsonSchema(name))]));
 
+test("table cell policy is explicit and identical in generated and runtime contracts", () => {
+  const operation = { op: "setWorkbookTable", sheetId: "sheet-1", table: { tableId: "table", name: "Sales", range: { from: { row: 0, column: 0 }, to: { row: 0, column: 0 } },
+    header: false, totals: false, totalsPreviouslyShown: false, columns: [{ columnId: "column", name: "Amount", totalFunction: "none" }], rowStripes: false, columnStripes: false, showFirstColumn: false, showLastColumn: false } };
+  for (const valid of [operation, { ...operation, cellPolicy: "materialize" }, { ...operation, cellPolicy: "preserve" }]) {
+    expect(validators.get("document-operation")!(valid)).toBe(true); expect(parseContract("document-operation", valid)).toEqual(valid);
+  }
+  for (const cellPolicy of [true, null, "guess", "", 0]) {
+    expect(validators.get("document-operation")!({ ...operation, cellPolicy })).toBe(false); expect(() => parseContract("document-operation", { ...operation, cellPolicy })).toThrow();
+  }
+});
+
 test("axis edits have strict generated and runtime contracts", () => {
   const valid = { op: "editWorkbookAxis", sheetId: "sheet-1", axis: "row", action: "insert", index: 255, count: 2 };
   expect(validators.get("document-operation")!(valid)).toBe(true);

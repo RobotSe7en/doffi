@@ -295,6 +295,13 @@ test('mounted Worker native whole-table cut keeps its definition across sheets a
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker whole native table copy owns independent identities and inputs in one history step', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-table-copy' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookTableCopy } = await import('./workbook-copy-tables-cases.js'); await exerciseWorkbookTableCopy(page, true);
+});
 test('mounted Worker structured formula fill differs from copy and retains locked columns and history', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-structured-fill' }), { kind: 'workbook' });
