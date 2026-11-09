@@ -6,7 +6,7 @@ import { build } from 'vite';
 import { createHash } from 'node:crypto';
 import { importXlsx, writeDocumentZip } from '@doffi/office';
 import { scalarWorkbook } from '../../packages/core/tests/workbook-scalar-fixture.js';
-import { createDocumentSession, openDocument } from '@doffi/core';
+import { createDocumentSession, createWorkbook, openDocument } from '@doffi/core';
 import type * as editorFixture from './fixtures/workbook-remote-editor.js';
 import type * as fixture from './fixtures/workbook-read-host.js';
 import type * as sessionFixture from './fixtures/workbook-session-host.js';
@@ -17,6 +17,13 @@ declare global { interface Window { workbookSessionHost: typeof sessionFixture }
 declare global { interface Window { workbookEditingPerformance: typeof performanceFixture } }
 declare global { interface Window { workbookEditorPerformance: typeof mountedPerformanceFixture } }
 declare global { interface Window { workbookRemoteEditor: typeof editorFixture } }
+test('mounted Worker system HTML clipboard preserves rich appearance, types, merges, drafts and atomic rejection', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(createWorkbook({ documentId: 'worker-html-paste-editor' }))).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookHtmlClipboard } = await import('./workbook-html-clipboard-cases.js'); await exerciseWorkbookHtmlClipboard(page, true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
 let workerCode = '', hostCode = '', sessionWorkerCode = '', sessionHostCode = '';
 let performanceHostCode = '';
 let editorHostCode = '';

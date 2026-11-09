@@ -20,13 +20,14 @@ export interface WorkbookSessionReceipt extends Omit<TransactionReceipt, "mappin
 export interface WorkbookSessionCandidate extends Pick<WorkbookCandidateChange, "documentId" | "baseRevision" | "affectedNodeIds" | "affectedSheetIds" | "changedRanges" | "changes" | "changedAnnotationIds"> {
   readonly mapping: WorkbookSessionMapping;
   readonly proposalReview?: DeepReadonly<WorkbookProposalReview>;
+  readonly clipboardDiagnostics?: readonly string[];
 }
 export type WorkbookSessionCommand =
   | { readonly kind: "transaction"; readonly transaction: DocumentTransaction }
   | { readonly kind: "proposal"; readonly request: WorkbookInteractionRequest; readonly proposal: WorkbookEditProposal }
   | (WorkbookSessionIdentity & { readonly kind: "input"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly mode?: WorkbookTextInputMode })
   | (WorkbookSessionIdentity & { readonly kind: "formatText"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly selection: WorkbookTextFontSelection; readonly properties: Readonly<Record<string, string>> })
-  | (WorkbookSessionIdentity & { readonly kind: "paste"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly options?: WorkbookPasteOptions })
+  | (WorkbookSessionIdentity & { readonly kind: "paste"; readonly sheetId: string; readonly at: WorkbookCoordinate; readonly text: string; readonly html?: string; readonly options?: WorkbookPasteOptions })
   | (WorkbookSessionIdentity & { readonly kind: "copy"; readonly sheetId: string; readonly source: WorkbookRange; readonly target: WorkbookCoordinate;
       readonly targetSheetId?: string; readonly mode?: WorkbookRangeCopyOptions["mode"]; readonly skipBlanks?: boolean })
   | (WorkbookSessionIdentity & { readonly kind: "fill"; readonly sheetId: string; readonly source: WorkbookRange; readonly target: WorkbookRange;

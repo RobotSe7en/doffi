@@ -12,7 +12,7 @@ export interface WorkbookTextBindingOptions {
   readonly onNavigate?: (direction: WorkbookNavigationDirection, extend: boolean) => void;
   readonly onHistory?: (direction: "undo" | "redo") => void;
   readonly onClear?: (selection: DocumentSelection) => void;
-  readonly onPaste?: (text: string, selection: DocumentSelection) => void;
+  readonly onPaste?: (text: string, selection: DocumentSelection, html?: string) => void;
   readonly onError?: (error: DocumentError, recoveryText: string) => void;
 }
 export interface WorkbookTextBinding {
@@ -91,8 +91,10 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
   }, events);
   input.addEventListener("paste", event => {
     const state = controller.state();
-    if (editing || state.dirty || state.composing || input.value !== workbookInputTextView(state.text) || !state.selection || !options.onPaste || !event.clipboardData?.types.includes("text/plain")) return;
-    event.preventDefault(); notify(options.onPaste, event.clipboardData.getData("text/plain"), state.selection);
+    const data = event.clipboardData;
+    if (editing || state.dirty || state.composing || input.value !== workbookInputTextView(state.text) || !state.selection || !options.onPaste || !data
+      || !data.types.some(type => type === "text/plain" || type === "text/html")) return;
+    event.preventDefault(); notify(options.onPaste, data.getData("text/plain"), state.selection, data.getData("text/html") || undefined);
   }, events);
   input.addEventListener("keydown", event => {
     const state = controller.state();

@@ -1,0 +1,112 @@
+{
+  "scope": "Actual pinned Calc controller getTransferable HTML data from independent inputs. Hidden rows/columns are omitted; emitted merge spans remain original producer bytes. Conflicting truncated Sheets metadata and precise sdval are recorded, with the SDK preserving the precise native number. No SDK export, global OS clipboard, or Excel/WPS editing runtime claim.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "cases": [
+    {
+      "name": "values",
+      "source": "examples/xlsx/01-values-text.xlsx",
+      "sourceSha256": "305d3984c9de3150d26ad24775d6ab651195b240f1625e811991d357309b97b5",
+      "sheetIndex": 0,
+      "range": "A1:F8",
+      "mime": "text/html",
+      "htmlFile": "packages/office/tests/fixtures/workbook-html-clipboard-values-calc.html",
+      "htmlSha256": "92b9ef78f8ebb44296e547686cad022a7863cf8cab019f749e5dcd4297facadc",
+      "bytes": 8657,
+      "sourceRows": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "sourceColumns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "numericMetadataConflicts": []
+    },
+    {
+      "name": "styles",
+      "source": "examples/xlsx/02-styles-dates.xlsx",
+      "sourceSha256": "a7ffd0b493e9ab94fb473013a84f45a4d500b04b338a05c511b9a6bf80d07c2c",
+      "sheetIndex": 0,
+      "range": "A1:F8",
+      "mime": "text/html",
+      "htmlFile": "packages/office/tests/fixtures/workbook-html-clipboard-styles-calc.html",
+      "htmlSha256": "ea7fe75dfbee55a7b2eee8392e3599393ff2b6960c6c1d70040b09cf1966cdb1",
+      "bytes": 12014,
+      "sourceRows": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "sourceColumns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "numericMetadataConflicts": [
+        {
+          "sdval": "12345.678",
+          "sheetsNumber": 12345
+        },
+        {
+          "sdval": "0.125",
+          "sheetsNumber": 0
+        },
+        {
+          "sdval": "0.5",
+          "sheetsNumber": 0
+        },
+        {
+          "sdval": "-1234.5",
+          "sheetsNumber": -1234
+        }
+      ]
+    },
+    {
+      "name": "structure",
+      "source": "examples/xlsx/03-structure.xlsx",
+      "sourceSha256": "795ab81826ff1d923379ae95bf9bac8458ee5b3165f8e6208363453c39b5485d",
+      "sheetIndex": 0,
+      "range": "A1:F8",
+      "mime": "text/html",
+      "htmlFile": "packages/office/tests/fixtures/workbook-html-clipboard-structure-calc.html",
+      "htmlSha256": "dc5febc9e8381f631bc040603c0d2fe0d26c1468937606f59617657afd758517",
+      "bytes": 6165,
+      "sourceRows": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7
+      ],
+      "sourceColumns": [
+        0,
+        1,
+        2,
+        4,
+        5
+      ],
+      "numericMetadataConflicts": []
+    }
+  ]
+}

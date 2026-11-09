@@ -8,6 +8,7 @@ import { withWorkbookAsyncValidationConfirmation, workbookValidationInputKey } f
 import { createWorkbookInputController } from "./input-controller.js";
 import { bindWorkbookAsyncTextInput } from "./text-binding.js";
 import { createWorkbookPasteTransaction } from "./text-input.js";
+import { createWorkbookHtmlPastePlan } from "./html-paste.js";
 import type { WorkbookTextInputMode } from "./text-input.js";
 import { createWorkbookFillTransaction } from "./fill.js";
 import { workbookFillSeedCount } from "./fill-selection.js";
@@ -482,16 +483,18 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       const sheetId = selected.anchor.sheetId, ranges = selected.anchor.ranges.map(range => ({ from: { ...range.from }, to: { ...range.to } }));
       void runInteraction(async () => { if (session.snapshot().manifest.revision !== selected.baseRevision) throw new DocumentError("RevisionConflict", "Clear selection belongs to an older source."); await perform([{ op: "clearWorkbookRanges", sheetId, ranges, mode: "contents" }]); });
     },
-    onPaste(text, selected) {
+    onPaste(text, selected, html) {
       if (selected.anchor.kind !== "cells") return;
-      const transaction = createWorkbookPasteTransaction(session.snapshot(), selected.anchor.sheetId, selected.anchor.ranges[0]!.from, text);
+      const pasted = html === undefined ? undefined : createWorkbookHtmlPastePlan(session.snapshot(), selected.anchor.sheetId, selected.anchor.ranges[0]!.from, html);
+      const transaction = pasted?.transaction ?? createWorkbookPasteTransaction(session.snapshot(), selected.anchor.sheetId, selected.anchor.ranges[0]!.from, text);
       const anchor = selected.anchor;
       void runInteraction(async () => {
         if (session.snapshot().manifest.revision !== selected.baseRevision) throw new DocumentError("RevisionConflict", "Paste selection belongs to an older source.");
         const receipt = await perform(transaction.operations); readCurrentSelection(); controls();
-        const cells = transaction.operations[0]; if (receipt.changed && cells?.op === "setWorkbookCells") {
+        const cells = transaction.operations.find(operation => operation.op === "setWorkbookCells"); if (receipt.changed && cells?.op === "setWorkbookCells") {
           const last = cells.cells.at(-1)!; await choose(anchor.sheetId, { from: anchor.ranges[0]!.from, to: { row: last.row, column: last.column } }, true);
         }
+        if (pasted?.diagnostics.length) ui.status.textContent = "已粘贴；部分外部样式不受支持（" + pasted.diagnostics.length + " 项）。";
       });
     },
     onError(error) { report(error); controls(); },

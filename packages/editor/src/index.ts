@@ -15,6 +15,8 @@ export { mountPresentationWorkbench } from "./presentation-workbench.js";
 export type { PresentationWorkbenchOptions,PresentationWorkbenchView,PresentationWorkbenchEvent } from "./presentation-workbench.js";
 export { parseWorkbookTextInput, parseWorkbookTsv, createWorkbookPasteTransaction } from "./workbook/text-input.js";
 export type { WorkbookTextInputMode, WorkbookPasteOptions } from "./workbook/text-input.js";
+export { createWorkbookHtmlPastePlan } from "./workbook/html-paste.js";
+export type { WorkbookHtmlPastePlan } from "./workbook/html-paste.js";
 export { createWorkbookInputTransaction, readWorkbookInputText } from "./workbook/input-source.js";
 export { createWorkbookInputController } from "./workbook/input-controller.js";
 export type { WorkbookInputController, WorkbookInputState } from "./workbook/input-controller.js";

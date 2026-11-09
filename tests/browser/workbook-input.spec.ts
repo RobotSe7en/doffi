@@ -7,10 +7,15 @@ import type * as fixture from "./fixtures/workbook-input.js";
 import type * as editorFixture from "./fixtures/workbook-editor.js";
 import { scalarWorkbook } from "../../packages/core/tests/workbook-scalar-fixture.js";
 import { encodeTestPackage } from "./package-transport.js";
-import { createDocumentSession, openDocument } from "@doffi/core";
+import { createDocumentSession, createWorkbook, openDocument } from "@doffi/core";
 import { importXlsx, writeDocumentZip } from "@doffi/office";
 import type * as remoteFixture from "./fixtures/workbook-remote-text-host.js";
 declare global { interface Window { workbookInput: typeof fixture } }
+test("mounted direct system HTML clipboard preserves rich appearance, types, merges, drafts and atomic rejection", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(createWorkbook({ documentId: "html-paste-editor" })));
+  const { exerciseWorkbookHtmlClipboard } = await import("./workbook-html-clipboard-cases.js"); await exerciseWorkbookHtmlClipboard(page, false);
+});
 declare global { interface Window { workbookEditor: typeof editorFixture } }
 declare global { interface Window { workbookRemoteText: typeof remoteFixture } }
 let code = "", editorCode = "";

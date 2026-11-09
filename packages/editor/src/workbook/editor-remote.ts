@@ -235,7 +235,10 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
       const context = validationContext(undefined, abort.signal);
       candidate = await withWorkbookAsyncValidationConfirmation(options => client.prepare(command, options, { signal: abort.signal, onProgress: progress => { if (!disposed) ui.status.textContent = "正在准备更改 · " + progress.completed + (progress.total ? " / " + progress.total : ""); } }), preparation(supplied), context);
       if (disposed || abort.signal.aborted) throw new DocumentError("OperationCancelled", "Workbook command was cancelled before application.");
-      commandApplying = true; controls(); const receipt = await client.commit(candidate); consumed = true; if (!disposed) { ui.error.hidden = true; void scheduleRefresh(); } return receipt;
+      commandApplying = true; controls(); const receipt = await client.commit(candidate); consumed = true; if (!disposed) {
+        ui.error.hidden = true; void scheduleRefresh();
+        if (candidate.clipboardDiagnostics?.length) ui.status.textContent = "已粘贴；部分外部样式不受支持（" + candidate.clipboardDiagnostics.length + " 项）。";
+      } return receipt;
     } finally {
       if (candidate && !consumed) try { await client.discard(candidate); } catch { /* Host disposal or another source can release the lease. */ }
       commandApplying = false; controls();
@@ -412,8 +415,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
       if (selected.baseRevision !== client.state().revision) throw new DocumentError("RevisionConflict", "Clear selection belongs to a previous source.");
       await perform([{ op: "clearWorkbookRanges", sheetId: anchor.sheetId, ranges: anchor.ranges.map(range => ({ from: { ...range.from }, to: { ...range.to } })), mode: "contents" }]);
     }); },
-    onPaste(text, selected) { if (selected.anchor.kind !== "cells") return; const anchor = selected.anchor; void runInteraction(async () => {
-      await commitCommand({ kind: "paste", documentId: selected.documentId, revision: selected.baseRevision, sheetId: anchor.sheetId, at: anchor.ranges[0]!.from, text });
+    onPaste(text, selected, html) { if (selected.anchor.kind !== "cells") return; const anchor = selected.anchor; void runInteraction(async () => {
+      await commitCommand({ kind: "paste", documentId: selected.documentId, revision: selected.baseRevision, sheetId: anchor.sheetId, at: anchor.ranges[0]!.from, text, ...(html === undefined ? {} : { html }) });
     }); },
   });
   const idle = (): boolean => !refreshing && !commandAbort && !input.state().applying && !input.state().selecting && !pendingInput() && source?.cells.snapshot.manifest.revision === client.state().revision;

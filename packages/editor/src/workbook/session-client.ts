@@ -151,6 +151,8 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
           const review = WorkbookProposalReviewSchema.safeParse(value.candidate.proposalReview);
           if (!review.success || review.data.requestId !== command.request.requestId || review.data.proposalId !== command.proposal.proposalId) invalidSessionTransport("Invalid workbook proposal review response.");
         } else if (value.candidate.proposalReview !== undefined) invalidSessionTransport("Unexpected workbook proposal review response.");
+        if (value.candidate.clipboardDiagnostics !== undefined && (command.kind !== "paste" || command.html === undefined || !Array.isArray(value.candidate.clipboardDiagnostics)
+          || value.candidate.clipboardDiagnostics.length > 32 || value.candidate.clipboardDiagnostics.some((value: unknown) => typeof value !== "string" || value.length > 1024))) invalidSessionTransport("Invalid clipboard diagnostics response.");
         const candidate = freezeSessionValue(value.candidate as unknown as WorkbookSessionCandidate); candidates.set(candidate, { handle: value.handle, consumed: false }); return candidate;
       },
       async resolveReference(expression: string, origin: WorkbookReferenceLocation, execution?: WorkbookSessionExecution) {

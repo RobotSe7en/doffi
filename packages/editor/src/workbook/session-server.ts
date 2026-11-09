@@ -10,6 +10,7 @@ import { createWorkbookReplaceTransaction } from "./replace.js";
 import { findWorkbookText } from "./find.js";
 import { createWorkbookInputTransaction, readWorkbookInputText } from "./input-source.js";
 import { createWorkbookPasteTransaction } from "./text-input.js";
+import { createWorkbookHtmlPastePlan } from "./html-paste.js";
 import { createWorkbookTaskQueue } from "./task-queue.js";
 import { calculationOptions, checkSessionMessage, invalidSessionTransport, keys, positiveId, record, sessionMapping, sessionReceipt, sessionTransportConfig, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
 import type { WorkbookSessionCommand, WorkbookSessionProgress, WorkbookSessionServer, WorkbookSessionState, WorkbookSessionTransportOptions } from "./session-transport.js";
@@ -76,7 +77,7 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
           send({ id: requestId, event: "layout", value, readPort, replyPort }, [readPort, replyPort]);
         });
       } };
-      let transaction;
+      let transaction, clipboardDiagnostics: readonly string[] | undefined;
       const common = { signal: abort.signal, yield: yieldTask };
       if (command.kind === "proposal") {
         if (!keys(payload.command, ["kind", "request", "proposal"])) invalidSessionTransport("Invalid workbook proposal command.");
@@ -95,8 +96,11 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
           if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "at", "selection", "properties"])) invalidSessionTransport("Invalid workbook text font command.");
           transaction = createWorkbookTextFormatTransaction(base, command.sheetId, command.at, command.selection, command.properties);
         } else if (command.kind === "paste") {
-          if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "at", "text", "options"])) invalidSessionTransport("Invalid workbook paste command.");
-          transaction = createWorkbookPasteTransaction(base.snapshot(), command.sheetId, command.at, command.text, command.options);
+          if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "at", "text", "html", "options"]) || typeof command.text !== "string") invalidSessionTransport("Invalid workbook paste command.");
+          if (command.html !== undefined) {
+            const pasted = createWorkbookHtmlPastePlan(base.snapshot(), command.sheetId, command.at, command.html, command.options);
+            transaction = pasted.transaction; clipboardDiagnostics = pasted.diagnostics;
+          } else transaction = createWorkbookPasteTransaction(base.snapshot(), command.sheetId, command.at, command.text, command.options);
         } else if (command.kind === "copy") {
           if (!keys(payload.command, ["kind", "documentId", "revision", "sheetId", "source", "target", "targetSheetId", "mode", "skipBlanks"])) invalidSessionTransport("Invalid workbook copy command.");
           const calculation = command.mode === "values" ? await calculate(base, abort, progress, preparation, guard) : undefined; guard();
@@ -125,7 +129,7 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
       handle = ++nextCandidate; candidates.set(handle, { candidate: owned, requestId, views: new Set(), ...(retainedPreparation === undefined ? {} : { preparation: retainedPreparation }) });
       const { documentId, baseRevision, affectedNodeIds, affectedSheetIds, changedRanges, changes, changedAnnotationIds, mapping } = owned;
       const review = session.getProposalReview(owned);
-      post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping), ...(review ? { proposalReview: review } : {}) } });
+      post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping), ...(review ? { proposalReview: review } : {}), ...(clipboardDiagnostics ? { clipboardDiagnostics } : {}) } });
     } catch (reason) {
       if (handle !== undefined) release(handle); else if (owned) try { session.discard(owned); } catch { /* Disposed or invalidated by its host. */ }
       throw reason;

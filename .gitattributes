@@ -1,0 +1,2 @@
+# Preserve native controller exports byte-for-byte, including producer whitespace.
+packages/office/tests/fixtures/workbook-html-clipboard-*-calc.html binary

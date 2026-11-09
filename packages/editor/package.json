@@ -30,7 +30,9 @@
   },
   "dependencies": {
     "@doffi/core": "workspace:*",
-    "@doffi/render": "workspace:*"
+    "@doffi/render": "workspace:*",
+    "css-tree": "3.2.1",
+    "parse5": "8.0.1"
   },
   "peerDependencies": {
     "react": ">=18.2.0 <20"
@@ -41,6 +43,7 @@
     }
   },
   "devDependencies": {
+    "@types/css-tree": "3.2.0",
     "@types/react": "19.3.0"
   },
   "repository": {
