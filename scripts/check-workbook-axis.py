@@ -123,6 +123,8 @@ def native(source_path, output, case, mutate=None):
             document.storeAsURL(output.resolve().as_uri(), (prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", True)))
             return version
         finally:
+            failed = sys.exc_info()[0] is not None
+            exit_before_cleanup = process.poll()
             if document is not None:
                 try:
                     document.close(True)
@@ -133,10 +135,15 @@ def native(source_path, output, case, mutate=None):
             except ProcessLookupError:
                 pass
             try:
-                process.communicate(timeout=3)
+                stdout, stderr = process.communicate(timeout=3)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
-                process.communicate()
+                stdout, stderr = process.communicate()
+            if failed:
+                print(f"Pinned Calc acceptance failed; process exit before cleanup: {exit_before_cleanup!r}", file=sys.stderr)
+                for label, data in [("stdout", stdout), ("stderr", stderr)]:
+                    if data:
+                        print(label + ":\n" + data[-16_384:].decode("utf-8", errors="replace"), file=sys.stderr)
 
 
 def main():

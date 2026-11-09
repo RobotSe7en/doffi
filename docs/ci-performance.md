@@ -51,7 +51,8 @@ gh workflow run ci.yml --ref <branch>
 专项运行完整原生 XLSX 参考、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
 
 ```sh
-pnpm check:workbook-scale
+node scripts/install-acceptance-fonts.mjs --system-fonts
+FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-scale
 ```
 
 完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核），已超过原先整个 job 的 15 分钟；工作簿浏览器 job 的总时限设为 30 分钟，Word／PPT 保持 15 分钟。阶段容量现在串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限设为 60 分钟。它们仅是 CI 调度时限，不改变首屏、计算、编辑／交互 p95、CPU／内存、DOM 或取消的任何 SDK 性能门槛。
@@ -59,3 +60,11 @@ pnpm check:workbook-scale
 前提为 Linux/systemd/cgroup v2、至少四个可用逻辑 CPU、已固定的四个浏览器、字体及 LibreOffice 环境。脚本需要无交互 sudo 创建临时受限服务；不更改持久系统服务。
 
 正式结果位于 `.cache/workbook-scale-acceptance/` 并作为 CI artifact 上传。汇总器的 `--output <file>` 写入显式结果路径；原 `--record` 入口仍用于明确更新已提交证据，普通 CI 不改写参考基线。
+
+## 固定字体的实际浏览器前置检查
+
+`97af0b5` 的远端容量首次运行有 115 项现代集成通过，两项 Firefox 大表编辑各首次／诊断重跑均超过 360 秒，未进入旧引擎及固定资源步骤。固定字体文件位于应用 `.cache` 时，`fc-match` 虽指向正确摘要，Firefox Canvas 与公开矩阵却报告 Noto CJK 替代；完整自动行高因此不能复用，每次编辑重新测量 20 万格。本机用同一 FONTCONFIG 重现，三次诊断的预览各约 15 秒，原日志与 profile 保留，未将诊断算验收。
+
+显式 `--system-fonts` 将相同摘要字节安装到[标准系统字体目录](https://help.gnome.org/system-admin-guide/fonts.html)下由 manifest 摘要命名的独立目录。已有不同字节拒绝覆盖；来源、版本、许可和摘要保持原固定记录。默认无该开关仍使用应用缓存。只有 CI Office／容量 setup 显式调用，SDK 运行时不安装或下载字体，也不更改浏览器安全偏好或允许替代字体复用。
+
+[字体前置脚本](../scripts/check-acceptance-fonts.mjs)在长容量流程前核验仓库规范 manifest、五份实际文件摘要和当前 Fontconfig 选择，再在默认 Firefox context 中测量四个 CJK family／weight，保留不存在字体的负例。正负测量及来源写入阶段 artifact 的 `font-environment.json`。这避免 shell 字体可见却浏览器不可见时继续运行长测试；其成功仍不能代替完整日常／容量。

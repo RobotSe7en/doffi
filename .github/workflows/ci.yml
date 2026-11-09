@@ -153,7 +153,7 @@ jobs:
           path: .cache/LibreOffice_25.8.1.1_Linux_x86-64_deb.tar.gz
           key: office-archive-f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c
       - run: node scripts/install-acceptance-office.mjs
-      - run: node scripts/install-acceptance-fonts.mjs
+      - run: node scripts/install-acceptance-fonts.mjs --system-fonts
       - uses: actions/cache@v4
         if: matrix.suite != 'workbook'
         with:
@@ -211,7 +211,7 @@ jobs:
           path: .cache/LibreOffice_25.8.1.1_Linux_x86-64_deb.tar.gz
           key: office-archive-f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c
       - run: node scripts/install-acceptance-office.mjs
-      - run: node scripts/install-acceptance-fonts.mjs
+      - run: node scripts/install-acceptance-fonts.mjs --system-fonts
       - run: node scripts/install-legacy-chromium.mjs
       - run: pnpm check:workbook-scale
       - uses: actions/upload-artifact@v4

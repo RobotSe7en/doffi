@@ -3,6 +3,35 @@ import { createDocumentSession, createWorkbookCalculator, createWorkbookScalarEv
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 const location = (row: number, column = 0) => ({ sheetId: "sheet-1", row, column });
 const number = (value: number) => ({ type: "number" as const, value });
+test('completed immutable seeds retain full step and UTF-16 output budgets on constant-time reuse', () => {
+  const text = '甲𠀀'.repeat(80), model = scalarWorkbook([{ row: 0, column: 0, value: { type: 'text', value: text } },
+    { row: 0, column: 1, value: number(999), formula: '=A1' }, { row: 0, column: 2, value: number(999), formula: '=B1&"尾"' }]);
+  const original = createWorkbookCalculator(model), initial = original.calculateSync(), seed = original.calculateSync();
+  expect(seed).toMatchObject({ calculated: 0, reused: 2 }); expect(seed.codeUnits).toBeGreaterThan(2 * text.length);
+  for (const limits of [{ maxCodeUnits: seed.codeUnits - 1 }, { maxSteps: seed.steps - 1 }]) {
+    const bounded = createWorkbookCalculator(model, limits, seed);
+    expect(() => bounded.calculateSync()).toThrowError(expect.objectContaining({ code: 'ResourceLimitExceeded' })); bounded.dispose();
+  }
+  const exact = createWorkbookCalculator(model, { maxCodeUnits: seed.codeUnits, maxSteps: seed.steps }, seed);
+  expect(exact.calculateSync()).toMatchObject({ calculated: 0, reused: 2, codeUnits: seed.codeUnits, steps: seed.steps });
+  expect(initial.cells[1]).toMatchObject({ value: { type: 'text', value: text + '尾' } }); exact.dispose(); original.dispose();
+});
+test('incremental dirty roots can enter and leave a real lazy cycle while retaining unrelated values and old seeds', () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(0) },
+    { row: 0, column: 1, value: number(999), formula: '=IF(A1,C1,5)' }, { row: 0, column: 2, value: number(999), formula: '=B1+1' },
+    { row: 0, column: 3, value: number(999), formula: '=7' }]));
+  const calculator = createWorkbookCalculator(session), seed = calculator.calculateSync();
+  for (const value of [1, 0]) {
+    const m = session.snapshot().manifest;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: m.documentId, baseRevision: m.revision, operations: [
+      { op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row: 0, column: 0, source: { kind: 'value', value: number(value) } }] }] }));
+    expect(calculator.calculateSync()).toMatchObject({ calculated: 2, reused: 1 });
+    for (const column of [1, 2]) expect(calculator.getCell(location(0, column))).toMatchObject(value
+      ? { state: 'unavailable', issue: { reason: 'circular-reference' } } : { state: 'valid', value: number(column + 4) });
+    expect(calculator.getCell(location(0, 3))).toMatchObject({ value: number(7) });
+  }
+  expect(seed.cells[0]).toMatchObject({ revision: 0, value: number(5) }); calculator.dispose(); session.dispose();
+});
 test('cancelling a reused graph after learning an expanded lookup range cannot corrupt a completed seed', async () => {
   const session = createDocumentSession(scalarWorkbook([
     ...[0, 1].map(row => ({ row, column: 0, value: { type: 'text' as const, value: 'keep' } })),

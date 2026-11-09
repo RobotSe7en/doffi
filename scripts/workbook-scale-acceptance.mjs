@@ -17,6 +17,7 @@ function run(command, args, env = process.env) {
 const pnpm = process.env.npm_execpath;
 if (!pnpm) throw Error('Run capacity acceptance through pnpm.');
 if (process.env.DOFFI_CI_MODE === 'daily') throw Error('Stage capacity acceptance cannot run in daily mode.');
+run(process.execPath, ['scripts/check-acceptance-fonts.mjs']);
 run(process.execPath, [pnpm, 'run', 'check:xlsx-fixtures']);
 run(process.execPath, [pnpm, 'run', 'check:xlsx-reference']);
 const unitReport = resolve(directory, 'unit-scale.json');

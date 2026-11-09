@@ -4,6 +4,15 @@
 
 ## 基线与当前状态
 
+- 最新完整 `pnpm check` 270 文件／3015 项、架构／类型／SDK 和 Playground 构建通过（`.cache/workbook-editing-seed-budgets-complete-check.log`）。`97af0b5` 远端容量最终为现代 115 项通过、2 个 Firefox 大表编辑首次／诊断重跑均 360 秒超时，没有进入后续旧版及固定资源；`.cache/workbook-editing-first-ci-{failed-complete.log,scale/}` 保留。该运行不得计作阶段通过。
+- 排查同时发现本机 `.cache/acceptance-fonts` 的旧配置指向重命名前目录，已修正；早先名为 `pinned-font-replay` 的那次不能证明固定字体环境。修正后实际 Calc 及 XSD／OPC 重放仍通过（`.cache/workbook-editing-combinations-repaired-font-replay.log`）。
+- 固定字体目录在应用缓存时，本机与 CI Firefox 实际将 Noto CJK 替代，虽然 `fc-match` 正确；三次诊断准备约 150～200ms／view 约 50～70ms，预览每次约 15 秒，profile 指向完整自动行高重测。相同字体字节安装到标准系统目录后，四个 CJK face 与不存在 face 的 Canvas 正负例通过；不改 SDK 的替代诊断、行高复用或浏览器安全偏好。安装新增显式 `--system-fonts`、按 manifest 摘要命名目录和不同字节拒绝覆盖；CI Office／scale 明确使用。阶段最前新增仓库 manifest／实际 SHA／当前 Fontconfig／真实 Firefox 前置检查，报告归档，详见[CI 说明](ci-performance.md)。两个原超时用例以 CI=true／full／固定字体重跑均通过：普通编辑 55.9 秒、默认编辑器 1.5 分钟，全部 100 次与完整历史保留（`.cache/workbook-firefox-capacity-system-fonts.log`）。
+
+- `97af0b5` 已完成恰好两位完整独立审查及三项 P2 修复复核。远端 [CI 42694627203](https://github.com/RobotSe7en/doffi/actions/runs/42694627203) 中工程、Safari、Word／PPT 全套及四引擎工作簿日常通过；Chromium／旧 Chromium 各 359，Firefox／WebKit 各 356、3 项声明的 IME 跳过，首次失败／flaky 均为零。工作簿 Office 在固定 Calc 打开混合来源后发生 UNO bridge disposed；原日志保留 `.cache/workbook-editing-first-ci-office-workbook.log`，本机固定字体重放通过，未将远端失败算成功。原生适配器现只在异常时记录进程退出及有界 stdout／stderr，不重试或掩盖断言。
+- 同提交本机完整容量已通过原生参考、八项容量单元、现代 117／旧版 39 集成、128 份公开矩阵及固定资源四引擎读取；编辑 Chromium 通过，Firefox p95 515ms 失败（`.cache/workbook-editing-final-stage-scale.log`），因此没有阶段成功记录。全部首屏／全算／内存／历史／真实反馈／取消通过，500ms 未调整。
+- 随后主实施者优化完整计算 seed 的重复遍历：成功发布时保留表达式／输出 UTF-16 总量，精确计足复用预算；已证明相同拓扑、非易变且地区相同的图不再重复扫描 dirty，已有复用结果时只从受影响根开始。依赖发现、循环复核、取消／修订及旧 seed 隔离保留。新增紧预算与进入／退出 lazy 真循环，4 文件／58 项及构建通过；两位原审查者分别只读认可、无新增 P0／P1／P2。新源码固定 Firefox 全部 100 次通过，p95 495ms、首屏 24.35s、全算 3.379s、浏览器高水位约 1819MiB（`.cache/workbook-editing-firefox-seed-budgets-full.log`）。该单引擎记录不代替最新最终源全部日常及容量。
+- 最新完整工程检查见 `.cache/workbook-editing-seed-budgets-complete-check.log`。最终阶段状态以[PR #31](https://github.com/RobotSe7en/doffi/pull/31)同一最终 HEAD 的完整日常及 `workbook-scale` 为准；全部成功且审查无未关闭问题后方可合并，不能用历史成功或本机短诊断代替。
+
 - 完整阶段差异 `5451736..b87098d` 已由恰好两位 `workbook_edit_review_one`／`workbook_edit_review_two` 分别独立审查，均覆盖整个范围，没有委派实施或再建子代理。审查者一发现显示格式筛选及长表名代理对两项 P2，审查者二无新增；修复复核中追加同格式行区间拆段的 P2。表名已独立 8/8 复核关闭；筛选／分段与预算的最新源码已由两位原审查者认可，三项 P2 全部关闭；审查者一另独立 32/32 通过，无新增 P0／P1／P2，详见[记录](workbook-editing-review.md)。
 - `b87098d1a2e7f366e2ebabd422299fbe628697e8` 已推送，Quick `42687107818` 成功，草稿 PR 已同步。该源码完整本地 `pnpm check` 268 文件／2973 项、架构／类型／SDK 和 Playground 构建全部通过（`.cache/workbook-editing-combinations-complete-check.log`）。当前审查修复后的完整 `pnpm check` 已通过：270 文件／3013 项及所有类型／架构／构建（`.cache/workbook-editing-review-fixes-complete-check.log`）；最终远端验收仍待执行。
 - 显示列表匹配保留精确原值，另外使用第一方数字格式器读取单元格／行／列／默认格式及格式／宿主／文档地区，供 SUBTOTAL 与行可见性共用。只改格式也进入停止验证的影响检查；维度的原始分段仅作扫描提示，实际格的有效格式相同则不产生格式影响。新目录预算用例先复现无计量全目录构建，现按需扫描、每步计量、局部 256 项缓存，结束清理。最新源 3 文件／44 项通过（`.cache/workbook-filter-display-effective-coverage-unit.log`），包含相同格式区间拆段与 UNKNOWN/SUBTOTAL 规则的复核反例；此前广泛 7 文件／69 项属于这两项细化前。
