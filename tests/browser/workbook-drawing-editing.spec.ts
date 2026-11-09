@@ -71,7 +71,7 @@ test.beforeAll(async () => {
   }
 });
 
-test("measured fixed and mixed objects and note boxes follow actual font and wrapped-row layout without geometry drift", async ({ page }) => {
+for (const remote of [false, true]) test(`${remote ? "default Worker" : "explicit direct"} measured fixed and mixed objects and note boxes follow actual font and wrapped-row layout without geometry drift`, async ({ page }) => {
   const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 0, column: 1, value: { type: "text", value: "B" } },
     { row: 3, column: 0, value: { type: "text", value: "Wrapped text with several words on multiple lines" } }]));
   const at = (row: number, column: number) => ({ row, column, offsetXPt: 2, offsetYPt: 3 });
@@ -83,22 +83,27 @@ test("measured fixed and mixed objects and note boxes follow actual font and wra
     { op: "addWorkbookComment", anchor: { kind: "cells", sheetId: "sheet-1", ranges: [{ from: { row: 1, column: 1 }, to: { row: 1, column: 1 } }] }, format: "classic", html: "<p>备注</p>", box },
   ] }));
   const initial = s.snapshot(), ids = [...initial.metadata.workbook.objects!.map(object => object.nodeId), initial.annotations[0]!.bodyNodeId!], files = s.serialize(); s.dispose();
-  await page.addScriptTag({ content: bundles.get("workbook-editor")! }); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
-  const measure = () => page.evaluate(() => window.workbookEditor.displayedDrawingBounds());
+  await page.addScriptTag({ content: bundles.get(remote ? "workbook-remote-editor" : "workbook-editor")! });
+  if (remote) await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: bundles.get("workbook-session-worker")!, bytes: Buffer.from(writeDocumentZip(files)).toString("base64") });
+  else await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const measure = () => page.evaluate(remote => remote ? window.workbookRemoteEditor.displayedDrawingBounds() : window.workbookEditor.displayedDrawingBounds(), remote);
   const bounds = (value: Awaited<ReturnType<typeof measure>>, index: number) => value.objects.find(object => object.nodeId === ids[index])!;
   const before = await measure(); expect(before.objects).toHaveLength(5);
-  await page.evaluate(() => window.workbookEditor.measuredApply([{ op: "setWorkbookStyleClass", cssClass: "cell-default", properties: { "font-size": "20pt", "white-space": "pre-wrap" } }]));
+  await page.evaluate(async remote => {
+    const operations = [{ op: "setWorkbookStyleClass" as const, cssClass: "cell-default", properties: { "font-size": "20pt", "white-space": "pre-wrap" } }];
+    if (remote) await window.workbookRemoteEditor.perform(operations); else await window.workbookEditor.measuredApply(operations);
+  }, remote);
   const after = await measure(); expect(after.objects).toHaveLength(5); expect(after.columnWidthPt!).toBeGreaterThan(before.columnWidthPt!);
   for (const index of [0, 4]) for (const field of ["xPt", "yPt", "widthPt", "heightPt"] as const) expect(bounds(after, index)[field]).toBeCloseTo(bounds(before, index)[field], 1);
   for (const field of ["xPt", "yPt"] as const) expect(bounds(after, 1)[field]).toBeCloseTo(bounds(before, 1)[field], 1);
   for (const field of ["widthPt", "heightPt"] as const) expect(bounds(after, 2)[field]).toBeCloseTo(bounds(before, 2)[field], 1);
   for (const index of [1, 3]) for (const field of ["widthPt", "heightPt"] as const) expect(bounds(after, index)[field]).toBeGreaterThan(bounds(before, index)[field]);
   for (const index of [2, 3]) for (const field of ["xPt", "yPt"] as const) expect(bounds(after, index)[field]).toBeGreaterThan(bounds(before, index)[field]);
-  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote)).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
   expect(await page.locator("iframe").count()).toBe(1);
-  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
-  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ drawings: initial.metadata.workbook.objects, comments: initial.metadata.workbook.comments, history: { undoSteps: 0 }, errors: [] });
-  await page.evaluate(() => window.workbookEditor.dispose());
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
+  expect(await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote)).toMatchObject({ drawings: initial.metadata.workbook.objects, comments: initial.metadata.workbook.comments, history: { undoSteps: 0 }, errors: [] });
+  if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
 });
 
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} axis edits move fixed one-cell drawings and resize both-marker drawings and notes in the actual canvas`, async ({ page }) => {

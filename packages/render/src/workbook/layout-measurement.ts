@@ -6,14 +6,16 @@ import { measureWorkbookColumnFont } from "./column-font.js";
 import { createWorkbookPreviewSource } from "./preview-source.js";
 import type { WorkbookPreviewOptions, WorkbookPreviewSource } from "./preview-contracts.js";
 import { createWorkbookSurface } from "./surface.js";
+import type { WorkbookViewport } from "./viewport.js";
 
-export interface WorkbookLayoutSourceRequest extends Omit<WorkbookLayoutRequest, "model"> {
+export interface WorkbookLayoutSourceRequest extends Omit<WorkbookLayoutRequest, "model" | "signal"> {
   readonly source: WorkbookPreviewSource;
+  readonly signal?: AbortSignal;
 }
 export interface WorkbookLayoutService {
   readonly measure: WorkbookLayoutMeasurer;
   /** Worker adapters supply a scoped read endpoint for the private candidate. */
-  measureSource(request: WorkbookLayoutSourceRequest): Promise<WorkbookLayoutMeasurement>;
+  measureSource(request: WorkbookLayoutSourceRequest, viewport?: Pick<WorkbookViewport, "widthPt" | "heightPt">): Promise<WorkbookLayoutMeasurement>;
   dispose(): void;
 }
 let nextFontEnvironment = 0;
@@ -41,14 +43,15 @@ export function createWorkbookLayoutService(container: HTMLElement, options: Pic
     try { check(signal ?? abort.signal); const result = await work(abort); check(signal ?? abort.signal); return result; }
     finally { if (typeof native?.removeEventListener === "function") native.removeEventListener("abort", stop); if (pending === abort) pending = undefined; }
   }
-  async function measureSource(request: WorkbookLayoutSourceRequest, abort: AbortController): Promise<WorkbookLayoutMeasurement> {
+  async function measureSource(request: WorkbookLayoutSourceRequest, abort: AbortController, viewport = { widthPt, heightPt }): Promise<WorkbookLayoutMeasurement> {
     check(abort.signal);
+    const size = { widthPt: viewport.widthPt, heightPt: viewport.heightPt };
     const before = fonts.watch(document.fonts);
     if (!before.ready) throw new DocumentError("InvalidOperation", "Workbook layout measurement requires settled local fonts.");
     const snapshot = request.source.cells.snapshot, ids = [...request.sheetIds];
     if (!ids.length || new Set(ids).size !== ids.length || ids.some(id => !snapshot.metadata.workbook.sheets.some(sheet => sheet.sheetId === id)))
       throw new DocumentError("InvalidOperation", "Workbook layout measurement requires existing, distinct worksheets.");
-    const surface = await createWorkbookSurface(container, snapshot, { widthPt, heightPt, signal: abort.signal });
+    const surface = await createWorkbookSurface(container, snapshot, { ...size, signal: abort.signal });
     const sheets: WorkbookLayoutMeasurement["sheets"][number][] = [];
     try {
       const formatter = createWorkbookNumberFormatter({ dateSystem: snapshot.metadata.workbook.dateSystem,
@@ -65,7 +68,7 @@ export function createWorkbookLayoutService(container: HTMLElement, options: Pic
         const after = fonts.watch(document.fonts);
         if (!after.ready || before.epoch !== after.epoch) throw new DocumentError("InvalidOperation", "Local workbook fonts changed during measurement.");
         check(request.signal ?? abort.signal);
-        return Object.freeze({ sourceDigest: request.sourceDigest, fontEnvironment: `local-fonts-${fontOwner}-${before.epoch}`, sheets: Object.freeze(sheets) });
+        return Object.freeze({ sourceDigest: request.sourceDigest, fontEnvironment: `local-fonts-${fontOwner}-${before.epoch}-${size.widthPt}-${size.heightPt}`, sheets: Object.freeze(sheets) });
       } finally { formatter.dispose(); }
     } finally { surface.dispose(); }
   }
@@ -81,7 +84,7 @@ export function createWorkbookLayoutService(container: HTMLElement, options: Pic
           ...(request.calculationContext ? { calculationContext: request.calculationContext } : {}), signal: abort.signal }, abort);
       } finally { calculator?.dispose(); }
     }),
-    measureSource: (request: WorkbookLayoutSourceRequest) => run(request.signal, abort => measureSource(request, abort)),
+    measureSource: (request: WorkbookLayoutSourceRequest, viewport?: Pick<WorkbookViewport, "widthPt" | "heightPt">) => run(request.signal, abort => measureSource(request, abort, viewport)),
     dispose() { if (disposed) return; disposed = true; pending?.abort(); fonts.clear(); },
   });
 }

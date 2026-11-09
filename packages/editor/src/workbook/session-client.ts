@@ -3,11 +3,13 @@ import type { TransactionPrepareOptions, WorkbookChangeImpact, WorkbookCoordinat
 import { connectWorkbookReads, linkWorkbookPreviewSource } from "@doffi/render";
 import type { WorkbookReadConnection } from "@doffi/render";
 import { checkSessionMessage, freezeSessionValue, invalidSessionTransport, keys, positiveId, record, sessionTransportConfig, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
-import type { WorkbookSessionCandidate, WorkbookSessionCommand, WorkbookSessionConnection, WorkbookSessionExecution, WorkbookSessionFindOptions, WorkbookSessionInput, WorkbookSessionProgress, WorkbookSessionReceipt, WorkbookSessionState, WorkbookSessionTransportOptions, WorkbookSessionViewOptions } from "./session-transport.js";
+import type { WorkbookSessionCandidate, WorkbookSessionCommand, WorkbookSessionConnection, WorkbookSessionExecution, WorkbookSessionPreparationExecution, WorkbookSessionFindOptions, WorkbookSessionInput, WorkbookSessionProgress, WorkbookSessionReceipt, WorkbookSessionState, WorkbookSessionTransportOptions, WorkbookSessionViewOptions } from "./session-transport.js";
 import type { WorkbookFindQuery, WorkbookFindResult } from "./find-contracts.js";
+import { answerWorkbookLayout } from "./session-layout-client.js";
 
 interface Reply { readonly value: unknown; readonly port?: MessagePort }
-interface Pending { readonly operation: string; cancelled?: boolean; resolve(reply: Reply): void; reject(error: unknown): void; clean(): void; progress?(value: WorkbookSessionProgress): void }
+interface Pending { readonly operation: string; cancelled?: boolean; resolve(reply: Reply): void; reject(error: unknown): void; clean(): void; progress?(value: WorkbookSessionProgress): void;
+  readonly layout?: { readonly measure: NonNullable<WorkbookSessionPreparationExecution["measureLayout"]>; readonly identity: { readonly documentId: string; readonly revision: number }; readonly jobs: Set<AbortController> } }
 /** Owns an authorized port and bounded view state. Core candidates, source
  * chunks, calculation and history stay in the host's sole Worker session. */
 export async function connectWorkbookSession(port: MessagePort, options: WorkbookSessionTransportOptions = {}, signal?: AbortSignal): Promise<WorkbookSessionConnection> {
@@ -46,6 +48,15 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
       if (message.event === "state" && keys(message, ["protocol", "event", "value"])) { checkSessionMessage(message.value, config); acceptState(message.value, true); return; }
       if (!positiveId(message.id)) throw new Error("Missing response identity");
       const request = pending.get(message.id);
+      if (message.event === "layout") {
+        if (!keys(message, ["protocol", "id", "event", "value", "readPort", "replyPort"]) || !(message.readPort instanceof MessagePort) || !(message.replyPort instanceof MessagePort)
+          || message.readPort === message.replyPort || request?.operation !== "prepare" || !request.layout) throw new Error("Unexpected workbook layout capability");
+        if (request.cancelled) { closeTransferred(message.readPort); message.replyPort.close(); return; }
+        const abort = new AbortController(), layout = request.layout; layout.jobs.add(abort);
+        void answerWorkbookLayout(message.value, message.readPort, message.replyPort, layout.measure, abort.signal, config, layout.identity)
+          .catch(invalidMessage).finally(() => layout.jobs.delete(abort));
+        return;
+      }
       if (message.event === "cancelled") {
         if (!keys(message, ["protocol", "id", "event"]) || request && !request.cancelled) throw new Error("Invalid cancellation acknowledgment");
         if (request) { pending.delete(message.id); request.clean(); request.reject(cancelled()); } return;
@@ -70,13 +81,15 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
         const parsed = DocumentErrorDataSchema.safeParse(message.error); if (!parsed.success) throw new Error("Invalid error result");
         pending.delete(message.id); request.clean(); request.reject(new DocumentError(parsed.data.code, parsed.data.message, parsed.data.details));
       }
-    } catch { if (message.port instanceof MessagePort) closeTransferred(message.port); invalidMessage(); }
+    } catch { if (message.port instanceof MessagePort) closeTransferred(message.port); if (message.readPort instanceof MessagePort) closeTransferred(message.readPort); if (message.replyPort instanceof MessagePort) message.replyPort.close(); invalidMessage(); }
   }
-  function request(operation: string, payload: unknown, execution: WorkbookSessionExecution = {}, mutation = false): Promise<Reply> {
+  function request(operation: string, payload: unknown, execution: WorkbookSessionPreparationExecution = {}, mutation = false): Promise<Reply> {
     check();
-    if (!execution || typeof execution !== "object" || Array.isArray(execution) || Object.keys(execution).some(key => !["signal", "onProgress"].includes(key)) || execution.onProgress !== undefined && typeof execution.onProgress !== "function"
+    if (!execution || typeof execution !== "object" || Array.isArray(execution) || Object.keys(execution).some(key => !(operation === "prepare" ? ["signal", "onProgress", "measureLayout"] : ["signal", "onProgress"]).includes(key)) || execution.onProgress !== undefined && typeof execution.onProgress !== "function"
+      || execution.measureLayout !== undefined && typeof execution.measureLayout !== "function"
       || execution.signal !== undefined && (!execution.signal || typeof execution.signal.aborted !== "boolean" || typeof execution.signal.addEventListener !== "function" || typeof execution.signal.removeEventListener !== "function")) invalidSessionTransport("Invalid workbook session execution options.");
     const supplied = { ...execution };
+    const layout = supplied.measureLayout ? { measure: supplied.measureLayout, identity: { documentId: current.documentId, revision: current.revision }, jobs: new Set<AbortController>() } : undefined;
     if (supplied.signal?.aborted) return Promise.reject(cancelled());
     checkSessionMessage(payload, config);
     if (pending.size >= config.maxPendingRequests || nextId >= Number.MAX_SAFE_INTEGER) throw new DocumentError("ResourceLimitExceeded", "Too many pending workbook session requests.");
@@ -85,6 +98,7 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
       const cancel = (): void => {
         const owned = pending.get(id); if (!owned || owned.cancelled) return;
         if (operation === "prepare") {
+          for (const abort of owned.layout?.jobs ?? []) abort.abort();
           owned.cancelled = true; supplied.signal?.removeEventListener("abort", cancel); clearTimeout(timer);
           timer = setTimeout(() => dispose(cancelled("The remote workbook preparation did not acknowledge cancellation.")), config.requestTimeoutMs);
           try { port.postMessage({ protocol: WORKBOOK_SESSION_PROTOCOL, id, operation: "cancel" }); } catch { dispose(cancelled()); }
@@ -97,8 +111,8 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
       let timer = setTimeout(() => {
         if (mutation) dispose(new DocumentError("InvalidOperation", "The workbook command response timed out; its commit outcome is unknown. Inspect the host session before retrying.")); else cancel();
       }, config.requestTimeoutMs);
-      const clean = (): void => { clearTimeout(timer); supplied.signal?.removeEventListener("abort", cancel); };
-      pending.set(id, { operation, resolve, reject, clean, ...(supplied.onProgress ? { progress: supplied.onProgress } : {}) });
+      const clean = (): void => { clearTimeout(timer); supplied.signal?.removeEventListener("abort", cancel); for (const abort of layout?.jobs ?? []) abort.abort(); layout?.jobs.clear(); };
+      pending.set(id, { operation, resolve, reject, clean, ...(supplied.onProgress ? { progress: supplied.onProgress } : {}), ...(layout ? { layout } : {}) });
       supplied.signal?.addEventListener("abort", cancel, { once: true });
       try { port.postMessage({ protocol: WORKBOOK_SESSION_PROTOCOL, id, operation, payload }); }
       catch { pending.delete(id); clean(); reject(new DocumentError("InvalidOperation", "The workbook session could not send this command.")); }
@@ -127,8 +141,9 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
         if (result.documentId !== expected.documentId || result.baseRevision !== expected.revision || current.revision !== expected.revision) throw new DocumentError("RevisionConflict", "Workbook interaction source changed before completion.");
         return freezeSessionValue(result);
       },
-      async prepare(command: WorkbookSessionCommand, preparation?: TransactionPrepareOptions, execution?: WorkbookSessionExecution) {
-        const { value } = await request("prepare", { command, ...(preparation === undefined ? {} : { options: preparation }) }, execution);
+      async prepare(command: WorkbookSessionCommand, preparation?: TransactionPrepareOptions, execution?: WorkbookSessionPreparationExecution) {
+        const captured = { ...execution };
+        const { value } = await request("prepare", { command, ...(preparation === undefined ? {} : { options: preparation }), ...(captured.measureLayout ? { measureLayout: true } : {}) }, captured);
         if (!record(value) || !keys(value, ["handle", "candidate"]) || !positiveId(value.handle) || !record(value.candidate)
           || value.candidate.documentId !== current.documentId || !Number.isSafeInteger(value.candidate.baseRevision) || !Array.isArray(value.candidate.changes)
           || !Array.isArray(value.candidate.affectedNodeIds) || !record(value.candidate.mapping)) invalidSessionTransport("Invalid workbook candidate response.");

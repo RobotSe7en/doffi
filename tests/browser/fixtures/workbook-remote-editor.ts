@@ -1,12 +1,13 @@
 import { connectWorkbookSession, mountWorkbookEditor } from '@doffi/editor';
 import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
-import type { TransactionPrepareOptions, WorkbookCell, WorkbookSnapshot } from '@doffi/core';
+import type { DocumentOperation, TransactionPrepareOptions, WorkbookCell, WorkbookSnapshot } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
 import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean, at?: { row: number; column: number }): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
+  perform(operations: readonly DocumentOperation[]): Promise<void>;
   tableStyleSource(): Promise<{ tableStyles: WorkbookSnapshot["metadata"]["workbook"]["tableStyles"]; defaultTableStyle: WorkbookSnapshot["metadata"]["workbook"]["defaultTableStyle"] }>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedCellAppearance(row: number, column: number): ReturnType<typeof measureWorkbookCellAppearance>;
@@ -41,6 +42,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
   const release = () => { if (!disposed) { editor.dispose(); disposed = true; } };
   cleanup = () => { observed?.dispose(); release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
   actions = {
+    async perform(operations) { await editor.perform(operations); await editor.settled(); },
     async inspect() {
       const source = await client.view();
       try {
@@ -83,6 +85,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
 }
 export function inspect() { return actions.inspect(); }
 export function settled() { return actions.settled(); }
+export function perform(operations: readonly DocumentOperation[]) { return actions.perform(operations); }
 export function displayedCellAppearance(row: number, column: number) { return actions.displayedCellAppearance(row, column); }
 export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string, includeBounds = false) { return actions.displayedDrawingText(nodeId, includeBounds); }
@@ -97,4 +100,4 @@ export function sourceCell(row: number, column: number, sheetId?: string) { retu
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
 export const tableStyleSource = () => actions.tableStyleSource();
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

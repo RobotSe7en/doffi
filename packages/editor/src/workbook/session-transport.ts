@@ -1,8 +1,8 @@
 import { DocumentError } from "@doffi/core";
 import type { ChangeMapping, DocumentHistoryState, DocumentTransaction, TransactionPreparationProgress, TransactionPrepareOptions, TransactionReceipt,
   WorkbookCandidateChange, WorkbookCoordinate, WorkbookRange, WorkbookScalarContext, WorkbookSort, WorkbookReferenceLocation, WorkbookReferenceResult,
-  DeepReadonly, WorkbookEditProposal, WorkbookInteractionRequest, WorkbookInteractionRequestInput, WorkbookProposalReview } from "@doffi/core";
-import type { WorkbookReadConnection, WorkbookReadTransportOptions } from "@doffi/render";
+  DeepReadonly, WorkbookEditProposal, WorkbookInteractionRequest, WorkbookInteractionRequestInput, WorkbookProposalReview, WorkbookLayoutMeasurement } from "@doffi/core";
+import type { WorkbookReadConnection, WorkbookReadTransportOptions, WorkbookLayoutSourceRequest } from "@doffi/render";
 import { resolveWorkbookReadTransportOptions } from "@doffi/render";
 import type { WorkbookFindQuery, WorkbookFindResult, WorkbookReplaceOptions } from "./find-contracts.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
@@ -38,6 +38,10 @@ export interface WorkbookSessionExecution {
   readonly signal?: AbortSignal;
   readonly onProgress?: (value: WorkbookSessionProgress) => void;
 }
+export interface WorkbookSessionPreparationExecution extends WorkbookSessionExecution {
+  /** Local capability; it is never serialized into the command payload. */
+  readonly measureLayout?: (request: WorkbookLayoutSourceRequest) => WorkbookLayoutMeasurement | Promise<WorkbookLayoutMeasurement>;
+}
 export interface WorkbookSessionViewOptions extends WorkbookSessionExecution {
   /** Default follows the source's automatic/manual calculation mode. */
   readonly calculate?: boolean;
@@ -64,7 +68,7 @@ export interface WorkbookSessionTransportOptions {
 export interface WorkbookSessionConnection {
   state(): WorkbookSessionState;
   buildInteractionRequest(input: WorkbookInteractionRequestInput, execution?: WorkbookSessionExecution): Promise<WorkbookInteractionRequest>;
-  prepare(command: WorkbookSessionCommand, options?: TransactionPrepareOptions, execution?: WorkbookSessionExecution): Promise<WorkbookSessionCandidate>;
+  prepare(command: WorkbookSessionCommand, options?: TransactionPrepareOptions, execution?: WorkbookSessionPreparationExecution): Promise<WorkbookSessionCandidate>;
   /** A view is immutable and belongs to its caller. It transfers metadata and
    * requested windows, never the package or a second editing session. */
   view(candidate?: WorkbookSessionCandidate, options?: WorkbookSessionViewOptions): Promise<WorkbookReadConnection>;

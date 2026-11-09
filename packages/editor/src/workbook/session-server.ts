@@ -14,6 +14,7 @@ import { createWorkbookTaskQueue } from "./task-queue.js";
 import { calculationOptions, checkSessionMessage, invalidSessionTransport, keys, positiveId, record, sessionMapping, sessionReceipt, sessionTransportConfig, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
 import type { WorkbookSessionCommand, WorkbookSessionProgress, WorkbookSessionServer, WorkbookSessionState, WorkbookSessionTransportOptions } from "./session-transport.js";
 import type { WorkbookFindQuery } from "./find-contracts.js";
+import { requestWorkbookLayout } from "./session-layout-server.js";
 
 /** One exclusive host-authorized endpoint, bound to the host's sole session.
  * Closing it releases its candidates/views, never the host session or Worker. */
@@ -56,7 +57,7 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
     finally { calculator?.dispose(); }
   }
   async function prepare(payload: Record<string, unknown>, abort: AbortController, progress: (value: WorkbookSessionProgress) => void, requestId: number): Promise<void> {
-    if (!keys(payload, ["command", "options"]) || !record(payload.command)) invalidSessionTransport("Invalid workbook preparation request.");
+    if (!keys(payload, ["command", "options", "measureLayout"]) || !record(payload.command) || payload.measureLayout !== undefined && payload.measureLayout !== true) invalidSessionTransport("Invalid workbook preparation request.");
     if (preparing) throw new DocumentError("ResourceLimitExceeded", "Another workbook command is already preparing.");
     preparing = true; let owned: WorkbookCandidateChange | undefined, handle: number | undefined;
     try {
@@ -66,6 +67,15 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
         if (abort.signal.aborted || disposed) throw new DocumentError("OperationCancelled", "Workbook command was cancelled.");
         if (captureWorkbookModel(session) !== base) throw new DocumentError("RevisionConflict", "Workbook command source changed while preparing.");
       };
+      if (payload.measureLayout) preparation = { ...preparation, measureWorkbookLayout: async request => {
+        guard();
+        const calculation = request.model.snapshot().metadata.workbook.calculationMode === "auto" ? await calculate(request.model, abort, progress,
+          request.calculationContext ? { calculationContext: request.calculationContext } : undefined, guard) : undefined;
+        guard();
+        return requestWorkbookLayout(request, calculation, abort.signal, config, (value, readPort, replyPort) => {
+          send({ id: requestId, event: "layout", value, readPort, replyPort }, [readPort, replyPort]);
+        });
+      } };
       let transaction;
       const common = { signal: abort.signal, yield: yieldTask };
       if (command.kind === "proposal") {
@@ -111,7 +121,8 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
       }
       guard(); if (!owned) { if (!transaction) invalidSessionTransport("Workbook preparation requires a typed transaction."); owned = await session.prepareAsync(transaction, preparation, { ...common, onProgress: progress }); } guard();
       if (nextCandidate >= Number.MAX_SAFE_INTEGER) throw new DocumentError("ResourceLimitExceeded", "Workbook candidate handles are exhausted.");
-      handle = ++nextCandidate; candidates.set(handle, { candidate: owned, requestId, views: new Set(), ...(preparation === undefined ? {} : { preparation }) });
+      const retainedPreparation = preparation === undefined ? undefined : { ...preparation }; if (retainedPreparation) delete retainedPreparation.measureWorkbookLayout;
+      handle = ++nextCandidate; candidates.set(handle, { candidate: owned, requestId, views: new Set(), ...(retainedPreparation === undefined ? {} : { preparation: retainedPreparation }) });
       const { documentId, baseRevision, affectedNodeIds, affectedSheetIds, changedRanges, changes, changedAnnotationIds, mapping } = owned;
       const review = session.getProposalReview(owned);
       post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping), ...(review ? { proposalReview: review } : {}) } });

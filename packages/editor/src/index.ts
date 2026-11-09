@@ -42,4 +42,4 @@ export type { WorkbookSortOptions } from "./workbook/sort.js";
 export { serveWorkbookSession } from "./workbook/session-server.js";
 export { connectWorkbookSession } from "./workbook/session-client.js";
 export type { WorkbookSessionIdentity, WorkbookSessionState, WorkbookSessionInput, WorkbookSessionMapping, WorkbookSessionReceipt, WorkbookSessionCandidate, WorkbookSessionCommand, WorkbookSessionProgress,
-  WorkbookSessionExecution, WorkbookSessionViewOptions, WorkbookSessionFindOptions, WorkbookSessionTransportOptions, WorkbookSessionConnection, WorkbookSessionServer } from "./workbook/session-transport.js";
+  WorkbookSessionExecution, WorkbookSessionPreparationExecution, WorkbookSessionViewOptions, WorkbookSessionFindOptions, WorkbookSessionTransportOptions, WorkbookSessionConnection, WorkbookSessionServer } from "./workbook/session-transport.js";

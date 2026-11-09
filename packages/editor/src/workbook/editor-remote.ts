@@ -1,6 +1,6 @@
 import { DocumentError, parseContract } from "@doffi/core";
 import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
-import { mountDocumentPreview } from "@doffi/render";
+import { createWorkbookLayoutService, mountDocumentPreview } from "@doffi/render";
 import type { WorkbookPreview, WorkbookReadConnection, WorkbookRenderReport } from "@doffi/render";
 import type { WorkbookEditorOptions, WorkbookEditorView } from "./editor-contracts.js";
 import { createWorkbookEditorUi } from "./editor-ui.js";
@@ -52,6 +52,13 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
   const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), events = new view.AbortController();
+  const layoutService = createWorkbookLayoutService(ui.preview, { ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
+    ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
+  const authorizedClient = client;
+  client = Object.freeze({ ...authorizedClient, prepare: (...args: Parameters<WorkbookSessionConnection["prepare"]>) => {
+    const [command, preparation, execution] = args;
+    return authorizedClient.prepare(command, preparation, { ...execution, measureLayout: execution?.measureLayout ?? (request => layoutService.measureSource(request, preview?.layout().viewport)) });
+  } });
   let disposed = false, choosing = 0, generation = 0, refreshQueued = false, forceCalculation = false, refreshing = false;
   let latest: Promise<void> = Promise.resolve(), interaction: Promise<void> = Promise.resolve(), refreshAbort: AbortController | undefined, commandAbort: AbortController | undefined;
   let inputTask: Promise<void> = Promise.resolve(), commandTask: Promise<void> = Promise.resolve();
@@ -487,6 +494,6 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     setViewport: async (viewport: Parameters<WorkbookPreview["setViewport"]>[0]) => { await sourceSettled(); check(); return preview!.setViewport(viewport); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: () => binding.apply(), cancelInput: () => runInteraction(cancelInput), perform,
     recalculate,
-    dispose() { if (disposed) return; disposed = true; generation++; releaseWaiters(); refreshAbort?.abort(); commandAbort?.abort(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview?.dispose(); source?.dispose(); ui.element.remove(); },
+    dispose() { if (disposed) return; disposed = true; generation++; releaseWaiters(); refreshAbort?.abort(); commandAbort?.abort(); layoutService.dispose(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview?.dispose(); source?.dispose(); ui.element.remove(); },
   });
 }
