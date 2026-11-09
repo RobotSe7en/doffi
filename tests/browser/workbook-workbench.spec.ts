@@ -106,6 +106,29 @@ for (const remote of [false, true]) {
       await page.getByRole("button", { name: "放弃工作簿提案", exact: true }).click(); await expect(page.getByLabel("工作簿提案差异")).toBeHidden();
       expect((await page.evaluate(() => window.workbookWorkbench.inspect())).content).toContain("原对象"); expect(await page.evaluate(() => window.workbookWorkbench.revision())).toBe(1);
     });
+    test("layout compensation requires explicit object scope and preserves fixed drawing bounds through candidate apply and undo", async ({ page }) => {
+      await page.evaluate(({ encoded, worker }) => window.workbookWorkbench.mount(encoded, worker || undefined, false, false, true), { encoded, worker: remote ? worker : "" });
+      const nodeId = await page.evaluate(() => window.workbookWorkbench.addFixedObject()), before = await page.evaluate(() => window.workbookWorkbench.inspect());
+      const bounds = () => page.evaluate(() => window.workbookWorkbench.drawingBounds()); const original = (await bounds()).objects.find(object => object.nodeId === nodeId)!; expect(original).toBeDefined();
+      await page.evaluate(() => window.workbookWorkbench.build());
+      expect(await page.evaluate(() => window.workbookWorkbench.formatFont().then(() => "accepted", (error: { code: string }) => error.code))).toBe("InvalidProposal");
+      expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ revision: before.revision, drawings: before.drawings, history: before.history });
+      await page.getByLabel("允许修改的绘图", { exact: true }).selectOption(nodeId); await page.evaluate(() => window.workbookWorkbench.build());
+      await page.evaluate(() => window.workbookWorkbench.formatFont());
+      expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ revision: before.revision, drawings: before.drawings });
+      const title = page.getByText("结构、规则、绘图、批注锚点与样式", { exact: true }); await title.click();
+      const details = JSON.parse((await title.locator("..").locator("pre").textContent())!) as { after: { metadata: WorkbookDocumentMetadata } };
+      const candidate = details.after.metadata.workbook.objects!.find(object => object.nodeId === nodeId)!.anchor;
+      expect(candidate.kind).toBe("two-cell"); if (candidate.kind !== "two-cell") throw Error("Missing cell anchor.");
+      expect(candidate.from.offsetYPt).toBeLessThan(3);
+      await page.getByRole("button", { name: "整批应用工作簿提案", exact: true }).click(); await expect.poll(() => page.evaluate(() => window.workbookWorkbench.revision())).toBe(before.revision + 1); await page.evaluate(() => window.workbookWorkbench.settled());
+      const after = (await bounds()).objects.find(object => object.nodeId === nodeId)!;
+      for (const field of ["xPt", "yPt", "widthPt", "heightPt"] as const) expect(after[field]).toBeCloseTo(original[field], 1);
+      expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ drawings: [expect.objectContaining({ nodeId, anchor: candidate })], history: { undoSteps: before.history.undoSteps + 1 } });
+      await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookWorkbench.settled());
+      const restored = await page.evaluate(() => window.workbookWorkbench.inspect()); expect(restored.drawings).toEqual(before.drawings);
+      expect(restored.annotations).toEqual(before.annotations.map(annotation => ({ ...annotation, baseRevision: restored.revision })));
+    });
   });
 }
 

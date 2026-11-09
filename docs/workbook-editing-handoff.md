@@ -4,6 +4,9 @@
 
 ## 基线与当前状态
 
+- 工作台提案测量最终：完整工作簿工作台三引擎 69 项通过（`.cache/workbook-proposal-layout-three-engine-browser.log`），核心请求／提案与测量协议 4 文件／36 项通过（`.cache/workbook-proposal-layout-unit.log`），最终工具类型通过（`-final-types.log`），SDK 构建通过（`-first-build.log`）。保留原显式绘图写入权限与完整源补集，无需新增补偿权限例外；候选前／应用后实际固定边界和撤销绑定已核对。此批使用窄范围验证，完整本地基线仍记 `bd1d124` 的 238／2468，不移作当前全量；继续名称、结构／剪贴板、绘图／批注组合和固定容量等未完门槛。
+- `bd1d124f2f3aa156151c48adeae8a75d82f71529` 已推送，Quick `42552172702` 成功，草稿 PR #31 已同步默认两种编辑器异步测量；完整本地基线 238 文件／2468 项。随后工作台为直连 prepareProposalAsync 注入共享测量器，为原 Worker 连接的提案执行显式 measureLayout，跟随当前预览视口并随工作台释放。复用既有 objectIds 权限：区域字体改变需要补偿未授权绘图时整批 InvalidProposal；显式选入绘图后候选可核对锚点，应用实际画布保持固定，撤销精确恢复。首轮两项只因撤销断言误用旧 baseRevision 失败（`.cache/workbook-proposal-layout-first-browser.log`）；已按单调修订断言当前绑定，直连／Worker 两项 Chromium 复核通过（`-second-browser.log`）。SDK 构建及首轮类型通过（`-first-build.log`、`-first-types.log`）。
+- 当前工作台三引擎完整回归（`.cache/workbook-proposal-layout-three-engine-browser.log`）、核心请求／提案及测量协议单位回归（`.cache/workbook-proposal-layout-unit.log`）和最终工具类型（`.cache/workbook-proposal-layout-final-types.log`）进行中，冻结源码／测试；本批未提交。这里不自动扩大绘图或批注写入权限；区域外几何补偿通过显式已有范围／objectIds 授权完成，原精确源补集仍保留。完整格式／结构／绘图／批注提案组合与容量继续验收，R3-16 尚未退出。
 - 默认直连异步／测量批次最终完整 `pnpm check` 238 文件／2468 项通过，架构边界、工具／应用类型及 SDK／Playground 构建通过（`.cache/workbook-direct-async-complete-check.log`）。最终几何／字体／命令捕获三引擎 27 项通过；Firefox／WebKit 输入 90 项通过、6 项按既有浏览器能力声明跳过；Chromium 46 项在宿主重入修复前通过，新增三项在最终源码 Chromium 通过。默认两种编辑器现在共用异步候选准备及布局测量，公开工作簿直连 applyInput／perform 为 Promise；低层同步核心和 input.apply 保持。继续工作台提案测量与权限范围、容量及其他编辑余项，未进行阶段双人审查或最终远端全量验收。
 - 直连异步最终三引擎命令捕获／默认几何／旧行列及字体 27 项通过（`.cache/workbook-direct-async-final-three-engine-browser.log`）。随后完整 `pnpm check` 已启动（`.cache/workbook-direct-async-complete-check.log`，执行会话以实际工具返回为准），严格冻结全部源码／测试。必须等完成并核对真实计数和退出码，再提交默认直连批次；最近已提交完整基线仍为 `8fa6fb3` 的 237／2455，`6c8483f` 只记录其本批定向，不将旧全量移作当前源证明。
 - 默认直连异步入口的最终 Firefox／WebKit 完整输入文件：90 项通过、6 项按既有浏览器能力声明跳过（`.cache/workbook-direct-async-input-firefox-webkit-browser.log`）；此前 Chromium 46 项在宿主重入补强前通过，新宿主重入三项在最终源码上 Chromium 通过。当前进行三引擎命令捕获／默认混合几何／旧行列及字体复核（`.cache/workbook-direct-async-final-three-engine-browser.log`，会话以工具实际返回为准），冻结所有源码／测试；结束后运行完整 pnpm check 再提交本批。用户询问剩余量，已明确答复 R3-09～16 八项仍未验收、R3-17～20 四项尚未实施，不给虚假的接近合并结论。
@@ -256,7 +259,7 @@
 | R3-13 | 智能表、名称、条件格式、验证和全部修改入口的组合及独立验收；当前管理界面和默认／自定义表样式基础继续复用。 |
 | R3-14 | 绘图和两份经典备注框在排序／剪切／筛选／字体／换行及自动行高变化中的完整联动、来源身份和原生对照；验证有绘图大表的普通编辑时延及测量资源总量。默认编辑器测量及异步输入本批先完成最终检查。 |
 | R3-15 | 复制、排序、剪切、结构变更和跨表多片段组合中的两类批注映射、失效／重定位、线程及历史恢复完整验收。 |
-| R3-16 | 工作台提案测量接线，区域外确定性几何补偿与显式写入权限范围；完成冻结上下文、候选差异、冲突、迟到结果、取消和界面组合验收。 |
+| R3-16 | 提案测量与显式绘图权限基础已接通；继续完整格式／结构／绘图／批注组合的冻结上下文、候选差异、冲突、迟到结果、取消和容量验收。 |
 
 容量验收保留一万行／20 万实际格、2 万公式、100 步历史和四引擎固定资源目标。`workbook-scale` 现有固定资源脚本主要覆盖读取，编辑脚本及完整 500ms 普通编辑 p95 等门槛仍需落地并运行，见[CI 执行](ci-performance.md)与[第三轮细则](iteration-3.md)。本机小型结果、无绘图结果及读取验收分别记录。
 

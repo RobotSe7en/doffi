@@ -1,6 +1,6 @@
 import { createWorkbookCalculator, DocumentError, parseContract } from "@doffi/core";
 import type { DeepReadonly, TransactionPrepareOptions, TransactionReceipt, WorkbookEditProposal, WorkbookInteractionRequest, WorkbookInteractionRequestInput, WorkbookInteractionScope, WorkbookSession, WorkbookSnapshot } from "@doffi/core";
-import { createWorkbookPreviewSource, mountDocumentPreview } from "@doffi/render";
+import { createWorkbookLayoutService, createWorkbookPreviewSource, mountDocumentPreview } from "@doffi/render";
 import type { WorkbookPreview, WorkbookPreviewSource, WorkbookReadConnection } from "@doffi/render";
 import { mountWorkbookEditor } from "./editor.js";
 import type { WorkbookEditorOptions, WorkbookEditorView } from "./editor-contracts.js";
@@ -73,6 +73,8 @@ export function mountWorkbookWorkbench(container: HTMLElement, session: Workbook
     onPendingChange: pending => { try { config.onPendingChange?.(pending); } catch { /* Host reporting only. */ } if (editor) buttons(); },
     onSelectionChange: selection => { try { config.onSelectionChange?.(selection); } catch { /* Host reporting only. */ } notify({ type: "selectionChanged", selection }); if (editor) buttons(); } };
   editor = "kind" in session ? mountWorkbookEditor(editorHost, session, editorOptions) : mountWorkbookEditor(editorHost, session, { ...editorOptions, onViewChange(snapshot) { sourceSnapshot = snapshot; if (editor) update(); } });
+  const layoutService = createWorkbookLayoutService(editorHost, { ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
+    ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
   const generate = action("生成工作簿请求", () => buildRequest()), submit = action("提交工作簿批注", () => submitAnnotations());
   const download = action("下载工作簿请求", () => {
     check(); if (!activeRequest) throw new DocumentError("InvalidOperation", "请先生成请求。");
@@ -148,7 +150,9 @@ export function mountWorkbookWorkbench(container: HTMLElement, session: Workbook
     let owned: WorkbookWorkbenchCandidate | undefined, lease: WorkbookReadConnection | undefined;
     try {
       candidateBefore = "kind" in session ? session.snapshot() : sourceSnapshot;
-      owned = await withWorkbookAsyncValidationConfirmation<WorkbookWorkbenchCandidate>(options => "kind" in session ? session.prepareProposalAsync(request, proposal, options, { signal: job.abort.signal, yield: tasks.yield }) : session.prepare({ kind: "proposal", request, proposal }, options, { signal: job.abort.signal }), resources ?? {}, {
+      const preparation = "kind" in session ? { ...resources, measureWorkbookLayout: resources?.measureWorkbookLayout ?? layoutService.measure } : resources ?? {};
+      owned = await withWorkbookAsyncValidationConfirmation<WorkbookWorkbenchCandidate>(options => "kind" in session ? session.prepareProposalAsync(request, proposal, options, { signal: job.abort.signal, yield: tasks.yield })
+        : session.prepare({ kind: "proposal", request, proposal }, options, { signal: job.abort.signal, measureLayout: input => layoutService.measureSource(input, "layout" in editor ? editor.layout().viewport : undefined) }), preparation, {
         documentId: request.documentId, baseRevision: request.baseRevision, confirm: config.confirmValidationWarnings,
         assertCurrent() { job.guard(); if (pendingInput()) throw new DocumentError("OperationCancelled", "Workbook input changed during proposal validation confirmation."); },
       }); job.guard();
@@ -181,6 +185,6 @@ export function mountWorkbookWorkbench(container: HTMLElement, session: Workbook
   const unsubscribe = session.subscribe(() => { if (disposed) return; if ("kind" in session) sourceSnapshot = session.snapshot(); if (!applying && candidate && candidate.baseRevision !== state().revision) { const owned = candidate; candidate = undefined; clearPreview(); void discard(owned); status.textContent = "工作簿已变化，旧候选已释放，请重新生成请求。"; } update(); });
   void editor.ready.then(() => { if (!disposed) update(); }).catch(report); update();
   return { element, editor, ready: editor.ready, settled: editor.settled, request: () => activeRequest, buildRequest, submitAnnotations, loadProposal, applyProposal, rejectProposal, cancel: () => { if (!applying) busy?.abort.abort(); },
-    dispose() { if (disposed) return; disposed = true; sequence++; busy?.abort.abort(); unsubscribe(); events.abort(); choiceEvents.abort(); tasks.dispose(); const owned = candidate; candidate = undefined; clearPreview(); if (owned) void discard(owned); editor.dispose(); selected.clear(); captionNodes.clear(); captionHtml = ""; sourceSnapshot = undefined; activeRequest = undefined; activeResources = undefined; element.remove(); },
+    dispose() { if (disposed) return; disposed = true; sequence++; busy?.abort.abort(); layoutService.dispose(); unsubscribe(); events.abort(); choiceEvents.abort(); tasks.dispose(); const owned = candidate; candidate = undefined; clearPreview(); if (owned) void discard(owned); editor.dispose(); selected.clear(); captionNodes.clear(); captionHtml = ""; sourceSnapshot = undefined; activeRequest = undefined; activeResources = undefined; element.remove(); },
   };
 }

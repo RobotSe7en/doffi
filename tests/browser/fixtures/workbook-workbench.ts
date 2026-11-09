@@ -7,12 +7,14 @@ import { WorkbookWorkbench } from "@doffi/editor/react";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { decodeTestBytes } from "./package-transport.js";
+import { measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
 
 let cleanup = () => {}, workbench: WorkbookWorkbenchView, session: WorkbookSession | WorkbookSessionConnection;
 let releaseHost: ((value: WorkbookEditProposal) => void) | undefined, submitted: WorkbookInteractionRequest | undefined, hostMode = "return", worker: Worker | undefined;
 let errors: string[] = [], disposed = false, unmount: (() => void) | undefined;
+let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 function edit(request: WorkbookInteractionRequest, value: number, column = 0): WorkbookEditProposal { return { protocolVersion: 1, requestId: request.requestId, documentId: request.documentId, baseRevision: request.baseRevision, proposalId: "reviewed-proposal", annotationIds: request.annotations.map(annotation => annotation.annotationId), summary: "将 A1 改为 " + value + "，核对只读公式当前结果。", operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column, source: { kind: "value", value: { type: "number", value } } }] }] }; }
-export async function mount(encoded: string, workerCode?: string, react = false, confirmWarnings = false) {
+export async function mount(encoded: string, workerCode?: string, react = false, confirmWarnings = false, observeDrawings = false) {
   cleanup(); errors = []; hostMode = "return"; releaseHost = undefined; submitted = undefined; disposed = false;
   const host = document.createElement("div"); document.body.append(host); let url: string | undefined;
   if (workerCode) { url = URL.createObjectURL(new Blob([workerCode], { type: "text/javascript" })); worker = new Worker(url); const channel = new MessageChannel(), bytes = decodeTestBytes(encoded); worker.postMessage({ kind: "open", format: "package", bytes, port: channel.port1 }, [bytes.buffer, channel.port1]); session = await connectWorkbookSession(channel.port2); }
@@ -27,15 +29,16 @@ export async function mount(encoded: string, workerCode?: string, react = false,
   try {
     if (react) { const root = createRoot(host); unmount = () => root.unmount(); await new Promise<void>(resolve => { root.render(createElement(WorkbookWorkbench, { ...config, session, onViewChange: value => { if (value) { workbench = value; resolve(); } } })); }); }
     else { unmount = undefined; workbench = mountDocumentWorkbench(host, session, { ...config, format: "workbook" }); }
-  } finally { Element.prototype.attachShadow = attach; }
+    if (observeDrawings) { Element.prototype.attachShadow = attach; observed = observeWorkbookViews(workbench.editor.element, { openHostShadows: true }); }
+  } finally { if (!observed) Element.prototype.attachShadow = attach; }
   await workbench.ready; await workbench.settled();
-  cleanup = () => { if (!disposed) { unmount?.(); workbench.dispose(); disposed = true; } session.dispose(); worker?.terminate(); if (url) URL.revokeObjectURL(url); host.remove(); };
+  cleanup = () => { observed?.dispose(); observed = undefined; if (!disposed) { unmount?.(); workbench.dispose(); disposed = true; } session.dispose(); worker?.terminate(); if (url) URL.revokeObjectURL(url); host.remove(); };
 }
 export async function inspect() {
   const lease = "kind" in session ? undefined : await session.view(), snapshot = "kind" in session ? session.snapshot() : lease!.cells.snapshot;
   try {
     const cells = "kind" in session ? [session.getCell("sheet-1", 0, 0), session.getCell("sheet-1", 0, 1)] : (await lease!.cells.read({ documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision, maxCells: 2, maxCodeUnits: 65536, windows: [{ sheetId: "sheet-1", row: 0, column: 0, rows: 1, columns: 2 }] }, new AbortController().signal)).cells;
-    return { revision: snapshot.manifest.revision, annotations: snapshot.annotations, history: "kind" in session ? session.history() : session.state().history, cells, content: snapshot.content?.html, request: workbench.request(), errors: [...errors], submitted: submitted?.requestId, held: !!releaseHost, disposed };
+    return { revision: snapshot.manifest.revision, annotations: snapshot.annotations, history: "kind" in session ? session.history() : session.state().history, cells, drawings: snapshot.metadata.workbook.objects ?? [], content: snapshot.content?.html, request: workbench.request(), errors: [...errors], submitted: submitted?.requestId, held: !!releaseHost, disposed };
   } finally { lease?.dispose(); }
 }
 export function build() { return workbench.buildRequest(); }
@@ -43,6 +46,13 @@ export function load(value = 10, column = 0) { const request = workbench.request
 export function loadNoop() { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, { ...edit(request, 10), operations: [{ op: "setWorkbookCellFormats", sheetId: "sheet-1", cells: [{ row: 0, column: 1 }] }] }).then(() => {}); }
 export async function selectRows(rows: number) { await workbench.editor.selectRange("sheet-1", { from: { row: 0, column: 0 }, to: { row: rows - 1, column: 0 } }); }
 export function formatRows(rows: number) { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, { ...edit(request, 10), operations: [{ op: "formatWorkbookRanges", sheetId: "sheet-1", ranges: [{ from: { row: 0, column: 0 }, to: { row: rows - 1, column: 0 } }], properties: { color: "red" } }] }).then(() => {}); }
+export function formatFont() { const request = workbench.request(); if (!request) throw Error("No request"); return workbench.loadProposal(request, { ...edit(request, 10), operations: [{ op: "formatWorkbookRanges", sheetId: "sheet-1", ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }], properties: { "font-size": "40pt" } }] }).then(() => {}); }
+export function drawingBounds() { return measureWorkbookDrawingBounds(observed?.current()); }
+export async function addFixedObject() {
+  await workbench.editor.perform([{ op: "updateWorkbookSheet", sheetId: "sheet-1", changes: { defaultRowHeightCustom: false, rowDimensions: [] } },
+    { op: "insertWorkbookObject", sheetId: "sheet-1", anchor: { kind: "two-cell", from: { row: 2, column: 1, offsetXPt: 2, offsetYPt: 3 }, to: { row: 5, column: 3, offsetXPt: 4, offsetYPt: 5 }, moveWithCells: false, sizeWithCells: false }, object: { kind: "geometry", preset: "rect", html: "<p>外部固定对象</p>" } }]);
+  await workbench.settled(); return (await inspect()).drawings[0]!.nodeId;
+}
 export async function addObject() {
   const current = "kind" in session ? session.snapshot().manifest : session.state(), transaction = { protocolVersion: 1 as const, documentId: current.documentId, baseRevision: current.revision,
     operations: [{ op: "insertWorkbookObject" as const, sheetId: "sheet-1", anchor: { kind: "absolute" as const, xPt: 10, yPt: 30, widthPt: 100, heightPt: 40 }, object: { kind: "text" as const, html: "<p>原对象</p>" } }] };
@@ -70,4 +80,4 @@ export async function finish() {
   session.dispose(); const active = worker;
   const result = await new Promise<unknown>(resolve => { const timer = setTimeout(() => resolve({ error: "audit timeout" }), 10000); active.onmessage = event => { clearTimeout(timer); resolve(event.data); }; active.postMessage({ kind: "closed-audit" }); }); cleanup(); return result;
 }
-Object.assign(window, { workbookWorkbench: { mount, inspect, build, load, loadNoop, selectRows, formatRows, addObject, replaceObject, mode, deliver, external, focusInput, cancelInput, settled, revision, disposeView, applyAndDispose, finish } });
+Object.assign(window, { workbookWorkbench: { mount, inspect, build, load, loadNoop, selectRows, formatRows, formatFont, drawingBounds, addFixedObject, addObject, replaceObject, mode, deliver, external, focusInput, cancelInput, settled, revision, disposeView, applyAndDispose, finish } });
