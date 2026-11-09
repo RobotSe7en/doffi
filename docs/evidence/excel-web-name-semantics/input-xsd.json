@@ -1,0 +1,36 @@
+{
+  "schemasSha256": "d34187520749998af306faf1b730e568b0ca6d88ad24638a407c0a9bb4ca04fc",
+  "lxml": [
+    5,
+    3,
+    0,
+    0
+  ],
+  "profile": "Unmodified official Transitional XSD; sml:t/a:t xml:space and selected MS-XLSX comment revision UID/compatibility declarations checked separately and removed only from validation projection. OPC references and selected MS-XLSX threads checked separately. VML is checked for XML well-formedness and relationship integrity, not its full schema.",
+  "cases": [
+    {
+      "file": "name-semantics.xlsx",
+      "standardParts": 6,
+      "modernParts": 0,
+      "xmlSpaceAttributesChecked": 45
+    },
+    {
+      "file": "qualified-context.xlsx",
+      "standardParts": 5,
+      "modernParts": 0,
+      "xmlSpaceAttributesChecked": 20
+    },
+    {
+      "file": "recalculation.xlsx",
+      "standardParts": 4,
+      "modernParts": 0,
+      "xmlSpaceAttributesChecked": 0
+    },
+    {
+      "file": "relative-bounds.xlsx",
+      "standardParts": 5,
+      "modernParts": 0,
+      "xmlSpaceAttributesChecked": 14
+    }
+  ]
+}

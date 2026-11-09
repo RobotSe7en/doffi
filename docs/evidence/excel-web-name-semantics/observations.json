@@ -1,0 +1,394 @@
+{
+  "status": "observed",
+  "method": "Visual transcription of the rendered read-only Microsoft Excel web grid from the archived screenshots. All formula caches in these synthetic inputs are 999; all observed values differ. Raw public input bytes were fetched and SHA-256 matched before viewing. No workbook repair was reported.",
+  "scope": "Formula/name calculation only. No desktop Excel, WPS, editing, native export or fixed-font visual acceptance is claimed.",
+  "captures": [
+    {
+      "sourceCommit": "dc533c31a6d37be9ab8f69a87aac7ccb42b3dd45",
+      "sourceSha256": "d76be0140e72f64fb61d329be7e6d0b7e09035a924e3ed6d66d2c415c0f91c1a",
+      "observedAt": "2026-11-09T03:22:30.870Z",
+      "versionHeaders": [
+        [
+          "x-officeversion",
+          "16.0.20706.42304"
+        ]
+      ],
+      "states": [
+        {
+          "sheet": "Data",
+          "repair": false,
+          "screenshot": "recalculation-Data.png",
+          "screenshotSha256": "81e92c163691abd2baec4d2019419ba43151bc2182e20aeb472b26a5c1251988"
+        }
+      ],
+      "source": "https://raw.githubusercontent.com/RobotSe7en/doffi/dc533c31a6d37be9ab8f69a87aac7ccb42b3dd45/docs/evidence/excel-web-inputs/recalculation.xlsx",
+      "input": "../excel-web-inputs/recalculation.xlsx",
+      "cells": [
+        {
+          "sheet": "Data",
+          "cell": "C1",
+          "formula": "A1+1",
+          "cache": 999,
+          "observed": 3
+        },
+        {
+          "sheet": "Data",
+          "cell": "C2",
+          "formula": "C1*2",
+          "cache": 999,
+          "observed": 6
+        }
+      ]
+    },
+    {
+      "sourceCommit": "dc533c31a6d37be9ab8f69a87aac7ccb42b3dd45",
+      "sourceSha256": "dff95a7653ed7e67b100fa764de8145d56195f8ea14ad2708d7411d2ecfb9caa",
+      "observedAt": "2026-11-09T03:22:32.367Z",
+      "versionHeaders": [
+        [
+          "x-officeversion",
+          "16.0.20706.42304"
+        ]
+      ],
+      "states": [
+        {
+          "sheet": "Data",
+          "repair": false,
+          "screenshot": "name-semantics-Data.png",
+          "screenshotSha256": "0584083a852578b925661e5e299ef455ceb29aebade72ef19e5de6d19ca1907f"
+        },
+        {
+          "sheet": "Other",
+          "repair": false,
+          "screenshot": "name-semantics-Other.png",
+          "screenshotSha256": "1d02dd8aa162342643141f04a55888e623633a9ea36d7e6aea21f9e0f312416b"
+        },
+        {
+          "sheet": "Third",
+          "repair": false,
+          "screenshot": "name-semantics-Third.png",
+          "screenshotSha256": "b17542e0e7d4b1dff683352ba186d079414dc97f5a723c892765b9442f30561e"
+        }
+      ],
+      "source": "https://raw.githubusercontent.com/RobotSe7en/doffi/dc533c31a6d37be9ab8f69a87aac7ccb42b3dd45/docs/evidence/excel-web-inputs/name-semantics.xlsx",
+      "input": "../excel-web-inputs/name-semantics.xlsx",
+      "cells": [
+        {
+          "sheet": "Data",
+          "cell": "C5",
+          "formula": "ProbeFixed",
+          "cache": 999,
+          "observed": 11
+        },
+        {
+          "sheet": "Data",
+          "cell": "C6",
+          "formula": "ProbeCaller",
+          "cache": 999,
+          "observed": 11
+        },
+        {
+          "sheet": "Data",
+          "cell": "C7",
+          "formula": "ProbeRel",
+          "cache": 999,
+          "observed": 17
+        },
+        {
+          "sheet": "Data",
+          "cell": "C8",
+          "formula": "ProbeRelCaller",
+          "cache": 999,
+          "observed": 18
+        },
+        {
+          "sheet": "Data",
+          "cell": "C9",
+          "formula": "ProbeRelColumn",
+          "cache": 999,
+          "observed": 410
+        },
+        {
+          "sheet": "Data",
+          "cell": "C10",
+          "formula": "ProbeShadow",
+          "cache": 999,
+          "observed": 10
+        },
+        {
+          "sheet": "Data",
+          "cell": "C11",
+          "formula": "ProbePlainAlias",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Data",
+          "cell": "C12",
+          "formula": "ProbeBangAlias",
+          "cache": 999,
+          "observed": 10
+        },
+        {
+          "sheet": "Data",
+          "cell": "C13",
+          "formula": "ProbeBangGlobal",
+          "cache": 999,
+          "observed": "#NAME?"
+        },
+        {
+          "sheet": "Data",
+          "cell": "C14",
+          "formula": "ProbeQualGlobal",
+          "cache": 999,
+          "observed": 1011
+        },
+        {
+          "sheet": "Data",
+          "cell": "C15",
+          "formula": "ProbeBookGlobal",
+          "cache": 999,
+          "observed": 1011
+        },
+        {
+          "sheet": "Data",
+          "cell": "C16",
+          "formula": "Data!ProbeLocalPlain",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Data",
+          "cell": "C17",
+          "formula": "Data!ProbeLocalBang",
+          "cache": 999,
+          "observed": 10
+        },
+        {
+          "sheet": "Data",
+          "cell": "C18",
+          "formula": "ProbeNested",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Data",
+          "cell": "C19",
+          "formula": "ProbeNestedBang",
+          "cache": 999,
+          "observed": "#NAME?"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C5",
+          "formula": "ProbeFixed",
+          "cache": 999,
+          "observed": 11
+        },
+        {
+          "sheet": "Other",
+          "cell": "C6",
+          "formula": "ProbeCaller",
+          "cache": 999,
+          "observed": 101
+        },
+        {
+          "sheet": "Other",
+          "cell": "C7",
+          "formula": "ProbeRel",
+          "cache": 999,
+          "observed": 17
+        },
+        {
+          "sheet": "Other",
+          "cell": "C8",
+          "formula": "ProbeRelCaller",
+          "cache": 999,
+          "observed": 108
+        },
+        {
+          "sheet": "Other",
+          "cell": "C9",
+          "formula": "ProbeRelColumn",
+          "cache": 999,
+          "observed": 410
+        },
+        {
+          "sheet": "Other",
+          "cell": "C10",
+          "formula": "ProbeShadow",
+          "cache": 999,
+          "observed": 20
+        },
+        {
+          "sheet": "Other",
+          "cell": "C11",
+          "formula": "ProbePlainAlias",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Other",
+          "cell": "C12",
+          "formula": "ProbeBangAlias",
+          "cache": 999,
+          "observed": 20
+        },
+        {
+          "sheet": "Other",
+          "cell": "C13",
+          "formula": "ProbeBangGlobal",
+          "cache": 999,
+          "observed": "#NAME?"
+        },
+        {
+          "sheet": "Other",
+          "cell": "C14",
+          "formula": "ProbeQualGlobal",
+          "cache": 999,
+          "observed": 1011
+        },
+        {
+          "sheet": "Other",
+          "cell": "C15",
+          "formula": "ProbeBookGlobal",
+          "cache": 999,
+          "observed": 1011
+        },
+        {
+          "sheet": "Other",
+          "cell": "C16",
+          "formula": "Data!ProbeLocalPlain",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Other",
+          "cell": "C17",
+          "formula": "Data!ProbeLocalBang",
+          "cache": 999,
+          "observed": 10
+        },
+        {
+          "sheet": "Other",
+          "cell": "C18",
+          "formula": "ProbeNested",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Other",
+          "cell": "C19",
+          "formula": "ProbeNestedBang",
+          "cache": 999,
+          "observed": "#NAME?"
+        },
+        {
+          "sheet": "Third",
+          "cell": "C5",
+          "formula": "ProbeFixed",
+          "cache": 999,
+          "observed": 11
+        },
+        {
+          "sheet": "Third",
+          "cell": "C6",
+          "formula": "ProbeCaller",
+          "cache": 999,
+          "observed": 1001
+        },
+        {
+          "sheet": "Third",
+          "cell": "C7",
+          "formula": "ProbeRel",
+          "cache": 999,
+          "observed": 17
+        },
+        {
+          "sheet": "Third",
+          "cell": "C8",
+          "formula": "ProbeRelCaller",
+          "cache": 999,
+          "observed": 1008
+        },
+        {
+          "sheet": "Third",
+          "cell": "C9",
+          "formula": "ProbeRelColumn",
+          "cache": 999,
+          "observed": 410
+        },
+        {
+          "sheet": "Third",
+          "cell": "C10",
+          "formula": "ProbeShadow",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Third",
+          "cell": "C11",
+          "formula": "ProbePlainAlias",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Third",
+          "cell": "C12",
+          "formula": "ProbeBangAlias",
+          "cache": 999,
+          "observed": "#NAME?"
+        },
+        {
+          "sheet": "Third",
+          "cell": "C13",
+          "formula": "ProbeBangGlobal",
+          "cache": 999,
+          "observed": "#NAME?"
+        },
+        {
+          "sheet": "Third",
+          "cell": "C14",
+          "formula": "ProbeQualGlobal",
+          "cache": 999,
+          "observed": 1011
+        },
+        {
+          "sheet": "Third",
+          "cell": "C15",
+          "formula": "ProbeBookGlobal",
+          "cache": 999,
+          "observed": 1011
+        },
+        {
+          "sheet": "Third",
+          "cell": "C16",
+          "formula": "Data!ProbeLocalPlain",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Third",
+          "cell": "C17",
+          "formula": "Data!ProbeLocalBang",
+          "cache": 999,
+          "observed": 10
+        },
+        {
+          "sheet": "Third",
+          "cell": "C18",
+          "formula": "ProbeNested",
+          "cache": 999,
+          "observed": 30
+        },
+        {
+          "sheet": "Third",
+          "cell": "C19",
+          "formula": "ProbeNestedBang",
+          "cache": 999,
+          "observed": "#NAME?"
+        }
+      ]
+    }
+  ]
+}

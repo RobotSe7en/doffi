@@ -62,6 +62,46 @@ def sources():
     book.names = definitions
     yield "name-semantics.xlsx", fixture.zipped(book.finish()), cells
 
+    book = fixture.Book()
+    book.names = [entry for entry in definitions if entry[0]["name"] in {"ProbeCaller", "ProbeRelCaller", "ProbeShadow", "ProbeBangAlias", "ProbeGlobal", "ProbePlainAlias"}]
+    book.names += [({"name": "ProbeLocalCaller", "localSheetId": 0}, "!$A$1"), ({"name": "ProbeLocalRelCaller", "localSheetId": 0}, "!$A1")]
+    formulas = ["Data!ProbeCaller", "Other!ProbeCaller", "Data!ProbeRelCaller", "Other!ProbeRelCaller", "Data!ProbeBangAlias", "Other!ProbeBangAlias",
+                "[0]!ProbeCaller", "Data!ProbeLocalCaller", "Data!ProbeLocalRelCaller", "[0]!ProbePlainAlias"]
+    cells = []
+    for name, base in [("Data", 10), ("Other", 100)]:
+        sheet = book.sheet(name)
+        sheet.before += '<cols><col min="2" max="2" width="34" customWidth="1"/></cols>'
+        for row in range(1, 31):
+            sheet.add(f"A{row}", base + row)
+        for row, formula in enumerate(formulas, 5):
+            sheet.add(f"B{row}", formula)
+            sheet.add(f"C{row}", 999, formula=formula)
+            cells.append({"sheet": name, "cell": f"C{row}", "formula": formula, "cache": 999})
+    yield "qualified-context.xlsx", fixture.zipped(book.finish()), cells
+
+    book = fixture.Book()
+    book.names = [({"name": "ProbeNegRow"}, "Data!$A1048576"), ({"name": "ProbeNegColumn"}, "Data!XFD$1"),
+                  ({"name": "ProbeNegBoth"}, "!XFD1048576"), ({"name": "ProbeNegRange"}, "Data!$A1048575:$A1048576"),
+                  ({"name": "ProbeNegColumns"}, "Data!XFC$1:XFD$1"), ({"name": "ProbeNegWholeRow"}, "Data!1048576:1048576")]
+    formulas = [("C5", "ProbeNegRow"), ("C6", "ProbeNegColumn"), ("C7", "ProbeNegBoth"), ("C8", "SUM(ProbeNegRange)"),
+                ("C9", "ROW(ProbeNegWholeRow)"), ("C10", "ROWS(ProbeNegWholeRow)"), ("C11", "COLUMNS(ProbeNegWholeRow)"),
+                ("G1", "SUM(ProbeNegRange)"), ("G2", "SUM(ProbeNegRange)"), ("G3", "SUM(ProbeNegRange)"), ("G4", "SUM(ProbeNegRange)"),
+                ("B2", "SUM(ProbeNegColumns)"), ("C2", "SUM(ProbeNegColumns)"), ("A31", "SUM(ProbeNegColumns)")]
+    cells = []
+    for name, base in [("Data", 10), ("Other", 100)]:
+        sheet = book.sheet(name)
+        sheet.before += '<cols><col min="2" max="2" width="34" customWidth="1"/></cols>'
+        for row in range(1, 31):
+            sheet.add(f"A{row}", base + row)
+        for cell, value in [("B1", base + 200), ("XFC1", 701), ("XFD1", 702), ("A1048575", 777), ("A1048576", 888)]:
+            sheet.add(cell, value)
+        for cell, formula in formulas:
+            if cell.startswith("C") and int(cell[1:]) >= 5:
+                sheet.add("B" + cell[1:], formula)
+            sheet.add(cell, 999, formula=formula)
+            cells.append({"sheet": name, "cell": cell, "formula": formula, "cache": 999})
+    yield "relative-bounds.xlsx", fixture.zipped(book.finish()), cells
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

@@ -4,6 +4,7 @@
 
 ## 基线与当前状态
 
+- `dc533c31a6d37be9ab8f69a87aac7ccb42b3dd45` 已推送，Quick `42555775296` 成功。实际 Excel 网页版以 `16.0.20706.42304` 对独立最小输入完成 47 格重算观测，所有缓存 999 均改变，四个画面均无修复；来源、摘要、截图及转录存于 [名称求值观测](evidence/excel-web-name-semantics/README.md)。继续补显式限定的上下文与相对引用边界探针；此证据只覆盖求值，未关闭任何结构编辑或桌面 Excel 门槛。
 - `668fc96564a8b0fb65b8aceaae3b4564d8e00b9e` 已推送，Quick `42553558447` 成功，草稿 PR #31 同步提案测量。为 R3-10 名称依据补充实际微软路线：公开 Excel Web Viewer 已打开仓库既有公开样例；既有 workbook-calculation.xlsx 的 C1/C2 缓存 999 在网页显示 3/6，确认重算，但该文件出现 WORKBOOK REPAIRED，只记探测、不作未修复验收（截图 `.cache/office-web-calculation-probe.png`；名称前缀初探 `.cache/office-web-name-prefix-probe.png`）。网页只读入口不等于桌面 Excel 或编辑能力，合并首行／首列删除实测门槛仍在。
 - 新增独立 Python ZIP/XML 生成器 `scripts/generate-excel-web-name-probes.py` 与 `docs/evidence/excel-web-inputs/` 两份最小原生输入及清单；一份故意缓存 999 测重算，另一份 3 张表／45 个消费者区分显式当前表 bang、相对名称及嵌套／局部阴影。输入状态明确 unverified-input，未更改任何旧独立源。生成器 check、Python 编译及官方 Transitional XSD／OPC（两份均通过）已核对。需将公开输入固定在提交 SHA 后用 Microsoft Viewer 打开，先核对修复提示与实际重算，再记录来源、服务版本／日期、结果和修复信息；不能提前删除嵌套全局名歧义守卫。
 - 工作台提案测量最终：完整工作簿工作台三引擎 69 项通过（`.cache/workbook-proposal-layout-three-engine-browser.log`），核心请求／提案与测量协议 4 文件／36 项通过（`.cache/workbook-proposal-layout-unit.log`），最终工具类型通过（`-final-types.log`），SDK 构建通过（`-first-build.log`）。保留原显式绘图写入权限与完整源补集，无需新增补偿权限例外；候选前／应用后实际固定边界和撤销绑定已核对。此批使用窄范围验证，完整本地基线仍记 `bd1d124` 的 238／2468，不移作当前全量；继续名称、结构／剪贴板、绘图／批注组合和固定容量等未完门槛。

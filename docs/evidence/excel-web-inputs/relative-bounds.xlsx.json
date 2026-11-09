@@ -1,0 +1,175 @@
+{
+  "status": "unverified-input",
+  "producer": "independent Python ZIP/XML, without SDK conversion",
+  "sha256": "9ca16f907a2f8cb873cd83397b0c81b855ea7334cc6963fa57273c1fbc4dcbb0",
+  "cells": [
+    {
+      "sheet": "Data",
+      "cell": "C5",
+      "formula": "ProbeNegRow",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C6",
+      "formula": "ProbeNegColumn",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C7",
+      "formula": "ProbeNegBoth",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C8",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C9",
+      "formula": "ROW(ProbeNegWholeRow)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C10",
+      "formula": "ROWS(ProbeNegWholeRow)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C11",
+      "formula": "COLUMNS(ProbeNegWholeRow)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "G1",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "G2",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "G3",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "G4",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "B2",
+      "formula": "SUM(ProbeNegColumns)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C2",
+      "formula": "SUM(ProbeNegColumns)",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "A31",
+      "formula": "SUM(ProbeNegColumns)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C5",
+      "formula": "ProbeNegRow",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C6",
+      "formula": "ProbeNegColumn",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C7",
+      "formula": "ProbeNegBoth",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C8",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C9",
+      "formula": "ROW(ProbeNegWholeRow)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C10",
+      "formula": "ROWS(ProbeNegWholeRow)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C11",
+      "formula": "COLUMNS(ProbeNegWholeRow)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "G1",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "G2",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "G3",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "G4",
+      "formula": "SUM(ProbeNegRange)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "B2",
+      "formula": "SUM(ProbeNegColumns)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C2",
+      "formula": "SUM(ProbeNegColumns)",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "A31",
+      "formula": "SUM(ProbeNegColumns)",
+      "cache": 999
+    }
+  ]
+}
