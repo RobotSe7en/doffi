@@ -3,7 +3,7 @@ import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
 import type { DocumentOperation, TransactionPrepareOptions, WorkbookCell, WorkbookSnapshot } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
-import { measureWorkbookCellAppearance, measureWorkbookCellDecorations, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
+import { measureWorkbookCellAppearance, measureWorkbookCellBounds, measureWorkbookCellDecorations, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean, at?: { row: number; column: number }): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
@@ -16,6 +16,7 @@ let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; externa
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
   displayedDrawingText(nodeId: string, includeBounds?: boolean): ReturnType<typeof measureWorkbookDrawingText>;
   displayedDrawingBounds(): ReturnType<typeof measureWorkbookDrawingBounds>;
+  displayedCellBounds(row: number, column: number): ReturnType<typeof measureWorkbookCellBounds>;
   displayedCell(row: number, column: number): string | undefined;
   holdReference(): void; referenceHeld(): boolean; releaseReference(): void };
 export async function mount(code: string, encoded: string, observeView = false, prepareOptions?: TransactionPrepareOptions, confirmWarnings = false) {
@@ -73,6 +74,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
     displayedChart: () => measureWorkbookChart(observed?.current()),
     displayedDrawingText: (nodeId, includeBounds) => measureWorkbookDrawingText(observed?.current(), nodeId, includeBounds),
     displayedDrawingBounds: () => measureWorkbookDrawingBounds(observed?.current()),
+    displayedCellBounds: (row, column) => measureWorkbookCellBounds(observed?.current(), row, column),
     displayedCell: (row, column) => observed?.current()?.querySelector(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`)?.textContent ?? undefined,
     async value(row, column) { return (await client.readInput('sheet-1', { row, column })).text; },
     async sourceCell(row, column, sheetId = 'sheet-1') {
@@ -102,6 +104,7 @@ export function displayedCellDecorations(row: number, column: number) { return a
 export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string, includeBounds = false) { return actions.displayedDrawingText(nodeId, includeBounds); }
 export function displayedDrawingBounds() { return actions.displayedDrawingBounds(); }
+export function displayedCellBounds(row: number, column: number) { return actions.displayedCellBounds(row, column); }
 export function displayedCell(row: number, column: number) { return actions.displayedCell(row, column); }
 export function external(text: string, wait = true, at = { row: 0, column: 0 }) { return actions.external(text, wait, at); }
 export function holdReference() { actions.holdReference(); }
@@ -112,4 +115,4 @@ export function sourceCell(row: number, column: number, sheetId?: string) { retu
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
 export const tableStyleSource = () => actions.tableStyleSource();
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, performWithPendingMutation, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, performWithPendingMutation, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCellBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

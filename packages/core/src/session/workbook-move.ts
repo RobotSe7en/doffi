@@ -34,10 +34,6 @@ export function* moveWorkbookRange(workbook: WorkbookMetadata, cells: WorkbookCe
       || sheet === target && rangesIntersect(merge, destination) && !contains(destination, merge)) invalid("A cut cannot split a merged region.");
   }
   for (const object of workbook.objects ?? []) if (object.anchor.kind !== "absolute" && covered(object.sheetId, { from: object.anchor.from, to: object.anchor.from })) invalid("Cutting cell-bound drawings is not yet connected.");
-  for (const binding of workbook.comments ?? []) if (binding.format === "classic" && [binding.box, binding.commentPrBox].some(box => box && box.anchor.kind !== "absolute")) {
-    const anchor = annotations.find(annotation => annotation.annotationId === binding.annotationId)?.anchor;
-    if (anchor?.kind === "cells" && anchor.ranges.some(value => covered(anchor.sheetId, value))) invalid("Cutting positioned native notes is not yet connected.");
-  }
   let removedDestination = 0;
   for (const cell of cells.entries(target.sheetId, false, [destination])) {
     if (source === target && rangeContains(range, cell.row, cell.column)) continue;

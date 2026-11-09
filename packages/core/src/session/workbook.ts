@@ -45,6 +45,7 @@ import { sessionLimits } from "./limits.js";
 import type { WorkbookCandidateChange, TransactionPreparationExecution } from "../runtime.js";
 import type { WorkbookProposalReview } from "../contracts/workbook-interaction.js";
 import { compensateWorkbookLayout, measureWorkbookCandidate, workbookLayoutBounds, workbookLayoutOwners } from "./workbook-layout.js";
+import { WorkbookNoteTransportTracker } from "./workbook-note-transport.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -94,7 +95,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     const cells = new WorkbookCellEdit(base, manifest, files, limits, allocate);
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
     const richContent = new WorkbookContentEdit(manifest, files, limits, allocate, workbook), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
-    const commentMapping = new WorkbookCommentMapping();
+    const commentMapping = new WorkbookCommentMapping(), noteTransports = new WorkbookNoteTransportTracker();
     let measuredModel = base;
     function* projectLayoutModel(): WorkbookPreparation<WorkbookModel> {
       const projectedManifest = parseContract("document-manifest", manifest); if (projectedManifest.kind !== "workbook") invalid("Expected a workbook candidate.");
@@ -140,8 +141,10 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     for (const operation of transaction.operations) {
       let layoutBefore: import("./workbook-layout.js").WorkbookMeasuredLayout | undefined;
       let boundsBefore: ReturnType<typeof workbookLayoutBounds> | undefined;
-      const copySheets = operation.op === "copyWorkbookComments" ? workbookCommentCopySheets(workbook, annotations, operation) : [];
-      if (copySheets.length && !measureLayout) invalid("Copying positioned notes requires a workbook layout measurer.");
+      const noteCapture = noteTransports.capture(workbook, annotations, operation); let noteTransport: import("./workbook-note-transport.js").WorkbookNoteTransport | undefined;
+      for (;;) { const value = noteCapture.next(); if (value.done) { noteTransport = value.value; break; } yield { kind: "progress", value: { phase: "validation", ...value.value } }; }
+      const copySheets = [...new Set([...(operation.op === "copyWorkbookComments" ? workbookCommentCopySheets(workbook, annotations, operation) : []), ...noteTransport?.sheetIds ?? []])];
+      if (copySheets.length && !measureLayout) invalid("Copying or transporting positioned notes requires a workbook layout measurer.");
       if (measureLayout) {
         const owners = (yield* workbookLayoutOwners(workbook, annotations))!;
         if (owners.length || copySheets.length) {
@@ -231,7 +234,12 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
           const model = (yield* projectLayoutModel())!;
           const layoutAfter = (yield* measureWorkbookCandidate(model, [...new Set([...owners.map(owner => owner.sheetId), ...copySheets])], measureLayout, limits.maxNodes, context))!;
           if (layoutAfter.fontEnvironment !== layoutBefore.fontEnvironment) invalid("Available workbook fonts changed during candidate layout measurement.");
-          for (const value of compensateWorkbookLayout(owners, boundsBefore, layoutAfter, operation)) yield { kind: "progress", value: { phase: "validation", ...value } };
+          let transported: ReadonlySet<string> | undefined;
+          if (noteTransport) {
+            const mapping = noteTransport.apply(layoutBefore, layoutAfter);
+            for (;;) { const value = mapping.next(); if (value.done) { transported = value.value; break; } yield { kind: "progress", value: { phase: "validation", ...value.value } }; }
+          }
+          for (const value of compensateWorkbookLayout(owners, boundsBefore, layoutAfter, operation, transported)) yield { kind: "progress", value: { phase: "validation", ...value } };
         }
       }
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };

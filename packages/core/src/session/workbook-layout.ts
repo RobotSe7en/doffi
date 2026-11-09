@@ -75,14 +75,14 @@ export function workbookLayoutBounds(owners: readonly Owner[], layout: WorkbookM
 
 /** Response flags affect changes to the grid. Explicitly replacing an anchor
  * or note box supplies new geometry, which is already the user's intent. */
-export function* compensateWorkbookLayout(owners: readonly Owner[], before: ReturnType<typeof workbookLayoutBounds>, layout: WorkbookMeasuredLayout, operation: DocumentOperation): Generator<{ completed: number; total: number }, void> {
+export function* compensateWorkbookLayout(owners: readonly Owner[], before: ReturnType<typeof workbookLayoutBounds>, layout: WorkbookMeasuredLayout, operation: DocumentOperation, transported?: ReadonlySet<string>): Generator<{ completed: number; total: number }, void> {
   let completed = 0;
   const explicit = operation.op === "updateWorkbookObject" && operation.changes.anchor ? JSON.stringify(["object", operation.nodeId]) : undefined;
   const note = operation.op === "setWorkbookNoteBox" ? operation.annotationId : undefined;
   const same = (a: number, b: number): boolean => Math.abs(a - b) <= Number.EPSILON * Math.max(1, Math.abs(a), Math.abs(b)) * 8;
   for (const owner of owners) {
     const old = before.get(owner.key);
-    if (old && owner.key !== explicit && (!note || owner.key !== JSON.stringify(["box", note]) && owner.key !== JSON.stringify(["commentPrBox", note]))) {
+    if (old && !transported?.has(owner.key) && owner.key !== explicit && (!note || owner.key !== JSON.stringify(["box", note]) && owner.key !== JSON.stringify(["commentPrBox", note]))) {
       const anchor = owner.anchor, current = rectangle(anchor, layout, owner.sheetId, false);
       const x = anchor.moveWithCells ? current.x : old.x, y = anchor.moveWithCells ? current.y : old.y;
       const width = anchor.sizeWithCells ? current.width : old.width, height = anchor.sizeWithCells ? current.height : old.height;

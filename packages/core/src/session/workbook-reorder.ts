@@ -43,10 +43,6 @@ export function* reorderWorkbookRows(workbook: WorkbookMetadata, cells: Workbook
   }
   for (const object of workbook.objects ?? []) if (object.sheetId === sheet.sheetId && object.anchor.kind !== "absolute" && rangeContains(range, object.anchor.from.row, object.anchor.from.column))
     invalid("Sorting cell-bound drawings is not yet connected.");
-  for (const comment of workbook.comments ?? []) if (comment.format === "classic" && [comment.box, comment.commentPrBox].some(box => box && box.anchor.kind !== "absolute")) {
-    const owner = annotations.find(annotation => annotation.annotationId === comment.annotationId)?.anchor;
-    if (owner?.kind === "cells" && owner.sheetId === sheet.sheetId && owner.ranges.some(value => rangesIntersect(value, range))) invalid("Sorting positioned native note boxes is not yet connected.");
-  }
   const step: WorkbookStructureMapping = { kind: "sort", sheetId: sheet.sheetId, range, rows };
   const moving: { cell?: WorkbookCell; row: number; column: number; cssClass: string; formatId?: string }[] = [];
   let completed = 0, additional = 0;

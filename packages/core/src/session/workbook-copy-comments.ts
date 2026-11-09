@@ -4,7 +4,6 @@ import { WorkbookCoordinateSchema } from "../contracts/workbook.js";
 import type { WorkbookOperation } from "../contracts/workbook-operations.js";
 import type { DeepReadonly, WorkbookModel } from "../runtime.js";
 import { DocumentError } from "../errors.js";
-import { MAX_SHEET_COLUMNS, MAX_SHEET_ROWS } from "../workbook/chunk-index.js";
 import { subtractWorkbookRange } from "../workbook/range-mapping.js";
 import { checkNonOverlappingRanges, checkRange } from "../workbook/ranges.js";
 import { WorkbookDependencyIndex } from "../workbook/dependency-index.js";
@@ -13,6 +12,7 @@ import { removeWorkbookCommentSources, reanchorWorkbookCommentSources } from "./
 import type { WorkbookMeasuredLayout } from "./workbook-layout.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import type { SourceStyleEdit } from "./source-styles.js";
+import { translateWorkbookAnchor } from "./workbook-anchor-translation.js";
 
 type Copy = Extract<WorkbookOperation, { op: "copyWorkbookComments" }>;
 const invalid = (message: string): never => { throw new DocumentError("InvalidOperation", message); };
@@ -89,15 +89,9 @@ export function* copyWorkbookComments(workbook: WorkbookMetadata, annotations: A
         if (!WorkbookCoordinateSchema.safeParse(next).success) invalid("Copying this retained native thread location exceeds worksheet bounds."); return next;
       };
       const box = (value: WorkbookNoteBox): WorkbookNoteBox => {
-        const from = layout?.sheets.get(operation.sheetId) ?? invalid("Copying positioned notes requires a measured source worksheet layout.");
-        const to = layout?.sheets.get(operation.targetSheetId) ?? invalid("Copying positioned notes requires a measured destination worksheet layout.");
-        const nextPoint = coordinate(point), dx = to.columns.position(nextPoint.column) - from.columns.position(point.column), dy = to.rows.position(nextPoint.row) - from.rows.position(point.row), anchor = value.anchor;
-        const marker = (value: Extract<typeof anchor, { kind: "one-cell" | "two-cell" }>["from"]) => {
-          const row = Math.max(0, Math.min(MAX_SHEET_ROWS - 1, value.row + plan.delta.row)), column = Math.max(0, Math.min(MAX_SHEET_COLUMNS - 1, value.column + plan.delta.column));
-          return { row, column, offsetXPt: from.columns.position(value.column) + value.offsetXPt + dx - to.columns.position(column), offsetYPt: from.rows.position(value.row) + value.offsetYPt + dy - to.rows.position(row) };
-        };
-        return { ...value, anchor: anchor.kind === "absolute" ? { ...anchor, xPt: anchor.xPt + dx, yPt: anchor.yPt + dy }
-          : anchor.kind === "one-cell" ? { ...anchor, from: marker(anchor.from) } : { ...anchor, from: marker(anchor.from), to: marker(anchor.to) } };
+        const measured = layout ?? invalid("Copying positioned notes requires measured worksheet layouts.");
+        return { ...value, anchor: translateWorkbookAnchor(value.anchor, { sheetId: operation.sheetId, at: point, layout: measured },
+          { sheetId: operation.targetSheetId, at: coordinate(point), layout: measured }) };
       };
       const value = clone(original, { kind: "cells", sheetId: operation.targetSheetId, ranges }, base.snapshot().manifest.revision, { box, coordinate });
       added.push(value.annotation); for (const [from, to] of value.identities) identities.set(from, to);

@@ -5,7 +5,7 @@ import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookEditorView } from "@doffi/editor";
 import { decodeTestPackage } from "./package-transport.js";
 import type { TestPackage } from "./package-transport.js";
-import { measureWorkbookCellAppearance, measureWorkbookCellDecorations, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
+import { measureWorkbookCellAppearance, measureWorkbookCellBounds, measureWorkbookCellDecorations, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
 let observed: ReturnType<typeof observeWorkbookViews> | undefined;
 const errors: string[] = [];
@@ -62,6 +62,7 @@ export async function measuredApply(operations: readonly DocumentOperation[]) {
   } finally { layout.dispose(); }
 }
 export function displayedDrawingBounds() { return measureWorkbookDrawingBounds(observed?.current()); }
+export function displayedCellBounds(row: number, column: number) { return measureWorkbookCellBounds(observed?.current(), row, column); }
 export async function select(fromRow: number, fromColumn = 0, toRow = fromRow, toColumn = fromColumn): Promise<void> {
   await editor.selectRange("sheet-1", { from: { row: fromRow, column: fromColumn }, to: { row: toRow, column: toColumn } }); editor.focusInput();
 }
@@ -120,4 +121,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, perform, mutateInputOnPending, performWithPendingMutation, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCellBounds, displayedCell, displayedTextStyles, settled, perform, mutateInputOnPending, performWithPendingMutation, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

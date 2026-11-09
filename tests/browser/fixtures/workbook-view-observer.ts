@@ -82,3 +82,10 @@ export function measureWorkbookDrawingBounds(view: ShadowRoot | undefined) {
   const first = view.querySelector<HTMLElement>('[data-office-view="workbook-cell"][data-row="0"][data-column="0"]'), second = view.querySelector<HTMLElement>('[data-office-view="workbook-cell"][data-row="0"][data-column="1"]');
   return { objects, columnWidthPt: first && second ? (second.getBoundingClientRect().left - first.getBoundingClientRect().left) * .75 : undefined };
 }
+
+export function measureWorkbookCellBounds(view: ShadowRoot | undefined, row: number, column: number) {
+  const cell = view?.querySelector<HTMLElement>(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`);
+  if (!cell || !view) throw Error("The requested source cell is outside the observed current view.");
+  const origin = view.host.getBoundingClientRect(), rect = cell.getBoundingClientRect();
+  return { xPt: (rect.left - origin.left) * .75, yPt: (rect.top - origin.top) * .75, widthPt: rect.width * .75, heightPt: rect.height * .75 };
+}

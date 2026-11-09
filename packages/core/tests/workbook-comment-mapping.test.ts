@@ -1,13 +1,15 @@
 import { afterEach, expect, test } from "vitest";
 import { createDocumentSession, openDocument } from "../src/index.js";
-import type { DocumentOperation, WorkbookNoteBox, WorkbookRange, WorkbookSession } from "../src/index.js";
+import type { DocumentOperation, WorkbookLayoutMeasurement, WorkbookLayoutRequest, WorkbookNoteBox, WorkbookRange, WorkbookSession } from "../src/index.js";
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 
 const owned: WorkbookSession[] = [], sheetId = "sheet-1", range = (from: number, to = from, column = 0): WorkbookRange => ({ from: { row: from, column }, to: { row: to, column } });
 afterEach(() => owned.splice(0).forEach(session => session.dispose()));
 function workbook() { const s = createDocumentSession(scalarWorkbook([1, 2, 3, 4, 5].map(value => ({ row: value, column: 0, value: { type: "number", value } })))); owned.push(s); return s; }
 function transaction(s: WorkbookSession, operations: DocumentOperation[]) { const m = s.snapshot().manifest; return { protocolVersion: 1 as const, documentId: m.documentId, baseRevision: m.revision, operations }; }
-const commit = (s: WorkbookSession, operations: DocumentOperation[]) => s.commit(s.prepare(transaction(s, operations)));
+const metrics = (request: WorkbookLayoutRequest): WorkbookLayoutMeasurement => ({ sourceDigest: request.sourceDigest, fontEnvironment: "comment-mapping-point-metrics",
+  sheets: request.sheetIds.map(sheetId => ({ sheetId, rows: { defaultSizePt: 15, overrides: [] }, columns: { defaultSizePt: 45, overrides: [] } })) });
+const commit = (s: WorkbookSession, operations: DocumentOperation[]) => s.commit(s.prepare(transaction(s, operations), { measureWorkbookLayout: metrics }));
 const binding = (s: WorkbookSession, id: string) => s.snapshot().metadata.workbook.comments!.find(comment => comment.annotationId === id)!;
 const absoluteBox: WorkbookNoteBox = { anchor: { kind: "absolute", xPt: 20, yPt: 30, widthPt: 160, heightPt: 90 }, visible: true, printable: true, locked: true, lockText: false,
   defaultSize: false, disabled: false, autoFill: false, autoLine: false, autoScale: false, justifyLastLine: false };
@@ -31,9 +33,10 @@ test("axis changes fragment native/host anchors without selecting new blank cell
 });
 
 test("sorting follows complete records and exact fragments; a reversed two-sort batch restores original grouping, cells, source bytes and redo", () => {
-  const s = workbook(), root = add(s, range(1, 2)); add(s, range(4), "classic"); s.clearHistory();
+  const s = workbook(), root = add(s, range(1, 2)), classic = add(s, range(4), "classic"); s.clearHistory();
   const sort: DocumentOperation = { op: "reorderWorkbookRows", sheetId, range: { from: { row: 1, column: 0 }, to: { row: 4, column: 1 } }, rows: [4, 1, 3, 2] };
   commit(s, [sort]); expect(s.getAnnotations()[0]!.anchor).toEqual({ kind: "cells", sheetId, ranges: [range(1), range(4)] });
+  expect(binding(s, classic.annotationId)).toMatchObject({ box: { anchor: { kind: "absolute", xPt: 20, yPt: 0, widthPt: 160, heightPt: 90 } } });
   expect(s.getCell(sheetId, 1, 0)?.value).toEqual({ type: "number", value: 2 }); expect(s.getCell(sheetId, 4, 0)?.value).toEqual({ type: "number", value: 1 });
   s.undo(); const before = s.serialize(), history = s.history();
   expect(commit(s, [sort, { ...sort, rows: [2, 4, 3, 1] }]).changed).toBe(false); expect(s.serialize()).toEqual(before); expect(s.history()).toEqual(history); expect(s.getAnnotations()[0]!.annotationId).toBe(root.annotationId);
