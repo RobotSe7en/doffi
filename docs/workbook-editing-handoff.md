@@ -4,6 +4,9 @@
 
 ## 基线与当前状态
 
+- 批注范围复制本批：默认直连／唯一 Worker 的真实双框、固定尺寸、三种选择性模式及 skipBlanks 三引擎 6 项通过（`.cache/workbook-copy-comments-first-browser.log`）；六类独立原生源、真实 Worker 候选／丢弃／重试／提交／撤销、孤立兼容恢复和四份实际生产者用例，连同核心及编辑器 3 文件／25 项通过（`.cache/workbook-copy-comments-producer-rechecked-unit.log`）。追加精确多片段、非法／空足迹、取消与候选冲突后核心 9 项通过（`-boundaries-rechecked-unit.log`）；首轮追加用例误用了单元格输入结构，失败保留 `-boundaries-unit.log`，已修正夹具。最终工具类型通过（`-final-tools-types.log`）。四次固定 Calc 复制及官方 XSD／OPC 重现通过（`-native-final-verified.log`）：三份含重复 VML 类型身份的经典备注输出保留为原字节负例；现代线程丢失明确记录，不放宽读取契约。最终完整本地 243 文件／2524 项、全部类型／架构边界／SDK 与 Playground 构建通过（`.cache/workbook-copy-comments-rechecked-complete-check.log`）；初轮完整检查发现新增用例错把序列化包当成快照，失败保留 `-complete-check.log`，改为快照比较后重跑全量通过。完整批注结构联动与容量仍未验收。
+- `bda31bf4d11049ca881f408ed5436d7172045d25` 已推送，Quick `42564504797` 成功，草稿 PR #31 同步均匀多行合并排序和 240／2496 完整检查。当前未提交工作转入选区批注复制：`copyWorkbookComments` 类型操作、共享正文／回复克隆、真实掩码替换、索引与预算、源／目标备注框测量、上下文正文权限已接通，普通 contents 复制启用；选择性值／公式／格式保留目标批注，skipBlanks 使用实际足迹。仍需真实 Worker、默认三引擎界面、更多边界及完整检查，不能计作 R3-11／15 完成。
+- 批注复制当前：共享克隆整表回归 6 项；核心／原批注／整表／测量 4 文件／37 项通过；核心复制／提案／整表 3 文件／25 项通过（`.cache/workbook-copy-comments-fifth-unit.log`）；编辑器模式／大空白备注预算／取消／冲突 6 项通过（`.cache/workbook-copy-comments-first-editor-unit.log`）。六类独立来源、整表复制与编辑器 3 文件／35 项通过（`.cache/workbook-copy-comments-first-native-unit.log`）；随后把原正文不变断言改为真正的复制前捕获比较，Worker 复核另记 `.cache/workbook-copy-comments-second-native-unit.log`。最后一次包构建 `.cache/workbook-copy-comments-second-build.log` 成功；核心类型已通过，完整工具类型后续重核。
 - 多行合并排序补充行 255～258／列 31～32、同时跨两条块边界的事务回归：公式与外部地址、完整覆盖及撤销后原摘要恢复通过（`.cache/workbook-merged-sort-cross-chunk-unit.log`，8 项）。工具类型最终通过（`.cache/workbook-merged-sort-second-browser-types.log`），最终完整本地 240 文件／2496 项、全部类型／边界及 SDK／Playground 构建通过（`.cache/workbook-merged-sort-complete-check.log`），固定资源及实际 Excel 编辑验收仍未关闭。
 - 均匀多行合并排序最终三引擎的直连／唯一 Worker 新旧排序 12 项通过（`.cache/workbook-merged-sort-second-browser.log`）；首轮 3 个 Worker 显示断言因测试未开观察器失败，保留 `.cache/workbook-merged-sort-first-browser.log`，已修正挂载及工具类型，不放宽显示断言。核心／规划／独立原生 3 文件／23 项通过；新增来源与四次固定 Calc 调用及官方 XSD／OPC 已记录并重现（`.cache/workbook-merged-sort-native-{recorded,verified}.log`），Calc 的调用返回但全部不重排，明确保留为限制，不称成功原生排序或 Excel 编辑验收。
 - `2cea73c5018e2f8ef6042570e3386a8e5dce1ca4` 已推送，Quick `42561973558` 成功，草稿 PR #31 已同步名称实测与 239／2481 完整检查。后续共享合并排序布局支持相同行列尺寸的完整记录块，核心验证行置换不拆块，规划稳定多键排序；微软文档明确的混合合并／未合并尺寸不匹配整批拒绝。部分隐藏的多行块仍保守拒绝，待实际 Office 依据；不将本基础计作 R3-12 完成。
@@ -263,7 +266,7 @@
 | --- | --- |
 | R3-09 | 补齐剩余组合的原子事务、结构映射、授权资源、撤销、冲突及取消验证，使用同一会话和历史。 |
 | R3-10 | 相对／嵌套／全局名称和 bang 求值及编辑绑定已补 Excel 网页版 95 格证据，完整上下文结构操作仍待完成；完整函数参数／类型／错误、1904 与 Unicode／日期边界，以及筛选显示格式和多列／表组合的独立对照；完成 2 万公式与增量编辑验收。 |
-| R3-11 | 系统富文本剪贴板、复制经典／现代批注和完整智能表身份；合并区域的选择性粘贴／跳过空白／填充等剩余组合；复杂继承文字格式及跨表名称／结构引用的独立对照。已完成的超链接、条件格式／验证复制及字体中性修复继续保留。 |
+| R3-11 | 系统富文本剪贴板、完整智能表身份；经典／现代批注范围复制本批已接通并通过定向检查，完整组合仍待验收；合并区域的选择性粘贴／跳过空白／填充等剩余组合；复杂继承文字格式及跨表名称／结构引用的独立对照。已完成的超链接、条件格式／验证复制及字体中性修复继续保留。 |
 | R3-12 | 上下文名称的行列映射、多行合并排序的完整可见性／原生对照、部分智能表剪切、表头／筛选表头删除等组合；合并首行／首列删除以 Microsoft Excel 为准，补明确微软依据或实际 Excel 对照后完成验收。该决定已作出，缺少的是证据。 |
 | R3-13 | 智能表、名称、条件格式、验证和全部修改入口的组合及独立验收；当前管理界面和默认／自定义表样式基础继续复用。 |
 | R3-14 | 绘图和两份经典备注框在排序／剪切／筛选／字体／换行及自动行高变化中的完整联动、来源身份和原生对照；验证有绘图大表的普通编辑时延及测量资源总量。默认编辑器测量及异步输入本批先完成最终检查。 |

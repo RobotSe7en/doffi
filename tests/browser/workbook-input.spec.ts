@@ -340,6 +340,13 @@ test("mounted direct sorting moves uniform multi-row merged records and restores
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
   const { exerciseWorkbookMergedSort } = await import('./workbook-merged-sort-cases.js'); await exerciseWorkbookMergedSort(page, false, model.snapshot().metadata.workbook.sheets[0]!.merges);
 });
+test("mounted direct copy preserves native note size, both boxes, threaded replies, selective modes and skip blanks", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx'), { documentId: 'copy-comments-editor' }), { kind: 'workbook' });
+  const { workbookCopyCommentsSource, exerciseWorkbookCopyComments } = await import('./workbook-copy-comments-cases.js'), prepared = workbookCopyCommentsSource(model);
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(prepared.source));
+  await exerciseWorkbookCopyComments(page, false, [...prepared.original.annotations], prepared.classicId, prepared.modernId);
+});
 
 test("mounted direct hyperlink controls edit exact ranges, preserve source text and guard drafts and history", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });

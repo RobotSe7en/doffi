@@ -904,3 +904,13 @@ DrawingML 正文片段的显式 `u="none"`／`strike="noStrike"` 读入时保留
 共享 `resolveWorkbookSortLayout` 在有合并时要求选区由相同行列尺寸的合并单元格完整覆盖，依据微软[合并区域排序限制](https://learn.microsoft.com/en-us/troubleshoot/microsoft-365-apps/excel/error-sort-a-range-merged-cell)。没有合并时保持逐行记录。核心行置换必须保持每个多行块连续且内部顺序不变；人工／Worker 规划用当前计算读取块首格键，稳定排序并展开为同一类型的完整行置换。排序区域外公式继续保留地址；候选、冲突、一次历史和包重开共用现有边界。
 
 整块隐藏时保留原位，部分隐藏／筛选可见性的合并块暂时原子拒绝，完整组合仍待实际 Office 依据及验收。四份[固定 Calc 调用记录](evidence/workbook-merged-sort.json)来自独立 Python ZIP/XML：Calc 返回但未重排，保留输出字节、原缓存与合并几何，作为生产者限制；不能称作四次成功排序，也不代表 Excel/WPS 编辑实机通过。
+
+### 区域复制中的经典备注与现代线程（R3-11／15／16 实施中）
+
+普通内容复制同时复制批注并替换实际目标位置的原批注，依据[微软粘贴选项](https://support.microsoft.com/en-au/excel/paste-options?nochrome=true)及[复制批注和备注](https://support.microsoft.com/en-us/excel/insert-comments-and-notes-in-excel)。值、公式和仅格式模式保留目标批注。跳过空白复用单元格和规则的精确足迹；不复制未选中的正文，也不清除被跳过位置的目标批注。跨表和重叠复制先冻结所有原故事，再移除目标；多区域批注只复制实际交集，目标剩余片段保留原正文和身份。
+
+核心 `copyWorkbookComments` 接受 `sheetId`、`range`、`targetSheetId`、`target`，可选 `ranges` 是目标矩形内不重叠的实际复制片段，最多 4096 个；空列表不修改来源。批注、回复、故事、正文节点及提及获得新身份，保留显示作者、时间、解决状态、精确 UTF-16 提及和回复父子关系。原生来源身份不冒充新对象身份；孤立兼容备注的缺失线程引用和恢复原因继续保存。整表复制复用同一克隆器。
+
+带位置的经典备注要求 `measureWorkbookLayout` 提供源和目标的实际点布局；按复制位置搬移原框并保留物理尺寸，同时处理 VML 和 commentPr 两份来源。默认直连和唯一 Worker 编辑器使用现有渲染测量服务，核心不会凭字符宽度猜测；前后字体环境变化整批拒绝。范围提案只允许冻结的源／目标足迹，源批注正文还须已包含在上下文中，其他补集权限检查保持有效。取消、冲突及失败不提交部分批注或故事。
+
+[四次实际 Calc 复制记录](evidence/workbook-copy-comments.json)保留独立输入和输出摘要：三个经典备注输出确实复制原文和作者，但各自含重复 VML 类型标识，作为畸形生产者负例明确拒绝；现代线程丢失单独记录为生产者差异。官方 XSD／OPC 检查不覆盖完整 VML 身份约束，通过它不能覆盖该错误。这些记录不构成 Excel/WPS 编辑实机验收，完整批注结构联动和固定资源门槛继续实施。

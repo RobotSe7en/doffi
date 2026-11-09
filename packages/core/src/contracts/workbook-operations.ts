@@ -25,6 +25,10 @@ export type WorkbookCellFormatInput = z.infer<typeof WorkbookCellFormatInputSche
 export const WorkbookOperationSchema = z.discriminatedUnion("op", [
   ...WorkbookDrawingOperationSchema.options,
   ...WorkbookCommentOperationSchema.options,
+  z.strictObject({ op: z.literal("copyWorkbookComments"), sheetId: IdentifierSchema, range: WorkbookRangeSchema,
+    targetSheetId: IdentifierSchema, target: WorkbookCoordinateSchema,
+    /** Exact copied destination footprint; omitted means the full rectangle. */
+    ranges: z.array(WorkbookRangeSchema).max(4096).optional() }),
   z.strictObject({ op: z.literal("setWorkbookCells"), sheetId: IdentifierSchema, cells: z.array(WorkbookCellInputSchema).min(1) }),
   z.strictObject({ op: z.literal("setWorkbookCellFormats"), sheetId: IdentifierSchema, cells: z.array(WorkbookCellFormatInputSchema).min(1) }),
   z.strictObject({ op: z.literal("setWorkbookNumberFormat"), format: WorkbookNumberFormatSchema }),

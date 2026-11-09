@@ -11,6 +11,7 @@ import { workbookContextCovers, workbookContextIntersects } from "./workbook-int
 import { subtractWorkbookRange } from "../workbook/range-mapping.js";
 import { sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
+import { workbookCommentCopyPlan } from "./workbook-copy-comments.js";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 function invalid(message: string): never { throw new DocumentError("InvalidProposal", message); }
@@ -34,8 +35,15 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
     if ("annotationId" in op && !annotations.has(op.annotationId)) invalid("A workbook proposal targets a read-only or undisclosed comment.");
     if (op.op === "addWorkbookComment") anchor(op.anchor);
     if (op.op === "updateWorkbookComment" && op.changes.anchor) anchor(op.changes.anchor);
+    if (op.op === "copyWorkbookComments" && !global) {
+      const plan = workbookCommentCopyPlan(op), disclosed = new Set(context.annotations.map(annotation => annotation.annotationId));
+      for (const range of plan.source) requireRange(op.sheetId, range);
+      for (const range of plan.footprint) requireRange(op.targetSheetId, range);
+      for (const annotation of model.snapshot().annotations) if (plan.affected(annotation, op.sheetId, plan.source) && !disclosed.has(annotation.annotationId)) invalid("A workbook proposal cannot copy an undisclosed comment body.");
+    }
     if (global) continue;
     switch (op.op) {
+      case "copyWorkbookComments": break; // Exact read/write masks and disclosed bodies were checked above.
       case "setWorkbookCells": case "setWorkbookCellFormats": for (const at of op.cells) requireRange(op.sheetId, { from: at, to: at }); break;
       case "formatWorkbookText": requireRange(op.sheetId, { from: op.at, to: op.at }); break;
       case "formatWorkbookConditionalRule": {

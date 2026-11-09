@@ -8,7 +8,7 @@ import { copyWorkbookRules, createWorkbookCopyFootprint } from "./copy-rules.js"
 export interface WorkbookRangeCopyOptions {
   /** Defaults to the source worksheet; both belong to the same workbook. */
   readonly targetSheetId?: string;
-  /** Contents includes rich source, formats, hyperlinks and both rule categories.
+  /** Contents includes rich source, formats, hyperlinks, comments and both rule categories.
    * Values/formulas keep destination formats and rules. Formats copies conditional
    * formats while retaining destination validation, content and formula caches. */
   readonly mode?: "contents" | "values" | "formulas" | "formats";
@@ -30,7 +30,7 @@ function contains(a: DeepReadonly<WorkbookRange>, b: DeepReadonly<WorkbookRange>
   return a.from.row <= b.from.row && a.from.column <= b.from.column && a.to.row >= b.to.row && a.to.column >= b.to.column;
 }
 /** Copy one fixed source rectangle, including complete merged regions for
- * ordinary content copies; clipboard lifetime, comments and structural
+ * ordinary content copies; clipboard lifetime and structural
  * copy are composed separately. No output is read back as a later seed. */
 export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, sheetId: string, range: DeepReadonly<WorkbookRange>, origin: WorkbookCoordinate, options: WorkbookRangeCopyOptions = {}): Promise<DocumentTransaction> {
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["targetSheetId", "mode", "calculation", "skipBlanks", "maxCells", "maxCodeUnits", "maxSteps", "signal", "yield", "onProgress"].includes(key))) invalid("Invalid workbook range-copy options.");
@@ -81,8 +81,18 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
     guard();
     const hyperlinks = config.mode === "contents" && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column) && (sheet.hyperlinks?.length || targetSheet.hyperlinks?.length)
       ? createWorkbookHyperlinkCopy(sheet.hyperlinks ?? [], targetSheet.hyperlinks ?? [], source, target, step) : undefined;
+    let comments = false;
+    if (config.mode === "contents") for (const annotation of snapshot.annotations) {
+      guard(); step();
+      const anchor = annotation.anchor;
+      if (anchor.kind === "cells") for (const range of anchor.ranges) {
+        step();
+        if (anchor.sheetId === sheetId && overlap(range, source) || anchor.sheetId === targetSheetId && overlap(range, target)) { comments = true; break; }
+      }
+      if (comments) break;
+    }
     const footprint = (config.mode === "contents" || config.mode === "formats") && (sheetId !== targetSheetId || source.from.row !== destination.row || source.from.column !== destination.column)
-      && (sheet.conditionalRules?.length || targetSheet.conditionalRules?.length || config.mode === "contents" && (sheet.dataValidations?.length || targetSheet.dataValidations?.length)) ? createWorkbookCopyFootprint() : undefined;
+      && (sheet.conditionalRules?.length || targetSheet.conditionalRules?.length || config.mode === "contents" && (comments || sheet.dataValidations?.length || targetSheet.dataValidations?.length)) ? createWorkbookCopyFootprint() : undefined;
     for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
       guard(); const from = { row: source.from.row + row, column: source.from.column + column }, to = { row: destination.row + row, column: destination.column + column };
       const raw = model.getCell(sheetId, from.row, from.column), same = sheetId === targetSheetId && from.row === to.row && from.column === to.column;
@@ -137,8 +147,23 @@ export async function createWorkbookRangeCopyTransaction(input: WorkbookModel, s
         guard(); if (completed < total && config.yield) { await config.yield(); guard(); }
       }
     }
-    const ruleCopy = footprint ? await copyWorkbookRules(snapshot.metadata.workbook, sheet, targetSheet, source, target, footprint.finish(), config.mode === "contents", copyExpression, { guard, step, account, ...(config.yield ? { yield: config.yield } : {}) }) : undefined;
+    const copiedRanges = footprint?.finish();
+    const ruleCopy = copiedRanges ? await copyWorkbookRules(snapshot.metadata.workbook, sheet, targetSheet, source, target, copiedRanges, config.mode === "contents", copyExpression, { guard, step, account, ...(config.yield ? { yield: config.yield } : {}) }) : undefined;
     guard(); const operations: DocumentTransaction["operations"] = [];
+    if (comments && copiedRanges?.length) {
+      const sourceMasks = copiedRanges.map(range => ({ from: { row: range.from.row - destination.row + source.from.row, column: range.from.column - destination.column + source.from.column }, to: { row: range.to.row - destination.row + source.from.row, column: range.to.column - destination.column + source.from.column } }));
+      const included = (ranges: readonly DeepReadonly<WorkbookRange>[]): boolean => {
+        for (const range of ranges) for (const mask of sourceMasks) { guard(); step(); if (overlap(range, mask)) return true; } return false;
+      };
+      for (const annotation of snapshot.annotations) {
+        guard(); step();
+        if (annotation.anchor.kind !== "cells" || annotation.anchor.sheetId !== sheetId || !included(annotation.anchor.ranges)) continue;
+        account(JSON.stringify(annotation).length);
+        for (const body of [annotation, ...annotation.replies ?? []]) if (body.bodyNodeId) { step(); account(model.getNode(body.bodyNodeId)?.html.length ?? 0); }
+      }
+      const operation = { op: "copyWorkbookComments" as const, sheetId, range: source, targetSheetId, target: destination, ranges: copiedRanges };
+      account(JSON.stringify(operation).length); operations.push(operation);
+    }
     for (const name of names?.names ?? []) {
       const operation = { op: "setWorkbookDefinedName" as const, name }; account(JSON.stringify(operation).length); operations.push(operation);
     }

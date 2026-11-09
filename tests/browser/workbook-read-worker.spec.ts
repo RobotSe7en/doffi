@@ -341,6 +341,14 @@ test('mounted Worker sorting moves uniform multi-row merged records through one 
   const { exerciseWorkbookMergedSort } = await import('./workbook-merged-sort-cases.js'); await exerciseWorkbookMergedSort(page, true, model.snapshot().metadata.workbook.sheets[0]!.merges);
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
+test('mounted Worker copy preserves native note size, both boxes, threaded replies, selective modes and skip blanks', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx'), { documentId: 'copy-comments-editor' }), { kind: 'workbook' });
+  const { workbookCopyCommentsSource, exerciseWorkbookCopyComments } = await import('./workbook-copy-comments-cases.js'), prepared = workbookCopyCommentsSource(model), bytes = Buffer.from(writeDocumentZip(prepared.source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyComments(page, true, [...prepared.original.annotations], prepared.classicId, prepared.modernId);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
 
 test('mounted Worker hyperlink controls edit exact ranges, preserve source text and guard drafts and history', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });

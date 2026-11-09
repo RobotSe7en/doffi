@@ -10,6 +10,7 @@ import { WorkbookCellEdit } from "./workbook-cells.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import { cloneWorkbookDrawing } from "./workbook-drawings.js";
 import type { SourceStyleEdit } from "./source-styles.js";
+import { createWorkbookCommentCloner } from "./workbook-comment-copy.js";
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const upper = (value: string) => value.toUpperCase();
@@ -136,27 +137,11 @@ export function* copyWorkbookSheet(workbook: WorkbookMetadata, cells: WorkbookCe
     }
     yield { completed: ++work, total: 0 };
   }
-  const originalStories = new Map(workbook.stories?.map(story => [story.rootNodeId, story])), bindings = new Map(workbook.comments?.map(binding => [binding.annotationId, binding]));
+  const cloneComment = createWorkbookCommentCloner(workbook, content, allocate);
   for (const original of [...annotations]) if (original.anchor.kind === "cells" && original.anchor.sheetId === source.sheetId) {
-    const value = copy(original), replies = new Map((value.replies ?? []).map(reply => [reply.replyId, allocate()]));
-    value.annotationId = allocate(); value.baseRevision = base.snapshot().manifest.revision; value.anchor = { ...copy(original.anchor), sheetId: added.sheetId }; delete value.sourceId;
-    for (const reply of value.replies ?? []) { reply.replyId = replies.get(reply.replyId)!; delete reply.sourceId; }
-    for (const message of [value, ...value.replies ?? []]) if (message.bodyNodeId) {
-      const story = originalStories.get(message.bodyNodeId) ?? invalid("The copied comment story is missing."), cloned = content.edit().cloneSource(message.bodyNodeId, content.root());
-      message.bodyNodeId = cloned.rootNodeIds[0]!; workbook.stories!.push({ ...copy(story), storyId: allocate(), rootNodeId: message.bodyNodeId, sheetId: added.sheetId }); for (const [from, to] of cloned.identities) identities.set(from, to);
-    }
-    const originalBinding = bindings.get(original.annotationId);
-    if (originalBinding) {
-      const binding = copy(originalBinding); binding.annotationId = value.annotationId;
-      if (binding.format === "classic") { delete binding.nativeShapeId; delete binding.nativeUid; delete binding.compatibilityThreadId; }
-      else {
-        delete binding.compatibilityUids;
-        for (const mention of binding.mentions ?? []) mention.mentionId = allocate();
-        for (const reply of binding.replies) { reply.replyId = replies.get(reply.replyId)!; if (reply.parentReplyId) reply.parentReplyId = replies.get(reply.parentReplyId)!; for (const mention of reply.mentions ?? []) mention.mentionId = allocate(); }
-      }
-      (workbook.comments ??= []).push(binding);
-    }
-    annotations.push(value); yield { completed: ++work, total: 0 };
+    const cloned = cloneComment(original, { ...original.anchor, sheetId: added.sheetId }, base.snapshot().manifest.revision);
+    for (const [from, to] of cloned.identities) identities.set(from, to);
+    annotations.push(cloned.annotation); yield { completed: ++work, total: 0 };
   }
   styles.aliasNodeIds(identities);
   if (added.visibility === "visible") workbook.activeSheetId = added.sheetId;

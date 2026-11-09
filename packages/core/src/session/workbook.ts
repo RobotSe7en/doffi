@@ -24,6 +24,7 @@ import { checkTransactionSize } from "./limits.js";
 import { WorkbookContentEdit } from "./workbook-content.js";
 import { editWorkbookSheet } from "./workbook-sheets.js";
 import { copyWorkbookSheet } from "./workbook-copy-sheet.js";
+import { copyWorkbookComments, workbookCommentCopyPlan, workbookCommentCopySheets } from "./workbook-copy-comments.js";
 import { editWorkbookAxis, restoreWorkbookAxisSource } from "./workbook-axis.js";
 import { editWorkbookHyperlink, replaceWorkbookHyperlinks, sameWorkbookHyperlinks } from "./workbook-hyperlinks.js";
 import { compileNumberFormat } from "../workbook/number-format.js";
@@ -139,16 +140,22 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     for (const operation of transaction.operations) {
       let layoutBefore: import("./workbook-layout.js").WorkbookMeasuredLayout | undefined;
       let boundsBefore: ReturnType<typeof workbookLayoutBounds> | undefined;
+      const copySheets = operation.op === "copyWorkbookComments" ? workbookCommentCopySheets(workbook, annotations, operation) : [];
+      if (copySheets.length && !measureLayout) invalid("Copying positioned notes requires a workbook layout measurer.");
       if (measureLayout) {
         const owners = (yield* workbookLayoutOwners(workbook, annotations))!;
-        if (owners.length) {
+        if (owners.length || copySheets.length) {
           const model = (yield* projectLayoutModel())!;
-          layoutBefore = (yield* measureWorkbookCandidate(model, [...new Set(owners.map(owner => owner.sheetId))], measureLayout, limits.maxNodes, context))!;
+          layoutBefore = (yield* measureWorkbookCandidate(model, [...new Set([...owners.map(owner => owner.sheetId), ...copySheets])], measureLayout, limits.maxNodes, context))!;
           boundsBefore = workbookLayoutBounds(owners, layoutBefore);
         }
       }
       if ((operation.op === "updateAnnotation" || operation.op === "updateWorkbookComment") && (operation.changes.anchor !== undefined || operation.changes.status !== undefined))
         commentMapping.explicit(workbook, annotations, mapping, operation.annotationId);
+      if (operation.op === "copyWorkbookComments") {
+        const plan = workbookCommentCopyPlan(operation);
+        if (!plan.unchanged) for (const annotation of annotations) if (plan.affected(annotation, operation.targetSheetId, plan.footprint)) commentMapping.explicit(workbook, annotations, mapping, annotation.annotationId);
+      }
       if (operation.op === "editWorkbookAxis" || operation.op === "reorderWorkbookRows" || operation.op === "moveWorkbookRange") commentMapping.capture(workbook, annotations, mapping.length);
       if (!isWorkbookOperation(operation)) annotation(operation as AnnotationOperation);
       else if (operation.op === "setWorkbookCells" || operation.op === "setWorkbookCellFormats") {
@@ -193,6 +200,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       }
       else if (isWorkbookDrawingOperation(operation)) editWorkbookDrawing(workbook, richContent, base, operation, allocate, styles);
       else if (isWorkbookCommentOperation(operation)) editWorkbookComment(workbook, annotations, richContent, base, operation, allocate);
+      else if (operation.op === "copyWorkbookComments") {
+        for (const value of copyWorkbookComments(workbook, annotations, richContent, base, operation, allocate, styles, layoutBefore)) yield { kind: "progress", value: { phase: "cells", ...value } };
+      }
       else if (operation.op === "moveWorkbookRange") {
         for (const value of moveWorkbookRange(workbook, cells, annotations, operation, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;
@@ -217,9 +227,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);
       if (measureLayout && boundsBefore && layoutBefore) {
         const owners = (yield* workbookLayoutOwners(workbook, annotations))!.filter(owner => boundsBefore!.has(owner.key));
-        if (owners.length) {
+        if (owners.length || copySheets.length) {
           const model = (yield* projectLayoutModel())!;
-          const layoutAfter = (yield* measureWorkbookCandidate(model, [...new Set(owners.map(owner => owner.sheetId))], measureLayout, limits.maxNodes, context))!;
+          const layoutAfter = (yield* measureWorkbookCandidate(model, [...new Set([...owners.map(owner => owner.sheetId), ...copySheets])], measureLayout, limits.maxNodes, context))!;
           if (layoutAfter.fontEnvironment !== layoutBefore.fontEnvironment) invalid("Available workbook fonts changed during candidate layout measurement.");
           for (const value of compensateWorkbookLayout(owners, boundsBefore, layoutAfter, operation)) yield { kind: "progress", value: { phase: "validation", ...value } };
         }
