@@ -2,6 +2,8 @@ export { decorate, mountDocumentPreview, mountPreview, packagePath } from "./pre
 export type { DocumentPreview, DocumentPreviewOptions } from "./preview.js";
 export type { WorkbookPreview, WorkbookPreviewInput, WorkbookPreviewSource, WorkbookPreviewOptions, WorkbookRenderReport } from "./workbook/preview-contracts.js";
 export { createWorkbookPreviewSource, linkWorkbookPreviewSource } from "./workbook/preview-source.js";
+export { createWorkbookLayoutService } from "./workbook/layout-measurement.js";
+export type { WorkbookLayoutService, WorkbookLayoutSourceRequest } from "./workbook/layout-measurement.js";
 export type { WorkbookViewport } from "./workbook/viewport.js";
 export type { WorkbookWindowSource, WorkbookWindowRequest, WorkbookWindowResponse } from "./workbook/window-source.js";
 export type { WorkbookAssetSource } from "./workbook/assets.js";

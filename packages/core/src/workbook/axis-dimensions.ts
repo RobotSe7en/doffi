@@ -28,6 +28,8 @@ export class AxisDimensions {
     append(next, count - 1, defaultSizePt); this.extentPt = extent;
   }
   get segmentCount(): number { return this.segments.length; }
+  /** Compact document-point runs for an isolated layout measurement response. */
+  runs(): readonly AxisOverride[] { return Object.freeze(this.segments.map(({ from, to, sizePt }) => Object.freeze({ from, to, sizePt }))); }
   private atIndex(index: number): Segment {
     if (!Number.isSafeInteger(index) || index < 0 || index >= this.count) invalid("Worksheet axis index is outside its bounds.");
     let low = 0, high = this.segments.length;

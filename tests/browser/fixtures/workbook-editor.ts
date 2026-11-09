@@ -1,5 +1,6 @@
 import { createDocumentSession, openDocument } from "@doffi/core";
-import type { TransactionPrepareOptions, WorkbookSession } from "@doffi/core";
+import type { DocumentOperation, TransactionPrepareOptions, WorkbookSession } from "@doffi/core";
+import { createWorkbookLayoutService } from "@doffi/render";
 import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookEditorView } from "@doffi/editor";
 import { decodeTestPackage } from "./package-transport.js";
@@ -40,6 +41,14 @@ export function displayedTextStyles(row: number, column: number) {
   });
 }
 export async function settled() { return editor.settled(); }
+export async function measuredApply(operations: readonly DocumentOperation[]) {
+  const layout = createWorkbookLayoutService(container, { widthPt: 420, heightPt: 240 });
+  try {
+    const m = session.snapshot().manifest;
+    const candidate = await session.prepareAsync({ protocolVersion: 1, documentId: m.documentId, baseRevision: m.revision, operations: [...operations] }, { measureWorkbookLayout: layout.measure });
+    const receipt = session.commit(candidate); await editor.settled(); return receipt;
+  } finally { layout.dispose(); }
+}
 export function displayedDrawingBounds() { return measureWorkbookDrawingBounds(observed?.current()); }
 export async function select(fromRow: number, fromColumn = 0, toRow = fromRow, toColumn = fromColumn): Promise<void> {
   await editor.selectRange("sheet-1", { from: { row: fromRow, column: fromColumn }, to: { row: toRow, column: toColumn } }); editor.focusInput();
@@ -99,4 +108,4 @@ export function dispose(): { revision: number; usable: boolean } {
   editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
-(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };
+(window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, displayedTextStyles, settled, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

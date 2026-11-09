@@ -43,6 +43,7 @@ import { finishWorkbookInteraction, finishWorkbookInteractionAsync, reviewWorkbo
 import { sessionLimits } from "./limits.js";
 import type { WorkbookCandidateChange, TransactionPreparationExecution } from "../runtime.js";
 import type { WorkbookProposalReview } from "../contracts/workbook-interaction.js";
+import { compensateWorkbookLayout, measureWorkbookCandidate, workbookLayoutBounds, workbookLayoutOwners } from "./workbook-layout.js";
 
 const names = new Set<string>(WorkbookOperationSchema.options.map(schema => schema.shape.op.value));
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
@@ -64,7 +65,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     return reopen(model, files);
   }
   function* preparationSteps(base: WorkbookModel, transaction: DocumentTransaction, allocate: () => string, resolvedIds?: readonly string[], preparation?: TransactionPrepareOptions): WorkbookPreparation<SessionPrepared<WorkbookModel>> {
-    if (preparation !== undefined && (!preparation || typeof preparation !== "object" || Array.isArray(preparation) || Object.keys(preparation).some(name => !["assets", "calculationContext", "validation"].includes(name)))) invalid("Invalid workbook preparation options.");
+    if (preparation !== undefined && (!preparation || typeof preparation !== "object" || Array.isArray(preparation) || Object.keys(preparation).some(name => !["assets", "calculationContext", "validation", "measureWorkbookLayout"].includes(name)))) invalid("Invalid workbook preparation options.");
+    const measureLayout = preparation?.measureWorkbookLayout;
+    if (measureLayout !== undefined && typeof measureLayout !== "function") invalid("Workbook layout measurement requires an authorized measurer.");
     const context = preparation?.calculationContext === undefined ? undefined : copyWorkbookScalarContext(preparation.calculationContext);
     if (preparation?.validation !== undefined) {
       checkTransactionSize(preparation.validation, limits.maxFileBytes, limits.maxDepth);
@@ -91,6 +94,23 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
     const richContent = new WorkbookContentEdit(manifest, files, limits, allocate, workbook), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
     const commentMapping = new WorkbookCommentMapping();
+    let measuredModel = base;
+    function* projectLayoutModel(): WorkbookPreparation<WorkbookModel> {
+      const projectedManifest = parseContract("document-manifest", manifest); if (projectedManifest.kind !== "workbook") invalid("Expected a workbook candidate.");
+      const projectedFiles = new Map(files);
+      for (const value of cells.projectSteps(projectedFiles, projectedManifest)) yield { kind: "progress", value: { phase: "chunks", ...value } };
+      richContent.project(projectedFiles);
+      projectedFiles.set("manifest.json", encode(JSON.stringify(projectedManifest)));
+      projectedFiles.set(manifest.metadata, encode(JSON.stringify(metadata))); projectedFiles.set(manifest.annotations, encode(JSON.stringify(annotations)));
+      const loader = openWorkbookModelSteps(projectedFiles, projectedManifest, limits, options.workbookLimits, measuredModel);
+      try {
+        for (;;) {
+          const step = loader.next();
+          if (step.done) { measuredModel = step.value ?? invalid("Workbook measurement source did not load."); return measuredModel; }
+          yield { kind: "progress", value: { phase: "validation", ...step.value } };
+        }
+      } finally { loader.return(undefined); }
+    }
     function annotation(operation: AnnotationOperation): void {
       if (operation.op === "addAnnotation") {
         const value = operation.annotation;
@@ -117,6 +137,16 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     let operationCount = 0, changedAxis = false, changedDefinition = false;
     yield { kind: "progress", value: { phase: "operations", completed: 0, total: transaction.operations.length } };
     for (const operation of transaction.operations) {
+      let layoutBefore: import("./workbook-layout.js").WorkbookMeasuredLayout | undefined;
+      let boundsBefore: ReturnType<typeof workbookLayoutBounds> | undefined;
+      if (measureLayout) {
+        const owners = (yield* workbookLayoutOwners(workbook, annotations))!;
+        if (owners.length) {
+          const model = (yield* projectLayoutModel())!;
+          layoutBefore = (yield* measureWorkbookCandidate(model, [...new Set(owners.map(owner => owner.sheetId))], measureLayout, limits.maxNodes, context))!;
+          boundsBefore = workbookLayoutBounds(owners, layoutBefore);
+        }
+      }
       if ((operation.op === "updateAnnotation" || operation.op === "updateWorkbookComment") && (operation.changes.anchor !== undefined || operation.changes.status !== undefined))
         commentMapping.explicit(workbook, annotations, mapping, operation.annotationId);
       if (operation.op === "editWorkbookAxis" || operation.op === "reorderWorkbookRows" || operation.op === "moveWorkbookRange") commentMapping.capture(workbook, annotations, mapping.length);
@@ -173,7 +203,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         changedAxis = true; mergeSheets.add(operation.sheetId); hyperlinkSheets.add(operation.sheetId);
       }
       else if (operation.op === "editWorkbookAxis") {
-        for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping, allocate)) yield { kind: "progress", value: { phase: "cells", ...value } };
+        for (const value of editWorkbookAxis(workbook, cells, annotations, operation, mapping, allocate, !!measureLayout)) yield { kind: "progress", value: { phase: "cells", ...value } };
         changedAxis = true;
       }
       else if (operation.op === "copyWorkbookSheet") {
@@ -185,6 +215,15 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         else if (defaultTableStyle !== undefined) workbook.defaultTableStyle = defaultTableStyle;
       }
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);
+      if (measureLayout && boundsBefore && layoutBefore) {
+        const owners = (yield* workbookLayoutOwners(workbook, annotations))!.filter(owner => boundsBefore!.has(owner.key));
+        if (owners.length) {
+          const model = (yield* projectLayoutModel())!;
+          const layoutAfter = (yield* measureWorkbookCandidate(model, [...new Set(owners.map(owner => owner.sheetId))], measureLayout, limits.maxNodes, context))!;
+          if (layoutAfter.fontEnvironment !== layoutBefore.fontEnvironment) invalid("Available workbook fonts changed during candidate layout measurement.");
+          for (const value of compensateWorkbookLayout(owners, boundsBefore, layoutAfter, operation)) yield { kind: "progress", value: { phase: "validation", ...value } };
+        }
+      }
       yield { kind: "progress", value: { phase: "operations", completed: ++operationCount, total: transaction.operations.length } };
     }
     for (const value of commentMapping.finish(workbook, annotations, mapping)) yield { kind: "progress", value: { phase: "cells", ...value } };

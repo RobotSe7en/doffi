@@ -93,14 +93,14 @@ export function restoreWorkbookAxisSource(workbook: WorkbookMetadata, before: De
  * Complex native object/table integration is added at its editing boundary;
  * until then those combinations fail atomically rather than drifting. */
 export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCellEdit, annotations: Annotation[], operation: AxisEdit,
-  mappings: WorkbookStructureMapping[], allocate: () => string): Generator<{ completed: number; total: number }, void> {
+  mappings: WorkbookStructureMapping[], allocate: () => string, measured = false): Generator<{ completed: number; total: number }, void> {
   const sheet = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId) ?? invalid("An earlier operation removed the worksheet.");
   const { axis, action, index, count } = operation, bound = axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS;
   if (index + count > bound) invalid("The worksheet axis edit exceeds its native bounds.");
   if (action === "delete" && operation.formatSource !== undefined) invalid("A deletion cannot inherit inserted-axis formatting.");
   if (workbook.names?.some(name => contextualName(parseFormula(name.expression, name.origin), name.sheetId === undefined)))
     invalid("Axis editing with contextual defined names is not yet connected.");
-  yield* mapWorkbookAxisAnchors(workbook, annotations, operation);
+  yield* mapWorkbookAxisAnchors(workbook, annotations, operation, measured);
   const step: WorkbookStructureMapping = { kind: "axis", sheetId: sheet.sheetId, axis, action, index, count };
   const styleSource = action === "insert" && operation.formatSource !== undefined && operation.formatSource !== "none"
     ? operation.formatSource === "before" ? index > 0 ? index - 1 : undefined : index : undefined;

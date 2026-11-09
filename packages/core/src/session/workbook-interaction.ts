@@ -53,11 +53,13 @@ export function* validateWorkbookProposalSteps(model: WorkbookModel, requestInpu
   if (request.documentId !== manifest.documentId || proposal.documentId !== request.documentId || proposal.requestId !== request.requestId) invalid("The workbook proposal does not match this request and document.");
   if (request.baseRevision !== manifest.revision || proposal.baseRevision !== request.baseRevision) throw new DocumentError("RevisionConflict", "The workbook request or proposal is based on a different revision.");
   const budget = new WorkbookInteractionBudget(workbookInteractionLimits(request.context.limits), limits, execution.signal);
-  if (optionsInput !== undefined && (!optionsInput || typeof optionsInput !== "object" || Array.isArray(optionsInput) || Object.keys(optionsInput).some(key => !["assets", "calculationContext", "validation"].includes(key)))) invalid("Invalid workbook proposal preparation options.");
+  if (optionsInput !== undefined && (!optionsInput || typeof optionsInput !== "object" || Array.isArray(optionsInput) || Object.keys(optionsInput).some(key => !["assets", "calculationContext", "validation", "measureWorkbookLayout"].includes(key)))) invalid("Invalid workbook proposal preparation options.");
+  if (optionsInput?.measureWorkbookLayout !== undefined && typeof optionsInput.measureWorkbookLayout !== "function") invalid("Workbook layout measurement requires an authorized measurer.");
   // The existing resource adapter validates/copies each byte vector before a
   // host callback can mutate it. The same immutable copies enter the candidate.
   const staged = stageResourceFiles(source.files, manifest, optionsInput?.assets !== undefined ? { assets: optionsInput.assets } : undefined, limits);
   const options: TransactionPrepareOptions = {
+    ...(optionsInput?.measureWorkbookLayout ? { measureWorkbookLayout: optionsInput.measureWorkbookLayout } : {}),
     ...(optionsInput?.assets ? { assets: optionsInput.assets.map(resource => ({ descriptor: parseContract("asset-descriptor", resource.descriptor), bytes: new Uint8Array(staged.files.get(resource.descriptor.path)!) })) } : {}),
     calculationContext: calculationContext(request),
     ...(optionsInput?.validation ? { validation: { acceptedRuleIds: [...optionsInput.validation.acceptedRuleIds] } } : {}),

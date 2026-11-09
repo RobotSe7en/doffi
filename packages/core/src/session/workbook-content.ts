@@ -49,5 +49,6 @@ export class WorkbookContentEdit {
     if (resolveReference(relative, this.manifest.content!) !== path) throw new Error("Invalid workbook resource path.");
     return relative;
   }
-  flush(): void { if (this.editor) this.files.set(this.manifest.content!, encode(this.editor.html())); }
+  project(files: Map<string, Uint8Array>): void { if (this.editor) files.set(this.manifest.content!, encode(this.editor.html())); }
+  flush(): void { this.project(this.files); }
 }

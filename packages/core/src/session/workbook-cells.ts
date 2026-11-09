@@ -219,6 +219,17 @@ export class WorkbookCellEdit {
     if (previous >= 0) html += "</tr>";
     const bytes = encode(html + "</tbody></table></body></html>"); checkLimit(bytes.byteLength, this.limits.maxFileBytes); return bytes;
   }
+  /** Project pending chunks without pruning or changing the mutable editor.
+   * An intermediate measurement must allow later operations to reuse a chunk. */
+  *projectSteps(files: Map<string, Uint8Array>, manifest: WorkbookManifest): Generator<{ completed: number; total: number }, void> {
+    let completed = 0;
+    for (const chunk of this.chunks.values()) {
+      const descriptor = manifest.chunks.find(item => item.path === chunk.descriptor.path)!;
+      if (!chunk.cells.size) { files.delete(descriptor.path); manifest.chunks = manifest.chunks.filter(item => item !== descriptor); }
+      else { const bytes = this.serialize(descriptor, chunk.cells); files.set(descriptor.path, bytes); descriptor.sha256 = assetDigest(bytes); }
+      yield { completed: ++completed, total: this.chunks.size };
+    }
+  }
   *flushSteps(): Generator<{ completed: number; total: number }, void> {
     let completed = 0; const total = this.chunks.size;
     for (const chunk of this.chunks.values()) {

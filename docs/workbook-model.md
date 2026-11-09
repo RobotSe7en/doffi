@@ -774,9 +774,31 @@ session.dispose();
 
 单点锚定以原物理尺寸随起点移动；同时移动／缩放的双点锚定按两端所在行列移动，保留各自偏移。插删不重建图形、图表系列、图片资源或正文身份，绝对位置保持固定。删除起点所在行列时，位置映射到该删除带的存续边界；批注语义锚点继续独立失效，保留正文、原状态和显式恢复。经典备注所选 VML 框和未选 commentPr 框分别映射，原来源及差异记录保留。新增逻辑只使用源坐标和物理尺寸，不把屏幕像素写入文档。
 
-依据微软 [oneCellAnchor](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.onecellanchor?view=openxml-3.0.1)、[EditAs](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.editasvalues?view=openxml-3.0.1) 和 [SizeWithCells](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.spreadsheet.resizewithcells?view=openxml-3.0.1)。固定或混合行为的双点框仍需按实际布局补偿，当前继续原子拒绝；排序／剪切、普通输入引起的自动行高与其他布尔组合也须继续完成，不将这部分数学映射计作整个几何闭环。
+依据微软 [oneCellAnchor](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.onecellanchor?view=openxml-3.0.1)、[EditAs](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.editasvalues?view=openxml-3.0.1) 和 [SizeWithCells](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.spreadsheet.resizewithcells?view=openxml-3.0.1)。固定或混合行为的双点框现在可通过下述候选测量接口补偿；未提供测量器时，行列增删仍原子拒绝。默认编辑入口、Worker、排序／剪切、提案范围和完整原生组合仍须继续完成，不将这部分接口计作整个几何闭环。
 
 [独立原生记录](evidence/workbook-axis-drawings.json)包含三份不可变来源、各自重存基线及八次实际行列编辑、来源与生产者 SHA、固定字体清单摘要、锚点／框缓存／备注位置及图表引用；`pnpm check:workbook-axis-drawings` 重做全部 27 组并通过官方 XSD／OPC。Calc 在首次打开的部分单点移动和备注内部缩放中与源声明存在差异，旋转框缓存也会重写，观察保留为生产者证据。SDK 另核对类型事务、双框、缓存、取消／预算／过期候选、文档包 ZIP 重开、撤销和三引擎实际移动／尺寸；未作 Excel／WPS 实机通过声明。
+
+### 候选布局测量与固定／混合锚定（R3-14 实施中）
+
+`TransactionPrepareOptions.measureWorkbookLayout` 接收私有只读候选、工作表清单、冻结计算上下文及源摘要。摘要包含快照和计算上下文，涵盖块摘要、样式、字体、规则及来源内容；返回值必须匹配摘要、请求工作表和有界点单位维度段。前后字体环境不一致、过期来源、非法段、取消或并发修订均不能提交。同步测量器可供 `prepare` 使用，异步测量器须使用 `prepareAsync`／`prepareProposalAsync`；这项宿主函数不属于可序列化的 Worker 命令参数。
+
+每个操作前后分别测量当前候选。固定起点保留原物理位置，固定尺寸保留原物理宽高；其余分量跟随测量后的行列。补偿只调整原有标记的点单位偏移，保留标记的单元格身份、两个响应布尔值和两份经典备注框，不把当前屏幕坐标写成源。中间投影不清理活跃编辑块，后续操作可以重新填入刚清空的块；插入与反向删除可以恢复精确源和既有 redo。显式替换绘图锚点或备注框直接采用请求的新几何。
+
+`createWorkbookLayoutService(container, options)` 复用网格的隔离脚本禁用表面、源 CSS、Normal 字体字符宽度、当前规则外观和自动行高；本地字体替代沿用预览路径，不改原字体名称，也不下载字体。`measure` 可直接作为核心测量器，`measureSource` 供持有授权候选读取端点的适配器使用。自动模式计算使用同一冻结上下文；手动模式保留已有缓存。测量表面结束或失败即释放，`dispose` 取消进行中的任务。
+
+```ts
+const layout = createWorkbookLayoutService(container, { widthPt: 600, heightPt: 360 });
+try {
+  const candidate = await session.prepareAsync(transaction, {
+    measureWorkbookLayout: layout.measure,
+  });
+  session.commit(candidate);
+} finally {
+  layout.dispose();
+}
+```
+
+核心及原生相邻回归 6 文件／96 项通过，覆盖四种响应组合、同时改变行列尺寸、连续结构映射、两个原生备注框、临时负跨度、空块重用、无净变化、上下文摘要、取消与历史。共享测量器的实际字体／换行及既有直连／Worker 行列画布三引擎 9 项通过。完整本地检查 237 文件／2455 项、类型、架构及构建通过。此处是显式测量接口和共享服务，默认编辑器自动接线、候选 Worker 测量协议、提案范围组合及完整外部 Office 对照尚未完成，不代表 R3-14 退出。
 
 ### 智能表管理界面（R3-13 实施中）
 

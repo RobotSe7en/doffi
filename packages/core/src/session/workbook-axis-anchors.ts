@@ -7,7 +7,7 @@ import { MAX_SHEET_COLUMNS, MAX_SHEET_ROWS } from "../workbook/chunk-index.js";
 /** One-cell extents are already physical source dimensions. Both moving,
  * resizing markers of a two-cell anchor follow the changed axis directly;
  * fixed/mixed two-cell modes still need measured layout compensation. */
-export function* mapWorkbookAxisAnchors(workbook: WorkbookMetadata, annotations: readonly Annotation[], operation: Extract<WorkbookOperation, { op: "editWorkbookAxis" }>): Generator<{ completed: number; total: number }, void> {
+export function* mapWorkbookAxisAnchors(workbook: WorkbookMetadata, annotations: readonly Annotation[], operation: Extract<WorkbookOperation, { op: "editWorkbookAxis" }>, measured = false): Generator<{ completed: number; total: number }, void> {
   const owners = new Set<string>(), anchors: WorkbookDrawingAnchor[] = []; let completed = 0;
   for (const annotation of annotations) {
     if (annotation.anchor.kind === "cells" && annotation.anchor.sheetId === operation.sheetId) owners.add(annotation.annotationId);
@@ -23,7 +23,7 @@ export function* mapWorkbookAxisAnchors(workbook: WorkbookMetadata, annotations:
   }
   if (!anchors.length) return;
   for (const anchor of anchors) {
-    if (anchor.kind === "two-cell" && (!anchor.moveWithCells || !anchor.sizeWithCells)) throw new DocumentError("InvalidOperation", "Axis editing of fixed or mixed cell-bound native drawings and note boxes requires their measured layout mapping.");
+    if (!measured && anchor.kind === "two-cell" && (!anchor.moveWithCells || !anchor.sizeWithCells)) throw new DocumentError("InvalidOperation", "Axis editing of fixed or mixed cell-bound native drawings and note boxes requires their measured layout mapping.");
     if (++completed % 256 === 0) yield { completed, total: 0 };
   }
   const bound = operation.axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS;
@@ -35,7 +35,7 @@ export function* mapWorkbookAxisAnchors(workbook: WorkbookMetadata, annotations:
     return mapped;
   };
   for (const anchor of anchors) {
-    if (anchor.kind !== "absolute") { anchor.from[operation.axis] = point(anchor.from[operation.axis]); if (anchor.kind === "two-cell") anchor.to[operation.axis] = point(anchor.to[operation.axis]); }
+    if (anchor.kind !== "absolute" && (anchor.kind !== "two-cell" || anchor.moveWithCells || anchor.sizeWithCells)) { anchor.from[operation.axis] = point(anchor.from[operation.axis]); if (anchor.kind === "two-cell") anchor.to[operation.axis] = point(anchor.to[operation.axis]); }
     if (++completed % 256 === 0) yield { completed, total: 0 };
   }
   yield { completed, total: completed };

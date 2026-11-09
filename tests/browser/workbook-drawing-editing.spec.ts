@@ -71,6 +71,36 @@ test.beforeAll(async () => {
   }
 });
 
+test("measured fixed and mixed objects and note boxes follow actual font and wrapped-row layout without geometry drift", async ({ page }) => {
+  const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 0, column: 1, value: { type: "text", value: "B" } },
+    { row: 3, column: 0, value: { type: "text", value: "Wrapped text with several words on multiple lines" } }]));
+  const at = (row: number, column: number) => ({ row, column, offsetXPt: 2, offsetYPt: 3 });
+  const anchor = (moveWithCells: boolean, sizeWithCells: boolean) => ({ kind: "two-cell" as const, from: at(2, 1), to: at(6, 3), moveWithCells, sizeWithCells });
+  const box: WorkbookNoteBox = { anchor: anchor(false, false), visible: true, printable: true, locked: true, lockText: false, defaultSize: false,
+    disabled: false, autoFill: false, autoLine: false, autoScale: false, justifyLastLine: false };
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [
+    ...[false, true].flatMap(move => [false, true].map(size => ({ op: "insertWorkbookObject" as const, sheetId: "sheet-1", anchor: anchor(move, size), name: `${move}/${size}`, object: { kind: "geometry" as const, preset: "rect" as const, html: "<p>形</p>" } }))),
+    { op: "addWorkbookComment", anchor: { kind: "cells", sheetId: "sheet-1", ranges: [{ from: { row: 1, column: 1 }, to: { row: 1, column: 1 } }] }, format: "classic", html: "<p>备注</p>", box },
+  ] }));
+  const initial = s.snapshot(), ids = [...initial.metadata.workbook.objects!.map(object => object.nodeId), initial.annotations[0]!.bodyNodeId!], files = s.serialize(); s.dispose();
+  await page.addScriptTag({ content: bundles.get("workbook-editor")! }); await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(files));
+  const measure = () => page.evaluate(() => window.workbookEditor.displayedDrawingBounds());
+  const bounds = (value: Awaited<ReturnType<typeof measure>>, index: number) => value.objects.find(object => object.nodeId === ids[index])!;
+  const before = await measure(); expect(before.objects).toHaveLength(5);
+  await page.evaluate(() => window.workbookEditor.measuredApply([{ op: "setWorkbookStyleClass", cssClass: "cell-default", properties: { "font-size": "20pt", "white-space": "pre-wrap" } }]));
+  const after = await measure(); expect(after.objects).toHaveLength(5); expect(after.columnWidthPt!).toBeGreaterThan(before.columnWidthPt!);
+  for (const index of [0, 4]) for (const field of ["xPt", "yPt", "widthPt", "heightPt"] as const) expect(bounds(after, index)[field]).toBeCloseTo(bounds(before, index)[field], 1);
+  for (const field of ["xPt", "yPt"] as const) expect(bounds(after, 1)[field]).toBeCloseTo(bounds(before, 1)[field], 1);
+  for (const field of ["widthPt", "heightPt"] as const) expect(bounds(after, 2)[field]).toBeCloseTo(bounds(before, 2)[field], 1);
+  for (const index of [1, 3]) for (const field of ["widthPt", "heightPt"] as const) expect(bounds(after, index)[field]).toBeGreaterThan(bounds(before, index)[field]);
+  for (const index of [2, 3]) for (const field of ["xPt", "yPt"] as const) expect(bounds(after, index)[field]).toBeGreaterThan(bounds(before, index)[field]);
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  expect(await page.locator("iframe").count()).toBe(1);
+  await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ drawings: initial.metadata.workbook.objects, comments: initial.metadata.workbook.comments, history: { undoSteps: 0 }, errors: [] });
+  await page.evaluate(() => window.workbookEditor.dispose());
+});
+
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} axis edits move fixed one-cell drawings and resize both-marker drawings and notes in the actual canvas`, async ({ page }) => {
   const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: { type: "text", value: "A" } }, { row: 0, column: 1, value: { type: "text", value: "B" } }], metadata => {
     metadata.workbook.sheets[0]!.defaultRowHeightPt = 20; metadata.workbook.sheets[0]!.defaultRowHeightCustom = true;

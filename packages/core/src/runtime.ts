@@ -219,6 +219,26 @@ export interface TransactionReceipt {
 export type DocumentEventListener = (event: DeepReadonly<DocumentEvent>) => void;
 export type AnnotationSubmissionHandler = (request: DeepReadonly<DocumentInteractionRequest>) => void | Promise<void>;
 
+/** A private, read-only candidate, bound to its exact source and revision. */
+export interface WorkbookLayoutRequest {
+  readonly model: WorkbookModel;
+  readonly sourceDigest: string;
+  readonly sheetIds: readonly string[];
+  readonly calculationContext?: import("./workbook/scalar.js").WorkbookScalarContext;
+  readonly signal?: { readonly aborted: boolean };
+}
+export interface WorkbookLayoutMeasurement {
+  readonly sourceDigest: string;
+  /** Changes in available fonts invalidate a before/after measurement pair. */
+  readonly fontEnvironment: string;
+  readonly sheets: readonly {
+    readonly sheetId: string;
+    readonly rows: { readonly defaultSizePt: number; readonly overrides: readonly import("./workbook/axis-dimensions.js").AxisOverride[] };
+    readonly columns: { readonly defaultSizePt: number; readonly overrides: readonly import("./workbook/axis-dimensions.js").AxisOverride[] };
+  }[];
+}
+export type WorkbookLayoutMeasurer = (request: WorkbookLayoutRequest) => WorkbookLayoutMeasurement | Promise<WorkbookLayoutMeasurement>;
+
 /** Host-authorized immutable resources staged with the same isolated candidate. */
 export interface TransactionPrepareOptions {
   readonly assets?: readonly { readonly descriptor: AssetDescriptor; readonly bytes: Uint8Array }[];
@@ -226,6 +246,9 @@ export interface TransactionPrepareOptions {
   /** Warning/information rules require an explicit host acknowledgment. Stop
    * rules cannot be bypassed by this list. */
   readonly validation?: { readonly acceptedRuleIds: readonly string[] };
+  /** Use the same authorized fonts and automatic row measurement as the grid.
+   * Async measurers require prepareAsync/prepareProposalAsync. */
+  readonly measureWorkbookLayout?: WorkbookLayoutMeasurer;
 }
 export interface TransactionPreparationProgress {
   readonly phase: "operations" | "cells" | "chunks" | "validation" | "calculation";
