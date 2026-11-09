@@ -108,9 +108,12 @@ test("scoped drawing copies may alias selectors only to their newly owned nodes 
   const id = initial.snapshot().metadata.workbook.objects![0]!.nodeId, paragraph = initial.getNode(id)!.childNodeIds[0]!, files = new Map(initial.serialize());
   files.set("styles.css", new TextEncoder().encode(new TextDecoder().decode(files.get("styles.css")!) + '[data-node-id="' + id + '"] [data-node-id="' + paragraph + '"]{color:#123456}'));
   const session = createDocumentSession(openDocument(files, { kind: "workbook" }), { sessionLimits: { maxCandidates: 1 } }); sessions.push(session);
-  const before = session.snapshot(), scope = { kind: "ranges" as const, ranges: [{ sheetId: "sheet-1", range: range(0, 0) }], objectIds: [id] }, input = request(session, { scope });
+  const before = session.snapshot(), scope = { kind: "ranges" as const, ranges: [{ sheetId: "sheet-1", range: range(0, 0) }], objectIds: [id] }, selectedOnly = request(session, { scope }),
+    input = request(session, { scope: { ...scope, newObjectSheetIds: ["sheet-1"] } });
   const operation: WorkbookOperation = { op: "duplicateWorkbookObjects", nodeIds: [id], offset: { xPt: 5, yPt: 5 } };
   const withoutObject = request(session); expect(() => session.prepareProposal(withoutObject, proposal(withoutObject, [operation]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
+  expect(() => session.prepareProposal(selectedOnly, proposal(selectedOnly, [operation]))).toThrowError(expect.objectContaining({ code: "InvalidProposal" }));
+  expect(session.snapshot()).toEqual(before);
   const candidate = session.prepareProposal(input, proposal(input, [operation])); expect(session.snapshot()).toEqual(before);
   expect(candidate.preview.metadata.workbook.objects).toHaveLength(2); expect(candidate.preview.styles[0]!.css).toContain(candidate.preview.metadata.workbook.objects![1]!.nodeId);
   expect(candidate.model.getCell("sheet-1", 0, 1)!.html).toBe(session.getCell("sheet-1", 0, 1)!.html); session.discard(candidate);

@@ -75,7 +75,7 @@ export function* validateWorkbookProposalSteps(model: WorkbookModel, requestInpu
  * derived value differences without turning consumers into writable cells. */
 export function* reviewWorkbookProposalSteps(model: WorkbookModel, capture: WorkbookProposalCapture, candidate: WorkbookCandidateChange): Generator<TransactionPreparationProgress, WorkbookProposalReview> {
   const { request, proposal, budget } = capture, context = request.context, coverage = [...context.writableRanges, ...context.dependencies];
-  validateWorkbookProposalSource(model, request, proposal, candidate, budget);
+  validateWorkbookProposalSource(model, request, candidate, budget);
   const next = candidate.model, global = context.scope.kind === "global", knownNames = new Set(context.metadata.workbook.names?.map(name => name.nameId));
   const check = (area: import("../runtime.js").DeepReadonly<WorkbookReferenceArea>): void => {
     budget.step(); if (!global && !workbookContextCovers(coverage, { sheetId: area.sheetId, range: area }, budget.step)) invalid("The workbook candidate needs inputs outside the frozen context; expand read scope and rebuild the request.");

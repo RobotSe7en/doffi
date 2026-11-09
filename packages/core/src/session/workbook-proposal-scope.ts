@@ -23,6 +23,8 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
   const proposedRules = new Map<string, Extract<WorkbookEditProposal["operations"][number], { op: "setWorkbookConditionalRule" }>["rule"]>();
   for (const op of proposal.operations) { budget.step(); if (op.op === "setWorkbookConditionalRule") proposedRules.set(JSON.stringify([op.sheetId, op.rule.ruleId]), op.rule); }
   const objects = new Set(context.writableObjectIds), annotations = new Set(context.writableAnnotationIds), supported = new Set(request.supportedOperations);
+  const objectSheets = new Map<string, string>();
+  if (proposal.operations.some(op => op.op === "duplicateWorkbookObjects")) for (const object of context.metadata.workbook.objects ?? []) { budget.step(); objectSheets.set(object.nodeId, object.sheetId); }
   const requireRange = (sheetId: string, range: DeepReadonly<WorkbookRange>): void => { if (!workbookContextCovers(context.writableRanges, { sheetId, range }, budget.step)) invalid("A workbook proposal targets cells outside its declared write scope."); };
   const anchor = (value: { readonly kind: string; readonly sheetId: string; readonly ranges: readonly DeepReadonly<WorkbookRange>[] }): void => {
     if (value.kind !== "cells") invalid("Workbook proposal comments require worksheet anchors.");
@@ -79,6 +81,12 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
         for (const range of [...original?.ranges ?? [], ...("rule" in op ? op.rule.ranges : [])]) requireRange(op.sheetId, range); break;
       }
       case "insertWorkbookObject": case "insertWorkbookChart": if (!context.writableNewObjectSheetIds.includes(op.sheetId)) invalid("New workbook drawings require explicit worksheet creation scope."); break;
+      case "duplicateWorkbookObjects":
+        for (const id of op.nodeIds) {
+          budget.step(); const sheetId = objectSheets.get(id);
+          if (!sheetId || !context.writableNewObjectSheetIds.includes(sheetId)) invalid("Duplicating workbook drawings requires explicit worksheet creation scope.");
+        }
+        break;
       default: // Remaining operations target a selected drawing or comment;
         // the checks above run even when their typed operation would be a no-op.
         if (!("nodeId" in op) && !("nodeIds" in op) && !("annotationId" in op) && op.op !== "addWorkbookComment") invalid("This workbook operation requires explicit global scope.");
@@ -88,7 +96,7 @@ export function validateWorkbookProposalTargets(model: WorkbookModel, request: W
 
 /** Compare the actual candidate's source complement. Typed target validation
  * cannot by itself catch formula rewrites or indirect metadata changes. */
-export function validateWorkbookProposalSource(model: WorkbookModel, request: WorkbookInteractionRequest, proposal: WorkbookEditProposal, candidate: WorkbookCandidateChange, budget: WorkbookInteractionBudget): void {
+export function validateWorkbookProposalSource(model: WorkbookModel, request: WorkbookInteractionRequest, candidate: WorkbookCandidateChange, budget: WorkbookInteractionBudget): void {
   const before = model.snapshot(), after = candidate.preview, context = request.context, previous = workbookSource(model)!, next = workbookSource(candidate.model)!;
   const assets = new Set(context.assets.map(asset => asset.path));
   for (const change of candidate.changes) {
@@ -107,8 +115,7 @@ export function validateWorkbookProposalSource(model: WorkbookModel, request: Wo
     }
     if (source !== undefined && originalObjects.has(source) && !context.writableObjectIds.includes(source)) invalid("A workbook proposal cannot copy an undisclosed drawing source.");
   }
-  const duplicateSheets = new Set(proposal.operations.flatMap(op => op.op === "duplicateWorkbookObjects" ? op.nodeIds.flatMap(id => before.metadata.workbook.objects?.find(object => object.nodeId === id)?.sheetId ?? []) : []));
-  for (const object of after.metadata.workbook.objects ?? []) if (!originalObjects.has(object.nodeId) && (context.writableNewObjectSheetIds.includes(object.sheetId) || duplicateSheets.has(object.sheetId))) objectIds.add(object.nodeId);
+  for (const object of after.metadata.workbook.objects ?? []) if (!originalObjects.has(object.nodeId) && context.writableNewObjectSheetIds.includes(object.sheetId)) objectIds.add(object.nodeId);
   const originalAnnotations = new Set(before.annotations.map(annotation => annotation.annotationId));
   for (const annotation of after.annotations) if (!originalAnnotations.has(annotation.annotationId) && annotation.anchor.kind === "cells" && annotation.anchor.ranges.every(range => workbookContextCovers(context.writableRanges, { sheetId: annotation.anchor.kind === "cells" ? annotation.anchor.sheetId : "", range }, budget.step))) annotationIds.add(annotation.annotationId);
   const roots = new Set<string>(objectIds);
