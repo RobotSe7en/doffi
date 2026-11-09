@@ -332,6 +332,12 @@ test("mounted direct native local-name copy creates the missing target scope and
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
 });
 
+test("mounted direct contextual names follow row and column edits with actual cross-sheet results and undo", async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-names.xlsx'), { documentId: 'mounted-axis-names' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookAxisNames } = await import('./workbook-axis-names-cases.js'); await exerciseWorkbookAxisNames(page, false);
+});
 test("mounted direct name manager preserves scopes, drafts, IME and exact name consumers through one-step history", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-manager' }), { kind: 'workbook' });

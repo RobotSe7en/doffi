@@ -5,7 +5,6 @@ import type { DeepReadonly, WorkbookCell, WorkbookStructureMapping } from "../ru
 import { DocumentError } from "../errors.js";
 import { MAX_SHEET_COLUMNS, MAX_SHEET_ROWS } from "../workbook/chunk-index.js";
 import { copyFormula } from "../workbook/formula-rewrite.js";
-import { parseFormula, type FormulaExpression } from "../workbook/formula.js";
 import { createWorkbookFormulaEquivalence } from "../workbook/formula-equivalence.js";
 import { mapWorkbookCommentAnchors } from "./workbook-comment-mapping.js";
 import { sameWorkbookRangeCoverage } from "../workbook/ranges.js";
@@ -16,15 +15,6 @@ import { mapWorkbookAxisAnchors } from "./workbook-axis-anchors.js";
 
 type AxisEdit = Extract<WorkbookOperation, { op: "editWorkbookAxis" }>;
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
-function contextualName(node: FormulaExpression, global: boolean): boolean {
-  if (node.kind === "cell") return !node.absoluteRow || !node.absoluteColumn || global && (node.sheet === undefined || node.sheet === "");
-  if (node.kind === "range") return contextualName(node.from, global) || contextualName(node.to, global);
-  if (node.kind === "axisRange") return !node.from.absolute || !node.to.absolute || global && (node.sheet === undefined || node.sheet === "");
-  if (node.kind === "unary") return contextualName(node.operand, global);
-  if (node.kind === "binary") return contextualName(node.left, global) || contextualName(node.right, global);
-  if (node.kind === "call") return node.arguments.some(argument => argument !== null && contextualName(argument, global));
-  return false;
-}
 
 /** Reversed structure changes must not publish canonicalized formula syntax or
  * split equivalent dimension spans as a new authoritative revision. */
@@ -98,8 +88,6 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
   const { axis, action, index, count } = operation, bound = axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS;
   if (index + count > bound) invalid("The worksheet axis edit exceeds its native bounds.");
   if (action === "delete" && operation.formatSource !== undefined) invalid("A deletion cannot inherit inserted-axis formatting.");
-  if (workbook.names?.some(name => contextualName(parseFormula(name.expression, name.origin), name.sheetId === undefined)))
-    invalid("Axis editing with contextual defined names is not yet connected.");
   yield* mapWorkbookAxisAnchors(workbook, annotations, operation, measured);
   const step: WorkbookStructureMapping = { kind: "axis", sheetId: sheet.sheetId, axis, action, index, count };
   const styleSource = action === "insert" && operation.formatSource !== undefined && operation.formatSource !== "none"

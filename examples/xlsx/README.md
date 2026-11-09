@@ -73,3 +73,5 @@ pnpm check:xlsx-reference
 [编辑阶段链接复制](../../docs/evidence/workbook-copy-hyperlinks.json)使用不可变 `01-values-text.xlsx` 和固定 LibreOffice 的普通、重叠、跨表及新建表复制。四份生产者输出保留在 `packages/office/tests/fixtures/workbook-copy-hyperlinks-*-calc.xlsx`；五份源／输出均经官方 XSD／OPC 检查。记录保留显示缓存重算、提示丢失和新建表默认字体页眉不在当前字段读取范围内的拒绝负例，不覆盖原始样例。复现命令为 `pnpm check:workbook-copy-hyperlinks`。
 
 [编辑阶段系统剪贴板接收](../../docs/evidence/workbook-system-clipboard.json)使用同一不可变独立输入，在 SDK 中修改当前源后生成 HTML，由固定 Calc 原生控制器插入并再次修改值验证公式重算。生产者文件 `packages/office/tests/fixtures/workbook-system-clipboard-calc.xlsx` 保留精确字节及摘要，记录小数精度、日期序列、Boolean 公式、字面等号、长编号、合并，以及 CR／LF、制表符和常量错误的生产者差异。官方 XSD／OPC、SDK 再编辑、Worker 当前值、包 ZIP 重开与撤销分别核对。复现命令为 `pnpm check:workbook-system-clipboard`，不称为 Excel/WPS 实机验收。
+
+[名称行列编辑](../../docs/evidence/workbook-axis-names.json)由独立 Python ZIP/XML 生成源和五份固定 Calc 实际插删结果，保存在 `packages/office/tests/fixtures/workbook-axis-names*.xlsx`。相对配方、绝对分量、混合整轴范围、局部／全局 bang、别名及生产者缓存均保留；Calc 的 bang 和插删列后嵌套相对别名差异单独记录。源及原生输出经官方 XSD／OPC，SDK 当前计算、唯一 Worker 候选、再编辑、包 ZIP 重开及撤销分别验证；`pnpm check:workbook-axis-names` 重现原生操作。这不代替 Excel/WPS 结构编辑实机验收。

@@ -48,10 +48,17 @@ export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells
     if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression, destination === undefined);
     if (++completed % 256 === 0) yield { completed, total: 0 };
   }
+  // Defined names store relative recipes rather than a formula attached to a
+  // moving cell. Preserve those offsets and their stable serialization origin;
+  // absolute components on a bound worksheet still follow structural edits.
+  // A global unqualified/bang reference has no fixed worksheet identity: the
+  // $workbook context deliberately cannot match a worksheet axis operation.
+  const rewriteName = change.kind === "axis" ? createWorkbookReferenceRewriter(workbook, change, { preserveRelativeAxis: true }) : rewrite;
   for (const name of workbook.names ?? []) {
     const sheet = name.sheetId === undefined ? "$workbook" : workbook.sheets.find(sheet => sheet.sheetId === name.sheetId)!.name;
     if (change.kind === "deleteSheet" && sheet === change.sheet) continue;
-    name.expression = rewrite(name.expression, sheet, name.origin, undefined, undefined, true);
+    name.expression = rewriteName(name.expression, sheet, name.origin, undefined, undefined, true);
+    if (++completed % 256 === 0) yield { completed, total: 0 };
   }
   function sheetReferences(sheet: WorkbookSheet): void {
     for (const rule of [...sheet.conditionalRules ?? [], ...sheet.dataValidations ?? []]) {

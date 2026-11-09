@@ -295,6 +295,13 @@ test('mounted Worker native whole-table cut keeps its definition across sheets a
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker contextual names follow row and column edits with actual cross-sheet results and undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-names.xlsx'), { documentId: 'mounted-worker-axis-names' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookAxisNames } = await import('./workbook-axis-names-cases.js'); await exerciseWorkbookAxisNames(page, true);
+});
 test('mounted Worker native global-name cut shows the global value despite a target local shadow', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-cut' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;

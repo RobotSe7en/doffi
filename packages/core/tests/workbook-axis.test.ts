@@ -145,18 +145,13 @@ test("column deletion remaps absolute filter keys and removes a fully deleted fi
   apply(s, [axis("column", "delete", 1, 3)]); expect(s.snapshot().metadata.workbook.sheets[0]!.autoFilter).toBeUndefined();
 });
 
-test("qualified absolute defined names follow references while contextual names fail atomically until connected", () => {
+test("qualified absolute defined names follow references", () => {
   const s = session(scalarWorkbook([{ row: 2, column: 0, value: number(7) }, { row: 5, column: 0, value: number(99), formula: "=Rate" }], metadata => {
     metadata.workbook.names = [{ nameId: "rate", name: "Rate", origin: { row: 0, column: 0 }, expression: "=Sheet1!$A$3" }];
   }));
   apply(s, [axis("row", "insert", 1)]);
   expect(s.snapshot().metadata.workbook.names?.[0]?.expression).toBe("='Sheet1'!$A$4");
   s.calculateSync(); expect(s.getCalculatedCell(sheetId, 6, 0)).toMatchObject({ value: number(7) });
-  for (const expression of ["=A1", "=$A$1"]) {
-    const other = session(scalarWorkbook([], metadata => { metadata.workbook.names = [{ nameId: "context", name: "Context", origin: { row: 0, column: 0 }, expression }]; })), before = other.serialize();
-    expect(() => apply(other, [axis("row", "insert", 0)])).toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
-    expect(other.serialize()).toEqual(before);
-  }
 });
 
 test("empty full-axis operations stay sparse and insert/delete restores cached source and redo", () => {

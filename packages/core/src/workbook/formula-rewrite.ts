@@ -142,7 +142,15 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     if (sheet === undefined) return refError();
     if (change.kind === "axis" && bindings.preserveRelativeAxis
       && (change.axis === "row" ? !node.from.absoluteRow || !node.to.absoluteRow : !node.from.absoluteColumn || !node.to.absoluteColumn)) {
-      const a = visit(node.from), b = visit(node.to);
+      const mapped = same(first.sheet, change.sheet) ? interval(first[change.axis], last[change.axis]) : [first[change.axis], last[change.axis]];
+      const endpoint = (template: FormulaCell, point: FormulaLocation, index: number): FormulaExpression => {
+        const absolute = change.axis === "row" ? template.absoluteRow : template.absoluteColumn;
+        // A deleted absolute endpoint clips to the surviving rectangle. The
+        // relative endpoint remains a recipe, including mixed-direction ranges.
+        if (absolute && !mapped) return refError();
+        return cellAt({ ...point, sheet, [change.axis]: absolute ? mapped![index]! : point[change.axis] + to[change.axis] - from[change.axis] }, template);
+      };
+      const a = endpoint(node.from, first, 0), b = endpoint(node.to, last, 1);
       return a.kind === "cell" && b.kind === "cell" ? { kind: "range", from: a, to: b } : refError();
     }
     if (change.kind === "axis" && same(first.sheet, change.sheet)) {
@@ -189,12 +197,9 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
       }
       let positions = change.kind === "axis" && same(sourceSheet, change.sheet) && node.axis === change.axis ? interval(start, end) : [start, end];
       if (change.kind === "axis" && bindings.preserveRelativeAxis && node.axis === change.axis && (!node.from.absolute || !node.to.absolute)) {
-        const single = (value: number, absolute: boolean): number | undefined => {
-          if (!absolute) return value + to[node.axis] - from[node.axis];
-          if (!same(sourceSheet, change.sheet)) return value;
-          const point = mapPosition({ sheet: sourceSheet, row: node.axis === "row" ? value : 0, column: node.axis === "column" ? value : 0 }); return point?.[node.axis];
-        };
-        const a = single(start, node.from.absolute), b = single(end, node.to.absolute); positions = a === undefined || b === undefined ? undefined : [a, b];
+        const mapped = positions;
+        const single = (value: number, absolute: boolean, index: number): number | undefined => absolute ? mapped?.[index] : value + to[node.axis] - from[node.axis];
+        const a = single(start, node.from.absolute, 0), b = single(end, node.to.absolute, 1); positions = a === undefined || b === undefined ? undefined : [a, b];
       }
       if (!positions) return refError();
       return { ...node, from: { ...node.from, index: positions[0]! - (node.from.absolute ? 0 : to[node.axis]) }, to: { ...node.to, index: positions[1]! - (node.to.absolute ? 0 : to[node.axis]) },

@@ -18,6 +18,8 @@ R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射�
 
 系统剪贴板另开放 `parseWorkbookR1C1Formula`／`printWorkbookR1C1Formula`，与 A1 共用词法、表达式解析、相对偏移 AST、结构化引用和预算。R/C 数字为绝对位置，方括号为相对偏移，省略位置为当前行／列；支持混合地址、整行列、名称、跨表、联合和交集，字符串及结构化列名不当成地址。持久化源仍为 A1。R1C1 的产品定义见 [Microsoft FormulaR1C1](https://learn.microsoft.com/en-us/office/vba/api/excel.range.formular1c1)，Sheets HTML 字段的生产者定义见 [Collabora 集成手册](https://sdk.collaboraonline.com/25.04/CO-SDK-manual.pdf)；旧 `x:fmla` 的表格相对 A1 来自 [Microsoft Office HTML/XML 参考的存档](https://stigmortenmyre.no/mso/html/excel/xlconformulas.htm)。这些语法依据和固定 Calc 接收记录不构成当前 Excel/WPS 实机验收。
 
+名称参与行列插删：相对分量保留调用位置偏移及稳定的定义原点，已绑定工作表的绝对分量跟随单元格或成为 `#REF!`；混合范围删除端点时裁剪到存续范围，不能因一个端点删除而丢掉整段。局部名称的隐式／bang 引用使用所属表；全局隐式／bang 引用保留其调用表语义，不绑定到第一张表。嵌套名称继续按身份求值和失效。[独立 ZIP/XML 与五次固定 Calc 编辑](evidence/workbook-axis-names.json)保留原始生产者字节、官方 XSD／OPC、bang 计算差异及插删列后嵌套相对别名丢失调用坐标的差异。`pnpm check:workbook-axis-names` 实际复现；Excel 网页版求值证据不能充当 Excel 结构操作实机验收。
+
 `WorkbookModel.resolveReference(expression, { sheetId, row, column })` 已将静态引用绑定接入当前只读模型：支持单格/矩形/整行列、跨表、局部与全局名称、智能表、联合、交集和范围运算。名称的相对分量以调用坐标解析；显式局部名称在所属表解析。整列只返回一个区域，不生成百万条记录。联合保留重复项，交集为空返回 `#NULL!`；未知名称、缺失工作表和越界引用分别返回明确错误。
 
 引用查询不是求值器。动态引用函数返回 `calculation-required`，名称循环返回 `circular-name`。名称内部裸名称按全局绑定，`!名称` 只查上下文表的局部定义；依据为[实际 Excel 网页版求值记录](evidence/excel-web-name-semantics/README.md)。旧[独立 Calc 证据](evidence/xlsx-reference-semantics.json)中随第一张工作表变化的绑定保留为生产者差异，不再以歧义拒绝代替已验证的求值语义。该证据同时验证局部限定、联合重复计数、交集及多区域范围运算；`python3 scripts/check-xlsx-reference-semantics.py` 检查三组输入、三张表和 72 个结果。结构编辑与桌面 Excel/WPS 不由这些求值记录验收。
