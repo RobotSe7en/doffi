@@ -541,6 +541,12 @@ test("workbook search identifies hidden-sheet matches without changing visibilit
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
   await expect(page.getByRole("tab", { name: "Hidden", exact: true })).toHaveCount(0);
 });
+test("mounted direct structured formula fill differs from copy and retains locked columns and history", async ({ page }) => {
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-structured-fill' }), { kind: 'workbook' });
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookStructuredFill } = await import('./workbook-structured-fill-cases.js'); await exerciseWorkbookStructuredFill(page, false);
+});
 test("mounted workbook fill shifts formulas, extends numeric seeds and cancels before source publication", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode }); await page.evaluate(entries => window.workbookEditor.mount(entries), editorSource(false, false));
   await page.evaluate(() => window.workbookEditor.select(0, 0, 2, 1)); await page.getByRole("button", { name: "向下填充", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());

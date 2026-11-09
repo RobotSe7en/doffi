@@ -1,4 +1,4 @@
-import { captureWorkbookModel, copyWorkbookFormula, DocumentError, readWorkbookCellSource, replaceWorkbookCellText, resolveWorkbookCellFormat, WorkbookRangeSchema } from "@doffi/core";
+import { captureWorkbookModel, createWorkbookFormulaFiller, DocumentError, readWorkbookCellSource, replaceWorkbookCellText, resolveWorkbookCellFormat, WorkbookRangeSchema } from "@doffi/core";
 import type { DeepReadonly, DocumentTransaction, WorkbookCellInput, WorkbookCellSource, WorkbookCoordinate, WorkbookModel, WorkbookRange } from "@doffi/core";
 import { workbookSeriesAxis, workbookSeriesUnit } from "./fill-selection.js";
 import { workbookTextSplice } from "./text-projection.js";
@@ -36,6 +36,7 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
   };
   const seeds = range(source), destination = range(target), model = captureWorkbookModel(input), snapshot = model.snapshot();
   const sheet = snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === sheetId); if (!sheet) invalid("Workbook fill requires an existing worksheet.");
+  const fillFormula = createWorkbookFormulaFiller(model);
   const rows = seeds.to.row - seeds.from.row + 1, columns = seeds.to.column - seeds.from.column + 1;
   const total = (destination.to.row - destination.from.row + 1) * (destination.to.column - destination.from.column + 1);
   if (total > config.maxCells || rows * columns > config.maxCells) throw new DocumentError("ResourceLimitExceeded", "Workbook fill exceeds its cell budget.");
@@ -107,7 +108,7 @@ export async function createWorkbookFillTransaction(input: WorkbookModel, sheetI
         const value = base + (axis === "row" ? row - seeds.from.row : column - seeds.from.column) / unit * increment;
         if (!Number.isFinite(value)) invalid("A filled series value exceeds its finite range."); source = { kind: "value", value: { type: "number", value } };
       } else source = { kind: "value", value: { type: "blank" } };
-    } else if (source.kind === "formula") source = { kind: "formula", expression: copyWorkbookFormula(source.expression, template.at, { row, column }) };
+    } else if (source.kind === "formula") source = { kind: "formula", expression: fillFormula(source.expression, template.at, { row, column }) };
     if (row !== template.at.row || column !== template.at.column) {
       if (config.format === "preserve" && config.mode === "copy" && source.kind !== "formula") {
         const value = model.getCell(sheetId, template.at.row, template.at.column)?.value ?? { type: "blank" as const }, previous = model.getCell(sheetId, row, column);

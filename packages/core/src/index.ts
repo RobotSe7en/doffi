@@ -40,6 +40,8 @@ export type { FormulaExpression as WorkbookFormulaExpression, FormulaOrigin as W
 export { printFormula as printWorkbookFormula } from "./workbook/formula-print.js";
 export { printR1C1Formula as printWorkbookR1C1Formula } from "./workbook/formula-print.js";
 export { copyFormula as copyWorkbookFormula } from "./workbook/formula-rewrite.js";
+export { createWorkbookFormulaFiller } from "./workbook/formula-fill.js";
+export type { WorkbookFormulaFiller } from "./workbook/formula-fill.js";
 export { rewriteFormula as rewriteWorkbookFormula } from "./workbook/formula-rewrite.js";
 export type { FormulaLocation as WorkbookFormulaLocation, FormulaReferenceChange as WorkbookFormulaReferenceChange, FormulaRewriteBindings as WorkbookFormulaRewriteBindings } from "./workbook/formula-rewrite.js";
 export { resolveWorkbookSortLayout } from "./workbook/sort-layout.js";

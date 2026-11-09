@@ -295,6 +295,13 @@ test('mounted Worker native whole-table cut keeps its definition across sheets a
   expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
 
+test('mounted Worker structured formula fill differs from copy and retains locked columns and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-structured-fill' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookStructuredFill } = await import('./workbook-structured-fill-cases.js'); await exerciseWorkbookStructuredFill(page, true);
+});
 test('mounted Worker partial table cuts keep native identities, current inputs, totals and overwrite protection', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-partial-table' }), { kind: 'workbook' });
