@@ -5,6 +5,7 @@ import { readLimits } from "./document/validation.js";
 import { readManifest } from "./document/manifest.js";
 import { DocumentError } from "./errors.js";
 import { openWorkbookModel } from "./workbook/model.js";
+import { takeSerializedWorkbook } from "./workbook/source.js";
 
 export { DEFAULT_DOCUMENT_READ_LIMITS } from "./document/validation.js";
 
@@ -16,7 +17,7 @@ export function openDocument(input: DocumentPackage, options: OpenDocumentOption
   const limits = readLimits(options.limits);
   const files = copyPackage(input, limits), manifest = readManifest(files);
   if (options.kind !== undefined && options.kind !== manifest.kind) throw new DocumentError("UnsupportedFormat", "Document kind does not match the expected format.");
-  if (manifest.kind === "workbook") return openWorkbookModel(files, manifest, limits, options.workbookLimits);
+  if (manifest.kind === "workbook") return openWorkbookModel(files, manifest, limits, options.workbookLimits, takeSerializedWorkbook(input));
   const state = buildDocumentState(files, limits);
   return Object.freeze({
     kind: state.snapshot.manifest.kind,

@@ -145,6 +145,37 @@ test("column deletion remaps absolute filter keys and removes a fully deleted fi
   apply(s, [axis("column", "delete", 1, 3)]); expect(s.snapshot().metadata.workbook.sheets[0]!.autoFilter).toBeUndefined();
 });
 
+test.each([
+  { index: 1, count: 1, target: range(1, 1, 4, 3), expected: number(80) },
+  { index: 0, count: 3, target: range(0, 1, 2, 3), expected: number(90) },
+  { index: 1, count: 5, target: undefined, expected: { type: 'error' as const, value: '#REF!' as const } },
+  { index: 1, count: 4, target: range(1, 1, 1, 3), expected: number(40) },
+])('ordinary filter header deletion maps the remaining range and preserves current criteria and history (%j)', ({ index, count, target, expected }) => {
+  const cells = ['Item', 'Count', 'Amount'].map((value, offset) => ({ row: 1, column: offset + 1, value: { type: 'text' as const, value } }));
+  const values = [10, 20, 30, 40].flatMap((amount, offset) => [
+    { row: offset + 2, column: 1, value: { type: 'text' as const, value: offset === 1 ? 'skip' : 'keep' } },
+    { row: offset + 2, column: 2, value: number(offset + 1) }, { row: offset + 2, column: 3, value: number(amount) },
+  ]);
+  const s = session(scalarWorkbook([...cells, ...values], metadata => {
+    const sheet = metadata.workbook.sheets[0]!;
+    sheet.autoFilter = { range: range(1, 1, 5, 3), columns: [
+      { column: 1, hiddenButton: false, showButton: true, criterion: { kind: 'values', blank: false, values: ['keep'], dates: [] } },
+      { column: 2, hiddenButton: false, showButton: true, criterion: { kind: 'custom', and: false, tests: [{ operator: 'greaterThan', value: '1' }] } },
+    ] };
+    const observer = { ...sheet, sheetId: 'observer', name: 'Observer' }; delete observer.autoFilter; metadata.workbook.sheets.push(observer);
+  }));
+  apply(s, [{ op: 'setWorkbookCells', sheetId: 'observer', cells: [{ row: 0, column: 0, source: { kind: 'formula', expression: '=SUBTOTAL(9,Sheet1!D3:D6)' } }] }]);
+  s.clearHistory(); const before = s.snapshot(), columns = before.metadata.workbook.sheets[0]!.autoFilter!.columns;
+  apply(s, [axis('row', 'delete', index, count)]);
+  const filter = s.snapshot().metadata.workbook.sheets[0]!.autoFilter;
+  expect(filter?.range).toEqual(target); if (target) expect(filter!.columns).toEqual(columns);
+  s.calculateSync(); expect(s.getCalculatedCell('observer', 0, 0)).toMatchObject({ state: 'valid', value: expected });
+  expect(s.history().undoSteps).toBe(1); expect(openDocument(new Map(s.serialize()), { kind: 'workbook' }).snapshot()).toEqual(s.snapshot());
+  s.undo(); expect(s.snapshot().metadata.workbook.sheets).toEqual(before.metadata.workbook.sheets);
+  s.calculateSync(); expect(s.getCalculatedCell('observer', 0, 0)).toMatchObject({ value: number(70) });
+  s.redo(); s.calculateSync(); expect(s.getCalculatedCell('observer', 0, 0)).toMatchObject({ value: expected });
+});
+
 test("qualified absolute defined names follow references", () => {
   const s = session(scalarWorkbook([{ row: 2, column: 0, value: number(7) }, { row: 5, column: 0, value: number(99), formula: "=Rate" }], metadata => {
     metadata.workbook.names = [{ nameId: "rate", name: "Rate", origin: { row: 0, column: 0 }, expression: "=Sheet1!$A$3" }];

@@ -4,6 +4,7 @@ import { createWorkbookLayoutService } from "@doffi/render";
 import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookEditorView } from "@doffi/editor";
 import { decodeTestPackage } from "./package-transport.js";
+import { hostOwnershipProbeLayout } from "./workbook-host-probe.js";
 import type { TestPackage } from "./package-transport.js";
 import { measureWorkbookCellAppearance, measureWorkbookCellBounds, measureWorkbookCellDecorations, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from "./workbook-view-observer.js";
 let session: WorkbookSession, editor: WorkbookEditorView, container: HTMLDivElement;
@@ -78,10 +79,10 @@ export function inspect() {
     cells: [session.getCell("sheet-1", 0, 0), session.getCell("sheet-1", 0, 1)], calculated: session.getCalculatedCell("sheet-1", 0, 1),
     cleanSource: [...session.serialize()].filter(([path]) => path.endsWith(".html")).every(([, bytes]) => !/contenteditable|data-office-view|textarea/.test(new TextDecoder().decode(bytes))) };
 }
-export function external(value: string, at = { row: 0, column: 0 }): void {
+export function external(value: string, at = { row: 0, column: 0 }, preparation?: TransactionPrepareOptions): void {
   const manifest = session.snapshot().manifest;
   session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision,
-    operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ ...at, source: { kind: "value", value: { type: "text", value } } }] }] }));
+    operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ ...at, source: { kind: "value", value: { type: "text", value } } }] }] }, preparation));
 }
 export function tableStyleSource() { const workbook = session.snapshot().metadata.workbook; return { tableStyles: workbook.tableStyles, defaultTableStyle: workbook.defaultTableStyle }; }
 export function cell(sheetId: string, row: number, column: number) { return session.getCell(sheetId, row, column); }
@@ -118,7 +119,8 @@ export function cancelPreparationAtProgress(): void {
 }
 export function dispose(): { revision: number; usable: boolean } {
   observed?.dispose(); observed = undefined;
-  editor.dispose(); const revision = session.snapshot().manifest.revision; external("host remains usable"); container.remove();
+  editor.dispose(); const revision = session.snapshot().manifest.revision;
+  external("host remains usable", undefined, { measureWorkbookLayout: hostOwnershipProbeLayout }); container.remove();
   return { revision, usable: session.getCell("sheet-1", 0, 0)?.value.type === "text" };
 }
 (window as unknown as { workbookEditor: unknown }).workbookEditor = { tableStyleSource, mount, mountObserved, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCellBounds, displayedCell, displayedTextStyles, settled, perform, mutateInputOnPending, performWithPendingMutation, measuredApply, select, inspect, external, cell, paste, point, cancelFillAtProgress, cancelSearchAtProgress, cancelPreparationAtProgress, dispose };

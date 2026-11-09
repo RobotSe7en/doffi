@@ -176,8 +176,6 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
   }
   function filter(value: WorkbookAutoFilter): WorkbookAutoFilter | undefined {
     const range = rectangle(value.range); if (!range) return undefined;
-    if (axis === "row" && action === "delete" && point(value.range.from.row) === undefined)
-      invalid("Deleting a surviving filter's header is not yet connected.");
     const columns = value.columns.flatMap(item => {
       const column = axis === "column" ? point(item.column) : item.column; return column === undefined ? [] : [{ ...item, column }];
     });

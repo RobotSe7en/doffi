@@ -3,6 +3,34 @@ import { createDocumentSession, createWorkbookCalculator, createWorkbookScalarEv
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 const location = (row: number, column = 0) => ({ sheetId: "sheet-1", row, column });
 const number = (value: number) => ({ type: "number" as const, value });
+test("completed result projections remain immutable and bound to their original batch after later calculation and disposal", () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(2) }, { row: 0, column: 1, value: number(999), formula: '=A1+1' }]));
+  const calculator = createWorkbookCalculator(session), first = calculator.calculateSync();
+  session.commit(session.prepare({ protocolVersion: 1, documentId: 'scalar-kernel', baseRevision: 0, operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row: 0, column: 0, source: { kind: 'value', value: number(9) } }] }] }));
+  const next = calculator.calculateSync(); calculator.dispose(); session.dispose();
+  expect(first.cells).toEqual([expect.objectContaining({ revision: 0, batchId: first.batchId, value: number(3) })]);
+  expect(first.cells).toBe(first.cells); expect(next.cells[0]).toMatchObject({ revision: 1, batchId: next.batchId, value: number(10) });
+  expect(Object.isFrozen(first.cells)).toBe(true); expect(Object.isFrozen(first.cells[0])).toBe(true);
+  expect(Object.isFrozen(first.cells[0]!.state === 'valid' && first.cells[0]!.value)).toBe(true);
+});
+test("completed calculation seeds fork isolated candidate results without altering the live calculator or its budgets", async () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(2) },
+    { row: 0, column: 1, value: number(999), formula: "=A1+1" }, { row: 1, column: 1, value: number(999), formula: "=4" }]));
+  const live = createWorkbookCalculator(session), seed = live.calculateSync(), m = session.snapshot().manifest;
+  const restored = createWorkbookCalculator(session, {}, seed);
+  expect(restored.getCell(location(0, 1))).toMatchObject({ state: "valid", value: number(3), batchId: seed.batchId }); restored.dispose();
+  const candidate = session.prepare({ protocolVersion: 1, documentId: m.documentId, baseRevision: m.revision, operations: [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column: 0, source: { kind: "value", value: number(9) } }] }] });
+  const fork = createWorkbookCalculator(candidate.model, {}, seed);
+  expect(fork.calculateSync()).toMatchObject({ calculated: 1, reused: 1 }); expect(fork.getCell(location(0, 1))).toMatchObject({ value: number(10) });
+  expect(live.getCell(location(0, 1))).toMatchObject({ value: number(3) }); expect(live.calculateSync()).toMatchObject({ calculated: 0, reused: 2 });
+  const aborted = { aborted: false };
+  await expect(fork.calculate({ signal: aborted, yield: async () => { aborted.aborted = true; } })).rejects.toMatchObject({ code: "OperationCancelled" });
+  expect(fork.getCell(location(0, 1))).toMatchObject({ value: number(10) });
+  const bounded = createWorkbookCalculator(candidate.model, { maxFormulas: 1 }, seed);
+  expect(() => bounded.calculateSync()).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
+  expect(() => createWorkbookCalculator(candidate.model, {}, JSON.parse(JSON.stringify(seed)))).toThrowError(expect.objectContaining({ code: "InvalidOperation" }));
+  bounded.dispose(); fork.dispose(); live.dispose(); session.discard(candidate); session.dispose();
+});
 test("ISBLANK reads source presence even for unsupported, empty-string and cyclic formulas", () => {
   const model = scalarWorkbook([
     { row: 0, column: 0, value: number(999), formula: "=FUTUREFUNC()" }, { row: 1, column: 0, value: number(999), formula: '=ISBLANK(A2)' },

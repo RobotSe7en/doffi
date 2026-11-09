@@ -332,6 +332,12 @@ test("mounted direct native local-name copy creates the missing target scope and
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
 });
 
+test('mounted direct ordinary filter header deletion keeps criteria, current subtotal and one-step history', async ({ page }) => {
+  await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-headers.xlsx'), { documentId: 'mounted-filter-headers' }), { kind: 'workbook' });
+  await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(model.serialize()));
+  const { exerciseWorkbookFilterHeaders } = await import('./workbook-filter-header-cases.js'); await exerciseWorkbookFilterHeaders(page, false);
+});
 test("mounted direct partial table cuts keep native identities, current inputs, totals and overwrite protection", async ({ page }) => {
   await page.evaluate(() => window.workbookInput.dispose()); await page.addScriptTag({ content: editorCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-partial-table' }), { kind: 'workbook' });

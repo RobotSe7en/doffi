@@ -16,7 +16,7 @@ import { createSessionLifecycle } from "./lifecycle.js";
 import type { SessionPreparationControl, SessionPrepared } from "./lifecycle.js";
 import { finishWorkbookPreparation, finishWorkbookPreparationAsync } from "./workbook-preparation.js";
 import type { WorkbookPreparation } from "./workbook-preparation.js";
-import { compareWorkbooks, compareWorkbookSteps, retainedWorkbookBytes, sameWorkbookSource } from "../workbook/source-changes.js";
+import { compareWorkbooks, compareWorkbookSteps, retainedWorkbookBytes, sameWorkbookFiles, sameWorkbookSource } from "../workbook/source-changes.js";
 import { WorkbookCellEdit } from "./workbook-cells.js";
 import { checkResourceUse, stageResourceFiles } from "./resources.js";
 import { validateWorkbookCandidateSteps } from "./workbook-validation.js";
@@ -53,6 +53,17 @@ const names = new Set<string>(WorkbookOperationSchema.options.map(schema => sche
 export function isWorkbookOperation(operation: DocumentOperation): operation is WorkbookOperation { return names.has(operation.op); }
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
 
+/** Cell values and definitions can change automatic row heights on another
+ * worksheet through formulas. Pure metadata and explicit drawing/comment edits
+ * do not change the grid underneath an existing fixed-response owner. */
+function gridMayChange(operation: DocumentOperation): boolean {
+  if (!isWorkbookOperation(operation) || isWorkbookDrawingOperation(operation) || isWorkbookCommentOperation(operation)
+    || operation.op === "copyWorkbookComments" || operation.op === "copyWorkbookObjects") return false;
+  if (operation.op === "updateWorkbookSheet") return Object.keys(operation.changes).some(key => !["name", "visibility", "frozen", "showGridLines", "tabColor"].includes(key));
+  if (operation.op === "setWorkbookSettings") return operation.changes.calculationMode !== undefined || Object.hasOwn(operation.changes, "defaultTableStyle");
+  return true;
+}
+
 export function createWorkbookSession(document: WorkbookModel, options: DocumentSessionOptions): WorkbookSession {
   const limits = readLimits(options.limits);
   const reopen = (previous: WorkbookModel, files: Map<string, Uint8Array>): WorkbookModel => {
@@ -66,7 +77,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     const files = new Map(workbookSource(model)!.files), manifest = { ...model.snapshot().manifest, revision };
     const annotations = model.snapshot().annotations.map(annotation => annotation.status === "needs_reanchor" ? annotation : { ...annotation, baseRevision: revision });
     files.set("manifest.json", encode(JSON.stringify(manifest))); files.set(manifest.annotations, encode(JSON.stringify(annotations)));
-    return reopen(model, files);
+    const next = reopen(model, files); workbookSource(model)!.releaseReads(); return next;
   }
   function* preparationSteps(base: WorkbookModel, transaction: DocumentTransaction, allocate: () => string, resolvedIds?: readonly string[], preparation?: TransactionPrepareOptions): WorkbookPreparation<SessionPrepared<WorkbookModel>> {
     if (preparation !== undefined && (!preparation || typeof preparation !== "object" || Array.isArray(preparation) || Object.keys(preparation).some(name => !["assets", "calculationContext", "validation", "measureWorkbookLayout"].includes(name)))) invalid("Invalid workbook preparation options.");
@@ -98,7 +109,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     const styles = new SourceStyleEdit(files, manifest.styles, limits);
     const richContent = new WorkbookContentEdit(manifest, files, limits, allocate, workbook), mapping: WorkbookStructureMapping[] = [], hyperlinkSheets = new Set<string>(), mergeSheets = new Set<string>();
     const commentMapping = new WorkbookCommentMapping(), noteTransports = new WorkbookNoteTransportTracker(), drawingTransports = new WorkbookDrawingTransportTracker(), copiedObjects = createWorkbookObjectCopyState();
-    let measuredModel = base;
+    let measuredModel = base, unmeasuredGrid = false;
     function* projectLayoutModel(): WorkbookPreparation<WorkbookModel> {
       const projectedManifest = parseContract("document-manifest", manifest); if (projectedManifest.kind !== "workbook") invalid("Expected a workbook candidate.");
       const projectedFiles = new Map(files);
@@ -106,6 +117,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       richContent.project(projectedFiles);
       projectedFiles.set("manifest.json", encode(JSON.stringify(projectedManifest)));
       projectedFiles.set(manifest.metadata, encode(JSON.stringify(metadata))); projectedFiles.set(manifest.annotations, encode(JSON.stringify(annotations)));
+      if (sameWorkbookFiles(measuredModel, projectedFiles)) return measuredModel;
       const loader = openWorkbookModelSteps(projectedFiles, projectedManifest, limits, options.workbookLimits, measuredModel);
       try {
         for (;;) {
@@ -149,8 +161,9 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       for (;;) { const value = drawingCapture.next(); if (value.done) { drawingTransport = value.value; break; } yield { kind: "progress", value: { phase: "validation", ...value.value } }; }
       const copySheets = [...new Set([...(operation.op === "copyWorkbookComments" ? workbookCommentCopySheets(workbook, annotations, operation) : operation.op === "copyWorkbookObjects" ? workbookObjectCopySheets(workbook, operation) : []), ...noteTransport?.sheetIds ?? [], ...drawingTransport?.sheetIds ?? []])];
       if (copySheets.length && !measureLayout) invalid("Copying or transporting cell-bound objects and notes requires a workbook layout measurer.");
+      const owners = measureLayout || gridMayChange(operation) ? (yield* workbookLayoutOwners(workbook, annotations))! : [];
+      const unmeasuredBefore = !measureLayout && owners.length ? (yield* projectLayoutModel())! : undefined;
       if (measureLayout) {
-        const owners = (yield* workbookLayoutOwners(workbook, annotations))!;
         if (owners.length || copySheets.length) {
           const model = (yield* projectLayoutModel())!;
           layoutBefore = (yield* measureWorkbookCandidate(model, [...new Set([...owners.map(owner => owner.sheetId), ...copySheets])], measureLayout, limits.maxNodes, context))!;
@@ -237,6 +250,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         else if (defaultTableStyle !== undefined) workbook.defaultTableStyle = defaultTableStyle;
       }
       else editWorkbookSheet(workbook, cells, richContent, annotations, operation, allocate, mapping);
+      if (unmeasuredBefore && !sameWorkbookSource(unmeasuredBefore, (yield* projectLayoutModel())!)) unmeasuredGrid = true;
       if (drawingTransport) for (const value of drawingTransport.project(layoutBefore ?? invalid("Moving drawings requires their measured source projection."))) yield { kind: "progress", value: { phase: "validation", ...value } };
       if (measureLayout && boundsBefore && layoutBefore) {
         const owners = (yield* workbookLayoutOwners(workbook, annotations))!.filter(owner => boundsBefore!.has(owner.key));
@@ -294,9 +308,10 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     yield { kind: "progress", value: { phase: "validation", completed: 0, total: 0 } };
     validatePackage(files, limits);
     const loadedManifest = readManifest(files); if (loadedManifest.kind !== "workbook") invalid("Workbook transactions cannot change the document kind.");
-    const loader = openWorkbookModelSteps(files, loadedManifest, limits, options.workbookLimits, base);
+    const loader = sameWorkbookFiles(measuredModel, files) ? undefined : openWorkbookModelSteps(files, loadedManifest, limits, options.workbookLimits, measuredModel);
     let next: WorkbookModel;
-    try {
+    if (!loader) next = measuredModel;
+    else try {
       for (;;) {
         const step = loader.next();
         if (step.done) { next = step.value ?? invalid("Workbook loading did not complete."); break; }
@@ -314,6 +329,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
         yield { kind: "progress", value: { phase: "validation", ...step.value } };
       }
     } finally { comparison.return(undefined); }
+    if (unmeasuredGrid && !sameWorkbookSource(base, next)) invalid("Changing a grid with fixed-response drawings or notes requires a workbook layout measurer.");
     yield* validateWorkbookCandidateSteps(base, next, diff.changedRanges, captured);
     yield { kind: "progress", value: { phase: "validation", completed: 1, total: 1 } };
     bindWorkbookObjectCopies(next, copiedObjects.sources);
@@ -324,6 +340,13 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
   const boundary = createSessionLifecycle<WorkbookModel, WorkbookModel>(initial, { model: state => state, prepare, prepareAsync, rebase, compare: compareWorkbooks,
     same: sameWorkbookSource, retained: retainedWorkbookBytes, identities: model => workbookSource(model)?.content?.nodeIds() ?? [] }, options);
   const current = boundary.state;
+  // History retains immutable source, not every revision's warmed read cache.
+  // Captured models remain readable and reconstruct only requested values.
+  let reading: WorkbookModel | undefined = initial;
+  boundary.lifecycle.subscribe(event => {
+    if (event.type !== "documentChanged") return;
+    const previous = reading; reading = current(); workbookSource(previous!)!.releaseReads();
+  });
   const calculator = createWorkbookCalculator(current, options.calculationLimits);
   const interactionBudgets = sessionLimits(options.sessionLimits), reviews = new WeakMap<WorkbookCandidateChange, WorkbookProposalReview>();
   let interactionDisposed = false;
@@ -358,7 +381,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     getProposalReview: candidate => { current(); return reviews.get(candidate); },
     calculate: calculator.calculate, calculateSync: calculator.calculateSync,
     getCalculatedCell: (sheetId, row, column) => calculator.getCell({ sheetId, row, column }),
-    dispose: () => { boundary.lifecycle.dispose(); interactionDisposed = true; calculator.dispose(); },
+    dispose: () => { if (reading) workbookSource(reading)!.releaseReads(); reading = undefined; boundary.lifecycle.dispose(); interactionDisposed = true; calculator.dispose(); },
   });
   registerWorkbookModelProvider(session, current); return session;
 }

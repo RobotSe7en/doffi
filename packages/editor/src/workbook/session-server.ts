@@ -1,5 +1,5 @@
 import { captureWorkbookModel, copyWorkbookScalarContext, createWorkbookCalculator, DocumentError, readWorkbookChangeImpact, WorkbookCoordinateSchema, WorkbookRangeSchema } from "@doffi/core";
-import type { WorkbookCandidateChange, WorkbookCalculationResult, WorkbookModel, WorkbookSession, TransactionPrepareOptions, WorkbookInteractionRequestInput } from "@doffi/core";
+import type { WorkbookCandidateChange, WorkbookCalculationResult, WorkbookLayoutRequest, WorkbookModel, WorkbookSession, TransactionPrepareOptions, WorkbookInteractionRequestInput } from "@doffi/core";
 import { serveWorkbookReads } from "@doffi/render";
 import type { WorkbookReadServer } from "@doffi/render";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
@@ -24,6 +24,8 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
   if (session.kind !== "workbook") invalidSessionTransport("Workbook session endpoints require their owning core session.");
   const config = sessionTransportConfig(options), pending = new Map<number, AbortController>(), jobs = new Map<number, Promise<void>>(), views = new Set<WorkbookReadServer>();
   const viewRequests = new Map<number, { server: WorkbookReadServer; model: WorkbookModel; calculation?: WorkbookCalculationResult }>();
+  let calculationSeed: WorkbookCalculationResult | undefined;
+  let previousLayout: { request: WorkbookLayoutRequest; calculation?: WorkbookCalculationResult } | undefined;
   const candidates = new Map<number, { candidate: WorkbookCandidateChange; requestId: number; views: Set<WorkbookReadServer>; preparation?: TransactionPrepareOptions }>();
   let disposed = false, highestId = 0, nextCandidate = 0, preparing = false;
   const state = (): WorkbookSessionState => { const manifest = session.snapshot().manifest; return { documentId: manifest.documentId, revision: manifest.revision, history: session.history() }; };
@@ -52,10 +54,13 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
   });
   const tasks = createWorkbookTaskQueue(), yieldTask = (): Promise<void> => tasks.yield();
   async function calculate(model: WorkbookModel, abort: AbortController, progress: (value: WorkbookSessionProgress) => void, preparation?: TransactionPrepareOptions, guard?: () => void): Promise<WorkbookCalculationResult> {
-    const calculator = captureWorkbookModel(session) === model ? undefined : createWorkbookCalculator(model);
+    const calculator = captureWorkbookModel(session) === model ? undefined : createWorkbookCalculator(model, {}, calculationSeed);
     progress({ phase: "calculation", completed: 0, total: 0 });
-    try { return await (calculator?.calculate ?? session.calculate)({ signal: abort.signal, yield: async () => { await yieldTask(); guard?.(); }, ...calculationOptions(preparation?.calculationContext),
-      onProgress: value => progress({ phase: "calculation", completed: value.completed, total: value.total }) }); }
+    try {
+      const result = await (calculator?.calculate ?? session.calculate)({ signal: abort.signal, yield: async () => { await yieldTask(); guard?.(); }, ...calculationOptions(preparation?.calculationContext),
+        onProgress: value => progress({ phase: "calculation", completed: value.completed, total: value.total }) });
+      calculationSeed = result; return result;
+    }
     finally { calculator?.dispose(); }
   }
   async function prepare(payload: Record<string, unknown>, abort: AbortController, progress: (value: WorkbookSessionProgress) => void, requestId: number): Promise<void> {
@@ -74,9 +79,10 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
         const calculation = request.model.snapshot().metadata.workbook.calculationMode === "auto" ? await calculate(request.model, abort, progress,
           request.calculationContext ? { calculationContext: request.calculationContext } : undefined, guard) : undefined;
         guard();
-        return requestWorkbookLayout(request, calculation, abort.signal, config, (value, readPort, replyPort) => {
+        const result = await requestWorkbookLayout(request, calculation, abort.signal, config, (value, readPort, replyPort) => {
           send({ id: requestId, event: "layout", value, readPort, replyPort }, [readPort, replyPort]);
-        });
+        }, previousLayout);
+        previousLayout = { request, ...(calculation ? { calculation } : {}) }; return result;
       } };
       let transaction, clipboardDiagnostics: readonly string[] | undefined;
       const common = { signal: abort.signal, yield: yieldTask };
@@ -262,6 +268,7 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
   }
   function dispose(): void {
     if (disposed) return; disposed = true; unsubscribe(); tasks.dispose();
+    calculationSeed = undefined; previousLayout = undefined;
     for (const abort of pending.values()) abort.abort(); pending.clear();
     for (const handle of [...candidates.keys()]) release(handle);
     for (const view of views) view.dispose(); views.clear(); viewRequests.clear();

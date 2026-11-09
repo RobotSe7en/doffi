@@ -29,6 +29,14 @@ export function formatGeneralNumber(value: number, decimal: string, availableWid
       add(rounded.integer, rounded.fraction, "", "decimal", Math.max(1, leading + 1 + places));
     }
   }
+  // A full-precision decimal outranks every scientific candidate (ties
+  // prefer decimal). Measure it first, without constructing unused rounds.
+  const exact = candidates.find(candidate => candidate.precision === significant);
+  if (exact) {
+    const width = measure(exact.text);
+    if (!Number.isFinite(width) || width < 0) invalid("General number-format measurement must be finite and nonnegative.");
+    if (width <= availableWidth) return { kind: "text", text: exact.text, notation: exact.notation };
+  }
   if (value !== 0) for (let precision = 15; precision >= 1; precision--) {
     let exponent = leading, rounded = decimalMagnitude(value, precision - 1, powerAdjustment - exponent);
     if (rounded.integer.length > 1) { exponent++; rounded = decimalMagnitude(value, precision - 1, powerAdjustment - exponent); }
@@ -39,6 +47,7 @@ export function formatGeneralNumber(value: number, decimal: string, availableWid
   // same width. Equal precision prefers familiar fixed notation.
   candidates.sort((a, b) => b.precision - a.precision || (a.notation === b.notation ? 0 : a.notation === "decimal" ? -1 : 1));
   for (const candidate of candidates) {
+    if (candidate === exact) continue; // Its one measurement already failed.
     const width = measure(candidate.text);
     if (!Number.isFinite(width) || width < 0) invalid("General number-format measurement must be finite and nonnegative.");
     if (width <= availableWidth) return { kind: "text", text: candidate.text, notation: candidate.notation };

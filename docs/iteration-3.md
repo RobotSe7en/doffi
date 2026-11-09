@@ -183,7 +183,7 @@ Word/PPT 单入口包继续可读；工作簿使用明确的 chunks 分支。工
 
 验证严格契约和同源 Schema、跨块引用及安全输入、公式类型和错误语义、原子事务和映射、真实 IME、三引擎和旧 Chromium/Safari、两类批注、提案作用域、打印、Worker/资源/子进程释放及独立打包。范围限额和性能目标分别验证。
 
-已提供 `fixtures:xlsx`、`check:xlsx-fixtures`、`check:xlsx-reference` 和单独的 `record:xlsx-reference`。编辑阶段已增加 `check:workbook-calculation` 与 `check:workbook-filter-calculation` 的独立原生来源／固定 Calc 复现；两项基础证据不代表 R3-10 完整验收。`check:workbook-copy-sheet` 重做十组整表复制及官方 XSD／OPC，保留表公式和现代线程的生产者差异，安全拒绝的歧义名称组合仍须完成。`check:workbook-performance`、`check:xlsx-export`、`check:workbook-closure` 尚未实现，落地后才记录结果。普通检查不改参考基线。
+已提供 `fixtures:xlsx`、`check:xlsx-fixtures`、`check:xlsx-reference` 和单独的 `record:xlsx-reference`。编辑阶段已增加 `check:workbook-calculation` 与 `check:workbook-filter-calculation` 的独立原生来源／固定 Calc 复现；两项基础证据不代表 R3-10 完整验收。`check:workbook-copy-sheet` 重做十组整表复制及官方 XSD／OPC，保留表公式和现代线程的生产者差异，安全拒绝的歧义名称组合仍须完成。`check:workbook-performance` 已接入固定资源的实际 Worker 编辑器、含混合响应绘图的大表、全量计算、100 次编辑／完整历史及万行排序／修改取消，当前仍在优化和验收，不记为通过；`check:xlsx-export`、`check:workbook-closure` 尚未实现。普通检查不改参考基线。
 
 原生链路必须包含独立来源导入、当前源修改、导出、结构检查、Calc 实际修改值/公式/表格/图表/备注后重存、SDK 重新导入。独立打包在工作区外安装五个 tarball，普通 JS 不安装 React，不使用源码私有路径。每阶段保留 Word/PPT 回归。
 

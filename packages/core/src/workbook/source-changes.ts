@@ -12,11 +12,14 @@ interface WorkbookSourceDiff {
   readonly changedAnnotationIds: readonly string[];
   readonly mapping: ChangeMapping;
 }
+const comparisons = new WeakMap<WorkbookModel, WeakMap<WorkbookModel, WorkbookSourceDiff>>();
 export function compareWorkbooks(before: WorkbookModel, after: WorkbookModel, mapping?: ChangeMapping): WorkbookSourceDiff {
   const steps = compareWorkbookSteps(before, after, mapping);
   for (;;) { const next = steps.next(); if (next.done) return next.value ?? invalid("Workbook comparison did not complete."); }
 }
 export function* compareWorkbookSteps(before: WorkbookModel, after: WorkbookModel, mapping?: ChangeMapping): Generator<{ completed: number; total: number }, WorkbookSourceDiff | undefined> {
+  const known = comparisons.get(before)?.get(after);
+  if (known) return mapping === undefined ? known : freeze({ ...known, mapping: { nodes: known.mapping.nodes, textEdits: mapping.textEdits, workbook: mapping.workbook ?? [] } });
   const previous = workbookSource(before)!, next = workbookSource(after)!, changedRanges: WorkbookRangeChange[] = [], sheets = new Set<string>();
   const oldDescriptors = new Map(before.snapshot().manifest.chunks.map(chunk => [chunk.path, chunk]));
   const newDescriptors = new Map(after.snapshot().manifest.chunks.map(chunk => [chunk.path, chunk]));
@@ -65,11 +68,17 @@ export function* compareWorkbookSteps(before: WorkbookModel, after: WorkbookMode
   const changedAnnotationIds = [...new Set([...leftAnnotations.keys(), ...rightAnnotations.keys()])].filter(id => leftAnnotations.get(id) !== rightAnnotations.get(id));
   const annotationIds = new Set(changedAnnotationIds);
   for (const annotation of [...a.annotations, ...b.annotations]) if (annotationIds.has(annotation.annotationId) && annotation.anchor.kind === "cells") sheets.add(annotation.anchor.sheetId);
-  return freeze({ changes, affectedNodeIds: [...affected], affectedSheetIds: [...sheets], changedRanges, changedAnnotationIds,
+  const result = freeze({ changes, affectedNodeIds: [...affected], affectedSheetIds: [...sheets], changedRanges, changedAnnotationIds,
     mapping: { nodes: readonlyMap(nodes), textEdits: mapping?.textEdits ?? [], workbook: mapping?.workbook ?? [] } });
+  let values = comparisons.get(before); if (!values) { values = new WeakMap(); comparisons.set(before, values); }
+  values.set(after, mapping === undefined ? result : freeze({ ...result, mapping: { nodes: result.mapping.nodes, textEdits: [], workbook: [] } }));
+  return result;
 }
 export function sameWorkbookSource(before: WorkbookModel, after: WorkbookModel): boolean {
-  const left = workbookSource(before)!.files, right = workbookSource(after)!.files;
+  return sameWorkbookFiles(before, workbookSource(after)!.files);
+}
+export function sameWorkbookFiles(before: WorkbookModel, right: import("../runtime.js").DocumentPackage): boolean {
+  const left = workbookSource(before)!.files;
   if (left.size !== right.size) return false;
   for (const [path, bytes] of left) {
     const other = right.get(path);

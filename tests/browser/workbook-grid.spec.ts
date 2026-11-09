@@ -146,7 +146,7 @@ test('cached text keeps independent live UTF-16 projections, ownership, font inv
   const result = await page.evaluate(() => window.workbookGridHost.textCacheMeasurement());
   expect(result.offsets.map(part => part[2]).join('')).toBe('A😀\n禰󠄀B');
   expect(result.offsets[0]![0]).toBe(0); expect(result.offsets.at(-1)![1]).toBe('A😀\n禰󠄀B'.length);
-  for (const key of ['projectionsOwned', 'same', 'isolated', 'detached', 'atomic', 'evicted', 'bounded', 'invalidated', 'cleared', 'unchanged'] as const) expect(result[key], key).toBe(true);
+  for (const key of ['projectionsOwned', 'same', 'isolated', 'detached', 'atomic', 'evicted', 'warningsRefreshed', 'bounded', 'invalidated', 'cleared', 'unchanged'] as const) expect(result[key], key).toBe(true);
   expect(result.failures).toEqual(['ResourceLimitExceeded', 'ResourceLimitExceeded']);
 });
 
@@ -162,7 +162,7 @@ test('a cached window validates every new source and invalidates text when a pro
   const result = await page.evaluate(entries => window.workbookGridHost.windowLayoutMeasurement(entries,
     [{ sheetId: 'sheet-1', viewport: { widthPt: 350, heightPt: 120, scrollLeftPt: 0, scrollTopPt: 0 } }], false, true), encodeTestPackage(files));
   expect(result.unchanged).toBe(true); expect(result.cacheSafety).toHaveLength(1);
-  expect(result.cacheSafety[0]).toMatchObject({ rejected: 'InvalidDocument', rejectedNumeric: 'InvalidDocument', retained: true, changedText: '新的😀禰󠄀', leaked: 0 });
+  expect(result.cacheSafety[0]).toMatchObject({ rejected: 'InvalidDocument', rejectedNumeric: 'InvalidDocument', forkRetainsText: true, retained: true, changedText: '新的😀禰󠄀', leaked: 0 });
   expect(result.cacheSafety[0]!.offsets.map(part => part[2]).join('')).toBe('新的😀禰󠄀');
 });
 

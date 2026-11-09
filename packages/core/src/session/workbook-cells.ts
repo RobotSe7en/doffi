@@ -27,7 +27,8 @@ export function rangeContains(range: WorkbookRange, row: number, column: number)
 export function rangesIntersect(a: WorkbookRange, b: WorkbookRange): boolean {
   return a.from.row <= b.to.row && a.to.row >= b.from.row && a.from.column <= b.to.column && a.to.column >= b.from.column;
 }
-interface EditedChunk { descriptor: WorkbookChunkDescriptor; cells: Map<number, string>; pending: Set<number> }
+interface EditedChunk { descriptor: WorkbookChunkDescriptor; cells: Map<number, string>; pending: Set<number>;
+  serialized?: { readonly identity: string; readonly bytes: Uint8Array; readonly sha256: string } }
 const coordinate = (row: number, column: number): number => row * 16_384 + column;
 function cellTail(html: string): string {
   let quote = "";
@@ -178,6 +179,7 @@ export class WorkbookCellEdit {
   private store(sheetId: string, row: number, column: number, source: string, empty: boolean): void {
     const chunk = this.chunk(sheetId, row, column), key = coordinate(row, column);
     this.validatePending(chunk, key);
+    delete chunk.serialized;
     if (empty) chunk.cells.delete(key);
     else { chunk.cells.set(key, source); chunk.pending.add(key); }
   }
@@ -200,7 +202,7 @@ export class WorkbookCellEdit {
       for (const key of [...chunk.cells.keys()]) {
         const row = Math.floor(key / 16_384), column = key % 16_384;
         if (ranges.some(range => rangeContains(range, row, column))) {
-          if (mode === "all") { this.validatePending(chunk, key); chunk.cells.delete(key); }
+          if (mode === "all") { this.validatePending(chunk, key); chunk.cells.delete(key); delete chunk.serialized; }
           else this.set(sheetId, { row, column, source: { kind: "value", value: { type: "blank" } } });
         }
         if (++completed % 256 === 0) yield { completed, total };
@@ -219,6 +221,12 @@ export class WorkbookCellEdit {
     if (previous >= 0) html += "</tr>";
     const bytes = encode(html + "</tbody></table></body></html>"); checkLimit(bytes.byteLength, this.limits.maxFileBytes); return bytes;
   }
+  private serialized(chunk: EditedChunk): NonNullable<EditedChunk["serialized"]> {
+    const { sheetId, row, column } = chunk.descriptor, identity = JSON.stringify([sheetId, row, column]);
+    if (chunk.serialized?.identity === identity) return chunk.serialized;
+    const bytes = this.serialize(chunk.descriptor, chunk.cells);
+    return chunk.serialized = { identity, bytes, sha256: assetDigest(bytes) };
+  }
   /** Project pending chunks without pruning or changing the mutable editor.
    * An intermediate measurement must allow later operations to reuse a chunk. */
   *projectSteps(files: Map<string, Uint8Array>, manifest: WorkbookManifest): Generator<{ completed: number; total: number }, void> {
@@ -226,7 +234,7 @@ export class WorkbookCellEdit {
     for (const chunk of this.chunks.values()) {
       const descriptor = manifest.chunks.find(item => item.path === chunk.descriptor.path)!;
       if (!chunk.cells.size) { files.delete(descriptor.path); manifest.chunks = manifest.chunks.filter(item => item !== descriptor); }
-      else { const bytes = this.serialize(descriptor, chunk.cells); files.set(descriptor.path, bytes); descriptor.sha256 = assetDigest(bytes); }
+      else { const { bytes, sha256 } = this.serialized(chunk); files.set(descriptor.path, bytes); descriptor.sha256 = sha256; }
       yield { completed: ++completed, total: this.chunks.size };
     }
   }
@@ -234,12 +242,12 @@ export class WorkbookCellEdit {
     let completed = 0; const total = this.chunks.size;
     for (const chunk of this.chunks.values()) {
       if (!chunk.cells.size) { this.files.delete(chunk.descriptor.path); this.manifest.chunks = this.manifest.chunks.filter(item => item.path !== chunk.descriptor.path); yield { completed: ++completed, total }; continue; }
-      const bytes = this.serialize(chunk.descriptor, chunk.cells), previous = this.files.get(chunk.descriptor.path);
+      const { bytes, sha256 } = this.serialized(chunk), previous = this.files.get(chunk.descriptor.path);
       // Preserve original bytes when the final cell set is unchanged, including source syntax.
       const original = this.originals.get(chunk.descriptor.path);
       const originalCells = original?.readWindow({ ...chunk.descriptor, rows: CHUNK_ROWS, columns: CHUNK_COLUMNS });
       if (!(previous && originalCells?.length === chunk.cells.size && originalCells.every(cell => chunk.cells.get(coordinate(cell.row, cell.column)) === cell.html))
-        && !(previous && decodeText(previous) === decodeText(bytes))) { this.files.set(chunk.descriptor.path, bytes); chunk.descriptor.sha256 = assetDigest(bytes); }
+        && !(previous && decodeText(previous) === decodeText(bytes))) { this.files.set(chunk.descriptor.path, bytes); chunk.descriptor.sha256 = sha256; }
       yield { completed: ++completed, total };
     }
   }

@@ -15,6 +15,26 @@ it('bounds overlapping immutable reads by entry count with actual LRU eviction a
   expect(first.value).toEqual({ type: 'text', value: '😀禰󠄀' }); expect(first.text.length).toBe(5);
   expect(Object.isFrozen(first)).toBe(true); expect(Object.isFrozen(first.value)).toBe(true);
 });
+it('point cache hits update the same LRU and never expose implicit blanks or another sheet', () => {
+  const cache = new WorkbookCellReadCache(2), first = cache.read('s', source(0)); cache.read('s', source(1));
+  expect(cache.get('s', 0, 0)).toBe(first); cache.read('s', source(2));
+  expect(cache.get('s', 0, 1)).toBeUndefined(); expect(cache.get('other', 0, 0)).toBeUndefined(); expect(cache.get('s', 50, 0)).toBeUndefined();
+  expect(cache.get('s', 0, 0)).toBe(first);
+});
+it('keeps exact bounded LRU identities across repeated middle hits, misses and evictions', () => {
+  const cache = new WorkbookCellReadCache(7), expected = new Map<string, ReturnType<WorkbookCellReadCache['read']>>(); let seed = 20261110;
+  for (let index = 0; index < 1000; index++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const column = seed % 19, sheet = index % 3 ? 'first' : 'second', key = sheet + ':' + column, previous = expected.get(key);
+    const cell = cache.read(sheet, source(column));
+    if (previous) expect(cell).toBe(previous);
+    expected.delete(key); if (expected.size === 7) expected.delete(expected.keys().next().value!); expected.set(key, cell);
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const probe = seed % 19, probeKey = sheet + ':' + probe, known = expected.get(probeKey);
+    expect(cache.get(sheet, 0, probe)).toBe(known);
+    if (known) { expected.delete(probeKey); expected.set(probeKey, known); }
+  }
+});
 it('enforces cumulative text storage and does not retain an individual oversized value', () => {
   const cache = new WorkbookCellReadCache(5000, 180), first = cache.read('s', source(0)); cache.read('s', source(1)); cache.read('s', source(2));
   expect(cache.read('s', source(0))).not.toBe(first);

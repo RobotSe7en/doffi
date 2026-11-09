@@ -1,4 +1,4 @@
-import { DocumentError, DocumentErrorDataSchema } from "@doffi/core";
+import { DocumentError, DocumentErrorDataSchema, readWorkbookChangeImpact } from "@doffi/core";
 import type { WorkbookCalculationResult, WorkbookLayoutMeasurement, WorkbookLayoutRequest } from "@doffi/core";
 import { serveWorkbookReads } from "@doffi/render";
 import { checkSessionMessage, invalidSessionTransport, keys, record, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
@@ -7,13 +7,19 @@ import type { sessionTransportConfig } from "./session-transport.js";
 /** Each measurement receives two capabilities bound to this exact private
  * model: bounded source reads and one reply. Neither port can commit edits. */
 export function requestWorkbookLayout(request: WorkbookLayoutRequest, calculation: WorkbookCalculationResult | undefined, signal: AbortSignal,
-  config: ReturnType<typeof sessionTransportConfig>, send: (value: unknown, reads: MessagePort, reply: MessagePort) => void): Promise<WorkbookLayoutMeasurement> {
+  config: ReturnType<typeof sessionTransportConfig>, send: (value: unknown, reads: MessagePort, reply: MessagePort) => void,
+  previous?: { readonly request: WorkbookLayoutRequest; readonly calculation?: WorkbookCalculationResult }): Promise<WorkbookLayoutMeasurement> {
   if (signal.aborted) return Promise.reject(new DocumentError("OperationCancelled", "Workbook layout measurement was cancelled."));
+  const value: Record<string, unknown> = { sourceDigest: request.sourceDigest, sheetIds: request.sheetIds, ...(request.calculationContext ? { calculationContext: request.calculationContext } : {}) };
+  if (previous) {
+    const hint = { previousSourceDigest: previous.request.sourceDigest, impact: readWorkbookChangeImpact(previous.request.model, request.model, previous.calculation, calculation) };
+    try { checkSessionMessage({ ...value, ...hint }, config); Object.assign(value, hint); }
+    catch (error) { if (!(error instanceof DocumentError) || error.code !== "ResourceLimitExceeded") throw error; }
+  }
   const reads = new MessageChannel(), reply = new MessageChannel();
   let reader: ReturnType<typeof serveWorkbookReads>;
   try { reader = serveWorkbookReads(reads.port1, request.model, config.reads, calculation); }
   catch (error) { for (const port of [reads.port1, reads.port2, reply.port1, reply.port2]) port.close(); return Promise.reject(error); }
-  const value = { sourceDigest: request.sourceDigest, sheetIds: request.sheetIds, ...(request.calculationContext ? { calculationContext: request.calculationContext } : {}) };
   return new Promise((resolve, reject) => {
     let finished = false;
     const clean = (): void => { signal.removeEventListener("abort", stop); reply.port1.removeEventListener("message", receive); reply.port1.removeEventListener("messageerror", malformed);

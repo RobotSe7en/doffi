@@ -7,6 +7,7 @@ import { checkSessionMessage, freezeSessionValue, invalidSessionTransport, keys,
 import type { WorkbookSessionCandidate, WorkbookSessionCommand, WorkbookSessionConnection, WorkbookSessionExecution, WorkbookSessionPreparationExecution, WorkbookSessionFindOptions, WorkbookSessionInput, WorkbookSessionProgress, WorkbookSessionReceipt, WorkbookSessionState, WorkbookSessionTransportOptions, WorkbookSessionViewOptions } from "./session-transport.js";
 import type { WorkbookFindQuery, WorkbookFindResult } from "./find-contracts.js";
 import { answerWorkbookLayout } from "./session-layout-client.js";
+import type { WorkbookLayoutHistory } from "./session-layout-client.js";
 
 interface Reply { readonly value: unknown; readonly port?: MessagePort }
 interface Pending { readonly operation: string; cancelled?: boolean; resolve(reply: Reply): void; reject(error: unknown): void; clean(): void; progress?(value: WorkbookSessionProgress): void;
@@ -18,11 +19,13 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
   let disposed = false, nextId = 0, current: WorkbookSessionState;
   const candidates = new WeakMap<WorkbookSessionCandidate, { handle: number; consumed: boolean }>();
   const viewHandles = new WeakMap<WorkbookReadConnection, number>();
+  const layoutHistory: WorkbookLayoutHistory = {};
   function cancelled(message = "The workbook session operation was cancelled."): DocumentError { return new DocumentError("OperationCancelled", message); }
   function check(): void { if (disposed) invalidSessionTransport("This workbook session connection has been disposed."); }
   function closeTransferred(port: MessagePort | undefined): void { if (port) void connectWorkbookReads(port, config.reads, AbortSignal.abort()).catch(() => {}); }
   function dispose(reason: DocumentError = cancelled("The workbook session connection was closed.")): void {
     if (disposed) return; disposed = true;
+    delete layoutHistory.source; delete layoutHistory.sourceDigest;
     try { port.postMessage({ protocol: WORKBOOK_SESSION_PROTOCOL, event: "close" }); } catch { /* Its host may already have closed the port. */ }
     for (const request of pending.values()) { request.clean(); request.reject(reason); } pending.clear();
     for (const view of views) view.dispose(); views.clear(); listeners.clear();
@@ -54,7 +57,7 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
           || message.readPort === message.replyPort || request?.operation !== "prepare" || !request.layout) throw new Error("Unexpected workbook layout capability");
         if (request.cancelled) { closeTransferred(message.readPort); message.replyPort.close(); return; }
         const abort = new AbortController(), layout = request.layout; layout.jobs.add(abort);
-        void answerWorkbookLayout(message.value, message.readPort, message.replyPort, layout.measure, abort.signal, config, layout.identity)
+        void answerWorkbookLayout(message.value, message.readPort, message.replyPort, layout.measure, abort.signal, config, layout.identity, layoutHistory)
           .catch(invalidMessage).finally(() => layout.jobs.delete(abort));
         return;
       }

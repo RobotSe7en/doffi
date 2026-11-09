@@ -3,11 +3,23 @@ import { captureWorkbookModel, createDocumentSession, createWorkbook, createWork
 import type { DocumentOperation, WorkbookSession } from "../src/index.js";
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 import { createHash } from "node:crypto";
+import { compareWorkbooks } from "../src/workbook/source-changes.js";
 
 const sheetId = "sheet-1", number = (value: number) => ({ type: "number" as const, value });
 function apply(s: WorkbookSession, operations: DocumentOperation[]) {
   const manifest = s.snapshot().manifest; s.commit(s.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations }));
 }
+test('reused immutable source comparisons keep each caller structural mapping separate', () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(7) }])), before = captureWorkbookModel(session);
+  apply(session, [{ op: 'editWorkbookAxis', sheetId, axis: 'row', action: 'insert', index: 0, count: 1 }]);
+  const after = captureWorkbookModel(session), plain = compareWorkbooks(before, after);
+  const step = { kind: 'axis' as const, sheetId, axis: 'row' as const, action: 'insert' as const, index: 0, count: 1 };
+  const mapped = compareWorkbooks(before, after, { nodes: new Map(), textEdits: [], workbook: [step] });
+  expect(mapped.changedRanges).toEqual(plain.changedRanges); expect(mapped.mapping.workbook).toEqual([step]);
+  expect(compareWorkbooks(before, after).mapping.workbook).toEqual([]);
+  expect(compareWorkbooks(after, before).changedRanges).toEqual(plain.changedRanges);
+  expect(Object.isFrozen(mapped.mapping.workbook)).toBe(true); session.dispose();
+});
 test("source and changed calculation ranges remain distinct across chunks", () => {
   const s = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(999), formula: "=B1+1" }, { row: 0, column: 1, value: number(1) },
     { row: 0, column: 2, value: number(999), formula: "=99" }, { row: 1000, column: 0, value: number(999), formula: "=A1+1" },

@@ -42,6 +42,46 @@ test("all response modes retain their intended physical bounds after simultaneou
   s.redo(); expect(rectangles(s)["false/false"]).toEqual({ x: 81, y: 32, width: 82, height: 47 });
 });
 
+const gridMutations: DocumentOperation[] = [
+  { op: 'setWorkbookCells', sheetId, cells: [{ row: 0, column: 0, source: { kind: 'value', value: { type: 'text', value: 'wrapped\ninput' } } }] },
+  { op: 'updateWorkbookSheet', sheetId, changes: { defaultRowHeightPt: 30 } },
+  { op: 'updateWorkbookSheet', sheetId, changes: { columnDimensions: [{ from: 0, to: 0, unit: 'characters', hidden: true }] } },
+  { op: 'formatWorkbookRanges', sheetId, ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }], properties: { 'font-size': '24pt' } },
+  { op: 'setWorkbookStyleClass', cssClass: 'cell-default', properties: { 'font-size': '18pt' } },
+  { op: 'setWorkbookNumberFormat', format: { formatId: 'amount', code: '0.00' } },
+  { op: 'setWorkbookSettings', changes: { calculationMode: 'manual' } },
+  { op: 'setWorkbookAutoFilter', sheetId, filter: { range: { from: { row: 0, column: 0 }, to: { row: 2, column: 1 } }, columns: [] } },
+  { op: 'editWorkbookAxis', sheetId, axis: 'row', action: 'insert', index: 0, count: 1 },
+  { op: 'mergeWorkbookCells', sheetId, range: { from: { row: 0, column: 0 }, to: { row: 1, column: 1 } } },
+];
+test.each(gridMutations)('requires a measurer before %s can displace fixed drawing bounds', operation => {
+  const s = blank(), before = s.serialize(), history = s.history();
+  expect(() => commit(s, [operation])).toThrowError(/layout measurer|requires their measured layout/);
+  expect(s.serialize()).toEqual(before); expect(s.history()).toEqual(history);
+  commit(s, [operation], metrics); expect(s.history().undoSteps).toBe(1);
+  s.undo(); expect(s.snapshot().metadata.workbook.objects).toEqual(openDocument(before, { kind: 'workbook' }).snapshot().metadata.workbook.objects);
+});
+
+test('metadata and explicit object changes remain usable without a grid measurer', () => {
+  const s = blank(), nodeId = s.snapshot().metadata.workbook.objects![0]!.nodeId;
+  commit(s, [{ op: 'updateWorkbookObject', nodeId, changes: { name: 'renamed' } },
+    { op: 'updateWorkbookSheet', sheetId, changes: { name: 'Renamed', showGridLines: false, tabColor: '#112233' } },
+    { op: 'setWorkbookSettings', changes: { activeSheetId: sheetId } },
+    { op: 'setWorkbookCells', sheetId, cells: [{ row: 0, column: 0, source: { kind: 'value', value: { type: 'blank' } } }] }]);
+  expect(s.snapshot().metadata.workbook.objects![0]!.name).toBe('renamed'); expect(s.history().undoSteps).toBe(1);
+});
+
+test('classic note response modes also require a measurer when the grid changes', () => {
+  const s = createDocumentSession(openDocument(createWorkbook({ documentId: 'fixed-note' }), { kind: 'workbook' })); sessions.push(s);
+  commit(s, [{ op: 'addWorkbookComment', anchor: { kind: 'cells', sheetId, ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }] },
+    html: '<p>note</p>', format: 'classic', box: { anchor: anchor(false, false), visible: true, printable: true, locked: true, lockText: false, defaultSize: false,
+      disabled: false, autoFill: false, autoLine: false, autoScale: false, justifyLastLine: false } }]);
+  s.clearHistory(); const before = s.serialize();
+  expect(() => commit(s, [gridMutations[0]!])).toThrowError(/layout measurer/);
+  expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+  commit(s, [gridMutations[0]!], metrics); expect(s.history().undoSteps).toBe(1);
+});
+
 test.each(["row", "column"] as const)("axis insertion before and inside an object composes measured %s movement and resizing in one history step", axis => {
   const s = blank(); commit(s, [{ op: "editWorkbookAxis", sheetId, axis, action: "insert", index: 1, count: 2 }, { op: "editWorkbookAxis", sheetId, axis, action: "insert", index: 5, count: 2 }], metrics);
   const values = rectangles(s), unit = axis === "row" ? 15 : 40, position = axis === "row" ? "y" : "x", extent = axis === "row" ? "height" : "width";
@@ -54,7 +94,7 @@ test.each(["row", "column"] as const)("axis insertion before and inside an objec
 test("projection preserves pending chunks when an intermediate empty chunk is reused later in the batch", () => {
   const s = blank(), measurements: WorkbookLayoutRequest[] = [];
   const set = (text: string): DocumentOperation => ({ op: "setWorkbookCells", sheetId, cells: [{ row: 256, column: 32, source: { kind: "value", value: { type: "text", value: text } } }] });
-  commit(s, [set("old")]); s.clearHistory();
+  commit(s, [set("old")], metrics); s.clearHistory();
   commit(s, [{ op: "clearWorkbookRanges", sheetId, mode: "all", ranges: [{ from: { row: 256, column: 32 }, to: { row: 256, column: 32 } }] }, set("新禰󠄀😀")], request => { measurements.push(request); return metrics(request); });
   expect(s.getCell(sheetId, 256, 32)?.text).toBe("新禰󠄀😀"); expect(measurements).toHaveLength(4);
   expect(measurements[1]!.model.getCell(sheetId, 256, 32)).toBeUndefined(); expect(measurements[3]!.model.getCell(sheetId, 256, 32)?.text).toBe("新禰󠄀😀");

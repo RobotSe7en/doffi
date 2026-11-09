@@ -70,7 +70,7 @@ export interface WorkbookWindowDecoration {
 export type WorkbookWindowDecorator = (candidate: WorkbookRenderedWindow, content: WorkbookContentSources, maxNodes: number) => WorkbookWindowDecoration;
 interface WorkbookSheetMetrics extends WorkbookAutoRows { readonly normal: WorkbookColumnFont; readonly fontEpoch?: number; readonly fontSet?: object }
 export interface WorkbookMeasurementSeed { readonly previous: WorkbookSheetMetrics; readonly rows: readonly WorkbookRowInterval[] }
-export interface WorkbookWindowOwnership { readonly measurements?: ReadonlyMap<string, WorkbookMeasurementSeed>; readonly deferPublication?: boolean }
+export interface WorkbookWindowOwnership { readonly measurements?: ReadonlyMap<string, WorkbookMeasurementSeed>; readonly deferPublication?: boolean; readonly textCache?: WorkbookCellTextCache }
 
 /** Internal lifecycle for one immutable workbook. The owner supplies a ready,
  * dedicated surface and authorized providers, and owns their disposal. This
@@ -113,7 +113,7 @@ export class WorkbookWindowController {
       || surface.view.childNodes.length) throw new DocumentError("InvalidOperation", "A workbook controller requires its own empty connected surface and supported node budget.");
     this.snapshot = providers.cells.snapshot;
     this.classStyles = this.snapshot.styles.every(style => /^(?:\s*\.[a-zA-Z_][-\w]*\s*\{[^{}]*\}\s*)*$/.test(style.css));
-    this.textCache = new WorkbookCellTextCache(input.read?.maxCells ?? 5000, Math.min(this.maxNodes, input.cells?.maxNodes ?? this.maxNodes), input.cells?.maxTextCodeUnits ?? 8 * 1024 * 1024);
+    this.textCache = ownership.textCache ?? new WorkbookCellTextCache(input.read?.maxCells ?? 5000, Math.min(this.maxNodes, input.cells?.maxNodes ?? this.maxNodes), input.cells?.maxTextCodeUnits ?? 8 * 1024 * 1024, surface.fontProbes);
     this.skewCoefficient = maximumWorkbookSkew(surface.document);
     checkWindowIdentity(providers.assets.snapshot.manifest, this.snapshot); checkWindowIdentity(providers.charts.snapshot.manifest, this.snapshot);
     if (providers.rules) checkWindowIdentity(providers.rules.snapshot.manifest, this.snapshot);
@@ -127,9 +127,13 @@ export class WorkbookWindowController {
       let rows = this.chunkRows.get(chunk.sheetId); if (!rows) { rows = new Set(); this.chunkRows.set(chunk.sheetId, rows); } rows.add(chunk.row);
     }
     for (const name of ["pointerdown", "keydown", "wheel"]) surface.document.addEventListener(name, this.interruptReadAhead, { capture: true, passive: true });
+    // Formula bars and other host-owned inputs live outside the iframe. Their
+    // input must interrupt optional work just like input on the grid itself.
+    for (const name of ["pointerdown", "keydown", "input"]) surface.frame.ownerDocument.addEventListener(name, this.interruptReadAhead, { capture: true, passive: true });
   }
 
   get current(): WorkbookRenderedWindow | undefined { return this.active?.state; }
+  forkTextCache(): WorkbookCellTextCache { return this.textCache.fork(); }
 
   /** Cancel only unfinished work while retaining the accepted window. */
   cancelPending(): void { this.readAhead.stop(); this.pending?.cancel(); this.pending = undefined; }
@@ -360,6 +364,7 @@ export class WorkbookWindowController {
     this.disposed = true; this.readAhead.dispose(); this.pending?.cancel(); this.pending = undefined;
     this.clearPreparedGrid();
     for (const name of ["pointerdown", "keydown", "wheel"]) this.surface.document.removeEventListener(name, this.interruptReadAhead, true);
+    for (const name of ["pointerdown", "keydown", "input"]) this.surface.frame.ownerDocument.removeEventListener(name, this.interruptReadAhead, true);
     this.active?.decoration?.dispose(); this.active?.drawings.dispose(); this.active?.state.element.remove(); this.active?.state.element.replaceChildren(); this.active = undefined;
     this.content.dispose(); this.sheets.clear(); this.measurements.clear(); this.chunkRows.clear(); this.textCache.clear();
   }

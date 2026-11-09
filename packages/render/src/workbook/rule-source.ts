@@ -30,7 +30,14 @@ export interface WorkbookRuleSource {
  * nor the host's Worker lifetime, and reads remain bound to one revision. */
 export function modelRuleSource(model: WorkbookModel, calculation?: WorkbookCalculationResult): WorkbookRuleSource {
   model = captureWorkbookModel(model);
-  return Object.freeze({ snapshot: model.snapshot(), ...(calculation === undefined ? {} : { currentValues: true }), read(request: WorkbookRuleReadRequest, signal: AbortSignal) {
-    return readWorkbookRules(model, request, { signal, yield: () => new Promise<void>(resolve => setTimeout(resolve, 0)), ...(calculation === undefined ? {} : { calculation }) });
+  return Object.freeze({ snapshot: model.snapshot(), ...(calculation === undefined ? {} : { currentValues: true }), async read(request: WorkbookRuleReadRequest, signal: AbortSignal) {
+    // Retiring each task's ports prevents a repeatedly refilled queue from
+    // starving cancellation traffic on another port. Port tasks also avoid
+    // browser nesting delays, and no query retains another query's queue.
+    return await readWorkbookRules(model, request, { signal, yield: () => new Promise<void>(resolve => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => { channel.port1.close(); channel.port2.close(); resolve(); };
+      channel.port2.postMessage(0);
+    }), ...(calculation === undefined ? {} : { calculation }) });
   } });
 }

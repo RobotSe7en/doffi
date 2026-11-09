@@ -44,16 +44,20 @@ interface FormulaRecord { readonly key: string; readonly location: WorkbookRefer
   readonly dependencies: readonly DeepReadonly<WorkbookReferenceArea>[]; readonly lazy: boolean; readonly volatile: boolean; readonly subtotal: boolean }
 interface Graph { readonly model: WorkbookModel; readonly namespace: string; readonly records: Map<string, FormulaRecord>; readonly chunks: Map<ChunkIndex, readonly FormulaRecord[]>;
   readonly reverse: WorkbookDependencyIndex; readonly points: WorkbookDependencyIndex; readonly dependencies: number }
+interface CalculationSeed { readonly graph: Graph; readonly values: ReadonlyMap<string, ScalarResolved>; readonly contextKey: string; readonly localeKey: string }
+const calculationSeeds = new WeakMap<WorkbookCalculationResult, CalculationSeed>();
 const key = (location: WorkbookReferenceLocation): string => JSON.stringify([location.sheetId, location.row, location.column]);
 class DependencyPending { constructor(readonly record: FormulaRecord) {} }
 
 /** A calculator retains derived results for one authorized source/provider.
  * Results are installed atomically after cancellation and revision guards. */
-export function createWorkbookCalculator(source: WorkbookModel | (() => WorkbookModel), input: Partial<WorkbookCalculationLimits> = {}): WorkbookCalculator {
+export function createWorkbookCalculator(source: WorkbookModel | (() => WorkbookModel), input: Partial<WorkbookCalculationLimits> = {}, previous?: WorkbookCalculationResult): WorkbookCalculator {
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(name => !Object.hasOwn(DEFAULT_WORKBOOK_CALCULATION_LIMITS, name)) || Object.values(input).some(value => !Number.isSafeInteger(value) || value! < 1)) throw new DocumentError("InvalidOperation", "Invalid workbook calculation limits.");
   const limits = { ...DEFAULT_WORKBOOK_CALCULATION_LIMITS, ...input };
   let provider: (() => WorkbookModel) | undefined = typeof source === "function" ? source : () => source;
-  let graph: Graph | undefined, values = new Map<string, ScalarResolved>(), contextKey = "", localeKey = "", batch = 0, publishedBatch = 0;
+  const seed = previous === undefined ? undefined : calculationSeeds.get(previous);
+  if (previous !== undefined && !seed) throw new DocumentError("InvalidOperation", "Calculation reuse requires a completed first-party batch.");
+  let graph = seed?.graph, values: ReadonlyMap<string, ScalarResolved> = seed?.values ?? new Map(), contextKey = seed?.contextKey ?? "", localeKey = seed?.localeKey ?? "", batch = previous?.batchId ?? 0, publishedBatch = batch;
   function current(): WorkbookModel { if (!provider) throw new DocumentError("InvalidOperation", "This workbook calculator has been disposed."); return currentWorkbookModel(provider()); }
   function recordResult(model: WorkbookModel, location: WorkbookReferenceLocation, result?: ScalarResolved, resultBatch = publishedBatch): WorkbookCalculatedCell {
     const manifest = model.snapshot().manifest, identity = { ...location, documentId: manifest.documentId, revision: manifest.revision, batchId: resultBatch, engineVersion: WORKBOOK_CALCULATION_VERSION };
@@ -78,6 +82,29 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
       const progress = (phase: "index" | "calculate", completed: number, total: number): void => { if (options.onProgress) try { options.onProgress(freeze({ phase, completed, total })); } catch { /* Host owns progress callback errors. */ } };
       function* checkpoint(): Generator<void> { if (++yields % 64 === 0) yield; guard(); }
       guard(); yield; guard();
+      const publish = (next: Graph, calculatedValues: ReadonlyMap<string, ScalarResolved>): WorkbookCalculationResult => {
+        for (const record of next.records.values()) {
+          const value = calculatedValues.get(record.key)!;
+          account(record.key.length + ("type" in value && value.type === "text" ? value.value.length : 0));
+        }
+        // Internal readers use the registered immutable value map. Materialize
+        // the public records once, only if a caller requests that projection;
+        // its complete output budget has already been checked above.
+        let cells: readonly WorkbookCalculatedCell[] | undefined;
+        const result: WorkbookCalculationResult = Object.freeze({ documentId: manifest.documentId, revision: manifest.revision, batchId: mine, engineVersion: WORKBOOK_CALCULATION_VERSION,
+          get cells() { return cells ??= Object.freeze([...next.records.values()].map(record => recordResult(model, record.location, calculatedValues.get(record.key)!, mine))); },
+          calculated, reused, steps, dependencies: next.dependencies, codeUnits: units, readCells: readCells.size });
+        guard(); graph = next; values = calculatedValues; contextKey = JSON.stringify(calculationContext); localeKey = resolvedLocale; publishedBatch = mine;
+        registerWorkbookCalculation(result, { model, context: calculationContext, values: calculatedValues });
+        calculationSeeds.set(result, { graph: next, values: calculatedValues, contextKey, localeKey });
+        return result;
+      };
+      if (graph?.model === model && !changedLocale && (JSON.stringify(calculationContext) === contextKey || ![...graph.records.values()].some(record => record.volatile))) {
+        checkLimit(graph.records.size, limits.maxFormulas); checkLimit(graph.dependencies, limits.maxDependencies);
+        let scanned = 0;
+        for (const record of graph.records.values()) { step(); account(record.expression.length); if (++scanned % 256 === 0) yield* checkpoint(); }
+        reused = graph.records.size; return publish(graph, values);
+      }
       const namespace = JSON.stringify([snapshot.metadata.workbook.dateSystem, snapshot.metadata.workbook.sheets.map(sheet => [sheet.sheetId, sheet.name, sheet.tables]), snapshot.metadata.workbook.names]);
       const records = new Map<string, FormulaRecord>(), chunks = new Map<ChunkIndex, readonly FormulaRecord[]>(), dependencies: WorkbookDependencyEntry[] = [];
       for (const descriptor of manifest.chunks) {
@@ -87,6 +114,10 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
         else for (const formula of index.formulaLocations()) {
           step(); checkLimit(records.size + items.length + 1, limits.maxFormulas);
           const location = { sheetId: descriptor.sheetId, row: formula.row, column: formula.column }, cell = model.getCell(location.sheetId, location.row, location.column)!;
+          const previous = graph?.namespace === namespace ? graph.records.get(key(location)) : undefined;
+          if (previous?.expression === cell.formula!.expression) {
+            account(cell.formula!.expression.length); items.push(previous); yield* checkpoint(); continue;
+          }
           const areas: DeepReadonly<WorkbookReferenceArea>[] = [];
           let lazy = false, volatile = false, subtotal = false;
           workbookExpressionDependencies(model, formula.expression, location, step, area => {
@@ -98,16 +129,15 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           // A changed chunk may contain an unchanged formula. Keep its learned
           // reference areas (for example SUMIF's expanded sum_range), so edits
           // in that same chunk still invalidate the formula before evaluation.
-          const previous = graph?.namespace === namespace ? graph.records.get(key(location)) : undefined;
-          const retainedAreas = previous?.expression === cell.formula!.expression ? previous.dependencies : areas;
-          account(cell.formula!.expression.length); items.push({ key: key(location), location, expression: cell.formula!.expression, ast: formula.expression, dependencies: retainedAreas, lazy, volatile, subtotal });
+          account(cell.formula!.expression.length); items.push({ key: key(location), location, expression: cell.formula!.expression, ast: formula.expression, dependencies: areas, lazy, volatile, subtotal });
           yield* checkpoint();
         }
         chunks.set(index, items);
         for (const record of items) { step(); checkLimit(records.size + 1, limits.maxFormulas); records.set(record.key, record); for (const area of record.dependencies) { checkLimit(dependencies.length + 1, limits.maxDependencies); dependencies.push({ area, owner: record.key }); } }
         progress("index", records.size, limits.maxFormulas); yield* checkpoint();
       }
-      const reverse = new WorkbookDependencyIndex(dependencies, step), points = new WorkbookDependencyIndex([...records.values()].map(record => ({ owner: record.key, area: { sheetId: record.location.sheetId, from: record.location, to: record.location } })), step);
+      const sameTopology = graph?.namespace === namespace && graph.records.size === records.size && [...records].every(([key, record]) => graph!.records.get(key) === record);
+      const reverse = sameTopology ? graph!.reverse : new WorkbookDependencyIndex(dependencies, step), points = sameTopology ? graph!.points : new WorkbookDependencyIndex([...records.values()].map(record => ({ owner: record.key, area: { sheetId: record.location.sheetId, from: record.location, to: record.location } })), step);
       let next: Graph = { model, namespace, records, chunks, reverse, points, dependencies: dependencies.length };
       const calculatedValues = new Map<string, ScalarResolved>();
       const dirty = new Set<string>(), changedContext = JSON.stringify(calculationContext) !== contextKey;
@@ -196,15 +226,7 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           yield* checkpoint();
         }
         refreshDependencies();
-        const cells = [...records.values()].map(record => {
-          const value = calculatedValues.get(record.key)!;
-          account(record.key.length + ("type" in value && value.type === "text" ? value.value.length : 0));
-          return recordResult(model, record.location, value, mine);
-        });
-        const result = freeze({ documentId: manifest.documentId, revision: manifest.revision, batchId: mine, engineVersion: WORKBOOK_CALCULATION_VERSION, cells, calculated, reused, steps, dependencies: next.dependencies, codeUnits: units, readCells: readCells.size });
-        guard(); graph = next; values = calculatedValues; contextKey = JSON.stringify(calculationContext); localeKey = resolvedLocale; publishedBatch = mine;
-        registerWorkbookCalculation(result, { model, context: calculationContext, values: calculatedValues });
-        return result;
+        return publish(next, calculatedValues);
       } finally { evaluator.dispose(); active.clear(); }
   }
   return Object.freeze({

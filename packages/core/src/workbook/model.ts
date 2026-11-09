@@ -15,7 +15,7 @@ import type { ChunkIndex } from "./chunk-index.js";
 import { workbookReferences } from "./reference.js";
 import { WorkbookCellReadCache } from "./cell-read-cache.js";
 import { WorkbookChunkTextCache } from "./chunk-text-cache.js";
-import { registerWorkbookSource, workbookSource } from "./source.js";
+import { registerSerializedWorkbook, registerWorkbookSource, workbookSource } from "./source.js";
 
 export const DEFAULT_WORKBOOK_READ_LIMITS: WorkbookReadLimits = Object.freeze({
   maxCells: 250_000, maxFormulas: 25_000, maxWindowCells: 5000, maxFormulaTemplates: 25_000, maxFormulaKeyCodeUnits: 4 * 1024 * 1024,
@@ -39,12 +39,24 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
   if (!("workbook" in metadata)) invalid("Manifest kind and workbook metadata must match.");
   const annotations = parseContract("annotations", readJson(files, manifest.annotations));
   validateAssets(manifest.assets, files);
-  const cssBudget = { nodes: 0 }, classes = new Set<string>();
-  const styles = manifest.styles.map(path => ({ path, css: normalizeCss(readText(files, path), "stylesheet", documentLimits, cssBudget) }));
-  for (const style of styles) walk(parse(style.css), node => { if (node.type === "ClassSelector") classes.add(ident.decode(node.name)); });
+  const prior = previous ? workbookSource(previous) : undefined, priorStyles = previous?.snapshot().styles;
+  const reuseStyles = prior?.stylesheetNodes !== undefined && prior.limits.maxDepth <= documentLimits.maxDepth && manifest.styles.length === priorStyles!.length
+    && manifest.styles.every((path, index) => path === priorStyles![index]!.path && files.get(path) === prior.files.get(path));
+  const cssBudget = { nodes: reuseStyles ? prior!.stylesheetNodes! : 0 }, classes = new Set<string>(reuseStyles ? prior!.classes : []);
+  checkLimit(cssBudget.nodes, documentLimits.maxCssNodes);
+  let canonicalStyles = true;
+  const styles = reuseStyles ? priorStyles! : manifest.styles.map(path => {
+    const input = readText(files, path), css = normalizeCss(input, "stylesheet", documentLimits, cssBudget);
+    canonicalStyles &&= input === css;
+    if (input !== css) files.set(path, encode(css));
+    return { path, css };
+  });
+  if (!reuseStyles) {
+    for (const style of styles) walk(parse(style.css), node => { if (node.type === "ClassSelector") classes.add(ident.decode(node.name)); });
+  }
+  const stylesheetNodes = canonicalStyles ? cssBudget.nodes : undefined;
   const { formats, cellStyleClasses, items } = validateWorkbookMetadata(metadata.workbook, classes, documentLimits.maxNodes);
   const bindingKey = JSON.stringify([[...classes].sort(), [...cellStyleClasses].sort(), [...formats].sort()]);
-  const prior = previous ? workbookSource(previous) : undefined;
   const priorDescriptors = new Map(previous?.snapshot().manifest.chunks.map(chunk => [chunk.path, chunk]) ?? []);
   const canReuse = prior?.bindingKey === bindingKey && prior.limits.maxNodes <= documentLimits.maxNodes
     && prior.limits.maxDepth <= documentLimits.maxDepth;
@@ -60,21 +72,25 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
     const bytes = files.get(chunk.path);
     if (!bytes) invalid("Workbook chunk bytes do not match their digest.");
     checkLimit(bytes.byteLength, documentLimits.maxFileBytes);
-    // Only private, already-owned immutable buffers carry a digest proof.
-    // New bytes and changed declarations still hash before index reuse; style
-    // bindings, positions and every cumulative quota remain independent.
-    const unchanged = prior?.files.get(chunk.path) === bytes && priorDescriptors.get(chunk.path)?.sha256 === chunk.sha256;
+    // New buffers always hash. A matching prior digest can then retain the
+    // private owned bytes/index; the mutable input never becomes its proof.
+    const sameDigest = priorDescriptors.get(chunk.path)?.sha256 === chunk.sha256;
+    const unchanged = prior?.files.get(chunk.path) === bytes && sameDigest;
     if (!unchanged && assetDigest(bytes) !== chunk.sha256) invalid("Workbook chunk bytes do not match their digest.");
-    const known = canReuse && unchanged ? prior.chunks.get(chunk.path) : undefined;
+    const ownedBytes = sameDigest ? prior!.files.get(chunk.path)! : bytes;
+    if (sameDigest) files.set(chunk.path, ownedBytes);
+    const known = canReuse && sameDigest ? prior.chunks.get(chunk.path) : undefined;
     const samePosition = known && known.position.sheetId === chunk.sheetId && known.position.row === chunk.row && known.position.column === chunk.column;
-    const index = samePosition ? known : indexWorkbookChunk(bytes, chunk, documentLimits.maxFileBytes, { takeOwnership: true, formulas, textCache, cssClasses: classes, cellStyleClasses, numberFormats: formats, maxNodes: documentLimits.maxNodes, maxDepth: documentLimits.maxDepth });
+    const index = samePosition ? known : indexWorkbookChunk(ownedBytes, chunk, documentLimits.maxFileBytes, { takeOwnership: true, formulas, textCache, cssClasses: classes, cellStyleClasses, numberFormats: formats, maxNodes: documentLimits.maxNodes, maxDepth: documentLimits.maxDepth });
     if (samePosition) for (const expression of index.formulaTemplates) formulas.include(expression);
     cellCount += index.cellCount; formulaCount += index.formulaCount;
     checkLimit(cellCount, limits.maxCells); checkLimit(formulaCount, limits.maxFormulas);
     sheet.set(key, index); chunks.push({ path: chunk.path, index });
     yield { completed: chunks.length, total: manifest.chunks.length };
   }
-  const decodedCells = new WorkbookCellReadCache(Math.min(5000, limits.maxWindowCells));
+  // Foreground values/rules and one authorized read-ahead window coexist.
+  // Keep the same 8-Mi-code-unit byte protection while bounding both windows.
+  const decodedCells = new WorkbookCellReadCache(Math.min(10000, limits.maxWindowCells * 2));
   for (const sheet of metadata.workbook.sheets) for (const table of sheet.tables ?? []) if (table.header) {
     for (const [index, column] of table.columns.entries()) {
       const cell = readWindow({ sheetId: sheet.sheetId, row: table.range.from.row, column: table.range.from.column + index, rows: 1, columns: 1 })[0];
@@ -87,7 +103,6 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
   if (content) files.set(manifest.content!, encode(content.html));
   files.set("manifest.json", encode(JSON.stringify(manifest)));
   files.set(manifest.metadata, encode(JSON.stringify(metadata))); files.set(manifest.annotations, encode(JSON.stringify(annotations)));
-  for (const style of styles) files.set(style.path, encode(style.css));
   let total = 0;
   for (const bytes of files.values()) { checkLimit(bytes.byteLength, documentLimits.maxFileBytes); total += bytes.byteLength; }
   checkLimit(total, documentLimits.maxPackageBytes);
@@ -108,6 +123,14 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
     cells.sort((a, b) => a.row - b.row || a.column - b.column);
     return Object.freeze(cells);
   }
+  function getCell(sheetId: string, row: number, column: number): WorkbookCell | undefined {
+    if (!Number.isSafeInteger(row) || !Number.isSafeInteger(column) || row < 0 || column < 0 || row >= MAX_SHEET_ROWS || column >= MAX_SHEET_COLUMNS) invalid("Invalid workbook window.");
+    const sheet = sheets.get(sheetId); if (!sheet) invalid("A workbook query references an unknown worksheet.");
+    const known = decodedCells.get(sheetId, row, column); if (known) return known;
+    const chunk = sheet.get(Math.floor(row / CHUNK_ROWS) * (MAX_SHEET_COLUMNS / CHUNK_COLUMNS) + Math.floor(column / CHUNK_COLUMNS));
+    const cell = chunk?.getCell(row, column);
+    return cell ? decodedCells.read(sheetId, cell) : undefined;
+  }
   const model: WorkbookModel = Object.freeze({
     kind: "workbook", snapshot: () => snapshot, getNode: (nodeId: string) => content?.getNode(nodeId),
     readWindow,
@@ -117,10 +140,12 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
       const bytes = files.get(path)!; checkLimit(bytes.byteLength, maxBytes); return new Uint8Array(bytes);
     },
     resolveReference: references.resolve.bind(references),
-    getCell: (sheetId: string, row: number, column: number) => readWindow({ sheetId, row, column, rows: 1, columns: 1 })[0],
-    serialize: () => new Map(Array.from(files, ([path, bytes]) => [path, new Uint8Array(bytes)] as const)),
+    getCell,
+    serialize: () => { const result = new Map(Array.from(files, ([path, bytes]) => [path, new Uint8Array(bytes)] as const)); registerSerializedWorkbook(result, model); return result; },
   });
   registerWorkbookSource(model, { files, chunks: new Map(chunks.map(chunk => [chunk.path, chunk.index])), classes, bindingKey,
+    ...(stylesheetNodes === undefined ? {} : { stylesheetNodes }),
+    releaseReads() { decodedCells.clear(); for (const chunk of chunks) chunk.index.releaseText(); },
     limits: documentLimits, workbookLimits: limits, ...(content ? { content } : {}) });
   return model;
 }

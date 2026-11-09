@@ -33,9 +33,15 @@ export function readWorkbookChangeImpact(previous: WorkbookModel, model: Workboo
   const left = previousCalculation === undefined ? undefined : workbookCalculationSource(previous, previousCalculation).values;
   const right = calculation === undefined ? undefined : workbookCalculationSource(model, calculation).values;
   const points = new Map<string, { sheetId: string; row: number; column: number }>();
-  if (left || right) for (const batch of [previousCalculation, calculation]) for (const cell of batch?.cells ?? []) {
-    const key = JSON.stringify([cell.sheetId, cell.row, cell.column]);
-    if (!left || !right || !sameValue(left.get(key), right.get(key))) points.set(key, cell);
+  if (left !== right) {
+    const changed = new Set<string>();
+    if (left) for (const [key, value] of left) if (!right || !sameValue(value, right.get(key))) changed.add(key);
+    if (right) for (const key of right.keys()) if (!left?.has(key)) changed.add(key);
+    // These keys were created by the registered first-party calculator. Parse
+    // only actual changes, instead of rebuilding every unchanged coordinate.
+    for (const key of changed) {
+      const [sheetId, row, column] = JSON.parse(key) as [string, number, number]; points.set(key, { sheetId, row, column });
+    }
   }
   const sheets = new Map<string, number>();
   for (const sheet of [...model.snapshot().metadata.workbook.sheets, ...previous.snapshot().metadata.workbook.sheets]) if (!sheets.has(sheet.sheetId)) sheets.set(sheet.sheetId, sheets.size);

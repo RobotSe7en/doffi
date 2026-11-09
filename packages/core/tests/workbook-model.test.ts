@@ -22,6 +22,14 @@ function mutateJson(files: Map<string, Uint8Array>, path: string, edit: (value: 
 }
 
 describe("unified workbook package reader", () => {
+  it("single-cell lookups match one-cell windows across sparse chunks and native bounds with the same validation", () => {
+    const model = openDocument(seeded(), { kind: "workbook", workbookLimits: { maxWindowCells: 1 } });
+    for (const [row, column] of [[0, 0], [0, 2], [255, 31], [256, 32], [256, 33], [1_048_575, 16_383]])
+      expect(model.getCell("sheet-1", row!, column!)).toEqual(model.readWindow({ sheetId: "sheet-1", row: row!, column: column!, rows: 1, columns: 1 })[0]);
+    for (const [row, column] of [[-1, 0], [0, -1], [1_048_576, 0], [0, 16_384], [.5, 0], [0, NaN]])
+      expect(() => model.getCell("sheet-1", row!, column!)).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+    expect(() => model.getCell("unknown", 0, 0)).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+  });
   it("creates an isolated empty package and branches its snapshot without full HTML", () => {
     const files = createWorkbook({ documentId: "new", dateSystem: "1904", sheetName: "账目" }), model = openDocument(files);
     expect(model.kind).toBe("workbook"); if (model.kind !== "workbook") throw new Error("Wrong model branch");

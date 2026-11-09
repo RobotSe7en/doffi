@@ -1,6 +1,14 @@
 import { expect, it } from 'vitest';
 import { FontProbeCache } from '../src/font-probe-cache.js';
+import { WorkbookCellTextCache } from '../src/workbook/cell-text-cache.js';
 const fonts = () => Object.assign(new Set<FontFace>(), { status: 'loaded' }) as unknown as FontFaceSet;
+it('controller cleanup preserves borrowed surface probes and owning cleanup releases private probes', () => {
+  const probes = new FontProbeCache(), borrowed = new WorkbookCellTextCache(2, 10, 1024, probes), own = new WorkbookCellTextCache(2, 10, 1024);
+  probes.glyph('same-frame', () => 7); borrowed.clear();
+  expect(probes.glyph('same-frame', () => { throw Error('A live surface probe was cleared.'); })).toBe(7);
+  own.probes.glyph('private', () => 9); own.clear(); expect(own.probes.glyph('private', () => 10)).toBe(10);
+  probes.clear(); expect(probes.glyph('same-frame', () => 11)).toBe(11);
+});
 it('retains zero/false font probes, bounds both LRUs and isolates font-set owners', () => {
   const cache = new FontProbeCache(2, 100), owner = fonts(); let calls = 0;
   cache.watch(owner);

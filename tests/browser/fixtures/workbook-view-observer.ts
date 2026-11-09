@@ -30,7 +30,7 @@ export function observeWorkbookViews(editor: HTMLElement, options: { openHostSha
   // Retain only weak handles here; scan/observe content solely under this UI.
   prototype.attachShadow = function(init) { const shadow = attach.call(this, options.openHostShadows ? { ...init, mode: 'open' } : init); captured.set(this, shadow); return shadow; };
   watch();
-  return { root: (frame: HTMLIFrameElement) => views.get(frame), current: () => { const frame = [...watched].find(frame => frame.isConnected); return frame ? views.get(frame) : undefined; },
+  return { root: (frame: HTMLIFrameElement) => views.get(frame), current: () => { const frame = [...watched].find(frame => frame.isConnected && frame.style.visibility === 'visible'); return frame ? views.get(frame) : undefined; },
     dispose() { observer.disconnect(); for (const restore of restores.splice(0).reverse()) restore(); prototype.attachShadow = attach; watched.clear(); } };
 }
 export function measureWorkbookChart(view: ShadowRoot | undefined) {

@@ -265,7 +265,10 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
             selectSourceRange(merges.at(cell.row, cell.column) ?? { from: cell, to: cell });
           }), { signal: events.signal });
           return { get nodes() { return controls.nodes; }, get fonts() { return controls.fonts; }, dispose() { events.abort(); controls.dispose(); } };
-        }, { deferPublication: true, ...(share && rows ? { measurements: share.controller.measurementSeeds(rows) } : {}) });
+        }, { deferPublication: true, ...(share && rows ? { measurements: share.controller.measurementSeeds(rows),
+          // Conditional appearances can change without changing source HTML;
+          // only plain class-based cells share detached text across revisions.
+          ...(!snapshot.metadata.workbook.sheets.some(sheet => sheet.tables?.length || sheet.conditionalRules?.length) ? { textCache: share.controller.forkTextCache() } : {}) } : {}) });
         let released = false;
         // Native point-based styles retain their stable indexes on resize.
         // Viewport/container units and conditional CSS need a fresh surface

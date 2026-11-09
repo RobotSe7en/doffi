@@ -228,7 +228,7 @@ export async function ruleWindowLifecycle(entries: Entries) {
 }
 (window as unknown as { workbookPreview: unknown }).workbookPreview = { incrementalPreview, mountPublicPreview, previewInspect, previewAction, imperativeRangeSelection, calculatedPreview, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
 
-export async function publicReadAhead(entries: Entries, allow: boolean, rows: number, mode: 'normal' | 'hold' | 'failure' | 'revision' | 'active' | 'preference' = 'normal') {
+export async function publicReadAhead(entries: Entries, allow: boolean, rows: number, mode: 'normal' | 'hold' | 'parent-input' | 'failure' | 'revision' | 'active' | 'preference' = 'normal') {
   const model = modelOf(entries), before = model.serialize(), snapshot = model.snapshot(), source = modelWindowSource(model), container = host();
   const surface = await createWorkbookSurface(container, snapshot, { widthPt: 240, heightPt: 60 }), formatter = createWorkbookNumberFormatter({ dateSystem: '1900' });
   let observing = false, foreground = false, reads = 0, largestSlots = 0, held: { signal: AbortSignal; release(): void } | undefined;
@@ -239,7 +239,7 @@ export async function publicReadAhead(entries: Entries, allow: boolean, rows: nu
     const background = observing && !foreground;
     if (background) {
       reads++; largestSlots = Math.max(largestSlots, request.windows.reduce((sum, item) => sum + item.rows * item.columns, 0)); began();
-      if (mode === 'hold' && !held) await new Promise<void>(resolve => { held = { signal, release: resolve }; });
+      if ((mode === 'hold' || mode === 'parent-input') && !held) await new Promise<void>(resolve => { held = { signal, release: resolve }; });
       if (mode === 'failure') throw Error('Private optional read failure');
     }
     const response = await source.read(request, held?.signal === signal ? new AbortController().signal : signal);
@@ -255,10 +255,13 @@ export async function publicReadAhead(entries: Entries, allow: boolean, rows: nu
     const viewport = { widthPt: 240, heightPt: 60, scrollLeftPt: 0, scrollTopPt: 0 };
     await controller.render('sheet-1', viewport); observing = true;
     const first = controller.current!, original = first.element.innerHTML;
-    let aborted = false, whileHeld = 0;
-    if (allow && rows && mode === 'hold') {
+    let aborted = false, whileHeld = 0, parentAborted = false;
+    if (allow && rows && (mode === 'hold' || mode === 'parent-input')) {
       await Promise.race([started, pause(2000).then(() => { throw Error('Read ahead did not start'); })]);
-      surface.document.dispatchEvent(new surface.document.defaultView!.PointerEvent('pointerdown', { bubbles: true }));
+      if (mode === 'parent-input') {
+        const input = document.createElement('textarea'); container.append(input);
+        input.dispatchEvent(new Event('input', { bubbles: true, composed: true })); input.remove(); parentAborted = held!.signal.aborted;
+      } else surface.document.dispatchEvent(new surface.document.defaultView!.PointerEvent('pointerdown', { bubbles: true }));
       foreground = true; await controller.render('sheet-1', { ...viewport, scrollTopPt: 30 }); foreground = false;
       aborted = held!.signal.aborted; await pause(80); whileHeld = reads;
       held!.release();
@@ -268,8 +271,8 @@ export async function publicReadAhead(entries: Entries, allow: boolean, rows: nu
     foreground = true; await controller.render('sheet-1', { ...viewport, scrollTopPt: 60 }); foreground = false;
     const last = controller.current!; controller.dispose(); await pause(80);
     const stopped = reads; await pause(100);
-    return { invalid, reads: optionalReads, largestSlots, aborted, whileHeld, unhandled,
-      firstRetained: mode === 'hold' ? accepted !== first : accepted === first && html === original,
+    return { invalid, reads: optionalReads, largestSlots, aborted, whileHeld, parentAborted, unhandled,
+      firstRetained: mode === 'hold' || mode === 'parent-input' ? accepted !== first : accepted === first && html === original,
       foreground: last.frame.layout.scrollTopPt === 60, stopped: stopped === reads,
       clean: !surface.view.childNodes.length && !surface.source.childNodes.length,
       activeContent: Boolean((surface.document.defaultView as unknown as { readAheadExecuted?: boolean }).readAheadExecuted),

@@ -85,7 +85,7 @@ function automatic(sheet: DeepReadonly<WorkbookSheet>, row: number): boolean {
  * only declared chunks, retain one bounded batch, and release every temporary
  * source/display node. Horizontal scrolling cannot change row prefix sums.
  * Imported formula caches remain imported; this pass does not mark them fresh. */
-export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "source" | "view">, source: WorkbookWindowSource,
+export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "source" | "view" | "fontProbes">, source: WorkbookWindowSource,
   sheetId: string, normal: WorkbookColumnFont, formatter: WorkbookNumberFormatter, signal: AbortSignal,
   options: Partial<WorkbookAutoRowLimits> = {}, rules?: { readonly source: WorkbookRuleSource; readonly limits: WorkbookRuleReadLimits }, reuse?: WorkbookAutoRowReuse): Promise<WorkbookAutoRows> {
   const limits = { ...DEFAULT_AUTO_ROW_LIMITS, ...options }, snapshot = source.snapshot;
@@ -141,7 +141,7 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     }
   }
   const prototypes = simpleClasses && !sheet.conditionalRules?.length && !sheet.tables?.length ? new WorkbookRowSourcePrototypes(surface.source, snapshot, sheetId) : undefined;
-  const probes = new FontProbeCache(), fontEpoch = probes.watch(surface.source.ownerDocument.fonts).epoch;
+  const probes = surface.fontProbes ?? new FontProbeCache(), fontEpoch = probes.watch(surface.source.ownerDocument.fonts).epoch;
   async function measure(coordinates: readonly Readonly<WorkbookCoordinate>[], byCoordinate: ReadonlyMap<number, WorkbookCell>): Promise<void> {
     checkWindowCancellation(signal);
     checkReuse();
@@ -245,5 +245,5 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     const reusable = simpleClasses && !implicitFonts && !sheet.conditionalRules?.length && !sheet.tables?.length && !inlineStyles && !usedFallbackLineMetrics
       && finalDiagnostics.every(font => !font.substituted && !font.missingCharacters?.length && font.glyphAuditComplete !== false);
     return Object.freeze({ dimensions: worksheetDimensions(sheet, normal.maximumDigitWidthPx, heights), fonts: finalDiagnostics, usedFallbackLineMetrics, measuredCells, heights, reusable });
-  } finally { prototypes?.dispose(); probes.clear(); }
+  } finally { prototypes?.dispose(); if (!surface.fontProbes) probes.clear(); }
 }

@@ -47,7 +47,7 @@ function metrics(request: WorkbookLayoutRequest): WorkbookLayoutMeasurement {
 test.each(paths)("independent %s clones native comment bodies, reply graphs and retained recovery into a different worksheet", async path => {
   const s = createDocumentSession(openDocument(await importXlsx(readFileSync(path), { documentId: "native-copy-comments" }), { kind: "workbook" }));
   try {
-    s.commit(s.prepare(transaction(s, [{ op: "insertWorkbookSheet", name: "Destination" }]))); s.clearHistory();
+    s.commit(s.prepare(transaction(s, [{ op: "insertWorkbookSheet", name: "Destination" }]), { measureWorkbookLayout: metrics })); s.clearHistory();
     const before = s.snapshot(), targetSheetId = before.metadata.workbook.sheets.at(-1)!.sheetId;
     const original = before.annotations.find(annotation => annotation.anchor.kind === "cells" && annotation.anchor.ranges.length)!;
     if (original.anchor.kind !== "cells") throw Error("Expected native cell anchor");

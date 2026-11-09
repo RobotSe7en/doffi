@@ -55,5 +55,6 @@ for (const browser of ['chromium', 'firefox', 'webkit', 'legacy-chromium']) {
     process.execPath, 'scripts/workbook-reading-budget.mjs', '--browser', browser]);
 }
 run(process.execPath, ['scripts/collect-workbook-reading-budget.mjs', '--output', resolve(directory, 'reading-budget.json')]);
+run(process.execPath, ['scripts/workbook-performance-acceptance.mjs']);
 writeFileSync(acceptance, JSON.stringify({ sourceHead: process.env.DOFFI_SOURCE_HEAD ?? execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  complete: true, fullNativeReferences: true, logicalCpus: selected, matrixCases: 128, cells: 200000, formulas: 20000, chunks: 40 }, null, 2) + '\n');
+  complete: true, fullNativeReferences: true, fixedResourceEditing: true, logicalCpus: selected, matrixCases: 128, cells: 200000, formulas: 20000, chunks: 40 }, null, 2) + '\n');

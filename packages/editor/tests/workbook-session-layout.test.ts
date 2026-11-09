@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createDocumentSession, createWorkbook, DEFAULT_WORKBOOK_RULE_LIMITS, DocumentError, openDocument } from "@doffi/core";
-import type { DocumentOperation, WorkbookLayoutMeasurement, WorkbookSession } from "@doffi/core";
+import type { DocumentOperation, WorkbookLayoutMeasurement, WorkbookLayoutRequest, WorkbookSession } from "@doffi/core";
 import type { WorkbookLayoutSourceRequest, WorkbookPreviewSource } from "@doffi/render";
 import { connectWorkbookSession, serveWorkbookSession } from "../src/index.js";
 import type { WorkbookSessionPreparationExecution, WorkbookSessionTransportOptions } from "../src/index.js";
@@ -12,15 +12,32 @@ const resize: DocumentOperation = { op: "updateWorkbookSheet", sheetId, changes:
 async function pair(options: WorkbookSessionTransportOptions = {}) {
   const s = createDocumentSession(openDocument(createWorkbook({ documentId: "worker-layout" }), { kind: "workbook" })); cleanups.push(() => s.dispose());
   s.commit(s.prepare(transaction(s, [{ op: "insertWorkbookObject", sheetId, anchor: { kind: "two-cell", from: { row: 2, column: 1, offsetXPt: 0, offsetYPt: 0 }, to: { row: 5, column: 3, offsetXPt: 0, offsetYPt: 0 }, moveWithCells: false, sizeWithCells: false }, object: { kind: "geometry", preset: "rect", html: "<p>禰󠄀😀</p>" } },
-    { op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "number", value: 5 } } }, { row: 0, column: 1, source: { kind: "formula", expression: "=A1+1" } }] }]))); s.clearHistory();
+    { op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "number", value: 5 } } }, { row: 0, column: 1, source: { kind: "formula", expression: "=A1+1" } }] }]), { measureWorkbookLayout: metrics })); s.clearHistory();
   const channel = new MessageChannel(), server = serveWorkbookSession(channel.port1, s, options); cleanups.push(() => server.dispose());
   const client = await connectWorkbookSession(channel.port2, options); cleanups.push(() => client.dispose());
   return { s, client, server, command: () => ({ kind: "transaction" as const, transaction: transaction(s, [resize]) }) };
 }
-function metrics(request: WorkbookLayoutSourceRequest): WorkbookLayoutMeasurement {
+function metrics(request: WorkbookLayoutSourceRequest | WorkbookLayoutRequest): WorkbookLayoutMeasurement {
+  const snapshot = 'model' in request ? request.model.snapshot() : request.source.cells.snapshot;
   return { sourceDigest: request.sourceDigest, fontEnvironment: "fixed-test-fonts", sheets: request.sheetIds.map(id => ({ sheetId: id,
-    rows: { defaultSizePt: request.source.cells.snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === id)!.defaultRowHeightPt, overrides: [] }, columns: { defaultSizePt: 40, overrides: [] } })) };
+    rows: { defaultSizePt: snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === id)!.defaultRowHeightPt, overrides: [] }, columns: { defaultSizePt: 40, overrides: [] } })) };
 }
+test("layout deltas bind exact successive private providers across candidate and committed revisions", async () => {
+  const { s, client } = await pair(); let previous: WorkbookPreviewSource | undefined;
+  const seen: { sourceRows: number[]; calculatedRows: number[] }[] = [];
+  const measureLayout: NonNullable<WorkbookSessionPreparationExecution["measureLayout"]> = request => {
+    const impact = request.source.impact;
+    if (impact) seen.push({ sourceRows: impact.sourceRanges.map(value => value.range.from.row), calculatedRows: impact.calculatedRanges.map(value => value.range.from.row) });
+    else expect(previous).toBeUndefined();
+    previous = request.source; return metrics(request);
+  };
+  for (const value of [10, 20]) {
+    const candidate = await client.prepare({ kind: "transaction", transaction: transaction(s, [{ op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "number", value } } }] }]) }, undefined, { measureLayout });
+    await client.commit(candidate);
+  }
+  expect(seen).toHaveLength(3); expect(seen.filter(value => value.sourceRows.includes(0) && value.calculatedRows.includes(0))).toHaveLength(2);
+  await expect(read(previous!)).rejects.toThrow();
+});
 async function read(source: WorkbookPreviewSource, signal = new AbortController().signal) {
   const m = source.cells.snapshot.manifest;
   return source.cells.read({ documentId: m.documentId, revision: m.revision, maxCells: 2, maxCodeUnits: 8192, windows: [{ sheetId, row: 0, column: 0, rows: 1, columns: 2 }] }, signal);

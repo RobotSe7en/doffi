@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "vitest";
 import { createDocumentSession, openDocument } from "../src/index.js";
-import type { DocumentOperation, WorkbookDocumentMetadata, WorkbookDrawingAnchor, WorkbookNoteBox, WorkbookSession } from "../src/index.js";
+import type { DocumentOperation, WorkbookDocumentMetadata, WorkbookDrawingAnchor, WorkbookLayoutMeasurer, WorkbookNoteBox, WorkbookSession } from "../src/index.js";
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 
 const owned: WorkbookSession[] = [];
@@ -14,7 +14,9 @@ const box: WorkbookNoteBox = { anchor: { kind: "one-cell", from: marker(3, 2), w
 const axis = (direction: "row" | "column", action: "insert" | "delete", index: number, count = 1) => ({ op: "editWorkbookAxis" as const, sheetId: "sheet-1", axis: direction, action, index, count });
 const set: DocumentOperation = { op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "number", value: 99 } } }] };
 function tx(s: WorkbookSession, operations: DocumentOperation[]) { const m = s.snapshot().manifest; return { protocolVersion: 1 as const, documentId: m.documentId, baseRevision: m.revision, operations }; }
-function apply(s: WorkbookSession, operations: DocumentOperation[]) { return s.commit(s.prepare(tx(s, operations))); }
+const metrics: WorkbookLayoutMeasurer = request => ({ sourceDigest: request.sourceDigest, fontEnvironment: 'axis-source-test-points',
+  sheets: request.sheetIds.map(sheetId => ({ sheetId, rows: { defaultSizePt: 15, overrides: [] }, columns: { defaultSizePt: 40, overrides: [] } })) });
+function apply(s: WorkbookSession, operations: DocumentOperation[]) { return s.commit(s.prepare(tx(s, operations), { measureWorkbookLayout: metrics })); }
 function fixture() {
   const setup = createDocumentSession(scalarWorkbook([{ row: 255, column: 31, value: { type: "number", value: 7 } }, { row: 4, column: 3, value: { type: "number", value: 17 }, formula: "=$AF$256" }]));
   apply(setup, [{ op: "insertWorkbookSheet", name: "Other" }]); const other = setup.snapshot().metadata.workbook.sheets[1]!.sheetId;
@@ -31,7 +33,7 @@ function fixture() {
 function classic(s: WorkbookSession) { const value = s.snapshot().metadata.workbook.comments![0]!; if (value.format !== "classic") throw Error("Missing classic note."); return value; }
 
 test("axis insertions move one-cell objects and both resizing markers, retain physical extents, rich identities and both note sources", () => {
-  const s = fixture(), before = s.snapshot(), candidate = s.prepare(tx(s, [axis("row", "insert", 1, 2)]));
+  const s = fixture(), before = s.snapshot(), candidate = s.prepare(tx(s, [axis("row", "insert", 1, 2)]), { measureWorkbookLayout: metrics });
   expect(s.snapshot()).toEqual(before); expect(candidate.preview.metadata.workbook.objects![0]!.anchor).toEqual({ ...one, from: marker(4) }); s.commit(candidate);
   const objects = s.snapshot().metadata.workbook.objects!;
   expect(objects[0]!.anchor).toEqual({ ...one, from: marker(4) }); expect(objects[1]!.anchor).toEqual({ ...both, from: marker(4), to: { ...marker(8, 4), offsetXPt: 5, offsetYPt: 7 } });
@@ -65,7 +67,7 @@ test("deleted anchor positions clamp to the surviving boundary, while invalidate
 test("fixed or mixed two-cell modes and native-bound overflow reject every earlier write in the batch", () => {
   for (const flags of [{ moveWithCells: true, sizeWithCells: false }, { moveWithCells: false, sizeWithCells: false }, { moveWithCells: false, sizeWithCells: true }]) {
     const s = fixture(), nodeId = s.snapshot().metadata.workbook.objects![0]!.nodeId; apply(s, [{ op: "updateWorkbookObject", nodeId, changes: { anchor: { ...both, kind: "two-cell", ...flags } } }]); s.clearHistory(); const before = s.serialize();
-    expect(() => apply(s, [set, axis("column", "insert", 0)])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
+    expect(() => s.prepare(tx(s, [set, axis("column", "insert", 0)]))).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
   }
   const s = fixture(), nodeId = s.snapshot().metadata.workbook.objects![0]!.nodeId; apply(s, [{ op: "updateWorkbookObject", nodeId, changes: { anchor: { ...one, kind: "one-cell", from: marker(1_048_575) } } }]); s.clearHistory(); const before = s.serialize();
   expect(() => apply(s, [set, axis("row", "insert", 0)])).toThrowError(expect.objectContaining({ code: "InvalidOperation" })); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
@@ -73,8 +75,8 @@ test("fixed or mixed two-cell modes and native-bound overflow reject every earli
 
 test("cancellation after private anchor mapping releases its sole candidate slot, and a later revision rejects a prepared mapping", async () => {
   const s = fixture(), before = s.serialize(), signal = { aborted: false }; let reached = false;
-  await expect(s.prepareAsync(tx(s, [axis("row", "insert", 1)]), undefined, { signal, yield: async () => {}, onProgress(value) { if (value.phase === "cells" && value.completed >= 8) { signal.aborted = true; reached = true; } } })).rejects.toMatchObject({ code: "OperationCancelled" });
+  await expect(s.prepareAsync(tx(s, [axis("row", "insert", 1)]), { measureWorkbookLayout: metrics }, { signal, yield: async () => {}, onProgress(value) { if (value.phase === "cells" && value.completed >= 8) { signal.aborted = true; reached = true; } } })).rejects.toMatchObject({ code: "OperationCancelled" });
   expect(reached).toBe(true); expect(s.serialize()).toEqual(before); expect(s.history().undoSteps).toBe(0);
-  s.discard(s.prepare(tx(s, [axis("row", "insert", 1)]))); apply(s, [set]); const candidate = s.prepare(tx(s, [axis("row", "insert", 1)])); s.undo();
+  s.discard(s.prepare(tx(s, [axis("row", "insert", 1)]), { measureWorkbookLayout: metrics })); apply(s, [set]); const candidate = s.prepare(tx(s, [axis("row", "insert", 1)]), { measureWorkbookLayout: metrics }); s.undo();
   expect(() => s.commit(candidate)).toThrowError(expect.objectContaining({ code: "RevisionConflict" })); s.discard(candidate); expect(s.snapshot().metadata.workbook.objects![0]!.anchor).toEqual(one);
 });

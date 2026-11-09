@@ -25,18 +25,31 @@ function cloneText(text: WorkbookTextLayout): WorkbookTextLayout {
   })) }) });
 }
 
-/** One immutable controller owns a bounded detached-text LRU. Store clones so
+/** Each immutable controller owns a bounded detached-text LRU. Store clones so
  * a cached node never retains an old pane through its DOM parent pointers. */
 export class WorkbookCellTextCache {
   private readonly entries = new Map<string, Entry>();
   private readonly fontIds = new WeakMap<FontResolution, string>();
-  readonly probes: FontProbeCache = new FontProbeCache();
+  readonly probes: FontProbeCache;
+  private readonly ownsProbes: boolean;
   private fontEpoch: number | undefined;
   get fontRevision(): number | undefined { return this.fontEpoch; }
   private nodes = 0; private units = 0;
-  constructor(private readonly maxEntries: number, private readonly maxNodes: number, private readonly maxUnits: number) {
+  constructor(private readonly maxEntries: number, private readonly maxNodes: number, private readonly maxUnits: number, probes?: FontProbeCache) {
+    this.probes = probes ?? new FontProbeCache(); this.ownsProbes = probes === undefined;
     if (![maxEntries, maxNodes, maxUnits].every(value => Number.isSafeInteger(value) && value > 0))
       throw new DocumentError("InvalidOperation", "Workbook text caching requires positive finite budgets.");
+  }
+  /** The preview owner proves unchanged source styles, metadata and the actual
+   * surface/font set. Each fork has its own LRU and returns fresh DOM clones. */
+  fork(): WorkbookCellTextCache {
+    const next = new WorkbookCellTextCache(this.maxEntries, this.maxNodes, this.maxUnits, this.probes);
+    // A removed last source must also remove its warning. Batch diagnostics
+    // are conservative, so unhealthy entries take the complete fresh path.
+    if ([...this.entries.values()].some(entry => entry.fallback || entry.fonts.some(font => font.substituted || font.missingCharacters?.length || font.glyphAuditComplete === false))) return next;
+    for (const [key, entry] of this.entries) next.entries.set(key, entry);
+    next.nodes = this.nodes; next.units = this.units; next.fontEpoch = this.fontEpoch;
+    return next;
   }
   settled(fonts: FontFaceSet): boolean {
     const state = this.probes.watch(fonts);
@@ -59,7 +72,7 @@ export class WorkbookCellTextCache {
     }
     this.entries.set(key, { cell: Object.freeze({ ...cell, text: cloneText(cell.text) }), fonts, fallback, nodes, units }); this.nodes += nodes; this.units += units;
   }
-  clear(): void { this.entries.clear(); this.nodes = 0; this.units = 0; this.fontEpoch = undefined; this.probes.clear(); }
+  clear(): void { this.entries.clear(); this.nodes = 0; this.units = 0; this.fontEpoch = undefined; if (this.ownsProbes) this.probes.clear(); }
 }
 
 export function layoutCachedWorkbookCellTexts(scope: HTMLElement, snapshot: WorkbookSnapshot, inputs: readonly WorkbookCellTextInput[], keys: readonly string[],

@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { createDocumentSession, openDocument, WorkbookChartDataInputSchema } from "@doffi/core";
-import type { DocumentOperation, WorkbookSession } from "@doffi/core";
+import type { DocumentOperation, WorkbookLayoutMeasurer, WorkbookSession } from "@doffi/core";
 import { importXlsx, readDocumentZip, writeDocumentZip } from "@doffi/office";
 import { createWorkbookPreviewSource, DEFAULT_WORKBOOK_CHART_READ_LIMITS } from "@doffi/render";
-const commit = (s: WorkbookSession, operations: DocumentOperation[]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }));
+// Explicit point metrics verify source/history here. Browser acceptance owns
+// actual font-driven geometry; imported fixed-response objects still require
+// an authorized measurer when their cell inputs change.
+const metrics: WorkbookLayoutMeasurer = request => ({ sourceDigest: request.sourceDigest, fontEnvironment: 'native-source-test-points',
+  sheets: request.sheetIds.map(sheetId => ({ sheetId, rows: { defaultSizePt: 15, overrides: [] }, columns: { defaultSizePt: 45, overrides: [] } })) });
+const commit = (s: WorkbookSession, operations: DocumentOperation[]) => s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: s.snapshot().manifest.revision, operations }, { measureWorkbookLayout: metrics }));
 
 test.each(["examples/xlsx/07-three-charts.xlsx", "examples/xlsx/producer/07-three-charts.xlsx"])("native %s keeps source caches and unrelated charts while current data, titles, axes, copied identities and history change", async path => {
   const s = createDocumentSession(openDocument(await importXlsx(readFileSync(path), { documentId: "drawing-native" }), { kind: "workbook" }));

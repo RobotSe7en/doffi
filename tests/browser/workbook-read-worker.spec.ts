@@ -309,6 +309,13 @@ test('mounted Worker structured formula fill differs from copy and retains locke
   await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
   const { exerciseWorkbookStructuredFill } = await import('./workbook-structured-fill-cases.js'); await exerciseWorkbookStructuredFill(page, true);
 });
+test('mounted Worker ordinary filter header deletion keeps criteria, current subtotal and one-step history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-headers.xlsx'), { documentId: 'mounted-filter-headers' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookFilterHeaders } = await import('./workbook-filter-header-cases.js'); await exerciseWorkbookFilterHeaders(page, true);
+});
 test('mounted Worker partial table cuts keep native identities, current inputs, totals and overwrite protection', async ({ page }) => {
   await page.addScriptTag({ content: editorHostCode });
   const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-partial-table' }), { kind: 'workbook' });

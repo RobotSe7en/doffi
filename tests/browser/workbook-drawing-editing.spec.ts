@@ -228,10 +228,11 @@ for (const remote of [false, true]) test(`${remote ? "default Worker" : "default
   for (const index of [1, 3]) for (const field of ["widthPt", "heightPt"] as const) expect(bounds(after, index)[field]).toBeGreaterThan(bounds(before, index)[field]);
   for (const index of [2, 3]) for (const field of ["xPt", "yPt"] as const) expect(bounds(after, index)[field]).toBeGreaterThan(bounds(before, index)[field]);
   expect(await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote)).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
-  expect(await page.locator("iframe").count()).toBe(1);
+  expect(await page.locator("iframe:visible").count()).toBe(1); expect(await page.locator("iframe").count()).toBe(2);
   await page.getByRole("button", { name: "撤销", exact: true }).click(); await page.evaluate(remote => remote ? window.workbookRemoteEditor.settled() : window.workbookEditor.settled(), remote);
   expect(await page.evaluate(remote => remote ? window.workbookRemoteEditor.inspect() : window.workbookEditor.inspect(), remote)).toMatchObject({ drawings: initial.metadata.workbook.objects, comments: initial.metadata.workbook.comments, history: { undoSteps: 0 }, errors: [] });
   if (remote) expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, reopenedEqual: true }); else await page.evaluate(() => window.workbookEditor.dispose());
+  expect(await page.locator("iframe").count()).toBe(0);
 });
 
 for (const remote of [false, true]) test(`${remote ? "Worker" : "direct"} axis edits move fixed one-cell drawings and resize both-marker drawings and notes in the actual canvas`, async ({ page }) => {

@@ -3,6 +3,8 @@ import type { WorkbookSnapshot } from "@doffi/core";
 import { FontProbeCache } from "../font-probe-cache.js";
 
 export interface WorkbookSurface {
+  /** Bounded measurements belong to this actual iframe/font-set lifetime. */
+  readonly fontProbes?: FontProbeCache;
   readonly frame: HTMLIFrameElement;
   readonly document: Document;
   /** Source projections retain the document's :root/html/body cascade. */
@@ -57,7 +59,7 @@ export function createWorkbookSurface(container: HTMLElement, snapshot: Workbook
     function lease(document: Document, source: HTMLElement, host: HTMLElement, view: HTMLElement): WorkbookSurface {
       let released = false; leases.set(view, host);
       const check = (): void => { if (released || disposed) throw new DocumentError("InvalidOperation", "This workbook surface lease has been released."); };
-      return Object.freeze({ frame, document, source, view,
+      return Object.freeze({ frame, document, source, view, fontProbes: fonts,
         fork() {
           check(); const nextHost = document.createElement("office-workbook-view-surface"), nextView = document.createElement("div");
           nextHost.style.cssText = host.style.cssText; nextHost.style.setProperty("visibility", "hidden", "important"); nextHost.style.setProperty("pointer-events", "none", "important");

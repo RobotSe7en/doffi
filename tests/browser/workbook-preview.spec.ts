@@ -142,11 +142,12 @@ test('worksheet-wide prompt suppression retains current validation status and so
 
 
 test('idle neighbor reading is opt-in, bounded, cancellable and never publishes a background candidate', async ({ page }) => {
-  for (const [allow, rows, mode] of [[false, 8, 'normal'], [true, 0, 'normal'], [true, 8, 'normal'], [true, 8, 'hold'], [true, 8, 'failure'], [true, 8, 'revision'], [true, 8, 'active'], [true, 8, 'preference']] as const) {
+  for (const [allow, rows, mode] of [[false, 8, 'normal'], [true, 0, 'normal'], [true, 8, 'normal'], [true, 8, 'hold'], [true, 8, 'parent-input'], [true, 8, 'failure'], [true, 8, 'revision'], [true, 8, 'active'], [true, 8, 'preference']] as const) {
     const result = await page.evaluate(({ entries, allow, rows, mode }) => window.workbookPreview.publicReadAhead(entries, allow, rows, mode), { entries: readAheadFiles, allow, rows, mode });
     expect(result, JSON.stringify({ allow, rows, mode, result })).toMatchObject({ invalid: ['InvalidOperation', 'InvalidOperation', 'InvalidOperation'], unhandled: [], firstRetained: true, foreground: true, stopped: true, clean: true, activeContent: false, unchanged: true });
-    if (!allow || !rows) expect(result.reads).toBe(0); else { expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(mode === 'hold' ? 9 : 8); expect(result.largestSlots).toBeLessThanOrEqual(256); }
-    if (mode === 'hold') { expect(result.aborted).toBe(true); expect(result.whileHeld).toBe(1); }
+    if (!allow || !rows) expect(result.reads).toBe(0); else { expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(mode === 'hold' || mode === 'parent-input' ? 9 : 8); expect(result.largestSlots).toBeLessThanOrEqual(256); }
+    if (mode === 'hold' || mode === 'parent-input') { expect(result.aborted).toBe(true); expect(result.whileHeld).toBe(1); }
+    if (mode === 'parent-input') expect(result.parentAborted).toBe(true);
   }
 });
 
