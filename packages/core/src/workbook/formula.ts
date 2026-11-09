@@ -28,7 +28,8 @@ const number = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?/;
 const word = /^\$?[\p{L}\p{Nl}_\\][\p{L}\p{N}\p{M}_.?\\$]*/u;
 const error = /^#(?:NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|GETTING_DATA)/i;
 
-function tokenize(source: string): Token[] {
+const r1c1 = /^(?:R(?:\[[+-]?\d+\]|[1-9]\d*)?C(?:\[[+-]?\d+\]|[1-9]\d*)?|R(?:\[[+-]?\d+\]|[1-9]\d*)?|C(?:\[[+-]?\d+\]|[1-9]\d*)?)(?![\p{L}\p{N}\p{M}_.?$\\])/iu;
+function tokenize(source: string, referenceStyle: "A1" | "R1C1"): Token[] {
   const tokens: Token[] = [];
   for (let cursor = 1; cursor < source.length;) {
     const character = source[cursor]!;
@@ -48,7 +49,7 @@ function tokenize(source: string): Token[] {
       if (!closed) invalid("Unclosed formula string or sheet name.");
       tokens.push({ kind: quote === '"' ? "string" : "quoted", text: value });
     } else {
-      const rest = source.slice(cursor), numeric = number.exec(rest), identifier = word.exec(rest) ?? /^\$[1-9]\d*/.exec(rest), failure = error.exec(rest);
+      const rest = source.slice(cursor), numeric = number.exec(rest), identifier = (referenceStyle === "R1C1" ? r1c1.exec(rest) : undefined) ?? word.exec(rest) ?? /^\$[1-9]\d*/.exec(rest), failure = error.exec(rest);
       if (numeric) { tokens.push({ kind: "number", text: numeric[0] }); cursor += numeric[0].length; }
       else if (identifier) { tokens.push({ kind: "word", text: identifier[0] }); cursor += identifier[0].length; }
       else if (failure) { tokens.push({ kind: "error", text: failure[0].toUpperCase() }); cursor += failure[0].length; }
@@ -95,13 +96,34 @@ function reference(text: string, origin: FormulaOrigin, sheet?: string): Operand
 }
 
 /** Relative references are offsets from origin, making copied formulas share an AST. */
-export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpression {
+export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpression { return parseWithStyle(source, origin, "A1"); }
+/** R1C1 addresses produce the same relative-offset AST and share all grammar,
+ * structured references and budgets with persisted A1 formulas. */
+export function parseR1C1Formula(source: string, origin: FormulaOrigin): FormulaExpression { return parseWithStyle(source, origin, "R1C1"); }
+function parseWithStyle(source: string, origin: FormulaOrigin, referenceStyle: "A1" | "R1C1"): FormulaExpression {
   checkLimit(source.length, 8192);
   if (!source.startsWith("=") || source.length < 2) invalid("Formula source must begin with equals.");
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(source)) invalid("Invalid formula control character.");
   if (!Number.isInteger(origin.row) || !Number.isInteger(origin.column) || origin.row < 0 || origin.column < 0
     || origin.row >= MAX_SHEET_ROWS || origin.column >= MAX_SHEET_COLUMNS) invalid("Invalid formula origin.");
-  const tokens = tokenize(source); let index = 0, nodes = 0;
+  const tokens = tokenize(source, referenceStyle); let index = 0, nodes = 0;
+  const ref = (text: string, sheet?: string): Operand => {
+    if (referenceStyle === "A1") return reference(text, origin, sheet);
+    const cell = /^R(\[[+-]?\d+\]|[1-9]\d*)?C(\[[+-]?\d+\]|[1-9]\d*)?$/i.exec(text);
+    const axis = /^([RC])(\[[+-]?\d+\]|[1-9]\d*)?$/i.exec(text);
+    const position = (part: string | undefined, maximum: number): FormulaAxisPosition => {
+      const absolute = !!part && !part.startsWith("["), index = !part ? 0 : absolute ? Number(part) - 1 : Number(part.slice(1, -1));
+      if (!Number.isSafeInteger(index) || absolute && (index < 0 || index >= maximum)) invalid("R1C1 reference exceeds worksheet bounds.");
+      return { index, absolute };
+    };
+    if (cell) {
+      const row = position(cell[1], MAX_SHEET_ROWS), column = position(cell[2], MAX_SHEET_COLUMNS);
+      return { kind: "cell", row: row.index, column: column.index, absoluteRow: row.absolute, absoluteColumn: column.absolute, ...(sheet === undefined ? {} : { sheet }) };
+    }
+    if (axis) { const dimension = axis[1]!.toUpperCase() === "R" ? "row" : "column"; return { kind: "axis", axis: dimension, position: position(axis[2], dimension === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS), ...(sheet === undefined ? {} : { sheet }) }; }
+    if (text.includes("$") || /^(?:R(?:\d+|\[.*\])(?:C(?:\d+|\[.*\])?)?|C(?:\d+|\[.*\]))$/i.test(text)) invalid("Invalid R1C1 reference.");
+    return { kind: "name", name: text, ...(sheet === undefined ? {} : { sheet }) };
+  };
   const numericTokens = new Map<Operand, string>();
   const peek = (): Token => tokens[index]!;
   const take = (): Token => tokens[index++]!;
@@ -111,15 +133,15 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
   const isReference = (value: Operand): boolean => ["cell", "range", "axisRange", "name", "structured", "axis"].includes(value.kind)
     || value.kind === "error" && value.value === "#REF!" || value.kind === "binary" && [",", " ", ":"].includes(value.operator)
     || value.kind === "call" && ["INDEX", "OFFSET", "INDIRECT"].includes(value.name);
-  const asAxis = (value: Operand): AxisOperand | undefined => value.kind === "axis" ? value
+  const asAxis = (value: Operand): AxisOperand | undefined => value.kind === "axis" ? value : referenceStyle === "R1C1" ? undefined
     : value.kind === "name" && value.workbook === undefined ? axisOperand(value.name, origin, value.sheet) : value.kind === "number" ? axisOperand(numericTokens.get(value) ?? "", origin) : undefined;
   function sheetReference(input: string): Operand {
     const sheet = input.replace(/^\[0+\]/, "");
     if (/[\[\]\\/:?*\u0000-\u001f]/.test(sheet)) unsupported("Unsupported formula sheet reference.");
     spaces(); const target = take();
     if (target.kind === "error" && target.text === "#REF!") return { kind: "error", value: "#REF!" };
-    if (target.kind === "number") { const axis = axisOperand(target.text, origin, sheet); if (!axis) invalid("Invalid whole-row reference."); return axis; }
-    if (target.kind !== "word") invalid("Expected a formula reference after a sheet name."); return reference(target.text, origin, sheet);
+    if (target.kind === "number" && referenceStyle === "A1") { const axis = axisOperand(target.text, origin, sheet); if (!axis) invalid("Invalid whole-row reference."); return axis; }
+    if (target.kind !== "word") invalid("Expected a formula reference after a sheet name."); return ref(target.text, sheet);
   }
   function expression(minimum: number, depth: number, union = true): Operand {
     checkLimit(depth, 128); checkLimit(++nodes, 4096);
@@ -140,7 +162,7 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
       if (peek().text === "!") {
         take(); spaces(); const target = take();
         if (target.kind !== "word") invalid("A workbook-qualified name requires a name token.");
-        const name = reference(target.text, origin); if (name.kind !== "name") invalid("A workbook prefix without a sheet requires a defined name.");
+        const name = ref(target.text); if (name.kind !== "name") invalid("A workbook prefix without a sheet requires a defined name.");
         left = peek().kind === "structured" ? parseStructuredReference(take().text, name.name) : { ...name, workbook: 0 };
       } else { const sheet = take(); if (!sheet.text) invalid("An explicit worksheet qualifier cannot be empty."); consume("!"); left = sheetReference(sheet.text); }
     }
@@ -167,13 +189,13 @@ export function parseFormula(source: string, origin: FormulaOrigin): FormulaExpr
         }
         consume(")"); left = { kind: "call", name: token.text.toUpperCase(), arguments: args };
       } else if (/^(TRUE|FALSE)$/i.test(token.text)) left = { kind: "boolean", value: token.text.toUpperCase() === "TRUE" };
-      else left = reference(token.text, origin);
+      else left = ref(token.text);
     } else invalid("Expected a formula operand.");
 
     while (true) {
       if (peek().kind === "space") {
         const next = tokens[index + 1]!;
-        if (!(isReference(left) && (["word", "quoted", "structured"].includes(next.kind) || next.text === "(" || next.text === "!"))) { take(); continue; }
+        if (!(isReference(left) && (["word", "quoted", "structured"].includes(next.kind) || next.kind === "number" && tokens[index + 2]?.text === ":" || next.text === "(" || next.text === "!"))) { take(); continue; }
       }
       if (peek().text === "%" && 60 >= minimum) { take(); left = { kind: "unary", operator: "%", operand: operand(left) }; continue; }
       const operator = peek().text, precedence = operators[operator];

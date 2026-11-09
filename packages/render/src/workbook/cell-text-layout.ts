@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { WorkbookDisplayFormat, WorkbookNumberDisplay, WorkbookNumberFormatter, WorkbookSnapshot, WorkbookValue } from "@doffi/core";
+import type { SourceStyleResolver, WorkbookDisplayFormat, WorkbookNumberDisplay, WorkbookNumberFormatter, WorkbookSnapshot, WorkbookValue } from "@doffi/core";
 import type { FontResolution } from "../contracts.js";
 import type { FontProbeCache } from "../font-probe-cache.js";
 import type { WorkbookSourceCell } from "./cell-source.js";
@@ -11,6 +11,7 @@ import { layoutWorkbookNumbers } from "./number-text-layout.js";
 import type { WorkbookNumberLayoutInput } from "./number-text-layout.js";
 import { layoutWorkbookFormattedTexts } from "./formatted-text.js";
 import type { WorkbookFormattedTextInput } from "./formatted-text.js";
+import { createSourceStyleResolver } from "../source-style-probe.js";
 
 export interface WorkbookCellTextInput {
   readonly source: WorkbookSourceCell;
@@ -32,6 +33,8 @@ export interface WorkbookCellTextLayouts {
 export function layoutWorkbookCellTexts(scope: HTMLElement, snapshot: WorkbookSnapshot, inputs: readonly WorkbookCellTextInput[], formatter: WorkbookNumberFormatter,
   options: { readonly normalSpaceWidthPx: number }, maxNodes: number, maxTextUnits: number, probes?: FontProbeCache): WorkbookCellTextLayouts {
   const formats = new Map(snapshot.metadata.workbook.numberFormats.map(format => [format.formatId, format]));
+  let sourceStyleResolver: SourceStyleResolver | undefined;
+  const sourceStyles = (): SourceStyleResolver => sourceStyleResolver ??= createSourceStyleResolver(scope.ownerDocument);
   const texts: WorkbookTextLayoutInput[] = [], numbers: WorkbookNumberLayoutInput[] = [], formatted: WorkbookFormattedTextInput[] = [];
   const locations = new Map<WorkbookCellTextInput, { kind: "text" | "number" | "formatted"; index: number }>();
   let textNodes = 0, units = 0;
@@ -57,7 +60,7 @@ export function layoutWorkbookCellTexts(scope: HTMLElement, snapshot: WorkbookSn
         locations.set(input, { kind: "formatted", index: formatted.length }); formatted.push({ source, value: value.value, format, derived: formula, ...size }); continue;
       }
     }
-    const text = value.type === "text" && !formula ? createWorkbookTextView(source, remaining())
+    const text = value.type === "text" && !formula ? createWorkbookTextView(source, remaining(), sourceStyles)
       : createWorkbookNumberText(source, [{ kind: "text", text: value.type === "boolean" ? value.value ? "TRUE" : "FALSE" : value.value }], undefined, remaining());
     textNodes += text.nodes + 1; units += text.element.textContent?.length ?? 0;
     if (units > maxTextUnits) throw new DocumentError("ResourceLimitExceeded", "Workbook window text exceeds its cumulative source-text budget.");
@@ -66,7 +69,7 @@ export function layoutWorkbookCellTexts(scope: HTMLElement, snapshot: WorkbookSn
   const rich = layoutWorkbookTexts(scope, texts, options.normalSpaceWidthPx, maxNodes, maxTextUnits, probes);
   textNodes = rich.cells.reduce((sum, cell) => sum + cell.nodes, 0);
   units = rich.cells.reduce((sum, cell) => sum + cell.codeUnits, 0);
-  const formattedText = layoutWorkbookFormattedTexts(scope, formatted, formatter, options.normalSpaceWidthPx, remaining(), Math.max(1, maxTextUnits - units), probes);
+  const formattedText = layoutWorkbookFormattedTexts(scope, formatted, formatter, options.normalSpaceWidthPx, remaining(), Math.max(1, maxTextUnits - units), probes, sourceStyles);
   textNodes += formattedText.cells.reduce((sum, cell) => sum + cell.nodes, 0);
   units += formattedText.cells.reduce((sum, cell) => sum + cell.codeUnits, 0);
   if (units > maxTextUnits) throw new DocumentError("ResourceLimitExceeded", "Workbook window exceeds its cumulative displayed-text budget.");

@@ -17,6 +17,7 @@ import type { WorkbookFindMatch, WorkbookFindQuery, WorkbookFindResult, Workbook
 import { workbookInputTextView } from "./text-projection.js";
 import { selectedWorkbookSort } from "./selected-sort.js";
 import { WorkbookClipboard } from "./clipboard.js";
+import { WorkbookSystemClipboard } from "./system-clipboard.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import { createWorkbookDrawingControls } from "./drawing-controls.js";
 import { createWorkbookCommentControls } from "./comment-controls.js";
@@ -81,6 +82,11 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   const buttons: { button: HTMLButtonElement; available(): boolean }[] = [];
   const input = createWorkbookRemoteInputController(client, { onChange: controls });
   const clipboard = new WorkbookClipboard();
+  const systemClipboard = new WorkbookSystemClipboard(async (selected, signal) => {
+    const anchor = selected.anchor;
+    if (anchor.kind !== "cells" || anchor.ranges.length !== 1 || selected.baseRevision !== client.state().revision) throw new DocumentError("RevisionConflict", "Clipboard selection belongs to a previous source.");
+    return client.readClipboard(anchor.sheetId, { from: { ...anchor.ranges[0]!.from }, to: { ...anchor.ranges[0]!.to } }, { signal, ...(source ? { view: source } : {}), ...(config.locale === undefined ? {} : { calculationContext: { locale: config.locale } }) });
+  });
   const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode];
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook editor has been disposed."); }
   function report(error: unknown): void {
@@ -140,6 +146,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   function queueInteraction(action: () => Promise<unknown>): void { void runInteraction(action); }
   async function acceptSelection(selected: DocumentSelection, focus = false): Promise<void> {
     await input.select(selected); check(); binding.refresh();
+    if (source?.cells.snapshot.manifest.revision === selected.baseRevision) systemClipboard.prepare(selected);
     if (selected.anchor.kind === "cells") ui.address.value = address(selected.anchor.ranges[0]!);
     controls(); notify(); if (focus) binding.focus();
   }
@@ -323,9 +330,10 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     await sourceSettled(); binding.focus();
   }
   async function copySelection(kind: "copy" | "cut"): Promise<void> {
-    check(); await sourceSettled(); clipboard.capture(source!.cells.snapshot, input.state().selection, kind);
+    check(); clipboard.capture(source!.cells.snapshot, input.state().selection, kind);
     if (kind === "cut") { ui.clipboardMode.value = "contents"; ui.clipboardSkipBlanks.checked = false; }
     ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
+    binding.focus(); ui.input.ownerDocument.execCommand(kind);
   }
   async function pasteSelection(): Promise<void> {
     check(); await sourceSettled(); const plan = clipboard.plan(source!.cells.snapshot, input.state().selection), mode = ui.clipboardMode.value as WorkbookRangeCopyOptions["mode"];
@@ -411,11 +419,19 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     onCancelled() { void runInteraction(cancelInput); },
     onNavigate(direction, extend) { void runInteraction(async () => { await sourceSettled(); if (pendingInput()) return; choosing++; try { const selected = await preview!.moveSelection(direction, extend); await acceptSelection(selected, true); } finally { choosing--; } }); },
     onHistory(direction) { void runInteraction(() => history(direction)); },
+    onCopy(kind, selected, transfer) {
+      const data = systemClipboard.data(selected);
+      clipboard.capture(source!.cells.snapshot, selected, kind, data); transfer.setData("text/plain", data.text); transfer.setData("text/html", data.html);
+      if (kind === "cut") { ui.clipboardMode.value = "contents"; ui.clipboardSkipBlanks.checked = false; }
+      controls();
+    },
     onClear(selected) { if (selected.anchor.kind !== "cells") return; const anchor = selected.anchor; void runInteraction(async () => {
       if (selected.baseRevision !== client.state().revision) throw new DocumentError("RevisionConflict", "Clear selection belongs to a previous source.");
       await perform([{ op: "clearWorkbookRanges", sheetId: anchor.sheetId, ranges: anchor.ranges.map(range => ({ from: { ...range.from }, to: { ...range.to } })), mode: "contents" }]);
     }); },
-    onPaste(text, selected, html) { if (selected.anchor.kind !== "cells") return; const anchor = selected.anchor; void runInteraction(async () => {
+    onPaste(text, selected, html) { if (selected.anchor.kind !== "cells") return;
+      if (clipboard.matches(text, html)) { void runInteraction(pasteSelection); return; }
+      const anchor = selected.anchor; void runInteraction(async () => {
       await commitCommand({ kind: "paste", documentId: selected.documentId, revision: selected.baseRevision, sheetId: anchor.sheetId, at: anchor.ranges[0]!.from, text, ...(html === undefined ? {} : { html }) });
     }); },
   });
@@ -482,13 +498,13 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   }, { signal: events.signal });
   for (const type of ["input", "keydown", "keyup", "select", "mouseup", "compositionstart", "compositionend"]) ui.input.addEventListener(type, controls, { signal: events.signal });
   const unsubscribe = client.subscribe(() => { if (!disposed) { found = undefined; findSelectionScope = undefined; void scheduleRefresh(); } }); controls(); void scheduleRefresh();
-  const ready = sourceSettled().then(() => {}); void ready.catch(() => {});
+  const ready = sourceSettled().then(() => systemClipboard.settled()); void ready.catch(() => {});
   async function settled(): Promise<WorkbookRenderReport> {
     for (;;) {
       check(); const pendingInput = inputTask, pendingCommand = commandTask;
       await Promise.race([Promise.all([pendingInput, pendingCommand]), released]); check();
       const current = interaction; await Promise.race([current, released]); check();
-      const result = await sourceSettled(); if (current === interaction && pendingInput === inputTask && pendingCommand === commandTask) return result;
+      const result = await sourceSettled(); await systemClipboard.settled(); if (current === interaction && pendingInput === inputTask && pendingCommand === commandTask) return result;
     }
   }
   return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); },
@@ -497,6 +513,6 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     setViewport: async (viewport: Parameters<WorkbookPreview["setViewport"]>[0]) => { await sourceSettled(); check(); return preview!.setViewport(viewport); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: () => binding.apply(), cancelInput: () => runInteraction(cancelInput), perform,
     recalculate,
-    dispose() { if (disposed) return; disposed = true; generation++; releaseWaiters(); refreshAbort?.abort(); commandAbort?.abort(); layoutService.dispose(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview?.dispose(); source?.dispose(); ui.element.remove(); },
+    dispose() { if (disposed) return; disposed = true; generation++; releaseWaiters(); refreshAbort?.abort(); commandAbort?.abort(); systemClipboard.dispose(); clipboard.clear(); layoutService.dispose(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview?.dispose(); source?.dispose(); ui.element.remove(); },
   });
 }

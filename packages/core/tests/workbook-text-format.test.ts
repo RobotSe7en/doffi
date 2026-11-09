@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "vitest";
-import { createDocumentSession, openDocument } from "../src/index.js";
+import { createDocumentSession, DEFAULT_DOCUMENT_READ_LIMITS, openDocument, readWorkbookCellSource, SourceStyleResolver } from "../src/index.js";
 import type { DocumentOperation, WorkbookSession } from "../src/index.js";
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 
@@ -53,4 +53,31 @@ test("empty font patches retain redo, stale candidates and asynchronous cancella
   const abort = { aborted: false }, saved = s.snapshot();
   await expect(s.prepareAsync(transaction(s, [format(0, 1, "A")]), {}, { signal: abort, yield: async () => { abort.aborted = true; } })).rejects.toMatchObject({ code: "OperationCancelled" });
   expect(s.snapshot()).toEqual(saved); expect(s.snapshot().styles).toEqual(before.styles);
+});
+test("one hundred multiline font edits reuse complete protected runs, keep source classes and no-op history, and undo to the exact initial chunks", () => {
+  const s = session(), value = "甲\n禰󠄀😀"; text(s, value.replace("\n", "<br>")); const before = s.snapshot();
+  const operation = (color: string) => ({ ...format(0, value.length, value), properties: { color } });
+  for (let index = 0; index < 100; index++) {
+    apply(s, [operation(index % 2 ? "blue" : "red")]);
+    const cell = s.getCell("sheet-1", 0, 0)!;
+    expect(cell.text).toBe(value); expect((cell.html.match(/<span\b/g) ?? []).length).toBe(3);
+    for (const entry of cell.html.matchAll(/<span class="([^"]+)"/g)) expect(entry[1]!.split(/\s+/).length).toBeLessThanOrEqual(2);
+    expect(cell.html).not.toMatch(/\sstyle=|data-node-id/);
+  }
+  expect(s.history().undoSteps).toBe(100); const current = s.snapshot();
+  expect(apply(s, [operation("blue")]).changed).toBe(false); expect(s.snapshot()).toEqual(current); expect(s.history().undoSteps).toBe(100);
+  expect(openDocument(s.serialize(), { kind: "workbook" }).snapshot()).toEqual(current);
+  for (let index = 0; index < 100; index++) s.undo();
+  expect(s.snapshot().manifest.chunks).toEqual(before.manifest.chunks); expect(s.snapshot().styles).toEqual(before.styles);
+});
+test("a copied controlled run keeps its original font when another cell updates a shared neutral base", () => {
+  const s = session(); text(s, "ABCD"); apply(s, [{ ...format(0, 4, "ABCD"), properties: { color: "red" } }]);
+  apply(s, [{ op: "setWorkbookCells", sheetId: "sheet-1", cells: [{ row: 0, column: 1, source: readWorkbookCellSource(s, { sheetId: "sheet-1", row: 0, column: 0 }) }] }]);
+  const before = s.getCell("sheet-1", 0, 1)!;
+  apply(s, [{ ...format(0, 4, "ABCD"), properties: { color: "blue" } }]);
+  expect(s.getCell("sheet-1", 0, 1)).toEqual(before);
+  const classes = /<span class="([^"]+)"/.exec(before.html)![1]!;
+  const resolver = new SourceStyleResolver(s.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS);
+  expect(resolver.get({ tag: "span", attrs: { class: classes }, parent: { tag: "td", attrs: { class: "cell-default" }, parent: undefined } }).color).toBe("red");
+  s.undo(); expect(s.getCell("sheet-1", 0, 1)).toEqual(before);
 });

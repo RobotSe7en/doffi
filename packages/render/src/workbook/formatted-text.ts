@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { WorkbookDisplayFormat, WorkbookNumberFormatter } from "@doffi/core";
+import type { SourceStyleResolver, WorkbookDisplayFormat, WorkbookNumberFormatter } from "@doffi/core";
 import { resolvePreviewFontsInScope } from "../fonts.js";
 import type { FontProbeCache } from "../font-probe-cache.js";
 import type { WorkbookSourceCell } from "./cell-source.js";
@@ -11,6 +11,7 @@ import type { WorkbookTextLayoutInput, WorkbookTextLayouts } from "./text-layout
 import { workbookTextAlignment, workbookTextGutters, workbookReadingOrder } from "./text-alignment.js";
 import { WorkbookTextDirection } from "./text-direction.js";
 import { fitWorkbookFill } from "./number-layout.js";
+import { createSourceStyleResolver } from "../source-style-probe.js";
 
 export interface WorkbookFormattedTextInput {
   readonly source: WorkbookSourceCell;
@@ -27,13 +28,15 @@ export interface WorkbookFormattedTextInput {
  * projected @ fields. It neither flattens rich runs nor assigns fake source
  * offsets to literals. Repeated fields retain repeated source ranges. */
 export function layoutWorkbookFormattedTexts(scope: HTMLElement, inputs: readonly WorkbookFormattedTextInput[], formatter: WorkbookNumberFormatter,
-  normalSpaceWidthPx: number, maxNodes = 50_000, maxTextUnits: number = 8 * 1024 * 1024, probes?: FontProbeCache): WorkbookTextLayouts {
+  normalSpaceWidthPx: number, maxNodes = 50_000, maxTextUnits: number = 8 * 1024 * 1024, probes?: FontProbeCache, suppliedSourceStyles?: () => SourceStyleResolver): WorkbookTextLayouts {
   const document = scope.ownerDocument, view = document.defaultView;
   if (!scope.isConnected || !view || document.fonts.status === "loading" || !Number.isFinite(normalSpaceWidthPx) || normalSpaceWidthPx < 0
     || ![maxNodes, maxTextUnits].every(n => Number.isSafeInteger(n) && n > 0)) throw new DocumentError("InvalidOperation", "Text-format layout requires a connected settled surface and positive budgets.");
   const root = document.createElement("div"); root.dataset.officeView = "workbook-format-measurement"; root.setAttribute("aria-hidden", "true");
   root.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;contain:layout;left:0;top:0;width:0;height:0;overflow:hidden;direction:ltr";
   const direction = new WorkbookTextDirection(scope);
+  let resolver: SourceStyleResolver | undefined;
+  const sourceStyles = suppliedSourceStyles ?? (() => resolver ??= createSourceStyleResolver(document));
   let nodes = 1, units = 0;
   const remaining = (): number => { if (nodes >= maxNodes) throw new DocumentError("ResourceLimitExceeded", "Formatted text exceeds its cumulative node budget."); return maxNodes - nodes; };
   const accountText = (amount: number): void => { units += amount; if (units > maxTextUnits) throw new DocumentError("ResourceLimitExceeded", "Formatted text exceeds its cumulative text budget."); };
@@ -52,7 +55,7 @@ export function layoutWorkbookFormattedTexts(scope: HTMLElement, inputs: readonl
         let text: WorkbookTextView;
         if (part.kind === "text" && part.source && !input.derived) {
           if (part.source.from !== 0 || part.source.to !== input.value.length || part.text !== input.value) throw new DocumentError("InvalidDocument", "A text-format field does not match its source value.");
-          text = createWorkbookTextView(input.source, remaining());
+          text = createWorkbookTextView(input.source, remaining(), sourceStyles);
           if (text.projections.map(projection => projection.node.data).join("") !== input.value) throw new DocumentError("InvalidDocument", "A text-format source differs from its stored text value.");
           if (display.color) for (const node of [text.element, ...text.element.querySelectorAll<HTMLElement>("[data-office-text-style],[data-office-script]")]) node.style.color = element.style.color;
           projections.push(...text.projections);

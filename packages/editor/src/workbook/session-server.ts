@@ -1,4 +1,4 @@
-import { captureWorkbookModel, copyWorkbookScalarContext, createWorkbookCalculator, DocumentError, readWorkbookChangeImpact, WorkbookCoordinateSchema } from "@doffi/core";
+import { captureWorkbookModel, copyWorkbookScalarContext, createWorkbookCalculator, DocumentError, readWorkbookChangeImpact, WorkbookCoordinateSchema, WorkbookRangeSchema } from "@doffi/core";
 import type { WorkbookCandidateChange, WorkbookCalculationResult, WorkbookModel, WorkbookSession, TransactionPrepareOptions, WorkbookInteractionRequestInput } from "@doffi/core";
 import { serveWorkbookReads } from "@doffi/render";
 import type { WorkbookReadServer } from "@doffi/render";
@@ -11,6 +11,7 @@ import { findWorkbookText } from "./find.js";
 import { createWorkbookInputTransaction, readWorkbookInputText } from "./input-source.js";
 import { createWorkbookPasteTransaction } from "./text-input.js";
 import { createWorkbookHtmlPastePlan } from "./html-paste.js";
+import { createWorkbookClipboardData, WORKBOOK_CLIPBOARD_MAX_CELLS } from "./clipboard-data.js";
 import { createWorkbookTaskQueue } from "./task-queue.js";
 import { calculationOptions, checkSessionMessage, invalidSessionTransport, keys, positiveId, record, sessionMapping, sessionReceipt, sessionTransportConfig, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
 import type { WorkbookSessionCommand, WorkbookSessionProgress, WorkbookSessionServer, WorkbookSessionState, WorkbookSessionTransportOptions } from "./session-transport.js";
@@ -169,6 +170,18 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
       if (!coordinate.success) invalidSessionTransport("Invalid workbook reference origin.");
       const { documentId, revision } = model.snapshot().manifest;
       post(id, { documentId, revision, reference: model.resolveReference(payload.expression, { sheetId: payload.origin.sheetId, ...coordinate.data }) });
+    } else if (operation === "clipboard") {
+      if (!keys(payload, ["documentId", "revision", "sheetId", "range", "context", "view"]) || typeof payload.sheetId !== "string") invalidSessionTransport("Invalid workbook clipboard request.");
+      identity(payload); const model = captureWorkbookModel(session), range = WorkbookRangeSchema.parse(payload.range);
+      if (range.from.row > range.to.row || range.from.column > range.to.column || !model.snapshot().metadata.workbook.sheets.some(sheet => sheet.sheetId === payload.sheetId)) invalidSessionTransport("Clipboard output requires an ordered range on an existing worksheet.");
+      if ((range.to.row - range.from.row + 1) * (range.to.column - range.from.column + 1) > WORKBOOK_CLIPBOARD_MAX_CELLS) throw new DocumentError("ResourceLimitExceeded", "Clipboard output exceeds its cell budget.");
+      const context = payload.context === undefined ? undefined : copyWorkbookScalarContext(payload.context as never);
+      const view = payload.view === undefined ? undefined : positiveId(payload.view) ? viewRequests.get(payload.view) : undefined;
+      if (payload.view !== undefined && (!view || view.model !== model)) invalidSessionTransport("Clipboard results require a retained view of the current source.");
+      const calculation = view ? view.calculation : await calculate(model, abort, progress, context === undefined ? undefined : { calculationContext: context });
+      identity(payload);
+      const data = await createWorkbookClipboardData(session, payload.sheetId, range, { ...(calculation ? { calculation } : {}), signal: abort.signal, yield: yieldTask, ...(context?.locale === undefined ? {} : { locale: context.locale }) });
+      identity(payload); post(id, { ...state(), ...data });
     } else if (operation === "inputText") {
       if (!keys(payload, ["documentId", "revision", "sheetId", "at", "handle"])) invalidSessionTransport("Invalid workbook input read.");
       const owned = payload.handle === undefined ? undefined : positiveId(payload.handle) ? candidates.get(payload.handle) : undefined;

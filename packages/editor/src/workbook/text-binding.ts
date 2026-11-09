@@ -13,6 +13,7 @@ export interface WorkbookTextBindingOptions {
   readonly onHistory?: (direction: "undo" | "redo") => void;
   readonly onClear?: (selection: DocumentSelection) => void;
   readonly onPaste?: (text: string, selection: DocumentSelection, html?: string) => void;
+  readonly onCopy?: (kind: "copy" | "cut", selection: DocumentSelection, data: DataTransfer) => void;
   readonly onError?: (error: DocumentError, recoveryText: string) => void;
 }
 export interface WorkbookTextBinding {
@@ -42,7 +43,7 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
   const view = input?.ownerDocument?.defaultView;
   if (!view || !(input instanceof view.HTMLTextAreaElement) || !input.isConnected) throw new DocumentError("InvalidOperation", "Workbook text binding requires a connected native textarea.");
   if (!options || typeof options !== "object" || Array.isArray(options)
-    || Object.keys(options).some(key => !["prepareOptions", "onApplied", "onCancelled", "onNavigate", "onHistory", "onClear", "onPaste", "onError"].includes(key))
+    || Object.keys(options).some(key => !["prepareOptions", "onApplied", "onCancelled", "onNavigate", "onHistory", "onClear", "onPaste", "onCopy", "onError"].includes(key))
     || Object.values(options).some(value => value !== undefined && typeof value !== "function")) throw new DocumentError("InvalidOperation", "Invalid workbook text binding options.");
   const abort = new view.AbortController(), events = { signal: abort.signal };
   let disposed = false, editing = false;
@@ -95,6 +96,13 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
     if (editing || state.dirty || state.composing || input.value !== workbookInputTextView(state.text) || !state.selection || !options.onPaste || !data
       || !data.types.some(type => type === "text/plain" || type === "text/html")) return;
     event.preventDefault(); notify(options.onPaste, data.getData("text/plain"), state.selection, data.getData("text/html") || undefined);
+  }, events);
+  for (const kind of ["copy", "cut"] as const) input.addEventListener(kind, event => {
+    const state = controller.state();
+    if (editing || state.dirty || state.composing || input.value !== workbookInputTextView(state.text) || !state.selection || !options.onCopy || !event.clipboardData) return;
+    // Prevent native cut from deleting the textarea's reversible source spelling.
+    // Grid cut remains a delayed move through the core transaction boundary.
+    event.preventDefault(); notify(options.onCopy, kind, state.selection, event.clipboardData);
   }, events);
   input.addEventListener("keydown", event => {
     const state = controller.state();

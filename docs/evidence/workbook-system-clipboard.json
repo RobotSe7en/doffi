@@ -1,0 +1,77 @@
+{
+  "scope": "Independent XLSX imported and edited through SDK transactions; generated portable HTML inserted through the actual pinned native controller, then a native value edit recalculates the pasted formula. Original HTML/SDK text retains CR; producer CR/LF and tab normalization and constant-error formula conversion are recorded. No Excel/WPS runtime claim.",
+  "sourceSha256": "305d3984c9de3150d26ad24775d6ab651195b240f1625e811991d357309b97b5",
+  "htmlSha256": "10533adf96d995de81ea2d9b4166be5e88a2bafd06d6392cb1021b78c70c97a2",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "fixtureSha256": "987c1f3c813ddd547d399b49867ff8da0999d7f42845f3ebf7598d6ba5dcd616",
+  "generatorSha256": "709b418f0259f0f2b97408cd473d33bb354dd9367ef9577612ca534f62ab7c32",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "officialSchemasSha256": "d34187520749998af306faf1b730e568b0ca6d88ad24638a407c0a9bb4ca04fc",
+  "observed": {
+    "cells": {
+      "A12": {
+        "type": "n",
+        "value": "15",
+        "formula": null
+      },
+      "B12": {
+        "type": "n",
+        "value": "30",
+        "formula": "(A12*2)"
+      },
+      "C12": {
+        "type": "s",
+        "value": "001234567890123456789",
+        "formula": null
+      },
+      "D12": {
+        "type": "b",
+        "value": "1",
+        "formula": null
+      },
+      "A13": {
+        "type": "s",
+        "value": "合并😀禰󠄀",
+        "formula": null
+      },
+      "B13": {
+        "type": "n",
+        "value": null,
+        "formula": null
+      },
+      "C13": {
+        "type": "e",
+        "value": "#DIV/0!",
+        "formula": "#DIV/0!"
+      },
+      "D13": {
+        "type": "s",
+        "value": "=1+1",
+        "formula": null
+      },
+      "A14": {
+        "type": "s",
+        "value": "中文\n\n\"甲 乙\"😀禰󠄀",
+        "formula": null
+      },
+      "B14": {
+        "type": "n",
+        "value": "60",
+        "formula": null
+      },
+      "C14": {
+        "type": "b",
+        "value": "1",
+        "formula": "TRUE()"
+      },
+      "D14": {
+        "type": "n",
+        "value": "12345.6789",
+        "formula": null
+      }
+    },
+    "merges": [
+      "A13:B13"
+    ]
+  }
+}

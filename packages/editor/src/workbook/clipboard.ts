@@ -1,5 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { DocumentSelection, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
+import type { WorkbookClipboardData } from "./clipboard-data.js";
 export interface WorkbookClipboardSource {
   readonly documentId: string; readonly baseRevision: number; readonly sheetId: string; readonly range: WorkbookRange; readonly kind: "copy" | "cut";
 }
@@ -8,12 +9,16 @@ export interface WorkbookClipboardSource {
  * IDs. A cut does not remove source data before the destination is committed. */
 export class WorkbookClipboard {
   private source: WorkbookClipboardSource | undefined;
+  private data: WorkbookClipboardData | undefined;
   get available(): boolean { return this.source !== undefined; }
   get kind(): "copy" | "cut" | undefined { return this.source?.kind; }
-  capture(snapshot: WorkbookSnapshot, selection: DocumentSelection | undefined, kind: "copy" | "cut"): void {
+  clear(): void { this.source = undefined; this.data = undefined; }
+  capture(snapshot: WorkbookSnapshot, selection: DocumentSelection | undefined, kind: "copy" | "cut", data?: WorkbookClipboardData): void {
     const target = this.selection(snapshot, selection);
     this.source = Object.freeze({ documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, ...target, kind });
+    this.data = data;
   }
+  matches(text: string, html: string | undefined): boolean { return !!this.source && !!this.data && text === this.data.text && html === this.data.html; }
   plan(snapshot: WorkbookSnapshot, selection: DocumentSelection | undefined): { source: WorkbookClipboardSource; sheetId: string; target: WorkbookRange["from"] } {
     const source = this.source;
     if (!source) throw new DocumentError("InvalidOperation", "请先复制或剪切一个区域。");

@@ -3,7 +3,7 @@ import type { WorkbookRemoteEditorView } from '@doffi/editor';
 import { DEFAULT_WORKBOOK_RULE_LIMITS } from '@doffi/core';
 import type { DocumentOperation, TransactionPrepareOptions, WorkbookCell, WorkbookSnapshot } from '@doffi/core';
 import { decodeTestBytes } from './package-transport.js';
-import { measureWorkbookCellAppearance, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
+import { measureWorkbookCellAppearance, measureWorkbookCellDecorations, measureWorkbookChart, measureWorkbookDrawingText, measureWorkbookDrawingBounds, observeWorkbookViews } from './workbook-view-observer.js';
 
 let cleanup = () => {};
 let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; external(text: string, wait?: boolean, at?: { row: number; column: number }): Promise<void>; value(row: number, column: number): Promise<string>; disposeEditor(): Promise<boolean>; finish(): Promise<unknown>;
@@ -12,6 +12,7 @@ let actions: { inspect(): Promise<unknown>; settled(): Promise<unknown>; externa
   tableStyleSource(): Promise<{ tableStyles: WorkbookSnapshot["metadata"]["workbook"]["tableStyles"]; defaultTableStyle: WorkbookSnapshot["metadata"]["workbook"]["defaultTableStyle"] }>;
   sourceCell(row: number, column: number, sheetId?: string): Promise<WorkbookCell | undefined>;
   displayedCellAppearance(row: number, column: number): ReturnType<typeof measureWorkbookCellAppearance>;
+  displayedCellDecorations(row: number, column: number): ReturnType<typeof measureWorkbookCellDecorations>;
   displayedChart(): ReturnType<typeof measureWorkbookChart>;
   displayedDrawingText(nodeId: string, includeBounds?: boolean): ReturnType<typeof measureWorkbookDrawingText>;
   displayedDrawingBounds(): ReturnType<typeof measureWorkbookDrawingBounds>;
@@ -45,6 +46,7 @@ export async function mount(code: string, encoded: string, observeView = false, 
   const release = () => { if (!disposed) { editor.dispose(); disposed = true; } };
   cleanup = () => { observed?.dispose(); release(); client.dispose(); worker.terminate(); URL.revokeObjectURL(url); host.remove(); };
   actions = {
+    displayedCellDecorations(row, column) { return measureWorkbookCellDecorations(observed?.current(), row, column); },
     async perform(operations) { await editor.perform(operations); await editor.settled(); },
     async performWithPendingMutation() {
       const cell = { row: 0, column: 0, source: { kind: "value" as const, value: { type: "text" as const, value: "captured" } } };
@@ -96,6 +98,7 @@ export function settled() { return actions.settled(); }
 export function perform(operations: readonly DocumentOperation[]) { return actions.perform(operations); }
 export function performWithPendingMutation() { return actions.performWithPendingMutation(); }
 export function displayedCellAppearance(row: number, column: number) { return actions.displayedCellAppearance(row, column); }
+export function displayedCellDecorations(row: number, column: number) { return actions.displayedCellDecorations(row, column); }
 export function displayedChart() { return actions.displayedChart(); }
 export function displayedDrawingText(nodeId: string, includeBounds = false) { return actions.displayedDrawingText(nodeId, includeBounds); }
 export function displayedDrawingBounds() { return actions.displayedDrawingBounds(); }
@@ -109,4 +112,4 @@ export function sourceCell(row: number, column: number, sheetId?: string) { retu
 export function disposeEditor() { return actions.disposeEditor(); }
 export function finish() { return actions.finish(); }
 export const tableStyleSource = () => actions.tableStyleSource();
-Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, performWithPendingMutation, displayedCellAppearance, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });
+Object.assign(window, { workbookRemoteEditor: { mount, inspect, tableStyleSource, settled, perform, performWithPendingMutation, displayedCellAppearance, displayedCellDecorations, displayedChart, displayedDrawingText, displayedDrawingBounds, displayedCell, external, value, sourceCell, holdReference, referenceHeld, releaseReference, disposeEditor, finish } });

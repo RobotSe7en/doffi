@@ -1,7 +1,8 @@
 import { DocumentError, DocumentErrorDataSchema, parseContract, WorkbookCoordinateSchema, WorkbookProposalReviewSchema, WorkbookRangeSchema } from "@doffi/core";
-import type { TransactionPrepareOptions, WorkbookChangeImpact, WorkbookCoordinate, WorkbookInteractionRequestInput, WorkbookReferenceLocation, WorkbookReferenceResult } from "@doffi/core";
+import type { TransactionPrepareOptions, WorkbookChangeImpact, WorkbookCoordinate, WorkbookInteractionRequestInput, WorkbookReferenceLocation, WorkbookReferenceResult, WorkbookRange } from "@doffi/core";
 import { connectWorkbookReads, linkWorkbookPreviewSource } from "@doffi/render";
 import type { WorkbookReadConnection } from "@doffi/render";
+import type { WorkbookSessionClipboardOptions } from "./session-transport.js";
 import { checkSessionMessage, freezeSessionValue, invalidSessionTransport, keys, positiveId, record, sessionTransportConfig, WORKBOOK_SESSION_PROTOCOL } from "./session-transport.js";
 import type { WorkbookSessionCandidate, WorkbookSessionCommand, WorkbookSessionConnection, WorkbookSessionExecution, WorkbookSessionPreparationExecution, WorkbookSessionFindOptions, WorkbookSessionInput, WorkbookSessionProgress, WorkbookSessionReceipt, WorkbookSessionState, WorkbookSessionTransportOptions, WorkbookSessionViewOptions } from "./session-transport.js";
 import type { WorkbookFindQuery, WorkbookFindResult } from "./find-contracts.js";
@@ -172,6 +173,17 @@ export async function connectWorkbookSession(port: MessagePort, options: Workboo
         else invalidSessionTransport("Invalid workbook reference kind.");
         if (current.revision !== expected.revision) throw new DocumentError("RevisionConflict", "Workbook reference source changed before completion.");
         return freezeSessionValue(result as unknown as WorkbookReferenceResult);
+      },
+      async readClipboard(sheetId: string, range: WorkbookRange, options: WorkbookSessionClipboardOptions = {}) {
+        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["view", "calculationContext", "signal", "onProgress"].includes(key))) invalidSessionTransport("Invalid workbook clipboard options.");
+        const { view, calculationContext: context, ...execution } = options, handle = view === undefined ? undefined : viewHandles.get(view);
+        if (view !== undefined && (handle === undefined || !views.has(view))) invalidSessionTransport("Clipboard results require this connection's retained view.");
+        const expected = identity(), selected = WorkbookRangeSchema.parse(range);
+        const { value } = await request("clipboard", { ...expected, sheetId, range: selected, ...(context === undefined ? {} : { context }), ...(handle === undefined ? {} : { view: handle }) }, execution);
+        if (!record(value) || !keys(value, ["documentId", "revision", "history", "text", "html"]) || value.documentId !== expected.documentId || value.revision !== expected.revision
+          || typeof value.text !== "string" || typeof value.html !== "string") invalidSessionTransport("Invalid workbook clipboard result.");
+        if (current.revision !== expected.revision) throw new DocumentError("RevisionConflict", "Clipboard source changed before completion.");
+        return Object.freeze({ text: value.text, html: value.html });
       },
       async readInput(sheetId: string, at: WorkbookCoordinate, candidate?: WorkbookSessionCandidate, execution?: WorkbookSessionExecution) {
         const coordinate = WorkbookCoordinateSchema.safeParse(at);

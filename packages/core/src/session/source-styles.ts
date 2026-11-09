@@ -7,11 +7,54 @@ import { invalid } from "../document/validation.js";
 import { setDrawingInlineStyle } from "../document/drawing-css.js";
 import { SourceStyleResolver, expandSourceCssProperty } from "../document/source-css.js";
 import type { SourceStyleResolverOptions } from "../document/source-css.js";
+import { defaultTreeAdapter as adapter, html as namespaces } from "parse5";
+import type { DefaultTreeAdapterTypes as Tree } from "parse5";
+import { styleSourceText } from "../document/text-style.js";
+import type { SourceTextRange } from "../document/text-style.js";
 /** Candidate-local CSS writes use the package's existing, bounded stylesheets. */
 export class SourceStyleEdit {
     constructor(private readonly files: Map<string, Uint8Array>, private readonly paths: readonly string[], private readonly limits: DocumentReadLimits) { }
     validateProperty(name: string, value: string): void { setInlineStyle("", name, value, this.limits); }
     resolver(options?: SourceStyleResolverOptions): SourceStyleResolver { return new SourceStyleResolver(this.paths.map(path => readText(this.files, path)), this.limits, new Set(), options); }
+    /** Grid runs share stories' bounded neutral font spans, represented only
+     * by source classes, without inline styles or story node identities. */
+    formatClassText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, allocate: () => string): void {
+        const sheets = this.snapshot().map(sheet => sheet.css), classes = new Map<string, string>();
+        for (const css of sheets) {
+            const ast = parse(css, { context: "stylesheet" }); if (ast.type !== "StyleSheet") invalid("Invalid source styles.");
+            for (const rule of ast.children) if (rule.type === "Rule" && rule.prelude.type === "SelectorList") for (const selector of rule.prelude.children) {
+                if (selector.type !== "Selector") continue;
+                const parts = selector.children.toArray(), names = parts.filter(node => node.type === "ClassSelector").map(node => ident.decode(node.name));
+                if (!names.length || names.some(name => name !== names[0]) || parts.some(node => node.type !== "ClassSelector" && !(node.type === "TypeSelector" && node.name === "span"))) continue;
+                classes.set(names[0]!, (classes.get(names[0]!) ?? "") + generate(rule.block).slice(1, -1) + ";");
+            }
+        }
+        const declarations = (css: string): Map<string, Declaration> => {
+            const ast = parse(css, { context: "declarationList", parseCustomProperty: true }); if (ast.type !== "DeclarationList") invalid("Invalid font run appearance.");
+            return new Map(ast.children.toArray().filter((node): node is Declaration => node.type === "Declaration").map(node => [ident.decode(node.property), node]));
+        };
+        const generated = new Map<string, string>();
+        const register = (name: string, css: string): string => {
+            const existing = generated.get(css); if (existing) return existing;
+            const patch = Object.fromEntries([...declarations(css)].map(([name, node]) => [name, generate(node.value) + (node.important ? "!important" : "")]));
+            this.overrideLocalClass(name, patch, {}, "span"); classes.set(name, css); generated.set(css, name); return name;
+        };
+        styleSourceText(target, range, properties, this.limits, allocate, sheets, {
+            create: (name, css) => adapter.createElement("span", namespaces.NS.HTML, [{ name: "class", value: register(name, css) }]),
+            read: element => {
+                const names = element.attrs.find(attribute => attribute.name === "class")?.value.trim().split(/\s+/);
+                return names?.length && names.every(name => classes.has(name)) ? names.map(name => classes.get(name)!).join(";") : undefined;
+            },
+            write: (element, css) => {
+                const base = element.attrs.find(attribute => attribute.name === "class")!.value.trim().split(/\s+/)[0]!, previous = declarations(classes.get(base)!), next = declarations(css);
+                // Retain one neutral base and one complete direct override.
+                // New classes isolate copied/shared runs; obsolete overrides
+                // are not carried into an ever-growing class list or rule.
+                const patch = [...next].filter(([name, node]) => properties[name] !== undefined || !previous.has(name) || generate(previous.get(name)!) !== generate(node)).map(([, node]) => generate(node)).join(";");
+                const name = register(allocate(), patch); element.attrs = [...element.attrs.filter(attribute => attribute.name !== "class"), { name: "class", value: base + " " + name }];
+            },
+        });
+    }
     drawingProperties(properties: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
         let css = ""; for (const [name, value] of Object.entries(properties)) css = setDrawingInlineStyle(css, name, value, this.limits);
         const ast = parse(css, { context: "declarationList", parseCustomProperty: true });

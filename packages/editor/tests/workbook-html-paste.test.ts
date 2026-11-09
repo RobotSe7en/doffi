@@ -59,3 +59,27 @@ test("complete clipboard HTML retains body fonts, direction and native vertical 
   expect(resolver.get({ tag: "td", attrs: { class: cell.cssClass! }, parent: undefined })).toMatchObject({ "font-family": "Arial", color: "#112233", "--office-cell-reading-order": "rtl", "--office-cell-vertical": "center" });
   const before = s.serialize(); expect(() => createWorkbookHtmlPastePlan(s.snapshot(), sheetId, origin, '<p>must not disappear</p><table><tr><td>cell</td></tr></table>')).toThrow(); expect(s.serialize()).toEqual(before);
 });
+test("explicit native A1 and R1C1 dialects share destination-relative formula ASTs without trusting the display cache", async () => {
+  const s = blank(), plan = createWorkbookHtmlPastePlan(s.snapshot(), sheetId, origin,
+    '<table><tr><td x:num="3">3</td><td x:fmla="=A1+$B$2">9999</td><td data-sheets-value=\'{"1":3,"3":9999}\' data-sheets-formula="=RC[-2]*2">9999</td></tr></table>');
+  s.commit(s.prepare(plan.transaction));
+  expect(s.getCell(sheetId, 255, 32)?.formula?.expression).toBe("=(AF256+$B$2)");
+  expect(s.getCell(sheetId, 255, 33)?.formula?.expression).toBe("=(AF256*2)");
+  await s.calculate(); expect(s.getCalculatedCell(sheetId, 255, 32)).toMatchObject({ state: "valid", value: { type: "number", value: 3 } });
+  expect(s.getCalculatedCell(sheetId, 255, 33)).toMatchObject({ state: "valid", value: { type: "number", value: 6 } });
+});
+test("literal formula-like text is typed before parsing its display while conflicting native dialects fail atomically", () => {
+  const s = blank(), plan = createWorkbookHtmlPastePlan(s.snapshot(), sheetId, origin,
+    '<table><tr><td x:str="">=unclosed(</td><td data-sheets-value=\'{"1":2,"2":"=alsoUnclosed("}\'>=alsoUnclosed(</td></tr></table>');
+  s.commit(s.prepare(plan.transaction)); expect(s.getCell(sheetId, 255, 31)?.value).toEqual({ type: "text", value: "=unclosed(" });
+  expect(s.getCell(sheetId, 255, 32)?.value).toEqual({ type: "text", value: "=alsoUnclosed(" });
+  const before = s.serialize();
+  expect(() => createWorkbookHtmlPastePlan(s.snapshot(), sheetId, origin, '<table><tr><td x:fmla="=A1+1" data-sheets-formula="=RC+2">0</td></tr></table>')).toThrow();
+  expect(s.serialize()).toEqual(before);
+});
+test("CSS number-format strings decode once and retain quoted native positive, negative and zero literals", () => {
+  const s = blank(), plan = createWorkbookHtmlPastePlan(s.snapshot(), sheetId, origin,
+    '<table><tr><td x:num="12.5" style="mso-number-format:\'&quot;positive&quot;;&quot;negative&quot;;&quot;zero&quot;\'">positive</td></tr></table>');
+  expect(plan.transaction.operations).toContainEqual(expect.objectContaining({ op: "setWorkbookNumberFormat", format: expect.objectContaining({ code: '"positive";"negative";"zero"' }) }));
+  s.commit(s.prepare(plan.transaction)); expect(s.getCell(sheetId, 255, 31)?.value).toEqual({ type: "number", value: 12.5 });
+});

@@ -35,8 +35,10 @@ export type { WorkbookNumberMeasure } from "./workbook/format-general-section.js
 export type { NumberFormatColor as WorkbookNumberFormatColor } from "./workbook/number-format.js";
 export { DEFAULT_WORKBOOK_INDEXED_COLORS } from "./workbook/indexed-colors.js";
 export { parseFormula as parseWorkbookFormula } from "./workbook/formula.js";
+export { parseR1C1Formula as parseWorkbookR1C1Formula } from "./workbook/formula.js";
 export type { FormulaExpression as WorkbookFormulaExpression, FormulaOrigin as WorkbookFormulaOrigin } from "./workbook/formula.js";
 export { printFormula as printWorkbookFormula } from "./workbook/formula-print.js";
+export { printR1C1Formula as printWorkbookR1C1Formula } from "./workbook/formula-print.js";
 export { copyFormula as copyWorkbookFormula } from "./workbook/formula-rewrite.js";
 export { rewriteFormula as rewriteWorkbookFormula } from "./workbook/formula-rewrite.js";
 export type { FormulaLocation as WorkbookFormulaLocation, FormulaReferenceChange as WorkbookFormulaReferenceChange, FormulaRewriteBindings as WorkbookFormulaRewriteBindings } from "./workbook/formula-rewrite.js";

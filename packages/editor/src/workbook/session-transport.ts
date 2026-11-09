@@ -9,6 +9,7 @@ import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import type { WorkbookFillOptions } from "./fill.js";
 import type { WorkbookPasteOptions, WorkbookTextInputMode } from "./text-input.js";
 import type { WorkbookTextFontSelection } from "./text-format.js";
+import type { WorkbookClipboardData } from "./clipboard-data.js";
 
 export const WORKBOOK_SESSION_PROTOCOL = "doffi/workbook-session/1";
 export interface WorkbookSessionIdentity { readonly documentId: string; readonly revision: number }
@@ -58,6 +59,10 @@ export interface WorkbookSessionFindOptions extends WorkbookSessionExecution {
    * Supplying a second calculation context would be ambiguous. */
   readonly view?: WorkbookReadConnection;
 }
+export interface WorkbookSessionClipboardOptions extends WorkbookSessionExecution {
+  readonly view?: WorkbookReadConnection;
+  readonly calculationContext?: WorkbookScalarContext;
+}
 export interface WorkbookSessionTransportOptions {
   readonly maxPendingRequests?: number;
   readonly maxMessageBytes?: number;
@@ -75,6 +80,7 @@ export interface WorkbookSessionConnection {
   view(candidate?: WorkbookSessionCandidate, options?: WorkbookSessionViewOptions): Promise<WorkbookReadConnection>;
   /** One bounded reversible input spelling, read inside the owning Worker. */
   readInput(sheetId: string, at: WorkbookCoordinate, candidate?: WorkbookSessionCandidate, execution?: WorkbookSessionExecution): Promise<WorkbookSessionInput>;
+  readClipboard(sheetId: string, range: WorkbookRange, options?: WorkbookSessionClipboardOptions): Promise<WorkbookClipboardData>;
   resolveReference(expression: string, origin: WorkbookReferenceLocation, execution?: WorkbookSessionExecution): Promise<WorkbookReferenceResult>;
   commit(candidate: WorkbookSessionCandidate): Promise<WorkbookSessionReceipt>;
   discard(candidate: WorkbookSessionCandidate): Promise<void>;

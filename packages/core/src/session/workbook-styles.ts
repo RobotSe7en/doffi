@@ -7,6 +7,7 @@ import { WorkbookCellEdit } from "./workbook-cells.js";
 import { SourceStyleEdit } from "./source-styles.js";
 import { checkRange } from "../workbook/ranges.js";
 import { formatWorkbookCellText } from "./workbook-text-format.js";
+import { textFormattingProperties } from "../document/text-decoration.js";
 
 type StyleOperation = Extract<WorkbookOperation, { op: "formatWorkbookText" | "formatWorkbookRanges" | "formatWorkbookConditionalRule" | "formatWorkbookTableStyleElement" | "setWorkbookStyleClass" | "setWorkbookCellStyleDefinition" | "setWorkbookCellStyleName" | "removeWorkbookCellStyleName" }>;
 type Group = keyof WorkbookStyleApplication;
@@ -71,6 +72,13 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
     const decoded = ident.decode(token), property = decoded.startsWith("--") ? decoded : decoded.toLowerCase();
     if (Object.hasOwn(properties, property)) invalid("A workbook style patch cannot repeat a property.");
     properties[property] = value;
+  }
+  if (operation.op === "formatWorkbookText" || operation.op === "formatWorkbookRanges") {
+    Object.assign(properties, textFormattingProperties(properties));
+    if (properties["text-decoration"] !== undefined || properties["text-decoration-line"] !== undefined) {
+      // Explicit CSS editing replaces native font decoration defaults too.
+      properties["--office-font-underline"] ??= "none"; properties["--office-font-strike"] ??= "false";
+    }
   }
   // Native scalar color sources are consumed before ordinary CSS fallback.
   // A direct CSS color edit therefore updates the same native paint source;
@@ -139,14 +147,14 @@ export function* editWorkbookStyle(workbook: WorkbookMetadata, cells: WorkbookCe
     return;
   }
   if (operation.op === "formatWorkbookText") {
-    if ([...groups.values()].some(group => group !== "font")) invalid("Partial text formatting accepts only font properties.");
+    if ([...groups].some(([property, group]) => group !== "font" && property !== "letter-spacing" && property !== "word-spacing")) invalid("Partial text formatting accepts only font properties.");
     const cell = cells.get(operation.sheetId, operation.at.row, operation.at.column);
     formatWorkbookCellText(cell, operation);
     if (!Object.keys(properties).length) return;
-    let cssClass: string; do { cssClass = "workbook-run-" + allocate(); } while (classes.has(cssClass));
-    const html = formatWorkbookCellText(cell, operation, cssClass);
-    styles.overrideLocalClass(cssClass, properties, properties, "span");
-    cells.set(operation.sheetId, { ...operation.at, source: { kind: "richText", html } }); return;
+    const sheet = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId) ?? invalid("The formatted worksheet does not exist.");
+    const allocateClass = (): string => { let name: string; do { name = "workbook-run-" + allocate(); } while (classes.has(name)); classes.add(name); return name; };
+    const html = formatWorkbookCellText(cell, operation, root => styles.formatClassText(root, operation, properties, allocateClass), resolveWorkbookCellFormat(sheet, operation.at, cell).cssClass);
+    if (html !== cell!.html) cells.set(operation.sheetId, { ...operation.at, source: { kind: "richText", html } }); return;
   }
   if (operation.op === "formatWorkbookRanges") {
     const sheet = workbook.sheets.find(sheet => sheet.sheetId === operation.sheetId) ?? invalid("The formatted worksheet does not exist.");

@@ -1,8 +1,8 @@
-import { DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, SourceStyleResolver, WorkbookCoordinateSchema, WorkbookValueSchema } from "@doffi/core";
+import { copyWorkbookFormula, DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, parseWorkbookFormula, parseWorkbookR1C1Formula, printWorkbookFormula, SourceStyleResolver, WorkbookCoordinateSchema, WorkbookValueSchema } from "@doffi/core";
 import type { DocumentTransaction, SourceStyleNode, WorkbookCellInput, WorkbookCoordinate, WorkbookHyperlink, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import { defaultTreeAdapter, parse as parseHtml } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
-import { generate, parse, string } from "css-tree";
+import { generate, parse } from "css-tree";
 import type { CssNode } from "css-tree";
 import { parseWorkbookTextInput } from "./text-input.js";
 import type { WorkbookPasteOptions } from "./text-input.js";
@@ -24,7 +24,8 @@ const isElement = (node: Node): node is Element => "tagName" in node;
 const children = (node: Node): readonly Node[] => "childNodes" in node ? node.childNodes : [];
 const attributes = (node: Element): Record<string, string> => Object.fromEntries(node.attrs.map(attr => [attr.prefix ? attr.prefix + ":" + attr.name : attr.name, attr.value]));
 const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;");
-const textProperties = new Set(["font-family", "font-size", "font-weight", "font-style", "font-variant", "color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "vertical-align", "letter-spacing", "word-spacing"]);
+const textProperties = new Set(["font-family", "font-size", "font-weight", "font-style", "font-variant", "color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "vertical-align", "letter-spacing", "word-spacing",
+  ...["ascii", "h-ansi", "east-asia", "complex-script", "underline", "strike", "decoration-reset"].map(name => "--office-font-" + name)]);
 const supported = (name: string): boolean => textProperties.has(name) || /^(?:--office-cell-(?:reading-order|vertical)|font|text-decoration|background-color|text-align|text-indent|white-space|overflow-wrap|line-height|border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?)$/.test(name);
 const tags = new Set(["html", "head", "body", "title", "meta", "style", "table", "colgroup", "col", "thead", "tbody", "tfoot", "tr", "td", "th", "p", "div", "span", "br", "b", "strong", "i", "em", "u", "s", "strike", "sub", "sup", "font", "a", "pre"]);
 const inherited = (name: string): boolean => textProperties.has(name) && name !== "vertical-align" || ["text-align", "white-space", "line-height", "--office-cell-reading-order"].includes(name);
@@ -74,7 +75,7 @@ export function createWorkbookHtmlPastePlan(snapshot: WorkbookSnapshot, sheetId:
       const name = item.property.toLowerCase(), value = generate(item.value);
       if (name === "mso-number-format") {
         const valueNode = item.value.type === "Value" ? item.value.children.first : undefined;
-        format = valueNode?.type === "String" ? string.decode(valueNode.value) : value;
+        format = valueNode?.type === "String" ? valueNode.value : value;
       } else if (supported(name)) {
         if (/\b(?:url|var|expression)\s*\(/i.test(value)) invalid("Clipboard styles cannot reference external resources or source variables.");
         output.push(generate(item));
@@ -142,14 +143,16 @@ export function createWorkbookHtmlPastePlan(snapshot: WorkbookSnapshot, sheetId:
   const properties = (node: SourceStyleNode): Properties => {
     const cached = computed.get(node); if (cached) return cached;
     const parent = node.parent ? properties(node.parent) : {}, result: Properties = Object.fromEntries(Object.entries(parent).filter(([name]) => inherited(name)));
-    for (const [name, value] of Object.entries(resolver.specified(node))) {
+    const own = resolver.specified(node);
+    for (const [name, value] of Object.entries(own)) {
       if (!supported(name)) continue;
       if (["inherit", "unset"].includes(value)) { if (parent[name]) result[name] = parent[name]!; else delete result[name]; }
       else if (["initial", "revert"].includes(value)) delete result[name];
       else result[name] = value;
     }
     const decorations = [...new Set([parent["text-decoration-line"], result["text-decoration-line"]].flatMap(value => value?.split(/\s+/).filter(value => value !== "none") ?? []))];
-    if (decorations.length) result["text-decoration-line"] = decorations.join(" ");
+    if (own["--office-font-decoration-reset"] !== undefined) result["text-decoration-line"] = resolver.get(node)["text-decoration-line"]!;
+    else if (decorations.length) result["text-decoration-line"] = decorations.join(" ");
     computed.set(node, result); return result;
   };
   const cells: Cell[] = [], merges: WorkbookRange[] = [], occupied = new Set<string>();
@@ -238,12 +241,13 @@ export function createWorkbookHtmlPastePlan(snapshot: WorkbookSnapshot, sheetId:
   const addOperation = (operation: DocumentTransaction["operations"][number]): void => { if (operations.length >= 1024) limit("Clipboard HTML exceeds the transaction operation budget."); operations.push(operation); };
   const byCoordinate = new Map(cells.map(cell => [cell.at.row + ":" + cell.at.column, cell]));
   const formatsByCode = new Map(snapshot.metadata.workbook.numberFormats.filter(item => "code" in item).map(item => [item.code, item.formatId]));
-  const ids = new Set(snapshot.metadata.workbook.numberFormats.map(item => item.formatId)); let serial = 0;
+  const ids = new Set(snapshot.metadata.workbook.numberFormats.map(item => item.formatId)), builtinFormats = new Map(snapshot.metadata.workbook.numberFormats.filter(item => "builtinId" in item).map(item => [item.builtinId, item.formatId])); let serial = 0;
   for (let row = range.from.row; row <= range.to.row; row++) for (let column = range.from.column; column <= range.to.column; column++) {
     const cell = byCoordinate.get(row + ":" + column), at = { row, column };
     if (!cell) { inputs.push({ ...at, source: { kind: "value", value: { type: "blank" } } }); continue; }
     const attrs = attributes(cell.element);
-    let source = parseWorkbookTextInput(cell.text, at, options.mode), formatId: string | undefined;
+    const typed = ["x:str", "x:fmla", "data-sheets-value", "data-sheets-formula", "data-doffi-value", "data-doffi-formula-a1"].some(name => attrs[name] !== undefined);
+    let source = parseWorkbookTextInput(cell.text, at, typed ? "text" : options.mode), formatId: string | undefined;
     if (options.mode !== "text" && (attrs["x:num"] !== undefined || attrs.sdval !== undefined && !attrs["data-sheets-formula"])) {
       const number = attrs["x:num"] || attrs.sdval || cell.text;
       source = parseWorkbookTextInput(number, at, "number");
@@ -261,16 +265,49 @@ export function createWorkbookHtmlPastePlan(snapshot: WorkbookSnapshot, sheetId:
       if (parsed.success) source = { kind: "value", value: parsed.data };
     }
     if (attrs["x:str"] !== undefined) source = parseWorkbookTextInput(cell.text, at, "text");
-    if (attrs["x:fmla"] !== undefined) invalid("Native clipboard formula metadata requires an explicit formula dialect.");
-    if (attrs["data-sheets-formula"] && !attrs["data-sheets-formula"].startsWith("=#") && attrs["data-sheets-value"] === undefined) report("Native clipboard formulas were pasted using their supplied display values.");
+    const formulae: string[] = [];
+    if (options.mode !== "text" && attrs["x:fmla"] !== undefined) {
+      const local = { row: row - origin.row, column: column - origin.column };
+      formulae.push(printWorkbookFormula(parseWorkbookFormula(attrs["x:fmla"], local), at));
+    }
+    if (attrs["data-doffi-formula"] !== undefined && (attrs["data-doffi-formula"] !== "R1C1" || !attrs["data-sheets-formula"])) invalid("Clipboard formula metadata requires its declared dialect.");
+    if (options.mode !== "text" && attrs["data-sheets-formula"] && (attrs["data-doffi-formula"] === "R1C1" || !attrs["data-sheets-formula"].startsWith("=#"))) {
+      const formula = attrs["data-sheets-formula"];
+      // Calc also uses these exact constant carriers for native Boolean cells.
+      if (!(attrs["data-doffi-formula"] === undefined && source.kind === "value" && source.value.type === "boolean" && /^=(?:TRUE|FALSE)\(\)$/i.test(formula))) formulae.push(printWorkbookFormula(parseWorkbookR1C1Formula(formula, at), at));
+    }
+    if (options.mode !== "text" && attrs["data-doffi-value"] !== undefined) {
+      let value: unknown;
+      try { value = JSON.parse(attrs["data-doffi-value"]!); } catch { return invalid("Clipboard value metadata is invalid JSON."); }
+      const parsed = WorkbookValueSchema.safeParse(value); if (!parsed.success) invalid("Clipboard value metadata is invalid.");
+      source = { kind: "value", value: parsed.data };
+    }
+    if (options.mode !== "text" && attrs["data-doffi-formula-a1"] !== undefined) {
+      const origin = /^(\d+),(\d+)$/.exec(attrs["data-doffi-origin"] ?? ""), coordinate = origin ? WorkbookCoordinateSchema.safeParse({ row: Number(origin[1]), column: Number(origin[2]) }) : undefined;
+      if (!coordinate?.success || !attrs["data-doffi-formula-a1"].startsWith("=")) invalid("Clipboard A1 formulas require valid source coordinates.");
+      formulae.push(copyWorkbookFormula(attrs["data-doffi-formula-a1"], coordinate.data, at));
+    }
+    if (formulae.length) {
+      if (formulae.some(formula => formula !== formulae[0])) invalid("Clipboard formula dialect metadata disagrees.");
+      source = parseWorkbookTextInput(formulae[0]!, at);
+    }
     if (cell.runs.length && source.kind === "value" && source.value.type === "text" && source.value.value === cell.text) {
       source = { kind: "richText", html: escape(cell.text).replace(/\n/g, "<br>") }; richCells.add(row + ":" + column);
     }
-    if (cell.numberFormat !== undefined) {
+    if (cell.numberFormat !== undefined && attrs["data-doffi-number-format"] === undefined) {
       formatId = formatsByCode.get(cell.numberFormat);
       if (!formatId) {
         do { formatId = "clipboard-format-" + snapshot.manifest.revision + "-" + serial++; } while (ids.has(formatId)); ids.add(formatId); formatsByCode.set(cell.numberFormat, formatId);
         addOperation({ op: "setWorkbookNumberFormat", format: { formatId, code: cell.numberFormat } });
+      }
+    }
+    if (attrs["data-doffi-number-format"] !== undefined) {
+      const builtinId = Number(attrs["data-doffi-number-format"]);
+      if (!/^\d+$/.test(attrs["data-doffi-number-format"]) || !Number.isInteger(builtinId) || builtinId < 0 || builtinId > 163) invalid("Clipboard builtin number format is invalid.");
+      formatId = builtinFormats.get(builtinId);
+      if (!formatId) {
+        do { formatId = "clipboard-format-" + snapshot.manifest.revision + "-" + serial++; } while (ids.has(formatId)); ids.add(formatId);
+        builtinFormats.set(builtinId, formatId); addOperation({ op: "setWorkbookNumberFormat", format: { formatId, builtinId } });
       }
     }
     inputs.push({ ...at, source, ...(formatId ? { formatId } : {}) });

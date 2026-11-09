@@ -46,6 +46,20 @@ export function measureWorkbookCellAppearance(view: ShadowRoot | undefined, row:
   return { fill: fill ? fill.ownerDocument.defaultView!.getComputedStyle(fill).backgroundColor : undefined,
     text: (cell ? [cell, ...cell.querySelectorAll<HTMLElement>("*")] : []).filter(element => !element.children.length && element.textContent).map(element => { const style = element.ownerDocument.defaultView!.getComputedStyle(element); return { text: element.textContent, color: style.color, weight: style.fontWeight, italic: style.fontStyle, font: style.fontFamily, size: style.fontSize }; }) };
 }
+export function measureWorkbookCellDecorations(view: ShadowRoot | undefined, row: number, column: number) {
+  const cell = view?.querySelector<HTMLElement>(`[data-office-view="workbook-cell"][data-row="${row}"][data-column="${column}"]`);
+  if (!cell) return [];
+  const walker = cell.ownerDocument.createTreeWalker(cell, 4), result: { text: string; lines: string[] }[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const lines = new Set<string>();
+    for (let parent = node.parentElement; parent && cell.contains(parent); parent = parent.parentElement) {
+      const style = parent.ownerDocument.defaultView!.getComputedStyle(parent);
+      for (const line of style.textDecorationLine.split(/\s+/)) if (line && line !== "none") lines.add(line);
+    }
+    result.push({ text: node.textContent ?? "", lines: [...lines].sort() });
+  }
+  return result;
+}
 export function measureWorkbookDrawingText(view: ShadowRoot | undefined, nodeId: string, includeBounds = false) {
   return [...view?.querySelectorAll<HTMLElement>('[data-office-text-style][data-source-node-id]') ?? []]
     .filter(element => element.dataset.sourceNodeId === nodeId).map(element => {

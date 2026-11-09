@@ -28,6 +28,8 @@ export type WorkbookNumberDisplay = DisplayMetadata & (
   | { readonly kind: "overflow"; readonly reason: "width" | "invalidDate" | "unmatchedCondition" }
 );
 export interface WorkbookNumberFormatter {
+  /** Resolve the source code with this formatter's explicit display locale. */
+  code(definition?: WorkbookDisplayFormat): string;
   /** With no measurement, General uses its full display envelope. Other formats
    * produce parts for measured spacing/fill and width handling by the renderer. */
   format(value: number | string, definition?: WorkbookDisplayFormat, measurement?: WorkbookNumberMeasure): WorkbookNumberDisplay;
@@ -62,16 +64,21 @@ export function createWorkbookNumberFormatter(input: WorkbookNumberFormatterOpti
     }
     return known;
   };
+  const code = (definition: WorkbookDisplayFormat = { builtinId: 0 }): string => {
+    if (disposed) throw new DocumentError("InvalidOperation", "This workbook number formatter has been disposed.");
+    if (!definition || typeof definition !== "object" || Object.keys(definition).some(key => !["code", "builtinId", "formatId"].includes(key))
+      || (definition.code !== undefined) === (definition.builtinId !== undefined) || definition.code !== undefined && typeof definition.code !== "string"
+      || definition.formatId !== undefined && (typeof definition.formatId !== "string" || !definition.formatId)) invalid("A display format requires exactly one source code or built-in ID.");
+    const result = definition.code ?? workbookBuiltinNumberFormat(definition.builtinId!, context().display); compile(result); return result;
+  };
   return Object.freeze({
+    code,
     format(value: number | string, definition: WorkbookDisplayFormat = { builtinId: 0 }, measurement?: WorkbookNumberMeasure): WorkbookNumberDisplay {
       if (disposed) throw new DocumentError("InvalidOperation", "This workbook number formatter has been disposed.");
       if (typeof value !== "string" && (typeof value !== "number" || !Number.isFinite(value))) invalid("A number format requires a finite numeric or text scalar.");
       if (typeof value === "string") checkLimit(value.length, 32767);
-      if (!definition || typeof definition !== "object" || Object.keys(definition).some(key => !["code", "builtinId", "formatId"].includes(key))
-        || (definition.code !== undefined) === (definition.builtinId !== undefined) || definition.code !== undefined && typeof definition.code !== "string"
-        || definition.formatId !== undefined && (typeof definition.formatId !== "string" || !definition.formatId)) invalid("A display format requires exactly one source code or built-in ID.");
       if (measurement && (!Number.isFinite(measurement.availableWidth) || measurement.availableWidth < 0 || typeof measurement.measure !== "function")) invalid("Number display requires a finite width and text measurement function.");
-      const sections = compile(definition.code ?? workbookBuiltinNumberFormat(definition.builtinId!, context().display));
+      const sections = compile(code(definition));
       const selection = selectNumberFormat(value, sections), section = "section" in selection ? selection.section : undefined;
       const selected = context(section?.locale), metadata: DisplayMetadata = { locale: selected.display.locale, localeSource: selected.display.source, ...(section?.color ? { color: section.color } : {}) };
       if (selection.kind === "unmatchedCondition") return freeze({ ...metadata, kind: "overflow", reason: "unmatchedCondition" });

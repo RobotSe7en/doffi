@@ -1,5 +1,5 @@
 import { captureWorkbookModel, DocumentError, parseContract } from "@doffi/core";
-import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, TransactionReceipt, WorkbookRange, WorkbookSession } from "@doffi/core";
+import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, TransactionReceipt, WorkbookCalculationResult, WorkbookRange, WorkbookSession } from "@doffi/core";
 import { createWorkbookLayoutService, createWorkbookPreviewSource, mountDocumentPreview } from "@doffi/render";
 import type { WorkbookPreview, WorkbookPreviewSource, WorkbookRenderReport } from "@doffi/render";
 import type { WorkbookEditorOptions, WorkbookEditorView } from "./editor-contracts.js";
@@ -23,6 +23,8 @@ import { createWorkbookSortTransaction } from "./sort.js";
 import { selectedWorkbookSort } from "./selected-sort.js";
 import { createWorkbookTaskQueue } from "./task-queue.js";
 import { WorkbookClipboard } from "./clipboard.js";
+import { WorkbookSystemClipboard } from "./system-clipboard.js";
+import { createWorkbookClipboardData } from "./clipboard-data.js";
 import { createWorkbookRangeCopyTransaction } from "./copy-range.js";
 import type { WorkbookRangeCopyOptions } from "./copy-range.js";
 import { createWorkbookTextFormatTransaction } from "./text-format.js";
@@ -70,6 +72,14 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   let inputTask: Promise<void> = Promise.resolve(), commandTask: Promise<void> = Promise.resolve();
   let revision = -1, generation = 0, calculationAbort: AbortController | undefined, commandAbort: AbortController | undefined, preview: WorkbookPreview;
   let renderedSource: WorkbookPreviewSource | undefined;
+  let renderedCalculation: WorkbookCalculationResult | undefined;
+  const systemClipboard = new WorkbookSystemClipboard(async (selected, signal) => {
+    const anchor = selected.anchor;
+    if (anchor.kind !== "cells" || anchor.ranges.length !== 1 || selected.baseRevision !== session.snapshot().manifest.revision) throw new DocumentError("RevisionConflict", "Clipboard selection belongs to a previous source.");
+    const tasks = createWorkbookTaskQueue();
+    try { return await createWorkbookClipboardData(session, anchor.sheetId, anchor.ranges[0]!, { signal, yield: () => tasks.yield(), ...(renderedCalculation ? { calculation: renderedCalculation } : {}), ...(config.locale === undefined ? {} : { locale: config.locale }) }); }
+    finally { tasks.dispose(); }
+  });
   let found: { readonly key: string; readonly result: WorkbookFindResult; index: number } | undefined;
   let findSelectionScope: WorkbookFindQuery["scope"];
   const searchFields = [ui.find, ui.replacement, ui.findField, ui.findScope, ui.matchCase, ui.entireCell, ui.replacementMode, ui.sortColumns, ui.sortHeader, ui.sortCase, ui.sortMethod, ui.clipboardMode, ui.clipboardOverwrite, ui.clipboardSkipBlanks];
@@ -127,6 +137,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   }
   function acceptSelection(selected: DocumentSelection, focus: boolean): void {
     input.select(selected); binding.refresh(); ui.input.disabled = false;
+    if (renderedSource?.cells.snapshot.manifest.revision === selected.baseRevision) systemClipboard.prepare(selected);
     if (selected.anchor.kind === "cells") ui.address.value = address(selected.anchor.ranges[0]!);
     controls(); notify(); if (focus) binding.focus();
   }
@@ -186,7 +197,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     const source = createWorkbookPreviewSource(model, calculation, renderedSource);
     preview.update(source); await preview.settled();
     if (disposed || ticket !== generation) return;
-    renderedSource = source;
+    renderedSource = source; renderedCalculation = calculation;
     revision = snapshot.manifest.revision;
     const state = input.state();
     if (!pendingInput()) {
@@ -212,7 +223,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     for (;;) { const work = latest; try { await work; } catch (error) { if (work === latest) throw error; } if (work === latest) { const result = await preview.settled(); if (work === latest) return result; } }
   }
   async function settled(): Promise<WorkbookRenderReport> {
-    for (;;) { const work = interaction, applying = inputTask, command = commandTask; await Promise.all([work, applying, command]); const result = await sourceSettled(); if (work === interaction && applying === inputTask && command === commandTask) return result; }
+    for (;;) { const work = interaction, applying = inputTask, command = commandTask; await Promise.all([work, applying, command]); const result = await sourceSettled(); await systemClipboard.settled(); if (work === interaction && applying === inputTask && command === commandTask) return result; }
   }
   async function performNow(operations: readonly DocumentOperation[], preparedOptions?: TransactionPrepareOptions): Promise<TransactionReceipt> {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先确认或取消当前单元格输入或操作。");
@@ -278,6 +289,8 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
     clipboard.capture(session.snapshot(), input.state().selection, kind); if (kind === "cut") { ui.clipboardMode.value = "contents"; ui.clipboardSkipBlanks.checked = false; }
     ui.status.textContent = kind === "cut" ? "已选择剪切来源，请选择目标后粘贴。" : "已复制区域，请选择目标后粘贴。"; controls();
+    // The native event supplies a synchronous fallback for older browsers too.
+    binding.focus(); ui.input.ownerDocument.execCommand(kind);
   }
   async function formatSelection(): Promise<void> {
     check(); if (pendingInput() || commandAbort) throw new DocumentError("InvalidOperation", "请先完成当前输入或操作。");
@@ -476,6 +489,12 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       try { const selected = await preview.moveSelection(direction, extend); check(); acceptSelection(selected, true); } finally { choosing--; }
     }); },
     onHistory: history,
+    onCopy(kind, selected, transfer) {
+      const data = systemClipboard.data(selected);
+      clipboard.capture(session.snapshot(), selected, kind, data); transfer.setData("text/plain", data.text); transfer.setData("text/html", data.html);
+      if (kind === "cut") { ui.clipboardMode.value = "contents"; ui.clipboardSkipBlanks.checked = false; }
+      controls();
+    },
     onClear(selected) {
       if (selected.anchor.kind !== "cells") return;
       const manifest = session.snapshot().manifest;
@@ -485,6 +504,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     },
     onPaste(text, selected, html) {
       if (selected.anchor.kind !== "cells") return;
+      if (clipboard.matches(text, html)) { void runInteraction(pasteSelection); return; }
       const pasted = html === undefined ? undefined : createWorkbookHtmlPastePlan(session.snapshot(), selected.anchor.sheetId, selected.anchor.ranges[0]!.from, html);
       const transaction = pasted?.transaction ?? createWorkbookPasteTransaction(session.snapshot(), selected.anchor.sheetId, selected.anchor.ranges[0]!.from, text);
       const anchor = selected.anchor;
@@ -575,10 +595,10 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
       const area = resolved.areas[0]!; void runInteraction(() => choose(area.sheetId, { from: area.from, to: area.to }, true));
     } catch (error) { report(error); }
   }, { signal: events.signal });
-  controls(); void scheduleRefresh(); const ready = sourceSettled().then(() => {}); void ready.catch(() => {});
+  controls(); void scheduleRefresh(); const ready = sourceSettled().then(() => systemClipboard.settled()); void ready.catch(() => {});
   return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); }, hasPendingInput() { check(); return pendingInput() || Boolean(commandAbort) || pendingForms(); },
     selectRange: (sheetId: string, range: DeepReadonly<WorkbookRange>) => runInteraction(() => choose(sheetId, range)), focusInput(selectAll = true) { check(); binding.focus(selectAll); }, applyInput: binding.apply, cancelInput, perform,
     recalculate: async () => { commandAbort?.abort(); await scheduleRefresh(true); return settled(); },
-    dispose() { if (disposed) return; disposed = true; ++generation; calculationAbort?.abort(); commandAbort?.abort(); layoutService.dispose(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview.dispose(); renderedSource = undefined; ui.element.remove(); },
+    dispose() { if (disposed) return; disposed = true; ++generation; calculationAbort?.abort(); commandAbort?.abort(); systemClipboard.dispose(); clipboard.clear(); layoutService.dispose(); unsubscribe(); events.abort(); binding.dispose(); input.dispose(); preview.dispose(); renderedSource = undefined; renderedCalculation = undefined; ui.element.remove(); },
   });
 }
