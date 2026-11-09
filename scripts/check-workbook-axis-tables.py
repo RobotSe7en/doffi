@@ -1,4 +1,5 @@
 """Independent native tables, explicit SDK expectations and pinned Calc axis edits."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -137,8 +138,7 @@ def main():
         cases.append({**item, "observed": observed, "outputFile": recorded.relative_to(ROOT).as_posix(), "outputSha256": output_hash,
                       "basis": "SDK source-identity and table-template expectations; actual Calc output remains separate. Header rejection and total-row handling do not claim Excel runtime verification."})
         outputs.append((recorded, output))
-    audit_python = ROOT / ".cache/xlsx-venv/bin/python"
-    subprocess.run([str(audit_python) if audit_python.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True)
+    audit_schema(directory)
     report = {"scope": "Independent source and actual pinned Calc edits; producer differences are retained, not repaired. Excel/WPS runtime unverified.",
               "references": REFERENCES, "office": version, "archiveSha256": axis.ARCHIVE_HASH, "nativeLocale": "C.UTF-8",
               "baseSourceFile": BASE.relative_to(ROOT).as_posix(), "baseSourceSha256": sha256(BASE.read_bytes()).hexdigest(), "sourceSha256": sha256(data).hexdigest(), "cases": cases}

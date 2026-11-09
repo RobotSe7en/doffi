@@ -1,4 +1,5 @@
 """Independent ZIP/XML sorting source, pinned native edits and explicit producer differences."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -131,8 +132,7 @@ def main():
                       "basis": "Microsoft documented sort orders; stable equal-key records; outside formulas stay at their addresses by user decision. Actual pinned Calc output is retained separately; no Excel/WPS runtime claim."})
     # Committed producer bytes/hashes are immutable reference artifacts. A new
     # run's timestamps may differ; compare its observed semantics separately.
-    audit_python = ROOT / ".cache/xlsx-venv/bin/python"
-    subprocess.run([str(audit_python) if audit_python.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True)
+    audit_schema(directory)
     report = {"scope": "Independent input and actual pinned Calc sort edits. Microsoft documented expectations; Excel/WPS runtime unverified.",
               "office": version, "archiveSha256": axis.ARCHIVE_HASH, "sourceSha256": sha256(source).hexdigest(), "reference": BASIS, "cases": cases}
     if args.record:

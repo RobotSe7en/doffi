@@ -1,4 +1,5 @@
 """Independent note cuts/sorts retaining both native box sources and producer loss."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -103,8 +104,7 @@ def main():
                 producer.write_bytes(output.read_bytes())
             cases.append({"name": case, "nativeCall": call, "outputFile": producer.relative_to(ROOT).as_posix(), "outputSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)})
         sources.append({"name": name, "source": path, "sourceSha256": sha256(source.read_bytes()).hexdigest(), "original": observe(source), "cases": cases})
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Two immutable independent native classic-note sources, eight actual pinned Calc cell cuts/sorts with data identity proof and official XSD/OPC. Raw newly created target sheets introduce styled header/footer controls outside the SDK's declared basic print-band support; both original producer files remain unsupported negative cases. Six positive outputs use same-sheet edits or explicitly select the original native page style on the new target before moving data, without patching output bytes. Both VML and commentPr are recorded before editing; producer loss/normalization remains explicit. SDK preserves both sources and physically transports boxes with valid mapped note cells, retaining extents and native/body identities. Synthetic core point metrics are separate from fixed-font browser/native geometry acceptance. Excel/WPS structural runtime unverified.",
               "references": base.REFERENCES, "office": version, "archiveSha256": base.axis.ARCHIVE_HASH, "sources": sources}
     if args.record:

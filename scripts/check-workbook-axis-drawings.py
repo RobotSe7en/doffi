@@ -1,4 +1,5 @@
 """Pinned native axis edits for drawings and classic note boxes, retaining producer differences."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -106,8 +107,7 @@ def main():
             cases.append({"name": case_name, "operation": operation, "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observed})
         sources.append({"name": source_name, "path": str(source.relative_to(ROOT)), "sha256": sha256(source.read_bytes()).hexdigest(), "original": observe(source), "cases": cases})
     if args.record or args.verify_native:
-        audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-        subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+        audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Three independent sources, a resave baseline and eight actual axis edits per source, with pinned fonts and official XSD/OPC. Source anchors and native producer geometry are recorded separately. Excel/WPS runtime unverified.",
               "office": axis.BUILD, "archiveSha256": axis.ARCHIVE_HASH, "fontManifest": {"source": "examples/xlsx/reference.json#environment.fonts", "sha256": font_digest},
               "references": REFERENCES, "producerDifferences": [

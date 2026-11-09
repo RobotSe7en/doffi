@@ -68,3 +68,21 @@ FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-sc
 显式 `--system-fonts` 将相同摘要字节安装到[标准系统字体目录](https://help.gnome.org/system-admin-guide/fonts.html)下由 manifest 摘要命名的独立目录。已有不同字节拒绝覆盖；来源、版本、许可和摘要保持原固定记录。默认无该开关仍使用应用缓存。只有 CI Office／容量 setup 显式调用，SDK 运行时不安装或下载字体，也不更改浏览器安全偏好或允许替代字体复用。
 
 [字体前置脚本](../scripts/check-acceptance-fonts.mjs)在长容量流程前核验仓库规范 manifest、五份实际文件摘要和当前 Fontconfig 选择，再在默认 Firefox context 中测量四个 CJK family／weight，保留不存在字体的负例。正负测量及来源写入阶段 artifact 的 `font-environment.json`。这避免 shell 字体可见却浏览器不可见时继续运行长测试；其成功仍不能代替完整日常／容量。
+
+## 固定 Office 的远程客户端
+
+`7491c13` 的[远端日常／容量运行](https://github.com/RobotSe7en/doffi/actions/runs/42706072977)中，容量完整通过：128 份矩阵、八项容量单元、所有大表集成及固定资源四引擎读取／编辑。编辑 p95 为 149.9／394／255／245.8ms；Firefox 浏览器保守高水位约 1895MiB。日常仅工作簿原生远程编辑及其汇总失败。前序 CLI 转换成功不等于远程 UNO 可用。
+
+在 Ubuntu 24.04 隔离环境，以相同原始字节、默认／显式服务端 home 和相同字体作六组对照：
+
+| 客户端组合 | 服务端 Python home | 最小文档 | 混合文档 |
+| --- | --- | --- | --- |
+| 系统 Python 3.12.3／pyuno 24.2.7 | 默认 | getSheets 成功，getByIndex 断桥 | 相同断桥 |
+| 系统 Python 3.12.3／pyuno 24.2.7 | 显式归档 home／path | 同样断桥 | 同样断桥 |
+| 同归档 Python 3.11.13／pyuno 25.8.1.1 | 相同显式归档 home／path | 实际写入并重开通过 | 实际 B2=6、完整 producer 观测匹配 |
+
+此矩阵确认该环境应采用同归档客户端，不推广为所有跨版本 UNO 都不兼容。固定版本 [loader 源码](https://raw.githubusercontent.com/LibreOffice/core/libreoffice-25.8.1.1/pyuno/source/loader/pyuno_loader.cxx)的 home 初始化差异解释了检查环境的必要性，但单独设置服务端 home 未修复断桥。监控的进程是 `oosplash` 启动器；其尚存活不能证明实际 `soffice.bin` 尚存活。
+
+26 个远程原生命令显式经 [运行器](../scripts/workbook-native.mjs)校验原归档摘要、清理继承引导环境，并使用官方 `program/python`；适配器核验实际导入的 `uno.py` 来自同一归档，拒绝意外的系统客户端。每项作业在私有目录使用保留 basename 的精确输入副本，Office 的锁／恢复文件不会接触跟踪夹具。原始输入、producer 文件和全部观测／XSD／OPC 断言保持。
+
+XML 验证由[独立审计入口](../scripts/workbook_acceptance.py)选择已有 lxml venv 或系统解释器，清除归档 Python／UNO 引导环境后执行原官方 schema 检查，失败仍非零退出。它不向归档 Python 安装额外包，不进入 SDK。手动复现原生操作也应使用 `pnpm check:workbook-*` 或 `node scripts/workbook-native.mjs scripts/check-workbook-….py --verify-native`，不混用系统 pyuno。

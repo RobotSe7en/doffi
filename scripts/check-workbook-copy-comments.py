@@ -1,4 +1,5 @@
 """Actual pinned Calc comment copies from independent native sources."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -84,8 +85,7 @@ def main():
             recorded.write_bytes(output.read_bytes())
         cases.append({"name": name, "source": source, "sourceSha256": sha256((ROOT / source).read_bytes()).hexdigest(), "nativeCall": call,
                       "observed": observed, "outputFile": recorded.relative_to(ROOT).as_posix(), "outputSha256": sha256(recorded.read_bytes()).hexdigest()})
-    audit = ROOT / ".cache/xlsx-venv/bin/python"
-    subprocess.run([str(audit) if audit.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True)
+    audit_schema(directory)
     report = {"scope": "Independent native inputs and four real pinned Calc copyRange edits. Cell strings prove each copy; persisted XML proves classic note copies. Duplicate VML IDs remain malformed producer negative cases and are rejected by the SDK. Modern thread and alternate-box losses remain explicit producer differences; no Excel/WPS editing runtime claim.",
               "references": ["https://support.microsoft.com/en-au/excel/paste-options?nochrome=true", "https://support.microsoft.com/en-us/excel/insert-comments-and-notes-in-excel"],
               "office": version, "archiveSha256": axis.ARCHIVE_HASH, "cases": cases}

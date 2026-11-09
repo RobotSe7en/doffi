@@ -1,4 +1,5 @@
 """Independent ordinary-filter header deletions and actual pinned Calc edits."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -112,8 +113,7 @@ def main():
             cases.append({"name": name, "operation": case["name"], "reapply": reapply, "observed": observed,
                           "matchesCurrent": observed["cached"] == case["expected"], "outputFile": str(recorded.relative_to(ROOT)),
                           "outputSha256": sha256(recorded.read_bytes()).hexdigest()})
-    audit = ROOT / ".cache/xlsx-venv/bin/python"
-    subprocess.run([str(audit) if audit.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True)
+    audit_schema(directory)
     report = {"scope": "Independent ZIP/XML source, actual row deletions and separate explicit criterion reapplication in pinned Calc. Native cached visibility is not current filtering. Excel/WPS runtime unverified.",
               "compatibility": "The first surviving row is the resulting ordinary filter header. The Microsoft reference documents filter range ownership, not physical header deletion; runtime evidence here is Calc only.",
               "basis": ["https://learn.microsoft.com/en-us/office/vba/api/excel.autofilter.range",

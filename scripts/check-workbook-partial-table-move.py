@@ -1,4 +1,5 @@
 """Independent partial native table cuts and actual producer reopen differences."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 import argparse
@@ -70,8 +71,7 @@ def main():
                 producer.write_bytes(output.read_bytes())
             item[step] = {"file": producer.relative_to(ROOT).as_posix(), "sha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)}
         cases.append(item)
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Immutable independent ZIP/XML table source; five actual pinned Calc partial moveRange edits and five real reopens, with official XSD/OPC. Definitions remain on the original table; producer loss of calculated recipes and native filter/header differences remain recorded. Calc's moved current-row structured spellings can retain old caches initially and change after reopen; both versions remain original bytes. SDK applies the user's exact cut-reference mapping to current-row inputs of moved formulas, retaining unmoved inputs and table definitions. Dynamic structured consumers remaining inside the table continue to use its current data. Excel/WPS structural runtime unverified.",
               "references": REFERENCES, "source": SOURCE.relative_to(ROOT).as_posix(), "sourceSha256": sha256(data).hexdigest(), "sourceObserved": observe(SOURCE),
               "office": version, "archiveSha256": base.axis.ARCHIVE_HASH, "cases": cases}

@@ -1,4 +1,5 @@
 """Independent relative-name sources and actual pinned Calc axis edits."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -85,8 +86,7 @@ def main():
         if args.record:
             producer.write_bytes(output.read_bytes())
         cases.append({"case": case, "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)})
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Independent Python ZIP/XML names, actual pinned Calc row/column insertions/deletions and official XSD/OPC. Relative name offsets stay recipes while bound absolute components follow cells. Calc's bang interpretation and nested Alias=Relative+10 cache of 10 after column edits are retained differences; the latter loses the calling coordinate (Relative itself is 15 after insertion and #REF! after deletion). Neither is adopted as Excel behavior. Excel web evidence covers calculation only; Excel/WPS structural runtime remains unverified.",
               "references": REFERENCES, "office": version, "archiveSha256": axis.ARCHIVE_HASH,
               "sourceSha256": sha256(data).hexdigest(), "cases": cases}

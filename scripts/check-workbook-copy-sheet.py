@@ -1,4 +1,5 @@
 """Independent sources and pinned Calc whole-worksheet copy observations."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -129,8 +130,7 @@ def main():
         cases.append({"name": name, "source": source, "sourceSha256": sha256((ROOT / source).read_bytes()).hexdigest(),
                       "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observed})
     if args.record or args.verify_native:
-        audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-        subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+        audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Ten independent native inputs, actual whole-sheet copies in pinned Calc, and stable data/name/table/chart/comment/print/hyperlink observations. Static hyperlink destinations retain their original text rather than being rewritten as formulas. Excel/WPS runtime unverified.",
               "office": axis.BUILD, "archiveSha256": axis.ARCHIVE_HASH, "references": REFERENCES,
               "producerDifferences": ["Calc clones source-bound global names as copied-sheet local definitions and removes the explicit current-workbook name prefix.",

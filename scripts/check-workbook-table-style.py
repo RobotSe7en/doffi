@@ -1,4 +1,5 @@
 """Reproduce custom-style producer losses and real edits with pinned Calc."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -79,8 +80,7 @@ def main():
         cases.append({"name": name, "output": recorded.relative_to(ROOT).as_posix(),
                       "sha256": sha256(output.read_bytes() if args.record else recorded.read_bytes()).hexdigest(), "observed": observed})
         outputs.append((recorded, output))
-    audit_python = ROOT / ".cache/xlsx-venv/bin/python"
-    audit = subprocess.run([str(audit_python) if audit_python.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, capture_output=True, text=True)
+    audit = audit_schema(directory, capture_output=True, text=True)
     schemas = json.loads(audit.stdout)["schemasSha256"]
     report = {"scope": "Independent native custom table styles, pinned Calc resave and an actual B2 edit. Producer loss of custom definitions/default/associations is retained explicitly; not an SDK lossless-export or Excel/WPS runtime claim.",
               "source": SOURCE.relative_to(ROOT).as_posix(), "sourceSha256": sha256(source).hexdigest(), "sourceObserved": observe(SOURCE),

@@ -1,4 +1,5 @@
 """Whole native table copy provenance and actual producer reopen differences."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 import argparse
@@ -59,8 +60,7 @@ def main():
                 producer.write_bytes(output.read_bytes())
             item[step] = {"file": producer.relative_to(ROOT).as_posix(), "sha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)}
         cases.append(item)
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Immutable independent ZIP/XML native table source, two actual pinned Calc whole-range copyRange edits and two actual reopens with official XSD/OPC. Producer copies cells without a new table definition, retains original structured references and yields VALUE errors for copied current-row formulas outside the original table. SDK complete contents copies create independent table/column identities and map self references to the new table; partial and selective copies keep ordinary bindings. Table recipes remain metadata, actual copied exceptions and rich headers remain source cells. Producer loss of original calculated recipes/filter differences remains explicit. Excel/WPS whole-table copy runtime unverified.",
               "source": SOURCE.relative_to(ROOT).as_posix(), "sourceSha256": sha256(data).hexdigest(), "sourceObserved": observe(SOURCE),
               "office": version, "archiveSha256": base.axis.ARCHIVE_HASH, "cases": cases}

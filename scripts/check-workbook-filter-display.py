@@ -1,4 +1,5 @@
 """Independent displayed-value filters and actual pinned Calc operations."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -88,8 +89,7 @@ def main():
         if args.record: shutil.copyfile(produced, OUTPUT)
         assert observe(produced) == observe(OUTPUT)
         shutil.copyfile(FIXTURE, directory / FIXTURE.name); shutil.copyfile(OUTPUT, directory / OUTPUT.name)
-        python = ROOT / '.cache/xlsx-venv/bin/python'
-        subprocess.run([str(python) if python.is_file() else sys.executable, str(ROOT / 'scripts/check-xlsx-output.py'), str(directory)], check=True)
+        audit_schema(directory)
     report = {'scope': 'Independent intrinsic display labels for ordinary and two-column native-table filtering. SDK accepts exact native scalar spellings or intrinsic source-format text. Calc numeric coercion/format normalization is retained separately; this is not Excel/WPS runtime acceptance.',
         'office': axis.BUILD, 'archiveSha256': axis.ARCHIVE_HASH, 'sourceSha256': sha256(data).hexdigest(), 'outputSha256': sha256(OUTPUT.read_bytes()).hexdigest(),
         'basis': ['https://learn.microsoft.com/en-us/office/vba/api/excel.range.autofilter', 'https://support.microsoft.com/en-us/excel/quick-start-filter-data-by-using-an-autofilter'], 'cases': cases, 'producer': observe(OUTPUT)}

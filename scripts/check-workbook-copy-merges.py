@@ -1,4 +1,5 @@
 """Independent merged copies and actual autofill in the pinned Calc producer."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -89,10 +90,7 @@ def main():
             producer.write_bytes(output.read_bytes())
         # ZIP timestamps and producer UUIDs may vary; compare semantic records.
         cases.append({"name": name, "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)})
-    audit_python = sys.executable
-    if importlib.util.find_spec("lxml") is None:
-        audit_python = str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Independent ZIP/XML source, actual pinned Calc copyRange and fillAuto. Mismatched destination merges are rejected by the SDK; Calc retains its old merge. Excel/WPS runtime unverified.",
               "office": version, "archiveSha256": axis.ARCHIVE_HASH, "sourceSha256": sha256(data).hexdigest(), "cases": cases}
     if args.record:

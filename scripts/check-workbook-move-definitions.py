@@ -1,4 +1,5 @@
 """Whole native table cuts, independently produced by pinned Calc moveRange."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -70,8 +71,7 @@ def main():
         if args.record:
             producer.write_bytes(output.read_bytes())
         cases.append({"name": name, "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)})
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Independent ZIP/XML source reused without rewriting, actual pinned Calc whole-table moveRange. SDK preserves its source data-only filter and calculated-column recipe; Calc includes totals in its filter and drops the stored recipe. Excel/WPS runtime unverified.",
               "office": version, "archiveSha256": axis.ARCHIVE_HASH, "sourceSha256": sha256(data).hexdigest(), "cases": cases}
     if args.record:

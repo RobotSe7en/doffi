@@ -1,4 +1,5 @@
 """Independent cell/object copies, complete chart vectors and partial-vector retention."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 import argparse
@@ -71,8 +72,7 @@ def main():
                           "outputFile": str(producer.relative_to(ROOT)), "outputSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observed})
         sources.append({"name": name, "source": path, "sourceSha256": sha256(source.read_bytes()).hexdigest(), "original": base.observe(source), "cases": cases})
     if args.record or args.verify_native:
-        python = sys.executable if importlib.util.find_spec("lxml") else str(ROOT / ".cache/xlsx-venv/bin/python")
-        subprocess.run([python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+        audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Two immutable independent ZIP/XML sources and eight actual native range copies, with pictures, shapes, absolute boxes and three basic charts. Complete and partial direct input vectors are observed separately. Excel/WPS runtime unverified.",
               "office": base.axis.BUILD, "archiveSha256": base.axis.ARCHIVE_HASH,
               "fontManifest": {"source": "examples/xlsx/reference.json#environment.fonts", "sha256": sha256(json.dumps(fonts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()},

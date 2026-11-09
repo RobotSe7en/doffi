@@ -1,4 +1,5 @@
 """Pinned native range-copy observations for immutable independent hyperlinks."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -84,8 +85,7 @@ def main():
         assert any(link["ref"] == ("A3" if name == "overlap" else "AG257") and link["url"] == "https://example.com/authorized-link" for link in destination)
         cases.append({"name": name, "sdkAcceptance": "rejected: formatted print header/footer controls" if name == "new-sheet" else "supported", "output": recorded.relative_to(ROOT).as_posix(), "sha256": sha256(output.read_bytes() if args.record else recorded.read_bytes()).hexdigest(), "observed": current})
         outputs.append((recorded, output))
-    audit_python = ROOT / ".cache/xlsx-venv/bin/python"
-    audit = subprocess.run([str(audit_python) if audit_python.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, capture_output=True, text=True)
+    audit = audit_schema(directory, capture_output=True, text=True)
     report = {"scope": "Immutable Python ZIP/XML source and actual pinned Calc ordinary, overlapping and cross-sheet copies, plus an explicit negative producer case for new-sheet default print font controls. Display-cache regeneration and omitted tooltip are retained as producer differences; no Excel/WPS runtime or SDK native XLSX export claim.",
               "source": SOURCE.relative_to(ROOT).as_posix(), "sourceSha256": source_hash, "sourceObserved": observe(SOURCE), "office": axis.BUILD, "archiveSha256": axis.ARCHIVE_HASH, "nativeLocale": "C.UTF-8",
               "officialSchemasSha256": json.loads(audit.stdout)["schemasSha256"], "cases": cases}

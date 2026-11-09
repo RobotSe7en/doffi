@@ -1,4 +1,5 @@
 """Independent mixed-feature workbook and pinned Calc edit; never SDK output."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -123,8 +124,7 @@ def main():
         assert observe(produced) == observe(OUTPUT), 'Native mixed observations changed'
         shutil.copyfile(FIXTURE, directory / FIXTURE.name)
         shutil.copyfile(OUTPUT, directory / OUTPUT.name)
-        python = ROOT / '.cache/xlsx-venv/bin/python'
-        subprocess.run([str(python) if python.is_file() else sys.executable, str(ROOT / 'scripts/check-xlsx-output.py'), str(directory)], check=True)
+        audit_schema(directory)
     report = {'scope': 'Independent mixed native source: table, rich text, name, rules, three drawing anchor kinds, chart, classic note and modern threads. SDK current expectations are independent of Calc caches. Unmodified actual Calc edit/resave and differences retained; Excel/WPS runtime unverified.',
         'office': axis.BUILD, 'archiveSha256': axis.ARCHIVE_HASH,
         'sourceSha256': sha256(data).hexdigest(), 'outputSha256': sha256(OUTPUT.read_bytes()).hexdigest(),

@@ -1,4 +1,5 @@
 """Independent merged selective paste/skip-blank and numeric autofill evidence."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -92,8 +93,7 @@ def main():
         if args.record:
             producer.write_bytes(output.read_bytes())
         cases.append({"case": case, "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": merged.observe(output)})
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Independent ZIP/XML source, eighteen actual selective clipboard pastes with explicit overwrite/current calculation, two actual numeric fillAuto operations, and official XSD/OPC. SDK values/formulas preserve target merge formatting; Calc removes a matching target merge. Calc formats/skip-blank content can retain populated covered cells; SDK rejects the whole candidate to protect source content. Source and producer bytes remain distinct. No Excel/WPS structural runtime claim.",
               "references": REFERENCES, "office": version, "archiveSha256": merged.axis.ARCHIVE_HASH, "sourceSha256": sha256(data).hexdigest(), "cases": cases}
     if args.record:

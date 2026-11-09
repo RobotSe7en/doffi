@@ -1,4 +1,5 @@
 """Independent ZIP/XML source and actual pinned Calc row/column edits."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +8,7 @@ import importlib.util
 import json
 import os
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -77,6 +79,9 @@ def native(source_path, output, case, mutate=None):
     # pyuno is an acceptance-only client. No Office runtime enters the SDK.
     import uno
     from com.sun.star.beans import PropertyValue
+    program = ROOT / ".cache/acceptance-office/installed/opt/libreoffice25.8/program"
+    if Path(uno.__file__).resolve() != (program / "uno.py").resolve():
+        raise RuntimeError("Native acceptance requires the fixed archive's UNO client; use node scripts/workbook-native.mjs.")
 
     def prop(name, value):
         result = PropertyValue()
@@ -84,6 +89,12 @@ def native(source_path, output, case, mutate=None):
         return result
 
     with TemporaryDirectory(prefix="doffi-axis-") as temporary:
+        # Office can create lock/recovery files beside its input. Give every
+        # job an exact private copy, including its original basename.
+        input_directory = Path(temporary) / "input"
+        input_directory.mkdir()
+        isolated_source = input_directory / source_path.name
+        shutil.copyfile(source_path, isolated_source)
         with socket.socket() as port:
             port.bind(("127.0.0.1", 0))
             number = port.getsockname()[1]
@@ -108,7 +119,7 @@ def native(source_path, output, case, mutate=None):
                         raise RuntimeError("The pinned Calc edit process did not become ready.")
                     time.sleep(0.1)
             desktop = context.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
-            document = desktop.loadComponentFromURL(source_path.resolve().as_uri(), "_blank", 0,
+            document = desktop.loadComponentFromURL(isolated_source.resolve().as_uri(), "_blank", 0,
                                                     (prop("Hidden", True), prop("ReadOnly", False), prop("UpdateDocMode", 0), prop("MacroExecutionMode", 4)))
             if document is None:
                 raise RuntimeError("The independent source did not open in Calc.")
@@ -140,7 +151,7 @@ def native(source_path, output, case, mutate=None):
                 os.killpg(process.pid, signal.SIGKILL)
                 stdout, stderr = process.communicate()
             if failed:
-                print(f"Pinned Calc acceptance failed; process exit before cleanup: {exit_before_cleanup!r}", file=sys.stderr)
+                print(f"Pinned Calc acceptance failed; launcher exit before cleanup: {exit_before_cleanup!r}", file=sys.stderr)
                 for label, data in [("stdout", stdout), ("stderr", stderr)]:
                     if data:
                         print(label + ":\n" + data[-16_384:].decode("utf-8", errors="replace"), file=sys.stderr)
@@ -170,15 +181,9 @@ def main():
         output = directory / (str(index) + ".xlsx")
         version = native(input_path, output, operation)
         cases.append({"operation": operation, "observed": observe(output)})
-    # The pyuno client and lxml may live in separate local Python installs.
-    # CI provides both to /usr/bin/python3; local schema checks can reuse the
-    # already provisioned acceptance venv without changing system packages.
-    audit_python = sys.executable
-    local_python = ROOT / ".cache/xlsx-venv/bin/python"
-    if importlib.util.find_spec("lxml") is None and local_python.is_file():
-        audit_python = str(local_python)
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True,
-                   stdout=subprocess.PIPE, text=True)
+    # The archive's UNO client and the lxml audit use separate interpreters;
+    # their Python home and module paths never leak across this boundary.
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Independent ZIP/XML input, actual row/column edits in pinned Calc and native formula/range observations. Excel/WPS unverified.",
               "office": version, "archiveSha256": ARCHIVE_HASH, "sourceSha256": sha256(data).hexdigest(), "cases": cases}
     if args.record:

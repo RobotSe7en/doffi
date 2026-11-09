@@ -1,4 +1,5 @@
 """Pinned native structured-reference fill observations, including Calc differences."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 import argparse
@@ -53,8 +54,7 @@ def main():
         document.calculateAll()
 
     version = base.axis.native(SOURCE, output, None, mutate)
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     producer = SOURCE.with_name("workbook-structured-fill-calc.xlsx")
     if args.record:
         producer.write_bytes(output.read_bytes())

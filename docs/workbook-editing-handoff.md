@@ -4,6 +4,10 @@
 
 ## 基线与当前状态
 
+- `7491c13a80c59c66fe471d0347f6b356f5712268` 的 [CI 42706072977](https://github.com/RobotSe7en/doffi/actions/runs/42706072977)已结束：日常除工作簿原生及其汇总外全部通过，`workbook-scale` 完整成功。源码／八项单元／156 项现代及旧版集成／128 矩阵／固定资源读取编辑均有最终该 SHA 的 artifact；编辑四引擎 p95 149.9／394／255／245.8ms，浏览器高水位约 1423／1895／1590／1246MiB。该结果不能替代后续原生适配器修复提交的最终全套。
+- 远程原生断桥已在 Ubuntu 24.04 六组对照定位为该系统客户端组合问题：系统 3.12.3／pyuno24.2 在最小与混合源均 getSheets 成功、getByIndex 断桥；只固定 server home 仍失败；同归档 3.11.13／pyuno25.8、相同 server home 两个来源实际编辑与 producer 观测均成功（`.cache/workbook-ubuntu-client-matrix-isolated.log`）。不得扩大为所有跨版本 UNO 皆不兼容或把启动器 poll None 当成服务端未崩溃。
+- 主实施者新增 `scripts/workbook-native.mjs` 固定同归档客户端／服务端、原 SHA 和干净引导环境；26 个命令明确使用。适配器拒绝非归档 uno.py，并以私有精确副本保留输入 basename、防止锁／恢复文件污染夹具。25 个 XML 审计入口统一到独立 lxml 解释器并清理继承 Python／UNO home/path，所有原操作、原始 bytes／producer 观测和 XSD／OPC 断言保持。两位原审查者已只读认可全部差异，无新增 P0／P1／P2，另通过语法／AST／非法入口及审计失败传播检查。新源本机与 Ubuntu 混合全验证均通过，五文件／48 项源／SDK 回归通过；本机完整49原生全部通过，约395.7秒（`.cache/workbook-native-pinned-complete-office.log`）；新提交最终全部日常／容量仍须重跑。完整环境说明见[CI 执行](ci-performance.md)。
+
 - 最新完整 `pnpm check` 270 文件／3015 项、架构／类型／SDK 和 Playground 构建通过（`.cache/workbook-editing-seed-budgets-complete-check.log`）。`97af0b5` 远端容量最终为现代 115 项通过、2 个 Firefox 大表编辑首次／诊断重跑均 360 秒超时，没有进入后续旧版及固定资源；`.cache/workbook-editing-first-ci-{failed-complete.log,scale/}` 保留。该运行不得计作阶段通过。
 - 排查同时发现本机 `.cache/acceptance-fonts` 的旧配置指向重命名前目录，已修正；早先名为 `pinned-font-replay` 的那次不能证明固定字体环境。修正后实际 Calc 及 XSD／OPC 重放仍通过（`.cache/workbook-editing-combinations-repaired-font-replay.log`）。
 - 固定字体目录在应用缓存时，本机与 CI Firefox 实际将 Noto CJK 替代，虽然 `fc-match` 正确；三次诊断准备约 150～200ms／view 约 50～70ms，预览每次约 15 秒，profile 指向完整自动行高重测。相同字体字节安装到标准系统目录后，四个 CJK face 与不存在 face 的 Canvas 正负例通过；不改 SDK 的替代诊断、行高复用或浏览器安全偏好。安装新增显式 `--system-fonts`、按 manifest 摘要命名目录和不同字节拒绝覆盖；CI Office／scale 明确使用。阶段最前新增仓库 manifest／实际 SHA／当前 Fontconfig／真实 Firefox 前置检查，报告归档，详见[CI 说明](ci-performance.md)。两个原超时用例以 CI=true／full／固定字体重跑均通过：普通编辑 55.9 秒、默认编辑器 1.5 分钟，全部 100 次与完整历史保留（`.cache/workbook-firefox-capacity-system-fonts.log`）。

@@ -1,4 +1,5 @@
 """Independent current-workbook name prefixes and pinned Calc copy/reopen differences."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -83,8 +84,7 @@ def main():
         if args.record:
             producer.write_bytes(output.read_bytes())
         cases.append({"name": name, "producerSha256": sha256(producer.read_bytes()).hexdigest(), "observed": observe(output)})
-    audit_python = sys.executable if importlib.util.find_spec("lxml") is not None else str(ROOT / ".cache/xlsx-venv/bin/python")
-    subprocess.run([audit_python, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, stdout=subprocess.PIPE, text=True)
+    audit_schema(directory, stdout=subprocess.PIPE, text=True)
     report = {"scope": "Independent ZIP/XML [0]!Tax source follows the Microsoft current-workbook name prefix. Calc removes the prefix, resolves a local shadow on resave, clones a missing local name on copy, and loses copied global binding on a second reopen. These producer differences are retained; Excel/WPS runtime unverified.",
               "references": REFERENCES, "office": version, "archiveSha256": axis.ARCHIVE_HASH, "sourceSha256": sha256(data).hexdigest(),
               "sourceCurrentWorkbookNameExpected": {"Data!B8": 7, "Other!B8": 7}, "cases": cases}

@@ -1,4 +1,5 @@
 """Pinned Calc consumes SDK HTML through its actual native transfer controller."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -97,8 +98,7 @@ def main():
     assert result["cells"]["C12"]["value"] == "001234567890123456789"
     assert result["cells"]["D13"]["value"] == "=1+1" and result["cells"]["D13"]["formula"] is None
     assert "A13:B13" in result["merges"]
-    audit_python = ROOT / ".cache/xlsx-venv/bin/python"
-    audit = subprocess.run([str(audit_python) if audit_python.is_file() else sys.executable, "scripts/check-xlsx-output.py", str(directory)], cwd=ROOT, check=True, capture_output=True, text=True)
+    audit = audit_schema(directory, capture_output=True, text=True)
     report = {"scope": "Independent XLSX imported and edited through SDK transactions; generated portable HTML inserted through the actual pinned native controller, then a native value edit recalculates the pasted formula. Original HTML/SDK text retains CR; producer CR/LF and tab normalization and constant-error formula conversion are recorded. No Excel/WPS runtime claim.",
               "sourceSha256": sha256(SOURCE.read_bytes()).hexdigest(), "htmlSha256": sha256(html).hexdigest(), "office": version,
               "fixtureSha256": sha256((output if args.record else FIXTURE).read_bytes()).hexdigest(),

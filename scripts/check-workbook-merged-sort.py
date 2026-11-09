@@ -1,4 +1,5 @@
 """Independent merged-sort sources, actual pinned Calc edits and Office's size rule."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -105,8 +106,7 @@ def main():
         if args.record:
             recorded.write_bytes(output.read_bytes())
         cases.append({**case, "nativeCall": call, "observed": observe(output, case), "outputFile": recorded.relative_to(ROOT).as_posix(), "outputSha256": sha256(recorded.read_bytes()).hexdigest()})
-    audit = ROOT / ".cache/xlsx-venv/bin/python"
-    subprocess.run([str(audit) if audit.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True)
+    audit_schema(directory)
     report = {"scope": "Independent ZIP/XML and four actual pinned Calc sort calls. Microsoft documents equal merged row/column sizes; record ordering expectations are declared independently. Excel/WPS editing runtime remains unverified.",
               "reference": BASIS, "office": version, "archiveSha256": axis.ARCHIVE_HASH, "sourceSha256": sha256(source).hexdigest(), "cases": cases}
     if args.record:

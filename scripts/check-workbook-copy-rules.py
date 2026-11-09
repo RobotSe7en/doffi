@@ -1,4 +1,5 @@
 """Actual bounded copies of immutable conditional formats and validation rules."""
+from workbook_acceptance import audit_schema
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -70,8 +71,7 @@ def main():
             recorded.write_bytes(output.read_bytes())
         cases.append({"name": name, "sourceRange": source_range, "destination": destination, "sdkCopy": "rejected: copied stop violation" if name == "invalid-stop" else "supported",
                       "output": recorded.relative_to(ROOT).as_posix(), "sha256": sha256(recorded.read_bytes()).hexdigest(), "observed": current})
-    audit_python = ROOT / ".cache/xlsx-venv/bin/python"
-    audit = subprocess.run([str(audit_python) if audit_python.is_file() else sys.executable, str(ROOT / "scripts/check-xlsx-output.py"), str(directory)], check=True, capture_output=True, text=True)
+    audit = audit_schema(directory, capture_output=True, text=True)
     report = {"scope": "Immutable independent ZIP/XML source, six actual pinned Calc copies and official Transitional XSD/OPC. SDK uses uniform transaction validation: copied stop violations are rejected even though native copy accepts them. Native conditional-rule grouping and producer changes are preserved. No Excel/WPS runtime claim.",
               "source": SOURCE.relative_to(ROOT).as_posix(), "sourceSha256": source_hash, "sourceObserved": observe(SOURCE), "office": axis.BUILD, "archiveSha256": axis.ARCHIVE_HASH,
               "officialSchemasSha256": json.loads(audit.stdout)["schemasSha256"], "nativeLocale": "C.UTF-8", "cases": cases}
