@@ -4,6 +4,7 @@
 
 ## 基线与当前状态
 
+- `9eb9c4e` 的 [CI 42712431026](https://github.com/RobotSe7en/doffi/actions/runs/42712431026)原生运行已通过混合来源等前序操作，随后绘图轴字体先决条件因比较作者整机字体清单失败；失败保留，不能计作阶段通过。主实施者将三项绘图原生检查隔离到来源声明字体及固定 emoji 回退，逐样式核对原历史 basename／SHA，并验证完整活动清单及私有目录。原生操作、原文件、几何／producer／XSD／OPC 断言不变。本机与 Ubuntu 的 27／6／8 项均匹配原观测，两位原审查者独立认可全部差异及严格拒绝负例，无新增 P0／P1／P2。字体隔离后的最终完整检查仍须完成，详见[CI 环境](ci-performance.md)及[复核](workbook-editing-review.md)。
 - `7491c13a80c59c66fe471d0347f6b356f5712268` 的 [CI 42706072977](https://github.com/RobotSe7en/doffi/actions/runs/42706072977)已结束：日常除工作簿原生及其汇总外全部通过，`workbook-scale` 完整成功。源码／八项单元／156 项现代及旧版集成／128 矩阵／固定资源读取编辑均有最终该 SHA 的 artifact；编辑四引擎 p95 149.9／394／255／245.8ms，浏览器高水位约 1423／1895／1590／1246MiB。该结果不能替代后续原生适配器修复提交的最终全套。
 - 远程原生断桥已在 Ubuntu 24.04 六组对照定位为该系统客户端组合问题：系统 3.12.3／pyuno24.2 在最小与混合源均 getSheets 成功、getByIndex 断桥；只固定 server home 仍失败；同归档 3.11.13／pyuno25.8、相同 server home 两个来源实际编辑与 producer 观测均成功（`.cache/workbook-ubuntu-client-matrix-isolated.log`）。不得扩大为所有跨版本 UNO 皆不兼容或把启动器 poll None 当成服务端未崩溃。
 - 主实施者新增 `scripts/workbook-native.mjs` 固定同归档客户端／服务端、原 SHA 和干净引导环境；26 个命令明确使用。适配器拒绝非归档 uno.py，并以私有精确副本保留输入 basename、防止锁／恢复文件污染夹具。25 个 XML 审计入口统一到独立 lxml 解释器并清理继承 Python／UNO home/path，所有原操作、原始 bytes／producer 观测和 XSD／OPC 断言保持。两位原审查者已只读认可全部差异，无新增 P0／P1／P2，另通过语法／AST／非法入口及审计失败传播检查。新源本机与 Ubuntu 混合全验证均通过，五文件／48 项源／SDK 回归通过；本机完整49原生全部通过，约395.7秒（`.cache/workbook-native-pinned-complete-office.log`）；新提交最终全部日常／容量仍须重跑。完整环境说明见[CI 执行](ci-performance.md)。

@@ -1,5 +1,5 @@
 """Independent drawing moves/sorts with native normalization and copy differences."""
-from workbook_acceptance import audit_schema
+from workbook_acceptance import audit_schema, pin_native_fonts
 from hashlib import sha256
 from pathlib import Path
 import argparse
@@ -36,8 +36,9 @@ def main():
         assert sha256((ROOT / ".cache/LibreOffice_25.8.1.1_Linux_x86-64_deb.tar.gz").read_bytes()).hexdigest() == base.axis.ARCHIVE_HASH
         os.environ["PATH"] = str(ROOT / ".cache/acceptance-office/bin") + os.pathsep + os.environ["PATH"]
         os.environ["LD_LIBRARY_PATH"] = str(ROOT / ".cache/acceptance-office-deps/installed/usr/lib/x86_64-linux-gnu")
+        active_fonts = pin_native_fonts([ROOT / source[1] for source in SOURCES], fonts, "drawing-transport")
         environment = base.shared.environment()
-        assert environment["libreOffice"] == base.axis.BUILD and environment["fonts"] == fonts, "Pinned Office/fonts changed."
+        assert environment["libreOffice"] == base.axis.BUILD and environment["fonts"] == active_fonts, "Pinned Office/fonts changed."
         # pyuno configures its own runtime environment; read the independent
         # CLI/font identity before importing it (native() isolates that state).
         import uno

@@ -1,5 +1,5 @@
 """Pinned native axis edits for drawings and classic note boxes, retaining producer differences."""
-from workbook_acceptance import audit_schema
+from workbook_acceptance import audit_schema, pin_native_fonts
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile
@@ -86,8 +86,9 @@ def main():
         assert sha256((ROOT / ".cache/LibreOffice_25.8.1.1_Linux_x86-64_deb.tar.gz").read_bytes()).hexdigest() == axis.ARCHIVE_HASH
         os.environ["PATH"] = str(ROOT / ".cache/acceptance-office/bin") + os.pathsep + os.environ["PATH"]
         os.environ["LD_LIBRARY_PATH"] = str(ROOT / ".cache/acceptance-office-deps/installed/usr/lib/x86_64-linux-gnu")
+        active_fonts = pin_native_fonts([ROOT / ("examples/xlsx/" + name + ".xlsx") for name in SOURCES], fonts, "axis-drawings")
         environment = shared.environment()
-        assert environment["libreOffice"] == axis.BUILD and environment["fonts"] == fonts, "The pinned Office/font environment differs."
+        assert environment["libreOffice"] == axis.BUILD and environment["fonts"] == active_fonts, "The pinned Office/font environment differs."
     directory = ROOT / ".cache/workbook-axis-drawings-native"
     directory.mkdir(exist_ok=True)
     sources = []

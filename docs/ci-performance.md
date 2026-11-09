@@ -86,3 +86,11 @@ FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-sc
 26 个远程原生命令显式经 [运行器](../scripts/workbook-native.mjs)校验原归档摘要、清理继承引导环境，并使用官方 `program/python`；适配器核验实际导入的 `uno.py` 来自同一归档，拒绝意外的系统客户端。每项作业在私有目录使用保留 basename 的精确输入副本，Office 的锁／恢复文件不会接触跟踪夹具。原始输入、producer 文件和全部观测／XSD／OPC 断言保持。
 
 XML 验证由[独立审计入口](../scripts/workbook_acceptance.py)选择已有 lxml venv 或系统解释器，清除归档 Python／UNO 引导环境后执行原官方 schema 检查，失败仍非零退出。它不向归档 Python 安装额外包，不进入 SDK。手动复现原生操作也应使用 `pnpm check:workbook-*` 或 `node scripts/workbook-native.mjs scripts/check-workbook-….py --verify-native`，不混用系统 pyuno。
+
+## 原生绘图的字体隔离
+
+`9eb9c4e` 的原生运行已越过远程客户端失败，随后在绘图轴检查的字体先决条件失败：历史清单包含作者整台机器数百份字体，Ubuntu 缺少与来源无关的字体。原始清单及其摘要保留，不重新记录 producer 或几何基线。
+
+三项绘图轴／移动排序／对象复制检查现在从其不可变 XLSX 的 XML／VML 提取声明字体，另固定 Noto Color Emoji 回退。每种字体的四个样式必须匹配同 family，实际 basename／SHA-256 必须存在于原始参考清单。将这些精确字节复制到私有目录，继承 Fontconfig 渲染与别名规则后用 `reset-dirs` 清空环境字体搜索目录；完整活动清单必须等于所选集合，任何目录逃逸都失败。该隔离只存在于独立验收进程，不改变 SDK 或浏览器环境。
+
+来源摘要、各样式解析和完整活动字体清单写入 Office artifact 的 `font-gates/`。本机和 Ubuntu 24.04 的 27 项绘图／备注轴操作、6 项移动排序和 8 项对象复制均与原有 producer 观测完全相同，并通过原官方 XSD／OPC 检查。全部原生操作、原始输入／producer 字节、几何和观测断言保持；该定向成功仍不能替代最终 HEAD 的完整日常／容量。
