@@ -1,12 +1,12 @@
 # 工作簿公式引用基础
 
-R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射；R3-08 增加供规则读取使用的有界只读标量内核。它们为导入和后续核心事务提供基础，**尚未实现 R3-10 完整函数矩阵、增量依赖图、自动重算或正式工作簿编辑**。解析成功不代表函数已经可计算。
+R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射；R3-08 增加供规则读取使用的有界只读标量内核。本页记录这些基础及读取语义；R3-09～16 的事务、增量计算、重算与输入基础已在实施，最新范围见[编辑计算交接](workbook-editing-handoff.md)，**完整函数矩阵和编辑阶段尚未完成验收**。解析成功不代表函数已经可计算。
 
 ## 语法与来源
 
 单元格公式仍保存为分块 HTML 中的 `data-formula`。缓存值及状态继续与公式分开；AST、名称/表格绑定和共享模板都是派生状态。原始表达式不会因读取自动规范化。
 
-[解析器](../packages/core/src/workbook/formula.ts)支持数值、字符串、布尔、错误、缺省参数、函数调用、标量运算、相对/绝对/混合 A1 引用、跨表引用、普通矩形、整行整列、名称、联合与交叉区域。函数参数逗号与引用联合逗号区分；括号保持引用运算优先级。前缀正负号、百分号和乘方遵循 Excel 的优先级和结合规则。
+[解析器](../packages/core/src/workbook/formula.ts)支持数值、字符串、布尔、错误、缺省参数、函数调用、标量运算、相对/绝对/混合 A1 引用、跨表引用、普通矩形、整行整列、名称、联合与交叉区域。函数参数逗号与引用联合逗号区分；分隔、括号及运算符均检查标记类型，字符串中的同名标点仍是字面量；括号保持引用运算优先级。前缀正负号、百分号和乘方遵循 Excel 的优先级和结合规则。
 
 [结构化引用](../packages/core/src/workbook/structured-reference.ts)覆盖表名/省略表名、列/列区间、All/Data/Headers/Totals/This Row、Headers+Data、Data+Totals、`[@Column]` 简写和列名特殊字符转义。省略表名时需提供实际所属表，不能根据可见 DOM 猜测。绑定器按源表几何、列名和表头/汇总行计算至多一个矩形；空数据区显式表示为空，未知表/列和无效当前行返回相应公式错误。
 
@@ -16,9 +16,13 @@ R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射�
 
 跨包适配器通过 core 的 `parseWorkbookFormula`、`printWorkbookFormula` 和 `createSharedWorkbookFormulas` 使用同一实现，公开类型为本项目的只读语法树，不暴露第三方解析器。打印与原生读取不另写一份公式解析器；引用重写及表格绑定暂为核心内部工具。
 
+系统剪贴板另开放 `parseWorkbookR1C1Formula`／`printWorkbookR1C1Formula`，与 A1 共用词法、表达式解析、相对偏移 AST、结构化引用和预算。R/C 数字为绝对位置，方括号为相对偏移，省略位置为当前行／列；支持混合地址、整行列、名称、跨表、联合和交集，字符串及结构化列名不当成地址。持久化源仍为 A1。R1C1 的产品定义见 [Microsoft FormulaR1C1](https://learn.microsoft.com/en-us/office/vba/api/excel.range.formular1c1)，Sheets HTML 字段的生产者定义见 [Collabora 集成手册](https://sdk.collaboraonline.com/25.04/CO-SDK-manual.pdf)；旧 `x:fmla` 的表格相对 A1 来自 [Microsoft Office HTML/XML 参考的存档](https://stigmortenmyre.no/mso/html/excel/xlconformulas.htm)。这些语法依据和固定 Calc 接收记录不构成当前 Excel/WPS 实机验收。
+
+名称参与行列插删：相对分量保留调用位置偏移及稳定的定义原点，已绑定工作表的绝对分量跟随单元格或成为 `#REF!`；混合范围删除端点时裁剪到存续范围，不能因一个端点删除而丢掉整段。局部名称的隐式／bang 引用使用所属表；全局隐式／bang 引用保留其调用表语义，不绑定到第一张表。嵌套名称继续按身份求值和失效。[独立 ZIP/XML 与五次固定 Calc 编辑](evidence/workbook-axis-names.json)保留原始生产者字节、官方 XSD／OPC、bang 计算差异及插删列后嵌套相对别名丢失调用坐标的差异。`pnpm check:workbook-axis-names` 实际复现；Excel 网页版求值证据不能充当 Excel 结构操作实机验收。
+
 `WorkbookModel.resolveReference(expression, { sheetId, row, column })` 已将静态引用绑定接入当前只读模型：支持单格/矩形/整行列、跨表、局部与全局名称、智能表、联合、交集和范围运算。名称的相对分量以调用坐标解析；显式局部名称在所属表解析。整列只返回一个区域，不生成百万条记录。联合保留重复项，交集为空返回 `#NULL!`；未知名称、缺失工作表和越界引用分别返回明确错误。
 
-引用查询不是求值器。动态引用函数返回 `calculation-required`，名称循环返回 `circular-name`。全局名称内部引用被局部名称遮蔽的未限定名称时，暂返回 `ambiguous-name-scope`：[独立 Calc 证据](evidence/xlsx-reference-semantics.json)显示其结果会随第一张工作表变化，不能把当前活动表或调用表猜作定义上下文。该证据同时验证局部限定、联合重复计数、交集及多区域范围运算；`python3 scripts/check-xlsx-reference-semantics.py` 检查三组输入、三张表和 72 个结果。Excel/WPS 行为仍未实机验证。
+引用查询不是求值器。动态引用函数返回 `calculation-required`，名称循环返回 `circular-name`。名称内部裸名称按全局绑定，`!名称` 只查上下文表的局部定义；依据为[实际 Excel 网页版求值记录](evidence/excel-web-name-semantics/README.md)。旧[独立 Calc 证据](evidence/xlsx-reference-semantics.json)中随第一张工作表变化的绑定保留为生产者差异，不再以歧义拒绝代替已验证的求值语义。该证据同时验证局部限定、联合重复计数、交集及多区域范围运算；`python3 scripts/check-xlsx-reference-semantics.py` 检查三组输入、三张表和 72 个结果。结构编辑与桌面 Excel/WPS 不由这些求值记录验收。
 
 ## 供读取规则使用的标量内核
 
@@ -60,7 +64,7 @@ R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射�
 
 不受影响的公式保留原始字符串，避免一次小结构编辑仅为了格式规范化而重写整本分块。需要修改时使用带括号的规范输出并重新解析校验。跨表范围一端越界时，另一端仍保留工作表限定。
 
-这些工具尚未接入工作簿事务；实际表格、名称、坐标及作用域的完整绑定随 R3-07 模型和 R3-09 编辑边界接入。它们不授予宿主写权限，也不绕过候选整批校验。
+工作表改名／删除及普通区域行列插删已接入同一工作簿事务；结构引用重写保留历史缓存正文并标记过期，当前计算独立求值。行列命令的维度、规则、打印及宿主批注基础、独立 Calc 实际操作证据和未接通的组合见[行列插删](workbook-model.md)。智能表、上下文名称、剪切、排序和原生对象／批注的完整联动仍在 R3-09～16 实施，不能把纯映射器或普通区域检查计为全部验收。它们不授予宿主写权限，也不绕过候选整批校验。
 
 ## 预算与验证
 
@@ -69,3 +73,12 @@ R3-05 实现第一方公式解析、共享模板、引用绑定和结构映射�
 93 个针对性测试覆盖分块/模型、解析、输出、共享组、表格绑定和引用映射；其中原生来源检查处理 16 个独立源及其 Calc 重存的四万余个公式/引用表达式，包括一万行样例、共享公式、表计算列、验证、图表及打印名称。独立点映射检查剪切重叠与删除边界，不只比较重写器自己的中间结构。类型和包依赖边界检查通过。测试不宣称计算结果或 SDK 原生导入已通过。
 
 规范依据：[MS-XLSX 公式语法](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/3d025add-118d-4413-9856-ab65712ec1b0)、[Excel 运算优先级](https://support.microsoft.com/en-us/excel/calculation-operators-and-precedence-in-excel)、[结构化引用](https://support.microsoft.com/en-gb/excel/using-structured-references-with-excel-tables)、[复制与移动公式](https://support.microsoft.com/en-us/excel/move-or-copy-a-formula-in-excel)。剪切部分范围及排序外部公式的具体选择以本轮用户决策为准，Excel/WPS 未实机验证。
+
+
+## 编辑阶段当前计算与独立边界
+
+`createWorkbookCalculator(source, limits?, previous?)` 在同一不可变模型或来源提供者上执行当前公式。`calculateSync()`／异步 `calculate()` 发布带文档、修订、批次与引擎身份的完整结果；`getCell()` 区分当前、过期和不可用。会话的计算接口复用该内核。实际输入及结构变化沿依赖闭包失效，图的区域边不展开成百万个点；迭代处理长链。取消或来源修订变化不发布半批结果，重算不添加历史。完整第一方批次可作为隔离分支的复用证明，复制的 JSON 对象不具备该证明。
+
+第三轮[已选函数表](iteration-3.md#自研公式范围与语义)中的聚合／条件统计、逻辑／类型、数值、文本、日期／时间及查找函数均已实现。上文只读基础的函数清单记录较早检查点，不代表当前只支持该子集。地区与 TODAY／NOW 使用复制的宿主上下文，同一批不读取系统时间。当前结果不采用故意错误的来源缓存；历史缓存和来源正文继续保留，输出缓存另属后续阶段。
+
+[边界记录](evidence/workbook-function-boundaries.json)增加两种日期系统共 268 项独立预期、无缓存输入及未修改的固定 Calc 重存，包括十进制舍入、参数数量与类型、错误传播、空串／空白、最大参数、历史日期及 Unicode。UTF-16 案例声明为旧版 Version 1；微软[兼容版本文档](https://support.microsoft.com/en-gb/excel/compatibility-versions)明确区分其与 Version 2 的代理对计数，当前不会把未知的兼容版本扩展当作旧版静默读取。这份语料不是 Excel 当前通道新工作簿的实机观测。两种日历的独立源／无缓存参考／实际 Calc 文件共六份，经过官方 XSD／OPC；`pnpm check:workbook-function-boundaries` 重新执行固定生产者并核对所有观测。阶段总状态和范围核对见[编辑验收](workbook-editing-acceptance.md)。

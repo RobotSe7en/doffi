@@ -25,7 +25,7 @@ const examples: WorkspaceFile[] = [
   { id: "docx", name: "文字与编号.docx", kind: "word", detail: "Word 原生文件样例" },
   { id: "presentation", name: "项目进展演示", kind: "presentation", detail: "PPT 编辑与协作样例" },
   { id: "pptx", name: "多页演示文稿.pptx", kind: "presentation", detail: "PowerPoint 原生文件样例" },
-  { id: "xlsx", name: "一万行工作簿.xlsx", kind: "workbook", detail: "Excel 只读样例 · 20 万单元格" },
+  { id: "xlsx", name: "一万行工作簿.xlsx", kind: "workbook", detail: "Excel 工作簿 · 20 万单元格" },
 ];
 const sample = import.meta.env.BASE_URL + "01-text-numbering.docx";
 function base64(bytes: Uint8Array): string {
@@ -42,6 +42,7 @@ export function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [model, setModel] = useState<DocumentModel>();
   const [workbook, setWorkbook] = useState<HostedWorkbook>();
+  const [, refreshWorkbookMetadata] = useState(0);
   const [candidate, setCandidate] = useState<WorkbookCandidate>();
   const [progress, setProgress] = useState<OfficeImportProgress>();
   const loadRef = useRef<AbortController>(undefined);
@@ -111,7 +112,13 @@ export function App() {
     setActiveId(file.id);
     setModel(next);
   }
-  function beginLoad(): { current: number; controller: AbortController } {
+  function canLeaveWorkbook(): boolean {
+    const current = activeDocument.current;
+    if (current?.kind === "workbook" && current.pendingInput) { setError("请先确认或取消当前单元格输入或操作，再切换文档。"); return false; }
+    return true;
+  }
+  function beginLoad(): { current: number; controller: AbortController } | undefined {
+    if (!canLeaveWorkbook()) return;
     const current = ++generation.current; loadRef.current?.abort();
     const controller = new AbortController(); loadRef.current = controller;
     exportRef.current?.controller.abort(); exportRef.current = undefined; setExporting(undefined);
@@ -146,7 +153,7 @@ export function App() {
     kind: "docx" | "pptx" | "xlsx" | "package",
     file: WorkspaceFile,
   ): Promise<void> {
-    const { current, controller } = beginLoad();
+    const started = beginLoad(); if (!started) { void bytes.catch(() => {}); return; } const { current, controller } = started;
     let next: OpenedWorkspaceDocument | undefined;
     try {
       const value = new Uint8Array(await bytes);
@@ -183,18 +190,19 @@ export function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : "文档包导出失败。"); }
   }
   async function openReport(presentation=false): Promise<void> {
-    const { current, controller } = beginLoad();
+    const started = beginLoad(); if (!started) return; const { current, controller } = started;
     try { const files = await (presentation?presentationFiles():reportFiles()); if (current === generation.current) activate(openDocument(files, { kind: presentation ? "presentation" : "document" }), examples[presentation ? 2 : 0]!); }
     catch (reason) { if (current === generation.current) setError(reason instanceof Error ? reason.message : "报告读取失败"); }
     finally { if (current === generation.current) { setLoading(false); if (loadRef.current === controller) loadRef.current = undefined; } }
   }
   function openFile(file: WorkspaceFile): void {
     const cached = opened.current.get(file.id);
+    if (cached !== activeDocument.current && !canLeaveWorkbook()) return;
     if (cached) {
       if (cached.kind === "workbook") {
         if (cached.disposed) { setError("工作簿读取进程已停止，请重新选择原文件。"); return; }
         if (cached === workbook) { setError(""); return; }
-        const { current, controller } = beginLoad();
+        const started = beginLoad(); if (!started) return; const { current, controller } = started;
         void stageWorkbook(cached, file, current, controller.signal).catch(error => { if (current === generation.current) setError(error.message); })
           .finally(() => { if (current === generation.current) { setLoading(false); loadRef.current = undefined; } });
         return;
@@ -306,8 +314,9 @@ export function App() {
       <section className="workspace" aria-label="文档工作区">
         <header className="workspace-topbar"><div className="breadcrumb">工作空间 <Icon name="chevron" size={13} /><span>Playground</span></div><span className="environment-badge"><span className="connection-dot" />交互办公</span></header>
         <div className="document-header">
-          <div className="document-title"><span className={"file-icon " + (workbook ? "workbook" : isPresentation ? "presentation" : "word")}><Icon name={workbook ? "grid" : isPresentation ? "slides" : "file"} size={22} /></span><div><h1>{activeFile?.name ?? "文档工作台"}</h1><p>{activeFile ? workbook ? "Excel · 只读预览" : (isPresentation ? "PowerPoint" : "Word") + " · 预览、编辑与批注协作" : "打开一份文档，开始与智能体协作"}</p></div></div>
+          <div className="document-title"><span className={"file-icon " + (workbook ? "workbook" : isPresentation ? "presentation" : "word")}><Icon name={workbook ? "grid" : isPresentation ? "slides" : "file"} size={22} /></span><div><h1>{activeFile?.name ?? "文档工作台"}</h1><p>{activeFile ? workbook ? "Excel · 单元格编辑与计算" : (isPresentation ? "PowerPoint" : "Word") + " · 预览、编辑与批注协作" : "打开一份文档，开始与智能体协作"}</p></div></div>
           <div className="document-header-actions"><button className="subtle-button" disabled={loading} onClick={() => {
+            if (!canLeaveWorkbook()) return;
             generation.current++; exportRef.current?.controller.abort(); exportRef.current = undefined; setExporting(undefined);
             loadRef.current?.abort(); loadRef.current = undefined;
             activate(openDocument(createPresentation({ documentId: createOpaqueId() }), { kind: "presentation" }), { id: createOpaqueId(), name: "未命名演示文稿", kind: "presentation", detail: "新建 PowerPoint 文稿" }); setError("");
@@ -361,8 +370,8 @@ export function App() {
           {(snapshot ?? model.snapshot()).annotations.length}
         </p>
       )}
-      {workbook && !loading && <p className="document-status" role="status"><span className="connection-dot" />已打开 · 修订 {workbook.source.cells.snapshot.manifest.revision} · 工作表 {workbook.source.cells.snapshot.metadata.workbook.sheets.length} · 批注 {workbook.source.cells.snapshot.annotations.length}</p>}
-      {workbook && <p className="workbook-note">工作簿只读预览；编辑及导出尚未开放。</p>}
+      {workbook && !loading && <p className="document-status" role="status"><span className="connection-dot" />已打开 · 修订 {workbook.snapshot().manifest.revision} · 工作表 {workbook.snapshot().metadata.workbook.sheets.length} · 批注 {workbook.snapshot().annotations.length}</p>}
+      {workbook && <p className="workbook-note">可编辑单元格、粘贴、填充与查找替换；XLSX 导出尚未开放。</p>}
       {submitted && <p className="submission-message"><Icon name="check" size={16} />Playground 已接收批注请求；使用固定提案验证返回与应用。</p>}
       {docxReport && <section className="export-report" aria-label="DOCX 导出报告">
         <p>已生成 DOCX · 修订 {docxReport.revision} · 保留原生批注 {docxReport.exportedAnnotationIds.length} 条。</p>
@@ -381,17 +390,18 @@ export function App() {
       </section>}
       </div>
       {!model && !workbook && <div className="empty-workspace"><div className="empty-paper"><div className="paper-lines"><i /><i /><i /><i /></div><span className="empty-comment"><Icon name="comment" size={24} /></span></div><span className="empty-eyebrow">YOUR NEXT IDEA STARTS HERE</span><h2>让文档成为协作的起点</h2><p>从左侧选择一份样例，或打开自己的 Office 文档。<br />选中内容、写下批注，让每一个修改想法都有迹可循。</p><div className="format-tags"><span><i className="word-dot" />Word · DOCX</span><span><i className="ppt-dot" />PowerPoint · PPTX</span><span><i className="html-dot" />HTML 文档包</span></div></div>}
-      {(workbook || candidate || lastWorkbookPane.current) && <div style={{ display: workbook || candidate ? "contents" : "none" }}>
-        <WorkbookPane source={(candidate?.document ?? workbook ?? lastWorkbookPane.current)!.source} preparing={!workbook} activation={candidate}
-        onReady={source => { if (candidate?.document.source === source) candidate.accept(); }}
-        onError={(source, error) => { if (candidate?.document.source === source) candidate.reject(error); else if (workbook?.source === source) setError(error.message); }} /></div>}
+      {(workbook || candidate || lastWorkbookPane.current) && <div style={{ display: "contents" }}>
+        <WorkbookPane document={(candidate?.document ?? workbook ?? lastWorkbookPane.current)!} preparing={!workbook} activation={candidate}
+        onReady={document => { if (candidate?.document === document) candidate.accept(); }}
+        onUpdate={document => { if (workbook === document) refreshWorkbookMetadata(value => value + 1); }}
+        onError={(document, error) => { if (candidate?.document === document) candidate.reject(error); else if (workbook === document) setError(error.message); }} /></div>}
       {model&&session&&isPresentation&&<PresentationWorkbench session={session} appearance="workspace" className="preview" onViewChange={view=>{presentationRef.current=view;}} onSubmitAnnotations={()=>{setSubmitted(true);}} onError={reason=>setError(reason.message)}/>}
       {model && session && !isPresentation && <DocumentWorkbench session={session} appearance="workspace" layout={layout} className="preview"
         onViewChange={(view) => { workbenchRef.current = view; }}
         onSubmitAnnotations={() => { setSubmitted(true); }}
         onError={(reason) => setError(reason.message)} />}
 
-        <footer className="workspace-footer"><span>doffi <i /> Playground</span><span>{workbook ? "Excel 只读预览 · 查看单元格、工作表与批注" : "选中内容添加批注 · 人工与智能体共享编辑历史"}</span></footer>
+        <footer className="workspace-footer"><span>doffi <i /> Playground</span><span>{workbook ? "Excel 工作簿 · 单元格编辑与计算" : "选中内容添加批注 · 人工与智能体共享编辑历史"}</span></footer>
       </section>
     </main>
   );

@@ -6,6 +6,7 @@ import type { FormulaExpression } from "./formula.js";
 import { bindStructuredReference } from "./formula-table-binding.js";
 import type { FormulaTableDefinition } from "./formula-table-binding.js";
 import { MAX_SHEET_COLUMNS, MAX_SHEET_ROWS } from "./chunk-index.js";
+import { checkFormulaOrigin } from "./formula-print.js";
 
 export interface WorkbookReferenceLocation extends WorkbookCoordinate { readonly sheetId: string }
 export interface WorkbookReferenceArea extends WorkbookRange { readonly sheetId: string }
@@ -17,6 +18,9 @@ export type WorkbookReferenceResult =
   | { readonly kind: "unresolved"; readonly reason: "calculation-required" | "circular-name" | "ambiguous-name-scope" };
 type Sheet = DeepReadonly<WorkbookSheet>;
 type DefinedName = DeepReadonly<WorkbookDefinedName>;
+/** A qualified global name has no implicit worksheet for bang references.
+ * A local definition supplies its own worksheet. This state is derived only. */
+export interface WorkbookNameContext { readonly inName?: boolean; readonly unboundSheet?: boolean }
 const error = (code: Extract<WorkbookReferenceResult, { kind: "error" }>["code"]): WorkbookReferenceResult => ({ kind: "error", code });
 const unresolved = (reason: Extract<WorkbookReferenceResult, { kind: "unresolved" }>["reason"]): WorkbookReferenceResult => ({ kind: "unresolved", reason });
 const inside = (cell: WorkbookCoordinate, range: DeepReadonly<WorkbookRange>): boolean => range.from.row <= cell.row && cell.row <= range.to.row && range.from.column <= cell.column && cell.column <= range.to.column;
@@ -29,36 +33,55 @@ export class WorkbookReferences {
   private readonly sheetsByName: ReadonlyMap<string, Sheet>;
   private readonly sheetsById: ReadonlyMap<string, Sheet>;
   private readonly names: ReadonlyMap<string, DefinedName>;
-  private readonly localNames: ReadonlySet<string>;
   private readonly parsedNames = new Map<string, FormulaExpression>();
   private readonly tables: ReadonlyMap<string, FormulaTableDefinition>;
   constructor(workbook: DeepReadonly<WorkbookMetadata>) {
     this.sheetsByName = new Map(workbook.sheets.map(sheet => [sheet.name.toUpperCase(), sheet]));
     this.sheetsById = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet]));
     this.names = new Map((workbook.names ?? []).map(name => [key(name.sheetId, name.name), name]));
-    this.localNames = new Set((workbook.names ?? []).filter(name => name.sheetId !== undefined).map(name => name.name.toUpperCase()));
     this.tables = new Map(workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => [table.name.toUpperCase(), { name: table.name, sheet: sheet.name, range: table.range, header: table.header, totals: table.totals, columns: table.columns.map(column => column.name) }] as const)));
   }
   resolve(expression: string, origin: WorkbookReferenceLocation): WorkbookReferenceResult {
+    return this.resolveExpression(parseFormula(expression, origin), origin);
+  }
+  bindName(node: Extract<FormulaExpression, { kind: "name" }>, origin: WorkbookReferenceLocation, context: WorkbookNameContext = {}) {
+    const explicit = node.sheet === undefined || node.sheet === "" ? undefined : this.sheetsByName.get(node.sheet.toUpperCase());
+    if (node.sheet !== undefined && node.sheet !== "" && !explicit || node.sheet === "" && context.unboundSheet) return { kind: "error" as const, code: "#REF!" as const };
+    const scope = explicit?.sheetId ?? origin.sheetId;
+    // Native name formulas bind bare nested names to the workbook. Bang names
+    // bind only locally; ordinary cell formulas try local then global.
+    const definition = node.workbook === 0 || context.inName && node.sheet === undefined ? this.names.get(key(undefined, node.name))
+      : this.names.get(key(scope, node.name)) ?? (node.sheet === "" ? undefined : this.names.get(key(undefined, node.name)));
+    if (!definition) return undefined;
+    return { kind: "name" as const, definition, location: { ...origin, sheetId: definition.sheetId ?? origin.sheetId },
+      context: { inName: true, unboundSheet: definition.sheetId === undefined && (context.unboundSheet === true || node.workbook === 0 || explicit !== undefined) } };
+  }
+  resolveExpression(ast: FormulaExpression, origin: WorkbookReferenceLocation, context: WorkbookNameContext = {}): WorkbookReferenceResult {
     if (Object.keys(origin).some(name => !["sheetId", "row", "column"].includes(name)) || !this.sheetsById.has(origin.sheetId)) invalid("A reference query requires an existing worksheet and source coordinate.");
-    const ast = parseFormula(expression, origin), path = new Set<string>(); let operations = 0;
-    const sheetFor = (name: string | undefined, context: WorkbookReferenceLocation): Sheet | undefined => name === undefined ? this.sheetsById.get(context.sheetId) : this.sheetsByName.get(name.toUpperCase());
+    checkFormulaOrigin(origin);
+    const path = new Set<string>(); let operations = 0;
     function area(sheet: Sheet | undefined, from: WorkbookCoordinate, to = from): WorkbookReferenceResult {
       if (!sheet || [from, to].some(point => point.row < 0 || point.row >= MAX_SHEET_ROWS || point.column < 0 || point.column >= MAX_SHEET_COLUMNS)) return error("#REF!");
       return ranges([{ sheetId: sheet.sheetId, from: { row: Math.min(from.row, to.row), column: Math.min(from.column, to.column) }, to: { row: Math.max(from.row, to.row), column: Math.max(from.column, to.column) } }]);
     }
-    const visit = (node: FormulaExpression, context: WorkbookReferenceLocation, depth: number, nameContext?: DefinedName): WorkbookReferenceResult => {
+    const visit = (node: FormulaExpression, context: WorkbookReferenceLocation, depth: number, nameContext: WorkbookNameContext = {}): WorkbookReferenceResult => {
       checkLimit(++operations, 100_000); checkLimit(depth, 128);
-      const cell = (value: Extract<FormulaExpression, { kind: "cell" }>): WorkbookCoordinate => ({ row: value.row + (value.absoluteRow ? 0 : context.row), column: value.column + (value.absoluteColumn ? 0 : context.column) });
-      if (node.kind === "cell") return area(sheetFor(node.sheet, context), cell(node));
+      const sheetFor = (name: string | undefined): Sheet | undefined => name === "" && nameContext.unboundSheet ? undefined
+        : name === undefined || name === "" ? this.sheetsById.get(context.sheetId) : this.sheetsByName.get(name.toUpperCase());
+      const coordinate = (value: number, absolute: boolean, axis: "row" | "column"): number => {
+        const result = value + (absolute ? 0 : context[axis]), bound = axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS;
+        return nameContext.inName && !absolute ? (result % bound + bound) % bound : result;
+      };
+      const cell = (value: Extract<FormulaExpression, { kind: "cell" }>): WorkbookCoordinate => ({ row: coordinate(value.row, value.absoluteRow, "row"), column: coordinate(value.column, value.absoluteColumn, "column") });
+      if (node.kind === "cell") return area(sheetFor(node.sheet), cell(node));
       if (node.kind === "range") {
-        const first = sheetFor(node.from.sheet, context), last = sheetFor(node.to.sheet, context);
+        const first = sheetFor(node.from.sheet), last = sheetFor(node.to.sheet);
         if (first !== last) return error("#REF!");
         return area(first, cell(node.from), cell(node.to));
       }
       if (node.kind === "axisRange") {
-        const from = node.from.index + (node.from.absolute ? 0 : context[node.axis]), to = node.to.index + (node.to.absolute ? 0 : context[node.axis]);
-        return area(sheetFor(node.sheet, context), node.axis === "row" ? { row: from, column: 0 } : { row: 0, column: from }, node.axis === "row" ? { row: to, column: MAX_SHEET_COLUMNS - 1 } : { row: MAX_SHEET_ROWS - 1, column: to });
+        const from = coordinate(node.from.index, node.from.absolute, node.axis), to = coordinate(node.to.index, node.to.absolute, node.axis);
+        return area(sheetFor(node.sheet), node.axis === "row" ? { row: from, column: 0 } : { row: 0, column: from }, node.axis === "row" ? { row: to, column: MAX_SHEET_COLUMNS - 1 } : { row: MAX_SHEET_ROWS - 1, column: to });
       }
       if (node.kind === "error") return node.value === "#REF!" ? error("#REF!") : unresolved("calculation-required");
       if (node.kind === "structured") {
@@ -72,24 +95,20 @@ export class WorkbookReferences {
         return "error" in bound ? error(bound.error) : bound.range ? area(this.sheetsByName.get(bound.sheet.toUpperCase()), bound.range.from, bound.range.to) : ranges([]);
       }
       if (node.kind === "name") {
-        const explicit = node.sheet === undefined ? undefined : this.sheetsByName.get(node.sheet.toUpperCase());
-        if (node.sheet !== undefined && !explicit) return error("#REF!");
-        // A local definition resolves its unqualified nested names in its own
-        // scope. Global definitions with locally shadowed nested names require
-        // an independently verified binding context; do not guess from the UI.
-        if (node.sheet === undefined && nameContext && nameContext.sheetId === undefined && this.localNames.has(node.name.toUpperCase())) return unresolved("ambiguous-name-scope");
-        const scope = explicit?.sheetId ?? nameContext?.sheetId ?? context.sheetId;
-        const name = this.names.get(key(scope, node.name)) ?? (explicit ? undefined : this.names.get(key(undefined, node.name)));
-        if (!name) {
-          if (!node.sheet && this.tables.has(node.name.toUpperCase())) return visit({ kind: "structured", table: node.name, selectors: [], columns: [] }, context, depth + 1, nameContext);
+        const bound = this.bindName(node, context, nameContext);
+        if (bound?.kind === "error") return error(bound.code);
+        if (!bound) {
+          if (node.sheet === undefined && this.tables.has(node.name.toUpperCase())) return visit({ kind: "structured", table: node.name, selectors: [], columns: [] }, context, depth + 1, nameContext);
           return error("#NAME?");
         }
-        if (path.has(name.nameId)) return unresolved("circular-name");
+        const name = bound.definition;
+        const identity = JSON.stringify([name.nameId, bound.location.sheetId, bound.context.unboundSheet]);
+        if (path.has(identity)) return unresolved("circular-name");
         let parsed = this.parsedNames.get(name.nameId);
         if (!parsed) { parsed = parseFormula(name.expression, name.origin); this.parsedNames.set(name.nameId, parsed); }
-        path.add(name.nameId);
-        const result = visit(parsed, { ...context, sheetId: name.sheetId ?? context.sheetId }, depth + 1, name);
-        path.delete(name.nameId); return result;
+        path.add(identity);
+        const result = visit(parsed, bound.location, depth + 1, bound.context);
+        path.delete(identity); return result;
       }
       if (node.kind === "binary" && [",", " ", ":"].includes(node.operator)) {
         const left = visit(node.left, context, depth + 1, nameContext); if (left.kind !== "ranges") return left;
@@ -111,6 +130,15 @@ export class WorkbookReferences {
       }
       return unresolved("calculation-required");
     };
-    return freeze(visit(ast, origin, 0));
+    return freeze(visit(ast, origin, 0, context));
   }
+}
+
+const references = new WeakMap<DeepReadonly<WorkbookMetadata>, WorkbookReferences>();
+/** Immutable revisions share one bounded-source index, never values or caches
+ * across documents. Weak ownership does not retain discarded history. */
+export function workbookReferences(workbook: DeepReadonly<WorkbookMetadata>): WorkbookReferences {
+  let result = references.get(workbook);
+  if (!result) { result = new WorkbookReferences(workbook); references.set(workbook, result); }
+  return result;
 }

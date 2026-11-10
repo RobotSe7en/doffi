@@ -93,7 +93,9 @@ function boundedParser(limits: DocumentReadLimits, supportedTags: ReadonlySet<st
       // reference. This one code unit is required for exact Office text; all
       // other control references and malformed entities remain errors.
       if (error.code === "control-character-reference") {
-        const begin = source.lastIndexOf("&#", error.startOffset);
+        // The reported position is after the reference. A consecutive numeric
+        // reference can start there, so exclude that next entity's ampersand.
+        const begin = source.lastIndexOf("&#", error.startOffset - 1);
         if (begin >= 0 && /^&#(?:0*13|x0*d);$/i.test(source.slice(begin, error.startOffset))) return;
       }
       invalid("The HTML source is malformed.");

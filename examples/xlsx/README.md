@@ -61,3 +61,21 @@ pnpm check:xlsx-reference
 ```
 
 只有 `record:xlsx-reference` 更新参考。普通检查验证已保存摘要并重新打开/重存；始终比较源结构、重存结构及已记录的外部差异，相同环境才比较页数与像素，不同环境明确报告未进行像素等同性比较。Office CI 执行两项检查并上传 `.cache/xlsx-reference/result.json`，不将生产者本身已记录的丢失算作 SDK 无损验收。
+
+
+## 编辑阶段的自定义表样式来源
+
+新增来源保存在 `packages/office/tests/fixtures/workbook-table-style.xlsx`，由 `scripts/generate-workbook-table-style-fixture.py` 使用 Python 标准 ZIP/XML 从不可变的 `05-native-table.xlsx` 派生，包含两份共享差异格式的自定义定义、四类区域、条纹及默认／表关联；原始十六份样例字节不变。[源摘要](../../docs/evidence/workbook-table-style-source.json)记录基准和新增文件 SHA-256。
+
+[固定 LibreOffice 重存与实际 B2 修改](../../docs/evidence/workbook-table-style-native.json)另外记录官方 25.8.1.1 归档摘要及生产者差异：Calc 移除自定义定义、默认值和样式关联。源及两份输出均通过官方 Transitional XSD／OPC 检查，原始来源和生产者损失分别保留；不将其称为原生 XLSX 导出或 Excel/WPS 实机验收。复现使用 `pnpm check:workbook-table-style-source` 和 `pnpm check:workbook-table-style-native`。
+
+
+[编辑阶段链接复制](../../docs/evidence/workbook-copy-hyperlinks.json)使用不可变 `01-values-text.xlsx` 和固定 LibreOffice 的普通、重叠、跨表及新建表复制。四份生产者输出保留在 `packages/office/tests/fixtures/workbook-copy-hyperlinks-*-calc.xlsx`；五份源／输出均经官方 XSD／OPC 检查。记录保留显示缓存重算、提示丢失和新建表默认字体页眉不在当前字段读取范围内的拒绝负例，不覆盖原始样例。复现命令为 `pnpm check:workbook-copy-hyperlinks`。
+
+[编辑阶段系统剪贴板接收](../../docs/evidence/workbook-system-clipboard.json)使用同一不可变独立输入，在 SDK 中修改当前源后生成 HTML，由固定 Calc 原生控制器插入并再次修改值验证公式重算。生产者文件 `packages/office/tests/fixtures/workbook-system-clipboard-calc.xlsx` 保留精确字节及摘要，记录小数精度、日期序列、Boolean 公式、字面等号、长编号、合并，以及 CR／LF、制表符和常量错误的生产者差异。官方 XSD／OPC、SDK 再编辑、Worker 当前值、包 ZIP 重开与撤销分别核对。复现命令为 `pnpm check:workbook-system-clipboard`，不称为 Excel/WPS 实机验收。
+
+[名称行列编辑](../../docs/evidence/workbook-axis-names.json)由独立 Python ZIP/XML 生成源和五份固定 Calc 实际插删结果，保存在 `packages/office/tests/fixtures/workbook-axis-names*.xlsx`。相对配方、绝对分量、混合整轴范围、局部／全局 bang、别名及生产者缓存均保留；Calc 的 bang 和插删列后嵌套相对别名差异单独记录。源及原生输出经官方 XSD／OPC，SDK 当前计算、唯一 Worker 候选、再编辑、包 ZIP 重开及撤销分别验证；`pnpm check:workbook-axis-names` 重现原生操作。这不代替 Excel/WPS 结构编辑实机验收。
+
+[合并区域选择性粘贴与数列](../../docs/evidence/workbook-merged-special.json)使用独立 ZIP/XML 来源及二十份固定 Calc 原生输出，文件前缀为 `packages/office/tests/fixtures/workbook-merged-special`。十八次实际控制器粘贴明确覆盖、先重算，两次 `fillAuto` 验证纵向／横向合并数列；保留 Calc 取消目标合并和保存非空覆盖格的差异。全部生产者字节、官方 XSD／OPC、当前值、SDK 再编辑重开及历史分别检查；`pnpm check:workbook-merged-special` 实际复现，不改已有独立样例或宣称 Excel/WPS 实机通过。
+
+[智能表局部剪切](../../docs/evidence/workbook-partial-table-move.json)复用不可变 `workbook-axis-tables.xlsx` 独立源，保留五份实际固定 Calc 剪切和五份再次原生重开输出，前缀为 `packages/office/tests/fixtures/workbook-partial-table-move`。记录列配方和原生筛选差异，以及表外当前行公式初次缓存与重开后错误的差异；SDK 按精确输入映射求当前值，不改生产者字节。复现命令为 `pnpm check:workbook-partial-table-move`，包含官方 XSD／OPC；不称为 Excel/WPS 实机验收。

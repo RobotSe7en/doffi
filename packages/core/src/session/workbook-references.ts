@@ -1,0 +1,111 @@
+import type { WorkbookCoordinate, WorkbookMetadata, WorkbookSheet } from "../contracts/workbook.js";
+import { rewriteFormula } from "../workbook/formula-rewrite.js";
+import type { FormulaLocation, FormulaReferenceChange } from "../workbook/formula-rewrite.js";
+import { WorkbookCellEdit, rangeContains } from "./workbook-cells.js";
+import { DocumentError } from "../errors.js";
+
+/** Every formula-bearing source participates in a structural reference edit.
+ * Cached values are never rewritten into independent authoritative content. */
+export function rewriteWorkbookReferences(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange): void {
+  for (const _step of rewriteWorkbookReferenceSteps(workbook, cells, change)) { /* Synchronous driver of the same kernel. */ }
+}
+export function createWorkbookReferenceRewriter(workbook: WorkbookMetadata, change: FormulaReferenceChange, options: { readonly preserveRelativeAxis?: boolean } = {}) {
+  const tables = workbook.sheets.flatMap(sheet => (sheet.tables ?? []).map(table => ({ name: table.name, sheet: sheet.name,
+    range: table.range, header: table.header, totals: table.totals, columns: table.columns.map(column => column.name) })));
+  const sheetNames = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet.name.toUpperCase()])), globalNames = new Map<string, string>(), locals = new Map<string, Map<string, string>>();
+  for (const name of workbook.names ?? []) {
+    const token = name.name.toUpperCase();
+    if (name.sheetId === undefined) globalNames.set(token, name.nameId);
+    else { const owner = sheetNames.get(name.sheetId)!, scope = locals.get(owner) ?? new Map<string, string>(); scope.set(token, name.nameId); locals.set(owner, scope); }
+  }
+  const tableNames = new Set(tables.map(table => table.name.toUpperCase()));
+  const movedTables = new Set(change.kind === "move" ? tables.filter(table => table.sheet.toUpperCase() === change.sheet.toUpperCase()
+    && rangeContains(change.range, table.range.from.row, table.range.from.column) && rangeContains(change.range, table.range.to.row, table.range.to.column)).map(table => table.name.toUpperCase()) : []);
+  return function rewrite(expression: string, sheet: string, at: WorkbookCoordinate, table?: string, destination?: FormulaLocation, nameContext = false): string {
+    const target = change.kind === "renameSheet" && sheet === change.from ? change.to : sheet;
+    return rewriteFormula(expression, { ...at, sheet }, destination ?? { ...at, sheet: target }, change, { ...options, tables, movedTables, definedName: nameContext, ...(table ? { table } : {}),
+      resolveName: (name, owner, explicit, workbook, localOnly) => {
+        const token = name.toUpperCase();
+        if (workbook === 0) return globalNames.get(token);
+        if (nameContext && !explicit) return globalNames.get(token);
+        return locals.get(owner.toUpperCase())?.get(token) ?? (localOnly ? undefined : globalNames.get(token));
+      },
+      isTableName: (name, owner, workbook) => !globalNames.has(name.toUpperCase()) && (workbook === 0 || nameContext || !locals.get(owner.toUpperCase())?.has(name.toUpperCase())) && tableNames.has(name.toUpperCase()),
+    });
+  };
+}
+export function* rewriteWorkbookReferenceSteps(workbook: WorkbookMetadata, cells: WorkbookCellEdit, change: FormulaReferenceChange,
+  options: { readonly skipTableFormulas?: ReadonlySet<string>; readonly drawingDestinations?: ReadonlyMap<string, string> } = {}): Generator<{ completed: number; total: number }, void> {
+  let completed = 0; const rewrite = createWorkbookReferenceRewriter(workbook, change);
+  for (const cell of cells.entries(undefined, true)) {
+    const sheet = workbook.sheets.find(sheet => sheet.sheetId === cell.sheetId)!;
+    if (change.kind === "deleteSheet" && sheet.name === change.sheet) continue;
+    const destination = change.kind === "move" && sheet.name.toUpperCase() === change.sheet.toUpperCase() && rangeContains(change.range, cell.row, cell.column)
+      ? { sheet: change.target.sheet, row: cell.row + change.target.row - change.range.from.row, column: cell.column + change.target.column - change.range.from.column } : undefined;
+    const expression = rewrite(cell.formula!.expression, sheet.name, cell, sheet.tables?.find(table => rangeContains(table.range, cell.row, cell.column))?.name, destination);
+    // A moved formula is already printed for its destination. Restoring at
+    // the old coordinate could remove a qualifier required by the new sheet.
+    // Relocation performs the same source check at the final coordinate.
+    if (expression !== cell.formula!.expression) cells.rewriteFormula(cell.sheetId, cell.row, cell.column, expression, destination === undefined);
+    if (++completed % 256 === 0) yield { completed, total: 0 };
+  }
+  // Defined names store relative recipes rather than a formula attached to a
+  // moving cell. Preserve those offsets and their stable serialization origin;
+  // absolute components on a bound worksheet still follow structural edits.
+  // A global unqualified/bang reference has no fixed worksheet identity: the
+  // $workbook context deliberately cannot match a worksheet axis operation.
+  const rewriteName = change.kind === "axis" ? createWorkbookReferenceRewriter(workbook, change, { preserveRelativeAxis: true }) : rewrite;
+  for (const name of workbook.names ?? []) {
+    const sheet = name.sheetId === undefined ? "$workbook" : workbook.sheets.find(sheet => sheet.sheetId === name.sheetId)!.name;
+    if (change.kind === "deleteSheet" && sheet === change.sheet) continue;
+    name.expression = rewriteName(name.expression, sheet, name.origin, undefined, undefined, true);
+    if (++completed % 256 === 0) yield { completed, total: 0 };
+  }
+  function sheetReferences(sheet: WorkbookSheet): void {
+    for (const rule of [...sheet.conditionalRules ?? [], ...sheet.dataValidations ?? []]) {
+      if ("expression" in rule) rule.expression = rewrite(rule.expression, sheet.name, rule.origin);
+      if ("formulas" in rule) rule.formulas = rule.formulas.map(formula => rewrite(formula, sheet.name, rule.origin));
+      if (rule.kind === "colorScale") for (const stop of rule.stops) if (stop.kind === "formula") stop.expression = rewrite(stop.expression, sheet.name, rule.origin);
+    }
+    for (const table of sheet.tables ?? []) if (!options.skipTableFormulas?.has(table.tableId)) for (const [index, column] of table.columns.entries()) {
+      const destination = (at: WorkbookCoordinate): FormulaLocation | undefined => change.kind === "move" && sheet.name.toUpperCase() === change.sheet.toUpperCase()
+        && rangeContains(change.range, table.range.from.row, table.range.from.column) && rangeContains(change.range, table.range.to.row, table.range.to.column)
+        ? { sheet: change.target.sheet, row: at.row + change.target.row - change.range.from.row, column: at.column + change.target.column - change.range.from.column } : undefined;
+      const data = { row: table.range.from.row + Number(table.header), column: table.range.from.column + index }, total = { row: table.range.to.row, column: table.range.from.column + index };
+      if (column.calculatedFormula) column.calculatedFormula = rewrite(column.calculatedFormula, sheet.name, data, table.name, destination(data));
+      if (column.totalFormula) column.totalFormula = rewrite(column.totalFormula, sheet.name, total, table.name, destination(total));
+    }
+    for (const link of sheet.hyperlinks ?? []) if (link.location) link.location = rewrite("=" + link.location, sheet.name, { row: 0, column: 0 }).slice(1);
+  }
+  for (const sheet of workbook.sheets) if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) sheetReferences(sheet);
+  const sheetsById = new Map(workbook.sheets.map(sheet => [sheet.sheetId, sheet]));
+  function chartReferences(value: unknown, owner: WorkbookSheet, destination = owner): void {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) { for (const item of value) chartReferences(item, owner, destination); return; }
+    const object = value as Record<string, unknown>;
+    if (object.kind === "literal") return;
+    if (typeof object.expression === "string") {
+      const origin = object.originSheetId === undefined ? owner : sheetsById.get(object.originSheetId as string);
+      if (!origin) throw new DocumentError("InvalidOperation", "A chart expression origin requires an existing worksheet.");
+      // A drawing move preserves the expression's caller context. Qualifying a
+      // global name would remove the worksheet for its nested bang recipes.
+      const expression = rewrite(object.expression, origin.name, { row: 0, column: 0 });
+      if ((expression !== object.expression || destination.sheetId !== owner.sheetId) && object.cache && typeof object.cache === "object") (object.cache as { state: string }).state = "stale";
+      object.expression = expression;
+      if (change.kind === "deleteSheet" && origin.name === change.sheet || origin.sheetId === destination.sheetId) delete object.originSheetId;
+      else object.originSheetId = origin.sheetId;
+    }
+    for (const [name, item] of Object.entries(object)) if (name !== "cache") chartReferences(item, owner, destination);
+  }
+  for (const chart of workbook.charts ?? []) {
+    const owner = workbook.objects!.find(object => object.nodeId === chart.nodeId)!, sheet = workbook.sheets.find(sheet => sheet.sheetId === owner.sheetId)!;
+    const targetId = options.drawingDestinations?.get(owner.nodeId), target = targetId === undefined ? undefined : workbook.sheets.find(sheet => sheet.sheetId === targetId);
+    if (change.kind !== "deleteSheet" || sheet.name !== change.sheet) chartReferences(chart, sheet, target);
+  }
+  for (const link of workbook.objectHyperlinks ?? []) if (link.location) {
+    // Object hyperlinks may target child text nodes, so their owning sheet is
+    // supplied by the caller's absolute native location or a workbook scope.
+    link.location = rewrite("=" + link.location, "$workbook", { row: 0, column: 0 }, undefined, undefined, true).slice(1);
+  }
+  yield { completed, total: completed };
+}

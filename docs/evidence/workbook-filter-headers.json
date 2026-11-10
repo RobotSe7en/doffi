@@ -1,0 +1,309 @@
+{
+  "scope": "Independent ZIP/XML source, actual row deletions and separate explicit criterion reapplication in pinned Calc. Native cached visibility is not current filtering. Excel/WPS runtime unverified.",
+  "compatibility": "The first surviving row is the resulting ordinary filter header. The Microsoft reference documents filter range ownership, not physical header deletion; runtime evidence here is Calc only.",
+  "basis": [
+    "https://learn.microsoft.com/en-us/office/vba/api/excel.autofilter.range",
+    "https://api.libreoffice.org/docs/idl/ref/interfacecom_1_1sun_1_1star_1_1sheet_1_1XSheetFilterable.html"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "d33646109620a2147efea2d31fd4d7b629f533c07b3777f94c53f7cf4458fc6a",
+  "operations": [
+    {
+      "name": "header",
+      "index": 1,
+      "count": 1,
+      "range": "B2:D5",
+      "expected": {
+        "type": "number",
+        "value": 80
+      }
+    },
+    {
+      "name": "above-header-data",
+      "index": 0,
+      "count": 3,
+      "range": "B1:D3",
+      "expected": {
+        "type": "number",
+        "value": 90
+      }
+    },
+    {
+      "name": "all",
+      "index": 1,
+      "count": 5,
+      "range": null,
+      "expected": {
+        "type": "error",
+        "value": "#REF!"
+      }
+    },
+    {
+      "name": "header-most-data",
+      "index": 1,
+      "count": 4,
+      "range": "B2:D2",
+      "expected": {
+        "type": "number",
+        "value": 40
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "header-delete",
+      "operation": "header",
+      "reapply": false,
+      "observed": {
+        "range": "B2:D5",
+        "columns": [
+          {
+            "column": 0,
+            "values": [
+              "keep"
+            ],
+            "tests": []
+          },
+          {
+            "column": 1,
+            "values": [],
+            "tests": [
+              {
+                "operator": "greaterThan",
+                "val": "1"
+              }
+            ]
+          }
+        ],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,Data!D2:D5)",
+        "cached": {
+          "type": "number",
+          "value": 100.0
+        }
+      },
+      "matchesCurrent": false,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-header-delete-calc.xlsx",
+      "outputSha256": "63c0d3b241d2aff380a45dfc82ea4384e2e199d24552fc7095364aa92c21c339"
+    },
+    {
+      "name": "header-reapply",
+      "operation": "header",
+      "reapply": true,
+      "observed": {
+        "range": "B2:D5",
+        "columns": [
+          {
+            "column": 0,
+            "values": [
+              "keep"
+            ],
+            "tests": []
+          },
+          {
+            "column": 1,
+            "values": [],
+            "tests": [
+              {
+                "operator": "greaterThan",
+                "val": "1"
+              }
+            ]
+          }
+        ],
+        "hiddenRows": [
+          2
+        ],
+        "formula": "SUBTOTAL(9,Data!D2:D5)",
+        "cached": {
+          "type": "number",
+          "value": 80.0
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-header-reapply-calc.xlsx",
+      "outputSha256": "0c2fada00e865a4ec10f573bcbe674be46011a97b28a6d88199f576240749393"
+    },
+    {
+      "name": "above-header-data-delete",
+      "operation": "above-header-data",
+      "reapply": false,
+      "observed": {
+        "range": "B1:D3",
+        "columns": [
+          {
+            "column": 0,
+            "values": [
+              "keep"
+            ],
+            "tests": []
+          },
+          {
+            "column": 1,
+            "values": [],
+            "tests": [
+              {
+                "operator": "greaterThan",
+                "val": "1"
+              }
+            ]
+          }
+        ],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,Data!D1:D3)",
+        "cached": {
+          "type": "number",
+          "value": 90.0
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-above-header-data-delete-calc.xlsx",
+      "outputSha256": "f76b53eb23c572d1f4751322329962007fa01fe15ce68e65076b6f309e0b419e"
+    },
+    {
+      "name": "above-header-data-reapply",
+      "operation": "above-header-data",
+      "reapply": true,
+      "observed": {
+        "range": "B1:D3",
+        "columns": [
+          {
+            "column": 0,
+            "values": [
+              "keep"
+            ],
+            "tests": []
+          },
+          {
+            "column": 1,
+            "values": [],
+            "tests": [
+              {
+                "operator": "greaterThan",
+                "val": "1"
+              }
+            ]
+          }
+        ],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,Data!D1:D3)",
+        "cached": {
+          "type": "number",
+          "value": 90.0
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-above-header-data-reapply-calc.xlsx",
+      "outputSha256": "14a5109c06b627e88612a33de96ae3b22d48ee17dd3546a2731a17c204c70ab4"
+    },
+    {
+      "name": "all-delete",
+      "operation": "all",
+      "reapply": false,
+      "observed": {
+        "range": null,
+        "columns": [],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,#REF!)",
+        "cached": {
+          "type": "error",
+          "value": "#REF!"
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-all-delete-calc.xlsx",
+      "outputSha256": "87cdbe2c925b61ac5831585076bc2779f7ab1b6f33be0baf060c05acefdafb33"
+    },
+    {
+      "name": "all-reapply",
+      "operation": "all",
+      "reapply": true,
+      "observed": {
+        "range": null,
+        "columns": [],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,#REF!)",
+        "cached": {
+          "type": "error",
+          "value": "#REF!"
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-all-reapply-calc.xlsx",
+      "outputSha256": "7f46c6e1e5c48a0cc7b02f775d23b97c5c5883f4ff8eaac96f7027f574d37ce7"
+    },
+    {
+      "name": "header-most-data-delete",
+      "operation": "header-most-data",
+      "reapply": false,
+      "observed": {
+        "range": "B2:D2",
+        "columns": [
+          {
+            "column": 0,
+            "values": [
+              "keep"
+            ],
+            "tests": []
+          },
+          {
+            "column": 1,
+            "values": [],
+            "tests": [
+              {
+                "operator": "greaterThan",
+                "val": "1"
+              }
+            ]
+          }
+        ],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,Data!D2)",
+        "cached": {
+          "type": "number",
+          "value": 40.0
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-header-most-data-delete-calc.xlsx",
+      "outputSha256": "d704c2073469146bc765d4be6d14454918260f19191c72c84e70d56092d7e095"
+    },
+    {
+      "name": "header-most-data-reapply",
+      "operation": "header-most-data",
+      "reapply": true,
+      "observed": {
+        "range": "B2:D2",
+        "columns": [
+          {
+            "column": 0,
+            "values": [
+              "keep"
+            ],
+            "tests": []
+          },
+          {
+            "column": 1,
+            "values": [],
+            "tests": [
+              {
+                "operator": "greaterThan",
+                "val": "1"
+              }
+            ]
+          }
+        ],
+        "hiddenRows": [],
+        "formula": "SUBTOTAL(9,Data!D2)",
+        "cached": {
+          "type": "number",
+          "value": 40.0
+        }
+      },
+      "matchesCurrent": true,
+      "outputFile": "packages/office/tests/fixtures/workbook-filter-headers-header-most-data-reapply-calc.xlsx",
+      "outputSha256": "73012d556682099666bfda901a9f69825f0c0222f5fd9deebe939555a91770b9"
+    }
+  ]
+}

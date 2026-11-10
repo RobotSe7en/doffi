@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { WorkbookSnapshot } from "@doffi/core";
+import type { DeepReadonly, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import type { FontResolution } from "../contracts.js";
 import { createWorkbookAnnotationView } from "./annotation-view.js";
 import type { WorkbookAnnotationView } from "./annotation-view.js";
@@ -8,6 +8,7 @@ import type { WorkbookCommentView } from "./comment-view.js";
 import type { WorkbookContentSources } from "./content-source.js";
 import type { WorkbookSurface } from "./surface.js";
 import type { WorkbookRenderedWindow, WorkbookWindowDecoration } from "./window-controller.js";
+import { intersectRect, paneRect } from "./projection.js";
 
 export interface WorkbookPreviewDecoration extends WorkbookWindowDecoration {
   readonly fonts: readonly FontResolution[];
@@ -15,6 +16,7 @@ export interface WorkbookPreviewDecoration extends WorkbookWindowDecoration {
   showComments(annotationIds: readonly string[]): void;
   closeComment(): void;
   selectCell(row: number, column: number): void;
+  selectRange(range: DeepReadonly<WorkbookRange>): void;
 }
 export function decorateWorkbookPreview(surface: WorkbookSurface, snapshot: WorkbookSnapshot, window: WorkbookRenderedWindow,
   content: WorkbookContentSources, maxNodes: number, attempt: (action: () => void) => void): WorkbookPreviewDecoration {
@@ -69,13 +71,15 @@ export function decorateWorkbookPreview(surface: WorkbookSurface, snapshot: Work
   };
   const openComment = (annotationId: string): void => show([annotationId], annotationId);
   const closeComment = (): void => show([], undefined);
-  const selectCell = (row: number, column: number): void => {
-    check(); const pieces = window.frame.projections.filter(piece => piece.range.from.row === row && piece.range.from.column === column);
-    if (pieces.length > 4) throw new DocumentError("ResourceLimitExceeded", "A selected cell exceeds its pane-fragment budget.");
+  const selectRange = (range: DeepReadonly<WorkbookRange>): void => {
+    check(); const dimensions = window.dimensions, x = dimensions.columns.position(range.from.column), y = dimensions.rows.position(range.from.row);
+    const width = dimensions.columns.position(range.to.column + 1) - x, height = dimensions.rows.position(range.to.row + 1) - y;
     const next = document.createDocumentFragment();
-    for (const { rect, clip } of pieces) {
-      const node = document.createElement("div"), x = sheet.rightToLeft ? window.frame.layout.widthPt - clip.x - clip.width : clip.x;
-      node.style.cssText = `position:absolute;box-sizing:border-box;left:${x}pt;top:${clip.y}pt;width:${clip.width}pt;height:${clip.height}pt;background:rgba(52,100,189,.06);pointer-events:none`;
+    for (const pane of window.frame.layout.panes) {
+      const rect = { x: x - pane.sourceLeftPt + pane.inlineStartPt, y: y - pane.sourceTopPt + pane.blockStartPt, width, height }, clip = intersectRect(rect, paneRect(pane));
+      if (!clip) continue;
+      const node = document.createElement("div"), left = sheet.rightToLeft ? window.frame.layout.widthPt - clip.x - clip.width : clip.x;
+      node.style.cssText = `position:absolute;box-sizing:border-box;left:${left}pt;top:${clip.y}pt;width:${clip.width}pt;height:${clip.height}pt;background:rgba(52,100,189,.06);pointer-events:none`;
       const edge = (name: string, visible: boolean): void => { if (visible) node.style.setProperty("border-" + name, "2px solid #3464bd"); };
       edge("top", Math.abs(rect.y - clip.y) < 1e-6); edge("bottom", Math.abs(rect.y + rect.height - clip.y - clip.height) < 1e-6);
       edge(sheet.rightToLeft ? "right" : "left", Math.abs(rect.x - clip.x) < 1e-6); edge(sheet.rightToLeft ? "left" : "right", Math.abs(rect.x + rect.width - clip.x - clip.width) < 1e-6);
@@ -83,9 +87,13 @@ export function decorateWorkbookPreview(surface: WorkbookSurface, snapshot: Work
     }
     selection.replaceChildren(next);
   };
+  const selectCell = (row: number, column: number): void => {
+    const projected = window.frame.projections.find(piece => piece.range.from.row === row && piece.range.from.column === column);
+    if (projected) selectRange(projected.range); else { check(); selection.replaceChildren(); }
+  };
   try { closeComment(); window.element.append(root); }
   catch (error) { root.remove(); throw error; }
-  return Object.freeze({ get nodes() { return 2 + selection.childNodes.length + (markers?.nodes ?? 0) + panelNodes; }, get fonts() { return panel?.fonts ?? []; }, openComment, selectCell,
+  return Object.freeze({ get nodes() { return 2 + selection.childNodes.length + (markers?.nodes ?? 0) + panelNodes; }, get fonts() { return panel?.fonts ?? []; }, openComment, selectCell, selectRange,
     showComments: (ids: readonly string[]) => show(ids, ids.length === 1 ? ids[0] : undefined), closeComment,
     dispose() { if (disposed) return; disposed = true; markers?.dispose(); panel?.dispose(); panelEvents?.abort(); root.remove(); root.replaceChildren(); markers = undefined; panel = undefined; panelNodes = 0; } });
 }

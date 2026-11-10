@@ -5,6 +5,7 @@ import { DocumentErrorDataSchema, DocumentEventSchema } from "./contracts/events
 import type { DocumentErrorCode } from "./contracts/events.js";
 import { DocumentInteractionRequestSchema, EditProposalSchema } from "./contracts/interaction.js";
 import { PresentationInteractionRequestSchema,PresentationEditProposalSchema } from "./contracts/presentation-interaction.js";
+import { WorkbookInteractionRequestSchema, WorkbookEditProposalSchema } from "./contracts/workbook-interaction.js";
 import { DocumentContentOperationSchema, DocumentOperationSchema, DocumentTransactionSchema } from "./contracts/operations.js";
 import { FORMAT_VERSION, PROTOCOL_VERSION } from "./contracts/primitives.js";
 import { DocumentError, summarizeIssues } from "./errors.js";
@@ -23,6 +24,8 @@ export const contractSchemas = Object.freeze({
   "edit-proposal": EditProposalSchema,
   "presentation-interaction-request":PresentationInteractionRequestSchema,
   "presentation-edit-proposal":PresentationEditProposalSchema,
+  "workbook-interaction-request": WorkbookInteractionRequestSchema,
+  "workbook-edit-proposal": WorkbookEditProposalSchema,
   "document-error": DocumentErrorDataSchema,
   "document-event": DocumentEventSchema,
 });
@@ -68,7 +71,7 @@ function checkEnvelope(name: ContractName, input: unknown): void {
     }
     checkVersion(data.formatVersion, FORMAT_VERSION);
   }
-  if (["document-transaction", "interaction-request", "edit-proposal", "presentation-interaction-request","presentation-edit-proposal","document-event"].includes(name)) {
+  if (["document-transaction", "interaction-request", "edit-proposal", "presentation-interaction-request","presentation-edit-proposal", "workbook-interaction-request", "workbook-edit-proposal", "document-event"].includes(name)) {
     checkVersion(data.protocolVersion, PROTOCOL_VERSION);
   }
   if (name === "interaction-request") {
@@ -80,13 +83,25 @@ function checkEnvelope(name: ContractName, input: unknown): void {
       }
     }
   }
-  if(name==="presentation-interaction-request"){const context=object(data.context);if(context)checkVersion(context.formatVersion,FORMAT_VERSION);}
+  if(name==="presentation-interaction-request" || name === "workbook-interaction-request"){const context=object(data.context);if(context)checkVersion(context.formatVersion,FORMAT_VERSION);}
 }
 
 // Zod collects every array item's issues before returning. Preflight arrays one
 // item at a time, including arrays nested in objects and contract variants, so
 // invalid input cannot build an issue list proportional to the array's length.
+// Cache schema structure only. A subtree without any preflight array has no
+// work here; its ordinary Zod validation below remains complete. In particular,
+// scalar cell unions need no repeated discriminator-error construction.
+const arrayPaths = new WeakMap<z.core.$ZodType, boolean>();
+function hasArrayPath(schema: z.core.$ZodType): boolean {
+  const known = arrayPaths.get(schema); if (known !== undefined) return known;
+  const found = schema instanceof z.ZodArray || schema instanceof z.ZodOptional && hasArrayPath(schema.unwrap())
+    || (schema instanceof z.ZodDiscriminatedUnion || schema instanceof z.ZodUnion) && schema.options.some(option => hasArrayPath(option))
+    || schema instanceof z.ZodObject && Object.values(schema.shape).some(child => hasArrayPath(child as z.core.$ZodType));
+  arrayPaths.set(schema, found); return found;
+}
 function checkArrayItems(schema: z.core.$ZodType, input: unknown, path: PropertyKey[], fail: (issues: z.ZodIssue[]) => never): void {
+  if (!hasArrayPath(schema)) return;
   if (schema instanceof z.ZodOptional) {
     if (input !== undefined) checkArrayItems(schema.unwrap(), input, path, fail);
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
@@ -125,7 +140,7 @@ function checkArrayItems(schema: z.core.$ZodType, input: unknown, path: Property
 export function parseContract<Name extends ContractName>(name: Name, input: unknown): ContractValue<Name> {
   const schema = schemaFor(name);
   checkEnvelope(name, input);
-  const code: DocumentErrorCode = ["edit-proposal","presentation-edit-proposal"].includes(name) ? "InvalidProposal"
+  const code: DocumentErrorCode = ["edit-proposal","presentation-edit-proposal", "workbook-edit-proposal"].includes(name) ? "InvalidProposal"
     : ["content-operation", "document-operation", "document-transaction"].includes(name)
       ? "InvalidOperation" : "InvalidDocument";
   const fail = (issues: z.ZodIssue[]): never => {

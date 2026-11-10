@@ -96,7 +96,7 @@ export async function measureWorkbookChartAxes(snapshot: WorkbookSnapshot, plots
 export async function measureWorkbookChartTextFonts(snapshot: WorkbookSnapshot, plot: BasicChartData, missing: boolean) {
   const container = document.createElement('div'); document.body.append(container);
   const names = missing ? ['DagentMissingLatin', 'DagentMissingAnsi', 'DagentMissingEA', 'DagentMissingComplex'] : ['Liberation Serif', 'Liberation Sans', 'Noto Serif CJK SC', 'DejaVu Sans'];
-  const css = `.chart-local-font{font-size:9pt}.chart-font-roles{font-family:"DagentUnusedBase";font-size:18pt;--office-font-ascii:"${names[0]}";--office-font-h-ansi:"${names[1]}";--office-font-east-asia:"${names[2]}";--office-font-complex-script:"${names[3]}"}`;
+  const css = `.chart-local-font{font-size:9pt}.chart-font-roles{font-family:"DagentUnusedBase";font-size:18pt;text-decoration:underline double;--office-fill-kind:linear;--office-fill-stop-count:2;--office-fill-stop-0-position:0;--office-fill-stop-0-color:#ff0000;--office-fill-stop-1-position:1;--office-fill-stop-1-color:#0000ff;--office-font-ascii:"${names[0]}";--office-font-h-ansi:"${names[1]}";--office-font-east-asia:"${names[2]}";--office-font-complex-script:"${names[3]}"}`;
   const surface = await createWorkbookSurface(container, { ...snapshot, styles: [...snapshot.styles, { path: 'chart-font-roles.css', css }] }, { widthPt: 520, heightPt: 340 });
   const sources = new WorkbookContentSources(surface.document, snapshot), original = snapshot.metadata.workbook.charts![0]!;
   const chart = { ...original, showLabels: true, labelContents: ['category', 'series', 'value'] as const, textCssClass: 'chart-font-roles', labelCssClass: 'chart-font-roles', categoryAxisCssClass: 'chart-font-roles', valueAxisCssClass: 'chart-font-roles', legendCssClass: 'chart-font-roles' };
@@ -249,8 +249,11 @@ import { layoutWorkbookChart } from '../../../packages/render/src/workbook/chart
 
 export async function measureWorkbookCharts(snapshot: WorkbookSnapshot, plots: readonly BasicChartData[]) {
   const container = document.createElement('div'); document.body.append(container);
-  const css = '.chart-text-probe{font-family:"Liberation Sans";font-size:13pt;color:rgb(12,34,56);--office-text-color:#0c2238;--office-text-source:direct;--office-text-lum-mod:1;--office-text-lum-off:0;--office-text-tint:0;--office-text-shade:1;--office-text-alpha:1}svg{width:1px!important;height:1px!important}text{font-size:99pt!important;fill:red!important}';
+  const css = '.chart-text-probe{font-family:"Liberation Sans";font-size:13pt;color:rgb(12,34,56);--office-text-color:#0c2238;--office-text-source:direct;--office-text-lum-mod:1;--office-text-lum-off:0;--office-text-tint:0;--office-text-shade:1;--office-text-alpha:1}';
   const surface = await createWorkbookSurface(container, { ...snapshot, styles: [...snapshot.styles, { path: 'chart-probe.css', css }] }, { widthPt: 600, heightPt: 300 });
+  // Host/page attacks are outside the admitted document CSS profile. Keep them
+  // active on the page while testing the renderer's private measurement scope.
+  const hostile = surface.document.createElement('style'); hostile.textContent = 'svg{width:1px!important;height:1px!important}text{font-size:99pt!important;fill:red!important}'; surface.document.head.append(hostile);
   const sources = new WorkbookContentSources(surface.document, snapshot), results = [];
   try {
     const definitions = snapshot.metadata.workbook.charts!, projection = sources.project(surface.source, definitions.map(chart => chart.nodeId));

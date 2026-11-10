@@ -1,9 +1,8 @@
 import type { Anchor,Annotation } from "./contracts/annotations.js";
 import { isPresentationCommentPoint } from "./document/presentation.js";
 import type { ContentDocumentMetadata } from "./contracts/document.js";
-import type { DocumentEvent } from "./contracts/events.js";
 import type { AnnotationOperation, DocumentTransaction } from "./contracts/operations.js";
-import type { CandidateChange, DocumentSession, DocumentEventListener, DocumentModel, DocumentSessionOptions, TextOffsetMapping, TransactionReceipt } from "./runtime.js";
+import type { CandidateChange, DocumentSession, ContentDocumentModel, DocumentModel, DocumentSessionOptions, WorkbookModel, WorkbookSession } from "./runtime.js";
 import { DocumentError } from "./errors.js";
 import { parseContract } from "./schema-registry.js";
 import { DocumentEdit } from "./document/edit.js";
@@ -12,7 +11,7 @@ import type { ParsedHtml } from "./document/html.js";
 import { copyPackage, encode } from "./document/package.js";
 import { buildDocumentState } from "./document/state.js";
 import type { DocumentState } from "./document/state.js";
-import { checkLimit, freeze, readLimits } from "./document/validation.js";
+import { checkLimit, readLimits } from "./document/validation.js";
 import { compareStates, retainedBytes } from "./session/changes.js";
 import { checkTransactionSize, sessionLimits } from "./session/limits.js";
 import { annotationNodes, mapAnnotations } from "./session/anchors.js";
@@ -31,6 +30,8 @@ export { DEFAULT_INTERACTION_LIMITS } from "./session/interaction.js";
 
 export { DEFAULT_DOCUMENT_SESSION_LIMITS } from "./session/limits.js";
 
+import { createSessionLifecycle } from "./session/lifecycle.js";
+import { createWorkbookSession, isWorkbookOperation } from "./session/workbook.js";
 function invalid(message: string): never { throw new DocumentError("InvalidOperation", message); }
 
 /** Remove definitions only when their complete source object was deleted. Partial damage fails validation. */
@@ -60,99 +61,26 @@ function rebase(state: DocumentState, revision: number, limits: ReturnType<typeo
   return buildDocumentState(files, limits);
 }
 
-interface Prepared {
-  readonly baseRevision: number;
-  consumed: boolean;
-}
-interface HistoryEntry {
-  readonly before: DocumentState;
-  readonly after: DocumentState;
-  readonly textEdits: readonly TextOffsetMapping[];
-}
-
-/** Create an isolated transaction session from an authorized, validated document source. */
-export function createDocumentSession(document: DocumentModel, options: DocumentSessionOptions = {}): DocumentSession {
-  const limits = readLimits(options.limits);
-  const budgets = sessionLimits(options.sessionLimits);
-  let current: DocumentState | undefined = buildDocumentState(copyPackage(document.serialize(), limits), limits);
-  let undo: HistoryEntry[] = [];
-  let redo: HistoryEntry[] = [];
-  const activeCandidates = new Map<CandidateChange, DocumentState>();
-  let issued = new WeakMap<CandidateChange, Prepared>();
-  const listeners = new Set<DocumentEventListener>();
-  const reservedIds = new Set(current.html.nodeIds());
-  const reserveIdentities=(value:unknown,key=""):void=>{
-    if(typeof value==="string"){if(/(?:Ids?|Style|Class)$/.test(key))reservedIds.add(value);return;}
-    if(Array.isArray(value)){for(const item of value)reserveIdentities(item,key);return;}
-    if(value&&typeof value==="object")for(const[name,item]of Object.entries(value))reserveIdentities(item,name);
-  };
-  let sequence = 0;
-  let publishing = false;
-
-  function state(): DocumentState {
-    if (!current) invalid("This document session has been disposed.");
-    return current;
-  }
-  function editable(): DocumentState {
-    const result = state();
-    if (publishing) invalid("A session cannot be changed while its events are being delivered.");
-    return result;
-  }
-  function emit(event: DocumentEvent): void {
-    publishing = true;
-    try {
-      const frozen = freeze(event);
-      for (const listener of [...listeners]) {
-        // A consumer callback cannot turn an already committed edit into an apparent failure.
-        try { listener(frozen); } catch { /* Consumer owns its callback errors. */ }
-      }
-    } finally { publishing = false; }
-  }
-  function execute<Value>(action: () => Value): Value {
-    editable();
-    try { return action(); }
-    catch (error) {
-      const bounded = error instanceof DocumentError
-        ? error.code === "InvalidDocument" ? new DocumentError("InvalidOperation", error.message) : error
-        : new DocumentError("InvalidOperation", "The document operation could not be prepared or committed.");
-      const snapshot = state().snapshot;
-      emit({ protocolVersion: 1, documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision, type: "error", error: bounded.toJSON() });
-      throw bounded;
-    }
-  }
-  function allocate(): string {
-    let id: string;
-    do {
-      if (sequence >= Number.MAX_SAFE_INTEGER) throw new DocumentError("ResourceLimitExceeded", "Node identity allocation is exhausted.");
-      id = "edit-" + ++sequence;
-    } while (reservedIds.has(id));
-    return id;
-  }
-  function historyStates(entries: readonly HistoryEntry[]): DocumentState[] {
-    return entries.flatMap((entry) => [entry.before, entry.after]);
-  }
-  function emptyReceipt(): TransactionReceipt {
-    const base = state();
-    return freeze({ documentId: base.snapshot.manifest.documentId, revision: base.snapshot.manifest.revision, changed: false,
-      affectedNodeIds: [], ...(base.snapshot.metadata.presentation ? { affectedSlideIds: [] } : {}), mapping: compareStates(base, base).mapping });
-  }
-  function publish(next: DocumentState, textEdits: readonly TextOffsetMapping[]): TransactionReceipt {
-    const previous = state();
-    const diff = compareStates(previous, next, textEdits);
-    current = next;
-    activeCandidates.clear();
-    const identity = { protocolVersion: 1 as const, documentId: next.snapshot.manifest.documentId, revision: next.snapshot.manifest.revision };
-    const receipt: TransactionReceipt = freeze({ documentId: identity.documentId, revision: identity.revision, changed: true,
-      affectedNodeIds: diff.affectedNodeIds, ...(diff.affectedSlideIds ? { affectedSlideIds: diff.affectedSlideIds } : {}), mapping: diff.mapping });
-    emit({ ...identity, type: "documentChanged", affectedNodeIds: [...diff.affectedNodeIds], ...(diff.affectedSlideIds ? { affectedSlideIds: [...diff.affectedSlideIds] } : {}) });
-    if (diff.changedAnnotationIds.length) emit({ ...identity, type: "annotationChanged", annotationIds: [...diff.changedAnnotationIds] });
-    return receipt;
-  }
-  function nextRevision(): number {
-    const revision = state().snapshot.manifest.revision;
-    if (revision >= Number.MAX_SAFE_INTEGER) throw new DocumentError("ResourceLimitExceeded", "The document revision is exhausted.");
-    return revision + 1;
-  }
+/** Create an isolated session using the shared transaction/history boundary. */
+export function createDocumentSession(document: WorkbookModel, options?: DocumentSessionOptions): WorkbookSession;
+export function createDocumentSession(document: ContentDocumentModel, options?: DocumentSessionOptions): DocumentSession;
+export function createDocumentSession(document: DocumentModel, options?: DocumentSessionOptions): DocumentSession | WorkbookSession;
+export function createDocumentSession(document: DocumentModel, options: DocumentSessionOptions = {}): DocumentSession | WorkbookSession {
+  if (document.kind === "workbook") return createWorkbookSession(document, options);
+  const limits = readLimits(options.limits), budgets = sessionLimits(options.sessionLimits);
+  const initial = buildDocumentState(copyPackage(document.serialize(), limits), limits);
+  const model = (source: DocumentState): ContentDocumentModel => Object.freeze<ContentDocumentModel>({
+    kind: source.snapshot.manifest.kind, snapshot: () => source.snapshot, getNode: id => source.html.getNode(id),
+    serialize: () => new Map([...source.files].map(([path, bytes]) => [path, new Uint8Array(bytes)])),
+  });
+  const boundary = createSessionLifecycle(initial, {
+    model, prepare: prepareContent,
+    rebase: (source, revision) => rebase(source, revision, limits),
+    compare: (before, after, mapping) => compareStates(before, after, mapping?.textEdits),
+    same: (before, after) => JSON.stringify(before.snapshot) === JSON.stringify(after.snapshot),
+    retained: retainedBytes, identities: source => source.html.nodeIds(),
+  }, options);
+  const { state, execute, prepareTransaction } = boundary;
   function applyAnnotation(operation: AnnotationOperation, annotations: Annotation[], explicit: Set<string>): void {
     const base = state().snapshot.manifest;
     if (operation.op === "addAnnotation") {
@@ -177,24 +105,11 @@ export function createDocumentSession(document: DocumentModel, options: Document
     }
   }
 
-  function prepareTransaction(input: DocumentTransaction, resolvedIds?: readonly string[], options?: TransactionPrepareOptions): CandidateChange {
-    if (input && Array.isArray(input.operations)) {
-      let count = input.operations.length;
-      for (const operation of input.operations) {
-        if (operation?.op === "reconcileFragment" && Array.isArray(operation.textEdits)) count += operation.textEdits.length;
-        checkLimit(count, budgets.maxOperations);
-      }
-      checkLimit(count, budgets.maxOperations);
-    }
-    checkTransactionSize(input, budgets.maxTransactionBytes, limits.maxDepth);
-    const transaction = parseContract("document-transaction", input);
-    const base = state();
-    reserveIdentities(base.snapshot.metadata);reserveIdentities(base.snapshot.annotations);reserveIdentities(transaction);
-    if (transaction.documentId !== base.snapshot.manifest.documentId) invalid("The transaction belongs to another document.");
-    if (transaction.baseRevision !== base.snapshot.manifest.revision) throw new DocumentError("RevisionConflict", "The transaction is based on a different document revision.");
-    checkLimit(activeCandidates.size + 1, budgets.maxCandidates);
+  function prepareContent(base: DocumentState, transaction: DocumentTransaction, allocate: () => string,
+    resolvedIds?: readonly string[], options?: TransactionPrepareOptions) {
     // Validate every target against the base before applying any operation.
     for (const operation of transaction.operations) {
+      if (isWorkbookOperation(operation)) invalid("Workbook operations require a workbook session.");
       if ("nodeId" in operation && !base.html.hasNode(operation.nodeId)) invalid("An operation targets a node outside the base snapshot.");
       if (isPresentationOperation(operation)) validatePresentationTargets(base, operation);
     }
@@ -202,7 +117,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
     const edit = new DocumentEdit(resources.state, limits, allocate);
     let annotations = parseContract("annotations", base.snapshot.annotations);
     const parsedMetadata = parseContract("document-metadata", base.snapshot.metadata);
-    if ("workbook" in parsedMetadata) invalid("Workbook editing is not implemented yet.");
+    if ("workbook" in parsedMetadata) invalid("Content operations require Word or PPT metadata.");
     const metadata: ContentDocumentMetadata = parsedMetadata;
     const files = new Map(resources.state.files);
     const styles=new PresentationStyleEdit(files,base.snapshot.manifest.styles,limits);
@@ -210,7 +125,8 @@ export function createDocumentSession(document: DocumentModel, options: Document
     const explicit = new Set<string>();
     const unresolved = new Set(base.snapshot.annotations.filter((item) => item.status === "needs_reanchor").map((item) => item.annotationId));
     for (const operation of transaction.operations) {
-      if (isPresentationOperation(operation)) {
+      if (isWorkbookOperation(operation)) invalid("Workbook operations require a workbook session.");
+      else if (isPresentationOperation(operation)) {
         if (!metadata.presentation) invalid("Presentation operations cannot target a Word document.");
         applyPresentationOperation({ base, p: metadata.presentation, edit, parse: parseEdited, allocate, limits,styles,annotations,explicit }, operation);
       }
@@ -254,14 +170,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
     files.set(base.snapshot.manifest.metadata, encode(JSON.stringify(metadata)));
     files.set(base.snapshot.manifest.annotations, encode(JSON.stringify(annotations)));
     const next = buildDocumentState(files, limits);
-    checkLimit(retainedBytes([...activeCandidates.values(), next]), budgets.maxCandidateBytes);
-    const diff = compareStates(base, next, edit.textEdits);
-    const model=Object.freeze({kind:next.snapshot.manifest.kind,snapshot:()=>next.snapshot,getNode:(nodeId:string)=>next.html.getNode(nodeId),serialize:()=>new Map([...next.files].map(([path,bytes])=>[path,new Uint8Array(bytes)]))});
-    const candidate = freeze({ documentId: transaction.documentId, baseRevision: transaction.baseRevision,
-      preview: next.snapshot,model, ...diff }) as unknown as CandidateChange;
-    issued.set(candidate, { baseRevision: transaction.baseRevision, consumed: false });
-    activeCandidates.set(candidate, next);
-    return candidate;
+    return { state: next, mapping: compareStates(base, next, edit.textEdits).mapping };
   }
 
   function buildRequest(input:PresentationInteractionRequestInput):PresentationInteractionRequest;
@@ -286,7 +195,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
         const request=parseContract("presentation-interaction-request",requestInput),proposal=parseContract("presentation-edit-proposal",proposalInput);
         validatePresentationProposal(state(),request,proposal,options);
         const candidate=prepareTransaction({protocolVersion:1,documentId:proposal.documentId,baseRevision:proposal.baseRevision,operations:proposal.operations},proposal.annotationIds,options);
-        try{validatePresentationCandidate(state(),request,candidate);}catch(error){activeCandidates.delete(candidate);issued.get(candidate)!.consumed=true;throw error;}return candidate;
+        try{validatePresentationCandidate(state(),request,candidate);}catch(error){boundary.lifecycle.discard(candidate);throw error;}return candidate;
       }
       if(options!==undefined)invalid("PPT proposal resource options require a presentation session.");
       const request=parseContract("interaction-request",requestInput),proposal=parseContract("edit-proposal",proposalInput);validateProposal(state(),request,proposal);
@@ -295,78 +204,12 @@ export function createDocumentSession(document: DocumentModel, options: Document
   }
 
   return Object.freeze({
-    kind: state().snapshot.manifest.kind,
+    kind: initial.snapshot.manifest.kind,
     snapshot: () => state().snapshot,
     getNode: (id: string) => state().html.getNode(id),
-    getAnnotations: () => state().snapshot.annotations,
-    serialize: () => new Map([...state().files].map(([path, bytes]) => [path, new Uint8Array(bytes)])),
-    prepare: (input: DocumentTransaction, options?: TransactionPrepareOptions): CandidateChange => execute(() => prepareTransaction(input, undefined, options)),
-    buildInteractionRequest:buildRequest,
-    prepareProposal:prepareProposalRequest,
-    commit: (candidate: CandidateChange): TransactionReceipt => execute(() => {
-      const record = issued.get(candidate);
-      if (!record || record.consumed) invalid("The candidate is foreign, discarded or already consumed.");
-      const base = state();
-      if (record.baseRevision !== base.snapshot.manifest.revision) throw new DocumentError("RevisionConflict", "The candidate is based on an older document revision.");
-      const prepared = activeCandidates.get(candidate);
-      if (!prepared) invalid("The candidate is no longer available.");
-      if (JSON.stringify(base.snapshot) === JSON.stringify(prepared.snapshot)) {
-        record.consumed = true;
-        activeCandidates.delete(candidate);
-        return emptyReceipt();
-      }
-      const next = rebase(prepared, nextRevision(), limits);
-      const entries = [...undo, { before: base, after: next, textEdits: candidate.mapping.textEdits }];
-      checkLimit(entries.length, budgets.maxHistorySteps);
-      checkLimit(retainedBytes(historyStates(entries)), budgets.maxHistoryBytes);
-      record.consumed = true;
-      undo = entries;
-      redo = [];
-      return publish(next, candidate.mapping.textEdits);
-    }),
-    discard: (candidate: CandidateChange): void => execute(() => {
-      const record = issued.get(candidate);
-      if (!record || record.consumed) invalid("The candidate is foreign, discarded or already consumed.");
-      record.consumed = true;
-      activeCandidates.delete(candidate);
-    }),
-    undo: (): TransactionReceipt => execute(() => {
-      const entry = undo.at(-1);
-      if (!entry) return emptyReceipt();
-      const next = rebase(entry.before, nextRevision(), limits);
-      const edits = [...entry.textEdits].reverse().map((item) => ({ nodeId: item.nodeId, from: item.from, to: item.from + item.insertedLength, insertedLength: item.to - item.from }));
-      undo = undo.slice(0, -1);
-      redo = [...redo, entry];
-      return publish(next, edits);
-    }),
-    redo: (): TransactionReceipt => execute(() => {
-      const entry = redo.at(-1);
-      if (!entry) return emptyReceipt();
-      const next = rebase(entry.after, nextRevision(), limits);
-      redo = redo.slice(0, -1);
-      undo = [...undo, entry];
-      return publish(next, entry.textEdits);
-    }),
-    history: () => {
-      state();
-      return freeze({ undoSteps: undo.length, redoSteps: redo.length, retainedBytes: retainedBytes(historyStates([...undo, ...redo])) });
-    },
-    clearHistory: (): void => execute(() => { undo = []; redo = []; }),
-    subscribe: (listener: DocumentEventListener): (() => void) => {
-      state();
-      listeners.add(listener);
-      return () => { listeners.delete(listener); };
-    },
-    dispose: (): void => {
-      if (!current) return;
-      editable();
-      current = undefined;
-      undo = [];
-      redo = [];
-      activeCandidates.clear();
-      issued = new WeakMap();
-      reservedIds.clear();
-      listeners.clear();
-    },
+    serialize: () => model(state()).serialize(),
+    ...boundary.lifecycle,
+    buildInteractionRequest: buildRequest,
+    prepareProposal: prepareProposalRequest,
   });
 }

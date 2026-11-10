@@ -1,0 +1,192 @@
+{
+  "scope": "Independent ZIP/XML and four actual pinned Calc sort calls. Microsoft documents equal merged row/column sizes; record ordering expectations are declared independently. Excel/WPS editing runtime remains unverified.",
+  "reference": "https://learn.microsoft.com/en-us/troubleshoot/microsoft-365-apps/excel/error-sort-a-range-merged-cell",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "3fe290c352973d6bc8beb2a4fb1b9993c90610ee73ee1117de0f296415e605bd",
+  "cases": [
+    {
+      "name": "uniform-stable",
+      "sheet": "Uniform",
+      "height": 2,
+      "columns": [
+        0
+      ],
+      "descending": [
+        false
+      ],
+      "expectedRecords": [
+        1,
+        2,
+        0
+      ],
+      "nativeCall": {
+        "outcome": "returned",
+        "changed": false
+      },
+      "observed": {
+        "records": [
+          [
+            "3",
+            "30"
+          ],
+          [
+            "1",
+            "20"
+          ],
+          [
+            "1",
+            "25"
+          ]
+        ],
+        "merges": [
+          "A1:B2",
+          "C1:D2",
+          "A3:B4",
+          "C3:D4",
+          "A5:B6",
+          "C5:D6"
+        ],
+        "outsideFormula": "A1"
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-merged-sort-uniform-stable-calc.xlsx",
+      "outputSha256": "11c596bb359102cf7dd1a42dca06988ae9c109904126141d37e69e35de5469ed"
+    },
+    {
+      "name": "uniform-multikey",
+      "sheet": "Uniform",
+      "height": 2,
+      "columns": [
+        0,
+        2
+      ],
+      "descending": [
+        false,
+        true
+      ],
+      "expectedRecords": [
+        2,
+        1,
+        0
+      ],
+      "nativeCall": {
+        "outcome": "returned",
+        "changed": false
+      },
+      "observed": {
+        "records": [
+          [
+            "3",
+            "30"
+          ],
+          [
+            "1",
+            "20"
+          ],
+          [
+            "1",
+            "25"
+          ]
+        ],
+        "merges": [
+          "A1:B2",
+          "C1:D2",
+          "A3:B4",
+          "C3:D4",
+          "A5:B6",
+          "C5:D6"
+        ],
+        "outsideFormula": "A1"
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-merged-sort-uniform-multikey-calc.xlsx",
+      "outputSha256": "22fcf5f57f030ee6f95975ceaba813c1cbc54fa650391e0f2f02680be8768cc6"
+    },
+    {
+      "name": "horizontal-stable",
+      "sheet": "Horizontal",
+      "height": 1,
+      "columns": [
+        0
+      ],
+      "descending": [
+        false
+      ],
+      "expectedRecords": [
+        1,
+        2,
+        0
+      ],
+      "nativeCall": {
+        "outcome": "returned",
+        "changed": false
+      },
+      "observed": {
+        "records": [
+          [
+            "3",
+            "30"
+          ],
+          [
+            "1",
+            "20"
+          ],
+          [
+            "1",
+            "25"
+          ]
+        ],
+        "merges": [
+          "A1:B1",
+          "C1:D1",
+          "A2:B2",
+          "C2:D2",
+          "A3:B3",
+          "C3:D3"
+        ],
+        "outsideFormula": "A1"
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-merged-sort-horizontal-stable-calc.xlsx",
+      "outputSha256": "22fcf5f57f030ee6f95975ceaba813c1cbc54fa650391e0f2f02680be8768cc6"
+    },
+    {
+      "name": "mixed-rejected",
+      "sheet": "Mixed",
+      "height": 1,
+      "columns": [
+        0
+      ],
+      "descending": [
+        false
+      ],
+      "reject": true,
+      "nativeCall": {
+        "outcome": "returned",
+        "changed": false
+      },
+      "observed": {
+        "records": [
+          [
+            "3",
+            "30"
+          ],
+          [
+            "1",
+            "20"
+          ],
+          [
+            "1",
+            "25"
+          ]
+        ],
+        "merges": [
+          "A1:B1",
+          "A2:B2",
+          "A3:B3"
+        ],
+        "outsideFormula": "A1"
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-merged-sort-mixed-rejected-calc.xlsx",
+      "outputSha256": "333ffc97ea825ec9fb61a8ee6a9af079dea67b223f0da934cea7c18a5c58c72b"
+    }
+  ]
+}

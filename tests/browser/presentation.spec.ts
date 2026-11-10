@@ -9,7 +9,7 @@ import { build } from "vite";
 import { importPptx, readDocumentZip } from "@doffi/office";
 import { writeOpcZip } from "../../packages/office/src/document-zip.js";
 import { createPresentation, readPresentationGeometry } from "@doffi/core";
-import type { DocumentPackage } from "@doffi/core";
+import type { DocumentPackage, DocumentMetadata } from "@doffi/core";
 import type { DocumentPreviewOptions } from "@doffi/render";
 import type { PresentationHost } from "./fixtures/presentation-host.js";
 declare global { interface Window { presentationHost: PresentationHost } }
@@ -102,6 +102,28 @@ test("bound connectors meet native connection sites without changing arrow defin
   for (const path of paths) { expect(path.start.x).toBeCloseTo(paths[0]!.start.x, 1); expect(path.start.y).toBeCloseTo(paths[0]!.start.y, 1); expect(path.end.x).toBeCloseTo(paths[0]!.end.x, 1); expect(path.end.y).toBeCloseTo(paths[0]!.end.y, 1); expect(path.marker!.length).toBeLessThan(60); }
   const start = await page.frameLocator("iframe").locator('article > [data-office-kind="slide"] [data-office-kind="geometry"]').first().boundingBox();
   expect(paths[0]!.start.x).toBeCloseTo(start!.x, 1); expect(paths[0]!.start.y).toBeCloseTo(start!.y + start!.height / 2, 1);
+});
+
+test("chart decorations use final substituted fonts and survive print without entering the source", async ({ page }) => {
+  const files = new Map(fixture("09-charts")), model = openDocument(files), snapshot = model.snapshot(), metadata = JSON.parse(new TextDecoder().decode(files.get("metadata.json")!)) as DocumentMetadata, chart = metadata.presentation!.charts[0]!;
+  chart.showLabels = true; chart.labelContents = ["value"]; chart.labelCssClass = "decor-label";
+  chart.pointStyles = [{ seriesId: metadata.presentation!.dataSets.find(data => data.dataSetId === chart.dataSetId)!.series[0]!.seriesId, index: 0, cssClass: "decor-point", labelCssClass: "decor-none" }];
+  files.set("metadata.json", new TextEncoder().encode(JSON.stringify(metadata)));
+  const path = snapshot.manifest.styles[0]!;
+  files.set(path, new TextEncoder().encode(new TextDecoder().decode(files.get(path)!) + '.decor-label{--office-font-ascii:"DOFFI Unavailable Chart Font";font-size:18pt;text-decoration:underline double currentColor;--office-fill-kind:solid;--office-fill-color:#f0e0c0;--office-line-kind:solid;--office-line-color:#704090}.decor-point{}.decor-none{text-decoration-line:none}'));
+  await mount(page, files);
+  const result = await page.evaluate(() => {
+    const view = window.presentationHost.view!, document = view.element.contentDocument!;
+    return { substituted: view.fonts().some(font => font.requestedFamily === "DOFFI Unavailable Chart Font" && font.substituted), projected: window.presentationHost.projected(),
+      print: view.printDocument().querySelectorAll('[data-sdk-chart-decoration-paint] line').length, frames: view.printDocument().querySelectorAll('[data-sdk-chart-label-frame]').length,
+      labels: [...document.querySelectorAll<SVGTextElement>('svg[data-sdk-chart=column] [data-sdk-chart-label=data-label]')].map(label => {
+        const bounds = label.getBBox(), carrier = label.closest('[data-sdk-chart-text-decoration]');
+        return { accessible: !carrier?.hasAttribute('aria-hidden'), strokes: [...(carrier?.querySelectorAll<SVGLineElement>('[data-sdk-chart-decoration-paint] line') ?? [])].map(line => ({ x: line.x1.baseVal.value, width: line.x2.baseVal.value - line.x1.baseVal.value })), bounds: { x: bounds.x, width: bounds.width } };
+      }) };
+  });
+  expect(result.substituted).toBe(true); expect(result.print).toBeGreaterThan(0); expect(result.frames).toBe(result.labels.length); expect(result.projected).not.toMatch(/data-sdk-|sdk-ppt|<svg/);
+  expect(result.labels[0]!.strokes).toHaveLength(0);
+  for (const label of result.labels.slice(1)) { expect(label.accessible).toBe(true); expect(label.strokes).toHaveLength(2); for (const stroke of label.strokes) { expect(stroke.x).toBeCloseTo(label.bounds.x, 4); expect(stroke.width).toBeCloseTo(label.bounds.width, 4); } }
 });
 
 test("charts plot current constants at physical point sizes and rich UTF-16 selection maps to canonical text", async ({ page }) => {

@@ -1,0 +1,3773 @@
+{
+  "scope": "Three independent sources, a resave baseline and eight actual axis edits per source, with pinned fonts and official XSD/OPC. Source anchors and native producer geometry are recorded separately. Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "fontManifest": {
+    "source": "examples/xlsx/reference.json#environment.fonts",
+    "sha256": "bda037c50b31e342e0e460755840725d14dd8bfaeccca8de54269277342a5119"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.onecellanchor?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.editasvalues?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.spreadsheet.resizewithcells?view=openxml-3.0.1"
+  ],
+  "producerDifferences": [
+    "Calc converts one-cell and absolute source containers to two-cell forms and rewrites transformed geometry/cache coordinates on resave; original native source anchors remain separate evidence.",
+    "Some first-open one-cell edits retain the old physical position in Calc. SDK movement follows the Microsoft oneCellAnchor source contract, which moves with its cell and retains physical extents.",
+    "Calc may retain a classic box size on an internal row deletion despite SizeWithCells. SDK applies both moving/resizing markers when both source flags are true; native observations are not replaced with SDK expectations."
+  ],
+  "sources": [
+    {
+      "name": "07-three-charts",
+      "path": "examples/xlsx/07-three-charts.xlsx",
+      "sha256": "395c89fea4af3914620f4238d30eba086de4c4605aae13abcd40d15dd4a1516b",
+      "original": {
+        "drawings": [
+          {
+            "name": "Chart 1",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "0",
+              "colOff": "0",
+              "row": "6",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "2413000"
+            },
+            "frame": {
+              "attributes": {},
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "0",
+                  "cy": "0"
+                }
+              }
+            }
+          },
+          {
+            "name": "Chart 2",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "5",
+              "colOff": "0",
+              "row": "6",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "2413000"
+            },
+            "frame": {
+              "attributes": {},
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "0",
+                  "cy": "0"
+                }
+              }
+            }
+          },
+          {
+            "name": "Chart 3",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "0",
+              "colOff": "0",
+              "row": "20",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "2413000"
+            },
+            "frame": {
+              "attributes": {},
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "0",
+                  "cy": "0"
+                }
+              }
+            }
+          }
+        ],
+        "notes": [],
+        "charts": [
+          [
+            "Data!$B$1",
+            "Data!$A$2:$A$4",
+            "Data!$B$2:$B$4",
+            "Data!$C$1",
+            "Data!$A$2:$A$4",
+            "Data!$C$2:$C$4"
+          ],
+          [
+            "Data!$B$1",
+            "Data!$A$2:$A$4",
+            "Data!$B$2:$B$4",
+            "Data!$C$1",
+            "Data!$A$2:$A$4",
+            "Data!$C$2:$C$4"
+          ],
+          [
+            "Data!$B$1",
+            "Data!$A$2:$A$4",
+            "Data!$B$2:$B$4"
+          ]
+        ],
+        "comments": [],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              },
+              {
+                "r": "2"
+              },
+              {
+                "r": "3"
+              },
+              {
+                "r": "4"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": []
+      },
+      "cases": [
+        {
+          "name": "resave",
+          "operation": null,
+          "producerSha256": "4f4253e7a82e615035148917b01a7c6472b67f4cf5dce4563b20cfd14c698998",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "70920"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1143000"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "134640"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "70560"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3809880"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-rows-before",
+          "operation": {
+            "axis": "row",
+            "action": "insert",
+            "index": 1,
+            "count": 2
+          },
+          "producerSha256": "c4af565d199e775e2faf77949518a723ed91b132da83ed922cdf0dfacaf96245",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "8",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "20",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1580040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "8",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "20",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1580040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "22",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "34",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "4246920"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$4:$A$6",
+                "Data!$B$4:$B$6",
+                "Data!$C$1",
+                "Data!$A$4:$A$6",
+                "Data!$C$4:$C$6"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$4:$A$6",
+                "Data!$B$4:$B$6",
+                "Data!$C$1",
+                "Data!$A$4:$A$6",
+                "Data!$C$4:$C$6"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$4:$A$6",
+                "Data!$B$4:$B$6"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "5",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "6",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-rows-inside",
+          "operation": {
+            "axis": "row",
+            "action": "insert",
+            "index": 3,
+            "count": 2
+          },
+          "producerSha256": "0021e296a7c4a6e460875d24999f42fc855b4bde57ff572161ee8d011aec5cf6",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "8",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "20",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1580040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "8",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "20",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1580040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "22",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "34",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "4246920"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$6",
+                "Data!$B$2:$B$6",
+                "Data!$C$1",
+                "Data!$A$2:$A$6",
+                "Data!$C$2:$C$6"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$6",
+                "Data!$B$2:$B$6",
+                "Data!$C$1",
+                "Data!$A$2:$A$6",
+                "Data!$C$2:$C$6"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$6",
+                "Data!$B$2:$B$6"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "6",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-row-before",
+          "operation": {
+            "axis": "row",
+            "action": "delete",
+            "index": 0,
+            "count": 1
+          },
+          "producerSha256": "0fafcd0ce71c3cc169bd68f8624989cdee98525f7331e663e6b1324a5977feef",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "17",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "952560"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "17",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "952560"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "31",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3619440"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$1:$A$3",
+                "Data!$B$1:$B$3",
+                "Data!$C$1",
+                "Data!$A$1:$A$3",
+                "Data!$C$1:$C$3"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$1:$A$3",
+                "Data!$B$1:$B$3",
+                "Data!$C$1",
+                "Data!$A$1:$A$3",
+                "Data!$C$1:$C$3"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$1:$A$3",
+                "Data!$B$1:$B$3"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "1048576",
+                    "ht": "12.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-row-inside",
+          "operation": {
+            "axis": "row",
+            "action": "delete",
+            "index": 3,
+            "count": 1
+          },
+          "producerSha256": "5c015cd33380e2e96268f19c57bb378d2f9f3cdf46c211553f41b2c080d651ec",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "17",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1008360"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "0",
+                  "row": "5",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "9",
+                  "colOff": "91080",
+                  "row": "17",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "4648320",
+                      "y": "1008360"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "19",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "31",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3675240"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$3",
+                "Data!$B$2:$B$3",
+                "Data!$C$1",
+                "Data!$A$2:$A$3",
+                "Data!$C$2:$C$3"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$3",
+                "Data!$B$2:$B$3",
+                "Data!$C$1",
+                "Data!$A$2:$A$3",
+                "Data!$C$2:$C$3"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$3",
+                "Data!$B$2:$B$3"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "1048576",
+                    "ht": "12.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-cols-before",
+          "operation": {
+            "axis": "column",
+            "action": "insert",
+            "index": 1,
+            "count": 2
+          },
+          "producerSha256": "c9ff0dc93d5a65bb677acc06f4d797b3b7285d5aed04cee375f85d025ad827b1",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "7",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "11",
+                  "colOff": "90720",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "6507360",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "20",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3866040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$D$1",
+                "Data!$A$2:$A$4",
+                "Data!$D$2:$D$4",
+                "Data!$E$1",
+                "Data!$A$2:$A$4",
+                "Data!$E$2:$E$4"
+              ],
+              [
+                "Data!$D$1",
+                "Data!$A$2:$A$4",
+                "Data!$D$2:$D$4",
+                "Data!$E$1",
+                "Data!$A$2:$A$4",
+                "Data!$E$2:$E$4"
+              ],
+              [
+                "Data!$D$1",
+                "Data!$A$2:$A$4",
+                "Data!$D$2:$D$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-col-inside",
+          "operation": {
+            "axis": "column",
+            "action": "insert",
+            "index": 4,
+            "count": 1
+          },
+          "producerSha256": "5c18e31cf7694bfeeae599b943ca966d63a281176a060c3c33be6a4e6c2c528e",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "6",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "10",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "5577840",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "20",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3866040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-col-before",
+          "operation": {
+            "axis": "column",
+            "action": "delete",
+            "index": 0,
+            "count": 1
+          },
+          "producerSha256": "b015c5e27ecceb2cd506beb32f6126cb045d1cfe2856be340d5565136a799343",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "90720",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "3718440",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "20",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3866040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$A$1",
+                "Data!$A$2:$A$4",
+                "Data!$A$2:$A$4",
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Data!$A$1",
+                "Data!$A$2:$A$4",
+                "Data!$A$2:$A$4",
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ],
+              [
+                "Data!$A$1",
+                "Data!$A$2:$A$4",
+                "Data!$A$2:$A$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [
+                  {
+                    "collapsed": "false",
+                    "customWidth": "true",
+                    "hidden": "false",
+                    "outlineLevel": "0",
+                    "max": "16384",
+                    "min": "16384",
+                    "style": "0",
+                    "width": "10.49"
+                  }
+                ],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-col-inside",
+          "operation": {
+            "axis": "column",
+            "action": "delete",
+            "index": 4,
+            "count": 1
+          },
+          "producerSha256": "1fb8e75bbf318fdec1476193f0a8d9671f3585dd295833eba9be0a3040127f57",
+          "observed": {
+            "drawings": [
+              {
+                "name": "Chart 1",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 2",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "0",
+                  "row": "6",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "90720",
+                  "row": "18",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "3718440",
+                      "y": "1198800"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Chart 3",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "0",
+                  "colOff": "0",
+                  "row": "20",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "91080",
+                  "row": "32",
+                  "rowOff": "126720"
+                },
+                "frame": {
+                  "attributes": {},
+                  "geometry": {
+                    "off": {
+                      "x": "0",
+                      "y": "3866040"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "2412720"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4",
+                "Data!$C$1",
+                "Data!$A$2:$A$4",
+                "Data!$C$2:$C$4"
+              ],
+              [
+                "Data!$B$1",
+                "Data!$A$2:$A$4",
+                "Data!$B$2:$B$4"
+              ]
+            ],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [
+                  {
+                    "collapsed": "false",
+                    "customWidth": "true",
+                    "hidden": "false",
+                    "outlineLevel": "0",
+                    "max": "16384",
+                    "min": "16384",
+                    "style": "0",
+                    "width": "10.49"
+                  }
+                ],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "08-images-shapes",
+      "path": "examples/xlsx/08-images-shapes.xlsx",
+      "sha256": "a0fa81e6b17e4362b57a7d116c4f821b10ea5eb12e7ab64b07e0660dc7d2ad7a",
+      "original": {
+        "drawings": [
+          {
+            "name": "独立蓝色位图",
+            "kind": "oneCellAnchor",
+            "editAs": null,
+            "from": {
+              "col": "1",
+              "colOff": "0",
+              "row": "2",
+              "rowOff": "0"
+            },
+            "ext": {
+              "cx": "2032000",
+              "cy": "1524000"
+            },
+            "frame": {
+              "attributes": {
+                "rot": "900000"
+              },
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "1524000",
+                  "cy": "1143000"
+                }
+              }
+            }
+          },
+          {
+            "name": "Shape 2",
+            "kind": "twoCellAnchor",
+            "editAs": "twoCell",
+            "from": {
+              "col": "4",
+              "colOff": "0",
+              "row": "2",
+              "rowOff": "0"
+            },
+            "to": {
+              "col": "8",
+              "colOff": "0",
+              "row": "9",
+              "rowOff": "0"
+            },
+            "frame": {
+              "attributes": {
+                "rot": "600000",
+                "flipH": "0"
+              },
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "2286000",
+                  "cy": "1143000"
+                }
+              }
+            }
+          },
+          {
+            "name": "Shape 3",
+            "kind": "absoluteAnchor",
+            "editAs": null,
+            "pos": {
+              "x": "762000",
+              "y": "2857500"
+            },
+            "ext": {
+              "cx": "3810000",
+              "cy": "1143000"
+            },
+            "frame": {
+              "attributes": {
+                "rot": "600000",
+                "flipH": "0"
+              },
+              "geometry": {
+                "off": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "ext": {
+                  "cx": "2286000",
+                  "cy": "1143000"
+                }
+              }
+            }
+          }
+        ],
+        "notes": [],
+        "charts": [],
+        "comments": [],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": [
+          "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+        ]
+      },
+      "cases": [
+        {
+          "name": "resave",
+          "operation": null,
+          "producerSha256": "8d3ec5dfe24bd2f48ce7402b759785a28d2bc205a0e10025b41aff1f9ad0d449",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "0",
+                  "row": "0",
+                  "rowOff": "380520"
+                },
+                "to": {
+                  "col": "7",
+                  "colOff": "929520",
+                  "row": "7",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3718080",
+                      "y": "380520"
+                    },
+                    "ext": {
+                      "cx": "3718440",
+                      "cy": "1333440"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "insert-rows-before",
+          "operation": {
+            "axis": "row",
+            "action": "insert",
+            "index": 1,
+            "count": 2
+          },
+          "producerSha256": "53bfa1a5d87770f609615c3f97c0dbb51f58d34edb0d2f21cff263710a849a87",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "3",
+                  "colOff": "907560",
+                  "row": "1",
+                  "rowOff": "23400"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "21600",
+                  "row": "10",
+                  "rowOff": "73440"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "796800"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3609360",
+                      "y": "476280"
+                    },
+                    "ext": {
+                      "cx": "3762360",
+                      "cy": "1764360"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "insert-rows-inside",
+          "operation": {
+            "axis": "row",
+            "action": "insert",
+            "index": 3,
+            "count": 2
+          },
+          "producerSha256": "659c803110f5cf2bf1ca477895d6670b006bcaa79625f1cdec267db9d1806de2",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "3",
+                  "colOff": "907560",
+                  "row": "1",
+                  "rowOff": "23400"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "21600",
+                  "row": "10",
+                  "rowOff": "73440"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "796800"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3609360",
+                      "y": "476280"
+                    },
+                    "ext": {
+                      "cx": "3762360",
+                      "cy": "1764360"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "delete-row-before",
+          "operation": {
+            "axis": "row",
+            "action": "delete",
+            "index": 0,
+            "count": 1
+          },
+          "producerSha256": "d5f8ae2866c37539c522d900cffaaf8110002bb9f430c8d49e1b49ef1522de90",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "2",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "9",
+                  "rowOff": "189720"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "5040",
+                  "row": "1",
+                  "rowOff": "158040"
+                },
+                "to": {
+                  "col": "7",
+                  "colOff": "924120",
+                  "row": "8",
+                  "rowOff": "31680"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "542400"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3744360",
+                      "y": "351720"
+                    },
+                    "ext": {
+                      "cx": "3708000",
+                      "cy": "1207080"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "15",
+                  "rowOff": "-360"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "20",
+                  "rowOff": "190080"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1048576",
+                    "ht": "12.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "delete-row-inside",
+          "operation": {
+            "axis": "row",
+            "action": "delete",
+            "index": 3,
+            "count": 1
+          },
+          "producerSha256": "4547dd9026c6670e2969d612846e3b1823e870f141ef09077bb7aceb0249c4f4",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "3",
+                  "colOff": "926640",
+                  "row": "0",
+                  "rowOff": "396720"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "2160",
+                  "row": "7",
+                  "rowOff": "174240"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "627600"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3704760",
+                      "y": "394200"
+                    },
+                    "ext": {
+                      "cx": "3723840",
+                      "cy": "1394280"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "1048576",
+                    "ht": "12.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "insert-cols-before",
+          "operation": {
+            "axis": "column",
+            "action": "insert",
+            "index": 1,
+            "count": 2
+          },
+          "producerSha256": "fbac5a283648de5da2c384f24d1dc9095dbebc6d917711c886df16ae5e2e906e",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "5",
+                  "colOff": "920880",
+                  "row": "0",
+                  "rowOff": "429480"
+                },
+                "to": {
+                  "col": "10",
+                  "colOff": "8280",
+                  "row": "8",
+                  "rowOff": "141120"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "684600"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "5534640",
+                      "y": "422280"
+                    },
+                    "ext": {
+                      "cx": "3735360",
+                      "cy": "1518840"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "insert-col-inside",
+          "operation": {
+            "axis": "column",
+            "action": "insert",
+            "index": 4,
+            "count": 1
+          },
+          "producerSha256": "02a90ca5637fc690a10e12fbb78f7c980a1a1c50a95ad487b2e8d41f8e44e263",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "4",
+                  "colOff": "26280",
+                  "row": "0",
+                  "rowOff": "424080"
+                },
+                "to": {
+                  "col": "8",
+                  "colOff": "903240",
+                  "row": "8",
+                  "rowOff": "146160"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "555000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3764880",
+                      "y": "427320"
+                    },
+                    "ext": {
+                      "cx": "4595760",
+                      "cy": "1529280"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "delete-col-before",
+          "operation": {
+            "axis": "column",
+            "action": "delete",
+            "index": 0,
+            "count": 1
+          },
+          "producerSha256": "495692091dd1bfa2672f57e4b97241ed4081e7aee8a744e1404e761a1d769a1b",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "2",
+                  "rowOff": "0"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "9",
+                  "rowOff": "189720"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "3",
+                  "colOff": "0",
+                  "row": "2",
+                  "rowOff": "-360"
+                },
+                "to": {
+                  "col": "6",
+                  "colOff": "929160",
+                  "row": "8",
+                  "rowOff": "190080"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "2788560",
+                      "y": "380520"
+                    },
+                    "ext": {
+                      "cx": "3718080",
+                      "cy": "1333440"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "15",
+                  "rowOff": "-360"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "20",
+                  "rowOff": "190080"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [
+                  {
+                    "collapsed": "false",
+                    "customWidth": "true",
+                    "hidden": "false",
+                    "outlineLevel": "0",
+                    "max": "16384",
+                    "min": "16384",
+                    "style": "0",
+                    "width": "10.49"
+                  }
+                ],
+                "rows": []
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        },
+        {
+          "name": "delete-col-inside",
+          "operation": {
+            "axis": "column",
+            "action": "delete",
+            "index": 4,
+            "count": 1
+          },
+          "producerSha256": "8e3ac7ea30c65781715f6da94d37331b658075ae03a60d259235d6fdec23948a",
+          "observed": {
+            "drawings": [
+              {
+                "name": "独立蓝色位图",
+                "kind": "twoCellAnchor",
+                "editAs": "oneCell",
+                "from": {
+                  "col": "1",
+                  "colOff": "360",
+                  "row": "0",
+                  "rowOff": "380880"
+                },
+                "to": {
+                  "col": "3",
+                  "colOff": "172440",
+                  "row": "8",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "900000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "929520",
+                      "y": "380880"
+                    },
+                    "ext": {
+                      "cx": "2031480",
+                      "cy": "1523520"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 2",
+                "kind": "twoCellAnchor",
+                "editAs": "twoCell",
+                "from": {
+                  "col": "3",
+                  "colOff": "882000",
+                  "row": "0",
+                  "rowOff": "439920"
+                },
+                "to": {
+                  "col": "7",
+                  "colOff": "47160",
+                  "row": "8",
+                  "rowOff": "130320"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "891000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "3567240",
+                      "y": "412200"
+                    },
+                    "ext": {
+                      "cx": "2883600",
+                      "cy": "1497600"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Shape 3",
+                "kind": "twoCellAnchor",
+                "editAs": "absolute",
+                "from": {
+                  "col": "0",
+                  "colOff": "762120",
+                  "row": "13",
+                  "rowOff": "97560"
+                },
+                "to": {
+                  "col": "4",
+                  "colOff": "853200",
+                  "row": "19",
+                  "rowOff": "97200"
+                },
+                "frame": {
+                  "attributes": {
+                    "rot": "600000"
+                  },
+                  "geometry": {
+                    "off": {
+                      "x": "762120",
+                      "y": "2857320"
+                    },
+                    "ext": {
+                      "cx": "3809520",
+                      "cy": "1142640"
+                    }
+                  }
+                }
+              }
+            ],
+            "notes": [],
+            "charts": [],
+            "comments": [],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [
+                  {
+                    "collapsed": "false",
+                    "customWidth": "true",
+                    "hidden": "false",
+                    "outlineLevel": "0",
+                    "max": "16384",
+                    "min": "16384",
+                    "style": "0",
+                    "width": "10.49"
+                  }
+                ],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "37.3",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [
+              "fa5e323a7b01a6944abbb9766517d0482d23bfb78d7c511e9da70e9b7a19754d"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09-classic-notes",
+      "path": "examples/xlsx/09-classic-notes.xlsx",
+      "sha256": "4e916b0f4883d663e1058ddd622305059823ab54c9ffdb4a8d1edc08e26ba09d",
+      "original": {
+        "drawings": [],
+        "notes": [
+          {
+            "MoveWithCells": null,
+            "SizeWithCells": null,
+            "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+            "AutoFill": "False",
+            "Row": "1",
+            "Column": "1"
+          }
+        ],
+        "charts": [],
+        "comments": [
+          {
+            "cell": "B2",
+            "text": "请确认：预算😀禰󠄀"
+          }
+        ],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              },
+              {
+                "r": "2"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": []
+      },
+      "cases": [
+        {
+          "name": "resave",
+          "operation": null,
+          "producerSha256": "becdc130d6b07be219acc08edf8f09e3f6b4ac1d5e723e46a6dac7635b51001a",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-rows-before",
+          "operation": {
+            "axis": "row",
+            "action": "insert",
+            "index": 1,
+            "count": 2
+          },
+          "producerSha256": "9b40889a9c2f71222d4cdc9435d11b3b0137fa6b7a377247a0e0b457ff391c73",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 3, 2, 5, 20, 7, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "3",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B4",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-rows-inside",
+          "operation": {
+            "axis": "row",
+            "action": "insert",
+            "index": 3,
+            "count": 2
+          },
+          "producerSha256": "acf2f4f901832b67187f6643d9f093405113bfde8f23e010653f6f15e3c5b1c2",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-row-before",
+          "operation": {
+            "axis": "row",
+            "action": "delete",
+            "index": 0,
+            "count": 1
+          },
+          "producerSha256": "1363ba4655b3884159c2d8c64103b34da94ff70efa9a9ff8e8409519c72e690f",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 0, 2, 5, 20, 4, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "0",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B1",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "1048576",
+                    "ht": "12.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-row-inside",
+          "operation": {
+            "axis": "row",
+            "action": "delete",
+            "index": 3,
+            "count": 1
+          },
+          "producerSha256": "42945289580433b36f58197e38fab1057621d96536975baf07f92d8a33e19ba2",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "1048576",
+                    "ht": "12.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-cols-before",
+          "operation": {
+            "axis": "column",
+            "action": "insert",
+            "index": 1,
+            "count": 2
+          },
+          "producerSha256": "915e0598b0ec673fb7bc439055025db8ecbf42ffe9cdad4cafde6dcb806293f8",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "4, 10, 1, 2, 7, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "3"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "D2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "insert-col-inside",
+          "operation": {
+            "axis": "column",
+            "action": "insert",
+            "index": 4,
+            "count": 1
+          },
+          "producerSha256": "44c1a1ab7cc580a18dc9d3f5a96e73e1806b18bc0ce776da3dc86c42ee91c3ef",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-col-before",
+          "operation": {
+            "axis": "column",
+            "action": "delete",
+            "index": 0,
+            "count": 1
+          },
+          "producerSha256": "5d276c940f4d9147ba2994c91d72782e74288ec620680d9b97c6f77905651274",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "1, 10, 1, 2, 4, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "0"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "A2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [
+                  {
+                    "collapsed": "false",
+                    "customWidth": "true",
+                    "hidden": "false",
+                    "outlineLevel": "0",
+                    "max": "16384",
+                    "min": "16384",
+                    "style": "0",
+                    "width": "10.49"
+                  }
+                ],
+                "rows": [
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        },
+        {
+          "name": "delete-col-inside",
+          "operation": {
+            "axis": "column",
+            "action": "delete",
+            "index": 4,
+            "count": 1
+          },
+          "producerSha256": "a1113a031af9307ca06396851b813b7f65bedc75f31b61f484b009362b32fd06",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "1",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B2",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [
+                  {
+                    "collapsed": "false",
+                    "customWidth": "true",
+                    "hidden": "false",
+                    "outlineLevel": "0",
+                    "max": "16384",
+                    "min": "16384",
+                    "style": "0",
+                    "width": "10.49"
+                  }
+                ],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": []
+          }
+        }
+      ]
+    }
+  ]
+}

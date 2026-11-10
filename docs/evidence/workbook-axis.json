@@ -1,0 +1,267 @@
+{
+  "scope": "Independent ZIP/XML input, actual row/column edits in pinned Calc and native formula/range observations. Excel/WPS unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "04b17bbe21adaf8258e96f0e59c541542874a8e72d74a1238466b5ec98bf64bd",
+  "cases": [
+    {
+      "operation": {
+        "axis": "row",
+        "action": "insert",
+        "index": 1,
+        "count": 2
+      },
+      "observed": {
+        "sheets": [
+          {
+            "formulas": [
+              {
+                "address": "B1",
+                "formula": "SUM(A1:A6)",
+                "value": "100",
+                "type": "n"
+              },
+              {
+                "address": "B4",
+                "formula": "Observer!A1+$A$5",
+                "value": "31",
+                "type": "n"
+              }
+            ],
+            "merges": [
+              "D5:E6"
+            ],
+            "conditional": [
+              {
+                "ranges": "A1:A6",
+                "formulas": [
+                  "A1>0"
+                ]
+              }
+            ],
+            "validation": [
+              {
+                "ranges": "A1:A6",
+                "formula": "A1>0"
+              }
+            ]
+          },
+          {
+            "formulas": [
+              {
+                "address": "B1",
+                "formula": "Data!A5",
+                "value": "30",
+                "type": "n"
+              }
+            ],
+            "merges": [],
+            "conditional": [],
+            "validation": []
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$AG$262"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Observer!$A$1:$L$30"
+          }
+        ]
+      }
+    },
+    {
+      "operation": {
+        "axis": "row",
+        "action": "delete",
+        "index": 1,
+        "count": 2
+      },
+      "observed": {
+        "sheets": [
+          {
+            "formulas": [
+              {
+                "address": "B1",
+                "formula": "SUM(A1:A2)",
+                "value": "50",
+                "type": "n"
+              }
+            ],
+            "merges": [],
+            "conditional": [
+              {
+                "ranges": "A1:A2",
+                "formulas": [
+                  "A1>0"
+                ]
+              }
+            ],
+            "validation": [
+              {
+                "ranges": "A1:A2",
+                "formula": "A1>0"
+              }
+            ]
+          },
+          {
+            "formulas": [
+              {
+                "address": "B1",
+                "formula": "#REF!",
+                "value": "#REF!",
+                "type": "e"
+              }
+            ],
+            "merges": [],
+            "conditional": [],
+            "validation": []
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$AG$258"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Observer!$A$1:$L$30"
+          }
+        ]
+      }
+    },
+    {
+      "operation": {
+        "axis": "column",
+        "action": "insert",
+        "index": 1,
+        "count": 2
+      },
+      "observed": {
+        "sheets": [
+          {
+            "formulas": [
+              {
+                "address": "D1",
+                "formula": "SUM(A1:A4)",
+                "value": "100",
+                "type": "n"
+              },
+              {
+                "address": "D2",
+                "formula": "Observer!A1+$A$3",
+                "value": "31",
+                "type": "n"
+              }
+            ],
+            "merges": [
+              "F3:G4"
+            ],
+            "conditional": [
+              {
+                "ranges": "A1:C4",
+                "formulas": [
+                  "A1>0"
+                ]
+              }
+            ],
+            "validation": [
+              {
+                "ranges": "A1:C4",
+                "formula": "A1>0"
+              }
+            ]
+          },
+          {
+            "formulas": [
+              {
+                "address": "B1",
+                "formula": "Data!A3",
+                "value": "30",
+                "type": "n"
+              }
+            ],
+            "merges": [],
+            "conditional": [],
+            "validation": []
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$AI$260"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Observer!$A$1:$L$30"
+          }
+        ]
+      }
+    },
+    {
+      "operation": {
+        "axis": "column",
+        "action": "delete",
+        "index": 1,
+        "count": 1
+      },
+      "observed": {
+        "sheets": [
+          {
+            "formulas": [],
+            "merges": [
+              "C3:D4"
+            ],
+            "conditional": [
+              {
+                "ranges": "A1:A4",
+                "formulas": [
+                  "A1>0"
+                ]
+              }
+            ],
+            "validation": [
+              {
+                "ranges": "A1:A4",
+                "formula": "A1>0"
+              }
+            ]
+          },
+          {
+            "formulas": [
+              {
+                "address": "B1",
+                "formula": "Data!A3",
+                "value": "30",
+                "type": "n"
+              }
+            ],
+            "merges": [],
+            "conditional": [],
+            "validation": []
+          }
+        ],
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "0",
+            "expression": "Data!$A$1:$AF$260"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "scope": "1",
+            "expression": "Observer!$A$1:$L$30"
+          }
+        ]
+      }
+    }
+  ]
+}

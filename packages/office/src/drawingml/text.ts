@@ -63,6 +63,16 @@ export function runProperties(node: XmlNode | undefined): Css {
   return css;
 }
 
+function bodyRunProperties(node: XmlNode | undefined): Css {
+  const css = runProperties(node);
+  if (!node) return css;
+  // Explicit text-body runs override paragraph marks. Metadata font roles have
+  // their own default inheritance and retain ordinary HTML ancestor paint.
+  const reset = [value(node, "u") === "none" ? "underline" : "", value(node, "strike") === "noStrike" ? "line-through" : ""].filter(Boolean);
+  if (reset.length) css["--office-font-decoration-reset"] = reset.join(" ");
+  return css;
+}
+
 export function paragraphProperties(node: XmlNode | undefined, listDefaults = false): Css {
   const css: Css = {};
   if (!node) return css;
@@ -196,18 +206,18 @@ export function importText(context: DrawingTextContext, body: XmlNode, target: H
     if (child(pPr, "buNone", A)) p.attrs["data-office-list-none"] = "true";
     for (const sourceRun of elements(source, undefined, A)) {
       if (sourceRun.name === "pPr") continue;
-      if (sourceRun.name === "endParaRPr") { const c = context.id("paragraph-end"); context.rule(c, runProperties(sourceRun)); p.attrs["data-office-end-style"] = c; continue; }
+      if (sourceRun.name === "endParaRPr") { const c = context.id("paragraph-end"); context.rule(c, bodyRunProperties(sourceRun)); p.attrs["data-office-end-style"] = c; continue; }
       if (sourceRun.name === "br") {
         check(sourceRun, ["rPr"], A);
         const lineBreak = context.make("br"), properties = child(sourceRun, "rPr", A);
-        if (properties) { context.style(lineBreak, runProperties(properties)); context.hyperlink(child(properties, "hlinkClick", A), lineBreak, part); }
+        if (properties) { context.style(lineBreak, bodyRunProperties(properties)); context.hyperlink(child(properties, "hlinkClick", A), lineBreak, part); }
         p.children.push(lineBreak); nativeText += "\v"; continue;
       }
       const field = sourceRun.name === "fld";
       check(sourceRun, field ? ["rPr", "pPr", "t"] : ["rPr", "t"], A);
       const run = context.make("span");
       const rPr = child(sourceRun, "rPr", A);
-      context.style(run, runProperties(rPr));
+      context.style(run, bodyRunProperties(rPr));
       const language = rPr && value(rPr, "lang");
       if (language) run.attrs.lang = language;
       if (field) {

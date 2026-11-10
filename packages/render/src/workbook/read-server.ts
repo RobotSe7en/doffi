@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { WorkbookModel, WorkbookRuleReadRequest, WorkbookSnapshot } from "@doffi/core";
+import type { WorkbookCalculationResult, WorkbookModel, WorkbookRuleReadRequest, WorkbookSnapshot } from "@doffi/core";
 import { modelRuleSource } from "./rule-source.js";
 import { modelAssetSource } from "./assets.js";
 import type { WorkbookAssetRequest } from "./assets.js";
@@ -10,21 +10,21 @@ import type { WorkbookWindowRequest } from "./window-source.js";
 import { isRecord, keys, requestId, transportConfig, transportError, transportReadRequest, transportSnapshot, WORKBOOK_READ_PROTOCOL } from "./read-transport.js";
 import type { WorkbookReadTransportOptions } from "./read-transport.js";
 
-export interface WorkbookReadServer { dispose(): void }
+export interface WorkbookReadServer { readonly disposed: boolean; dispose(): void }
 /** Bind one exclusive host-authorized port to one immutable model. Importing,
  * switching models, owning/terminating Workers and permissions stay with the
  * host. Document IDs in requests can never select another server-side model. */
-export function serveWorkbookReads(port: MessagePort, model: WorkbookModel, options: WorkbookReadTransportOptions = {}): WorkbookReadServer {
+export function serveWorkbookReads(port: MessagePort, model: WorkbookModel, options: WorkbookReadTransportOptions = {}, calculation?: WorkbookCalculationResult): WorkbookReadServer {
   if (model.kind !== "workbook") throw new DocumentError("UnsupportedFormat", "Workbook read servers require a workbook model.");
   const config = transportConfig(options);
   let snapshot: WorkbookSnapshot | undefined = transportSnapshot(model.snapshot(), config);
   let providers: { cells: ReturnType<typeof modelWindowSource>; assets: ReturnType<typeof modelAssetSource>; charts: ReturnType<typeof modelChartSource>; rules: ReturnType<typeof modelRuleSource> } | undefined
-    = { cells: modelWindowSource(model), assets: modelAssetSource(model), charts: modelChartSource(model), rules: modelRuleSource(model) };
+    = { cells: modelWindowSource(model), assets: modelAssetSource(model), charts: modelChartSource(model, calculation), rules: modelRuleSource(model, calculation) };
   let disposed = false, highestId = 0, snapshotSent = false;
   const pending = new Map<number, AbortController>();
-  const post = (id: number, ok: boolean, value: unknown, transfer: Transferable[] = []): void => {
+  const post = (id: number, ok: boolean, value: unknown, transfer: Transferable[] = [], currentValues?: boolean): void => {
     if (disposed) return;
-    try { port.postMessage({ protocol: WORKBOOK_READ_PROTOCOL, id, ok, ...(ok ? { value } : { error: transportError(value).toJSON() }) }, transfer); }
+    try { port.postMessage({ protocol: WORKBOOK_READ_PROTOCOL, id, ok, ...(ok ? { value } : { error: transportError(value).toJSON() }), ...(currentValues === undefined ? {} : { currentValues }) }, transfer); }
     catch { dispose(); }
   };
   const receive = (event: MessageEvent<unknown>): void => {
@@ -40,7 +40,7 @@ export function serveWorkbookReads(port: MessagePort, model: WorkbookModel, opti
     if (operation === "snapshot") {
       if (Object.hasOwn(message, "payload")) post(id, false, new DocumentError("InvalidOperation", "Workbook snapshot requests have no payload."));
       else if (snapshotSent) post(id, false, new DocumentError("InvalidOperation", "This connection already received its immutable snapshot."));
-      else { snapshotSent = true; post(id, true, snapshot); }
+      else { snapshotSent = true; post(id, true, snapshot, [], providers?.rules.currentValues); }
       return;
     }
     const owned = providers; if (!owned) return;
@@ -73,5 +73,5 @@ export function serveWorkbookReads(port: MessagePort, model: WorkbookModel, opti
     port.removeEventListener("message", receive); port.removeEventListener("messageerror", invalidMessage); port.close();
   }
   port.addEventListener("message", receive); port.addEventListener("messageerror", invalidMessage); port.start();
-  return Object.freeze({ dispose });
+  return Object.freeze({ get disposed() { return disposed; }, dispose });
 }

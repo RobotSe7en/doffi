@@ -1,5 +1,6 @@
+import { openContentFixture as openDocument } from "../../content-fixture.js";
 import { readFileSync } from "node:fs";
-import { createDocumentSession, openDocument } from "@doffi/core";
+import { createDocumentSession } from "@doffi/core";
 import type { DocumentPackage, PageSetup } from "@doffi/core";
 import { importDocx } from "@doffi/office";
 

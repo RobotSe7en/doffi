@@ -1,0 +1,54 @@
+import type { WorkbookManifest } from "../contracts/document.js";
+import type { DocumentReadLimits } from "../runtime.js";
+import type { WorkbookMetadata } from "../contracts/workbook.js";
+import { DocumentEdit } from "../document/edit.js";
+import { parseHtml } from "../document/html.js";
+import type { HtmlSourceDescriptor } from "../document/html.js";
+import { decodeText, encode, resolveReference } from "../document/package.js";
+import type { SourceStyleNode } from "../document/source-css.js";
+import { escapeWorkbookText } from "./workbook-cells.js";
+
+/** Lazily opens only the bounded rich-content part, never the cell grid. */
+export class WorkbookContentEdit {
+  private editor?: DocumentEdit;
+  constructor(private readonly manifest: WorkbookManifest, private readonly files: Map<string, Uint8Array>,
+    private readonly limits: DocumentReadLimits, private readonly allocate: () => string, private readonly workbook: WorkbookMetadata) {}
+  private descriptor(): HtmlSourceDescriptor {
+    return { kind: "workbook-content", entrypoint: this.manifest.content!, styles: this.manifest.styles, assets: this.manifest.assets };
+  }
+  edit(): DocumentEdit {
+    if (this.editor) return this.editor;
+    if (!this.manifest.content) {
+      // A root-level path keeps stylesheet/resource resolution independent of
+      // the input package's nested paths. It is still an opaque package path.
+      let path: string; do { path = "workbook-" + this.allocate() + ".html"; } while (this.files.has(path));
+      this.manifest.content = path;
+      this.files.set(path, encode('<!doctype html><html><head><meta charset="utf-8">' + this.manifest.styles.map(path => '<link rel="stylesheet" href="' + escapeWorkbookText(path.split("/").map(encodeURIComponent).join("/")) + '">').join("")
+        + '</head><body><article data-node-id="' + this.allocate() + '" data-office-kind="workbook-content"></article></body></html>'));
+    }
+    const descriptor = this.descriptor(), source = decodeText(this.files.get(descriptor.entrypoint)!);
+    const html = parseHtml(source, descriptor, this.files, this.limits, { nodes: 0 });
+    return this.editor = new DocumentEdit({ files: this.files, snapshot: { html: html.html, manifest: descriptor, metadata: { workbook: this.workbook } }, html }, this.limits, this.allocate);
+  }
+  parse() { return parseHtml(this.edit().html(), this.descriptor(), this.files, this.limits, { nodes: 0 }); }
+  styleNode(nodeId: string): SourceStyleNode {
+    const source = this.parse(), shell = this.edit().shellAncestors();
+    let parent: SourceStyleNode | undefined;
+    for (const ancestor of [...shell].reverse()) parent = { tag: ancestor.tagName, attrs: ancestor.attributes, parent };
+    const chain = []; let id: string | null = nodeId;
+    while (id !== null) { const node = source.peekNode(id); if (!node) throw new Error("Missing workbook rich source identity."); chain.push(node); id = node.parentNodeId; }
+    for (const node of chain.reverse()) parent = { tag: node.tagName, attrs: node.attributes, parent };
+    return parent!;
+  }
+  root(): string { const html = this.parse(); return html.nodeIds().find(id => html.peekNode(id)?.parentNodeId === null)!; }
+  relative(path: string): string {
+    this.edit();
+    const directory = this.manifest.content!.split("/").slice(0, -1), target = path.split("/");
+    while (directory.length && directory[0] === target[0]) { directory.shift(); target.shift(); }
+    const relative = [...directory.map(() => ".."), ...target.map(encodeURIComponent)].join("/");
+    if (resolveReference(relative, this.manifest.content!) !== path) throw new Error("Invalid workbook resource path.");
+    return relative;
+  }
+  project(files: Map<string, Uint8Array>): void { if (this.editor) files.set(this.manifest.content!, encode(this.editor.html())); }
+  flush(): void { this.project(this.files); }
+}

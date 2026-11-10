@@ -163,13 +163,19 @@ export class PresentationExportStyles {
         };
         return visit(projected);
     }
-    probeClass(names: string | undefined, node: SourceElement, surface: PresentationStyleSurface): {
+    probeClass(names: string | readonly string[] | undefined, node: SourceElement, surface: PresentationStyleSurface): {
         css: Css;
         raw: Css;
         own: Css;
     } {
-        const probe = this.probe("span", { class: names ?? "" }, this.ensure(node, surface)), own = this.css.specified(probe);
-        return { css: this.css.get(probe), own, raw: { ...this.raw(node, surface), ...own } };
+        const layers = typeof names === "string" ? [names] : names?.length ? names : [""];
+        let probe = this.ensure(node, surface), raw = this.raw(node, surface), own: Css = {};
+        for (const name of layers) {
+            probe = this.probe("span", { class: name }, probe);
+            if (Array.isArray(names)) this.css.withFallback(probe, {}, { "text-decoration-line": "inherit", "text-decoration-style": "inherit", "text-decoration-color": "inherit" }, {}, { combineDecorations: false });
+            own = this.css.specified(probe); raw = { ...raw, ...own };
+        }
+        return { css: this.css.get(probe), own, raw };
     }
     theme(themeId: string): Css { return this.css.classStyle(this.p.themes.find(theme => theme.themeId === themeId)!.cssClass, this.css.get(this.tree.root)); }
     themeOwn(themeId: string): Css { return this.css.specifiedClass(this.p.themes.find(theme => theme.themeId === themeId)!.cssClass); }

@@ -5,7 +5,35 @@ import type { FormulaExpression } from "../src/workbook/formula.js";
 
 const place = (row = 0, column = 5, sheet = "Data"): FormulaLocation => ({ row, column, sheet });
 const area = (first: number, last: number, column = 0) => ({ from: { row: first, column }, to: { row: last, column } });
+it("whole-sheet copies rewrite only mapped sheet, name and table identities while preserving external references and literal strings", () => {
+  const from = place(4, 2), to = { ...from, sheet: "Copied" }, change = { kind: "copySheet", from: "Data", to: "Copied" } as const;
+  const expression = '=Data!$A1+Other!A$1+[0]!Cloned+[0]!Fixed+SUM(Sales[Amount])+"Data!A1"';
+  const bindings = { copiedNames: new Map([["clone-id", "NewLocal"]]), copiedTables: new Map([["SALES", "Sales_2"]]), resolveName: (name: string) => name === "Cloned" ? "clone-id" : "fixed-id" };
+  expect(parseFormula(rewriteFormula(expression, from, to, change, bindings), to)).toEqual(parseFormula('=Copied!$A1+Other!A$1+Copied!NewLocal+[0]!Fixed+SUM(Sales_2[Amount])+"Data!A1"', to));
+  expect(() => rewriteFormula(expression, from, { ...to, row: 5 }, change, bindings)).toThrow(); expect(bindings.copiedNames.get("clone-id")).toBe("NewLocal");
+  const external = place(4, 2, "Outside");
+  expect(parseFormula(rewriteFormula('=Data!A1+A1+Cloned+SUM(Sales[Amount])', external, external, change, bindings), external)).toEqual(parseFormula('=Copied!A1+A1+Copied!NewLocal+SUM(Sales_2[Amount])', external));
+  expect(() => rewriteFormula(expression, external, to, change, bindings)).toThrow();
+});
+it("bang names retain local-only identity when native tables are renamed or converted", () => {
+  const bindings = { isTableName: () => true };
+  expect(rewriteFormula("=SUM(!Sales)", place(), place(), { kind: "renameTable", from: "Sales", to: "Renamed" }, bindings)).toBe("=SUM(!Sales)");
+  expect(rewriteFormula("=SUM(!Sales)", place(), place(), { kind: "convertTable", table: "Sales" }, bindings)).toBe("=SUM(!Sales)");
+});
+it("empty table recipes preserve relative axis offsets while absolute cells, ranges and axes still follow deleted source", () => {
+  const operation = { kind: "axis", sheet: "Data", axis: "row", action: "delete", index: 1, count: 3 } as const, origin = place(1);
+  const map = (source: string) => parseFormula(rewriteFormula(source, origin, origin, operation, { preserveRelativeAxis: true }), origin);
+  expect(map("=A2+$B$2+A$1+Other!A2")).toEqual(parseFormula("=A2+#REF!+A$1+Other!A2", origin));
+  expect(map("=SUM(1:3,$1:$3,$1:3,$2:3,A:A)")).toEqual(parseFormula("=SUM(1:3,$1:$1,$1:3,#REF!,A:A)", origin));
+  expect(() => rewriteFormula("=A1", origin, origin, { kind: "renameSheet", from: "Data", to: "Other" }, { preserveRelativeAxis: true })).toThrow();
+});
 describe("formula reference mapping", () => {
+  it("moving a bare table reference retains its global binding and escapes a destination name shadow", () => {
+    const operation = { kind: "move", sheet: "Data", range: area(0, 0), target: place(3, 4, "Other") } as const;
+    const bindings = { resolveName: () => undefined, isTableName: () => true };
+    expect(rewriteFormula("=SUM(Sales)", place(), place(3, 4, "Other"), operation, bindings)).toBe("=SUM(Sales)");
+    expect(rewriteFormula("=SUM(Sales)", place(), place(3, 4, "Other"), operation, { ...bindings, isTableName: (_name, sheet) => sheet === "Data" })).toBe("=SUM([0]!Sales)");
+  });
   it("copies relative references and whole axes while preserving constants and absolute references", () => {
     expect(copyFormula('=A1+$B1+C$2+$D$4+SUM(A:C,1:$5)+"A1"', place(), place(2, 7))).toBe('=(((((C3+$B3)+E$2)+$D$4)+SUM(C:E,3:$5))+"A1")');
     expect(copyFormula("=A1:B2", place(2), place())).toBe("=#REF!:#REF!");
@@ -29,12 +57,12 @@ describe("formula reference mapping", () => {
   });
   it("follows a partially cut range with exact bounded fragments, never its bounding box", () => {
     const operation = { kind: "move", sheet: "Data", range: area(2, 2), target: place(2, 2) } as const;
-    expect(rewriteFormula("=SUM(A1:A5)", place(), place(), operation)).toBe("=SUM(((A1:A2,A4:A5),C3))");
+    expect(rewriteFormula("=SUM(A1:A5)", place(), place(), operation)).toBe("=SUM(((A1:A2,C3),A4:A5))");
     const large = rewriteFormula("=SUM(A:A)", place(), place(), operation);
-    expect(large).toBe("=SUM((('Data'!A$1:A$2,'Data'!A$4:A$1048576),'Data'!C$3))");
+    expect(large).toBe("=SUM((('Data'!A$1:A$2,'Data'!C$3),'Data'!A$4:A$1048576))");
     expect(large.length).toBeLessThan(100);
     const overlapping = { ...operation, range: area(0, 2), target: place(1, 0) };
-    expect(rewriteFormula("=SUM(A1:A5)", place(), place(), overlapping)).toBe("=SUM((A4:A5,A2:A3))");
+    expect(rewriteFormula("=SUM(A1:A5)", place(), place(), overlapping)).toBe("=SUM((A2:A3,A4:A5))");
   });
   it("keeps outside sort formulas at their addresses and copies inside relative references with their records", () => {
     const operation = { kind: "sort", sheet: "Data", range: { from: { row: 1, column: 0 }, to: { row: 7, column: 2 } } } as const;

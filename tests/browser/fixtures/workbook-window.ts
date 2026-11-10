@@ -24,7 +24,8 @@ export async function windowLayoutMeasurement(entries: TestPackage, views: reado
   const container = document.createElement('div'); container.style.cssText = 'position:relative;width:1000px;height:800px'; document.body.append(container);
   const surface = await createWorkbookSurface(container, snapshot, { widthPt: 750, heightPt: 600 });
   const loader = new WorkbookWindowLoader(modelWindowSource(model), {}, true, maximumWorkbookSkew(surface.document)), results = [];
-  const cache = cacheEnabled ? new WorkbookCellTextCache(5000, 50_000, 8 * 1024 * 1024) : undefined, cacheSafety = [];
+  let cache = cacheEnabled ? new WorkbookCellTextCache(5000, 50_000, 8 * 1024 * 1024, surface.fontProbes) : undefined;
+  const cacheSafety = [];
   try {
     for (const { sheetId, viewport, maxCellFragments } of views) {
       const normal = measureWorkbookColumnFont(surface.source, snapshot.metadata.workbook, sheetId);
@@ -78,6 +79,17 @@ export async function windowLayoutMeasurement(entries: TestPackage, views: reado
         retainedMeasurements: surface.view.querySelectorAll('[data-office-view$="measurement"]').length,
       });
       if (cache) {
+        // Release the previous controller while its independently owned cache
+        // fork still renders exact text/projection clones on the same surface.
+        const previous = cache; cache = previous.fork(); previous.clear();
+        const reused = layoutWorkbookWindow(surface, snapshot, loader.frame!, dimensions, formatter, { normalSpaceWidthPx: normal.spaceWidthPx }, rules, cache);
+        const forkRetainsText = reused.cells.every((cell, index) => {
+          const before = rendered.cells[index]?.text, next = cell.text;
+          return !before && !next || before !== undefined && next !== undefined && before.element !== next.element
+            && before.text.element.textContent === next.text.element.textContent
+            && JSON.stringify(before.text.projections.map(part => [part.from, part.to, part.node.data])) === JSON.stringify(next.text.projections.map(part => [part.from, part.to, part.node.data]))
+            && next.text.projections.every(part => next.element.contains(part.node));
+        });
         const frame = loader.frame!, point = frame.sourceCoordinates.find(point => { const cell = frame.getCell(point.row, point.column); return cell?.value.type === 'text' && !cell.formula; })!, source = frame.getCell(point.row, point.column)!;
         const changed = { ...source, text: '新的😀禰󠄀', value: { type: 'text' as const, value: '新的😀禰󠄀' }, html: source.html.replace(/>[\s\S]*<\/td>$/, '>新的😀禰󠄀</td>') };
         const replacement = (cell: typeof source) => ({ ...frame, getCell: (row: number, column: number) => row === point.row && column === point.column ? cell : frame.getCell(row, column) });
@@ -89,7 +101,7 @@ export async function windowLayoutMeasurement(entries: TestPackage, views: reado
           ? { ...numeric, html: numeric.html.replace('<td', '<td onclick="window.workbookInjected=true"') } : frame.getCell(row, column) }, dimensions, formatter, { normalSpaceWidthPx: normal.spaceWidthPx }, rules, cache); }
         catch (error) { rejectedNumeric = (error as { code: string }).code; }
         const next = layoutWorkbookWindow(surface, snapshot, replacement(changed), dimensions, formatter, { normalSpaceWidthPx: normal.spaceWidthPx }, rules, cache);
-        cacheSafety.push({ rejected, rejectedNumeric, retained: surface.view.firstChild === rendered.element,
+        cacheSafety.push({ rejected, rejectedNumeric, forkRetainsText, retained: surface.view.firstChild === rendered.element,
           changedText: next.cells.find(cell => cell.projection.row === point.row && cell.projection.column === point.column)!.text!.text.element.textContent,
           offsets: next.cells.find(cell => cell.projection.row === point.row && cell.projection.column === point.column)!.text!.text.projections.map(part => [part.from, part.to, part.node.data]),
           leaked: surface.source.querySelectorAll('[data-office-view="workbook-source-measurement"]').length });

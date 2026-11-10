@@ -5,6 +5,9 @@ import { PreviewSource } from "../source-index.js";
 import { hideFromViewSelection, markViewNode, measureViewContent, ownViewAttribute, ownViewStyle } from "../view-nodes.js";
 import { numeric, property, resolvedColor, svgFill } from "./appearance.js";
 import { renderChart } from "./chart.js";
+import type { BasicChartScene } from "../chart.js";
+import { prepareChartTextDecorations } from "../chart-text-decoration.js";
+import { prepareChartLabelFrames } from "../chart-label-frame.js";
 import { PresentationInheritance } from "./inheritance.js";
 import { svgElement } from "./svg.js";
 import { decorateLists, textTransform } from "./text.js";
@@ -22,6 +25,7 @@ const frameCss = `html{background:#eceef1}body{margin:0;padding:24px;font-family
 export interface PresentationCanvas {
   readonly source: PreviewSource;
   readonly fields: readonly LayoutFieldResult[];
+  finalizeCharts(): void;
   measure(): Pick<DocumentRenderReport, "pages" | "nodePages" | "diagnostics">;
 }
 /** Fixed slide composition. Every injected object is a reversible view node. */
@@ -40,6 +44,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   const inheritance = new PresentationInheritance(document, snapshot.styles.map(s => s.css).join("\n"), limits.maxNodes);
   const fields: LayoutFieldResult[] = [], diagnostics: LayoutDiagnostic[] = [], textBoxes: { node: HTMLElement; content: HTMLElement; fit: string; scale: number; lineReduction: number; fonts: readonly { node: HTMLElement; size: number; line: number }[]; resize(width: number, height: number): void; width: number; height: number }[] = [];
   const connectors: { node: HTMLElement; definition: DeepReadonly<Extract<PresentationObject, { kind: "connector" }>> }[] = [];
+  const chartScenes: { scene: BasicChartScene; geometry: PresentationGeometry }[] = [];
   const surfaceLayout=metadata.layouts.find(l=>l.rootNodeId===surfaceId),surfaceMaster=metadata.masters.find(m=>m.rootNodeId===surfaceId),surfaceNotesMaster=metadata.notesMasters.find(m=>m.rootNodeId===surfaceId);
   if(surfaceId&&!surfaceLayout&&!surfaceMaster&&!surfaceNotesMaster)throw new DocumentError("InvalidOperation","The requested presentation definition surface is missing.");
   const slideNodes = [...root.children].filter((node): node is HTMLElement => node instanceof document.defaultView!.HTMLElement && node.dataset.officeKind === "slide");
@@ -147,7 +152,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       }
     } else if (definition.kind === "chart") {
       const chart = metadata.charts.find(c => c.chartId === definition.chartId)!, data = metadata.dataSets.find(d => d.dataSetId === chart.dataSetId)!;
-      renderChart(node, chart, data, g.width, g.height, id, account, { rotationDegrees: g.rotation, flipH: g.flipH, flipV: g.flipV });
+      chartScenes.push({ scene: renderChart(node, chart, data, g.width, g.height, id, account, { rotationDegrees: g.rotation, flipH: g.flipH, flipV: g.flipV }), geometry: g });
     }
     for (const field of node.querySelectorAll<HTMLElement>('[data-office-field="slidenum"]')) {
       if (field.querySelector(".sdk-field-display")) continue;
@@ -269,7 +274,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   }
   decorateLists(root, account);
   source.reindex(); account(0);
-  return { source, fields, measure() {
+  return { source, fields, finalizeCharts() { for (const { scene, geometry } of chartScenes) { prepareChartTextDecorations(scene, account); prepareChartLabelFrames(scene, account, { rotationDegrees: geometry.rotation, flipH: geometry.flipH, flipV: geometry.flipV }); } chartScenes.length = 0; }, measure() {
     for (const box of textBoxes) {
       const apply = (scale: number): void => { for (const { node, size, line } of box.fonts) styleView(node, { "font-size": size * scale + "px", ...(Number.isFinite(line) ? { "line-height": line * scale * (1 - box.lineReduction) + "px" } : {}) }); };
       if (box.fit === "normal") {

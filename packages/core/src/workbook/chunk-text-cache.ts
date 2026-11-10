@@ -8,6 +8,7 @@ export class WorkbookChunkTextCache {
   constructor(private readonly maxEntries = 4, private readonly maxUnits = 8 * 1024 * 1024) {}
   get retainedCodeUnits(): number { return this.units; }
   get retainedChunks(): number { return this.entries.size; }
+  clear(): void { this.entries.clear(); this.units = 0; }
   read(bytes: Uint8Array): string {
     const known = this.entries.get(bytes);
     if (known !== undefined) { this.entries.delete(bytes); this.entries.set(bytes, known); return known; }

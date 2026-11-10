@@ -17,6 +17,8 @@ export interface ChunkPosition { readonly sheetId: string; readonly row: number;
 export interface ChunkWindow { readonly row: number; readonly column: number; readonly rows: number; readonly columns: number }
 export interface IndexedCellSource { readonly row: number; readonly column: number; readonly html: string }
 export interface ChunkValidation {
+  /** Internal callers already own detached immutable bytes. */
+  readonly takeOwnership?: boolean;
   readonly textCache?: WorkbookChunkTextCache;
   readonly formulas?: FormulaTemplatePool;
   readonly cssClasses?: ReadonlySet<string>;
@@ -31,8 +33,13 @@ export interface ChunkIndex {
   readonly formulaCount: number;
   readonly sourceBytes: number;
   readonly indexBytes: number;
+  readonly formulaTemplates: readonly FormulaExpression[];
+  formulaLocations(): Iterable<{ readonly row: number; readonly column: number; readonly expression: FormulaExpression }>;
   /** Window coordinates are absolute, zero based. Returned HTML is source data. */
   readWindow(window: ChunkWindow): readonly IndexedCellSource[];
+  getCell(row: number, column: number): IndexedCellSource | undefined;
+  /** Derived text only; immutable bytes and validated offsets stay owned. */
+  releaseText(): void;
   getFormula(row: number, column: number): FormulaExpression | undefined;
   /** Always returns a copy. Immutable source can be shared by revisions internally. */
   serialize(): Uint8Array;
@@ -88,6 +95,9 @@ function textContent(node: Node, classes?: ReadonlySet<string>): string {
 }
 function validateCell(cell: Element, validation?: ChunkValidation): { column: number; formula?: string } {
   const attrs = attributes(cell, cellAttributes);
+  return validateCellValue(attrs, textContent(cell, validation?.cssClasses), validation);
+}
+function validateCellValue(attrs: Record<string, string>, text: string, validation?: ChunkValidation): { column: number; formula?: string } {
   const column = integer(attrs["data-column"]), type = attrs["data-value-type"], value = attrs["data-value"];
   validateClass(attrs["class"], validation?.cssClasses);
   if (validation?.cellStyleClasses?.size && attrs["class"] !== undefined) {
@@ -95,7 +105,6 @@ function validateCell(cell: Element, validation?: ChunkValidation): { column: nu
     if (bindings.size > 1) invalid("A workbook cell cannot select competing named style bindings.");
   }
   if (attrs["data-format-id"] !== undefined && validation?.numberFormats && !validation.numberFormats.has(attrs["data-format-id"])) invalid("A workbook number format is not defined.");
-  const text = textContent(cell, validation?.cssClasses);
   checkLimit(text.length, 32_767);
   if (type === "number") { if (value === undefined || !numeric.test(value) || !Number.isFinite(Number(value))) invalid("Invalid workbook number."); }
   else if (type === "boolean") { if (value !== "true" && value !== "false") invalid("Invalid workbook boolean."); }
@@ -120,8 +129,10 @@ export function indexWorkbookChunk(input: Uint8Array, position: ChunkPosition, m
   if (!position.sheetId || !Number.isInteger(position.row) || !Number.isInteger(position.column)
     || position.row < 0 || position.row >= MAX_SHEET_ROWS || position.row % CHUNK_ROWS
     || position.column < 0 || position.column >= MAX_SHEET_COLUMNS || position.column % CHUNK_COLUMNS) invalid("Invalid workbook chunk position.");
-  const bytes = new Uint8Array(input), location = Object.freeze({ ...position });
+  const bytes = validation?.takeOwnership ? input : new Uint8Array(input), location = Object.freeze({ ...position });
   const source = decodeText(bytes);
+  const plain = indexPlainChunk(source, bytes, location, validation);
+  if (plain) return plain;
   const tree = parseHtmlTree(source, { maxFiles: 1, maxPackageBytes: maxBytes, maxFileBytes: maxBytes, maxNodes: validation?.maxNodes ?? 100_000, maxDepth: Math.min(16, validation?.maxDepth ?? 16), maxCssNodes: 1 }, tags);
   const [html] = only(tree, ["html"]), [head, body] = only(html!, ["head", "body"]);
   attributes(html!, []); attributes(head!, []); attributes(body!, []); only(head!, []);
@@ -159,6 +170,52 @@ export function indexWorkbookChunk(input: Uint8Array, position: ChunkPosition, m
   return createIndex(bytes, location, coords, starts, stops, formulaCount, Uint16Array.from(formulaCoordinates), Uint32Array.from(templateIds), formulas, validation?.textCache);
 }
 
+/** An exact inert grammar for canonical plain cells. Everything outside it
+ * uses the HTML parser, including entities, rich text and unusual Unicode.
+ * Both paths share value/binding validation and the same node/depth budgets. */
+function indexPlainChunk(source: string, bytes: Uint8Array, position: ChunkPosition, validation?: ChunkValidation): ChunkIndex | undefined {
+  if (/[&\r\u0000-\u0008\u000b\u000e-\u001f\u007f-\u009f\ud800-\udfff\ufdd0-\ufdef\ufffe\uffff]/.test(source)) return undefined;
+  const prefix = '<!doctype html><html><head></head><body><table data-sheet-id="' + position.sheetId + '" data-row="' + position.row + '" data-column="' + position.column + '"><tbody>';
+  const suffix = '</tbody></table></body></html>';
+  if (/["<>]/.test(position.sheetId) || !source.startsWith(prefix) || !source.endsWith(suffix)) return undefined;
+  const coordinates: number[] = [], starts: number[] = [], stops: number[] = [], formulas: { coordinate: number; expression: string; row: number; column: number }[] = [];
+  const rowPattern = /<tr data-row="(0|[1-9]\d*)">/y, end = source.length - suffix.length;
+  let cursor = prefix.length, previousRow = -1, nodes = 7;
+  const maxDepth = Math.min(16, validation?.maxDepth ?? 16), maxNodes = validation?.maxNodes ?? 100_000;
+  checkLimit(nodes, maxNodes); checkLimit(4, maxDepth);
+  while (cursor < end) {
+    rowPattern.lastIndex = cursor; const rowTag = rowPattern.exec(source);
+    if (!rowTag) return undefined;
+    const row = integer(rowTag[1]);
+    if (row <= previousRow || row < position.row || row >= position.row + CHUNK_ROWS) invalid("Workbook rows must be ordered within their chunk.");
+    previousRow = row; cursor = rowPattern.lastIndex; let previousColumn = -1;
+    checkLimit(++nodes, maxNodes); checkLimit(5, maxDepth);
+    while (!source.startsWith('</tr>', cursor)) {
+      if (cursor >= end || !source.startsWith('<td', cursor)) return undefined;
+      const close = source.indexOf('</td>', cursor); if (close < 0 || close >= end) return undefined;
+      const stop = close + 5, cell = plainCell(source.slice(cursor, stop)); if (!cell) return undefined;
+      const { column, formula } = validateCellValue(cell.attrs, cell.text, validation);
+      if (column <= previousColumn || column < position.column || column >= position.column + CHUNK_COLUMNS) invalid("Workbook cells must be ordered within their chunk.");
+      previousColumn = column;
+      const coordinate = (row - position.row) * CHUNK_COLUMNS + column - position.column;
+      coordinates.push(coordinate); starts.push(cursor); stops.push(stop);
+      nodes += 1 + (cell.text.length ? 1 : 0); checkLimit(nodes, maxNodes); checkLimit(cell.text.length ? 7 : 6, maxDepth);
+      if (formula !== undefined) formulas.push({ coordinate, expression: formula, row, column });
+      cursor = stop;
+    }
+    cursor += 5;
+  }
+  if (cursor !== end) return undefined;
+  // Only intern after the complete grammar matches, so a fallback does not
+  // consume the caller's shared formula-template budget twice.
+  const formulaCoordinates: number[] = [], templateIds: number[] = [];
+  if (validation?.formulas) for (const formula of formulas) {
+    formulaCoordinates.push(formula.coordinate); templateIds.push(validation.formulas.intern(formula.expression, formula));
+  }
+  return createIndex(bytes, position, Uint16Array.from(coordinates), Uint32Array.from(starts), Uint32Array.from(stops), formulas.length,
+    Uint16Array.from(formulaCoordinates), Uint32Array.from(templateIds), validation?.formulas, validation?.textCache);
+}
+
 function plainCell(source: string): { attrs: Record<string, string>; text: string } | undefined {
   if (!source.startsWith("<td") || !/[\t\n\f >]/.test(source[3] ?? "") || !source.endsWith("</td>") || /[&\r\u0000]/.test(source)) return undefined;
   const end = source.indexOf(">"), opening = source.slice(3, end), text = source.slice(end + 1, -5);
@@ -173,16 +230,19 @@ function plainCell(source: string): { attrs: Record<string, string>; text: strin
   return { attrs, text };
 }
 
+/** Shared inert parser for bounded source slices and rich-input extraction. */
+export function parseWorkbookCellElement(source: string): Element {
+  const context = defaultTreeAdapter.createElement("tr", htmlNamespace.NS.HTML, []);
+  const fragment = parseHtmlFragment(source, context, { maxFiles: 1, maxPackageBytes: 8 * 1024 * 1024, maxFileBytes: 8 * 1024 * 1024, maxNodes: 100_000, maxDepth: 16, maxCssNodes: 1 }, tags);
+  const [cell] = only(fragment, ["td"]); return cell!;
+}
 /** Only used on already validated, bounded cell slices. Canonical entity-free
- * plain cells need no second HTML parse; all other syntax uses the same inert
- * parser as before. Opening still validates every source chunk independently. */
+ * plain cells need no second HTML parse. Opening validates every source chunk. */
 export function decodeWorkbookCell(source: string): { value: WorkbookValue; formula?: WorkbookFormulaSource; text: string; cssClass?: string; formatId?: string } {
   let plain = plainCell(source);
   if (!plain) {
-    const context = defaultTreeAdapter.createElement("tr", htmlNamespace.NS.HTML, []);
-    const fragment = parseHtmlFragment(source, context, { maxFiles: 1, maxPackageBytes: 8 * 1024 * 1024, maxFileBytes: 8 * 1024 * 1024, maxNodes: 100_000, maxDepth: 16, maxCssNodes: 1 }, tags);
-    const [cell] = only(fragment, ["td"]);
-    plain = { attrs: Object.fromEntries(cell!.attrs.map(a => [a.name, a.value])), text: textContent(cell!) };
+    const cell = parseWorkbookCellElement(source);
+    plain = { attrs: Object.fromEntries(cell.attrs.map(a => [a.name, a.value])), text: textContent(cell) };
   }
   const { attrs, text } = plain;
   const type = attrs["data-value-type"], raw = attrs["data-value"];
@@ -193,16 +253,36 @@ export function decodeWorkbookCell(source: string): { value: WorkbookValue; form
 }
 
 function createIndex(bytes: Uint8Array, position: ChunkPosition, coords: Uint16Array, starts: Uint32Array, stops: Uint32Array, formulaCount: number, formulaCoords: Uint16Array, templateIds: Uint32Array, formulas: FormulaTemplatePool | undefined, textCache: WorkbookChunkTextCache | undefined): ChunkIndex {
+  const expressions = Array.from(templateIds, id => formulas?.get(id));
+  const formulaTemplates = Object.freeze([...new Set(expressions.filter((item): item is FormulaExpression => item !== undefined))]);
   return Object.freeze({
     position, cellCount: coords.length, formulaCount, sourceBytes: bytes.byteLength,
     indexBytes: coords.byteLength + starts.byteLength + stops.byteLength + formulaCoords.byteLength + templateIds.byteLength,
+    formulaTemplates,
+    *formulaLocations() {
+      for (let index = 0; index < formulaCoords.length; index++) {
+        const coordinate = formulaCoords[index]!, expression = expressions[index];
+        if (expression) yield { row: position.row + Math.floor(coordinate / CHUNK_COLUMNS), column: position.column + coordinate % CHUNK_COLUMNS, expression };
+      }
+    },
     serialize: () => new Uint8Array(bytes),
+    releaseText: () => textCache?.clear(),
+    getCell(row: number, column: number): IndexedCellSource | undefined {
+      if (!Number.isSafeInteger(row) || !Number.isSafeInteger(column) || row < 0 || column < 0 || row >= MAX_SHEET_ROWS || column >= MAX_SHEET_COLUMNS) invalid("Invalid workbook window.");
+      if (row < position.row || row >= position.row + CHUNK_ROWS || column < position.column || column >= position.column + CHUNK_COLUMNS) return undefined;
+      const coordinate = (row - position.row) * CHUNK_COLUMNS + column - position.column;
+      let low = 0, high = coords.length;
+      while (low < high) { const middle = (low + high) >>> 1; if (coords[middle]! < coordinate) low = middle + 1; else high = middle; }
+      if (coords[low] !== coordinate) return undefined;
+      const source = textCache?.read(bytes) ?? decodeText(bytes);
+      return Object.freeze({ row, column, html: source.slice(starts[low], stops[low]) });
+    },
     getFormula(row: number, column: number): FormulaExpression | undefined {
       if (!Number.isInteger(row) || !Number.isInteger(column) || row < position.row || row >= position.row + CHUNK_ROWS || column < position.column || column >= position.column + CHUNK_COLUMNS) return undefined;
       const coordinate = (row - position.row) * CHUNK_COLUMNS + column - position.column;
       let low = 0, high = formulaCoords.length;
       while (low < high) { const middle = (low + high) >>> 1; if (formulaCoords[middle]! < coordinate) low = middle + 1; else high = middle; }
-      return formulaCoords[low] === coordinate ? formulas?.get(templateIds[low]!) : undefined;
+      return formulaCoords[low] === coordinate ? expressions[low] : undefined;
     },
     readWindow(window: ChunkWindow): readonly IndexedCellSource[] {
       if (![window.row, window.column, window.rows, window.columns].every(Number.isSafeInteger)

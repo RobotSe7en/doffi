@@ -1,0 +1,912 @@
+{
+  "scope": "Two immutable independent native classic-note sources, eight actual pinned Calc cell cuts/sorts with data identity proof and official XSD/OPC. Raw newly created target sheets introduce styled header/footer controls outside the SDK's declared basic print-band support; both original producer files remain unsupported negative cases. Six positive outputs use same-sheet edits or explicitly select the original native page style on the new target before moving data, without patching output bytes. Both VML and commentPr are recorded before editing; producer loss/normalization remains explicit. SDK preserves both sources and physically transports boxes with valid mapped note cells, retaining extents and native/body identities. Synthetic core point metrics are separate from fixed-font browser/native geometry acceptance. Excel/WPS structural runtime unverified.",
+  "references": [
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.onecellanchor?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.spreadsheet.editasvalues?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.spreadsheet.resizewithcells?view=openxml-3.0.1"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sources": [
+    {
+      "name": "classic",
+      "source": "examples/xlsx/09-classic-notes.xlsx",
+      "sourceSha256": "4e916b0f4883d663e1058ddd622305059823ab54c9ffdb4a8d1edc08e26ba09d",
+      "original": {
+        "drawings": [],
+        "notes": [
+          {
+            "MoveWithCells": null,
+            "SizeWithCells": null,
+            "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+            "AutoFill": "False",
+            "Row": "1",
+            "Column": "1"
+          }
+        ],
+        "charts": [],
+        "comments": [
+          {
+            "cell": "B2",
+            "text": "请确认：预算😀禰󠄀"
+          }
+        ],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              },
+              {
+                "r": "2"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": [],
+        "nativeBoxes": {
+          "commentCells": [
+            "B2"
+          ],
+          "commentPr": [
+            null
+          ],
+          "vml": [
+            {
+              "anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+              "visible": false
+            }
+          ]
+        },
+        "printControls": {
+          "xl/worksheets/sheet1.xml": {}
+        }
+      },
+      "cases": [
+        {
+          "name": "cut-same",
+          "nativeCall": {
+            "sourceText": "1,200.00",
+            "targetText": "1,200.00",
+            "clearedSource": "",
+            "sourcePageStyle": "PageStyle_备注",
+            "targetPageStyle": "PageStyle_备注"
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-classic-cut-same-calc.xlsx",
+          "outputSha256": "c2d4f7b5ec0880f2659778ad168d84a0d355e78fa240c636111d6b481d78bd28",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "8, 10, 19, 2, 11, 20, 23, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "19",
+                "Column": "7"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "H20",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "20",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "H20"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "8, 10, 19, 2, 11, 20, 23, 4",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              }
+            }
+          }
+        },
+        {
+          "name": "cut-other-default-header",
+          "nativeCall": {
+            "sourceText": "1,200.00",
+            "targetText": "1,200.00",
+            "clearedSource": "",
+            "sourcePageStyle": "PageStyle_备注",
+            "targetPageStyle": "Default"
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-classic-cut-other-default-header-calc.xlsx",
+          "outputSha256": "8a330bd0abe76c8163f1c0ace921a54f0a9cac0701f075941184eb4f98d4f426",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "19",
+                "Column": "7"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "H20",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "20",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "H20"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              },
+              "xl/worksheets/sheet2.xml": {
+                "oddHeader": "&C&\"Times New Roman,Regular\"&12&Kffffff&A",
+                "oddFooter": "&C&\"Times New Roman,Regular\"&12&KffffffPage &P"
+              }
+            }
+          }
+        },
+        {
+          "name": "cut-other",
+          "nativeCall": {
+            "sourceText": "1,200.00",
+            "targetText": "1,200.00",
+            "clearedSource": "",
+            "sourcePageStyle": "PageStyle_备注",
+            "targetPageStyle": "PageStyle_备注"
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-classic-cut-other-calc.xlsx",
+          "outputSha256": "6bf29638eb320493910b1b25d957b5aea8c858c887a089e1e589ff69bdde3ce5",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "19",
+                "Column": "7"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "H20",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "20",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "H20"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              },
+              "xl/worksheets/sheet2.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              }
+            }
+          }
+        },
+        {
+          "name": "sort",
+          "nativeCall": {
+            "sortedKeys": [
+              1.0,
+              2.0,
+              3.0
+            ]
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-classic-sort-calc.xlsx",
+          "outputSha256": "4879f7a9d890f7ad744d4d612a539acfa3e804f8551e159072c03dba7ef9dc1a",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 3, 2, 5, 20, 7, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "3",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B4",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "B4"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "2, 10, 3, 2, 5, 20, 7, 4",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "dual",
+      "source": "packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx",
+      "sourceSha256": "444d53730451a6b7131e5847a8ee00381fb31c8ee4197f5b946c40e4a17adf12",
+      "original": {
+        "drawings": [],
+        "notes": [
+          {
+            "MoveWithCells": null,
+            "SizeWithCells": null,
+            "Anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+            "AutoFill": "False",
+            "Row": "1",
+            "Column": "1"
+          }
+        ],
+        "charts": [],
+        "comments": [
+          {
+            "cell": "B2",
+            "text": "请确认：预算😀禰󠄀"
+          }
+        ],
+        "sheets": [
+          {
+            "defaults": [
+              {
+                "defaultRowHeight": "15",
+                "defaultColWidth": "12"
+              }
+            ],
+            "columns": [],
+            "rows": [
+              {
+                "r": "1"
+              },
+              {
+                "r": "2"
+              }
+            ]
+          }
+        ],
+        "mediaSha256": [],
+        "nativeBoxes": {
+          "commentCells": [
+            "B2"
+          ],
+          "commentPr": [
+            "<ns0:commentPr xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:ns1=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" print=\"0\" autoFill=\"0\" altText=\"备用备注框😀\" textHAlign=\"center\" textVAlign=\"bottom\"><ns0:anchor moveWithCells=\"1\" sizeWithCells=\"0\"><ns1:from><ns1:col>3</ns1:col><ns1:colOff>0</ns1:colOff><ns1:row>2</ns1:row><ns1:rowOff>0</ns1:rowOff></ns1:from><ns1:to><ns1:col>7</ns1:col><ns1:colOff>127000</ns1:colOff><ns1:row>8</ns1:row><ns1:rowOff>25400</ns1:rowOff></ns1:to></ns0:anchor></ns0:commentPr>"
+          ],
+          "vml": [
+            {
+              "anchor": "2, 10, 1, 2, 5, 20, 5, 4",
+              "visible": false
+            }
+          ]
+        },
+        "printControls": {
+          "xl/worksheets/sheet1.xml": {}
+        }
+      },
+      "cases": [
+        {
+          "name": "cut-same",
+          "nativeCall": {
+            "sourceText": "1,200.00",
+            "targetText": "1,200.00",
+            "clearedSource": "",
+            "sourcePageStyle": "PageStyle_备注",
+            "targetPageStyle": "PageStyle_备注"
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-dual-cut-same-calc.xlsx",
+          "outputSha256": "ea88b980a03fb8758d384360da0b585af046328e8f53f07c121f8e386c9c16da",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "8, 10, 19, 2, 11, 20, 23, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "19",
+                "Column": "7"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "H20",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "20",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "H20"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "8, 10, 19, 2, 11, 20, 23, 4",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              }
+            }
+          }
+        },
+        {
+          "name": "cut-other-default-header",
+          "nativeCall": {
+            "sourceText": "1,200.00",
+            "targetText": "1,200.00",
+            "clearedSource": "",
+            "sourcePageStyle": "PageStyle_备注",
+            "targetPageStyle": "Default"
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-dual-cut-other-default-header-calc.xlsx",
+          "outputSha256": "bf4da679e613b096f59cb020a1b1b7da087f50d4460414c06971d198c7a1db4a",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "19",
+                "Column": "7"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "H20",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "20",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "H20"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              },
+              "xl/worksheets/sheet2.xml": {
+                "oddHeader": "&C&\"Times New Roman,Regular\"&12&Kffffff&A",
+                "oddFooter": "&C&\"Times New Roman,Regular\"&12&KffffffPage &P"
+              }
+            }
+          }
+        },
+        {
+          "name": "cut-other",
+          "nativeCall": {
+            "sourceText": "1,200.00",
+            "targetText": "1,200.00",
+            "clearedSource": "",
+            "sourcePageStyle": "PageStyle_备注",
+            "targetPageStyle": "PageStyle_备注"
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-dual-cut-other-calc.xlsx",
+          "outputSha256": "8587e6ae4eb627483167b0b50296fd6febb36eb549f13ba0d9420fb687a25187",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "19",
+                "Column": "7"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "H20",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              },
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "10.4921875",
+                    "defaultRowHeight": "12.8",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "20",
+                    "ht": "13.8",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "H20"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "8, 10, 19, 2, 11, 57, 23, 14",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              },
+              "xl/worksheets/sheet2.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              }
+            }
+          }
+        },
+        {
+          "name": "sort",
+          "nativeCall": {
+            "sortedKeys": [
+              1.0,
+              2.0,
+              3.0
+            ]
+          },
+          "outputFile": "packages/office/tests/fixtures/workbook-note-transport-dual-sort-calc.xlsx",
+          "outputSha256": "4a5ccae3ffd3c8a809b4d32ef65f8d5c0235b0b823c8b0aea033555fdec949e3",
+          "observed": {
+            "drawings": [],
+            "notes": [
+              {
+                "MoveWithCells": null,
+                "SizeWithCells": null,
+                "Anchor": "2, 10, 3, 2, 5, 20, 7, 4",
+                "AutoFill": "False",
+                "TextVAlign": "Top",
+                "TextHAlign": "Left",
+                "Row": "3",
+                "Column": "1"
+              }
+            ],
+            "charts": [],
+            "comments": [
+              {
+                "cell": "B4",
+                "text": "请确认：预算😀禰󠄀"
+              }
+            ],
+            "sheets": [
+              {
+                "defaults": [
+                  {
+                    "defaultColWidth": "12.00390625",
+                    "defaultRowHeight": "15",
+                    "customHeight": "true",
+                    "zeroHeight": "false",
+                    "outlineLevelRow": "0",
+                    "outlineLevelCol": "0"
+                  }
+                ],
+                "columns": [],
+                "rows": [
+                  {
+                    "r": "1",
+                    "ht": "19.4",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "2",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "3",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  },
+                  {
+                    "r": "4",
+                    "ht": "15",
+                    "hidden": "false",
+                    "customHeight": "false"
+                  }
+                ]
+              }
+            ],
+            "mediaSha256": [],
+            "nativeBoxes": {
+              "commentCells": [
+                "B4"
+              ],
+              "commentPr": [
+                null
+              ],
+              "vml": [
+                {
+                  "anchor": "2, 10, 3, 2, 5, 20, 7, 4",
+                  "visible": false
+                }
+              ]
+            },
+            "printControls": {
+              "xl/worksheets/sheet1.xml": {
+                "oddHeader": null,
+                "oddFooter": null
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

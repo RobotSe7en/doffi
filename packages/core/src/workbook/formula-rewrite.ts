@@ -8,19 +8,37 @@ import { bindStructuredReference, type FormulaTableDefinition } from "./formula-
 export interface FormulaLocation extends FormulaOrigin { readonly sheet: string }
 export interface FormulaRectangle { readonly from: FormulaOrigin; readonly to: FormulaOrigin }
 export type FormulaReferenceChange =
+  | { readonly kind: "copy" }
+  | { readonly kind: "copySheet"; readonly from: string; readonly to: string }
   | { readonly kind: "axis"; readonly sheet: string; readonly axis: "row" | "column"; readonly action: "insert" | "delete"; readonly index: number; readonly count: number }
   | { readonly kind: "move"; readonly sheet: string; readonly range: FormulaRectangle; readonly target: FormulaLocation }
   | { readonly kind: "sort"; readonly sheet: string; readonly range: FormulaRectangle }
   | { readonly kind: "renameSheet"; readonly from: string; readonly to: string }
   | { readonly kind: "deleteSheet"; readonly sheet: string }
+  | { readonly kind: "renameName"; readonly nameId: string; readonly to: string }
+  | { readonly kind: "convertTable"; readonly table: string }
   | { readonly kind: "renameTable"; readonly from: string; readonly to: string }
-  | { readonly kind: "renameColumn"; readonly table: string; readonly from: string; readonly to: string };
+  | { readonly kind: "renameColumn"; readonly table: string; readonly from: string; readonly to: string }
+  | { readonly kind: "deleteColumn"; readonly table: string; readonly column: string };
 export interface FormulaRewriteBindings {
   /** The table containing this formula, for unqualified structured references. */
   readonly table?: string;
   /** Required only when a bare identifier might name the table being renamed. */
-  readonly isTableName?: (name: string, sheet: string) => boolean;
+  readonly isTableName?: (name: string, sheet: string, workbook?: 0) => boolean;
   readonly tables?: readonly FormulaTableDefinition[];
+  /** Complete tables relocating with the containing range keep their native
+   * structured bindings, including current-row selectors. */
+  readonly movedTables?: ReadonlySet<string>;
+  /** Copies map explicitly cloned table identities and whole-sheet copies
+   * also map local/global names; unrelated definitions retain their bindings. */
+  readonly copiedNames?: ReadonlyMap<string, string>;
+  readonly copiedTables?: ReadonlyMap<string, string>;
+  readonly resolveName?: (name: string, sheet: string, explicit: boolean, workbook?: 0, localOnly?: boolean) => string | undefined;
+  /** An empty calculated column retains relative row recipes for its future
+   * data body. Absolute references still follow or invalidate source cells. */
+  readonly preserveRelativeAxis?: boolean;
+  /** Bare names inside a native defined-name expression bind globally. */
+  readonly definedName?: boolean;
 }
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 const refError = (): FormulaExpression => ({ kind: "error", value: "#REF!" });
@@ -54,6 +72,7 @@ export function copyFormula(source: string, from: FormulaOrigin, to: FormulaOrig
 /** Rewrite semantic references, never strings that happen to contain addresses. */
 export function rewriteFormula(source: string, from: FormulaLocation, to: FormulaLocation, change: FormulaReferenceChange, bindings: FormulaRewriteBindings = {}): string {
   const ast = parseFormula(source, from); checkFormulaOrigin(to);
+  if (bindings.preserveRelativeAxis !== undefined && (typeof bindings.preserveRelativeAxis !== "boolean" || change.kind !== "axis")) invalid("Relative template preservation requires a typed axis change.");
   if (change.kind === "sort" || change.kind === "move") checkRectangle(change.range);
   if (change.kind === "sort") {
     if (!same(from.sheet, change.sheet) || !inside(from, change.range)) {
@@ -72,16 +91,19 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     if (!Number.isInteger(change.index) || !Number.isInteger(change.count) || change.index < 0 || change.count <= 0 || change.index + change.count > bound) invalid("Invalid formula axis change.");
   }
   if (change.kind === "renameSheet" && !WorkbookSheetSchema.shape.name.safeParse(change.to).success) invalid("Invalid renamed sheet.");
-  if (change.kind === "renameTable") {
-    if (change.to.length > 255 || parseFormula("=" + change.to, from).kind !== "name") invalid("Invalid renamed table.");
+  if (change.kind === "copySheet" && (!WorkbookSheetSchema.shape.name.safeParse(change.to).success || !(same(from.sheet, change.from) ? same(to.sheet, change.to) : same(to.sheet, from.sheet))
+    || from.row !== to.row || from.column !== to.column)) invalid("A worksheet copy requires its source/destination sheets and unchanged cell coordinates.");
+  if (change.kind === "renameTable" || change.kind === "renameName") {
+    const token = parseFormula("=" + change.to, from);
+    if (change.to.length > 255 || token.kind !== "name" || token.sheet !== undefined || token.workbook !== undefined || token.name !== change.to) invalid("A renamed definition requires an unqualified identifier.");
   }
   if (change.kind === "renameColumn" && (!change.to || change.to.length > 255 || change.to.trim() !== change.to || /[\u0000-\u001f]/.test(change.to))) invalid("Invalid renamed table column.");
-  const location = (cell: FormulaCell): FormulaLocation => ({ row: cell.row + (cell.absoluteRow ? 0 : from.row), column: cell.column + (cell.absoluteColumn ? 0 : from.column), sheet: cell.sheet ?? from.sheet });
+  const location = (cell: FormulaCell): FormulaLocation => ({ row: cell.row + (cell.absoluteRow ? 0 : from.row), column: cell.column + (cell.absoluteColumn ? 0 : from.column), sheet: cell.sheet || from.sheet });
   const cellAt = (point: FormulaLocation, template: FormulaCell): FormulaCell => ({ kind: "cell", row: point.row - (template.absoluteRow ? 0 : to.row), column: point.column - (template.absoluteColumn ? 0 : to.column),
-    absoluteRow: template.absoluteRow, absoluteColumn: template.absoluteColumn, ...(template.sheet === undefined && same(point.sheet, to.sheet) ? {} : { sheet: point.sheet }) });
+    absoluteRow: template.absoluteRow, absoluteColumn: template.absoluteColumn, ...(template.sheet === undefined && same(point.sheet, to.sheet) ? {} : { sheet: template.sheet === "" && same(point.sheet, to.sheet) ? "" : point.sheet }) });
   function mapSheet(sheet: string): string | undefined {
     if (change.kind === "deleteSheet" && same(sheet, change.sheet)) return undefined;
-    return change.kind === "renameSheet" && same(sheet, change.from) ? change.to : sheet;
+    return (change.kind === "renameSheet" || change.kind === "copySheet") && same(sheet, change.from) ? change.to : sheet;
   }
   function mapPosition(point: FormulaLocation): FormulaLocation | undefined {
     const sheet = mapSheet(point.sheet); if (sheet === undefined) return undefined;
@@ -118,6 +140,19 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
   function range(node: Extract<FormulaExpression, { kind: "range" }>): FormulaExpression {
     const first = location(node.from), last = location(node.to), sheet = mapSheet(first.sheet);
     if (sheet === undefined) return refError();
+    if (change.kind === "axis" && bindings.preserveRelativeAxis
+      && (change.axis === "row" ? !node.from.absoluteRow || !node.to.absoluteRow : !node.from.absoluteColumn || !node.to.absoluteColumn)) {
+      const mapped = same(first.sheet, change.sheet) ? interval(first[change.axis], last[change.axis]) : [first[change.axis], last[change.axis]];
+      const endpoint = (template: FormulaCell, point: FormulaLocation, index: number): FormulaExpression => {
+        const absolute = change.axis === "row" ? template.absoluteRow : template.absoluteColumn;
+        // A deleted absolute endpoint clips to the surviving rectangle. The
+        // relative endpoint remains a recipe, including mixed-direction ranges.
+        if (absolute && !mapped) return refError();
+        return cellAt({ ...point, sheet, [change.axis]: absolute ? mapped![index]! : point[change.axis] + to[change.axis] - from[change.axis] }, template);
+      };
+      const a = endpoint(node.from, first, 0), b = endpoint(node.to, last, 1);
+      return a.kind === "cell" && b.kind === "cell" ? { kind: "range", from: a, to: b } : refError();
+    }
     if (change.kind === "axis" && same(first.sheet, change.sheet)) {
       const mapped = interval(first[change.axis], last[change.axis]); if (!mapped) return refError();
       return { kind: "range", from: cellAt({ ...first, sheet, [change.axis]: mapped[0] }, node.from), to: cellAt({ ...last, sheet, [change.axis]: mapped[1] }, node.to) };
@@ -126,13 +161,18 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
       const rectangle = { from: { row: Math.min(first.row, last.row), column: Math.min(first.column, last.column) }, to: { row: Math.max(first.row, last.row), column: Math.max(first.column, last.column) } };
       const overlap = intersect(rectangle, change.range);
       if (overlap) {
-        const fragments = subtract(rectangle, change.range).map(value => ({ range: value, sheet }));
+        const fragments = subtract(rectangle, change.range).map(value => ({ range: value, sheet, origin: value.from }));
         const delta = { row: change.target.row - change.range.from.row, column: change.target.column - change.range.from.column };
         const moved = { from: { row: overlap.from.row + delta.row, column: overlap.from.column + delta.column }, to: { row: overlap.to.row + delta.row, column: overlap.to.column + delta.column } };
         // Overlapping destinations must not introduce a duplicated reference.
         let additions = [moved];
         for (const fragment of fragments) if (same(fragment.sheet, change.target.sheet)) additions = additions.flatMap(value => subtract(value, fragment.range));
-        fragments.push(...additions.map(value => ({ range: value, sheet: change.target.sheet })));
+        fragments.push(...additions.map(value => ({ range: value, sheet: change.target.sheet, origin: { row: value.from.row - delta.row, column: value.from.column - delta.column } })));
+        // A chart/name vector observes union order. Keep a one-dimensional
+        // source's leading, middle and trailing values in their original order
+        // when only part of it is cut to another address or worksheet.
+        if (rectangle.from.row === rectangle.to.row || rectangle.from.column === rectangle.to.column)
+          fragments.sort((a, b) => a.origin.row - b.origin.row || a.origin.column - b.origin.column);
         checkLimit(fragments.length, 32);
         const expressions = fragments.map(value => rectangleExpression(value.range, value.sheet, node.from, node.to));
         return expressions.slice(1).reduce<FormulaExpression>((left, right) => ({ kind: "binary", operator: ",", left, right }), expressions[0]!);
@@ -141,10 +181,15 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
     return { kind: "range", from: cellAt({ ...first, sheet }, node.from), to: cellAt({ ...last, sheet }, node.to) };
   }
   function visit(node: FormulaExpression): FormulaExpression {
-    if (node.kind === "cell") { const point = mapPosition(location(node)); return point ? cellAt(point, node) : refError(); }
+    if (change.kind === "copy" && ["cell", "range", "axisRange"].includes(node.kind)) return node;
+    if (node.kind === "cell") {
+      const original = location(node), relative = change.kind === "axis" && bindings.preserveRelativeAxis && (change.axis === "row" ? !node.absoluteRow : !node.absoluteColumn);
+      const point = relative && change.kind === "axis" ? { ...original, [change.axis]: original[change.axis] + to[change.axis] - from[change.axis] } : mapPosition(original);
+      return point ? cellAt(point, node) : refError();
+    }
     if (node.kind === "range") return range(node);
     if (node.kind === "axisRange") {
-      const sourceSheet = node.sheet ?? from.sheet, sheet = mapSheet(sourceSheet); if (sheet === undefined) return refError();
+      const sourceSheet = node.sheet || from.sheet, sheet = mapSheet(sourceSheet); if (sheet === undefined) return refError();
       const start = node.from.index + (node.from.absolute ? 0 : from[node.axis]), end = node.to.index + (node.to.absolute ? 0 : from[node.axis]);
       if (change.kind === "move" && same(sourceSheet, change.sheet)) {
         const cell = (value: number, end: boolean): FormulaCell => {
@@ -155,22 +200,83 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
         const rectangle = { from: { row: node.axis === "row" ? Math.min(start, end) : 0, column: node.axis === "column" ? Math.min(start, end) : 0 }, to: { row: node.axis === "row" ? Math.max(start, end) : MAX_SHEET_ROWS - 1, column: node.axis === "column" ? Math.max(start, end) : MAX_SHEET_COLUMNS - 1 } };
         if (intersect(rectangle, change.range)) return range({ kind: "range", from: cell(Math.min(start, end), false), to: cell(Math.max(start, end), true) });
       }
-      const positions = change.kind === "axis" && same(sourceSheet, change.sheet) && node.axis === change.axis ? interval(start, end) : [start, end];
+      let positions = change.kind === "axis" && same(sourceSheet, change.sheet) && node.axis === change.axis ? interval(start, end) : [start, end];
+      if (change.kind === "axis" && bindings.preserveRelativeAxis && node.axis === change.axis && (!node.from.absolute || !node.to.absolute)) {
+        const mapped = positions;
+        const single = (value: number, absolute: boolean, index: number): number | undefined => absolute ? mapped?.[index] : value + to[node.axis] - from[node.axis];
+        const a = single(start, node.from.absolute, 0), b = single(end, node.to.absolute, 1); positions = a === undefined || b === undefined ? undefined : [a, b];
+      }
       if (!positions) return refError();
       return { ...node, from: { ...node.from, index: positions[0]! - (node.from.absolute ? 0 : to[node.axis]) }, to: { ...node.to, index: positions[1]! - (node.to.absolute ? 0 : to[node.axis]) },
-        ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };
+        ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet: node.sheet === "" && same(sheet, to.sheet) ? "" : sheet }) };
     }
     if (node.kind === "name") {
-      const sheet = mapSheet(node.sheet ?? from.sheet); if (sheet === undefined) return refError();
-      if (change.kind === "renameTable" && same(node.name, change.from)) {
-        if (!bindings.isTableName) invalid("Bare table rename requires resolved name bindings.");
-        if (bindings.isTableName(node.name, node.sheet ?? from.sheet)) return { ...node, name: change.to };
+      if (change.kind === "copySheet") {
+        const binding = bindings.resolveName?.(node.name, node.sheet || from.sheet, node.sheet !== undefined, node.workbook, node.sheet === "");
+        const copiedName = binding === undefined ? undefined : bindings.copiedNames?.get(binding);
+        if (copiedName !== undefined) return { kind: "name", name: copiedName,
+          ...(node.sheet === "" ? { sheet: "" } : bindings.definedName || node.sheet !== undefined || node.workbook === 0 || !same(from.sheet, change.from) ? { sheet: change.to } : {}) };
+        const table = node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook) ? bindings.copiedTables?.get(node.name.toUpperCase()) : undefined;
+        if (table !== undefined) return { ...node, name: table };
       }
-      return { ...node, ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet }) };
+      if (change.kind === "copy") {
+        const copiedTable = node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook) ? bindings.copiedTables?.get(node.name.toUpperCase()) : undefined;
+        if (copiedTable !== undefined) return { ...node, name: copiedTable };
+        if (node.workbook === 0 || node.sheet !== undefined) return node;
+        const binding = bindings.resolveName?.(node.name, from.sheet, false), local = bindings.resolveName?.(node.name, from.sheet, true, undefined, true);
+        if (binding !== undefined && binding !== local && binding !== bindings.resolveName?.(node.name, to.sheet, false)
+          || binding === undefined && bindings.isTableName?.(node.name, from.sheet) && !bindings.isTableName(node.name, to.sheet)) return { ...node, workbook: 0 };
+        return node;
+      }
+      const sheet = node.workbook === 0 ? from.sheet : mapSheet(node.sheet || from.sheet); if (sheet === undefined) return refError();
+      if (change.kind === "move" && node.workbook === undefined && node.sheet === undefined && bindings.resolveName) {
+        if (bindings.isTableName?.(node.name, from.sheet)) return bindings.isTableName(node.name, to.sheet) ? node : { ...node, workbook: 0 };
+        const binding = bindings.resolveName(node.name, from.sheet, false);
+        if (binding !== undefined && binding === bindings.resolveName(node.name, to.sheet, false)) return node;
+        if (binding !== undefined && binding !== bindings.resolveName(node.name, from.sheet, true, undefined, true)) return { ...node, workbook: 0 };
+      }
+      if (change.kind === "renameName" && bindings.resolveName?.(node.name, node.sheet || from.sheet, node.sheet !== undefined, node.workbook, node.sheet === "") === change.nameId) return { ...node, name: change.to };
+      if (node.sheet !== "" && change.kind === "convertTable" && same(node.name, change.table) && bindings.isTableName?.(node.name, node.sheet || from.sheet, node.workbook))
+        return visit({ kind: "structured", table: node.name, columns: [], selectors: [] });
+      if (change.kind === "deleteSheet" && node.sheet === undefined && bindings.isTableName?.(node.name, from.sheet, node.workbook)
+        && bindings.tables?.some(table => same(table.name, node.name) && same(table.sheet, change.sheet))) return refError();
+      if (node.sheet !== "" && change.kind === "renameTable" && same(node.name, change.from)) {
+        if (!bindings.isTableName) invalid("Bare table rename requires resolved name bindings.");
+        if (bindings.isTableName(node.name, node.sheet || from.sheet, node.workbook)) return { ...node, name: change.to };
+      }
+      if (node.workbook === 0) return node;
+      return { ...node, ...(node.sheet === undefined && same(sheet, to.sheet) ? {} : { sheet: node.sheet === "" && same(sheet, to.sheet) ? "" : sheet }) };
     }
     if (node.kind === "structured") {
       const table = node.table ?? bindings.table;
+      if (change.kind === "copy") {
+        const copied = node.table === undefined ? undefined : bindings.copiedTables?.get(node.table.toUpperCase());
+        return copied === undefined ? node : { ...node, table: copied };
+      }
+      if (change.kind === "copySheet" && node.table !== undefined) {
+        const copied = bindings.copiedTables?.get(node.table.toUpperCase()); return copied === undefined ? node : { ...node, table: copied };
+      }
+      if (change.kind === "deleteColumn" && table !== undefined && same(table, change.table) && node.columns.some(column => same(column, change.column))) {
+        if (node.columns.length === 1) return refError();
+        const definition = bindings.tables?.find(definition => same(definition.name, table));
+        if (!definition) invalid("Deleting a table column requires its source definition.");
+        const first = definition.columns.findIndex(column => same(column, node.columns[0]!)), last = definition.columns.findIndex(column => same(column, node.columns[1]!));
+        if (first < 0 || last < 0) return refError();
+        const remaining = definition.columns.slice(Math.min(first, last), Math.max(first, last) + 1).filter(column => !same(column, change.column));
+        if (!remaining.length) return refError();
+        return { ...node, columns: first <= last ? [remaining[0]!, remaining.at(-1)!] : [remaining.at(-1)!, remaining[0]!] };
+      }
+      if (change.kind === "convertTable" && table !== undefined && same(table, change.table)) {
+        const bound = bindStructuredReference(node, from, bindings.tables ?? [], bindings.table);
+        if ("error" in bound) return { kind: "error", value: bound.error };
+        if (!bound.range) return refError();
+        const cell = (point: FormulaOrigin): FormulaCell => ({ kind: "cell", ...point, absoluteRow: true, absoluteColumn: true,
+          ...(same(bound.sheet, to.sheet) ? {} : { sheet: bound.sheet }) });
+        return { kind: "range", from: cell(bound.range.from), to: cell(bound.range.to) };
+      }
+      if (change.kind === "deleteSheet" && table !== undefined && bindings.tables?.some(definition => same(definition.name, table) && same(definition.sheet, change.sheet))) return refError();
       if (change.kind === "move" && (!same(from.sheet, to.sheet) || from.row !== to.row || from.column !== to.column)) {
+        if (table !== undefined && bindings.movedTables?.has(table.toUpperCase())) return node;
         if (node.selectors.includes("thisRow")) {
           if (!bindings.tables) invalid("Moving a current-row table formula requires table geometry.");
           const bound = bindStructuredReference(node, from, bindings.tables, bindings.table);
@@ -200,7 +306,8 @@ export function rewriteFormula(source: string, from: FormulaLocation, to: Formul
   const rewritten = visit(ast);
   // Unaffected formulas retain their exact source bytes, so a small structural
   // edit does not rewrite every workbook chunk merely to canonicalize syntax.
-  if (from.row === to.row && from.column === to.column && JSON.stringify(rewritten) === JSON.stringify(ast)) return source;
+  if (JSON.stringify(rewritten) === JSON.stringify(ast) && (from.row === to.row && from.column === to.column
+    || JSON.stringify(parseFormula(source, to)) === JSON.stringify(rewritten))) return source;
   const output = printFormula(rewritten, to);
   // The parser rechecks generated identifiers, grammar, depth and token budgets.
   parseFormula(output, to); return output;

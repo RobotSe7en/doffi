@@ -31,10 +31,13 @@ export async function textCacheMeasurement() {
     const atomic = initial.element.isConnected && copied.element.isConnected;
     cache.put('two', { text: retained }, second.fonts, false); cache.get('rich'); cache.put('three', { text: retained }, second.fonts, false);
     const evicted = !cache.get('two') && !!cache.get('rich') && !!cache.get('three');
+    const warned = new WorkbookCellTextCache(2, 50_000, 8 * 1024 * 1024);
+    warned.put('warned', { text: retained }, second.fonts.map(font => ({ ...font, missingCharacters: ['x'] })), false);
+    const fork = warned.fork(), warningsRefreshed = !fork.get('warned') && !!warned.get('warned'); fork.clear(); warned.clear();
     const tiny = new WorkbookCellTextCache(1, 50_000, 1); tiny.put('rich', { text: retained }, second.fonts, false); const bounded = !tiny.get('rich'); tiny.clear();
     const face = new FontFace('WorkbookCacheProbe', 'local("Liberation Sans")');
     document.fonts.add(face); cache.settled(document.fonts); const invalidated = !cache.get('rich'); document.fonts.delete(face);
     cache.put('rich', { text: retained }, second.fonts, false); cache.clear(); const cleared = !cache.get('rich');
-    return { offsets, projectionsOwned, same, isolated, detached, failures, atomic, evicted, bounded, invalidated, cleared, unchanged: source.outerHTML === original };
+    return { offsets, projectionsOwned, same, isolated, detached, failures, atomic, evicted, warningsRefreshed, bounded, invalidated, cleared, unchanged: source.outerHTML === original };
   } finally { cache.clear(); formatter.dispose(); scope.remove(); }
 }

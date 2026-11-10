@@ -1,5 +1,6 @@
+import { openContentFixture as openDocument } from "../../content-fixture.js";
 import { decodeTestPackage, type TestPackage } from './package-transport.js';
-import { createDocumentSession, openDocument } from "@doffi/core";
+import { createDocumentSession } from "@doffi/core";
 import type { DocumentSession } from "@doffi/core";
 import { mountDocumentTextEditor } from "@doffi/editor";
 import type { DocumentTextEditor } from "@doffi/editor";

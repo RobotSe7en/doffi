@@ -1,0 +1,1949 @@
+{
+  "scope": "Independent ZIP/XML source, eighteen actual selective clipboard pastes with explicit overwrite/current calculation, two actual numeric fillAuto operations, and official XSD/OPC. SDK values/formulas preserve target merge formatting; Calc removes a matching target merge. Calc formats/skip-blank content can retain populated covered cells; SDK rejects the whole candidate to protect source content. Source and producer bytes remain distinct. No Excel/WPS structural runtime claim.",
+  "references": [
+    "https://support.microsoft.com/en-au/excel/paste-options?nochrome=true",
+    "https://learn.microsoft.com/en-us/office/vba/api/excel.range.pastespecial",
+    "https://api.libreoffice.org/docs/idl/ref/servicecom_1_1sun_1_1star_1_1sheet_1_1GlobalSheetSettings.html"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "5631e4a72728244ad804bfecb9258312ce6a8013cb427deb7d320ca3cbc3c31a",
+  "cases": [
+    {
+      "case": {
+        "mode": "contents",
+        "skipBlanks": false,
+        "target": "plain"
+      },
+      "producerSha256": "c5ce960d56ad9fcc6ed3ac169bea9632423b7057db4e1f5f6bacc78ee5fff201",
+      "observed": [
+        {
+          "merges": [
+            "D1:E2",
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "e",
+              "value": "#REF!",
+              "formula": "#REF!+$A$1"
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "contents",
+        "skipBlanks": false,
+        "target": "matching"
+      },
+      "producerSha256": "d709134e414f7921ff0b8df559c4f740183bb8f32b710a9d7cbb0fd367125752",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            },
+            {
+              "address": "D258",
+              "type": "n",
+              "value": "95",
+              "formula": "D1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "contents",
+        "skipBlanks": true,
+        "target": "plain"
+      },
+      "producerSha256": "480d88d6f6c408b47b92b700a7d5366e5852a0d6c73264377815d9e097e369af",
+      "observed": [
+        {
+          "merges": [
+            "D1:E2",
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "e",
+              "value": "#REF!",
+              "formula": "#REF!+$A$1"
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "contents",
+        "skipBlanks": true,
+        "target": "matching"
+      },
+      "producerSha256": "b5a59d8823a1af66f2345821151c02420bea2306b7055eaa7cafb711dac55133",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            },
+            {
+              "address": "D258",
+              "type": "n",
+              "value": "95",
+              "formula": "D1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "values",
+        "skipBlanks": false,
+        "target": "plain"
+      },
+      "producerSha256": "e20bb78554e76ae154f4cbc2b243a74f1ea6d9065de740b4c80e53fdbf8cf565",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "n",
+              "value": "14",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "values",
+        "skipBlanks": false,
+        "target": "matching"
+      },
+      "producerSha256": "6b938599747f6fcc6370fd7209cfe2ce7f5b3634ca6bb0edfa01d37111fafdc5",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            },
+            {
+              "address": "D258",
+              "type": "n",
+              "value": "14",
+              "formula": null
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "values",
+        "skipBlanks": true,
+        "target": "plain"
+      },
+      "producerSha256": "736efe47337b84039f464f7cc84cc0d94830cacd4375b511c42f292ae0223a53",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "n",
+              "value": "14",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "values",
+        "skipBlanks": true,
+        "target": "matching"
+      },
+      "producerSha256": "361d3f47e5a921d9fb3ca6d621a9754615f5be7cd2416137407469a3abe181d9",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            },
+            {
+              "address": "D258",
+              "type": "n",
+              "value": "14",
+              "formula": null
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formulas",
+        "skipBlanks": false,
+        "target": "plain"
+      },
+      "producerSha256": "8ec09032ea40d13e487cd7a922de80d335e852c043a4223803daf298639ee5e8",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "e",
+              "value": "#REF!",
+              "formula": "#REF!+$A$1"
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formulas",
+        "skipBlanks": false,
+        "target": "matching"
+      },
+      "producerSha256": "7dda572879fced6aa6091a3fda68a6fd491ff76847a7562315ae679f3d7dd9b9",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            },
+            {
+              "address": "D258",
+              "type": "n",
+              "value": "95",
+              "formula": "D1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formulas",
+        "skipBlanks": true,
+        "target": "plain"
+      },
+      "producerSha256": "084640fa5cabf7ca1bb821fd1a55af2902861ba2f05c74e3f879b50e2e03d2a5",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "D3",
+              "type": "e",
+              "value": "#REF!",
+              "formula": "#REF!+$A$1"
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formulas",
+        "skipBlanks": true,
+        "target": "matching"
+      },
+      "producerSha256": "1dd525073329053d579638aea6e606fe6d93cce2ebc6ac8ceea3f70df6467ae2",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            },
+            {
+              "address": "D258",
+              "type": "n",
+              "value": "95",
+              "formula": "D1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formats",
+        "skipBlanks": false,
+        "target": "plain"
+      },
+      "producerSha256": "8716133f82f375de401e6c150ade11f43ae107814f3f026ec36e1ffe1d74a2ae",
+      "observed": [
+        {
+          "merges": [
+            "D1:E2",
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formats",
+        "skipBlanks": false,
+        "target": "matching"
+      },
+      "producerSha256": "ad94f79871bdcba53774832564953ea606e625c14105436791868f3f6fba9564",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formats",
+        "skipBlanks": true,
+        "target": "plain"
+      },
+      "producerSha256": "f096583734a34874558438f136c88b7e3a9e51d5540a6c117c376579a37de608",
+      "observed": [
+        {
+          "merges": [
+            "D1:E2",
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formats",
+        "skipBlanks": true,
+        "target": "matching"
+      },
+      "producerSha256": "2f607e0e820c01e7a60bbce7d302e8057c61887619113b50dfba765c67908a2d",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formats",
+        "skipBlanks": false,
+        "target": "blank"
+      },
+      "producerSha256": "82323e8482b766bc8a829545cb19772d389c46ac3d01873141757ac4f73b2728",
+      "observed": [
+        {
+          "merges": [
+            "H1:I2",
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "formats",
+        "skipBlanks": true,
+        "target": "blank"
+      },
+      "producerSha256": "7c6b2f776500b8e0520ed02f6f2fc399f9ac1ed76efd6e801400f60e8490a115",
+      "observed": [
+        {
+          "merges": [
+            "H1:I2",
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "series",
+        "axis": "row"
+      },
+      "producerSha256": "fb8716e911c7863212b0f511df99e305eacc6cf9b0546019a79c6116e5b4a79e",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "L3:M4",
+            "L5:M6",
+            "L7:M8",
+            "L9:M10",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "L5",
+              "type": "n",
+              "value": "30",
+              "formula": null
+            },
+            {
+              "address": "L7",
+              "type": "n",
+              "value": "40",
+              "formula": null
+            },
+            {
+              "address": "L9",
+              "type": "n",
+              "value": "50",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    },
+    {
+      "case": {
+        "mode": "series",
+        "axis": "column"
+      },
+      "producerSha256": "f22957dfacea86a17bf080eee01f6cf3869cd5c4e50e530d7804f4aa67012044",
+      "observed": [
+        {
+          "merges": [
+            "L1:M2",
+            "O1:P2",
+            "Q1:R2",
+            "S1:T2",
+            "U1:V2",
+            "W1:X2",
+            "L3:M4",
+            "A256:B257",
+            "D256:E257"
+          ],
+          "cells": [
+            {
+              "address": "A1",
+              "type": "n",
+              "value": "7",
+              "formula": null
+            },
+            {
+              "address": "D1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "E1",
+              "type": "n",
+              "value": "98",
+              "formula": null
+            },
+            {
+              "address": "H1",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "L1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "O1",
+              "type": "n",
+              "value": "10",
+              "formula": null
+            },
+            {
+              "address": "Q1",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "S1",
+              "type": "n",
+              "value": "30",
+              "formula": null
+            },
+            {
+              "address": "U1",
+              "type": "n",
+              "value": "40",
+              "formula": null
+            },
+            {
+              "address": "W1",
+              "type": "n",
+              "value": "50",
+              "formula": null
+            },
+            {
+              "address": "L3",
+              "type": "n",
+              "value": "20",
+              "formula": null
+            },
+            {
+              "address": "A256",
+              "type": "text",
+              "value": "合并😀禰󠄀",
+              "formula": null
+            },
+            {
+              "address": "D256",
+              "type": "n",
+              "value": "88",
+              "formula": null
+            },
+            {
+              "address": "A258",
+              "type": "n",
+              "value": "14",
+              "formula": "A1+$A$1"
+            }
+          ]
+        },
+        {
+          "merges": [],
+          "cells": []
+        }
+      ]
+    }
+  ]
+}

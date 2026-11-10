@@ -1,11 +1,13 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, readlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, readlinkSync, renameSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { resolve, join, basename } from 'node:path';
 import { arch, platform, release, cpus as hostCpus } from 'node:os';
-const { values } = parseArgs({ options: { browser: { type: 'string', default: 'chromium' } } });
+const { values } = parseArgs({ options: { browser: { type: 'string', default: 'chromium' }, mode: { type: 'string', default: 'reading' } } });
 const browser = values.browser;
+const mode = values.mode;
+if (!['reading', 'editing'].includes(mode)) throw Error('Select reading or editing acceptance.');
 const startedAt = new Date().toISOString();
 if (!['chromium', 'firefox', 'webkit', 'legacy-chromium'].includes(browser)) throw Error('Select chromium, firefox, webkit or legacy-chromium.');
 const legacy = browser === 'legacy-chromium';
@@ -22,7 +24,12 @@ if (memoryMax !== 8 * 1024 ** 3 || quota / period !== 4 || !affinity || countCpu
 const cpuIds = list => list.split(',').flatMap(span => { const [from, to = from] = span.split('-').map(Number); return Array.from({ length: to - from + 1 }, (_, index) => from + index); });
 const allowed = new Set(cpuIds(affinity));
 const boundedAffinity = mask => Boolean(mask && cpuIds(mask).every(cpu => allowed.has(cpu)));
-const output = resolve('.cache/workbook-reading-budget', browser); mkdirSync(output, { recursive: true });
+const output = resolve('.cache/workbook-' + mode + '-budget', browser);
+if (mode === 'editing' && existsSync(output)) {
+  const archive = resolve('.cache/workbook-editing-budget-history', browser); mkdirSync(archive, { recursive: true });
+  renameSync(output, join(archive, startedAt.replace(/[:.]/g, '-')));
+}
+mkdirSync(output, { recursive: true });
 const fonts = execFileSync('fc-list', [':', 'file', 'family', 'style'], { encoding: 'utf8' }).split('\n').filter(Boolean).sort().join('\n');
 const fontPaths = [...new Set(execFileSync('fc-list', ['-f', '%{file}\n'], { encoding: 'utf8' }).trim().split('\n'))].sort();
 const fontFiles = fontPaths.map(path => { const bytes = readFileSync(path); return { file: basename(path), bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }; });
@@ -44,13 +51,13 @@ function sample(checkThreads = false) {
   }
   rssPeak = Math.max(rssPeak, total); groupPeak = Math.max(groupPeak, Number(read('memory.current'))); samples++;
 }
-const child = spawn(process.execPath, ['scripts/playwright.mjs', 'test', 'workbook-reading-performance.spec.ts', '--project=' + (legacy ? 'chromium' : browser), '--output=' + join(output, 'browser')],
+const child = spawn(process.execPath, ['scripts/playwright.mjs', 'test', 'workbook-' + mode + '-performance.spec.ts', '--project=' + (legacy ? 'chromium' : browser), '--output=' + join(output, 'browser')],
   { stdio: 'inherit', env: { ...process.env, DOFFI_WORKBOOK_BUDGET: '1', ...(legacy ? { DOFFI_BROWSER_EXECUTABLE: resolve('.cache/legacy-browser/chromium-1041/chrome-linux/chrome') } : {}) } });
 const timer = setInterval(() => sample(samples % 50 === 0), 20);
 const code = await new Promise(resolve => { child.once('error', error => { process.stderr.write(String(error) + '\n'); resolve(1); }); child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0))); });
 clearInterval(timer); sample(true);
 const highSum = [...peaks.values()].reduce((sum, item) => sum + item.high, 0);
-const report = { browser, startedAt, completedAt: new Date().toISOString(), cgroup: relative, memoryMax, cpuMax: read('cpu.max'), affinity, cpuSet, swapMax: read('memory.swap.max'), swapCurrent: read('memory.swap.current'),
+const report = { browser, mode, startedAt, completedAt: new Date().toISOString(), cgroup: relative, memoryMax, cpuMax: read('cpu.max'), affinity, cpuSet, swapMax: read('memory.swap.max'), swapCurrent: read('memory.swap.current'),
   memoryPeak: Number(read('memory.peak')), sampledGroupPeak: groupPeak, browserRssPeak: rssPeak, browserSummedProcessHighWater: highSum,
   samples, sampleIntervalMs: 20, threadChecks, invalidAffinity: [...badAffinity], processes: [...peaks.values()],
   fontconfigRecordCount: fonts.split('\n').length, fontListSha256: createHash('sha256').update(fonts).digest('hex'),

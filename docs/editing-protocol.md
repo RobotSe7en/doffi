@@ -52,7 +52,7 @@ interface DocumentSession {
 | 对象 `node` | `nodeId` |
 | 对象集合 `node-set` | 稳定、有序的 `nodeIds` |
 | 区域 `region` | `surfaceId`、pt 矩形 `rect`、命中 `nodeIds`、布局环境 `layoutKey`；真实分页后可附带 `pageId` |
-| 单元格范围 | 工作表 ID 与范围，进入工作簿迭代后实现 |
+| 单元格范围 `cells` | 稳定工作表 ID 与多个精确矩形片段，随事务映射和修订重绑；工作簿编辑范围见[阶段验收](workbook-editing-acceptance.md) |
 
 文字偏移使用规范节点文本的 UTF-16 索引，与 JavaScript 字符串和 DOM Range 一致。换行占一个 `\n`，内嵌对象占一个 `U+FFFC`；初次导入规范化后不再隐式进行 Unicode 归一化。
 

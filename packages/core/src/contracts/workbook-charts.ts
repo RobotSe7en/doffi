@@ -12,9 +12,11 @@ export const WorkbookChartCacheSchema = z.strictObject({
 export type WorkbookChartCache = z.infer<typeof WorkbookChartCacheSchema>;
 /** A reference is the source. Native caches are explicitly derived values and
  * never become an independently writable chart data table. Origin is A1 on the
- * owning worksheet, including for local defined-name lookup. */
+ * owning worksheet unless explicitly bound to another current worksheet. This
+ * binding preserves caller-dependent names when the drawing changes owner. */
 export const WorkbookChartReferenceSchema = z.strictObject({
   expression: z.string().min(2).max(8192).startsWith("="), valueType: z.enum(["text", "number"]), cache: WorkbookChartCacheSchema.optional(),
+  originSheetId: IdentifierSchema.optional(),
 });
 export type WorkbookChartReference = z.infer<typeof WorkbookChartReferenceSchema>;
 /** Native literal vectors own their values. They have neither a formula nor a

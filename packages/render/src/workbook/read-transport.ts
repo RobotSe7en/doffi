@@ -98,8 +98,8 @@ export function transportReadRequest(operation: WorkbookReadOperation, value: un
     if (!keys(value, ["documentId", "revision", "path", "maxBytes"]) || typeof value.path !== "string" || value.path.length > 1024) throw new DocumentError("InvalidOperation", "Invalid workbook resource transport request.");
     limit("maxBytes", limits.maxAssetBytes);
   } else if (operation === "rules") {
-    if (!keys(value, ["documentId", "revision", "sheetId", "coordinates", "maxCells", "maxRules", "maxValues", "maxSteps", "maxCodeUnits"])
-      || typeof value.sheetId !== "string" || value.sheetId.length > 1024 || !Array.isArray(value.coordinates)) throw new DocumentError("InvalidOperation", "Invalid workbook rule transport request.");
+    if (!keys(value, ["documentId", "revision", "sheetId", "coordinates", "includeCurrent", "maxCells", "maxRules", "maxValues", "maxSteps", "maxCodeUnits"])
+      || value.includeCurrent !== undefined && typeof value.includeCurrent !== "boolean" || typeof value.sheetId !== "string" || value.sheetId.length > 1024 || !Array.isArray(value.coordinates)) throw new DocumentError("InvalidOperation", "Invalid workbook rule transport request.");
     limit("maxCells", limits.maxCells); limit("maxRules", limits.maxRules); limit("maxValues", limits.maxRuleValues); limit("maxSteps", limits.maxRuleSteps); limit("maxCodeUnits", limits.maxCodeUnits);
     if (value.coordinates.length > (value.maxCells as number)) throw new DocumentError("ResourceLimitExceeded", "Too many transported workbook rule coordinates.");
     for (const coordinate of value.coordinates) if (!isRecord(coordinate) || !keys(coordinate, ["row", "column"]) || !Number.isSafeInteger(coordinate.row)

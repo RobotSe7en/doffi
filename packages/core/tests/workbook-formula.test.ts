@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFormulaTemplatePool, parseFormula } from "../src/workbook/formula.js";
+import { printFormula } from "../src/workbook/formula-print.js";
 const origin = { row: 4, column: 2 };
 describe("first-party formula parser foundation", () => {
   it("preserves constants, missing arguments, escaping and sheet-relative references", () => {
@@ -15,6 +16,20 @@ describe("first-party formula parser foundation", () => {
     expect(parseFormula('=1+2*3&"x"=TRUE', origin)).toMatchObject({ operator: "=", left: { operator: "&", left: { operator: "+", right: { operator: "*" } } } });
     expect(parseFormula("=SUM('Budget 2026'!A1:B3)", origin)).toMatchObject({ arguments: [{ from: { sheet: "Budget 2026" }, to: { sheet: "Budget 2026" } }] });
     expect(parseFormula("=LOG10(100)", origin)).toMatchObject({ kind: "call", name: "LOG10" });
+  });
+  it.each([",", ")", "(", "!", "%", ":", "+", " "])("preserves punctuation strings as arguments: %s", value => {
+    const source = `=CONCAT("${value}","tail")`, ast = parseFormula(source, origin);
+    expect(ast).toEqual({ kind: "call", name: "CONCAT", arguments: [{ kind: "string", value }, { kind: "string", value: "tail" }] });
+    expect(parseFormula(printFormula(ast, origin), origin)).toEqual(ast);
+    expect(() => parseFormula(`=SUM(1"${value}"2)`, origin)).toThrow();
+  });
+  it("preserves bang references and names separately from ordinary unqualified tokens", () => {
+    for (const source of ["=!A1", "=!$A$1", "=!Scoped", "=SUM(!A1:B2)", "=SUM(!1:2)", "=SUM(!A:B)", "=!Scoped !$A$1"]) {
+      const ast = parseFormula(source, origin);
+      expect(parseFormula(printFormula(ast, origin), origin)).toEqual(ast);
+    }
+    expect(parseFormula("=!Scoped", origin)).toEqual({ kind: "name", name: "Scoped", sheet: "" });
+    for (const source of ["=''!A1", "=[0]''!A1", "=!", "=!!Scoped"]) expect(() => parseFormula(source, origin)).toThrow();
   });
   it("interns copied formulas without retaining one AST per cell", () => {
     const pool = createFormulaTemplatePool();

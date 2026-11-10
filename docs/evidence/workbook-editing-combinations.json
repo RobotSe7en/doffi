@@ -1,0 +1,212 @@
+{
+  "scope": "Independent mixed native source: table, rich text, name, rules, three drawing anchor kinds, chart, classic note and modern threads. SDK current expectations are independent of Calc caches. Unmodified actual Calc edit/resave and differences retained; Excel/WPS runtime unverified.",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "f4ccceba73fef69c471b86b51928dfc95511409d42a2435e8340107a8c257826",
+  "outputSha256": "7ca7a8a59c057e13eb8dc6d7f8122723149995f3016caa1ccbb125a8c96e4da2",
+  "expected": {
+    "initialTotal": 240,
+    "editedTotal": 280,
+    "initialQuantitySum": 10,
+    "editedQuantitySum": 14,
+    "filteredEditedTotal": 120,
+    "drawingCount": 4,
+    "chartCount": 1,
+    "classicCount": 1,
+    "modernRoots": 2,
+    "modernReplies": 1
+  },
+  "producerImport": {
+    "outcome": "rejected",
+    "code": "InvalidDocument",
+    "reason": "Pinned Calc emits repeated VML type/shape identities for the three classic compatibility records. Raw bytes are preserved; XML/XSD/OPC success does not prove valid VML identities."
+  },
+  "producer": {
+    "sheets": [
+      {
+        "part": "xl/worksheets/sheet1.xml",
+        "cells": [
+          {
+            "address": "A1",
+            "type": "s",
+            "formula": null,
+            "value": "0"
+          },
+          {
+            "address": "B1",
+            "type": "s",
+            "formula": null,
+            "value": "1"
+          },
+          {
+            "address": "C1",
+            "type": "s",
+            "formula": null,
+            "value": "2"
+          },
+          {
+            "address": "D1",
+            "type": "s",
+            "formula": null,
+            "value": "3"
+          },
+          {
+            "address": "A2",
+            "type": "s",
+            "formula": null,
+            "value": "4"
+          },
+          {
+            "address": "B2",
+            "type": "n",
+            "formula": null,
+            "value": "6"
+          },
+          {
+            "address": "C2",
+            "type": "n",
+            "formula": null,
+            "value": "10"
+          },
+          {
+            "address": "D2",
+            "type": "n",
+            "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "value": "60"
+          },
+          {
+            "address": "A3",
+            "type": "s",
+            "formula": null,
+            "value": "5"
+          },
+          {
+            "address": "B3",
+            "type": "n",
+            "formula": null,
+            "value": "3"
+          },
+          {
+            "address": "C3",
+            "type": "n",
+            "formula": null,
+            "value": "20"
+          },
+          {
+            "address": "D3",
+            "type": "n",
+            "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "value": "60"
+          },
+          {
+            "address": "A4",
+            "type": "s",
+            "formula": null,
+            "value": "6"
+          },
+          {
+            "address": "B4",
+            "type": "n",
+            "formula": null,
+            "value": "4"
+          },
+          {
+            "address": "C4",
+            "type": "n",
+            "formula": null,
+            "value": "30"
+          },
+          {
+            "address": "D4",
+            "type": "n",
+            "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "value": "120"
+          },
+          {
+            "address": "A5",
+            "type": "s",
+            "formula": null,
+            "value": "7"
+          },
+          {
+            "address": "B5",
+            "type": "n",
+            "formula": null,
+            "value": "1"
+          },
+          {
+            "address": "C5",
+            "type": "n",
+            "formula": null,
+            "value": "40"
+          },
+          {
+            "address": "D5",
+            "type": "n",
+            "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+            "value": "40"
+          },
+          {
+            "address": "A6",
+            "type": "s",
+            "formula": null,
+            "value": "8"
+          },
+          {
+            "address": "D6",
+            "type": "n",
+            "formula": "SUBTOTAL(109,SalesTable[金额])",
+            "value": "280"
+          }
+        ],
+        "hiddenRows": []
+      },
+      {
+        "part": "xl/worksheets/sheet2.xml",
+        "cells": [
+          {
+            "address": "A1",
+            "type": "n",
+            "formula": "SUM(SalesTable[金额])",
+            "value": "280"
+          },
+          {
+            "address": "A2",
+            "type": "n",
+            "formula": "SUM(Quantities)",
+            "value": "14"
+          }
+        ],
+        "hiddenRows": []
+      }
+    ],
+    "tables": [
+      {
+        "name": "SalesTable",
+        "range": "A1:D6"
+      }
+    ],
+    "charts": [
+      [
+        "Sales!$B$1",
+        "Sales!$A$2:$A$4",
+        "Sales!$B$2:$B$4",
+        "Sales!$C$1",
+        "Sales!$A$2:$A$4",
+        "Sales!$C$2:$C$4"
+      ]
+    ],
+    "classicNotes": [
+      "B2",
+      "C3",
+      "D4"
+    ],
+    "modernThreads": [],
+    "duplicateVmlIds": [
+      "_x0000_t202",
+      "shape_0",
+      "_x0000_t202",
+      "shape_0"
+    ]
+  }
+}

@@ -58,7 +58,7 @@ interface PreparedDrawing {
 /** Build one detached object layer against the same dimensions and pane frame
  * as the cells. Source order controls stacking. All panes share one candidate
  * resource lease, while each owns fresh view nodes, projections and SVG IDs. */
-export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "source" | "view">, snapshot: WorkbookSnapshot,
+export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "source" | "view" | "fontProbes">, snapshot: WorkbookSnapshot,
   frame: WorkbookWindowFrame, dimensions: { readonly rows: AxisDimensions; readonly columns: AxisDimensions },
   sources: WorkbookContentSources, assetSource: WorkbookAssetSource, chartSource: WorkbookChartSource,
   formatter: WorkbookNumberFormatter, signal: AbortSignal, input: WorkbookDrawingLayoutLimits = {}): Promise<WorkbookDrawingLayout> {
@@ -104,7 +104,7 @@ export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "sou
       if (Math.max(rect.width, rect.height) > limits.maxExtentPt) throw new DocumentError("ResourceLimitExceeded", "A worksheet object exceeds its measurable extent budget.");
       textUnits(source.textContent ?? "");
       if (object.kind === "geometry" || object.kind === "text") {
-        const batch = layoutWorkbookDrawingTexts(surface.view, [{ source, object, text: createWorkbookDrawingText(source, object, remaining()), widthPt: rect.width, heightPt: rect.height }], { maxNodes: remaining(), maxExtentPt: limits.maxExtentPt });
+        const batch = layoutWorkbookDrawingTexts(surface.view, [{ source, object, text: createWorkbookDrawingText(source, object, remaining()), widthPt: rect.width, heightPt: rect.height }], { maxNodes: remaining(), maxExtentPt: limits.maxExtentPt }, surface.fontProbes);
         text = batch.objects[0]!; rect = { ...rect, width: text.widthPt, height: text.heightPt };
         fonts.push(...batch.fonts); usedFallbackLineMetrics ||= batch.usedFallbackLineMetrics;
       }
@@ -176,7 +176,7 @@ export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "sou
             message.dataset.officeView = "workbook-chart-unavailable"; message.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center"; content.append(message);
           } else {
             const chart = layoutWorkbookChart(surface.view, source, charts.get(object.chartId)!, binding as Extract<WorkbookChartBinding, { kind: "available" }>, rect.width, rect.height, id + "-chart", formatter,
-              { maxNodes: remaining(), maxCodeUnits: Math.max(1, limits.maxCodeUnits - units) });
+              { maxNodes: remaining(), maxCodeUnits: Math.max(1, limits.maxCodeUnits - units) }, surface.fontProbes);
             account(chart.nodes); textUnits(chart.element.textContent ?? ""); chart.element.style.overflow = "hidden"; content.append(chart.element);
             if (!partIndex) { fonts.push(...chart.fonts); usedFallbackLineMetrics ||= chart.usedFallbackLineMetrics;
               diagnostics.push(...chart.diagnostics.filter(diagnostic => diagnostic.code === "negative-pie-magnitude" || diagnostic.code === "chart-label-overflow"));

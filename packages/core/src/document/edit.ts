@@ -4,10 +4,14 @@ import type { DocumentContentOperation } from "../contracts/operations.js";
 import type { DocumentReadLimits, TextOffsetMapping } from "../runtime.js";
 import { DocumentError } from "../errors.js";
 import { normalizeCss, setInlineStyle } from "./css.js";
+import { setDrawingInlineStyle } from "./drawing-css.js";
+import { styleSourceText } from "./text-style.js";
+import type { SourceTextRange } from "./text-style.js";
 import { bodyTags, parseHtml, supportedTags } from "./html.js";
 import { parseHtmlFragment, parseHtmlTree, serializeHtmlOuter, serializeHtmlTree } from "./html-parser.js";
-import { encode, resolveReference } from "./package.js";
-import type { DocumentState } from "./state.js";
+import { decodeText, encode, resolveReference } from "./package.js";
+import type { HtmlSourceDescriptor, ParsedHtml } from "./html.js";
+import type { DocumentPackage } from "../runtime.js";
 import { checkLimit } from "./validation.js";
 import { isTextBoundary, textPositions } from "./text.js";
 
@@ -18,6 +22,15 @@ const blocks = new Set(["article", "section", "div", "p", "h1", "h2", "h3", "h4"
 const isElement = (node: Node): node is Element => "tagName" in node;
 const attr = (node: Element, name: string) => node.attrs.find((item) => item.name === name)?.value;
 function fail(message: string): never { throw new DocumentError("InvalidOperation", message); }
+
+/** Format adapters share the same bounded HTML editor and source validation. */
+export interface EditableHtmlSource {
+  readonly files: DocumentPackage;
+  readonly snapshot: { readonly html: string; readonly manifest: HtmlSourceDescriptor;
+    readonly metadata: { readonly presentation?: { readonly hyperlinks: readonly { readonly nodeId: string }[] };
+      readonly workbook?: { readonly objectHyperlinks?: readonly { readonly nodeId: string }[] | undefined } } };
+  readonly html: ParsedHtml;
+}
 
 function setAttribute(node: Element, name: string, value: string): void {
   const existing = node.attrs.find((item) => item.name === name);
@@ -90,7 +103,7 @@ export class DocumentEdit {
   readonly replacedTextNodes = new Set<string>();
   readonly structuralTextNodes = new Set<string>();
 
-  constructor(private readonly state: DocumentState, private readonly limits: DocumentReadLimits, private readonly allocate: () => string) {
+  constructor(private readonly state: EditableHtmlSource, private readonly limits: DocumentReadLimits, private readonly allocate: () => string) {
     this.tree = parseHtmlTree(state.snapshot.html, limits, supportedTags);
     this.baseIds = new Set(state.html.nodeIds());
   }
@@ -170,11 +183,40 @@ export class DocumentEdit {
   sourceStyle(nodeId:string,property:string,value:string):void {
     const target=this.index().get(nodeId);if(!target)fail("The format style target is unavailable.");setAttribute(target,"style",setInlineStyle(attr(target,"style")??"",property,value,this.limits));
   }
+  sourceDrawingStyle(nodeId: string, property: string, value: string): void {
+    const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
+    setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
+  }
+  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>): void {
+    const target = this.index().get(nodeId); if (!target) fail("The text format target is unavailable.");
+    const styles = this.state.snapshot.manifest.styles.map(path => decodeText(this.state.files.get(path)!));
+    styleSourceText(target, range, properties, this.limits, this.allocate, styles);
+  }
+  /** A format adapter has already checked the owning source identity. */
+  replaceSourceText(nodeId: string, edit: { readonly from: number; readonly to: number; readonly expectedText: string; readonly text: string }): void {
+    const target = this.index().get(nodeId); if (!target) fail("The source text target is unavailable.");
+    this.replaceText(target, { op: "replaceText", nodeId, from: edit.from, to: edit.to, expectedText: edit.expectedText, text: edit.text });
+  }
   removeSource(nodeId:string,contents=false):void {
     const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode)||target.parentNode.tagName==="body")fail("The document root cannot be removed.");
     const positions=textPositions(this.tree),range=positions.get(target)!;
     this.recordSplice(positions,range.from,range.to,contents?target:target.parentNode,0,true);
     if(contents)for(const child of [...target.childNodes])adapter.detachNode(child);else adapter.detachNode(target);
+  }
+
+  /** Format-owned bodies accept new fragments without exposing writable source
+   * identities. Equal canonical content retains the original nodes and bytes. */
+  replaceSourceContent(nodeId: string, source: string): boolean {
+    const target = this.index().get(nodeId); if (!target) fail("The source body is missing.");
+    const fragment = parseHtmlFragment(source, target, this.limits, bodyTags);
+    visit(fragment, node => { if (isElement(node) && (attr(node, "data-node-id") !== undefined || attr(node, "id") !== undefined)) fail("New format content cannot supply source identities."); });
+    const canonical = (fragment: Tree.DocumentFragment): string => {
+      visit(fragment, node => { if (isElement(node)) { node.attrs = node.attrs.filter(item => item.name !== "data-node-id"); const style = attr(node, "style"); if (style !== undefined) setAttribute(node, "style", normalizeCss(style, "declarationList", this.limits, { nodes: 0 })); } });
+      return serializeHtmlTree(fragment);
+    };
+    const old = parseHtmlFragment(target.childNodes.map(serializeHtmlOuter).join(""), target, this.limits, bodyTags);
+    if (canonical(fragment) === canonical(old)) return false;
+    this.removeSource(nodeId, true); this.insertSource(nodeId, source); return true;
   }
 
   /** Structural movement preserves node identity; ancestor text anchors need exact recovery. */
@@ -255,11 +297,11 @@ export class DocumentEdit {
     if (selected.some((leaf) => ancestors(leaf.node).some((node) => attr(node, "data-word-tab") !== undefined
       || attr(node, "data-word-break") !== undefined))) fail("Native tabs and explicit page breaks require structural operations.");
     const context = (node: Node) => ancestors(node).find((item) => blocks.has(item.tagName));
-    const presentationLinks = new Set(this.state.snapshot.metadata.presentation?.hyperlinks.map(link => link.nodeId));
+    const nativeLinks = new Set([...(this.state.snapshot.metadata.presentation?.hyperlinks ?? []), ...(this.state.snapshot.metadata.workbook?.objectHyperlinks ?? [])].map(link => link.nodeId));
     const semantic = (node: Node) => ancestors(node).find((item) => ["ins", "del"].includes(item.tagName)
       || attr(item, "data-word-link") !== undefined || attr(item, "data-word-field") !== undefined
       || attr(item, "data-word-field-result") !== undefined || attr(item, "data-office-field") !== undefined
-      || attr(item, "data-office-link") !== undefined || presentationLinks.has(attr(item, "data-node-id")!));
+      || attr(item, "data-office-link") !== undefined || nativeLinks.has(attr(item, "data-node-id")!));
     if (start && selected.some((leaf) => context(leaf.node) !== context(start.node) || semantic(leaf.node) !== semantic(start.node))) {
       fail("Text replacement cannot cross paragraphs, cells, stories or native semantic boundaries.");
     }
@@ -417,17 +459,7 @@ export class DocumentEdit {
       case "replaceText": this.replaceText(target, operation); break;
       case "reconcileFragment": this.reconcile(target, operation); break;
       case "setStyle": {
-        let style = setInlineStyle(attr(target, "style") ?? "", operation.property, operation.value, this.limits);
-        if (this.state.snapshot.metadata.presentation) {
-          const property = operation.property.toLowerCase();
-          const prefix = property === "color" ? "--office-text" : property === "background-color" ? "--office-fill" : /^--office-[a-z0-9-]+-color$/.test(operation.property) ? operation.property.slice(0, -6) : undefined;
-          if (prefix) {
-            style = setInlineStyle(style, prefix + "-color", operation.value, this.limits);
-            for (const [name, value] of Object.entries({ source: "direct", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" })) style = setInlineStyle(style, prefix + "-" + name, value, this.limits);
-            if (property === "background-color") style = setInlineStyle(style, "--office-fill-kind", "solid", this.limits);
-          }
-          if (property === "font-family") for (const role of ["ascii", "h-ansi", "east-asia", "complex-script"]) style = setInlineStyle(style, "--office-font-" + role, operation.value, this.limits);
-        }
+        const style = (this.state.snapshot.metadata.presentation ? setDrawingInlineStyle : setInlineStyle)(attr(target, "style") ?? "", operation.property, operation.value, this.limits);
         setAttribute(target, "style", style);
         break;
       }

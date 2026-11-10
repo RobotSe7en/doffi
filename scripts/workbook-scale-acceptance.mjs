@@ -17,12 +17,13 @@ function run(command, args, env = process.env) {
 const pnpm = process.env.npm_execpath;
 if (!pnpm) throw Error('Run capacity acceptance through pnpm.');
 if (process.env.DOFFI_CI_MODE === 'daily') throw Error('Stage capacity acceptance cannot run in daily mode.');
+run(process.execPath, ['scripts/check-acceptance-fonts.mjs']);
 run(process.execPath, [pnpm, 'run', 'check:xlsx-fixtures']);
 run(process.execPath, [pnpm, 'run', 'check:xlsx-reference']);
 const unitReport = resolve(directory, 'unit-scale.json');
 run(process.execPath, [pnpm, 'exec', 'vitest', 'run', '--testNamePattern=@scale', '--reporter=default', '--reporter=json', '--outputFile=' + unitReport]);
 const unit = JSON.parse(readFileSync(unitReport, 'utf8'));
-if (unit.numFailedTests !== 0 || unit.numPassedTests < 6) throw Error('The six declared native-capacity unit cases must actually execute.');
+if (unit.numFailedTests !== 0 || unit.numPassedTests < 8) throw Error('The six native-capacity and two editing-capacity unit cases must actually execute.');
 const files = ['workbook-storage', 'workbook-preview', 'workbook-read-worker', 'workbook-playground'].map(name => name + '.spec.ts');
 const selection = '@scale|completes the public reading matrix';
 run(process.execPath, ['scripts/playwright.mjs', 'test', ...files, '--grep=' + selection, '--reporter=list', '--output=.cache/workbook-reading-matrix-modern']);
@@ -55,5 +56,6 @@ for (const browser of ['chromium', 'firefox', 'webkit', 'legacy-chromium']) {
     process.execPath, 'scripts/workbook-reading-budget.mjs', '--browser', browser]);
 }
 run(process.execPath, ['scripts/collect-workbook-reading-budget.mjs', '--output', resolve(directory, 'reading-budget.json')]);
+run(process.execPath, ['scripts/workbook-performance-acceptance.mjs']);
 writeFileSync(acceptance, JSON.stringify({ sourceHead: process.env.DOFFI_SOURCE_HEAD ?? execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  complete: true, fullNativeReferences: true, logicalCpus: selected, matrixCases: 128, cells: 200000, formulas: 20000, chunks: 40 }, null, 2) + '\n');
+  complete: true, fullNativeReferences: true, fixedResourceEditing: true, logicalCpus: selected, matrixCases: 128, cells: 200000, formulas: 20000, chunks: 40 }, null, 2) + '\n');

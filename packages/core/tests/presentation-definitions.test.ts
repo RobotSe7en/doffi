@@ -1,5 +1,6 @@
+import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import { expect,test } from "vitest";
-import { createDocumentSession,createPresentation,openDocument,resolvePresentationGeometry } from "@doffi/core";
+import { createDocumentSession, createPresentation, resolvePresentationGeometry } from "@doffi/core";
 import type { DocumentOperation,DocumentSession } from "@doffi/core";
 const blank=()=>createDocumentSession(openDocument(createPresentation({documentId:"definitions"})));
 const p=(s:DocumentSession)=>s.snapshot().metadata.presentation!;

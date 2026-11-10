@@ -1,5 +1,9 @@
 import type { ChartAppearance, DeepReadonly, WorkbookNumberDisplayPart } from "@doffi/core";
 import { DocumentError } from "@doffi/core";
+import type { ChartTextDecoration } from "./chart-text-decoration.js";
+import { captureChartRolePaint, chartFontDecoration } from "./chart-style-probe.js";
+import type { ChartLabelFrame } from "./chart-label-frame.js";
+import type { DrawingPaintStyle } from "./presentation/appearance.js";
 import { markViewNode, ownViewAttribute } from "./view-nodes.js";
 import { cssStringValue, numeric, property, resolvedColor, strokeAttributes, svgFill } from "./presentation/appearance.js";
 import { svgElement as createSvgElement } from "./presentation/svg.js";
@@ -30,7 +34,7 @@ export interface BasicChartOptions {
   readonly onTextRun?: (run: BasicChartTextRun) => void;
   /** Resolve styles against the source ancestry, which may be outside the view.
    * The adapter owns any temporary probes and releases them even on failure. */
-  readonly style: (classes?: string) => CSSStyleDeclaration;
+  readonly style: (classes?: string | readonly string[]) => CSSStyleDeclaration;
   readonly formatNumber: (value: number, format?: string, context?: BasicChartNumberContext) => BasicChartText;
   readonly formatCategory?: (index: number, style: CSSStyleDeclaration) => BasicChartText;
   readonly accountText?: (codeUnits: number) => void;
@@ -61,6 +65,9 @@ export interface BasicChartScene {
   readonly legendPosition: ChartAppearance["legend"];
   readonly labels: readonly { readonly node: SVGTextElement; readonly outsidePie: boolean; readonly anchorX: number; readonly anchorY: number; readonly leader?: Readonly<Record<string, string | number>> }[];
   readonly automaticCategoryLabels: boolean;
+  readonly textDecorations?: readonly ChartTextDecoration[];
+  readonly labelFrames?: readonly ChartLabelFrame[];
+  readonly legendFrame?: DrawingPaintStyle;
   readonly numberTexts: readonly { readonly parts: readonly WorkbookNumberDisplayPart[]; readonly availableWidth: number; readonly fields: readonly SVGTSpanElement[] }[];
 }
 const defaultPalette = ["#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47"];
@@ -71,11 +78,17 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const svgElement: typeof createSvgElement = (document, tag, attributes) => { account(1); return createSvgElement(document, tag, attributes); };
   const document = node.ownerDocument, formatNumber = options.formatNumber, styles = new Map<string, CSSStyleDeclaration>();
   // Validated source CSS has no structural pseudo-classes. One probe per
-  // class list is enough for this immutable render, including repeated labels.
-  const style = (classes?: string): CSSStyleDeclaration => {
-    const key = classes ?? ""; let computed = styles.get(key);
+  // role chain is enough for this immutable render, including repeated labels.
+  const style = (classes?: string | readonly string[]): CSSStyleDeclaration => {
+    const key = JSON.stringify(classes ?? ""); let computed = styles.get(key);
     if (!computed) { computed = options.style(classes); styles.set(key, computed); }
     return computed;
+  };
+  const frameStyles = new WeakMap<CSSStyleDeclaration, DrawingPaintStyle | null>(); let styleUnits = 0;
+  const frameStyle = (style: CSSStyleDeclaration): DrawingPaintStyle | undefined => {
+    if (frameStyles.has(style)) return frameStyles.get(style) ?? undefined;
+    const captured = captureChartRolePaint(style, units => { styleUnits += units; if (styleUnits > 8 * 1024 * 1024) throw new DocumentError("ResourceLimitExceeded", "Chart frame styles exceed their captured text budget."); options.accountText?.(units); });
+    frameStyles.set(style, captured ?? null); return captured;
   };
   const seriesDefinitions = new Map((chart.seriesStyles ?? []).map(series => [series.seriesId, series]));
   const pointKey = (seriesId: string, index: number): string => JSON.stringify([seriesId, index]);
@@ -102,10 +115,14 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const font = (s: CSSStyleDeclaration): Record<string, string> => ({ "font-size": String(parseFloat(s.fontSize) * 0.75 * fontScale(s)), "font-weight": s.fontWeight, "font-style": s.fontStyle,
     "letter-spacing": String((parseFloat(s.letterSpacing) || 0) * .75 * fontScale(s)), "word-spacing": String((parseFloat(s.wordSpacing) || 0) * .75 * fontScale(s)),
     fill: property(s, "--office-text-color") ? resolvedColor(document, s, "--office-text") : s.color });
-  const numberTexts: BasicChartScene["numberTexts"][number][] = [];
+  const numberTexts: BasicChartScene["numberTexts"][number][] = [], textDecorations: ChartTextDecoration[] = [];
   const text = (value: BasicChartText, x: number, y: number, s = base, anchor = "middle"): SVGTextElement => {
     options.accountText?.(typeof value === "string" ? value.length : value.parts.reduce((sum, part) => sum + (part.kind === "text" ? part.text.length : part.character.length), 0));
-    const label = svgElement(document, "text", { x, y, "text-anchor": anchor, "dominant-baseline": "middle", ...font(s) });
+    const attributes = font(s), label = svgElement(document, "text", { x, y, "text-anchor": anchor, "dominant-baseline": "middle", ...attributes });
+    const decoration = chartFontDecoration(s, attributes.fill!);
+    label.style.textDecorationLine = "none";
+    label.dataset.sdkChartDecorationLine = decoration["text-decoration-line"]!; label.dataset.sdkChartDecorationStyle = decoration["text-decoration-style"]!; label.dataset.sdkChartDecorationColor = decoration["text-decoration-color"]!;
+    if (decoration["text-decoration-line"] !== "none") textDecorations.push({ node: label, line: decoration["text-decoration-line"]!, style: decoration["text-decoration-style"]!, color: decoration["text-decoration-color"]!, size: Number(attributes["font-size"]) });
     const run = (target: SVGTextElement | SVGTSpanElement, value: string, role: OfficeFontRole): void => {
       const family = property(s, "--office-font-" + role, property(s, "--office-minor-" + role, s.fontFamily));
       if (!document.defaultView!.CSS.supports("font-family", family)) throw new DocumentError("InvalidDocument", "Chart text has an invalid source font family.");
@@ -156,14 +173,15 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
   const right = options.layout ? left + options.layout.plot.width : width - (chart.kind === "pie" ? 12 : valueRight ? 28 : 16) - (chart.legend === "right" ? legendBand : 0), bottom = options.layout ? top + options.layout.plot.height : height - (chart.kind === "pie" ? 8 : categoryTop ? 12 : 26) - (chart.legend === "bottom" ? legendBand : 0);
   const w = Math.max(1, right - left), h = Math.max(1, bottom - top);
   const labels: BasicChartScene["labels"][number][] = [];
+  const labelFrames: ChartLabelFrame[] = [], legendFrame = chart.legend === "none" ? undefined : frameStyle(legendStyle);
   const scene: BasicChartScene = { svg, serial, width, height, plot: { x: left, y: top, width: w, height: h }, legendPosition: chart.legend, ...(options.layout?.legend ? { legend: options.layout.legend } : {}), labels,
-    automaticCategoryLabels: !property(catStyle, "--office-axis-label-skip"), numberTexts };
+    automaticCategoryLabels: !property(catStyle, "--office-axis-label-skip"), numberTexts, textDecorations, labelFrames, ...(legendFrame ? { legendFrame } : {}) };
   svg.append(svgElement(document, "rect", { x: left, y: top, width: w, height: h, fill: svgFill(document, plotStyle, svg, serial + "-plot", { x: left, y: top, width: w, height: h }, "--office-fill", "none", account, options.orientation), ...strokeAttributes(document, plotStyle) }));
   if (!data.series.length) return scene;
   const seriesStyle = new Map(data.series.map(series => [series.seriesId, style(seriesDefinitions.get(series.seriesId)?.cssClass)]));
   const pointStyle = (seriesId: string, index: number): CSSStyleDeclaration => {
     const series = seriesDefinitions.get(seriesId), point = pointDefinitions.get(pointKey(seriesId, sourceIndex(index)));
-    return point ? style([series?.cssClass, point.cssClass].filter(Boolean).join(" ")) : seriesStyle.get(seriesId)!;
+    return point ? style([series?.cssClass, point.cssClass].filter((name): name is string => !!name)) : seriesStyle.get(seriesId)!;
   };
   const fill = (seriesId: string, index: number, s: CSSStyleDeclaration, bounds: DrawingGradientBounds, negativeColumn = false): string => {
     const invert = property(s, "--office-invert-negative", "false");
@@ -196,7 +214,7 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
     if (chart.kind !== "pie" && options.showLabelsOverMaximum === true) y = Math.max(top, Math.min(bottom, y));
     const anchorX = pieAnchor?.[0] ?? x, anchorY = pieAnchor?.[1] ?? y;
     const seriesDefinition = seriesDefinitions.get(series.seriesId), point = pointDefinitions.get(pointKey(series.seriesId, sourceIndex(index)));
-    const s = style([chart.labelCssClass, seriesDefinition?.labelCssClass, point?.labelCssClass].filter(Boolean).join(" "));
+    const s = style([chart.labelCssClass, seriesDefinition?.labelCssClass, point?.labelCssClass].filter((name): name is string => !!name));
     const contents = chart.labelContents ?? ["value"], separator = cssStringValue(property(s, "--office-label-separator", ", "));
     const values = contents.map(kind => kind === "category" ? data.categories[index]! : kind === "series" ? series.name : kind === "percent" ? formatNumber(percent ?? 0, "0%", { kind: "data-label", content: "percent", seriesId: series.seriesId, index, style: s })
       : formatNumber(value, cssStringValue(property(s, "--office-label-number-format", chart.numberFormat ?? "General")), { kind: "data-label", content: "value", seriesId: series.seriesId, index, style: s }));
@@ -219,6 +237,7 @@ export function renderBasicChart(node: HTMLElement, chart: DeepReadonly<ChartApp
       ]), availableWidth: Math.max(0, ...values.map(value => typeof value === "string" ? 0 : value.availableWidth)),
     };
     const displayed = text(content, x, y, s, anchor); displayed.dataset.sdkChartLabel = "data-label";
+    const frame = frameStyle(s); if (frame) labelFrames.push({ node: displayed, style: frame });
     displayed.dataset.seriesId = series.seriesId; displayed.dataset.pointIndex = String(sourceIndex(index));
     const leaders = property(s, "--office-label-show-leader-lines", "false");
     if (leaders !== "true" && leaders !== "false") throw new DocumentError("InvalidDocument", "A chart leader-line flag must be a boolean.");

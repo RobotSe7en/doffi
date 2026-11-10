@@ -615,6 +615,7 @@ h1,h2,p {
 }
 .workbook-pane.preparing {
   position: absolute;
+  transform: translateX(-200vw);
   opacity: 0;
   pointer-events: none;
   left: 0;

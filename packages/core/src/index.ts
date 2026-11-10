@@ -10,6 +10,7 @@ export * from "./contracts/annotations.js";
 export * from "./contracts/operations.js";
 export * from "./contracts/interaction.js";
 export * from "./contracts/presentation-interaction.js";
+export * from "./contracts/workbook-interaction.js";
 export * from "./contracts/events.js";
 export { DocumentError } from "./errors.js";
 export { createOpaqueId } from "./identifiers.js";
@@ -23,16 +24,50 @@ export { DEFAULT_WORKBOOK_READ_LIMITS } from "./workbook/model.js";
 export { resolveWorkbookCommentMention } from "./workbook/comment-mentions.js";
 export type { NumberDisplayPart as WorkbookNumberDisplayPart } from "./workbook/format-numeric.js";
 export { createWorkbookNumberFormatter } from "./workbook/number-formatter.js";
+export { AxisDimensions as WorkbookAxisDimensions } from "./workbook/axis-dimensions.js";
+export { WorkbookRegionIndex } from "./workbook/region-index.js";
+export type { AxisOverride as WorkbookAxisOverride, AxisCell as WorkbookAxisCell } from "./workbook/axis-dimensions.js";
+export { WorkbookTableRegions, workbookTableRegionBorders, workbookTableRegionOrder } from "./workbook/table-regions.js";
+export type { WorkbookTableRegionElement, WorkbookTableRegionMatch } from "./workbook/table-regions.js";
+export { createWorkbookTableFormatResolver, createWorkbookConditionalFormatResolver } from "./workbook/display-format.js";
 export type { WorkbookNumberFormatter, WorkbookNumberFormatterOptions, WorkbookDisplayFormat, WorkbookNumberDisplay } from "./workbook/number-formatter.js";
 export type { WorkbookNumberMeasure } from "./workbook/format-general-section.js";
 export type { NumberFormatColor as WorkbookNumberFormatColor } from "./workbook/number-format.js";
 export { DEFAULT_WORKBOOK_INDEXED_COLORS } from "./workbook/indexed-colors.js";
 export { parseFormula as parseWorkbookFormula } from "./workbook/formula.js";
+export { parseR1C1Formula as parseWorkbookR1C1Formula } from "./workbook/formula.js";
 export type { FormulaExpression as WorkbookFormulaExpression, FormulaOrigin as WorkbookFormulaOrigin } from "./workbook/formula.js";
 export { printFormula as printWorkbookFormula } from "./workbook/formula-print.js";
+export { printR1C1Formula as printWorkbookR1C1Formula } from "./workbook/formula-print.js";
+export { copyFormula as copyWorkbookFormula } from "./workbook/formula-rewrite.js";
+export { createWorkbookFormulaFiller } from "./workbook/formula-fill.js";
+export type { WorkbookFormulaFiller } from "./workbook/formula-fill.js";
+export { rewriteFormula as rewriteWorkbookFormula } from "./workbook/formula-rewrite.js";
+export type { FormulaLocation as WorkbookFormulaLocation, FormulaReferenceChange as WorkbookFormulaReferenceChange, FormulaRewriteBindings as WorkbookFormulaRewriteBindings } from "./workbook/formula-rewrite.js";
+export { resolveWorkbookSortLayout } from "./workbook/sort-layout.js";
+export type { WorkbookSortLayout } from "./workbook/sort-layout.js";
+export { readWorkbookCellSource } from "./workbook/cell-source.js";
+export { replaceWorkbookCellText } from "./workbook/cell-text.js";
+export type { WorkbookCellTextEdit } from "./workbook/cell-text.js";
+export { resolveWorkbookCellFormat } from "./workbook/cell-format.js";
+export type { WorkbookCellFormat } from "./workbook/cell-format.js";
+export { isTextBoundary as isDocumentTextBoundary } from "./document/text.js";
+export { SourceStyleResolver, resolveSourceCssVariables } from "./document/source-css.js";
+export type { SourceStyleMap, SourceStyleNode, SourceStyleResolverOptions } from "./document/source-css.js";
+export { length as resolveSourceCssLength, color as resolveSourceCssColor } from "./document/css-values.js";
+export type { LengthContext as SourceCssLengthContext } from "./document/css-values.js";
 export type { WorkbookReferenceLocation, WorkbookReferenceArea, WorkbookReferenceResult } from "./workbook/reference.js";
-export { createWorkbookScalarEvaluator } from "./workbook/scalar.js";
+export { createWorkbookScalarEvaluator, copyWorkbookScalarContext } from "./workbook/scalar.js";
+export { captureWorkbookModel } from "./workbook/source.js";
 export type { WorkbookScalarEvaluator, WorkbookScalarResult, WorkbookScalarUnavailable, WorkbookScalarLimits, WorkbookScalarQueryOptions } from "./workbook/scalar.js";
+export type { WorkbookScalarContext } from "./workbook/scalar.js";
+export { readWorkbookChangeImpact } from "./workbook/change-impact.js";
+export type { WorkbookChangeImpact } from "./workbook/change-impact.js";
+export { createWorkbookCalculator, DEFAULT_WORKBOOK_CALCULATION_LIMITS, WORKBOOK_CALCULATION_VERSION } from "./workbook/calculation.js";
+export { createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
+export { readWorkbookRowVisibility, DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS } from "./workbook/row-visibility.js";
+export type { WorkbookRowVisibility, WorkbookRowVisibilityRequest, WorkbookRowVisibilityOptions, WorkbookRowVisibilityLimits, WorkbookRowVisibilityResult } from "./workbook/row-visibility.js";
+export type { WorkbookCalculator, WorkbookCalculationLimits, WorkbookCalculationOptions, WorkbookCalculationResult, WorkbookCalculatedCell } from "./workbook/calculation.js";
 export { readWorkbookRules, DEFAULT_WORKBOOK_RULE_LIMITS } from "./workbook/rule-reader.js";
 export type { WorkbookRuleReadLimits, WorkbookRuleReadRequest, WorkbookRuleReadOptions, WorkbookRuleReadResponse, WorkbookRuleCell, WorkbookRuleValue, WorkbookRuleIssue,
   WorkbookConditionalEvaluation, WorkbookValidationEvaluation } from "./workbook/rule-reader.js";
@@ -51,5 +86,7 @@ export type {
   OpenDocumentOptions, TextOffsetMapping, TransactionReceipt, DocumentEditingSession,
   DocumentNodeChange, DocumentSessionLimits, DocumentSessionOptions, DocumentHistoryState,
   TransactionPrepareOptions,
+  WorkbookLayoutRequest, WorkbookLayoutMeasurement, WorkbookLayoutMeasurer,
+  WorkbookSession, WorkbookCandidateChange, WorkbookInteractionRequestInput, WorkbookRangeChange, WorkbookStructureMapping, TransactionPreparationExecution, TransactionPreparationProgress,
   PresentationInteractionRequestInput,PresentationAnnotationSubmissionHandler,
 } from "./runtime.js";

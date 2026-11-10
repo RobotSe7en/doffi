@@ -28,7 +28,7 @@ export class PresentationChartWriter {
     }>();
     private count = 0;
     constructor(private readonly ctx: PresentationExportContext, private readonly text: PresentationTextWriter) { }
-    private style(name: string | undefined, node: SourceElement, surface: NativeSurface): {
+    private style(name: string | readonly string[] | undefined, node: SourceElement, surface: NativeSurface): {
         css: Css;
         raw: Css;
     } { return this.ctx.styles.probeClass(name, node, surface); }
@@ -51,14 +51,14 @@ export class PresentationChartWriter {
     private textStyle(style: {
         css: Css;
         raw: Css;
-    }): string { const own = Object.fromEntries(Object.keys(style.raw).filter(key => ["font-size", "font-family", "font-weight", "font-style", "color", "text-align"].includes(key) || key.startsWith("--office-font-") || key.startsWith("--office-text-")).map(key => [key, style.raw[key]!])); return '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr' + runProperties(style.css, own, style.raw) + "</a:defRPr></a:pPr><a:endParaRPr/></a:p></c:txPr>"; }
+    }): string { const own = Object.fromEntries(Object.keys(style.raw).filter(key => ["font-size", "font-family", "font-weight", "font-style", "color", "text-align", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--office-underline", "--office-strike"].includes(key) || key.startsWith("--office-font-") || key.startsWith("--office-text-")).map(key => [key, style.raw[key]!])); return '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr' + runProperties(style.css, own, style.raw) + "</a:defRPr></a:pPr><a:endParaRPr/></a:p></c:txPr>"; }
     private labels(chart: DeepReadonly<PresentationChart>, styleName: string | undefined, node: SourceElement, surface: NativeSurface, points: readonly {
         index: number;
         labelCssClass?: string | undefined;
     }[] = []): string {
-        const contents = chart.showLabels ? (chart.labelContents ?? ["value"]) : [], names = [chart.textCssClass, chart.labelCssClass, styleName].filter(Boolean);
+        const contents = chart.showLabels ? (chart.labelContents ?? ["value"]) : [], names = [...new Set([chart.textCssClass, chart.labelCssClass, styleName].filter((name): name is string => !!name))];
         const properties = (name: string | undefined, styled: boolean): string => {
-            const style = this.style([...names, name].filter(Boolean).join(" "), node, surface), css = style.css;
+            const style = this.style([...names, ...(name && !names.includes(name) ? [name] : [])], node, surface), css = style.css;
             let result = "";
             if (css["--office-label-number-format"] !== undefined)
                 result += empty("c:numFmt", { formatCode: cssString(css["--office-label-number-format"]!), sourceLinked: 0 });

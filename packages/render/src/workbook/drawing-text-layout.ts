@@ -5,6 +5,7 @@ import type { DeepReadonly, DrawingTextProperties, PresentationPresetGeometry, W
 import type { FontResolution } from "../contracts.js";
 import { resolvePreviewFontsInScope } from "../fonts.js";
 import { markViewNode } from "../view-nodes.js";
+import type { FontProbeCache } from "../font-probe-cache.js";
 import { property } from "../presentation/appearance.js";
 import { decorateDrawingLists } from "../presentation/text.js";
 import { workbookDrawingOrientation } from "./drawing-view.js";
@@ -48,7 +49,7 @@ interface TextBodyLayoutInput {
 /** Resolve local fonts and measure complete, unrotated object rectangles before
  * their pane projections are created. Text counters its object's reflections;
  * the outer object still owns rotation, flips, fill/effects and clipping. */
-export function layoutWorkbookDrawingTexts(scope: HTMLElement, inputs: readonly WorkbookDrawingTextLayoutInput[], limits: WorkbookDrawingTextLimits = {}): WorkbookDrawingTextBatch {
+export function layoutWorkbookDrawingTexts(scope: HTMLElement, inputs: readonly WorkbookDrawingTextLayoutInput[], limits: WorkbookDrawingTextLimits = {}, probes?: FontProbeCache): WorkbookDrawingTextBatch {
   return layoutTextBodies(scope, inputs, limits, input => {
     const { object, source } = input;
     if (object.kind !== "text" && object.kind !== "geometry" || source.dataset.nodeId !== object.nodeId || source.dataset.officeKind !== object.kind) throw new DocumentError("InvalidOperation", "Drawing layout requires its own shape or text-box source.");
@@ -57,7 +58,7 @@ export function layoutWorkbookDrawingTexts(scope: HTMLElement, inputs: readonly 
     const preset = object.kind === "geometry" ? object.preset : "rect";
     return { source, text: input.text, widthPt: input.widthPt, heightPt: input.heightPt, properties: object.text,
       geometry: (width: number, height: number) => evaluatePresentationPreset(preset, width, height, adjustments), flipH: orientation.flipH, flipV: orientation.flipV };
-  });
+  }, probes);
 }
 
 /** Measure each rich title in a compositor-supplied local rectangle. The chart
@@ -76,7 +77,7 @@ export function layoutWorkbookChartTexts(scope: HTMLElement, inputs: readonly Wo
  * A reference display owns no source UTF-16 offsets, even if its characters
  * happen to equal an imported title cache. */
 export function layoutWorkbookChartTitleContents(scope: HTMLElement, inputs: readonly WorkbookChartTitleContentInput[],
-  limits: WorkbookDrawingTextLimits & { readonly maxCodeUnits?: number } = {}): WorkbookDrawingTextBatch {
+  limits: WorkbookDrawingTextLimits & { readonly maxCodeUnits?: number } = {}, fontProbes?: FontProbeCache): WorkbookDrawingTextBatch {
   const document = scope.ownerDocument, view = document.defaultView, maxNodes = limits.maxNodes ?? 50_000, maxUnits = limits.maxCodeUnits ?? 8 * 1024 * 1024;
   if (!scope.isConnected || !view || !Number.isSafeInteger(maxNodes) || maxNodes < 1 || !Number.isSafeInteger(maxUnits) || maxUnits < 1)
     throw new DocumentError("InvalidOperation", "Chart title contents require a connected surface and positive budgets.");
@@ -133,13 +134,13 @@ export function layoutWorkbookChartTitleContents(scope: HTMLElement, inputs: rea
     }
     // The measurement pass's own accounting includes all display nodes and its
     // root; keep simultaneous source probes inside the same peak budget.
-    return layoutTextBodies(scope, bodies, { ...limits, maxNodes: Math.max(1, maxNodes - transientNodes) }, input => input);
+    return layoutTextBodies(scope, bodies, { ...limits, maxNodes: Math.max(1, maxNodes - transientNodes) }, input => input, fontProbes);
   } finally {
     for (const probe of probes) probe.remove();
   }
 }
 
-function layoutTextBodies<T>(scope: HTMLElement, inputs: readonly T[], limits: WorkbookDrawingTextLimits, adapt: (input: T) => TextBodyLayoutInput): WorkbookDrawingTextBatch {
+function layoutTextBodies<T>(scope: HTMLElement, inputs: readonly T[], limits: WorkbookDrawingTextLimits, adapt: (input: T) => TextBodyLayoutInput, probes?: FontProbeCache): WorkbookDrawingTextBatch {
   const document = scope.ownerDocument, view = document.defaultView, maxNodes = limits.maxNodes ?? 50_000, maxPasses = limits.maxPasses ?? 8, maxExtent = limits.maxExtentPt ?? 1_000_000;
   if (!scope.isConnected || !view || document.fonts.status === "loading" || !Number.isSafeInteger(maxNodes) || maxNodes < 1 || !Number.isSafeInteger(maxPasses) || maxPasses < 1 || maxPasses > 128 || !Number.isFinite(maxExtent) || maxExtent <= 0) throw new DocumentError("InvalidOperation", "Drawing text layout requires a connected surface, settled fonts and finite layout budgets.");
   let nodes = 1;
@@ -184,7 +185,7 @@ function layoutTextBodies<T>(scope: HTMLElement, inputs: readonly T[], limits: W
     });
     scope.append(root);
     for (const item of prepared) decorateDrawingLists(item.text, amount => { account(amount); item.nodes += amount; });
-    const fonts = [...resolvePreviewFontsInScope(document, root, "[data-office-text-style],[data-office-script],.sdk-ppt-marker")];
+    const fonts = [...resolvePreviewFontsInScope(document, root, "[data-office-text-style],[data-office-script],.sdk-ppt-marker", probes)];
     const normalLines = new Map<string, number>(), lineContext = document.createElement("canvas").getContext("2d");
     let usedFallbackLineMetrics = false;
     const lineHeight = (computed: CSSStyleDeclaration): number => {
@@ -245,7 +246,7 @@ function layoutTextBodies<T>(scope: HTMLElement, inputs: readonly T[], limits: W
         const rect = item.geometry.textRect, left = (rect.x - parseFloat(text.style.left)) / .75, top = (rect.y - parseFloat(text.style.top)) / .75;
         applyDrawingTextOverflow(text, { left, top, right: left + rect.width / .75, bottom: top + rect.height / .75 }, item.horizontal, item.vertical,
           amount => { account(amount); item.nodes += amount; });
-        fonts.push(...resolvePreviewFontsInScope(document, text, '[data-office-view="workbook-drawing-ellipsis"]'));
+        fonts.push(...resolvePreviewFontsInScope(document, text, '[data-office-view="workbook-drawing-ellipsis"]', probes));
       }
       text.style.transform = `scale(${item.input.flipH ? -1 : 1},${item.input.flipV ? -1 : 1})`;
       const origin = item.element.getBoundingClientRect();

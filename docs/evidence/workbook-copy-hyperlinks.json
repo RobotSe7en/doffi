@@ -1,0 +1,248 @@
+{
+  "scope": "Immutable Python ZIP/XML source and actual pinned Calc ordinary, overlapping and cross-sheet copies, plus an explicit negative producer case for new-sheet default print font controls. Display-cache regeneration and omitted tooltip are retained as producer differences; no Excel/WPS runtime or SDK native XLSX export claim.",
+  "source": "examples/xlsx/01-values-text.xlsx",
+  "sourceSha256": "305d3984c9de3150d26ad24775d6ab651195b240f1625e811991d357309b97b5",
+  "sourceObserved": {
+    "xl/worksheets/sheet1.xml": {
+      "links": [
+        {
+          "ref": "A2",
+          "display": "文档链接",
+          "tooltip": "外部链接，不自动访问",
+          "url": "https://example.com/authorized-link"
+        }
+      ],
+      "cells": {
+        "A2": {
+          "type": "inlineStr",
+          "value": "编号 001",
+          "formula": ""
+        },
+        "A3": {
+          "type": "n",
+          "value": "12.5",
+          "formula": ""
+        },
+        "A4": {
+          "type": "inlineStr",
+          "value": "",
+          "formula": ""
+        }
+      },
+      "printBands": {}
+    }
+  },
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "nativeLocale": "C.UTF-8",
+  "officialSchemasSha256": "d34187520749998af306faf1b730e568b0ca6d88ad24638a407c0a9bb4ca04fc",
+  "cases": [
+    {
+      "name": "copy",
+      "sdkAcceptance": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-hyperlinks-copy-calc.xlsx",
+      "sha256": "61f57b26b7640728e1a0fbafc145fa087090e0a6c3ea1bedd23b69a9aa702658",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "links": [
+            {
+              "ref": "A2",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            },
+            {
+              "ref": "AG257",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            }
+          ],
+          "cells": {
+            "A2": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            },
+            "A3": {
+              "type": "n",
+              "value": "12.5",
+              "formula": ""
+            },
+            "AG257": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            }
+          },
+          "printBands": {
+            "oddHeader": "",
+            "oddFooter": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "overlap",
+      "sdkAcceptance": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-hyperlinks-overlap-calc.xlsx",
+      "sha256": "83d37e0a90f9d9cce1e5b015b00e271bcd66dbaf95a603ad114715fd7497ec75",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "links": [
+            {
+              "ref": "A2",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            },
+            {
+              "ref": "A3",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            }
+          ],
+          "cells": {
+            "A2": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            },
+            "A3": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            },
+            "A4": {
+              "type": "n",
+              "value": "12.5",
+              "formula": ""
+            }
+          },
+          "printBands": {
+            "oddHeader": "",
+            "oddFooter": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "other",
+      "sdkAcceptance": "supported",
+      "output": "packages/office/tests/fixtures/workbook-copy-hyperlinks-other-calc.xlsx",
+      "sha256": "121c94f8b6feba062d0c5502211fab18f97e09baa1500545b6e5879c479b5349",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "links": [
+            {
+              "ref": "A2",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            }
+          ],
+          "cells": {
+            "A2": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            },
+            "A3": {
+              "type": "n",
+              "value": "12.5",
+              "formula": ""
+            }
+          },
+          "printBands": {
+            "oddHeader": "",
+            "oddFooter": ""
+          }
+        },
+        "xl/worksheets/sheet2.xml": {
+          "links": [
+            {
+              "ref": "A2",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            },
+            {
+              "ref": "AG257",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            }
+          ],
+          "cells": {
+            "A2": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            },
+            "A3": {
+              "type": "n",
+              "value": "12.5",
+              "formula": ""
+            },
+            "AG257": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            }
+          },
+          "printBands": {
+            "oddHeader": "",
+            "oddFooter": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "new-sheet",
+      "sdkAcceptance": "rejected: formatted print header/footer controls",
+      "output": "packages/office/tests/fixtures/workbook-copy-hyperlinks-new-sheet-calc.xlsx",
+      "sha256": "baf6d77130cb430d3811a368f72106e7def6bc66af5605d66e2226e6d19db47e",
+      "observed": {
+        "xl/worksheets/sheet1.xml": {
+          "links": [
+            {
+              "ref": "A2",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            }
+          ],
+          "cells": {
+            "A2": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            },
+            "A3": {
+              "type": "n",
+              "value": "12.5",
+              "formula": ""
+            }
+          },
+          "printBands": {
+            "oddHeader": "",
+            "oddFooter": ""
+          }
+        },
+        "xl/worksheets/sheet2.xml": {
+          "links": [
+            {
+              "ref": "AG257",
+              "display": "编号 001",
+              "url": "https://example.com/authorized-link"
+            }
+          ],
+          "cells": {
+            "AG257": {
+              "type": "s",
+              "value": "编号 001",
+              "formula": ""
+            }
+          },
+          "printBands": {
+            "oddHeader": "&C&\"Times New Roman,Regular\"&12&Kffffff&A",
+            "oddFooter": "&C&\"Times New Roman,Regular\"&12&KffffffPage &P"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,827 @@
+{
+  "scope": "Independent Python ZIP/XML names, actual pinned Calc row/column insertions/deletions and official XSD/OPC. Relative name offsets stay recipes while bound absolute components follow cells. Calc's bang interpretation and nested Alias=Relative+10 cache of 10 after column edits are retained differences; the latter loses the calling coordinate (Relative itself is 15 after insertion and #REF! after deletion). Neither is adopted as Excel behavior. Excel web evidence covers calculation only; Excel/WPS structural runtime remains unverified.",
+  "references": [
+    "https://support.microsoft.com/en-us/excel/use-the-name-manager-in-excel",
+    "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/36f59210-dd88-44c8-a24c-95b33d7742d5"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "171c6aad386c0b061354512a2d8dddd1689461a132cff20e75946d07f649e99d",
+  "cases": [
+    {
+      "case": [
+        "row",
+        "insert",
+        0
+      ],
+      "producerSha256": "ab11d2839614405ad563a69ff6c9f43eecc69033d59427aeebf6cf91e8723232",
+      "observed": {
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "0",
+            "expression": "Data!$A$2:$L$31"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Absolute",
+            "sheet": null,
+            "expression": "Data!$A$2"
+          },
+          {
+            "name": "Alias",
+            "sheet": null,
+            "expression": "Relative+10"
+          },
+          {
+            "name": "Relative",
+            "sheet": null,
+            "expression": "Data!$A1"
+          },
+          {
+            "name": "Columns",
+            "sheet": null,
+            "expression": "Data!A:C"
+          },
+          {
+            "name": "Dynamic",
+            "sheet": null,
+            "expression": "!$A$2"
+          },
+          {
+            "name": "Mixed",
+            "sheet": null,
+            "expression": "Data!A$2"
+          },
+          {
+            "name": "Rows",
+            "sheet": null,
+            "expression": "Data!$2:3"
+          },
+          {
+            "name": "WindowSum",
+            "sheet": null,
+            "expression": "SUM(Data!$A1:$A3)"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "!$A$2"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "C6",
+              "expression": "Relative",
+              "type": "n",
+              "value": "15"
+            },
+            {
+              "address": "D6",
+              "expression": "Absolute",
+              "type": "n",
+              "value": "11"
+            },
+            {
+              "address": "E6",
+              "expression": "Local",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "F6",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G6",
+              "expression": "Alias",
+              "type": "n",
+              "value": "25"
+            },
+            {
+              "address": "H6",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "48"
+            },
+            {
+              "address": "C11",
+              "expression": "Relative",
+              "type": "n",
+              "value": "20"
+            },
+            {
+              "address": "D11",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "40"
+            }
+          ],
+          [
+            {
+              "address": "C5",
+              "expression": "Relative",
+              "type": "n",
+              "value": "14"
+            },
+            {
+              "address": "D5",
+              "expression": "Absolute",
+              "type": "n",
+              "value": "11"
+            },
+            {
+              "address": "F5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "24"
+            },
+            {
+              "address": "H5",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "45"
+            },
+            {
+              "address": "C10",
+              "expression": "Relative",
+              "type": "n",
+              "value": "19"
+            },
+            {
+              "address": "D10",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "40"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": [
+        "row",
+        "insert",
+        6
+      ],
+      "producerSha256": "cd298dc080ef5a1e7edadac97af82f7cf4a189f159b776c33f502bfef68325f4",
+      "observed": {
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "0",
+            "expression": "Data!$A$1:$L$31"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Absolute",
+            "sheet": null,
+            "expression": "Data!$A$1"
+          },
+          {
+            "name": "Alias",
+            "sheet": null,
+            "expression": "Relative+10"
+          },
+          {
+            "name": "Relative",
+            "sheet": null,
+            "expression": "Data!$A1"
+          },
+          {
+            "name": "Columns",
+            "sheet": null,
+            "expression": "Data!A:C"
+          },
+          {
+            "name": "Dynamic",
+            "sheet": null,
+            "expression": "!$A$1"
+          },
+          {
+            "name": "Mixed",
+            "sheet": null,
+            "expression": "Data!A$1"
+          },
+          {
+            "name": "Rows",
+            "sheet": null,
+            "expression": "Data!$1:3"
+          },
+          {
+            "name": "WindowSum",
+            "sheet": null,
+            "expression": "SUM(Data!$A1:$A3)"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "!$A$1"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "C5",
+              "expression": "Relative",
+              "type": "n",
+              "value": "15"
+            },
+            {
+              "address": "D5",
+              "expression": "Absolute",
+              "type": "n",
+              "value": "11"
+            },
+            {
+              "address": "E5",
+              "expression": "Local",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "F5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "25"
+            },
+            {
+              "address": "H5",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "31"
+            },
+            {
+              "address": "C11",
+              "expression": "Relative",
+              "type": "n",
+              "value": "20"
+            },
+            {
+              "address": "D11",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "40"
+            }
+          ],
+          [
+            {
+              "address": "C5",
+              "expression": "Relative",
+              "type": "n",
+              "value": "15"
+            },
+            {
+              "address": "D5",
+              "expression": "Absolute",
+              "type": "n",
+              "value": "11"
+            },
+            {
+              "address": "F5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "25"
+            },
+            {
+              "address": "H5",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "31"
+            },
+            {
+              "address": "C10",
+              "expression": "Relative",
+              "type": "n",
+              "value": "19"
+            },
+            {
+              "address": "D10",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "40"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": [
+        "row",
+        "delete",
+        0
+      ],
+      "producerSha256": "7984d0f88107fa28830793e9ea2ef2983f58f57ec794ff8a47f9d91c5504fef0",
+      "observed": {
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "0",
+            "expression": "Data!$A$1:$L$29"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Absolute",
+            "sheet": null,
+            "expression": "#REF!"
+          },
+          {
+            "name": "Alias",
+            "sheet": null,
+            "expression": "Relative+10"
+          },
+          {
+            "name": "Relative",
+            "sheet": null,
+            "expression": "Data!$A1"
+          },
+          {
+            "name": "Columns",
+            "sheet": null,
+            "expression": "Data!A:C"
+          },
+          {
+            "name": "Dynamic",
+            "sheet": null,
+            "expression": "!#REF!"
+          },
+          {
+            "name": "Mixed",
+            "sheet": null,
+            "expression": "#REF!"
+          },
+          {
+            "name": "Rows",
+            "sheet": null,
+            "expression": "Data!$1:3"
+          },
+          {
+            "name": "WindowSum",
+            "sheet": null,
+            "expression": "SUM(Data!$A1:$A3)"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "!#REF!"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "C4",
+              "expression": "Relative",
+              "type": "n",
+              "value": "15"
+            },
+            {
+              "address": "D4",
+              "expression": "Absolute",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "E4",
+              "expression": "Local",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "F4",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G4",
+              "expression": "Alias",
+              "type": "n",
+              "value": "25"
+            },
+            {
+              "address": "H4",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "48"
+            },
+            {
+              "address": "C9",
+              "expression": "Relative",
+              "type": "n",
+              "value": "20"
+            },
+            {
+              "address": "D9",
+              "expression": "Mixed",
+              "type": "e",
+              "value": "#REF!"
+            }
+          ],
+          [
+            {
+              "address": "C5",
+              "expression": "Relative",
+              "type": "n",
+              "value": "16"
+            },
+            {
+              "address": "D5",
+              "expression": "Absolute",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "F5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "26"
+            },
+            {
+              "address": "H5",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "51"
+            },
+            {
+              "address": "C10",
+              "expression": "Relative",
+              "type": "n",
+              "value": "21"
+            },
+            {
+              "address": "D10",
+              "expression": "Mixed",
+              "type": "e",
+              "value": "#REF!"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": [
+        "column",
+        "insert",
+        0
+      ],
+      "producerSha256": "47e2faacdcb8b935152c46a132757e7075b2856f36b93fa4a9f30624d9f994bf",
+      "observed": {
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "0",
+            "expression": "Data!$B$1:$M$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Absolute",
+            "sheet": null,
+            "expression": "Data!$B$1"
+          },
+          {
+            "name": "Alias",
+            "sheet": null,
+            "expression": "Relative+10"
+          },
+          {
+            "name": "Relative",
+            "sheet": null,
+            "expression": "Data!$B1"
+          },
+          {
+            "name": "Columns",
+            "sheet": null,
+            "expression": "Data!A:C"
+          },
+          {
+            "name": "Dynamic",
+            "sheet": null,
+            "expression": "!$B$1"
+          },
+          {
+            "name": "Mixed",
+            "sheet": null,
+            "expression": "Data!A$1"
+          },
+          {
+            "name": "Rows",
+            "sheet": null,
+            "expression": "Data!$1:3"
+          },
+          {
+            "name": "WindowSum",
+            "sheet": null,
+            "expression": "SUM(Data!$B1:$B3)"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "!$B$1"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "D5",
+              "expression": "Relative",
+              "type": "n",
+              "value": "15"
+            },
+            {
+              "address": "E5",
+              "expression": "Absolute",
+              "type": "n",
+              "value": "11"
+            },
+            {
+              "address": "F5",
+              "expression": "Local",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "H5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "10"
+            },
+            {
+              "address": "I5",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "48"
+            },
+            {
+              "address": "D10",
+              "expression": "Relative",
+              "type": "n",
+              "value": "20"
+            },
+            {
+              "address": "E10",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "40"
+            }
+          ],
+          [
+            {
+              "address": "C5",
+              "expression": "Relative",
+              "type": "n",
+              "value": "15"
+            },
+            {
+              "address": "D5",
+              "expression": "Absolute",
+              "type": "n",
+              "value": "11"
+            },
+            {
+              "address": "F5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "10"
+            },
+            {
+              "address": "H5",
+              "expression": "WindowSum",
+              "type": "n",
+              "value": "48"
+            },
+            {
+              "address": "C10",
+              "expression": "Relative",
+              "type": "n",
+              "value": "20"
+            },
+            {
+              "address": "D10",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "30"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": [
+        "column",
+        "delete",
+        0
+      ],
+      "producerSha256": "b20afc193b91a2cf9d02cf0e38c2ef06259145a3e4a66b023b5365a9067dbdf7",
+      "observed": {
+        "names": [
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "0",
+            "expression": "Data!$A$1:$K$30"
+          },
+          {
+            "name": "_xlnm.Print_Area",
+            "sheet": "1",
+            "expression": "Other!$A$1:$L$30"
+          },
+          {
+            "name": "Absolute",
+            "sheet": null,
+            "expression": "#REF!"
+          },
+          {
+            "name": "Alias",
+            "sheet": null,
+            "expression": "Relative+10"
+          },
+          {
+            "name": "Relative",
+            "sheet": null,
+            "expression": "#REF!"
+          },
+          {
+            "name": "Columns",
+            "sheet": null,
+            "expression": "Data!A:C"
+          },
+          {
+            "name": "Dynamic",
+            "sheet": null,
+            "expression": "!#REF!"
+          },
+          {
+            "name": "Mixed",
+            "sheet": null,
+            "expression": "Data!A$1"
+          },
+          {
+            "name": "Rows",
+            "sheet": null,
+            "expression": "Data!$1:3"
+          },
+          {
+            "name": "WindowSum",
+            "sheet": null,
+            "expression": "SUM(#REF!)"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "!#REF!"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "B5",
+              "expression": "Relative",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "C5",
+              "expression": "Absolute",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "D5",
+              "expression": "Local",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "E5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "F5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "10"
+            },
+            {
+              "address": "G5",
+              "expression": "WindowSum",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "B10",
+              "expression": "Relative",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "C10",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "40"
+            }
+          ],
+          [
+            {
+              "address": "C5",
+              "expression": "Relative",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "D5",
+              "expression": "Absolute",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "F5",
+              "expression": "Dynamic",
+              "type": "e",
+              "value": "#VALUE!"
+            },
+            {
+              "address": "G5",
+              "expression": "Alias",
+              "type": "n",
+              "value": "10"
+            },
+            {
+              "address": "H5",
+              "expression": "WindowSum",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "C10",
+              "expression": "Relative",
+              "type": "e",
+              "value": "#REF!"
+            },
+            {
+              "address": "D10",
+              "expression": "Mixed",
+              "type": "n",
+              "value": "0"
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,277 @@
+{
+  "status": "unverified-input",
+  "producer": "independent Python ZIP/XML, without SDK conversion",
+  "sha256": "dff95a7653ed7e67b100fa764de8145d56195f8ea14ad2708d7411d2ecfb9caa",
+  "cells": [
+    {
+      "sheet": "Data",
+      "cell": "C5",
+      "formula": "ProbeFixed",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C6",
+      "formula": "ProbeCaller",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C7",
+      "formula": "ProbeRel",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C8",
+      "formula": "ProbeRelCaller",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C9",
+      "formula": "ProbeRelColumn",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C10",
+      "formula": "ProbeShadow",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C11",
+      "formula": "ProbePlainAlias",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C12",
+      "formula": "ProbeBangAlias",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C13",
+      "formula": "ProbeBangGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C14",
+      "formula": "ProbeQualGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C15",
+      "formula": "ProbeBookGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C16",
+      "formula": "Data!ProbeLocalPlain",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C17",
+      "formula": "Data!ProbeLocalBang",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C18",
+      "formula": "ProbeNested",
+      "cache": 999
+    },
+    {
+      "sheet": "Data",
+      "cell": "C19",
+      "formula": "ProbeNestedBang",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C5",
+      "formula": "ProbeFixed",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C6",
+      "formula": "ProbeCaller",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C7",
+      "formula": "ProbeRel",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C8",
+      "formula": "ProbeRelCaller",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C9",
+      "formula": "ProbeRelColumn",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C10",
+      "formula": "ProbeShadow",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C11",
+      "formula": "ProbePlainAlias",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C12",
+      "formula": "ProbeBangAlias",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C13",
+      "formula": "ProbeBangGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C14",
+      "formula": "ProbeQualGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C15",
+      "formula": "ProbeBookGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C16",
+      "formula": "Data!ProbeLocalPlain",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C17",
+      "formula": "Data!ProbeLocalBang",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C18",
+      "formula": "ProbeNested",
+      "cache": 999
+    },
+    {
+      "sheet": "Other",
+      "cell": "C19",
+      "formula": "ProbeNestedBang",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C5",
+      "formula": "ProbeFixed",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C6",
+      "formula": "ProbeCaller",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C7",
+      "formula": "ProbeRel",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C8",
+      "formula": "ProbeRelCaller",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C9",
+      "formula": "ProbeRelColumn",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C10",
+      "formula": "ProbeShadow",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C11",
+      "formula": "ProbePlainAlias",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C12",
+      "formula": "ProbeBangAlias",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C13",
+      "formula": "ProbeBangGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C14",
+      "formula": "ProbeQualGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C15",
+      "formula": "ProbeBookGlobal",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C16",
+      "formula": "Data!ProbeLocalPlain",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C17",
+      "formula": "Data!ProbeLocalBang",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C18",
+      "formula": "ProbeNested",
+      "cache": 999
+    },
+    {
+      "sheet": "Third",
+      "cell": "C19",
+      "formula": "ProbeNestedBang",
+      "cache": 999
+    }
+  ]
+}

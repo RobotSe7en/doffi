@@ -32,9 +32,9 @@ export async function measureNativeChartLabels(snapshot: WorkbookSnapshot, bindi
   } finally{projection.dispose();sources.dispose();formatter.dispose();surface.dispose();container.remove();}
 }
 
-export async function measureControlledChartLabels(snapshot: WorkbookSnapshot, bindings: readonly WorkbookChartBinding[]) {
+export async function measureControlledChartLabels(snapshot: WorkbookSnapshot, bindings: readonly WorkbookChartBinding[], decoration?: 'solid' | 'double' | 'dotted' | 'dashed' | 'wavy') {
   const container=document.createElement('div');document.body.append(container);
-  const css='.measured-label{font-family:"Liberation Sans";font-size:18pt;line-height:30pt;letter-spacing:2pt;--office-text-font-scale:0.5}.align-left{--office-axis-label-align:l}.align-right{--office-axis-label-align:r;--office-axis-label-skip:1}.keep-negative{--office-invert-negative:false}';
+  const css='.measured-label{font-family:"Liberation Sans";font-size:18pt;line-height:30pt;letter-spacing:2pt;--office-text-font-scale:0.5;--office-fill-kind:solid;--office-fill-color:#f0e0c0;--office-line-kind:solid;--office-line-color:#704090;'+(decoration?'text-decoration:underline line-through '+decoration:'')+'}.align-left{--office-axis-label-align:l}.align-right{--office-axis-label-align:r;--office-axis-label-skip:1}.keep-negative{--office-invert-negative:false}';
   const surface=await createWorkbookSurface(container,{...snapshot,styles:[...snapshot.styles,{path:'measured-label.css',css}]},{widthPt:520,heightPt:340}),sources=new WorkbookContentSources(surface.document,snapshot),formatter=createWorkbookNumberFormatter({dateSystem:snapshot.metadata.workbook.dateSystem});
   const charts=snapshot.metadata.workbook.charts!,projection=sources.project(surface.source,charts.map(chart=>chart.nodeId)),before=surface.source.innerHTML;
   try{
@@ -45,7 +45,9 @@ export async function measureControlledChartLabels(snapshot: WorkbookSnapshot, b
       const binding={...old,data:{...old.data,categories:Array(3).fill('A long mixed category 中😀\nSecond line')}};
       const result=layoutWorkbookChart(surface.view,projection.get(chart.nodeId)!,chart,binding,300,220,'controlled-'+alignment,formatter);surface.view.append(result.element);
       const labels=[...result.element.querySelectorAll<SVGTextElement>('[data-sdk-chart-label=category-axis]')];
-      results.push({alignment,anchors:labels.map(node=>node.getAttribute('text-anchor')),skipped:labels.filter(node=>node.dataset.sdkChartAutomaticSkip).length,size:labels[0]!.getAttribute('font-size'),spacing:labels[0]!.getAttribute('letter-spacing'),lineOffsets:[...labels[0]!.querySelectorAll('[data-sdk-chart-text-line]')].map(node=>Number(node.getAttribute('dy')))});
+      const walker=surface.document.createTreeWalker(result.element,0xffff_ffff);let actual=1;while(walker.nextNode())actual++;
+      const decorationPaint=labels.map(node=>{const carrier=node.closest('[data-sdk-chart-text-decoration]');return {text:node.textContent,accessible:!carrier?.hasAttribute('aria-hidden'),hidden:node.getAttribute('visibility')===carrier?.getAttribute('visibility'),strokes:carrier?.querySelectorAll('[data-sdk-chart-decoration-paint] line,[data-sdk-chart-decoration-paint] path').length??0};});
+      results.push({alignment,decorationPaint,nodes:result.nodes,actual,anchors:labels.map(node=>node.getAttribute('text-anchor')),skipped:labels.filter(node=>node.dataset.sdkChartAutomaticSkip).length,size:labels[0]!.getAttribute('font-size'),spacing:labels[0]!.getAttribute('letter-spacing'),lineOffsets:[...labels[0]!.querySelectorAll('[data-sdk-chart-text-line]')].map(node=>Number(node.getAttribute('dy')))});
       result.element.remove();
     }
     const original=charts[8]!,binding=bindings.find(binding=>binding.chartId===original.chartId)!;if(binding.kind!=='available')throw Error('No negative source');

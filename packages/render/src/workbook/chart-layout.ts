@@ -9,6 +9,7 @@ import { createWorkbookChartView } from "./chart-view.js";
 import type { WorkbookChartBinding, WorkbookChartDataDiagnostic } from "./chart-values.js";
 import type { WorkbookChartViewDiagnostic } from "./chart-view.js";
 import { layoutWorkbookChartTitleContents } from "./drawing-text-layout.js";
+import type { FontProbeCache } from "../font-probe-cache.js";
 import type { WorkbookChartTitleContentInput, WorkbookDrawingTextLayout } from "./drawing-text-layout.js";
 import type { WorkbookChartTextRole } from "./drawing-text.js";
 import { measureNumberDisplay } from "./number-layout.js";
@@ -28,7 +29,7 @@ export interface WorkbookChartLayout {
  * worksheet pane clipping remain the drawing compositor's responsibility. */
 export function layoutWorkbookChart(scope: HTMLElement, source: HTMLElement, chart: DeepReadonly<WorkbookChart>,
   binding: Extract<WorkbookChartBinding, { kind: "available" }>, widthPt: number, heightPt: number, id: string,
-  formatter: WorkbookNumberFormatter, limits: WorkbookChartLayoutLimits = {}): WorkbookChartLayout {
+  formatter: WorkbookNumberFormatter, limits: WorkbookChartLayoutLimits = {}, probes?: FontProbeCache): WorkbookChartLayout {
   const document = scope.ownerDocument, view = document.defaultView, maxNodes = limits.maxNodes ?? 50_000, maxUnits = limits.maxCodeUnits ?? 8 * 1024 * 1024;
   if (!scope.isConnected || !source.isConnected || source.ownerDocument !== document || !view || binding.chartId !== chart.chartId
     || source.dataset.nodeId !== chart.nodeId || source.dataset.officeKind !== "chart"
@@ -107,7 +108,7 @@ export function layoutWorkbookChart(scope: HTMLElement, source: HTMLElement, cha
     if (definition.reference && binding.titles[box.role] === undefined) throw new DocumentError("InvalidOperation", "A chart reference title has no current scalar display.");
     return { source, chart, role: box.role, widthPt: box.rect.width, heightPt: box.rect.height, ...(definition.reference ? { value: binding.titles[box.role]! } : {}) };
   });
-  const texts = layoutWorkbookChartTitleContents(scope, inputs, { maxNodes, maxCodeUnits: maxUnits });
+  const texts = layoutWorkbookChartTitleContents(scope, inputs, { maxNodes, maxCodeUnits: maxUnits }, probes);
   let axisNodes = 0, axisUnits = 0;
   for (const [index, object] of texts.objects.entries()) {
     if (object.widthPt > boxes[index]!.rect.width || object.heightPt > boxes[index]!.rect.height) throw new DocumentError("ResourceLimitExceeded", "Auto-sized chart titles exceed their reserved text bands.");
@@ -136,7 +137,7 @@ export function layoutWorkbookChart(scope: HTMLElement, source: HTMLElement, cha
     return code === undefined ? undefined : { code };
   };
   const graphics = createWorkbookChartView(source, chart, binding.data, widthPt, heightPt, id, {
-    ...limits, maxNodes: maxNodes - axisNodes, maxCodeUnits: maxUnits - axisUnits, layout,
+    ...limits, maxNodes: maxNodes - axisNodes, maxCodeUnits: maxUnits - axisUnits, layout, ...(probes ? { probes } : {}),
     ...(main < 0 ? {} : { title: texts.objects[main]!.element }),
     formatNumber(value, code, context) {
       if (!context) return format(value, code === undefined ? undefined : { code });

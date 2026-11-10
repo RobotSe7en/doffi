@@ -25,6 +25,7 @@ import type { WorkbookRuleSource, WorkbookRuleDiagnostic } from "./rule-source.j
 import { maximumWorkbookSkew } from "./skew-sources.js";
 import { measureWorkbookAutoRows } from "./auto-rows.js";
 import type { WorkbookAutoRowLimits, WorkbookAutoRows } from "./auto-rows.js";
+import type { WorkbookRowInterval } from "./row-invalidation.js";
 import { WorkbookCellTextCache } from "./cell-text-cache.js";
 import { WorkbookReadAhead, workbookIdle } from "./read-ahead.js";
 
@@ -67,6 +68,9 @@ export interface WorkbookWindowDecoration {
   dispose(): void;
 }
 export type WorkbookWindowDecorator = (candidate: WorkbookRenderedWindow, content: WorkbookContentSources, maxNodes: number) => WorkbookWindowDecoration;
+interface WorkbookSheetMetrics extends WorkbookAutoRows { readonly normal: WorkbookColumnFont; readonly fontEpoch?: number; readonly fontSet?: object }
+export interface WorkbookMeasurementSeed { readonly previous: WorkbookSheetMetrics; readonly rows: readonly WorkbookRowInterval[] }
+export interface WorkbookWindowOwnership { readonly measurements?: ReadonlyMap<string, WorkbookMeasurementSeed>; readonly deferPublication?: boolean; readonly textCache?: WorkbookCellTextCache }
 
 /** Internal lifecycle for one immutable workbook. The owner supplies a ready,
  * dedicated surface and authorized providers, and owns their disposal. This
@@ -87,14 +91,17 @@ export class WorkbookWindowController {
     if (event.type !== "wheel") this.clearPreparedGrid();
     this.readAhead.interrupt();
   };
-  private readonly sheets = new Map<string, WorkbookAutoRows & { readonly normal: WorkbookColumnFont }>();
+  private readonly sheets = new Map<string, WorkbookSheetMetrics>();
+  private readonly measurements: Map<string, WorkbookMeasurementSeed>;
+  private deferred: boolean;
   private pending: { cancel(): void } | undefined;
   private active: { readonly state: WorkbookRenderedWindow; readonly drawings: WorkbookDrawingLayout; readonly decoration?: WorkbookWindowDecoration } | undefined;
   private disposed = false;
   private preparedGrid: { readonly frame: WorkbookWindowFrame; readonly cells: WorkbookWindowLayout; readonly fontRevision: number | undefined } | undefined;
 
   constructor(private readonly surface: WorkbookSurface, private readonly providers: WorkbookWindowProviders,
-    private readonly formatter: WorkbookNumberFormatter, input: WorkbookWindowControllerOptions = {}, private readonly decorate: WorkbookWindowDecorator | undefined = undefined) {
+    private readonly formatter: WorkbookNumberFormatter, input: WorkbookWindowControllerOptions = {}, private readonly decorate: WorkbookWindowDecorator | undefined = undefined, ownership: WorkbookWindowOwnership = {}) {
+    this.measurements = new Map(ownership.measurements); this.deferred = ownership.deferPublication ?? false;
     this.maxNodes = input.maxNodes ?? 50_000;
     this.ruleLimits = Object.freeze({ ...DEFAULT_WORKBOOK_RULE_LIMITS, ...input.rules });
     if (Object.keys(this.ruleLimits).some(key => !Object.hasOwn(DEFAULT_WORKBOOK_RULE_LIMITS, key)) || !Object.values(this.ruleLimits).every(value => Number.isSafeInteger(value) && value > 0))
@@ -106,7 +113,7 @@ export class WorkbookWindowController {
       || surface.view.childNodes.length) throw new DocumentError("InvalidOperation", "A workbook controller requires its own empty connected surface and supported node budget.");
     this.snapshot = providers.cells.snapshot;
     this.classStyles = this.snapshot.styles.every(style => /^(?:\s*\.[a-zA-Z_][-\w]*\s*\{[^{}]*\}\s*)*$/.test(style.css));
-    this.textCache = new WorkbookCellTextCache(input.read?.maxCells ?? 5000, Math.min(this.maxNodes, input.cells?.maxNodes ?? this.maxNodes), input.cells?.maxTextCodeUnits ?? 8 * 1024 * 1024);
+    this.textCache = ownership.textCache ?? new WorkbookCellTextCache(input.read?.maxCells ?? 5000, Math.min(this.maxNodes, input.cells?.maxNodes ?? this.maxNodes), input.cells?.maxTextCodeUnits ?? 8 * 1024 * 1024, surface.fontProbes);
     this.skewCoefficient = maximumWorkbookSkew(surface.document);
     checkWindowIdentity(providers.assets.snapshot.manifest, this.snapshot); checkWindowIdentity(providers.charts.snapshot.manifest, this.snapshot);
     if (providers.rules) checkWindowIdentity(providers.rules.snapshot.manifest, this.snapshot);
@@ -120,12 +127,34 @@ export class WorkbookWindowController {
       let rows = this.chunkRows.get(chunk.sheetId); if (!rows) { rows = new Set(); this.chunkRows.set(chunk.sheetId, rows); } rows.add(chunk.row);
     }
     for (const name of ["pointerdown", "keydown", "wheel"]) surface.document.addEventListener(name, this.interruptReadAhead, { capture: true, passive: true });
+    // Formula bars and other host-owned inputs live outside the iframe. Their
+    // input must interrupt optional work just like input on the grid itself.
+    for (const name of ["pointerdown", "keydown", "input"]) surface.frame.ownerDocument.addEventListener(name, this.interruptReadAhead, { capture: true, passive: true });
   }
 
   get current(): WorkbookRenderedWindow | undefined { return this.active?.state; }
+  forkTextCache(): WorkbookCellTextCache { return this.textCache.fork(); }
 
   /** Cancel only unfinished work while retaining the accepted window. */
   cancelPending(): void { this.readAhead.stop(); this.pending?.cancel(); this.pending = undefined; }
+  cancelForReplacement(): void { this.cancelPending(); this.clearPreparedGrid(); }
+  measurementSeeds(rows: ReadonlyMap<string, readonly WorkbookRowInterval[]>): ReadonlyMap<string, WorkbookMeasurementSeed> {
+    const state = this.surface.fontState?.(), seeds = new Map<string, WorkbookMeasurementSeed>();
+    if (!state?.ready) return seeds;
+    for (const [sheetId, metrics] of this.sheets) if (metrics.reusable && metrics.fontEpoch === state.epoch && metrics.fontSet === state.identity) {
+      seeds.set(sheetId, { previous: metrics, rows: rows.get(sheetId) ?? [] });
+    }
+    return seeds;
+  }
+  unpublish(): void { this.active?.state.element.remove(); }
+  publish(): void {
+    if (this.disposed || !this.active) throw new DocumentError("InvalidOperation", "A workbook window must be fully prepared before publication.");
+    const state = this.active.state, viewport = state.frame.layout;
+    this.surface.activate?.(); this.surface.view.replaceChildren(state.element);
+    this.surface.frame.style.setProperty("width", viewport.widthPt + "pt", "important"); this.surface.frame.style.setProperty("height", viewport.heightPt + "pt", "important");
+    this.surface.frame.style.setProperty("visibility", "visible", "important");
+    if (this.deferred) { this.deferred = false; this.warm(state, undefined); }
+  }
 
   /** False means superseded/disposed; genuine failures reject. A newer request
    * also settles an older request whose provider ignores its AbortSignal. */
@@ -149,20 +178,27 @@ export class WorkbookWindowController {
     try {
       let metrics = this.sheets.get(sheetId);
       if (!metrics) {
+        const seed = this.measurements.get(sheetId); this.measurements.delete(sheetId);
         const normal = measureWorkbookColumnFont(this.surface.source, this.snapshot.metadata.workbook, sheetId);
+        const state = this.surface.fontState?.();
+        const reuse = seed && state?.ready && state.epoch === seed.previous.fontEpoch && state.identity === seed.previous.fontSet
+          && normal.maximumDigitWidthPx === seed.previous.normal.maximumDigitWidthPx && normal.spaceWidthPx === seed.previous.normal.spaceWidthPx
+          ? { previous: seed.previous, rows: seed.rows, guard: () => {
+            const current = this.surface.fontState?.(); return !!current?.ready && current.epoch === state.epoch && current.identity === state.identity;
+          } } : undefined;
         const measured = await Promise.race([measureWorkbookAutoRows(this.surface, this.providers.cells, sheetId, normal, this.formatter, abort.signal, this.options.autoRows,
-          this.providers.rules ? { source: this.providers.rules, limits: this.ruleLimits } : undefined), cancelled]);
+          this.providers.rules ? { source: this.providers.rules, limits: this.ruleLimits } : undefined, reuse), cancelled]);
         if (measured === false || !current()) return false;
-        metrics = { normal, ...measured }; this.sheets.set(sheetId, metrics);
+        metrics = { normal, ...measured, ...(state ? { fontEpoch: state.epoch, fontSet: state.identity } : {}) }; this.sheets.set(sheetId, metrics);
       }
       const { normal, dimensions } = metrics;
       if (!await Promise.race([loader.load(sheetId, dimensions, viewport), cancelled]) || !current()) return false;
       const frame = loader.frame!;
       let rules: WorkbookRuleReadResponse | undefined;
-      if (sheet.conditionalRules?.length || sheet.dataValidations?.length) {
+      if (sheet.conditionalRules?.length || sheet.dataValidations?.length || this.providers.rules?.currentValues) {
         if (!this.providers.rules) throw new DocumentError("InvalidOperation", "This worksheet requires an authorized current-value rule provider.");
         const request = Object.freeze({ documentId: frame.documentId, revision: frame.revision, sheetId, ...this.ruleLimits,
-          coordinates: Object.freeze(frame.sourceCoordinates.map(point => Object.freeze({ row: point.row, column: point.column }))) });
+          coordinates: Object.freeze(frame.sourceCoordinates.map(point => Object.freeze({ row: point.row, column: point.column }))), ...(this.providers.rules.currentValues ? { includeCurrent: true } : {}) });
         const response = await Promise.race([this.providers.rules.read(request, abort.signal), cancelled]);
         if (response === false || !current()) return false;
         rules = checkedWorkbookRules(response, request, this.snapshot);
@@ -192,17 +228,17 @@ export class WorkbookWindowController {
       const state: WorkbookRenderedWindow = extra ? Object.freeze({ ...base, get nodes() { return base.nodes + extra.nodes; },
         get fonts() { return extra.fonts?.length ? Object.freeze([...base.fonts, ...extra.fonts]) : base.fonts; } }) : base;
       const previous = this.active;
-      if (cells.element.parentNode === this.surface.view) {
+      if (!this.deferred && cells.element.parentNode === this.surface.view) {
         for (const child of [...this.surface.view.childNodes]) if (child !== cells.element) child.remove();
         cells.element.style.removeProperty("visibility"); cells.element.style.removeProperty("pointer-events"); cells.element.removeAttribute("aria-hidden");
-      } else this.surface.view.replaceChildren(cells.element);
+      } else if (!this.deferred) this.surface.view.replaceChildren(cells.element);
       candidateCells = undefined;
       this.surface.frame.style.setProperty("width", viewport.widthPt + "pt", "important");
       this.surface.frame.style.setProperty("height", viewport.heightPt + "pt", "important");
-      this.surface.frame.style.setProperty("visibility", "visible", "important");
+      if (!this.deferred) { this.surface.activate?.(); this.surface.frame.style.setProperty("visibility", "visible", "important"); }
       this.active = { state, drawings, ...(decoration ? { decoration } : {}) }; drawings = undefined; decoration = undefined;
       previous?.decoration?.dispose(); previous?.drawings.dispose(); previous?.state.element.replaceChildren();
-      this.warm(state, previous?.state);
+      if (!this.deferred) this.warm(state, previous?.state);
       return true;
     } catch (error) {
       if (!current()) return false;
@@ -328,7 +364,8 @@ export class WorkbookWindowController {
     this.disposed = true; this.readAhead.dispose(); this.pending?.cancel(); this.pending = undefined;
     this.clearPreparedGrid();
     for (const name of ["pointerdown", "keydown", "wheel"]) this.surface.document.removeEventListener(name, this.interruptReadAhead, true);
+    for (const name of ["pointerdown", "keydown", "input"]) this.surface.frame.ownerDocument.removeEventListener(name, this.interruptReadAhead, true);
     this.active?.decoration?.dispose(); this.active?.drawings.dispose(); this.active?.state.element.remove(); this.active?.state.element.replaceChildren(); this.active = undefined;
-    this.content.dispose(); this.sheets.clear(); this.chunkRows.clear(); this.textCache.clear();
+    this.content.dispose(); this.sheets.clear(); this.measurements.clear(); this.chunkRows.clear(); this.textCache.clear();
   }
 }

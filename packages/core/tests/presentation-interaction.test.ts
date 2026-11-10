@@ -1,6 +1,7 @@
+import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import {readFileSync} from "node:fs";
 import {expect,test} from "vitest";
-import {createAssetDescriptor,createDocumentSession,createPresentation,openDocument,parseContract,PresentationDocumentMetadataSchema} from "@doffi/core";
+import { createAssetDescriptor, createDocumentSession, createPresentation, parseContract, PresentationDocumentMetadataSchema } from "@doffi/core";
 import type {DocumentOperation,DocumentSession,PresentationEditProposal,PresentationInteractionRequest} from "@doffi/core";
 const geometry={x:10,y:20,width:300,height:100,rotation:0,flipH:false,flipV:false};
 const p=(s:DocumentSession)=>s.snapshot().metadata.presentation!;

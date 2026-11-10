@@ -32,7 +32,9 @@
     "./schemas/document-error.json": "./dist/schemas/document-error.json",
     "./schemas/document-event.json": "./dist/schemas/document-event.json",
     "./schemas/presentation-interaction-request.json": "./dist/schemas/presentation-interaction-request.json",
-    "./schemas/presentation-edit-proposal.json": "./dist/schemas/presentation-edit-proposal.json"
+    "./schemas/presentation-edit-proposal.json": "./dist/schemas/presentation-edit-proposal.json",
+    "./schemas/workbook-interaction-request.json": "./dist/schemas/workbook-interaction-request.json",
+    "./schemas/workbook-edit-proposal.json": "./dist/schemas/workbook-edit-proposal.json"
   },
   "sideEffects": false,
   "scripts": {

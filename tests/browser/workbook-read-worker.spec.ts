@@ -3,18 +3,488 @@ import { expect, test } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
+import { createHash } from 'node:crypto';
+import { importXlsx, writeDocumentZip } from '@doffi/office';
+import { scalarWorkbook } from '../../packages/core/tests/workbook-scalar-fixture.js';
+import { createDocumentSession, createWorkbook, openDocument } from '@doffi/core';
+import type * as editorFixture from './fixtures/workbook-remote-editor.js';
 import type * as fixture from './fixtures/workbook-read-host.js';
+import type * as sessionFixture from './fixtures/workbook-session-host.js';
+import type * as performanceFixture from './fixtures/workbook-editing-performance.js';
+import type * as mountedPerformanceFixture from './fixtures/workbook-editor-performance.js';
 declare global { interface Window { workbookReadHost: typeof fixture } }
-let workerCode = '', hostCode = '';
-test.beforeAll(async () => {
-  async function bundle(name: string): Promise<string> {
-    const result = await build({ configFile: false, build: { write: false, minify: false, lib: { entry: fileURLToPath(new URL(`./fixtures/${name}.ts`, import.meta.url)), formats: ['iife'], name: 'WorkbookReadProbe' } } });
-    if (!Array.isArray(result) && !('output' in result)) throw Error('Unexpected read-worker bundle');
-    const output = Array.isArray(result) ? result.flatMap(part => part.output) : result.output;
-    return output.filter(part => part.type === 'chunk').map(part => part.code).join('\n');
-  }
-  workerCode = await bundle('workbook-read-worker'); hostCode = await bundle('workbook-read-host');
+declare global { interface Window { workbookSessionHost: typeof sessionFixture } }
+declare global { interface Window { workbookEditingPerformance: typeof performanceFixture } }
+declare global { interface Window { workbookEditorPerformance: typeof mountedPerformanceFixture } }
+declare global { interface Window { workbookRemoteEditor: typeof editorFixture } }
+test('mounted Worker system HTML clipboard preserves rich appearance, types, merges, drafts and atomic rejection', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(createWorkbook({ documentId: 'worker-html-paste-editor' }))).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookHtmlClipboard } = await import('./workbook-html-clipboard-cases.js'); await exerciseWorkbookHtmlClipboard(page, true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });
+let workerCode = '', hostCode = '', sessionWorkerCode = '', sessionHostCode = '';
+let performanceHostCode = '';
+let editorHostCode = '';
+async function bundle(name: string): Promise<string> {
+  const result = await build({ configFile: false, build: { write: false, minify: false, lib: { entry: fileURLToPath(new URL(`./fixtures/${name}.ts`, import.meta.url)), formats: ['iife'], name: 'WorkbookReadProbe' } } });
+  if (!Array.isArray(result) && !('output' in result)) throw Error('Unexpected read-worker bundle');
+  const output = Array.isArray(result) ? result.flatMap(part => part.output) : result.output;
+  return output.filter(part => part.type === 'chunk').map(part => part.code).join('\n');
+}
+test.beforeAll(async () => {
+  workerCode = await bundle('workbook-read-worker'); hostCode = await bundle('workbook-read-host');
+  sessionWorkerCode = await bundle('workbook-session-worker'); sessionHostCode = await bundle('workbook-session-host');
+  performanceHostCode = await bundle('workbook-editing-performance');
+  editorHostCode = await bundle('workbook-remote-editor');
+});
+test('mounted remote workbook editor shares Worker input, address selection and history and leaves its host usable', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=A1+1' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }); await expect(input).toHaveValue('1');
+  await input.fill('5'); await input.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, history: { undoSteps: 1 }, source: { text: '5' }, current: { kind: 'value', value: { type: 'number', value: 6 } }, errors: [] });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('A1'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); await expect(input).toHaveValue('5');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); await expect(input).toHaveValue('1');
+  await page.getByRole('button', { name: '重做', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); await expect(input).toHaveValue('5');
+  await input.fill('='); await page.evaluate(() => window.workbookRemoteEditor.external('external')); await input.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ source: { text: 'external' }, input: { text: '=', dirty: true }, errors: ['RevisionConflict'] });
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled()); await expect(input).toHaveValue('external');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.disposeEditor())).toBe(true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
+});
+
+test('mounted remote private clipboard repeats copies, takes current values and rejects a stale cut without removing its source', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 7 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=A1+1' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A1:B1'); await page.getByRole('button', { name: '复制选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  for (const row of [3, 5]) {
+    await choose('A' + row); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+    expect(await page.evaluate(row => window.workbookRemoteEditor.value(row - 1, 1), row)).toBe('=(A' + row + '+1)');
+  }
+  await choose('A7'); await page.getByLabel('区域粘贴方式', { exact: true }).selectOption('values');
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(6, 1))).toBe('8');
+  await choose('A1:B1'); await page.getByRole('button', { name: '剪切选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.evaluate(() => window.workbookRemoteEditor.external('external', false)); await choose('A9');
+  await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 4, history: { undoSteps: 4 }, errors: ['RevisionConflict'] });
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(0, 0), window.workbookRemoteEditor.value(8, 0)]))).toEqual(['external', '']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
+});
+
+test('mounted remote range appearance rejects unsafe colors atomically, then formats current numeric display and restores one Worker history step', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 12.3 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=A1+1' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  await page.getByText('设置单元格格式', { exact: true }).click(); await page.getByLabel('文字颜色', { exact: true }).fill('url(https://private.invalid)');
+  await page.getByRole('button', { name: '应用单元格格式', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, errors: ['InvalidOperation'] });
+  await page.getByLabel('文字颜色', { exact: true }).fill('#112233'); await page.getByLabel('数字格式代码', { exact: true }).fill('0.00');
+  await page.getByLabel('字重', { exact: true }).selectOption('bold');
+  await page.getByRole('button', { name: '应用单元格格式', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, history: { undoSteps: 1 }, source: { text: '12.3' }, current: { kind: 'value', value: { type: 'number', value: 13.3 } } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 2, history: { undoSteps: 0, redoSteps: 1 }, source: { text: '12.3' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+test('mounted remote selected text fonts resolve native offsets inside the Worker and preserve rich source, draft protection and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode }); const s = createDocumentSession(scalarWorkbook([])), manifest = s.snapshot().manifest;
+  s.commit(s.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision, operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [
+    { row: 0, column: 0, source: { kind: 'richText', html: '<span class="cell-default">=A&#13;<br>禰󠄀😀Z</span>' } },
+  ] }] })); const bytes = Buffer.from(writeDocumentZip(s.serialize())).toString('base64'); s.dispose();
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const before = await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0)), input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true });
+  await page.getByText('设置单元格格式', { exact: true }).click(); await page.getByLabel('字重', { exact: true }).selectOption('bold');
+  await input.evaluate(element => { const field = element as HTMLTextAreaElement, from = field.value.indexOf('禰'); field.setSelectionRange(from, from + 5); field.dispatchEvent(new Event('select', { bubbles: true })); });
+  await page.getByRole('button', { name: '应用选中文字字体', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  const cell = await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0)); expect(cell?.text).toBe('=A\r\n禰󠄀😀Z'); expect(cell?.html).toContain('workbook-run-');
+  expect(await input.evaluate(element => { const field = element as HTMLTextAreaElement; return field.value.slice(field.selectionStart, field.selectionEnd); })).toBe('禰󠄀😀');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.sourceCell(0, 0))).toEqual(before);
+  await input.fill('draft'); await expect(page.getByRole('button', { name: '应用选中文字字体', exact: true })).toBeDisabled();
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+test('mounted remote sorting uses one Worker current batch and keeps headers, hidden rows, history and drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = scalarWorkbook([
+    { row: 0, column: 0, value: { type: 'text', value: 'Key' } }, { row: 0, column: 1, value: { type: 'text', value: 'Label' } },
+    ...[3, 100, 1, 2].map((value, index) => ({ row: index + 1, column: 0, value: { type: 'number' as const, value: 999 }, formula: '=' + value })),
+    ...['three', 'hidden', 'one', 'two'].map((value, index) => ({ row: index + 1, column: 1, value: { type: 'text' as const, value } })),
+    { row: 5, column: 3, value: { type: 'number', value: 999 }, formula: '=A2' },
+  ], metadata => { const sheet = metadata.workbook.sheets[0]!; sheet.defaultRowHeightCustom = true; sheet.rowDimensions = [{ from: 2, to: 2, hidden: true }]; });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('A1:B5'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByLabel('首行为表头', { exact: true }).check(); await page.getByRole('button', { name: '升序排序', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([1, 2, 3, 4].map(row => window.workbookRemoteEditor.value(row, 1))))).toEqual(['one', 'hidden', 'two', 'three']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(5, 3))).toBe('=A2');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([1, 2, 3, 4].map(row => window.workbookRemoteEditor.value(row, 1))))).toEqual(['three', 'hidden', 'one', 'two']);
+  const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }); await input.fill('draft'); await expect(page.getByRole('button', { name: '降序排序', exact: true })).toBeDisabled();
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled()); await page.getByRole('button', { name: '降序排序', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([1, 2, 3, 4].map(row => window.workbookRemoteEditor.value(row, 1))))).toEqual(['three', 'hidden', 'two', 'one']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1, redoSteps: 0 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostUsable: { type: 'number', value: 42 } });
+});
+test('mounted remote workbook fill and scoped single/all replacements remain atomic Worker commands', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } }, { row: 1, column: 0, value: { type: 'number', value: 3 } },
+    { row: 0, column: 2, value: { type: 'text', value: '甲猫😀猫' } }, { row: 1, column: 2, value: { type: 'text', value: '猫' } }, { row: 2, column: 2, value: { type: 'text', value: 'outside猫' } }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  await address.fill('A1:A5'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '数列填充', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(4, 0))).toBe('9');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); expect(await page.evaluate(() => window.workbookRemoteEditor.value(4, 0))).toBe('');
+  await address.fill('C1:C2'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByLabel('查找范围', { exact: true }).selectOption('selection'); await page.getByLabel('查找内容', { exact: true }).fill('猫');
+  await page.getByRole('button', { name: '查找下一个', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(page.getByRole('status', { name: '工作簿编辑状态', exact: true })).toContainText('匹配 1 / 3');
+  await page.getByLabel('替换为', { exact: true }).fill('$&'); await page.getByRole('button', { name: '替换当前项', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(0, 2))).toBe('甲$&😀猫');
+  await page.getByRole('button', { name: '查找下一个', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(page.getByRole('status', { name: '工作簿编辑状态', exact: true })).toContainText('匹配 1 / 2');
+  await page.getByRole('button', { name: '全部替换', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(0, 2), window.workbookRemoteEditor.value(1, 2), window.workbookRemoteEditor.value(2, 2)]))).toEqual(['甲$&😀$&', '$&', 'outside猫']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 2 }, errors: [] });
+  await page.evaluate(() => window.workbookRemoteEditor.finish());
+});
+
+test('mounted remote editor rejects a delayed address result after an external source revision', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  await page.evaluate(() => window.workbookRemoteEditor.holdReference());
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('C5'); await address.press('Enter');
+  await expect.poll(() => page.evaluate(() => window.workbookRemoteEditor.referenceHeld())).toBe(true);
+  await page.evaluate(() => window.workbookRemoteEditor.external('external', false));
+  await page.evaluate(() => window.workbookRemoteEditor.releaseReference()); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, history: { undoSteps: 1 }, source: { text: 'external' },
+    selection: { baseRevision: 1, anchor: { ranges: [{ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } }] } }, errors: ['RevisionConflict'] });
+  await expect(address).toHaveValue('A1'); await page.evaluate(() => window.workbookRemoteEditor.finish());
+});
+
+test('mounted remote merge requires explicit covered-content clearing and preserves both undo steps in its Worker', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 7 } }, { row: 0, column: 1, value: { type: 'number', value: 3 } }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true }); await address.fill('A1:B1'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  const area = { from: { row: 0, column: 0 }, to: { row: 0, column: 1 } };
+  await page.getByRole('button', { name: '合并单元格', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(page.getByRole('alert')).toContainText('合并范围包含其他内容');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, merges: [], errors: ['InvalidOperation'] });
+  await page.getByRole('button', { name: '合并并清除覆盖内容', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, history: { undoSteps: 1 }, merges: [area], source: { text: '7' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(0, 1))).toBe('');
+  await page.getByRole('button', { name: '取消合并', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 2, merges: [] });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ merges: [area] });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 4, merges: [], history: { undoSteps: 0, redoSteps: 2 }, source: { text: '7' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(0, 1))).toBe('3');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+test('mounted Worker merged clipboard and both fill axes retain complete templates and undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const area = (row: number, column: number, toRow: number, toColumn: number) => ({ from: { row, column }, to: { row: toRow, column: toColumn } });
+  const source = scalarWorkbook([{ row: 0, column: 0, value: { type: 'text', value: '合并😀禰󠄀' } }], metadata => { metadata.workbook.sheets[0]!.merges = [area(0, 0, 1, 1)]; });
+  const bytes = Buffer.from(writeDocumentZip(source.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A1:B2'); await page.getByRole('button', { name: '复制选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('D1'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ merges: [area(0, 0, 1, 1), area(0, 3, 1, 4)], history: { undoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.value(0, 3))).toBe('合并😀禰󠄀');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  for (const axis of ['row', 'column'] as const) {
+    await choose(axis === 'row' ? 'A1:B6' : 'A1:F2');
+    await page.getByRole('button', { name: axis === 'row' ? '向下填充' : '向右填充', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+    expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
+    for (const offset of [2, 4]) expect(await page.evaluate(({ row, column }) => window.workbookRemoteEditor.value(row, column), { row: axis === 'row' ? offset : 0, column: axis === 'column' ? offset : 0 })).toBe('合并😀禰󠄀');
+    await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+    expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ merges: [area(0, 0, 1, 1)], history: { undoSteps: 0 } });
+  }
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+test('mounted remote freeze controls use the selected source address and the Worker history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 7 } }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  await address.fill('ALM10001'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '冻结选区之前', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(page.getByRole('alert')).toContainText('冻结区域将占满当前视口');
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 0, frozen: { rows: 0, columns: 0 }, history: { undoSteps: 0 }, errors: ['InvalidOperation'] });
+  await address.fill('B2'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '冻结选区之前', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 1, frozen: { rows: 1, columns: 1 }, history: { undoSteps: 1 }, source: { text: '7' }, errors: ['InvalidOperation'] });
+  await page.getByRole('button', { name: '取消冻结', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 2, frozen: { rows: 0, columns: 0 } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ frozen: { rows: 1, columns: 1 } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 4, frozen: { rows: 0, columns: 0 }, history: { undoSteps: 0, redoSteps: 2 }, source: { text: '7' }, errors: ['InvalidOperation'] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true });
+});
+
+test('mounted remote axis controls move cross-chunk cells and formulas through one Worker with draft protection and four undo steps', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const bytes = Buffer.from(writeDocumentZip(scalarWorkbook([{ row: 1, column: 31, value: { type: 'number', value: 7 } }, { row: 2, column: 32, value: { type: 'number', value: 8 } },
+    { row: 0, column: 1, value: { type: 'number', value: 999 }, formula: '=SUM(AF2:AG3)' }]).serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }), address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  await input.fill('草稿'); await expect(page.getByRole('button', { name: '插入选区行', exact: true })).toBeDisabled();
+  await input.press('Escape'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByLabel('插入行列的格式', { exact: true }).selectOption('none');
+  await address.fill('AF2:AG3'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '插入选区行', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(1, 31), window.workbookRemoteEditor.value(3, 31), window.workbookRemoteEditor.value(4, 32), window.workbookRemoteEditor.value(0, 1)])))
+    .toEqual(['', '7', '8', '=SUM(AF4:AG5)']);
+  await address.fill('AF4:AG5'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '插入选区列', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(3, 33), window.workbookRemoteEditor.value(4, 34), window.workbookRemoteEditor.value(0, 1)])))
+    .toEqual(['7', '8', '=SUM(AH4:AI5)']);
+  await page.getByRole('button', { name: '删除选区列', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await address.fill('AF2:AG3'); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await page.getByRole('button', { name: '删除选区行', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 4, history: { undoSteps: 4 }, current: { kind: 'value', value: { type: 'number', value: 15 } }, errors: [] });
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(1, 31), window.workbookRemoteEditor.value(2, 32), window.workbookRemoteEditor.value(0, 1)])))
+    .toEqual(['7', '8', '=SUM(AF2:AG3)']);
+  for (let index = 0; index < 4; index++) { await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); }
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ revision: 8, history: { undoSteps: 0, redoSteps: 4 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
+test('mounted Worker native whole-table cut keeps its definition across sheets and restores it in one undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-native-table-cut' }), { kind: 'workbook' });
+  const [source, target] = model.snapshot().metadata.workbook.sheets, table = source!.tables![0]!;
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A1:D6'); await page.getByRole('button', { name: '剪切选区', exact: true }).click();
+  await page.getByRole('tab', { name: target!.name, exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('H260'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], tables: [
+    { sheetId: source!.sheetId, tables: [] }, { sheetId: target!.sheetId, tables: [{ tableId: table.tableId, range: { from: { row: 259, column: 7 }, to: { row: 264, column: 10 } }, columns: table.columns }] },
+  ] });
+  expect(await page.evaluate(sheetId => window.workbookRemoteEditor.sourceCell(260, 10, sheetId), target!.sheetId)).toMatchObject({ value: { type: 'number', value: 20 } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], tables: [{ tables: [table] }, { tables: [] }] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
+test('mounted Worker whole native table copy owns independent identities and inputs in one history step', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-table-copy' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookTableCopy } = await import('./workbook-copy-tables-cases.js'); await exerciseWorkbookTableCopy(page, true);
+});
+test('mounted Worker structured formula fill differs from copy and retains locked columns and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-structured-fill' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookStructuredFill } = await import('./workbook-structured-fill-cases.js'); await exerciseWorkbookStructuredFill(page, true);
+});
+test('mounted Worker ordinary filter header deletion keeps criteria, current subtotal and one-step history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-headers.xlsx'), { documentId: 'mounted-filter-headers' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookFilterHeaders } = await import('./workbook-filter-header-cases.js'); await exerciseWorkbookFilterHeaders(page, true);
+});
+test('mounted Worker partial table cuts keep native identities, current inputs, totals and overwrite protection', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-tables.xlsx'), { documentId: 'mounted-worker-partial-table' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookPartialTableMove } = await import('./workbook-partial-table-move-cases.js'); await exerciseWorkbookPartialTableMove(page, true);
+});
+test('mounted Worker merged selective paste, skip blanks and logical numeric fill preserve target format and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-special.xlsx'), { documentId: 'mounted-worker-merged-special' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookMergedSpecial } = await import('./workbook-merged-special-cases.js'); await exerciseWorkbookMergedSpecial(page, true);
+});
+test('mounted Worker contextual names follow row and column edits with actual cross-sheet results and undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-axis-names.xlsx'), { documentId: 'mounted-worker-axis-names' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookAxisNames } = await import('./workbook-axis-names-cases.js'); await exerciseWorkbookAxisNames(page, true);
+});
+test('mounted Worker native global-name cut shows the global value despite a target local shadow', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-cut' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('B7'); await page.getByRole('button', { name: '剪切选区', exact: true }).click();
+  await page.getByRole('tab', { name: target.name, exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('D1'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(sheetId => window.workbookRemoteEditor.sourceCell(0, 3, sheetId), target.sheetId)).toMatchObject({ formula: { expression: '=[0]!Tax' } });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.displayedCell(0, 3))).toBe('7');
+  await expect(page.getByRole('textbox', { name: '单元格或公式输入', exact: true })).toHaveValue('=[0]!Tax');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker native local-name copy creates the missing target scope and shows current values in one undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-copy' }), { kind: 'workbook' }), target = model.snapshot().metadata.workbook.sheets[1]!;
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('B5:B8'); await page.getByRole('button', { name: '复制选区', exact: true }).click();
+  await page.getByRole('tab', { name: target.name, exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  await choose('B5'); await page.getByRole('button', { name: '粘贴选区', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => [4, 5, 6, 7].map(row => window.workbookRemoteEditor.displayedCell(row, 1)))).toEqual(['107', '700', '7', '7']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [], names: expect.arrayContaining([expect.objectContaining({ name: 'Rate', sheetId: target.sheetId })]) });
+  expect(await page.evaluate(sheetId => window.workbookRemoteEditor.sourceCell(6, 1, sheetId), target.sheetId)).toMatchObject({ formula: { expression: '=[0]!Tax' } });
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 1 }, errors: [], names: model.snapshot().metadata.workbook.names });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker name manager preserves scopes, drafts, IME and exact name consumers through one-step history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-name-manager' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookNameControls } = await import('./workbook-name-controls-cases.js');
+  await exerciseWorkbookNameControls(page, true, model.snapshot().metadata.workbook.names!, model.snapshot().metadata.workbook.sheets[1]!.sheetId);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+test('mounted Worker sorting moves uniform multi-row merged records through one session and restores their actual display', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-merged-sort.xlsx'), { documentId: 'merged-sort-editor' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookMergedSort } = await import('./workbook-merged-sort-cases.js'); await exerciseWorkbookMergedSort(page, true, model.snapshot().metadata.workbook.sheets[0]!.merges);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+test('mounted Worker copy preserves native note size, both boxes, threaded replies, selective modes and skip blanks', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx'), { documentId: 'copy-comments-editor' }), { kind: 'workbook' });
+  const { workbookCopyCommentsSource, exerciseWorkbookCopyComments } = await import('./workbook-copy-comments-cases.js'), prepared = workbookCopyCommentsSource(model), bytes = Buffer.from(writeDocumentZip(prepared.source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await page.evaluate(operations => window.workbookRemoteEditor.perform(operations), prepared.preparationOperations);
+  await exerciseWorkbookCopyComments(page, true, [...prepared.original.annotations], prepared.classicId, prepared.modernId);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
+test('mounted Worker hyperlink controls edit exact ranges, preserve source text and guard drafts and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-copy-sheet-hyperlinks.xlsx'), { documentId: 'mounted-hyperlink-controls' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookHyperlinkControls } = await import('./workbook-hyperlink-controls-cases.js');
+  await exerciseWorkbookHyperlinkControls(page, true, model.snapshot().metadata.workbook.sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker worksheet manager copies names and current formulas, changes sheet properties and retains stale drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-name-prefix.xlsx'), { documentId: 'mounted-sheet-manager' }), { kind: 'workbook' });
+  const bytes = Buffer.from(writeDocumentZip(model.serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  const { exerciseWorkbookSheetControls } = await import('./workbook-sheet-controls-cases.js');
+  await exerciseWorkbookSheetControls(page, true, model.snapshot().metadata.workbook.sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true, reopenedEqual: true });
+});
+
+test('mounted Worker worksheet manager resolves copied name conflicts explicitly in one candidate', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookCopyNameConflictSource, exerciseWorkbookCopyNameConflict } = await import('./workbook-sheet-controls-cases.js');
+  const bytes = Buffer.from(writeDocumentZip(workbookCopyNameConflictSource().serialize())).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyNameConflict(page, true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, hostShadowsRestored: true, reopenedEqual: true });
+});
+
+test('mounted table row insertion fills only the new row, preserves a manual exception and restores native table source on undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const s = createDocumentSession(scalarWorkbook([{ row: 1, column: 0, value: { type: 'number', value: 3 } }, { row: 2, column: 0, value: { type: 'number', value: 4 } }]));
+  s.commit(s.prepare({ protocolVersion: 1, documentId: s.snapshot().manifest.documentId, baseRevision: 0, operations: [
+    { op: 'setWorkbookTable', sheetId: 'sheet-1', table: { tableId: 'sales', name: 'Sales', range: { from: { row: 0, column: 0 }, to: { row: 3, column: 1 } },
+      header: true, totals: true, totalsPreviouslyShown: true, showFirstColumn: false, showLastColumn: false, rowStripes: true, columnStripes: false,
+      columns: [{ columnId: 'amount', name: 'Amount', totalFunction: 'none' }, { columnId: 'double', name: 'Double', calculatedFormula: '=A2*2', totalFunction: 'sum' }] } },
+    { op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row: 2, column: 1, source: { kind: 'value', value: { type: 'number', value: 99 } } }] },
+  ] }));
+  const bytes = Buffer.from(writeDocumentZip(s.serialize())).toString('base64'); s.dispose();
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes), { code: sessionWorkerCode, bytes });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const choose = async (value: string) => { await address.fill(value); await address.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled()); };
+  await choose('A3'); await page.getByRole('button', { name: '插入选区行', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(2, 1), window.workbookRemoteEditor.value(3, 1)]))).toEqual(['=(A3*2)', '99']);
+  await choose('A3'); const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }); await input.fill('5'); await input.press('Enter'); await page.evaluate(() => window.workbookRemoteEditor.settled());
+  expect(await page.evaluate(() => window.workbookRemoteEditor.sourceCell(2, 1))).toMatchObject({ formula: { expression: '=(A3*2)' } });
+  for (let i = 0; i < 2; i++) { await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.evaluate(() => window.workbookRemoteEditor.settled()); }
+  expect(await page.evaluate(() => Promise.all([window.workbookRemoteEditor.value(1, 1), window.workbookRemoteEditor.value(2, 1)]))).toEqual(['=A2*2', '99']);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.inspect())).toMatchObject({ history: { undoSteps: 0, redoSteps: 2 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
+});
+
+test('100 ordinary edits and complete undo/redo retain bounded current previews on 200,000 actual cells', { tag: '@scale' }, async ({ page }, info) => {
+  test.setTimeout(360_000); await page.addScriptTag({ content: performanceHostCode });
+  const result = await page.evaluate(({ code, bytes }) => window.workbookEditingPerformance.ordinaryWorkerEdits(code, bytes), {
+    code: sessionWorkerCode, bytes: readFileSync('examples/xlsx/15-ten-thousand-rows.xlsx').toString('base64') });
+  const sha256 = (input: string | Uint8Array) => createHash('sha256').update(input).digest('hex');
+  const report = JSON.stringify({ ...result, sourceSha256: sha256(readFileSync('examples/xlsx/15-ten-thousand-rows.xlsx')),
+    workerBundleSha256: sha256(sessionWorkerCode), hostBundleSha256: sha256(performanceHostCode) }, null, 2); writeFileSync(info.outputPath('workbook-ordinary-editing.json'), report + '\n');
+  await info.attach('workbook-ordinary-editing.json', { body: report, contentType: 'application/json' });
+  expect(result.samples).toHaveLength(100); expect(result.maximumReadRow).toBeLessThan(1000);
+  expect(result).toMatchObject({ sameFrame: true, originalChunksRestored: true, restoredInput: '22', failures: [], fullHistory: { undoSteps: 100, redoSteps: 0 },
+    undoneHistory: { undoSteps: 0, redoSteps: 100 }, redoneHistory: { undoSteps: 100, redoSteps: 0 },
+    audit: { cells: 200_000, formulas: 20_000, sessionsCreated: 1, revision: 400, endpointDisposed: true, reopenedEqual: true, history: { undoSteps: 0, redoSteps: 100 } } });
+  expect(result.fullHistory.retainedBytes).toBeLessThan(512 * 1024 * 1024); expect(result.largestReplyUnits).toBeLessThan(2 * 1024 * 1024);
+  // Record the complete edit→calculation→preview distribution. A non-pinned
+  // host must not silently certify the 4-CPU/8-GiB stage's 500ms p95 gate.
+});
+test('mounted editor displays 100 current dependent results and full history on 200,000 actual cells', { tag: '@scale' }, async ({ page }, info) => {
+  test.setTimeout(360_000); const mountedPerformanceHostCode = await bundle('workbook-editor-performance'); await page.addScriptTag({ content: mountedPerformanceHostCode });
+  const result = await page.evaluate(({ code, bytes }) => window.workbookEditorPerformance.ordinaryMountedWorkerEdits(code, bytes), {
+    code: sessionWorkerCode, bytes: readFileSync('examples/xlsx/15-ten-thousand-rows.xlsx').toString('base64') });
+  const sha256 = (input: string | Uint8Array) => createHash('sha256').update(input).digest('hex');
+  const report = JSON.stringify({ ...result, sourceSha256: sha256(readFileSync('examples/xlsx/15-ten-thousand-rows.xlsx')),
+    workerBundleSha256: sha256(sessionWorkerCode), hostBundleSha256: sha256(mountedPerformanceHostCode) }, null, 2); writeFileSync(info.outputPath('workbook-mounted-editing.json'), report + '\n');
+  await info.attach('workbook-mounted-editing.json', { body: report, contentType: 'application/json' });
+  expect(result.samples).toHaveLength(100); expect(result.maximumReadRow).toBeLessThan(1000);
+  expect(result).toMatchObject({ sameFrame: true, originalChunksRestored: true, restoredInput: '22', undoneText: '492', redoneText: '669', restoredText: '492', finalRevision: 400, failures: [],
+    fullHistory: { undoSteps: 100, redoSteps: 0 }, undoneHistory: { undoSteps: 0, redoSteps: 100 }, redoneHistory: { undoSteps: 100, redoSteps: 0 },
+    audit: { cells: 200_000, formulas: 20_000, sessionsCreated: 1, revision: 400, endpointDisposed: true, reopenedEqual: true, history: { undoSteps: 0, redoSteps: 100 } } });
+  expect(result.fullHistory.retainedBytes).toBeLessThan(512 * 1024 * 1024); expect(result.largestReplyUnits).toBeLessThan(2 * 1024 * 1024);
+  // This host is not pinned. Record every edit→calculation→visible formula
+  // sample; final four-engine CPU/memory/p95 gates remain mandatory.
+});
+
 test.beforeEach(async ({ page }) => { await openSdkHost(page); await page.addScriptTag({ content: hostCode }); });
 test('native XLSX pictures and charts stay in a host Worker and feed the public preview through bounded reads', async ({ page }) => {
   for (const name of ['07-three-charts', '08-images-shapes']) {
@@ -51,4 +521,117 @@ test('10,000 actual XLSX rows open and scroll through the production read transp
   const report = JSON.stringify({ ...result, cancelled }, null, 2);
   writeFileSync(info.outputPath('native-workbook-worker.json'), report + '\n');
   await info.attach('native-workbook-worker.json', { body: report, contentType: 'application/json' });
+});
+
+test('native workbook edits, cross-sheet copy, current values, cancellation and history stay in one host Worker session', async ({ page }) => {
+  await page.addScriptTag({ content: sessionHostCode });
+  for (const name of ['01-values-text', '04-formulas-names']) {
+    const result = await page.evaluate(({ code, bytes, name }) => window.workbookSessionHost.editWorker(code, bytes, name, false, true), {
+      code: sessionWorkerCode, bytes: readFileSync(`examples/xlsx/${name}.xlsx`).toString('base64'), name });
+    expect(result).toMatchObject({ isolated: true, cancelled: 'OperationCancelled', cancellationPoint: 256, copyUndo: true, originalChunksRestored: true,
+      detachedInput: true, failures: [], cancellationState: { revision: 1, history: { undoSteps: 1 } },
+      current: { kind: 'value', value: { type: 'number', value: 2 } }, audit: { sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true,
+        revision: 4, history: { undoSteps: 0, redoSteps: 2 }, hostUsable: { type: 'number', value: 42 } } });
+    expect(result.largestControlReplyUnits).toBeLessThan(64 * 1024); expect(result.largestViewReplyUnits).toBeLessThan(2 * 1024 * 1024);
+    expect(result.states).toEqual([1, 2, 3, 4]); expect(result.selection?.anchor).toMatchObject({ kind: 'cells', sheetId: result.targetSheetId });
+    expect(result.shown.sheetId).toBe(result.targetSheetId); expect(result.shown.sheetId).not.toBe(result.first.sheetId);
+  }
+});
+
+test('200,000 actual cells copy and cancel through the editing Worker without transferring full source chunks', { tag: '@scale' }, async ({ page }, info) => {
+  test.setTimeout(180_000); await page.addScriptTag({ content: sessionHostCode });
+  const result = await page.evaluate(({ code, bytes }) => window.workbookSessionHost.editWorker(code, bytes, 'capacity-editing-worker', true), {
+    code: sessionWorkerCode, bytes: readFileSync('examples/xlsx/15-ten-thousand-rows.xlsx').toString('base64') });
+  expect(result).toMatchObject({ isolated: true, cancelled: 'OperationCancelled', cancellationPoint: 256, copyUndo: true, originalChunksRestored: true,
+    detachedInput: true, failures: [], current: { kind: 'value', value: { type: 'number', value: 3_400_152 } },
+    audit: { cells: 200_000, formulas: 20_000, sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, revision: 4, history: { undoSteps: 0, redoSteps: 2 } } });
+  expect(result.audit.chunks).toHaveLength(40); expect(result.copied).toBeGreaterThan(700); expect(result.prepared).toBeGreaterThan(800);
+  expect(result.largestControlReplyUnits).toBeLessThan(2 * 1024 * 1024); expect(result.largestViewReplyUnits).toBeLessThan(2 * 1024 * 1024); expect(result.ticks).toBeGreaterThan(100);
+  // This capacity integration keeps the real source counts and browser event
+  // loop; final fixed-resource editing latency/history gates remain separate.
+  const report = JSON.stringify(result, null, 2); writeFileSync(info.outputPath('workbook-editing-worker.json'), report + '\n');
+  await info.attach('workbook-editing-worker.json', { body: report, contentType: 'application/json' });
+});
+
+
+test('mounted Worker table controls maintain native columns, formulas, exceptions, styles and protected drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookTableControlsSource, exerciseWorkbookTableControls } = await import('./workbook-table-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/05-native-table.xlsx'), { documentId: 'mounted-table-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookTableControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookTableControls(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+
+test('mounted Worker filter controls preserve native criteria, paged text, hidden flags, table totals and protected drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookFilterControlsSource, exerciseWorkbookFilterControls } = await import('./workbook-filter-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-calculation.xlsx'), { documentId: 'mounted-filter-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookFilterControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookFilterControls(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+
+test('mounted Worker rule controls paint native conditions and scales, enforce validation warnings and preserve drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookRulesControlsSource, workbookRuleHostPreparation, exerciseWorkbookRulesControls } = await import('./workbook-rules-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-rule-controls' }), { kind: 'workbook' });
+  const { source, sheets } = workbookRulesControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes, options }) => window.workbookRemoteEditor.mount(code, bytes, true, options), { code: sessionWorkerCode, bytes, options: workbookRuleHostPreparation });
+  await exerciseWorkbookRulesControls(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker validation confirmations retain drafts and atomically apply input, fill and clipboard', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { validationConfirmationSource, validationPreparation, exerciseValidationConfirmation } = await import('./workbook-validation-confirmation-cases.js');
+  const bytes = Buffer.from(writeDocumentZip(validationConfirmationSource())).toString('base64');
+  await page.evaluate(({ code, bytes, options }) => window.workbookRemoteEditor.mount(code, bytes, false, options, true), { code: sessionWorkerCode, bytes, options: validationPreparation });
+  await exerciseValidationConfirmation(page, true);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker custom table styles isolate regions, retain native associations and manage defaults and drafts', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookTableStyleControlsSource, exerciseWorkbookTableStyleControls } = await import('./workbook-table-style-controls-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-table-style.xlsx'), { documentId: 'mounted-table-style-controls' }), { kind: 'workbook' });
+  const { source, workbook } = workbookTableStyleControlsSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookTableStyleControls(page, true, workbook);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker copy keeps hyperlink fragments, skip blanks, selective modes and cross-sheet history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookCopyHyperlinksSource, exerciseWorkbookCopyHyperlinks } = await import('./workbook-copy-hyperlinks-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/01-values-text.xlsx'), { documentId: 'mounted-copy-hyperlinks' }), { kind: 'workbook' });
+  const { source, sheets } = workbookCopyHyperlinksSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyHyperlinks(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+test('mounted Worker copy keeps conditional and validation templates, masks and history', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const { workbookCopyRulesSource, exerciseWorkbookCopyRules } = await import('./workbook-copy-rules-cases.js');
+  const model = openDocument(await importXlsx(readFileSync('examples/xlsx/06-rules-validation.xlsx'), { documentId: 'mounted-copy-rules' }), { kind: 'workbook' });
+  const { source, sheets } = workbookCopyRulesSource(model), bytes = Buffer.from(writeDocumentZip(source)).toString('base64');
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes });
+  await exerciseWorkbookCopyRules(page, true, sheets);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true, hostShadowsRestored: true });
+});
+
+
+test('mounted Worker formatted value filters share displayed rows, SUBTOTAL, format changes and undo', async ({ page }) => {
+  await page.addScriptTag({ content: editorHostCode });
+  const model = openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/workbook-filter-display.xlsx'), { documentId: 'display-filter-editor' }), { kind: 'workbook' });
+  const workbook = model.snapshot().metadata.workbook, sheets = workbook.sheets.filter(sheet => ['Rangedecimal', 'Tabledecimal'].includes(sheet.name)).map(sheet => ({ name: sheet.name, sheetId: sheet.sheetId }));
+  const formatId = workbook.numberFormats.find(format => 'code' in format && format.code === '0%')!.formatId;
+  await page.evaluate(({ code, bytes }) => window.workbookRemoteEditor.mount(code, bytes, true), { code: sessionWorkerCode, bytes: Buffer.from(writeDocumentZip(model.serialize())).toString('base64') });
+  const { exerciseWorkbookFilterDisplay } = await import('./workbook-filter-display-cases.js'); await exerciseWorkbookFilterDisplay(page, true, sheets, formatId);
+  expect(await page.evaluate(() => window.workbookRemoteEditor.finish())).toMatchObject({ sessionsCreated: 1, endpointDisposed: true, reopenedEqual: true });
 });

@@ -1,0 +1,155 @@
+{
+  "scope": "Independent native inputs and four real pinned Calc copyRange edits. Cell strings prove each copy; persisted XML proves classic note copies. Duplicate VML IDs remain malformed producer negative cases and are rejected by the SDK. Modern thread and alternate-box losses remain explicit producer differences; no Excel/WPS editing runtime claim.",
+  "references": [
+    "https://support.microsoft.com/en-au/excel/paste-options?nochrome=true",
+    "https://support.microsoft.com/en-us/excel/insert-comments-and-notes-in-excel"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "cases": [
+    {
+      "name": "classic",
+      "source": "examples/xlsx/09-classic-notes.xlsx",
+      "sourceSha256": "4e916b0f4883d663e1058ddd622305059823ab54c9ffdb4a8d1edc08e26ba09d",
+      "nativeCall": {
+        "sourceText": "1,200.00",
+        "targetText": "1,200.00",
+        "hadClassicNote": true,
+        "copiedClassicNote": true
+      },
+      "observed": {
+        "classic": [
+          {
+            "cell": "B2",
+            "author": "独立备注作者",
+            "text": "请确认：预算😀禰󠄀",
+            "commentPr": false
+          },
+          {
+            "cell": "G7",
+            "author": "独立备注作者",
+            "text": "请确认：预算😀禰󠄀",
+            "commentPr": false
+          }
+        ],
+        "modern": [],
+        "duplicateVmlIds": [
+          {
+            "part": "xl/drawings/vmlDrawing1.vml",
+            "id": "_x0000_t202",
+            "count": 2
+          },
+          {
+            "part": "xl/drawings/vmlDrawing1.vml",
+            "id": "shape_0",
+            "count": 2
+          }
+        ]
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-copy-comments-classic-calc.xlsx",
+      "outputSha256": "1c16c53ffd0702c9d907a06e488d20bd4dd8dbe8b9eda4af905448a14f76c2c5"
+    },
+    {
+      "name": "classic-producer",
+      "source": "examples/xlsx/producer/09-classic-notes.xlsx",
+      "sourceSha256": "a58df22e39342e46fcfb6d0e19f9bbb9abf4619f3b11a8221889cc57c12dad72",
+      "nativeCall": {
+        "sourceText": "1,200.00",
+        "targetText": "1,200.00",
+        "hadClassicNote": true,
+        "copiedClassicNote": true
+      },
+      "observed": {
+        "classic": [
+          {
+            "cell": "B2",
+            "author": "独立备注作者",
+            "text": "请确认：预算😀禰󠄀",
+            "commentPr": false
+          },
+          {
+            "cell": "G7",
+            "author": "独立备注作者",
+            "text": "请确认：预算😀禰󠄀",
+            "commentPr": false
+          }
+        ],
+        "modern": [],
+        "duplicateVmlIds": [
+          {
+            "part": "xl/drawings/vmlDrawing1.vml",
+            "id": "_x0000_t202",
+            "count": 2
+          },
+          {
+            "part": "xl/drawings/vmlDrawing1.vml",
+            "id": "shape_0",
+            "count": 2
+          }
+        ]
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-copy-comments-classic-producer-calc.xlsx",
+      "outputSha256": "dc627e97f42ef5c25d7a19de8d5291175af74ba02480a7f231cc279c465b6536"
+    },
+    {
+      "name": "modern",
+      "source": "examples/xlsx/10-modern-threads.xlsx",
+      "sourceSha256": "cf7f6a4b981cdc2e291bda3597f46b79aedcf7e7578c556f7d3d7d9250571623",
+      "nativeCall": {
+        "sourceText": "1,200.00",
+        "targetText": "1,200.00",
+        "hadClassicNote": false,
+        "copiedClassicNote": false
+      },
+      "observed": {
+        "classic": [],
+        "modern": [],
+        "duplicateVmlIds": []
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-copy-comments-modern-calc.xlsx",
+      "outputSha256": "c63e5e70646a644f9b7a9200a4749b434181994e351b06292212196f08e82ff4"
+    },
+    {
+      "name": "dual-box",
+      "source": "packages/office/tests/fixtures/xlsx-dual-note-boxes-conflict.xlsx",
+      "sourceSha256": "444d53730451a6b7131e5847a8ee00381fb31c8ee4197f5b946c40e4a17adf12",
+      "nativeCall": {
+        "sourceText": "1,200.00",
+        "targetText": "1,200.00",
+        "hadClassicNote": true,
+        "copiedClassicNote": true
+      },
+      "observed": {
+        "classic": [
+          {
+            "cell": "B2",
+            "author": "独立备注作者",
+            "text": "请确认：预算😀禰󠄀",
+            "commentPr": false
+          },
+          {
+            "cell": "G7",
+            "author": "独立备注作者",
+            "text": "请确认：预算😀禰󠄀",
+            "commentPr": false
+          }
+        ],
+        "modern": [],
+        "duplicateVmlIds": [
+          {
+            "part": "xl/drawings/vmlDrawing1.vml",
+            "id": "_x0000_t202",
+            "count": 2
+          },
+          {
+            "part": "xl/drawings/vmlDrawing1.vml",
+            "id": "shape_0",
+            "count": 2
+          }
+        ]
+      },
+      "outputFile": "packages/office/tests/fixtures/workbook-copy-comments-dual-box-calc.xlsx",
+      "outputSha256": "f23899858f5a4d185ddd271571966034d2ae42b2f08660473da000aeb7450e28"
+    }
+  ]
+}

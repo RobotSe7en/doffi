@@ -2,6 +2,7 @@ import { encodeTestPackage } from './package-transport.js';
 import { openSdkHost } from './sdk-host.js';
 import { expect, test } from '@playwright/test';
 import { openDocument } from '@doffi/core';
+import type { WorkbookDocumentMetadata } from '@doffi/core';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +32,48 @@ test.beforeAll(async () => {
   }
 });
 test.beforeEach(async ({ page }) => { await openSdkHost(page); await page.addScriptTag({ content: code }); });
+test('incremental preview remeasures distant hidden-column results and retains its accepted surface on failure and cancellation', async ({ page }) => {
+  const model = scalarWorkbook(Array.from({ length: 2048 * 3 }, (_, index) => {
+    const row = Math.floor(index / 3), column = index % 3;
+    return { row, column, value: { type: 'number' as const, value: row === 0 && column === 0 ? 1 : index + 1 },
+      ...(row === 1000 && column === 1 ? { formula: '=IF($A$1=1,"short","long wrapped content long wrapped content long wrapped content long wrapped content")' } : {}) };
+  }), metadata => { metadata.workbook.sheets[0]!.columnDimensions = [{ from: 1, to: 1, hidden: true, width: 8.43, unit: 'characters' }]; });
+  const files = new Map(model.serialize()), encoder = new TextEncoder();
+  files.set('styles.css', encoder.encode(new TextDecoder().decode(files.get('styles.css')!).replace('font-size:11pt;', 'font-size:11pt;--office-cell-wrap:true;')));
+  const result = await page.evaluate(entries => window.workbookPreview.incrementalPreview(entries), encodeTestPackage(files));
+  expect(result).toMatchObject({ failure: 'RevisionConflict', retained: true, superseded: true, sameFrame: true, frames: 1,
+    measuredDistant: true, skippedUntouched: true, errors: ['RevisionConflict'], unhandled: [] });
+  expect(result.updated).toEqual(result.fresh); expect(result.updated.scrollTopPt).toBeGreaterThan(result.oldTop);
+  expect(result.updatedReadRows).toBeLessThan(result.initialReadRows / 2);
+});
+test('completed calculation renders an unruled long chain and preserves view selection and active sheet', async ({ page }) => {
+  const model = scalarWorkbook(Array.from({ length: 150 }, (_, row) => ({ row, column: 0, value: { type: 'number' as const, value: 9999 }, formula: row ? `=A${row}+1` : '=1' })), metadata => { metadata.workbook.sheets[0]!.defaultRowHeightCustom = true; });
+  const result = await page.evaluate(entries => window.workbookPreview.calculatedPreview(entries), encodeTestPackage(model.serialize()));
+  expect(result).toEqual({ cell: '150', retained: true, sheet: 'preview-empty', errors: [], unchanged: true });
+});
+test('source offsets bind measured automatic heights, hidden axes and the accepted revision', async ({ page }) => {
+  const model = scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } }, { row: 1001, column: 2, value: { type: 'text', value: 'tall' } }], metadata => {
+    const sheet = metadata.workbook.sheets[0]!; sheet.defaultRowHeightCustom = false;
+    sheet.rowDimensions = [{ from: 0, to: 0, heightPt: 20 }, { from: 1, to: 1000, hidden: true }, { from: 1001, to: 1001, autoHeight: true }];
+    sheet.columnDimensions = [{ from: 1, to: 1, hidden: true, unit: 'characters' }];
+  }), files = new Map(model.serialize());
+  files.set('styles.css', new TextEncoder().encode(new TextDecoder().decode(files.get('styles.css')!) + '.large{font-size:40pt;line-height:1.2}'));
+  const metadata = JSON.parse(new TextDecoder().decode(files.get('metadata.json')!)) as WorkbookDocumentMetadata;
+  metadata.workbook.sheets[0]!.rowDimensions[2]!.cssClass = 'large'; files.set('metadata.json', new TextEncoder().encode(JSON.stringify(metadata)));
+  const result = await page.evaluate(entries => window.workbookPreview.sourceOffsets(entries), encodeTestPackage(files));
+  expect(result).toMatchObject({ first: { documentId: 'scalar-kernel', revision: 0, sheetId: 'sheet-1', topPt: 20 }, pending: { revision: 0 }, updated: { revision: 1 },
+    other: { revision: 1, sheetId: 'preview-empty', topPt: 20 }, invalid: 'InvalidOperation', disposed: 'InvalidOperation', unchanged: true, frozen: true });
+  expect(result.hiddenStart.leftPt).toBe(result.hiddenEnd.leftPt); expect(result.afterTall.topPt - result.first.topPt).toBeGreaterThan(15);
+  expect(result.pending).toEqual(result.afterTall); expect(result.updated.topPt).toBeGreaterThan(result.afterTall.topPt);
+});
+for (const rtl of [false, true]) test(`imperative source-range selection scrolls and guards worksheet races in ${rtl ? 'RTL' : 'LTR'}`, async ({ page }) => {
+  const files = await importXlsx(readFileSync('examples/xlsx/03-structure.xlsx'), { documentId: 'range-selection' });
+  const result = await page.evaluate(({ entries, rtl }) => window.workbookPreview.imperativeRangeSelection(entries, rtl), { entries: encodeTestPackage(files), rtl });
+  expect(result).toMatchObject({ invalid: 'InvalidOperation', retained: true, sameViewport: true, race: 'RevisionConflict', unchanged: true, frozen: true,
+    first: { documentId: 'range-selection', baseRevision: 0, anchor: { kind: 'cells', ranges: [{ from: { row: 0, column: 0 }, to: { row: 3, column: 3 } }] } },
+    far: { anchor: { ranges: [{ from: { row: 500, column: 40 }, to: { row: 502, column: 42 } }] } } });
+  expect(result.moved.scrollLeftPt).toBeGreaterThan(0); expect(result.moved.scrollTopPt).toBeGreaterThan(0);
+});
 for (const rtl of [false, true]) test(`public workbook preview selects cells and switches sheets without serializing source in ${rtl ? 'RTL' : 'LTR'}`, async ({ page }) => {
   for (const input of inputs.filter(input => input.name !== '08-images-shapes')) {
     const start = await page.evaluate(({ files, rtl }) => window.workbookPreview.mountPublicPreview(files, rtl), { files: input.files, rtl });
@@ -99,11 +142,12 @@ test('worksheet-wide prompt suppression retains current validation status and so
 
 
 test('idle neighbor reading is opt-in, bounded, cancellable and never publishes a background candidate', async ({ page }) => {
-  for (const [allow, rows, mode] of [[false, 8, 'normal'], [true, 0, 'normal'], [true, 8, 'normal'], [true, 8, 'hold'], [true, 8, 'failure'], [true, 8, 'revision'], [true, 8, 'active'], [true, 8, 'preference']] as const) {
+  for (const [allow, rows, mode] of [[false, 8, 'normal'], [true, 0, 'normal'], [true, 8, 'normal'], [true, 8, 'hold'], [true, 8, 'parent-input'], [true, 8, 'failure'], [true, 8, 'revision'], [true, 8, 'active'], [true, 8, 'preference']] as const) {
     const result = await page.evaluate(({ entries, allow, rows, mode }) => window.workbookPreview.publicReadAhead(entries, allow, rows, mode), { entries: readAheadFiles, allow, rows, mode });
     expect(result, JSON.stringify({ allow, rows, mode, result })).toMatchObject({ invalid: ['InvalidOperation', 'InvalidOperation', 'InvalidOperation'], unhandled: [], firstRetained: true, foreground: true, stopped: true, clean: true, activeContent: false, unchanged: true });
-    if (!allow || !rows) expect(result.reads).toBe(0); else { expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(mode === 'hold' ? 9 : 8); expect(result.largestSlots).toBeLessThanOrEqual(256); }
-    if (mode === 'hold') { expect(result.aborted).toBe(true); expect(result.whileHeld).toBe(1); }
+    if (!allow || !rows) expect(result.reads).toBe(0); else { expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(mode === 'hold' || mode === 'parent-input' ? 9 : 8); expect(result.largestSlots).toBeLessThanOrEqual(256); }
+    if (mode === 'hold' || mode === 'parent-input') { expect(result.aborted).toBe(true); expect(result.whileHeld).toBe(1); }
+    if (mode === 'parent-input') expect(result.parentAborted).toBe(true);
   }
 });
 

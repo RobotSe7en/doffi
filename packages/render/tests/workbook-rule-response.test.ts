@@ -4,8 +4,21 @@ import { createWorkbook, DEFAULT_WORKBOOK_RULE_LIMITS, openDocument, readWorkboo
 import type { WorkbookRuleReadResponse } from '@doffi/core';
 import { importXlsx } from '../../office/src/xlsx-import.js';
 import { checkedWorkbookRules } from '../src/workbook/rule-response.js';
+import { modelRuleSource } from '../src/workbook/rule-source.js';
 
 describe('workbook rule response acceptance', () => {
+  it('lets port traffic cancel a current-value read and keeps later independent reads usable', async () => {
+    const model = openDocument(createWorkbook({ documentId: 'rule-tasks' }), { kind: 'workbook' }), source = modelRuleSource(model);
+    const coordinates = Array.from({ length: 512 }, (_, row) => ({ row, column: 0 }));
+    const request = { documentId: 'rule-tasks', revision: 0, sheetId: 'sheet-1', coordinates, includeCurrent: true, ...DEFAULT_WORKBOOK_RULE_LIMITS };
+    const abort = new AbortController(), reading = source.read(request, abort.signal);
+    setImmediate(() => abort.abort());
+    await expect(reading).rejects.toMatchObject({ code: 'OperationCancelled' });
+    const result = await source.read({ ...request, coordinates: coordinates.slice(0, 64) }, new AbortController().signal);
+    expect(result.cells).toHaveLength(64);
+    expect(result.cells.every(cell => cell.current.kind === 'value' && cell.current.value.type === 'blank')).toBe(true);
+    expect(model.snapshot().manifest.revision).toBe(0);
+  });
   it('requires exact priority order and admits omission only after an actual stopping result', async () => {
     const files = new Map(createWorkbook({ documentId: 'priority' })), metadata = JSON.parse(new TextDecoder().decode(files.get('metadata.json')!));
     const origin = { row: 0, column: 0 }, ranges = [{ from: origin, to: origin }];

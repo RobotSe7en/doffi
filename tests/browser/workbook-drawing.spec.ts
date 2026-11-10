@@ -17,7 +17,7 @@ import type { measureContentSource, rejectContentSource } from './fixtures/workb
 import type { measureImageView, measurePictureFills, disposeImageView } from './fixtures/workbook-image-view.js';
 import type { measureObjectGeometry } from './fixtures/workbook-object-geometry.js';
 import type { measureDrawingGradients } from './fixtures/drawing-gradient.js';
-import type { measureDrawingText, measureDrawingTextLayout, measureNativeDrawingText, measureDrawingTextFallback, measureDrawingTextOverflow, measureDrawingOverflowEdges } from './fixtures/workbook-drawing-text.js';
+import type { measureDrawingFontProbeReuse, measureDrawingText, measureDrawingTextLayout, measureNativeDrawingText, measureDrawingTextFallback, measureDrawingTextOverflow, measureDrawingOverflowEdges } from './fixtures/workbook-drawing-text.js';
 import type { measureWorkbookSurface, mountWorkbookSurfacePixels, disposeWorkbookSurfacePixels } from './fixtures/workbook-surface.js';
 import type { measureWorkbookShadows, mountWorkbookShadowPixels, disposeWorkbookShadowPixels } from './fixtures/workbook-shadow.js';
 import type { measureWorkbookCharts, measureWorkbookChartAxes, measureWorkbookChartFiniteScales, measureNativeFiniteCharts, measureWorkbookChartTextFonts, measureWorkbookChartMarkers, measureWorkbookChartGrid, measureWorkbookChartColors, measureWorkbookChartTitles, measureWorkbookChartPositions, measureWorkbookChartTitleContents, measureWorkbookComposedChart, measureWorkbookChartFormats } from './fixtures/workbook-chart.js';
@@ -29,7 +29,7 @@ declare global { interface Window { workbookChartHost: { measureChartNumberField
 
 declare global { interface Window { workbookShadowHost: { measureWorkbookShadows: typeof measureWorkbookShadows; mountWorkbookShadowPixels: typeof mountWorkbookShadowPixels; disposeWorkbookShadowPixels: typeof disposeWorkbookShadowPixels } } }
 
-declare global { interface Window { workbookContentHost: { measureContentSource: typeof measureContentSource; rejectContentSource: typeof rejectContentSource; measureImageView: typeof measureImageView; measurePictureFills: typeof measurePictureFills; disposeImageView: typeof disposeImageView; measureObjectGeometry: typeof measureObjectGeometry; measureDrawingGradients: typeof measureDrawingGradients; measureDrawingText: typeof measureDrawingText; measureDrawingTextLayout: typeof measureDrawingTextLayout; measureNativeDrawingText: typeof measureNativeDrawingText; measureDrawingTextFallback: typeof measureDrawingTextFallback; measureDrawingTextOverflow: typeof measureDrawingTextOverflow; measureDrawingOverflowEdges: typeof measureDrawingOverflowEdges; measureWorkbookSurface: typeof measureWorkbookSurface; mountWorkbookSurfacePixels: typeof mountWorkbookSurfacePixels; disposeWorkbookSurfacePixels: typeof disposeWorkbookSurfacePixels } } }
+declare global { interface Window { workbookContentHost: { measureContentSource: typeof measureContentSource; rejectContentSource: typeof rejectContentSource; measureImageView: typeof measureImageView; measurePictureFills: typeof measurePictureFills; disposeImageView: typeof disposeImageView; measureObjectGeometry: typeof measureObjectGeometry; measureDrawingGradients: typeof measureDrawingGradients; measureDrawingFontProbeReuse: typeof measureDrawingFontProbeReuse; measureDrawingText: typeof measureDrawingText; measureDrawingTextLayout: typeof measureDrawingTextLayout; measureNativeDrawingText: typeof measureNativeDrawingText; measureDrawingTextFallback: typeof measureDrawingTextFallback; measureDrawingTextOverflow: typeof measureDrawingTextOverflow; measureDrawingOverflowEdges: typeof measureDrawingOverflowEdges; measureWorkbookSurface: typeof measureWorkbookSurface; mountWorkbookSurfacePixels: typeof mountWorkbookSurfacePixels; disposeWorkbookSurfacePixels: typeof disposeWorkbookSurfacePixels } } }
 const inputs: { name: string; snapshot: WorkbookSnapshot; text: Record<string, string>; resources: Record<string, string> }[] = [];
 const chartPlots = new Map<string, BasicChartData[]>();
 let referenceTitles: { snapshot: WorkbookSnapshot; bindings: ReturnType<typeof bindWorkbookChartData> };
@@ -290,12 +290,15 @@ test('chart text spacing, explicit axis alignment and wrapped legends use final 
   const model=openDocument(await importXlsx(readFileSync('packages/office/tests/fixtures/xlsx-chart-labels.xlsx'),{documentId:'controlled-labels'}),{kind:'workbook'}),snapshot=model.snapshot();
   const response=await modelChartSource(model).read({...DEFAULT_CHART_READ_LIMITS,documentId:snapshot.manifest.documentId,revision:0,chartIds:snapshot.metadata.workbook.charts!.map(chart=>chart.chartId)},new AbortController().signal),formatter=createWorkbookNumberFormatter({dateSystem:snapshot.metadata.workbook.dateSystem});
   const bindings=bindWorkbookChartData(snapshot,response,formatter);formatter.dispose();
-  const result=await page.evaluate(({snapshot,bindings})=>window.workbookChartHost.measureControlledChartLabels(snapshot,bindings),{snapshot,bindings});
+  for(const decoration of [undefined,'solid','double','dotted','dashed','wavy'] as const) {
+  const result=await page.evaluate(({snapshot,bindings,decoration})=>window.workbookChartHost.measureControlledChartLabels(snapshot,bindings,decoration),{snapshot,bindings,decoration});
   expect(result).toMatchObject({unchanged:true,cleaned:true,overrideFill:'rgba(68,114,196,1)'});
   for(const item of result.results){expect(item.size).toBe('9');expect(Number(item.spacing)).toBeCloseTo(1,5);expect(item.lineOffsets).toEqual([-7.5,15]);expect(item.anchors).toEqual(Array(3).fill(item.alignment==='left'?'start':'end'));if(item.alignment==='left')expect(item.skipped).toBeGreaterThan(0);else expect(item.skipped).toBe(0);}
+  for(const item of result.results){expect(item.nodes).toBe(item.actual);if(decoration)for(const paint of item.decorationPaint){expect(paint).toMatchObject({text:'A long mixed category 中😀Second line',accessible:true,hidden:true,strokes:decoration==='double'?8:4});}}
   expect(result.legend.rect.height).toBeGreaterThan(28);
   expect(result.largeMarker.height).toBe(72);expect(result.largeMarker.rect.height).toBeGreaterThanOrEqual(72);expect(result.largeMarker.nodes).toBe(result.largeMarker.actual);
   for(const box of result.legend.groups){expect(box.x).toBeGreaterThanOrEqual(result.legend.rect.x);expect(box.y).toBeGreaterThanOrEqual(result.legend.rect.y);expect(box.x+box.width).toBeLessThanOrEqual(result.legend.rect.x+result.legend.rect.width+.01);expect(box.y+box.height).toBeLessThanOrEqual(result.legend.rect.y+result.legend.rect.height+.01);}
+  }
 });
 
 test('finite chart endpoints and subnormal values retain bounded coordinates across direct and composed scales', async ({ page }) => {
@@ -887,4 +890,14 @@ test('chart numeric spaces preserve actual glyph advances and bounded fills afte
     if(index===4){expect(item.fills.filter(fill=>fill.text==='')).toHaveLength(8);expect(item.fills.filter(fill=>fill.text!==''&&/^y+$/.test(fill.text!))).toHaveLength(8);}
     for(const label of item.labels)expect(label).not.toMatch(/[)中😀]/u);
   }
+});
+
+
+test('drawing font probes reuse one owner and invalidate after actual font-set changes without changing source or projections', async ({ page }) => {
+  const snapshot = inputs.find(input => input.name === '08-images-shapes')!.snapshot;
+  const result = await page.evaluate(snapshot => window.workbookContentHost.measureDrawingFontProbeReuse(snapshot), snapshot);
+  expect(result).toMatchObject({ unchanged: true, cleaned: true });
+  expect(result.firstCreated).toBeGreaterThan(0); expect(result.secondCreated).toBe(result.firstCreated);
+  expect(result.changedCreated).toBeGreaterThan(result.secondCreated); expect(result.clearedCreated).toBeGreaterThan(result.changedCreated);
+  expect(result.second).toEqual(result.first); expect(result.changed).toEqual(result.first); expect(result.cleared).toEqual(result.first);
 });

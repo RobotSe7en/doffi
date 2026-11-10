@@ -1,0 +1,512 @@
+{
+  "scope": "Independent ZIP/XML table source and seven actual pinned Calc fillAuto cases with official XSD/OPC. Microsoft documents that ordinary copy retains structured columns and horizontal fill adjusts fully qualified column specifiers as a series. SDK single-column fill cycles through the table in both directions; explicit column ranges retain their bindings. Those boundary/range details are implementation behavior, not independently observed Excel acceptance. Calc retains all original structured columns and records #N/A for SUM of the All/quantity column; SDK sums its numeric body and ignores the text header and blank total. Both producer differences remain preserved. Anonymous Excel Preview opened the immutable source but did not accept temporary UI input; it supplies no editing acceptance. Excel/WPS fill runtime unverified.",
+  "references": [
+    "https://support.microsoft.com/en-us/excel/using-structured-references-with-excel-tables"
+  ],
+  "source": "packages/office/tests/fixtures/workbook-axis-tables.xlsx",
+  "sourceSha256": "25a5ac5cf409e94aa2e9fa8064e9b63d5860fd73e74c829ca1cd96b5bd8fed1e",
+  "cases": [
+    {
+      "name": "quantity-right",
+      "seed": "H3",
+      "range": "H3:O3",
+      "direction": "TO_RIGHT",
+      "formula": "=SUM(SalesTable[数量])",
+      "sdk": [
+        10,
+        100,
+        240,
+        0,
+        10,
+        100,
+        240,
+        0
+      ]
+    },
+    {
+      "name": "amount-right",
+      "seed": "H5",
+      "range": "H5:O5",
+      "direction": "TO_RIGHT",
+      "formula": "=SUM(SalesTable[金额])",
+      "sdk": [
+        240,
+        0,
+        10,
+        100,
+        240,
+        0,
+        10,
+        100
+      ]
+    },
+    {
+      "name": "quantity-left",
+      "seed": "O7",
+      "range": "H7:O7",
+      "direction": "TO_LEFT",
+      "formula": "=SUM(SalesTable[数量])",
+      "sdk": [
+        100,
+        240,
+        0,
+        10,
+        100,
+        240,
+        0,
+        10
+      ]
+    },
+    {
+      "name": "range-right",
+      "seed": "H9",
+      "range": "H9:O9",
+      "direction": "TO_RIGHT",
+      "formula": "=SUM(SalesTable[[数量]:[单价]])",
+      "sdk": [
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110
+      ]
+    },
+    {
+      "name": "locked-right",
+      "seed": "H11",
+      "range": "H11:O11",
+      "direction": "TO_RIGHT",
+      "formula": "=SUM(SalesTable[[数量]:[数量]])",
+      "sdk": [
+        10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10
+      ]
+    },
+    {
+      "name": "quantity-down",
+      "seed": "H13",
+      "range": "H13:H20",
+      "direction": "TO_BOTTOM",
+      "formula": "=SUM(SalesTable[数量])",
+      "sdk": [
+        10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10
+      ]
+    },
+    {
+      "name": "all-right",
+      "seed": "H22",
+      "range": "H22:O22",
+      "direction": "TO_RIGHT",
+      "formula": "=SUM(SalesTable[[#All],[数量]])",
+      "sdk": [
+        10,
+        100,
+        480,
+        0,
+        10,
+        100,
+        480,
+        0
+      ]
+    }
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "producer": "packages/office/tests/fixtures/workbook-structured-fill-calc.xlsx",
+  "producerSha256": "7250b5c970e0bc4790cc7956ffd68ab30e5c0a643dfa54acee966cfe63675e82",
+  "observed": {
+    "tables": [
+      {
+        "ref": "A1:D6",
+        "header": "1",
+        "totals": "1",
+        "headerCells": [
+          {
+            "address": "A1",
+            "type": "s",
+            "constantText": "产品"
+          },
+          {
+            "address": "B1",
+            "type": "s",
+            "constantText": "数量"
+          },
+          {
+            "address": "C1",
+            "type": "s",
+            "constantText": "单价"
+          },
+          {
+            "address": "D1",
+            "type": "s",
+            "constantText": "金额"
+          }
+        ],
+        "columns": [
+          {
+            "name": "产品",
+            "calculated": null,
+            "totalFormula": null
+          },
+          {
+            "name": "数量",
+            "calculated": null,
+            "totalFormula": null
+          },
+          {
+            "name": "单价",
+            "calculated": null,
+            "totalFormula": null
+          },
+          {
+            "name": "金额",
+            "calculated": null,
+            "totalFormula": null
+          }
+        ]
+      }
+    ],
+    "formulas": {
+      "Sales": {
+        "D2": {
+          "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+          "value": "20",
+          "type": "n"
+        },
+        "D3": {
+          "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+          "value": "60",
+          "type": "n"
+        },
+        "D4": {
+          "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+          "value": "120",
+          "type": "n"
+        },
+        "D5": {
+          "formula": "SalesTable[[#This Row],[数量]]*SalesTable[[#This Row],[单价]]",
+          "value": "40",
+          "type": "n"
+        },
+        "D6": {
+          "formula": "SUBTOTAL(109,SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        }
+      },
+      "Observer": {
+        "A1": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "B1": {
+          "formula": "Sales!D6",
+          "value": "240",
+          "type": "n"
+        },
+        "C1": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "H3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "I3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "J3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "K3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "L3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "M3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "N3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "O3": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "I5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "J5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "K5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "L5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "M5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "N5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "O5": {
+          "formula": "SUM(SalesTable[金额])",
+          "value": "240",
+          "type": "n"
+        },
+        "H7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "I7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "J7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "K7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "L7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "M7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "N7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "O7": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "I9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "J9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "K9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "L9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "M9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "N9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "O9": {
+          "formula": "SUM(SalesTable[[数量]:[单价]])",
+          "value": "110",
+          "type": "n"
+        },
+        "H11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "I11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "J11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "K11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "L11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "M11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "N11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "O11": {
+          "formula": "SUM(SalesTable[[数量]:[数量]])",
+          "value": "10",
+          "type": "n"
+        },
+        "H13": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H14": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H15": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H16": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H17": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H18": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H19": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H20": {
+          "formula": "SUM(SalesTable[数量])",
+          "value": "10",
+          "type": "n"
+        },
+        "H22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "I22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "J22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "K22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "L22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "M22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "N22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        },
+        "O22": {
+          "formula": "SUM(SalesTable[[#All],[数量]])",
+          "value": "#N/A",
+          "type": "e"
+        }
+      }
+    }
+  }
+}

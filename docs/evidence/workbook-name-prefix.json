@@ -1,0 +1,398 @@
+{
+  "scope": "Independent ZIP/XML [0]!Tax source follows the Microsoft current-workbook name prefix. Calc removes the prefix, resolves a local shadow on resave, clones a missing local name on copy, and loses copied global binding on a second reopen. These producer differences are retained; Excel/WPS runtime unverified.",
+  "references": [
+    "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/a469e5f5-a102-49bd-9642-8a8e8aaf1623",
+    "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/3d025add-118d-4413-9856-ab65712ec1b0"
+  ],
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "cef9b05bf45d1707c76b6b73274ba899b1cc80d1809a5eee5fb3cef6eb02353c",
+  "sourceCurrentWorkbookNameExpected": {
+    "Data!B8": 7,
+    "Other!B8": 7
+  },
+  "cases": [
+    {
+      "name": "resave",
+      "producerSha256": "7a9d9d4bdf77743afcbb5a69c320e8fe5d4dbcbe9582f9868f230b28eebaac10",
+      "observed": {
+        "names": [
+          {
+            "name": "Tax",
+            "sheet": null,
+            "expression": "Data!$H$1"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "Data!$A$6"
+          },
+          {
+            "name": "Rate",
+            "sheet": "0",
+            "expression": "Data!$A$5"
+          },
+          {
+            "name": "Local",
+            "sheet": "1",
+            "expression": "Other!$A$6"
+          },
+          {
+            "name": "Tax",
+            "sheet": "1",
+            "expression": "Other!$H$1"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "B5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "17"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            }
+          ],
+          [
+            {
+              "address": "B5",
+              "expression": "rate+Tax",
+              "type": "e",
+              "value": "#NAME?"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "700"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "70"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "name": "copy-same",
+      "producerSha256": "1315e8b2de61c290c6161c54b2bc81a2d4c88f6b9d7ce390449baf764e8559e3",
+      "observed": {
+        "names": [
+          {
+            "name": "Tax",
+            "sheet": null,
+            "expression": "Data!$H$1"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "Data!$A$6"
+          },
+          {
+            "name": "Rate",
+            "sheet": "0",
+            "expression": "Data!$A$5"
+          },
+          {
+            "name": "Local",
+            "sheet": "1",
+            "expression": "Other!$A$6"
+          },
+          {
+            "name": "Tax",
+            "sheet": "1",
+            "expression": "Other!$H$1"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "B5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "17"
+            },
+            {
+              "address": "D5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "17"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "D6",
+              "expression": "$A$5+C6+Local",
+              "type": "n",
+              "value": "40"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "D7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "D8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            }
+          ],
+          [
+            {
+              "address": "B5",
+              "expression": "rate+Tax",
+              "type": "e",
+              "value": "#NAME?"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "700"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "70"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "name": "copy-other",
+      "producerSha256": "e8ff56452d02a15fa3ba3e9c45ac6697856d5961d2fe1986621359a69f82d9da",
+      "observed": {
+        "names": [
+          {
+            "name": "Tax",
+            "sheet": null,
+            "expression": "Data!$H$1"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "Data!$A$6"
+          },
+          {
+            "name": "Rate",
+            "sheet": "0",
+            "expression": "Data!$A$5"
+          },
+          {
+            "name": "Local",
+            "sheet": "1",
+            "expression": "Other!$A$6"
+          },
+          {
+            "name": "Rate",
+            "sheet": "1",
+            "expression": "Other!$A$5"
+          },
+          {
+            "name": "Tax",
+            "sheet": "1",
+            "expression": "Other!$H$1"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "B5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "17"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            }
+          ],
+          [
+            {
+              "address": "B5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "107"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "700"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "name": "reopen-copy-other",
+      "producerSha256": "819b20294a79acc7cd213b016fb769380426e90c45bd8252b35fc6b0aed5592e",
+      "observed": {
+        "names": [
+          {
+            "name": "Tax",
+            "sheet": null,
+            "expression": "Data!$H$1"
+          },
+          {
+            "name": "Local",
+            "sheet": "0",
+            "expression": "Data!$A$6"
+          },
+          {
+            "name": "Rate",
+            "sheet": "0",
+            "expression": "Data!$A$5"
+          },
+          {
+            "name": "Local",
+            "sheet": "1",
+            "expression": "Other!$A$6"
+          },
+          {
+            "name": "Rate",
+            "sheet": "1",
+            "expression": "Other!$A$5"
+          },
+          {
+            "name": "Tax",
+            "sheet": "1",
+            "expression": "Other!$H$1"
+          }
+        ],
+        "sheets": [
+          [
+            {
+              "address": "B5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "17"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "7"
+            }
+          ],
+          [
+            {
+              "address": "B5",
+              "expression": "Rate+Tax",
+              "type": "n",
+              "value": "170"
+            },
+            {
+              "address": "B6",
+              "expression": "$A$5+A6+Local",
+              "type": "n",
+              "value": "700"
+            },
+            {
+              "address": "B7",
+              "expression": "Tax",
+              "type": "n",
+              "value": "70"
+            },
+            {
+              "address": "B8",
+              "expression": "Tax",
+              "type": "n",
+              "value": "70"
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

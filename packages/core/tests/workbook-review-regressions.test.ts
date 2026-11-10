@@ -28,7 +28,7 @@ describe('independent PR25 core review regressions', () => {
       expect(evaluator.evaluate('=LEN(B1)', at, { maxCodeUnits: 68 })).toMatchObject({ kind: 'value', value: { value: 60 }, codeUnits: 68 });
     } finally { evaluator.dispose(); }
   });
-  it('retains global-name ambiguity inside unions, intersections and ranges', () => {
+  it('retains Excel global-name bindings inside unions, intersections and ranges', () => {
     const model = scalarWorkbook([1, 9, 0].map((value, row) => ({ row, column: 0, value: { type: 'number' as const, value } })), metadata => {
       const origin = { row: 0, column: 0 }, sheet = metadata.workbook.sheets[0]!.name.replaceAll("'", "''");
       metadata.workbook.names = [{ nameId: 'inner-global', name: 'Inner', origin, expression: '=$A$1' },
@@ -38,8 +38,16 @@ describe('independent PR25 core review regressions', () => {
     });
     const evaluator = createWorkbookScalarEvaluator(model);
     try {
-      for (let index = 0; index < 4; index++) expect(evaluator.evaluate('=Outer' + index, at)).toMatchObject({ kind: 'unavailable', reason: 'ambiguous-name-scope' });
+      for (const [index, value] of [1, 1, 1, 10].entries()) expect(evaluator.evaluate('=Outer' + index, at)).toMatchObject({ kind: 'value', value: { type: 'number', value } });
       expect(evaluator.evaluate('=Outer4', at)).toMatchObject({ kind: 'value', value: { type: 'number', value: 9 } });
     } finally { evaluator.dispose(); }
+  });
+  it('does not diagnose a cycle when the same global name is evaluated in a different bang context', () => {
+    const model = scalarWorkbook([{ row: 0, column: 0, value: { type: 'number', value: 1 } }], metadata => {
+      metadata.workbook.names = [{ nameId: 'context', name: 'ContextValue', origin: { row: 0, column: 0 }, expression: '=IF(ISERROR(!$A$1),7,[0]!ContextValue)' }];
+    });
+    const evaluator = createWorkbookScalarEvaluator(model);
+    try { expect(evaluator.evaluate('=ContextValue', at)).toMatchObject({ kind: 'value', value: { type: 'number', value: 7 } }); }
+    finally { evaluator.dispose(); }
   });
 });

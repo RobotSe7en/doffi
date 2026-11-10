@@ -12,10 +12,12 @@ export function formulaColumn(column: number): string {
   for (let value = column + 1; value > 0; value = Math.floor((value - 1) / 26)) output = String.fromCharCode(65 + (value - 1) % 26) + output;
   return output;
 }
-const sheetPrefix = (sheet: string | undefined): string => sheet === undefined ? "" : "'" + sheet.replaceAll("'", "''") + "'!";
+const sheetPrefix = (sheet: string | undefined): string => sheet === undefined ? "" : sheet === "" ? "!" : "'" + sheet.replaceAll("'", "''") + "'!";
 
 /** Canonical, fully parenthesized expressions preserve reference precedence. */
-export function printFormula(expression: FormulaExpression, origin: FormulaOrigin): string {
+export function printFormula(expression: FormulaExpression, origin: FormulaOrigin): string { return printWithStyle(expression, origin, "A1"); }
+export function printR1C1Formula(expression: FormulaExpression, origin: FormulaOrigin): string { return printWithStyle(expression, origin, "R1C1"); }
+function printWithStyle(expression: FormulaExpression, origin: FormulaOrigin, referenceStyle: "A1" | "R1C1"): string {
   checkFormulaOrigin(origin);
   let nodes = 0;
   function print(node: FormulaExpression, depth = 0): string {
@@ -26,9 +28,10 @@ export function printFormula(expression: FormulaExpression, origin: FormulaOrigi
       case "boolean": output = node.value ? "TRUE" : "FALSE"; break;
       case "string": output = '"' + node.value.replaceAll('"', '""') + '"'; break;
       case "error": output = node.value; break;
-      case "name": output = sheetPrefix(node.sheet) + node.name; break;
+      case "name": output = (node.workbook === 0 ? "[0]!" : sheetPrefix(node.sheet)) + node.name; break;
       case "structured": output = printStructuredReference(node); break;
       case "cell": {
+        if (referenceStyle === "R1C1") { output = sheetPrefix(node.sheet) + "R" + (node.absoluteRow ? node.row + 1 : node.row ? "[" + node.row + "]" : "") + "C" + (node.absoluteColumn ? node.column + 1 : node.column ? "[" + node.column + "]" : ""); break; }
         const row = node.row + (node.absoluteRow ? 0 : origin.row), column = node.column + (node.absoluteColumn ? 0 : origin.column);
         output = row < 0 || row >= MAX_SHEET_ROWS || column < 0 || column >= MAX_SHEET_COLUMNS ? "#REF!"
           : sheetPrefix(node.sheet) + (node.absoluteColumn ? "$" : "") + formulaColumn(column) + (node.absoluteRow ? "$" : "") + (row + 1);
@@ -41,6 +44,10 @@ export function printFormula(expression: FormulaExpression, origin: FormulaOrigi
         break;
       }
       case "axisRange": {
+        if (referenceStyle === "R1C1") {
+          const axis = node.axis === "row" ? "R" : "C", end = (position: typeof node.from): string => axis + (position.absolute ? position.index + 1 : position.index ? "[" + position.index + "]" : "");
+          output = sheetPrefix(node.sheet) + end(node.from) + ":" + end(node.to); break;
+        }
         const end = (position: typeof node.from): string => {
           const index = position.index + (position.absolute ? 0 : origin[node.axis]);
           return index < 0 || index >= (node.axis === "row" ? MAX_SHEET_ROWS : MAX_SHEET_COLUMNS) ? "#REF!"

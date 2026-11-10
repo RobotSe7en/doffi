@@ -108,10 +108,19 @@ importers:
       '@doffi/render':
         specifier: workspace:*
         version: link:../render
+      css-tree:
+        specifier: 3.2.1
+        version: 3.2.1
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
       react:
         specifier: '>=18.2.0 <20'
         version: 19.3.1
     devDependencies:
+      '@types/css-tree':
+        specifier: 3.2.0
+        version: 3.2.0
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0

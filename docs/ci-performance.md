@@ -22,7 +22,7 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.playwright" node scripts/probe-browser-test-over
 
 actionlint 1.7.7 仅用于 Linux CI，采用 MIT 许可；官方 Linux amd64 归档 SHA-256 为 `023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757`。缓存命中后仍核验归档，再解包工具与许可，不进入 SDK 发布包。
 
-完整 `CI` 在 PR 从草稿转为待审、显式添加 `run-ci`／`stage-acceptance` 标签，或手动触发时运行。普通推送、无关标签和合并到 main 不重复执行整套。已存在的触发标签需要移除后重新添加才能再次请求；修改标签以外的推送不会自动重跑。验收后若修改了阶段 PR，须主动对最终 HEAD 再次发起验收，旧提交绿灯不能代替。
+完整 `CI` 仅在显式添加 `run-ci`／`stage-acceptance` 标签或手动触发时运行。草稿转为待审也不自动运行，以免随后请求阶段容量时重复启动并取消完整任务。普通推送、无关标签和合并到 main 不重复执行整套。已存在的触发标签需要移除后重新添加才能再次请求；修改标签以外的推送不会自动重跑。验收后若修改了阶段 PR，须主动对最终 HEAD 再次发起验收，旧提交绿灯不能代替。
 
 ```sh
 gh pr edit <PR> --add-label run-ci
@@ -40,18 +40,65 @@ gh workflow run ci.yml --ref <branch>
 
 `DOFFI_CI_MODE=daily` 只用于日常 CI。六项原生容量单元检查延后；浏览器 `@scale` 用例通过显式过滤延后，原断言保留。工作簿实际打开、切换、失败保留和授权资源仍有小样例覆盖。原生样例的字节、规范及负例审计继续执行；日常 Calc 重开省略一万行项。默认本地检查和参考记录命令保持完整模式，`--record` 永远不产生部分参考基线。
 
+编辑开发分支新增默认 `mountWorkbookEditor` 的 `@scale` 容量场景：100 次原生输入事件／公共确认入口，每次核对同一编辑器当前显示的依赖公式，再通过实际界面按钮执行 100 次撤销／重做／再撤销，并核对原始块和唯一 Worker 会话。此场景的额外 bundle 只在选中该场景时构建；日常检查继续排除它。`check:workbook-performance` 已为编辑增加独立的四引擎固定资源入口，包含混合响应的图片／形状／文本框、真实选择和按键反馈、100 次编辑及完整历史、两类万行取消与新包完整重开；严格汇总当前主线程／Worker 脚本和原生源摘要。带采样器或缩短样本的诊断不能计入验收。`4ee0710` 的本机四引擎编辑已通过，见[记录](evidence/workbook-editing-budget.json)；后续公式及审查修复的最终源仍须重测，读取成功不能代替编辑门槛。
+
 原生公式语料拆为每日小样例与阶段容量两部分；共享公式跟随者、打印名称及图表／规则／表格公式的独立来源检查继续每天执行。
 
 ## 阶段合并前
 
 阶段 PR 显式加上 `stage-acceptance` 标签，或手动运行 CI 并开启 `stage_acceptance`。最终 HEAD 必须同时通过全部日常检查和 `workbook-scale`，各分片必须实际成功。标签保留期间的新提交不自动重跑；集中修复完成后重新发起一次，旧 HEAD 的结果不能代替。
 
-专项运行完整原生 XLSX 参考、六项真实容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
+专项运行完整原生 XLSX 参考、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
 
 ```sh
-pnpm check:workbook-scale
+node scripts/install-acceptance-fonts.mjs --system-fonts
+FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-scale
 ```
+
+完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核），已超过原先整个 job 的 15 分钟；工作簿浏览器 job 的总时限设为 30 分钟，Word／PPT 保持 15 分钟。阶段容量现在串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限设为 60 分钟。它们仅是 CI 调度时限，不改变首屏、计算、编辑／交互 p95、CPU／内存、DOM 或取消的任何 SDK 性能门槛。
 
 前提为 Linux/systemd/cgroup v2、至少四个可用逻辑 CPU、已固定的四个浏览器、字体及 LibreOffice 环境。脚本需要无交互 sudo 创建临时受限服务；不更改持久系统服务。
 
 正式结果位于 `.cache/workbook-scale-acceptance/` 并作为 CI artifact 上传。汇总器的 `--output <file>` 写入显式结果路径；原 `--record` 入口仍用于明确更新已提交证据，普通 CI 不改写参考基线。
+
+## 固定字体的实际浏览器前置检查
+
+`97af0b5` 的远端容量首次运行有 115 项现代集成通过，两项 Firefox 大表编辑各首次／诊断重跑均超过 360 秒，未进入旧引擎及固定资源步骤。固定字体文件位于应用 `.cache` 时，`fc-match` 虽指向正确摘要，Firefox Canvas 与公开矩阵却报告 Noto CJK 替代；完整自动行高因此不能复用，每次编辑重新测量 20 万格。本机用同一 FONTCONFIG 重现，三次诊断的预览各约 15 秒，原日志与 profile 保留，未将诊断算验收。
+
+显式 `--system-fonts` 将相同摘要字节安装到[标准系统字体目录](https://help.gnome.org/system-admin-guide/fonts.html)下由 manifest 摘要命名的独立目录。已有不同字节拒绝覆盖；来源、版本、许可和摘要保持原固定记录。默认无该开关仍使用应用缓存。只有 CI Office／容量 setup 显式调用，SDK 运行时不安装或下载字体，也不更改浏览器安全偏好或允许替代字体复用。
+
+[字体前置脚本](../scripts/check-acceptance-fonts.mjs)在长容量流程前核验仓库规范 manifest、五份实际文件摘要和当前 Fontconfig 选择，再在默认 Firefox context 中测量四个 CJK family／weight，保留不存在字体的负例。正负测量及来源写入阶段 artifact 的 `font-environment.json`。这避免 shell 字体可见却浏览器不可见时继续运行长测试；其成功仍不能代替完整日常／容量。
+
+## 固定 Office 的远程客户端
+
+`7491c13` 的[远端日常／容量运行](https://github.com/RobotSe7en/doffi/actions/runs/42706072977)中，容量完整通过：128 份矩阵、八项容量单元、所有大表集成及固定资源四引擎读取／编辑。编辑 p95 为 149.9／394／255／245.8ms；Firefox 浏览器保守高水位约 1895MiB。日常仅工作簿原生远程编辑及其汇总失败。前序 CLI 转换成功不等于远程 UNO 可用。
+
+在 Ubuntu 24.04 隔离环境，以相同原始字节、默认／显式服务端 home 和相同字体作六组对照：
+
+| 客户端组合 | 服务端 Python home | 最小文档 | 混合文档 |
+| --- | --- | --- | --- |
+| 系统 Python 3.12.3／pyuno 24.2.7 | 默认 | getSheets 成功，getByIndex 断桥 | 相同断桥 |
+| 系统 Python 3.12.3／pyuno 24.2.7 | 显式归档 home／path | 同样断桥 | 同样断桥 |
+| 同归档 Python 3.11.13／pyuno 25.8.1.1 | 相同显式归档 home／path | 实际写入并重开通过 | 实际 B2=6、完整 producer 观测匹配 |
+
+此矩阵确认该环境应采用同归档客户端，不推广为所有跨版本 UNO 都不兼容。固定版本 [loader 源码](https://raw.githubusercontent.com/LibreOffice/core/libreoffice-25.8.1.1/pyuno/source/loader/pyuno_loader.cxx)的 home 初始化差异解释了检查环境的必要性，但单独设置服务端 home 未修复断桥。监控的进程是 `oosplash` 启动器；其尚存活不能证明实际 `soffice.bin` 尚存活。
+
+26 个远程原生命令显式经 [运行器](../scripts/workbook-native.mjs)校验原归档摘要、清理继承引导环境，并使用官方 `program/python`；适配器核验实际导入的 `uno.py` 来自同一归档，拒绝意外的系统客户端。每项作业在私有目录使用保留 basename 的精确输入副本，Office 的锁／恢复文件不会接触跟踪夹具。原始输入、producer 文件和全部观测／XSD／OPC 断言保持。
+
+XML 验证由[独立审计入口](../scripts/workbook_acceptance.py)选择已有 lxml venv 或系统解释器，清除归档 Python／UNO 引导环境后执行原官方 schema 检查，失败仍非零退出。它不向归档 Python 安装额外包，不进入 SDK。手动复现原生操作也应使用 `pnpm check:workbook-*` 或 `node scripts/workbook-native.mjs scripts/check-workbook-….py --verify-native`，不混用系统 pyuno。
+
+## 原生绘图的字体隔离
+
+`9eb9c4e` 的原生运行已越过远程客户端失败，随后在绘图轴检查的字体先决条件失败：历史清单包含作者整台机器数百份字体，Ubuntu 缺少与来源无关的字体。原始清单及其摘要保留，不重新记录 producer 或几何基线。
+
+三项绘图轴／移动排序／对象复制检查现在从其不可变 XLSX 的 XML／VML 提取声明字体，另固定 Noto Color Emoji 回退。每种字体的四个样式必须匹配同 family，实际 basename／SHA-256 必须存在于原始参考清单。将这些精确字节复制到私有目录，继承 Fontconfig 渲染与别名规则后用 `reset-dirs` 清空环境字体搜索目录；完整活动清单必须等于所选集合，任何目录逃逸都失败。该隔离只存在于独立验收进程，不改变 SDK 或浏览器环境。
+
+来源摘要、各样式解析和完整活动字体清单写入 Office artifact 的 `font-gates/`。本机和 Ubuntu 24.04 的 27 项绘图／备注轴操作、6 项移动排序和 8 项对象复制均与原有 producer 观测完全相同，并通过原官方 XSD／OPC 检查。全部原生操作、原始输入／producer 字节、几何和观测断言保持；该定向成功仍不能替代最终 HEAD 的完整日常／容量。
+
+## 编辑增量路径的后续容量修复
+
+`0ea15d8` 的[完整运行](https://github.com/RobotSe7en/doffi/actions/runs/42717332485)通过全部 49 项工作簿原生命令，四引擎日常 1430 项通过、6 项既定 IME 跳过、失败及 flaky 为零。Safari 首次在创建会话时超时，未开始 SDK 测试；单项重跑通过。容量中的 Firefox 100 次编辑 p95 为 554ms，超过 500ms，原失败和全部样本保留；该运行不能计作阶段通过。
+
+CPU 诊断确认三项可复用工作。计算图按不可变来源块保存完整依赖数／易变标记，逐块及变更记录身份确认顺序，完整计入原逻辑步数和限制；动态学习依赖后重新生成摘要。公式记录身份相同时，完整输出 UTF-16 预算由旧总量加实际求值的最终文本长度差得到，集合去重，记录表改变则执行完整扫描。事务序列化后已散列的私有字节使用本次准备专属 WeakMap，候选验证仍比较描述符并完整解析；公共打开仍重新散列副本，进度／测量回调不取得私有字节身份。
+
+新增跨块／收紧预算、独立 UTF-16 总量、增长／缩短／标量类型变化及公共导出原地篡改拒绝回归。两位原审查者分别只读复核全部差异，无新增 P0／P1／P2。未加诊断的完整 Firefox 100 次先为 489ms，加入后两项后为 449ms；首屏 23.624s、计算 3.373s、浏览器保守高水位约 1753MiB，全部输入反馈、历史、取消及完整包重开通过。CPU／内存、100 次样本和全部 SDK 门槛保持，后续提交仍须完整日常及四引擎容量。

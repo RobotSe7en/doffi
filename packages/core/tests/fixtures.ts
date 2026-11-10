@@ -39,6 +39,8 @@ export const validCases: [ContractName, unknown][] = [
   ["interaction-request", request],
   ["presentation-interaction-request", read("examples/presentation.request.json")],
   ["presentation-edit-proposal", read("examples/presentation.proposal.json")],
+  ["workbook-interaction-request", read("examples/workbook.request.json")],
+  ["workbook-edit-proposal", read("examples/workbook.proposal.json")],
   ["edit-proposal", proposal],
   ["document-error", { code: "InvalidDocument", message: "Invalid document.", details: [] }],
   ["document-event", {
@@ -116,6 +118,8 @@ export const invalidCases: [ContractName, unknown][] = [
   ["edit-proposal", { ...proposal, accepted: true }],
   ["presentation-edit-proposal", { ...read("examples/presentation.proposal.json") as object, operations: [{op:"hostExecute", command:"x"}] }],
   ["presentation-interaction-request", { ...read("examples/presentation.request.json") as object, protocolVersion:2 }],
+  ["workbook-edit-proposal", { ...read("examples/workbook.proposal.json") as object, operations: [{ op: "hostExecute", command: "x" }] }],
+  ["workbook-interaction-request", { ...read("examples/workbook.request.json") as object, protocolVersion: 2 }],
   ["document-error", { code: "UnspecifiedError", message: "No.", details: [] }],
   ["document-event", { protocolVersion: 1, documentId: "d", revision: 1, type: "documentChanged" }],
   ["document-event", { protocolVersion: 1, documentId: "d", revision: 1, type: "modelRunning" }],

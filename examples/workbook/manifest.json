@@ -1,0 +1,22 @@
+{
+  "format": "doffi",
+  "formatVersion": 1,
+  "kind": "workbook",
+  "documentId": "workbook-example",
+  "revision": 0,
+  "metadata": "metadata.json",
+  "annotations": "annotations.json",
+  "styles": [
+    "styles.css"
+  ],
+  "assets": [],
+  "chunks": [
+    {
+      "path": "cells.html",
+      "sheetId": "sheet-1",
+      "row": 0,
+      "column": 0,
+      "sha256": "5922fd9d215a6524a3ddd4914ac2a51571fc197d975acd135a1ae0fffa3ccbf6"
+    }
+  ]
+}

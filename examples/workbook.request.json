@@ -1,0 +1,216 @@
+{
+  "protocolVersion": 1,
+  "requestId": "workbook-example-request",
+  "documentId": "workbook-example",
+  "baseRevision": 0,
+  "annotations": [
+    {
+      "annotationId": "review-1",
+      "documentId": "workbook-example",
+      "baseRevision": 0,
+      "status": "open",
+      "instruction": "将 A1 改为 10，保留 B1 的公式并核对其当前结果。",
+      "anchor": {
+        "kind": "cells",
+        "sheetId": "sheet-1",
+        "ranges": [
+          {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 0,
+              "column": 0
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "context": {
+    "formatVersion": 1,
+    "kind": "workbook",
+    "scope": {
+      "kind": "ranges",
+      "ranges": [
+        {
+          "sheetId": "sheet-1",
+          "range": {
+            "from": {
+              "row": 0,
+              "column": 0
+            },
+            "to": {
+              "row": 0,
+              "column": 0
+            }
+          }
+        }
+      ]
+    },
+    "writableRanges": [
+      {
+        "sheetId": "sheet-1",
+        "range": {
+          "from": {
+            "row": 0,
+            "column": 0
+          },
+          "to": {
+            "row": 0,
+            "column": 0
+          }
+        }
+      }
+    ],
+    "writableObjectIds": [],
+    "writableNewObjectSheetIds": [],
+    "writableAnnotationIds": [
+      "review-1"
+    ],
+    "requestedReadRanges": [],
+    "dependencies": [
+      {
+        "sheetId": "sheet-1",
+        "range": {
+          "from": {
+            "row": 0,
+            "column": 1
+          },
+          "to": {
+            "row": 0,
+            "column": 1
+          }
+        }
+      }
+    ],
+    "cells": [
+      {
+        "sheetId": "sheet-1",
+        "row": 0,
+        "column": 0,
+        "value": {
+          "type": "number",
+          "value": 4
+        },
+        "text": "4",
+        "html": "<td data-column=\"0\" data-value-type=\"number\" data-value=\"4\">4</td>",
+        "access": "editable",
+        "current": {
+          "kind": "value",
+          "value": {
+            "type": "number",
+            "value": 4
+          }
+        }
+      },
+      {
+        "sheetId": "sheet-1",
+        "row": 0,
+        "column": 1,
+        "value": {
+          "type": "number",
+          "value": 999
+        },
+        "text": "999",
+        "html": "<td data-column=\"1\" data-value-type=\"number\" data-value=\"999\" data-formula=\"=A1+1\" data-cache-state=\"imported\">999</td>",
+        "access": "read-only",
+        "current": {
+          "kind": "value",
+          "value": {
+            "type": "number",
+            "value": 5
+          }
+        },
+        "formula": {
+          "expression": "=A1+1",
+          "cacheState": "imported"
+        }
+      }
+    ],
+    "annotations": [
+      {
+        "annotationId": "review-1",
+        "documentId": "workbook-example",
+        "baseRevision": 0,
+        "status": "open",
+        "instruction": "将 A1 改为 10，保留 B1 的公式并核对其当前结果。",
+        "anchor": {
+          "kind": "cells",
+          "sheetId": "sheet-1",
+          "ranges": [
+            {
+              "from": {
+                "row": 0,
+                "column": 0
+              },
+              "to": {
+                "row": 0,
+                "column": 0
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "blocks": [],
+    "styles": [
+      {
+        "path": "styles.css",
+        "css": ".cell-default{font-family:Arial;font-size:11pt}"
+      }
+    ],
+    "metadata": {
+      "title": "工作簿请求示例",
+      "workbook": {
+        "dateSystem": "1900",
+        "calculationMode": "auto",
+        "activeSheetId": "sheet-1",
+        "sheets": [
+          {
+            "sheetId": "sheet-1",
+            "name": "Sheet1",
+            "visibility": "visible",
+            "defaultRowHeightPt": 15,
+            "defaultColumnWidth": 8.43,
+            "defaultCssClass": "cell-default",
+            "rowDimensions": [],
+            "columnDimensions": [],
+            "merges": [],
+            "frozen": {
+              "rows": 0,
+              "columns": 0
+            },
+            "showGridLines": true,
+            "rightToLeft": false
+          }
+        ],
+        "numberFormats": [],
+        "objects": [],
+        "charts": [],
+        "names": [],
+        "comments": [],
+        "stories": [],
+        "objectHyperlinks": [],
+        "commentAuthors": []
+      }
+    },
+    "assets": [],
+    "providedAssets": [],
+    "calculationContext": {
+      "locale": "zh-CN"
+    },
+    "limits": {
+      "maxBytes": 4194304,
+      "maxCells": 10000,
+      "maxNodes": 10000,
+      "maxDependencies": 250000,
+      "maxSteps": 1000000,
+      "maxAssets": 256
+    }
+  },
+  "supportedOperations": [
+    "setWorkbookCells"
+  ]
+}

@@ -183,12 +183,30 @@ describe("version and error boundary", () => {
     ["document-transaction", (items: unknown[]) => ({ protocolVersion: 1, documentId: "d", baseRevision: 0,
       operations: [{ op: "addAnnotation", annotation: { ...annotations[0], anchor: { kind: "text-set", ranges: items } } }] }),
       "InvalidOperation", ["operations", 0, "annotation", "anchor", "ranges", 0]],
+    ["document-transaction", (items: unknown[]) => ({ protocolVersion: 1, documentId: "d", baseRevision: 0,
+      operations: [{ op: "setWorkbookCells", sheetId: "s", cells: items }] }), "InvalidOperation", ["operations", 0, "cells", 0]],
+    ["document-transaction", (items: unknown[]) => ({ protocolVersion: 1, documentId: "d", baseRevision: 0,
+      operations: [{ op: "setWorkbookCellFormats", sheetId: "s", cells: items }] }), "InvalidOperation", ["operations", 0, "cells", 0]],
   ] as const)("stops at an invalid array item in %s before reading its tail", (name, input, code, prefix) => {
     const items: unknown[] = [{}];
     Object.defineProperty(items, 1, { get() { throw new Error("The array tail must not be read."); } });
     const error = failure(name, input(items), code);
     expect(error.details.length).toBeGreaterThan(0);
     expect(error.details.every((issue) => prefix.every((part, index) => issue.path[index] === part))).toBe(true);
+  });
+
+  test("reused schema preflights preserve distinct workbook scalar kinds and caller ownership", () => {
+    const input = freeze({ protocolVersion: 1, documentId: "first", baseRevision: 0, operations: [{ op: "setWorkbookCells", sheetId: "s", cells: [
+      { row: 0, column: 0, source: { kind: "value", value: { type: "number", value: 12 } } },
+      { row: 0, column: 1, source: { kind: "value", value: { type: "text", value: "12" } } },
+      { row: 0, column: 2, source: { kind: "value", value: { type: "boolean", value: false } } },
+      { row: 0, column: 3, source: { kind: "value", value: { type: "blank" } } },
+      { row: 0, column: 4, source: { kind: "formula", expression: "=A1+1" } },
+    ] }] });
+    const first = parseContract("document-transaction", input), second = parseContract("document-transaction", { ...input, documentId: "second" });
+    expect(first).toEqual(input); expect(second).toEqual({ ...input, documentId: "second" });
+    expect(first.operations).not.toBe(input.operations); expect(first.operations[0]).not.toBe(input.operations[0]);
+    expect(first.operations).not.toBe(second.operations);
   });
 
   test("unknown contract names cannot resolve inherited registry properties", () => {

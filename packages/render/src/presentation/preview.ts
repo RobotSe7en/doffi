@@ -40,7 +40,7 @@ export function mountPresentationPreview(container: HTMLElement, input: ContentD
   function render(): void {
     observer?.disconnect();
     const document = frame.contentDocument!; canvas = composePresentation(document, prepared.model, limits,options.presentationSurfaceId);
-    fonts = resolvePreviewFonts(document, "[data-node-id],[data-office-script],.sdk-ppt-marker"); canvas.source.reindex();
+    fonts = resolvePreviewFonts(document, "[data-node-id],[data-office-script],.sdk-ppt-marker"); canvas.finalizeCharts(); canvas.source.reindex();
     projection = new SourceProjection(); const raw = new DOMParser().parseFromString(prepared.model.snapshot().html, "text/html").querySelector<HTMLElement>('[data-office-kind="presentation"]')!;
     projection.capture(canvas.source.root, raw); measure();
     const substitutions = fonts.filter(f => f.substituted), missing = [...new Set(fonts.flatMap(f => [...f.missingCharacters]))];

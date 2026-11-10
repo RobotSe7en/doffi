@@ -1,7 +1,7 @@
 import { DocumentError, openDocument, parseContract } from "@doffi/core";
-import type { DocumentErrorData, ContentDocumentModel } from "@doffi/core";
-import { connectWorkbookReads } from "@doffi/render";
-import type { WorkbookReadConnection } from "@doffi/render";
+import type { DocumentErrorData, ContentDocumentModel, WorkbookSnapshot } from "@doffi/core";
+import { connectWorkbookSession } from "@doffi/editor";
+import type { WorkbookSessionConnection } from "@doffi/editor";
 import type { OfficeImportProgress } from "@doffi/office";
 
 export interface WorkbookOpenRequest { readonly kind: "xlsx" | "package"; readonly taskId: string; readonly documentId: string; readonly bytes: Uint8Array; readonly port: MessagePort }
@@ -10,14 +10,18 @@ export type WorkbookOpenResponse = { readonly taskId: string; readonly kind: "pr
   | { readonly taskId: string; readonly kind: "error"; readonly error: DocumentErrorData };
 export interface HostedWorkbook {
   readonly kind: "workbook";
-  readonly source: WorkbookReadConnection;
+  readonly session: WorkbookSessionConnection;
+  snapshot(): WorkbookSnapshot;
+  acceptView(snapshot: WorkbookSnapshot): void;
+  readonly pendingInput: boolean;
+  setPendingInput(pending: boolean): void;
   readonly disposed: boolean;
   dispose(): void;
 }
 export type OpenedWorkspaceDocument = ContentDocumentModel | HostedWorkbook;
 
 /** This application owns the Worker, authorized input bytes and lifetime. The
- * SDK owns only the dedicated bounded read connection. Package classification
+ * SDK owns the dedicated session connection and bounded read leases. Package classification
  * also runs off the UI thread, so a workbook ZIP never opens on the UI thread. */
 export function openWorkbookFile(bytes: Uint8Array, kind: "xlsx" | "package", taskId: string, documentId: string,
   options: { readonly signal: AbortSignal; readonly onProgress?: (value: OfficeImportProgress) => void; readonly onFailure?: (error: Error) => void }
@@ -26,10 +30,10 @@ export function openWorkbookFile(bytes: Uint8Array, kind: "xlsx" | "package", ta
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./workbook-open-worker.ts", import.meta.url), { type: "module" });
     const channel = new MessageChannel(), controller = new AbortController();
-    let settled = false, disposed = false, source: WorkbookReadConnection | undefined;
+    let settled = false, disposed = false, session: WorkbookSessionConnection | undefined;
     const detachOpen = (): void => { clearTimeout(timer); options.signal.removeEventListener("abort", cancel); };
     const dispose = (): void => {
-      if (disposed) return; disposed = true; detachOpen(); controller.abort(); source?.dispose(); source = undefined;
+      if (disposed) return; disposed = true; detachOpen(); controller.abort(); session?.dispose(); session = undefined;
       channel.port1.close(); channel.port2.close(); worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null; worker.terminate();
     };
     const fail = (error: Error): void => {
@@ -57,10 +61,14 @@ export function openWorkbookFile(bytes: Uint8Array, kind: "xlsx" | "package", ta
     };
     options.signal.addEventListener("abort", cancel, { once: true });
     if (options.signal.aborted) { cancel(); return; }
-    void connectWorkbookReads(channel.port2, {}, controller.signal).then(connection => {
+    void connectWorkbookSession(channel.port2, {}, controller.signal).then(async connection => {
       if (disposed || settled) { connection.dispose(); return; }
-      source = connection; settled = true; detachOpen();
-      resolve(Object.freeze({ kind: "workbook", source: connection, get disposed() { return disposed; }, dispose }));
+      session = connection; const initial = await connection.view(undefined, { calculate: false, signal: controller.signal });
+      let snapshot = initial.cells.snapshot, pendingInput = false; initial.dispose();
+      if (disposed || settled) return; settled = true; detachOpen();
+      resolve(Object.freeze({ kind: "workbook", session: connection, snapshot: () => snapshot,
+        acceptView(value: WorkbookSnapshot) { if (!disposed && value.manifest.documentId === connection.state().documentId && value.manifest.revision <= connection.state().revision) snapshot = value; },
+        get pendingInput() { return pendingInput; }, setPendingInput(value: boolean) { pendingInput = value; }, get disposed() { return disposed; }, dispose }));
     }).catch(error => { if (!disposed && !settled) fail(error instanceof Error ? error : new Error("工作簿读取失败。")); });
     try {
       const input = new Uint8Array(bytes);

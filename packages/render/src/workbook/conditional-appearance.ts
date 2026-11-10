@@ -1,4 +1,4 @@
-import { DocumentError } from "@doffi/core";
+import { createWorkbookConditionalFormatResolver, DocumentError } from "@doffi/core";
 import type { DeepReadonly, WorkbookConditionalRule, WorkbookRuleReadResponse, WorkbookSheet } from "@doffi/core";
 import type { WorkbookSourceCell } from "./cell-source.js";
 import { resolvedWorkbookColor } from "./color.js";
@@ -12,14 +12,16 @@ export class WorkbookConditionalAppearance {
   private readonly definitions: ReadonlyMap<string, DeepReadonly<WorkbookConditionalRule>>;
   private readonly values: ReadonlyMap<number, WorkbookRuleReadResponse["cells"][number]>;
   private units = 0;
+  private readonly format: ReturnType<typeof createWorkbookConditionalFormatResolver>;
   constructor(private readonly document: Document, sheet: DeepReadonly<WorkbookSheet>, response: WorkbookRuleReadResponse, private readonly account: (amount: number) => void) {
     this.styles = new WorkbookStyleLayers(document, account);
     this.definitions = new Map(sheet.conditionalRules?.map(rule => [rule.ruleId, rule]));
     this.values = new Map(response.cells.map(cell => [cell.row * 16_384 + cell.column, cell]));
+    this.format = createWorkbookConditionalFormatResolver(sheet);
   }
   apply(key: number, source: WorkbookSourceCell): WorkbookSourceCell {
     const cell = this.values.get(key); if (!cell?.conditional.length) return source;
-    const claimed = new Set<string>(), patch = new Map<string, string>(); let numberFormatId: string | undefined;
+    const claimed = new Set<string>(), patch = new Map<string, string>();
     for (const result of cell.conditional) {
       if (result.state === "miss") continue;
       const rule = this.definitions.get(result.ruleId)!;
@@ -44,9 +46,6 @@ export class WorkbookConditionalAppearance {
         properties = new Map([["--office-cell-fill-kind", "initial"], ["background-color", `rgba(${rgb.join(",")},${alpha})`]]);
       } else {
         properties = rule.cssClass ? this.styles.read(source.element, rule.cssClass, true) : new Map();
-        if (rule.numberFormatId !== undefined && !claimed.has("number-format")) {
-          claimed.add("number-format"); if (result.state === "match") numberFormatId = rule.numberFormatId;
-        }
       }
       const groups = new Set([...properties.keys()].map(workbookStylePropertyGroup));
       if (result.state === "match") for (const [name, value] of properties) if (!claimed.has(workbookStylePropertyGroup(name))) patch.set(name, value);
@@ -63,6 +62,7 @@ export class WorkbookConditionalAppearance {
         element.style.setProperty(name, value, "important");
       }
     }
-    return numberFormatId === undefined ? source : Object.freeze({ element: source.element, format: Object.freeze({ ...source.format, numberFormatId }) });
+    const format = this.format({ row: Math.floor(key / 16_384), column: key % 16_384 }, cell.conditional, source.format).format;
+    return format === source.format ? source : Object.freeze({ element: source.element, format });
   }
 }

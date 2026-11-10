@@ -1,0 +1,114 @@
+{
+  "scope": "Independent current-filter definitions, explicit native hidden rows, and SUBTOTAL 9/109. Source caches deliberately wrong. Dynamic dates use separate explicit host-clock unit cases. Excel/WPS runtime unverified.",
+  "basis": "ECMA-376 Part 1 18.3.2, 18.17.7.305 and 18.18.26; current filtering is independent of native cached visibility",
+  "office": "LibreOffice 25.8.1.1 54047653041915e595ad4e45cccea684809c77b5",
+  "archiveSha256": "f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c",
+  "sourceSha256": "686c06fb3f9e879b9b2e5a75c3ff2acb04de911aa52cff08bd5cbf253f058599",
+  "referenceInputSha256": "1d4fbc28c0210f5ebbf3b9fc0f4ed6cf1b20622a8042525816f57a0b0f2aa278",
+  "cases": [
+    {
+      "sheet": "ValuesManualHidden",
+      "expected": [
+        101,
+        100
+      ],
+      "observed": [
+        100.0,
+        100.0
+      ],
+      "basis": "ECMA-376 18.17.7.305 and Microsoft SUBTOTAL: codes 1-11 include manually hidden rows, codes 101-111 exclude them. Native row/@hidden has no separate manual/filter reason; Calc excludes the manually hidden matching row in both codes on this input. Current-source criteria and original hidden flags remain separate.",
+      "matchesProducer": false
+    },
+    {
+      "sheet": "CustomBounds",
+      "expected": [
+        4,
+        4
+      ],
+      "observed": [
+        4.0,
+        4.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    },
+    {
+      "sheet": "TopTies",
+      "expected": [
+        8,
+        8
+      ],
+      "observed": [
+        8.0,
+        8.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    },
+    {
+      "sheet": "BottomTies",
+      "expected": [
+        5,
+        5
+      ],
+      "observed": [
+        5.0,
+        5.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    },
+    {
+      "sheet": "TopPercent",
+      "expected": [
+        4,
+        4
+      ],
+      "observed": [
+        4.0,
+        4.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    },
+    {
+      "sheet": "AboveAverage",
+      "expected": [
+        4,
+        4
+      ],
+      "observed": [
+        4.0,
+        4.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    },
+    {
+      "sheet": "BelowAverage",
+      "expected": [
+        5,
+        5
+      ],
+      "observed": [
+        5.0,
+        5.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    },
+    {
+      "sheet": "EscapedWildcard",
+      "expected": [
+        2,
+        2
+      ],
+      "observed": [
+        2.0,
+        2.0
+      ],
+      "basis": "Pinned Calc observation; Excel/WPS runtime unverified",
+      "matchesProducer": true
+    }
+  ]
+}
