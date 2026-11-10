@@ -19,6 +19,7 @@ function localConversion(): Plugin {
 function collaborationExamples(): Plugin {
   const files = ["manifest.json", "content.html", "styles.css", "metadata.json", "annotations.json"];
   const assets: Record<string, string | Uint8Array> = {
+    "brand/doffi-logo-color.svg": readFileSync(new URL("../../docs/assets/doffi-logo-color.svg", import.meta.url)),
     "report-demo.json": JSON.stringify(files.map((path) => [path, readFileSync(new URL("../../examples/report/" + path, import.meta.url), "utf8")])),
     "presentation-demo.json": JSON.stringify([...files,"assets/sample.png"].map(path => [path,readFileSync(new URL("../../examples/presentation/"+path,import.meta.url)).toString("base64")])),
     "presentation.proposal.json": readFileSync(new URL("../../examples/presentation.proposal.json",import.meta.url),"utf8"),
@@ -32,7 +33,7 @@ function collaborationExamples(): Plugin {
       server.middlewares.use((request, response, next) => {
         const source = assets[(request.url ?? "").split("?")[0]!.replace(/^\//, "")];
         if (source === undefined) { next(); return; }
-        response.setHeader("Content-Type", typeof source === "string" ? "application/json; charset=utf-8" : request.url?.split("?")[0]?.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.presentationml.presentation"); response.end(source);
+        response.setHeader("Content-Type", request.url?.split("?")[0]?.endsWith(".svg") ? "image/svg+xml" : typeof source === "string" ? "application/json; charset=utf-8" : request.url?.split("?")[0]?.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.presentationml.presentation"); response.end(source);
       });
     },
     generateBundle() {

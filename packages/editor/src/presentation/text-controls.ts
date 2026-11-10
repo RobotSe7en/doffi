@@ -1,7 +1,10 @@
+import { presentationCommandIds } from "../commands.js";
+import type { EditorCommandRegistry } from "../commands.js";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
 import type { PresentationInput } from "./input.js";
 export interface TextControlsHost {
     readonly session: DocumentEditingSession;
+    readonly commands?: EditorCommandRegistry;
     input(): PresentationInput | undefined;
     target(): string | undefined;
     edit(): void;
@@ -26,6 +29,7 @@ export function createTextControls(document: Document, parent: HTMLElement, host
         node.textContent = label;
         node.addEventListener("click", () => host.attempt(action), { signal: controls.signal });
         bar.append(node);
+        const id = presentationCommandIds[label]; if (id) host.commands?.register(id, label, action, () => !node.disabled);
         if (format)
             formatting.push(node);
         return node;
@@ -33,7 +37,7 @@ export function createTextControls(document: Document, parent: HTMLElement, host
     const field = (label: string, action: (value: string) => void, type = "text"): HTMLInputElement => { const wrap = document.createElement("label"), input = document.createElement("input"); input.type = type; input.setAttribute("aria-label", label); wrap.append(label, input); bar.append(wrap); input.addEventListener("change", () => host.attempt(() => action(input.value)), { signal: controls.signal }); return input; };
     const edit = button("编辑文字", host.edit), notes = button("编辑备注", host.notes), finish = button("完成输入", host.finish);
     for (const [label, property, value] of [["加粗", "font-weight", "700"], ["常规字重", "font-weight", "400"], ["斜体", "font-style", "italic"], ["下划线", "text-decoration", "underline"]] as const)
-        button(label, () => host.input()?.format(property, value), true);
+        button(label, () => { const input = host.input(); if (label === "加粗") input?.toggle("bold"); else if (label === "斜体") input?.toggle("italic"); else if (label === "下划线") input?.toggle("underline"); else input?.format(property, value); }, true);
     const size = field("字号（pt）", value => {
         const n = Number(value);
         if (!Number.isFinite(n) || n <= 0 || n > 4000)

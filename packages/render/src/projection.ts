@@ -16,6 +16,20 @@ export class SourceProjection {
     return false;
   };
 
+  /** An explicit editing command may replace a projected property (notably
+   * a substituted font). Keep that intent until the same DOM batch serializes. */
+  readonly setStyles = (element: HTMLElement, properties: ReadonlyMap<string, string>): boolean => {
+    if (this.ignored(element) || this.wrappers.has(element) || viewNodeRole(element) === "unwrap") return false;
+    const id = element.dataset.nodeId, identity = id ? this.identities.get(id) : undefined;
+    const original = this.originals.get(element) ?? identity?.original, authored = original?.cloneNode(true) as HTMLElement | undefined;
+    for (const [property, value] of properties) { element.style.setProperty(property, value); authored?.style.setProperty(property, value); }
+    if (authored) {
+      this.originals.set(element, authored);
+      if (id && identity) this.identities.set(id, { original: authored, rendered: identity.rendered });
+    }
+    return true;
+  };
+
   markDerived(node: Node): void { this.derived.add(node); }
   /** An editor may bind one live notes/comment instance to its exact source root.
    * Ownership is local to this projection; the global read-only view remains derived. */

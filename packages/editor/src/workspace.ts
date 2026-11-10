@@ -1,29 +1,29 @@
 /** Shared host chrome; never injected into Office document frames. */
 export const workspaceControls = `
-:host{color:#344b3d;font:12px "PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+:host{color:#344054;font:12px "PingFang SC","Microsoft YaHei",system-ui,sans-serif}
 *{box-sizing:border-box}[hidden]{display:none!important}
 button,input,select,textarea{font:inherit}
-button,select{border:1px solid #dce5dd;border-radius:5px;background:#fff;color:#627467;padding:6px 9px}
-button{cursor:pointer}button:hover:not(:disabled){background:#edf4ed;border-color:#c4d6c6}
-button:disabled{opacity:.4;cursor:default}button[aria-pressed=true]{background:#e7f0e7;color:#28714b;border-color:#c6dcc9}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #2c7a56;outline-offset:2px}
-input,textarea{border:1px solid #dce5dd;border-radius:5px;padding:7px;background:white;color:#425c49}
+button,select{border:1px solid #dbe3ef;border-radius:5px;background:#fff;color:#52647f;padding:6px 9px}
+button{cursor:pointer}button:hover:not(:disabled){background:#edf3ff;border-color:#b9cef4}
+button:disabled{opacity:.4;cursor:default}button[aria-pressed=true]{background:#eaf1ff;color:#175ce5;border-color:#c0d3f5}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #175ce5;outline-offset:2px}
+input,textarea{border:1px solid #dbe3ef;border-radius:5px;padding:7px;background:white;color:#425571}
 .error{color:#a54040;font-size:12px}
 `;
 
 export const annotationPopoverStyles = `
-.annotation-popover{position:fixed;z-index:1000;width:300px;max-width:calc(100vw - 24px);padding:15px;background:white;border:1px solid #dbe6dc;border-radius:10px;box-shadow:0 12px 42px #243f2926,0 2px 8px #243f2912;color:#3c5543}
+.annotation-popover{position:fixed;z-index:1000;width:300px;max-width:calc(100vw - 24px);padding:15px;background:white;border:1px solid #dbe3ef;border-radius:10px;box-shadow:0 12px 42px #243f6920,0 2px 8px #243f6912;color:#3c506f}
 .annotation-popover[hidden]{display:none!important}
 .annotation-popover .popover-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;font-size:12px;font-weight:600}
-.annotation-popover .popover-avatar{display:inline-grid;place-items:center;width:25px;height:25px;margin-right:7px;border-radius:50%;background:#e8f0e6;color:#6b8e68;font-size:11px}
-.annotation-popover .popover-close{border:0;background:none;padding:2px 6px;font-size:18px;color:#93a18f}
-.annotation-popover .popover-quote{margin:0 0 11px;padding:4px 9px;border-left:2px solid #a8c6a3;font-size:11px;color:#8a9986;background:#f6f9f4;max-height:46px;overflow:hidden;overflow-wrap:anywhere}
-.annotation-popover textarea,.annotation-popover input[type=text]{display:block;width:100%;resize:vertical;min-height:80px;padding:10px;border:1px solid #dce5d9;border-radius:6px;background:#fcfdfb;font:inherit;line-height:1.7}
+.annotation-popover .popover-avatar{display:inline-grid;place-items:center;width:25px;height:25px;margin-right:7px;border-radius:50%;background:#eaf1ff;color:#6688bd;font-size:11px}
+.annotation-popover .popover-close{border:0;background:none;padding:2px 6px;font-size:18px;color:#93a1b7}
+.annotation-popover .popover-quote{margin:0 0 11px;padding:4px 9px;border-left:2px solid #a8bee2;font-size:11px;color:#8191ac;background:#f3f6fc;max-height:46px;overflow:hidden;overflow-wrap:anywhere}
+.annotation-popover textarea,.annotation-popover input[type=text]{display:block;width:100%;resize:vertical;min-height:80px;padding:10px;border:1px solid #dce4f1;border-radius:6px;background:#f8faff;font:inherit;line-height:1.7}
 .annotation-popover input[type=text]{min-height:0;resize:none;padding:6px 8px}
 .annotation-popover .composer{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px;margin-top:12px}
 .annotation-popover .composer button{font-size:11px;padding:6px 11px}
-.annotation-popover .composer button:first-child{background:#287454;border-color:#287454;color:white}
-.annotation-popover .popover-hint{margin:10px 0 0;font-size:9px;color:#a2ad9d}
+.annotation-popover .composer button:first-child{background:#175ce5;border-color:#175ce5;color:white}
+.annotation-popover .popover-hint{margin:10px 0 0;font-size:9px;color:#96a5bd}
 `;
 
 export interface AnnotationPopover {

@@ -11,13 +11,13 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-`pnpm dev` 先构建库，再同时运行库编译监听与 Vite。开发服务器绑定本机，访问终端显示的地址；停止命令时一并结束监听进程。
+`pnpm dev` 先构建库，再同时运行库编译监听与 Vite。开发服务器监听 `0.0.0.0`，可访问终端显示的本机或局域网地址；停止命令时一并结束监听进程。
 
-Playground 通过公开入口打开 DOCX/文档包、选择文字／对象／区域、管理批注、缩放、撤销重做、下载当前会话的文档包及重开。开发宿主将公开合成样例作为静态资源提供；SDK 不自行访问样例目录。它使用 React 生命周期挂载同一 DOM 组件，SDK 的 `core`、`office` 和 `node` 不依赖 React；编辑器专用 React 包装通过可选 `@doffi/editor/react` 入口提供；普通 JS 入口不要求 React。
+Playground 通过公开入口打开 DOCX/文档包、选择文字／对象／区域、管理批注、缩放、撤销重做、下载当前会话的文档包及重开。开发宿主将公开合成样例作为静态资源提供；SDK 不自行访问样例目录。它使用 React 生命周期挂载同一 DOM 组件，Office 功能区、字体字段、图标与作用域样式也来自 SDK 的可选 `@doffi/editor/react` 入口；宿主接入文档状态与授权回调。SDK 的 `core`、`office` 和 `node` 不依赖 React，普通 JS 编辑入口也不要求 React。
 
 项目名称为 `doffi`，内部 workspace 使用 `@doffi/core`、`@doffi/editor`、`@doffi/office`、`@doffi/render` 和 `@doffi/node`；Playground 为 `@doffi/playground`，Node CLI 为 `doffi`。版本均为 `0.0.0`，包均设为 `private`；公开许可字段为 `AGPL-3.0-only`，版权署名为 RobotSe7en，也可另行洽谈[商业授权](../COMMERCIAL-LICENSE.md)。npm scope 归属和正式发布仍按发布计划确认。
 
-运行时环境变量统一使用 `DOFFI_*` 前缀，验收使用 `DOFFI_SOURCE_HEAD` 和 `DOFFI_WORKBOOK_*`。Playground 转换路由为 `/__doffi/convert`，请求头为 `X-Doffi-Dev: 1`，浏览器渲染桥为 `window.__doffiRender`，显示设置使用 `doffi:layout`。
+运行时环境变量统一使用 `DOFFI_*` 前缀，验收使用 `DOFFI_SOURCE_HEAD` 和 `DOFFI_WORKBOOK_*`。Playground 转换路由为 `/__doffi/convert`，请求头为 `X-Doffi-Dev: 1`，浏览器渲染桥为 `window.__doffiRender`，显示设置使用 `doffi:layout`，Word 编辑模式偏好使用 `doffi:editing`，文档列表开关使用 `doffi:library`，标尺开关使用 `doffi:rulers`。
 
 V1 文档包使用 `format: "doffi"`、`urn:doffi:contract:*` Schema 标识及 `doffi/workbook-read/1` Worker 协议标识。本次更名按用户决定不保留旧名称的兼容入口。独立原生样例、实际字体环境路径和历史验收证据保留原始内容。
 

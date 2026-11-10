@@ -177,17 +177,18 @@ test("unmount ignores late submission results and leaves the external session us
 
 test("React Playground submits two annotations, loads a fixed proposal and downloads a reopenable result", async ({ page }, info) => {
   await page.goto("/"); await page.getByRole("button", { name: "打开报告协作样例" }).click();
-  await expect(page.getByLabel("会话状态")).toContainText("批注 2");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-annotation-count", "2");
+  await page.getByRole("tab", { name: "审阅", exact: true }).click();
   await page.getByRole("button", { name: "统一提交批注" }).click();
   await expect(page.getByText("Playground 已接收批注请求", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "载入固定示例提案" }).click();
   await expect(page.getByRole("button", { name: "整批应用提案" })).toBeEnabled();
   await page.getByRole("button", { name: "整批应用提案" }).click();
-  await expect(page.getByLabel("会话状态")).toContainText("修订 1");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   const download = page.waitForEvent("download"); await page.getByRole("button", { name: "下载文档包" }).click();
   const path = info.outputPath("modified.zip"); await (await download).saveAs(path);
   await page.getByLabel("打开文件").setInputFiles(path);
-  await expect(page.getByLabel("会话状态")).toContainText("修订 1");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   await expect(page.frameLocator('iframe[title="文档只读预览"]').locator('[data-node-id="n-summary"]')).toContainText("第四季度");
   await expect(page.frameLocator('iframe[title="文档只读预览"]').locator('[data-node-id="n-title"]')).toHaveCSS("color", "rgb(31, 75, 153)");
 });

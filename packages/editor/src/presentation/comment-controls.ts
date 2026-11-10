@@ -12,6 +12,7 @@ export interface CommentControlsHost {
 }
 export interface CommentControls {
     refresh(): void;
+    start(): void;
     selectionChanged(): void;
     clearSelection(): void;
     dispose(): void;
@@ -66,7 +67,7 @@ export function createCommentControls(document: Document, parent: HTMLElement, h
     const show = (): void => { const next = host.selection(); if (!next) { clearSelection(); return; } if (JSON.stringify(chosen) !== JSON.stringify(next)) draft.value = ""; chosen = next; popover?.open(); };
     if (floating) { button("新建批注", () => { if (!host.selection()) throw new DocumentError("InvalidOperation", "请先选择幻灯片内容。"); show(); draft.focus(); }, floating.toolbar); button("取消", () => { popover?.close(); chosen = undefined; draft.value = ""; }, composer); }
     pane.append(list);
-    return { selectionChanged: show, clearSelection, refresh() {
+    return { start() { if (!host.selection()) throw new DocumentError("InvalidOperation", "请先选择幻灯片内容。"); show(); draft.focus(); }, selectionChanged: show, clearSelection, refresh() {
             if (chosen && chosen.baseRevision !== host.session.snapshot().manifest.revision) { chosen = undefined; draft.value = ""; popover?.close(); }
             listControls.abort();
             listControls = new AbortController();

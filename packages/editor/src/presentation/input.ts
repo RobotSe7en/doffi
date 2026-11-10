@@ -1,3 +1,6 @@
+import { executeClipboard } from "../clipboard-command.js";
+import { readTextFormat } from "../text-format-state.js";
+import type { TextFormatState } from "../text-format-state.js";
 import { DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation, ReconciledTextEdit } from "@doffi/core";
 import { SourceProjection, sourceSelectionText, stripClipboardIdentities } from "@doffi/render";
@@ -25,6 +28,9 @@ export interface PresentationInput {
     composing(): boolean;
     committing(): boolean;
     format(property: string, value: string): void;
+    formatState(): TextFormatState;
+    clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
+    toggle(property: "bold" | "italic" | "underline"): void;
     paragraph(property: string, value: string): void;
     list(kind: "none" | "bullet" | "number"): void;
     finish(): void;
@@ -32,6 +38,7 @@ export interface PresentationInput {
 }
 function characterStyle(property: string, value: string): ReadonlyMap<string, string> {
     const result = new Map([[property, value]]);
+    if (property === "font-family") for (const role of ["ascii", "h-ansi", "east-asia", "complex-script"]) result.set("--office-font-" + role, value);
     if (property === "--office-font-ascii")
         result.set("--office-font-h-ansi", value);
     if (property === "color")
@@ -280,6 +287,7 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         block.after(next);
         select(next, 0);
     };
+    let typingAnchor: string | undefined;
     const format = (property: string, value: string): void => {
         if (disposed || composing)
             return;
@@ -291,9 +299,16 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         if (selected.collapsed) {
             for (const [name, value] of properties)
                 typing.set(name, value);
+            typingAnchor = JSON.stringify(bookmark(root, projection.ignored));
             return;
         }
-        mutate(selected, () => styleNativeRange(root, selected, properties, projection.ignored));
+        const selection = remember();
+        mutate(selected, () => { styleNativeRange(root, selected, properties, projection.ignored, projection.setStyles); restoreBookmark(root, selection, projection.ignored); });
+    };
+    const formatState = (): TextFormatState => disposed || composing ? { enabled: false } : { ...readTextFormat(root, range(), typing, projection.ignored), editingText: true };
+    const toggle = (property: "bold" | "italic" | "underline"): void => {
+        const active = formatState()[property] === true;
+        format(property === "bold" ? "font-weight" : property === "italic" ? "font-style" : "text-decoration", property === "bold" ? active ? "400" : "700" : property === "italic" ? active ? "normal" : "italic" : active ? "none" : "underline");
     };
     const paragraphs = (): HTMLElement[] => { const selected = range(); if (!selected)
         return []; const current = selected.startContainer.nodeType === 1 ? selected.startContainer as Element : selected.startContainer.parentElement; return [...root.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")].filter(node => !projection.ignored(node) && (selected.collapsed ? node === current?.closest("p,h1,h2,h3,h4,h5,h6,li") : selected.intersectsNode(node))); };
@@ -487,7 +502,7 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
                     host.history(key === "y" || event.shiftKey ? "redo" : "undo");
                 }
                 else
-                    format(key === "b" ? "font-weight" : key === "i" ? "font-style" : "text-decoration", key === "b" ? "700" : key === "i" ? "italic" : "underline");
+                    toggle(key === "b" ? "bold" : key === "i" ? "italic" : "underline");
             }
             catch (error) {
                 host.error(error);
@@ -545,18 +560,18 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
     editable.addEventListener("copy", ((event: ClipboardEvent) => copy(event, false)) as EventListener, { signal: controls.signal });
     editable.addEventListener("cut", ((event: ClipboardEvent) => copy(event, true)) as EventListener, { signal: controls.signal });
     editable.addEventListener("drop", event => { event.preventDefault(); host.error(new DocumentError("UnsupportedFeature", "请通过粘贴或对象工具插入内容。")); }, { signal: controls.signal });
-    editable.addEventListener("compositionstart", () => { composing = true; compositionRevision = revision; }, { signal: controls.signal });
+    editable.addEventListener("compositionstart", () => { composing = true; compositionRevision = revision; host.save(saved); }, { signal: controls.signal });
     editable.addEventListener("compositionend", () => queueMicrotask(() => { if (disposed)
         return; composing = false; if (compositionInsertion && typing.size && revision === session.snapshot().manifest.revision) {
         const selection = remember(), value = frame.createRange();
         value.setStart(...caretAt(root, compositionInsertion.from, projection.ignored));
         value.setEnd(...caretAt(root, compositionInsertion.to, projection.ignored));
-        styleNativeRange(root, value, typing, projection.ignored);
+        styleNativeRange(root, value, typing, projection.ignored, projection.setStyles);
         restoreBookmark(root, selection, projection.ignored);
     } flush(); host.compositionEnded(); }), { signal: controls.signal });
-    frame.addEventListener("selectionchange", () => { if (range())
-        remember(); }, { signal: controls.signal });
-    return { focus: restore, selection: remember, composing: () => composing, committing: () => committing, format, paragraph, list,
+    frame.addEventListener("selectionchange", () => { if (range()) { const next = bookmark(root, projection.ignored); if (!composing && typingAnchor && next && JSON.stringify(next) !== typingAnchor) { typing.clear(); typingAnchor = undefined; } remember(); } }, { signal: controls.signal });
+    return { focus: restore, selection: remember, composing: () => composing, committing: () => committing, format, formatState, toggle,
+        clipboard(action) { const expected = revision, selected = JSON.stringify(remember()); return executeClipboard(root, () => restore(saved), action, () => !disposed && !composing && revision === expected && JSON.stringify(remember()) === selected); }, paragraph, list,
         finish() { if (disposed)
             return; composing = false; flush(); },
         dispose() { if (disposed)

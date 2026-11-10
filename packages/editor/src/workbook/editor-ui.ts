@@ -1,4 +1,5 @@
 import { createWorkbookFormatUi } from "./format-ui.js";
+import { workspaceControls } from "../workspace.js";
 interface WorkbookEditorUi {
   readonly element: HTMLDivElement; readonly tools: HTMLDivElement; readonly input: HTMLTextAreaElement; readonly address: HTMLInputElement;
   readonly mode: HTMLSelectElement; readonly preview: HTMLDivElement; readonly status: HTMLParagraphElement; readonly error: HTMLParagraphElement;
@@ -10,7 +11,7 @@ interface WorkbookEditorUi {
   readonly clipboardMode: HTMLSelectElement; readonly clipboardOverwrite: HTMLInputElement; readonly clipboardSkipBlanks: HTMLInputElement;
   readonly format: ReturnType<typeof createWorkbookFormatUi>;
 }
-export function createWorkbookEditorUi(container: HTMLElement, title: string): WorkbookEditorUi {
+export function createWorkbookEditorUi(container: HTMLElement, title: string, appearance: "default" | "workspace" = "default"): WorkbookEditorUi {
   const document = container.ownerDocument, element = document.createElement("div"), shadow = element.attachShadow({ mode: "closed" });
   const style = document.createElement("style"), heading = document.createElement("h2"), tools = document.createElement("div"), bar = document.createElement("div");
   const input = document.createElement("textarea"), address = document.createElement("input"), mode = document.createElement("select"), preview = document.createElement("div");
@@ -22,6 +23,18 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string): W
   const clipboardMode = document.createElement("select"), clipboardOverwrite = document.createElement("input"), clipboardSkipBlanks = document.createElement("input");
   const format = createWorkbookFormatUi(document);
   style.textContent = ":host{display:block;color:#172638;font:14px/1.5 system-ui,sans-serif}*{box-sizing:border-box}h2{margin:0 0 8px;font-size:17px}.tools,.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}button,input,textarea,select{font:inherit;border:1px solid #bdc9d5;border-radius:4px;background:#fff;color:inherit;padding:5px 8px}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}textarea{flex:1;min-width:160px;resize:vertical;min-height:35px;max-height:160px}input{width:120px}p{margin:4px 0;white-space:pre-wrap}.error{color:#a12626}.preview{position:relative}";
+  if (appearance === "workspace") style.textContent += workspaceControls + `
+    :host{background:#fff}h2{display:none}
+    .tools,.bar{gap:5px;margin:0;padding:7px 14px;border-bottom:1px solid #e0e6f0;background:#f8faff}
+    :host>.tools{display:var(--doffi-workbook-tools,flex);max-height:118px;overflow:auto}button,input,textarea,select{font-size:11px;padding:5px 7px}
+    input{width:100px}label{font-size:10px;color:#6f819e}textarea{min-height:29px;max-height:80px}
+    .bar{background:#fff}.bar[role=search]{display:var(--doffi-workbook-search,flex);background:#f8faff}.bar .tools{border:0;padding:0}
+    :host>details{display:var(--doffi-workbook-panels,block);padding:8px 14px;border-bottom:1px solid #e0e6f0;font-size:11px;color:#526b92}
+    :host>details[data-office-panel][open]{display:block;position:fixed;z-index:40;right:14px;top:208px;width:min(460px,calc(100vw - 28px));max-height:calc(100dvh - 235px);overflow:auto;border:1px solid #d6e1f1;border-radius:6px;background:white;box-shadow:0 8px 28px #243f6920}
+    summary{cursor:pointer}fieldset{border:1px solid #dbe3ef;border-radius:4px;margin-top:8px}
+    :host>p{padding:5px 14px;margin:0;font-size:10px;color:#8193ae}.preview{background:#eceef1}
+    @media(max-width:680px){.tools,.bar{padding:7px 9px}:host>.tools{max-height:140px}input{width:90px}}
+  `;
   heading.textContent = title; tools.className = "tools"; tools.setAttribute("role", "toolbar"); tools.setAttribute("aria-label", "工作簿编辑"); bar.className = "bar";
   address.setAttribute("aria-label", "选择单元格或区域"); address.placeholder = "A1 或 A1:B10";
   input.setAttribute("aria-label", "单元格或公式输入"); input.rows = 1; input.spellcheck = false; input.disabled = true;
