@@ -1,3 +1,9 @@
+import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
+import { readTextFormat } from "./text-format-state.js";
+import { createEditorCommands, presentationCommandIds } from "./commands.js";
+import type { EditorCommandState, EditorCommandTarget } from "./commands.js";
+import type { DocumentTextCommand } from "./rich-text.js";
+import type { TextFormatState } from "./text-format-state.js";
 import { createAssetDescriptor, createOpaqueId, DocumentError, PresentationPresetSchema, resolvePresentationGeometry } from "@doffi/core";
 import type { Anchor, Rectangle, DocumentEditingSession, DocumentNode, DocumentOperation, DocumentSelection, PresentationGeometry, PresentationObjectInput, TransactionPrepareOptions, TransactionReceipt } from "@doffi/core";
 import { mountPreview } from "@doffi/render";
@@ -20,11 +26,17 @@ import { createDefinitionControls } from "./presentation/definition-controls.js"
 import { annotationPopoverStyles, workspaceControls } from "./workspace.js";
 export interface PresentationEditorOptions extends DocumentPreviewOptions {
     readonly appearance?: "default" | "workspace";
+    readonly annotationTrigger?: "selection" | "command";
+    readonly onCommandStateChange?: (commands: readonly EditorCommandState[]) => void;
+    readonly onFormatStateChange?: (state: TextFormatState) => void;
     readonly onSelectionChange?: (selection: DocumentSelection | undefined) => void;
     readonly onError?: (error: Error) => void;
     readonly onInputRecovery?: (text: string) => void;
 }
-export interface PresentationEditorView {
+export interface PresentationEditorView extends EditorCommandTarget {
+    executeTextCommand(command: DocumentTextCommand): void;
+    formatState(): TextFormatState;
+    clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
     readonly element: HTMLElement;
     readonly ready: Promise<void>;
     selection(): DocumentSelection | undefined;
@@ -45,6 +57,7 @@ export interface PresentationEditorView {
     setZoom(value: number): void;
     setMode(mode: "text" | "node" | "region"): void;
     focusAnnotation(annotationId: string): void;
+    startAnnotation(): void;
     dispose(): void;
 }
 const labels: Readonly<Record<string, string>> = { text: "文本框", geometry: "形状", image: "图片", connector: "连接线", table: "表格", chart: "图表", group: "组合" };
@@ -59,18 +72,21 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
     style.textContent = ":host{display:block;font:14px system-ui;color:#20252b}*{box-sizing:border-box}button,input,select{font:inherit}button,select{padding:5px 8px}button{cursor:pointer}button:disabled{cursor:default}button[aria-pressed=true]{background:#deebff;border-color:#245aa5}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #245aa5;outline-offset:2px}.inspector{max-height:30vh;overflow:auto}.tools{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.body{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px}.nav{max-height:75vh;overflow:auto}.nav button{display:block;width:100%;text-align:left;margin:4px 0}.stage{overflow:auto;max-height:75vh;border:1px solid #ccd3dc}.plane{position:relative;width:max-content;min-width:100%}fieldset{display:flex;flex-wrap:wrap;gap:8px;border:1px solid #ccd3dc;margin:8px 0;padding:8px}label{display:inline-flex;align-items:center;gap:4px}input[type=number]{width:80px}.error{color:#a00000;white-space:pre-wrap}.status{margin:6px 0}h2{font-size:14px;margin:12px 0 6px}small{color:#555}";
     const workspace = options.appearance === "workspace";
     if (workspace) style.textContent += workspaceControls + annotationPopoverStyles + `
-      .tools{margin:0;padding:10px 17px;background:#fcfdfb;border-bottom:1px solid #dfe7df;gap:5px}.tools button,.tools select{font-size:10px;padding:5px 7px}.tools label{font-size:10px;color:#94a086}
-      .advanced-tools{padding:9px 18px;background:#f9fbf7;border-bottom:1px solid #e0e8dc;font-size:10px;color:#8e9e81}.advanced-tools summary{cursor:pointer}.inspector{max-height:230px;overflow:auto;padding-top:7px}
-      .status{margin:0;padding:7px 18px;background:#f4f7f1;color:#91a085;font-size:10px}
-      .body{grid-template-columns:135px minmax(0,1fr) 240px;gap:0;background:#edf1ee}
-      .nav{padding:5px 9px 16px;border-right:1px solid #dfe7dc;background:#f7f9f4;max-height:65vh}.nav h2{font-size:10px;color:#8fa080;font-weight:550;margin:13px 5px 9px}.nav button{font-size:10px;white-space:normal;border:1px solid #e2e9df;padding:10px 8px;line-height:1.7;margin:6px 0}
-      .stage{border:0;min-height:410px;max-height:65vh}.comments-pane{max-height:65vh;overflow:auto;padding:14px 10px;background:#fafcf8;border-left:1px solid #dfe7dc}
-      .comments-pane>fieldset{display:block;padding:0;margin:0;border:0}.comments-pane legend{font-size:12px;font-weight:600;margin-bottom:13px;color:#58744c}.comments-pane section{border:1px solid #dfe8d9;border-radius:7px;background:white;padding:11px;margin-bottom:10px;overflow-wrap:anywhere}
-      .comments-pane section p{font-size:11px;line-height:1.8;color:#718269;margin-top:0}.comments-pane section button{font-size:9px;padding:4px 6px;margin:2px;border-color:transparent;background:#f4f7f0}.comments-pane input{max-width:100%;margin-top:8px}
+      :host>.tools{display:var(--doffi-presentation-controls,flex)}
+      .tools{margin:0;padding:10px 17px;background:#f8faff;border-bottom:1px solid #e0e6f0;gap:5px}.tools button,.tools select{font-size:10px;padding:5px 7px}.tools label{font-size:10px;color:#8193ae}
+      .advanced-tools{padding:9px 18px;background:#f9fbfe;border-bottom:1px solid #e0e6f0;font-size:10px;color:#8193ae}.advanced-tools summary{cursor:pointer}.inspector{max-height:230px;overflow:auto;padding-top:7px}
+      .status{margin:0;padding:7px 18px;background:#f0f4fb;color:#8193ae;font-size:10px}
+      .body{grid-template-columns:135px minmax(0,1fr) var(--doffi-presentation-comments-width,240px);gap:0;background:#eceef1}
+      .nav{padding:5px 9px 16px;border-right:1px solid #e0e6f0;background:#f6f8fc;max-height:65vh}.nav h2{font-size:10px;color:#8193ae;font-weight:550;margin:13px 5px 9px}.nav button{font-size:10px;white-space:normal;border:1px solid #e0e6f0;padding:10px 8px;line-height:1.7;margin:6px 0}
+      .stage{border:0;min-height:410px;max-height:65vh}.comments-pane{display:var(--doffi-presentation-comments-display,block);max-height:65vh;overflow:auto;padding:14px 10px;background:#f9fbfe;border-left:1px solid #e0e6f0}
+      .comments-pane>fieldset{display:block;padding:0;margin:0;border:0}.comments-pane legend{font-size:12px;font-weight:600;margin-bottom:13px;color:#5274a8}.comments-pane section{border:1px solid #dfe6f1;border-radius:7px;background:white;padding:11px;margin-bottom:10px;overflow-wrap:anywhere}
+      .comments-pane section p{font-size:11px;line-height:1.8;color:#7185a2;margin-top:0}.comments-pane section button{font-size:9px;padding:4px 6px;margin:2px;border-color:transparent;background:#f0f4fb}.comments-pane input{max-width:100%;margin-top:8px}
       .annotation-popover label{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}.annotation-popover label input{min-width:0;max-width:100%}.annotation-popover select{font-size:10px;margin-bottom:9px}.annotation-popover .composer button{font-size:11px}
-      fieldset{border-color:#dfe7d9;border-radius:5px;font-size:11px}small{color:#8d9d81}
-      @media(max-width:1100px){.body{grid-template-columns:105px minmax(0,1fr) 210px}.tools{padding:8px 12px;gap:4px}.tools button{font-size:9px;padding:5px}.comments-pane{padding:12px 8px}}
-      @media(max-width:800px){.body{grid-template-columns:100px minmax(0,1fr)}.comments-pane{grid-column:1/-1;max-height:280px;border-top:1px solid #dfe7dc;border-left:0}.stage{min-height:330px}.tools{max-height:130px;overflow:auto}}
+      fieldset{border-color:#dfe6f1;border-radius:5px;font-size:11px}small{color:#8193ae}
+      .advanced-tools[open]{position:fixed;z-index:40;right:14px;top:208px;width:min(420px,calc(100vw - 28px));max-height:calc(100dvh - 235px);overflow:auto;border:1px solid #d6e1f1;border-radius:6px;background:white;box-shadow:0 8px 28px #243f6920}
+      .advanced-tools[open] .inspector{max-height:none}.advanced-tools:not([open]){display:var(--doffi-presentation-controls,block)}
+      @media(max-width:1100px){.body{grid-template-columns:105px minmax(0,1fr) var(--doffi-presentation-comments-width,210px)}.tools{padding:8px 12px;gap:4px}.tools button{font-size:9px;padding:5px}.comments-pane{padding:12px 8px}}
+      @media(max-width:800px){.body{grid-template-columns:100px minmax(0,1fr)}.comments-pane{grid-column:1/-1;max-height:280px;border-top:1px solid #e0e6f0;border-left:0}.stage{min-height:330px}.tools{max-height:130px;overflow:auto}}
     `;
     const toolbar = document.createElement("div");
     toolbar.className = "tools";
@@ -88,7 +104,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
     nav.className = "nav";
     nav.setAttribute("aria-label", "幻灯片与对象导航");
     stage.className = "stage";
-    plane.className = "plane";
+    plane.className = "plane"; plane.style.cssText = "min-width:0;margin-inline:auto";
     const slideHeading = document.createElement("h2");
     slideHeading.textContent = "幻灯片";
     const objectHeading = document.createElement("h2");
@@ -114,6 +130,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         annotationId: string;
         replyId?: string;
     } | undefined, inputSelection: SelectionBookmark | undefined, draftNotes: HTMLElement | undefined, deferredRefresh = false;
+    const commandRegistry = createEditorCommands(() => !disposed, options.onCommandStateChange, () => !busy && !input?.composing());
     const typingStyle = new Map<string, string>();
     let definitionSurface = options.presentationSurfaceId, previewLoaded = false;
     let regionSelection: Extract<Anchor, {
@@ -167,7 +184,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         report(reason);
         renderControls();
     } };
-    const button = (label: string, action: () => unknown, parent: HTMLElement = toolbar, signal = controller.signal): HTMLButtonElement => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", () => attempt(action), { signal }); parent.append(node); return node; };
+    const button = (label: string, action: () => unknown, parent: HTMLElement = toolbar, signal = controller.signal): HTMLButtonElement => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", () => attempt(action), { signal }); parent.append(node); const id = presentationCommandIds[label]; if (parent === toolbar && id) commandRegistry.register(id, label, action, () => !busy && !input?.composing() && !node.disabled); return node; };
     const field = (label: string, parent: HTMLElement, type = "number"): HTMLInputElement => { const wrap = document.createElement("label"), input = document.createElement("input"); wrap.append(label, input); input.type = type; input.setAttribute("aria-label", label); if (type === "number")
         input.step = "any"; parent.append(wrap); return input; };
     const select = (label: string, values: readonly {
@@ -213,7 +230,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         regions?.paint();
         renderControls();
         notify();
-        if (workspace) commentControls.selectionChanged();
+        if (workspace && options.annotationTrigger !== "command") commentControls.selectionChanged();
     };
     const perform = (operations: DocumentOperation[], prepareOptions?: TransactionPrepareOptions): TransactionReceipt => {
         ensure();
@@ -245,7 +262,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         regions?.paint();
         renderControls();
         notify();
-        if (workspace) commentControls.selectionChanged();
+        if (workspace && options.annotationTrigger !== "command") commentControls.selectionChanged();
     }
     function regionLayoutKey(slideId: string): string { ensure(); if(definitionSurface)throw new DocumentError("InvalidOperation","请先返回幻灯片画布，再核对区域布局。"); const slide = p().slides.find(s => s.slideId === slideId); if (!slide || !current())
         throw new DocumentError("InvalidOperation", "请等待幻灯片画布就绪后检查区域布局。"); return preview.source()!.layoutKey(slide.rootNodeId); }
@@ -333,7 +350,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
     }
     const appearance = createAppearanceControls(document, inspector, { session, selected: () => selected, element: id => preview.source()?.elements.get(id)?.element, current: () => current(), perform: operations => perform(operations), attempt });
     const connectors = createConnectorControls(document, inspector, { session, node: readNode, selected: () => selected, current: () => current(), perform: operations => perform(operations), attempt });
-    const textControls = createTextControls(document, inspector, { session, input: () => input, target: () => { const id = inputScope?.kind === "text" ? inputScope.nodeId : selected.length === 1 ? selected[0] : undefined; const object = p().objects.find(o => o.nodeId === id); return object && ["text", "geometry", "table"].includes(object.kind) ? id : undefined; }, edit: () => editText(), notes: () => editNotes(), finish: () => finishInput(), perform: operations => { perform(operations); }, attempt });
+    const textControls = createTextControls(document, inspector, { session, commands: commandRegistry, input: () => input, target: () => { const id = inputScope?.kind === "text" ? inputScope.nodeId : selected.length === 1 ? selected[0] : undefined; const object = p().objects.find(o => o.nodeId === id); return object && ["text", "geometry", "table"].includes(object.kind) ? id : undefined; }, edit: () => editText(), notes: () => editNotes(), finish: () => finishInput(), perform: operations => { perform(operations); }, attempt });
     if (workspace) {
         for (const label of ["编辑文字", "编辑备注", "完成输入"]) {
             const control = [...inspector.querySelectorAll("button")].find(node => node.textContent === label);
@@ -343,7 +360,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
     const tableControls = createTableControls(document, inspector, { session, target: () => selected.length === 1 && p().objects.find(o => o.nodeId === selected[0])?.kind === "table" ? selected[0] : undefined, perform: operations => { perform(operations); }, attempt });
     let preview = mountPreview(previewHost, session, options);
     const definitions = createDefinitionControls(document, inspector, { session, activeSlide: () => active, surface: () => definitionSurface, object: () => selected.length === 1 ? selected[0] : undefined, selectSurface: id => setDefinitionSurface(id), attempt });
-    const chartControls = createChartControls(document, inspector, { session, target: () => selected.length === 1 ? selected[0] : undefined, parent: currentSurface, perform: operations => { perform(operations); }, select: id => selectObjects([id]), attempt });
+    const chartControls = createChartControls(document, inspector, { session, commands: commandRegistry, target: () => selected.length === 1 ? selected[0] : undefined, parent: currentSurface, perform: operations => { perform(operations); }, select: id => selectObjects([id]), attempt });
     const commentControls = createCommentControls(document, workspace ? commentsPane : inspector, { session, selection, slideRoot: () => currentSlide().rootNodeId, perform: operations => { perform(operations); }, edit: editComment, locate: focusAnnotation, attempt }, workspace ? { root: shadow, toolbar, bounds: () => stage.getBoundingClientRect(), rect: chosen => {
         const rect = preview.source()?.rectangles(chosen.anchor).at(-1), frame = preview.element.getBoundingClientRect();
         return rect ? new DOMRect(frame.left + rect.left * zoom, frame.top + rect.top * zoom, rect.width * zoom, rect.height * zoom) : undefined;
@@ -411,6 +428,13 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         }
     };
     element.addEventListener("keydown", keyboard, { signal: controller.signal });
+    let lastTextFormat = "";
+    function notifyTextFormat(): void {
+        if (disposed) return; commandRegistry.notify(); const object = selected.length === 1 ? preview.source()?.elements.get(selected[0]!)?.element : undefined;
+        const range = object?.ownerDocument.createRange(); if (object && range) range.selectNodeContents(object);
+        const state = input?.formatState() ?? (object && range && p().objects.some(item => item.nodeId === selected[0] && ["text", "geometry", "table"].includes(item.kind)) ? { ...readTextFormat(object, range), hasSelection: false, editingText: false } : { enabled: false }), key = JSON.stringify(state);
+        if (key === lastTextFormat) return; lastTextFormat = key; try { options.onFormatStateChange?.(state); } catch { /* Host UI only. */ }
+    }
     function renderControls(): void {
         if (disposed)
             return;
@@ -453,6 +477,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
             input.value = object?.kind === "image" ? String(Number(readNode(object.nodeId)!.attributes["data-office-crop-" + key] ?? 0) * 100) : "0";
         appearance.refresh();
         connectors.refresh();
+        commandRegistry.notify(); notifyTextFormat();
         status.textContent = `第 ${slides.findIndex(slide => slide.slideId === active) + 1} / ${slides.length} 页 · ${selected.length ? "已选 " + selected.length + " 个对象" : "未选择对象"}${busy ? " · 正在更新画布" : ""}`;
         navControls.abort();
         navControls = new AbortController();
@@ -489,7 +514,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         ensure();
         if (!Number.isFinite(value) || value < .5 || value > 2)
             throw new DocumentError("InvalidOperation", "缩放范围为 50% 至 200%。");
-        zoom = value;
+        const anchor = captureZoomAnchor(stage, plane, zoom); zoom = value;
         if (![...zoomChoice.options].some(option => option.value === String(value))) {
             const option = document.createElement("option"); option.value = String(value); option.textContent = Math.round(value * 100) + "%"; zoomChoice.append(option);
         }
@@ -506,6 +531,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         plane.style.height = preview.element.offsetHeight * zoom + "px";
         gestures?.paint();
         regions?.paint();
+        restoreZoomAnchor(stage, plane, zoom, anchor);
     }
     const disposeInput = (): void => { input?.dispose(); input = undefined; draftNotes?.remove(); draftNotes = undefined; };
     const bindInput = (): void => {
@@ -562,7 +588,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
             inputScope = undefined;
             return;
         }
-        input = bindPresentationInput({ session, root, editable, source: canonical, instance, typingStyle, history: navigateHistory, ...(newNotesSlideId ? { newNotesSlideId } : {}), label: inputScope.kind === "text" ? "幻灯片文字输入" : inputScope.kind === "notes" ? "演讲者备注输入" : "批注正文输入", save: value => { inputSelection = value; }, refresh: value => { inputSelection = value; if (!disposed && !deferredRefresh)
+        input = bindPresentationInput({ session, root, editable, source: canonical, instance, typingStyle, history: navigateHistory, ...(newNotesSlideId ? { newNotesSlideId } : {}), label: inputScope.kind === "text" ? "幻灯片文字输入" : inputScope.kind === "notes" ? "演讲者备注输入" : "批注正文输入", save: value => { inputSelection = value; queueMicrotask(() => { if (!disposed) notifyTextFormat(); }); }, refresh: value => { inputSelection = value; if (!disposed && !deferredRefresh)
                 refresh(); }, compositionEnded: () => { if (disposed)
                 return; if (deferredRefresh) {
                 deferredRefresh = false;
@@ -656,7 +682,7 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
         const source = preview.source()!, frame = source.root.ownerDocument;
         gestures = bindObjectGestures(frame, { session, source, selected: () => selected, select: selectObjects, current: () => current() && !inputScope && !regionMode, perform: operations => { perform(operations); }, error: report });
         frame.addEventListener("keydown", keyboard, { signal: frameControls.signal });
-        if (workspace) frame.addEventListener("pointerup", () => { if (inputScope?.kind === "text" && !input?.composing() && frame.getSelection()?.isCollapsed === false) commentControls.selectionChanged(); }, { signal: frameControls.signal });
+        if (workspace && options.annotationTrigger !== "command") frame.addEventListener("pointerup", () => { if (inputScope?.kind === "text" && !input?.composing() && frame.getSelection()?.isCollapsed === false) commentControls.selectionChanged(); }, { signal: frameControls.signal });
         frame.addEventListener("dblclick", event => { const target = event.target as Element | null, node = target?.closest<HTMLElement>('[data-node-id][data-office-kind]'); if (node && source.elements.get(node.dataset.nodeId!)?.element === node && ["text", "geometry", "table"].includes(node.dataset.officeKind!))
             attempt(() => editText(node.dataset.nodeId)); }, { signal: frameControls.signal });
         regions = bindPresentationRegions(frame, { session, source, enabled: () => current() && regionMode && !definitionSurface, selected: () => regionSelection, focus: () => focusedAnnotation, select: anchor => { if (anchor.kind === "region") {
@@ -748,7 +774,28 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
     renderControls();
     void ready.catch(reason => { if (generation === 0)
         report(reason); });
-    return { element, get ready() { return ready; }, selection, selectObjects, selectRegion, regionLayoutKey, setDefinitionSurface, editText, editNotes, editComment, finishInput, activeSlide: () => { ensure(); return active; }, setActiveSlide, perform, insertImage, layout: () => { ensure(); return preview.layout(); }, fonts: () => { ensure(); return preview.fonts(); }, setZoom, setMode, focusAnnotation,
+    const openInspector = (legend: string): void => {
+        const advanced = shadow.querySelector<HTMLDetailsElement>(".advanced-tools"); if (advanced) advanced.open = true;
+        const pane = [...inspector.querySelectorAll("fieldset")].find(pane => pane.querySelector("legend")?.textContent === legend);
+        (pane ?? inspector).scrollIntoView({ block: "nearest" }); (pane ?? inspector).querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled)")?.focus();
+    };
+    for (const [id, title] of [["formatObject", "对象外观"], ["slideLayout", "主题、母版与布局"], ["definitions", "主题、母版与布局"], ["charts", "图表与常量数据"], ["tableProperties", "表格结构"]]) commandRegistry.register(id!, title!, () => openInspector(title!), () => !busy && !input?.composing());
+    commandRegistry.notify();
+    return { element, commands: commandRegistry.commands, executeCommand: commandRegistry.executeCommand,
+        clipboard(action) { ensure(); if (!input) return Promise.reject(new DocumentError("InvalidOperation", "请先选择文字。")); return input.clipboard(action); },
+        formatState() {
+            if (input) return input.formatState();
+            const object = selected.length === 1 ? preview.source()?.elements.get(selected[0]!)?.element : undefined;
+            if (!object || !p().objects.some(item => item.nodeId === selected[0] && ["text", "geometry", "table"].includes(item.kind))) return { enabled: false };
+            const range = object.ownerDocument.createRange(); range.selectNodeContents(object); return { ...readTextFormat(object, range), hasSelection: false, editingText: false };
+        }, executeTextCommand(command) {
+            ensure(); if (!input && selected.length === 1) { editText(); const root = preview.source()?.elements.get(selected[0]!)?.element; if (root) { const range = root.ownerDocument.createRange(); range.selectNodeContents(root); const selection = root.ownerDocument.getSelection()!; selection.removeAllRanges(); selection.addRange(range); } }
+            if (!input || input.composing()) throw new DocumentError("InvalidOperation", "请选择可编辑的文字。");
+            if (command.type === "toggle") input.toggle(command.property);
+            else if (command.type === "format") input.format(command.property, command.value);
+            else input.paragraph("text-align", command.value);
+            notifyTextFormat();
+        }, get ready() { return ready; }, selection, selectObjects, selectRegion, regionLayoutKey, setDefinitionSurface, editText, editNotes, editComment, finishInput, activeSlide: () => { ensure(); return active; }, setActiveSlide, perform, insertImage, layout: () => { ensure(); return preview.layout(); }, fonts: () => { ensure(); return preview.fonts(); }, setZoom, setMode, focusAnnotation, startAnnotation: () => commentControls.start(),
         dispose() { if (disposed)
             return; disposed = true; ++generation; unsubscribe(); controller.abort(); navControls.abort(); frameControls?.abort(); gestures?.dispose(); regions?.dispose(); disposeInput(); textControls.dispose(); tableControls.dispose(); definitions.dispose(); chartControls.dispose(); commentControls.dispose(); appearance.dispose(); connectors.dispose(); nodeCache.clear(); preview.dispose(); element.remove(); } };
 }

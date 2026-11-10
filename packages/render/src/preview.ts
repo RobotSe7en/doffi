@@ -429,6 +429,9 @@ export function mountPreview(
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   function measure(): void {
     if (disposed || !source) return;
+    // A display:none host has no usable geometry. Keep the last accepted
+    // layout instead of removing page gaps and measuring zero-sized lines.
+    if (!iframe.clientWidth || !iframe.clientHeight) return;
     // IME owns temporary DOM until compositionend; splitting its text node would
     // invalidate the operating system's composition target.
     if (composing) return;
@@ -460,6 +463,8 @@ export function mountPreview(
       pagination = paginate(frame, source, snapshot.metadata, limits);
     }
     baseFonts = Object.freeze([...sourceFonts, ...resolvePreviewFonts(frame, ".sdk-number-marker")]); fontReport = baseFonts;
+    report = Object.freeze({ documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision,
+      layout: options.layout ?? "pages", pages: [], nodePages: {}, fields: [], diagnostics: [], fonts: fontReport });
     measure();
     projection = new SourceProjection();
     const raw = new DOMParser().parseFromString(snapshot.html, "text/html").querySelector<HTMLElement>('[data-node-id="' + CSS.escape(source.root.dataset.nodeId!) + '"]')!;
@@ -477,7 +482,7 @@ export function mountPreview(
     observer?.disconnect(); observer = new ResizeObserver(() => {
       if (scheduled !== undefined || disposed) return;
       scheduled = hostDocument.defaultView!.requestAnimationFrame(() => { scheduled = undefined; measure(); });
-    }); observer.observe(frame.body);
+    }); observer.observe(frame.body); observer.observe(iframe);
   }
   let composing = false;
   const load = (): void => {

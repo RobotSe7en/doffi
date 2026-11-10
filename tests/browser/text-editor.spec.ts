@@ -356,6 +356,7 @@ test("replacing the complete editable story retains document and section identit
 });
 
 test("React workbench edits source, returns to preview and saves a reopenable package", async ({ page }, info) => {
+  await page.addInitScript(() => localStorage.setItem("doffi:editing", "preview"));
   await page.goto("/"); await page.getByRole("button", { name: "打开报告协作样例" }).click();
   await page.getByRole("button", { name: "编辑正文", exact: true }).click();
   await expect(page.frameLocator('iframe[title="正文编辑"]').getByRole("textbox", { name: "文档正文" })).toBeVisible();

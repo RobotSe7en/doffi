@@ -29,8 +29,9 @@ export interface PresentationWorkbenchOptions extends PresentationEditorOptions 
     readonly proposalResources?: TransactionPrepareOptions;
     readonly onEvent?: (event: PresentationWorkbenchEvent) => void;
 }
-export interface PresentationWorkbenchView extends DocumentInteractionView {
+export interface PresentationWorkbenchView extends Omit<DocumentInteractionView, "setRulers" | "settled"> {
     readonly editor: PresentationEditorView;
+    setReviewVisible(visible: boolean): void;
     request(): PresentationInteractionRequest | undefined;
     buildRequest(annotationIds?: readonly string[], scope?: "slides" | "global"): PresentationInteractionRequest;
     submitAnnotations(annotationIds?: readonly string[]): Promise<void>;
@@ -47,11 +48,11 @@ export function mountPresentationWorkbench(container: HTMLElement, session: Docu
     style.textContent = ":host{display:block;font:14px system-ui;color:#20252b}button,input,select{font:inherit}button,select{padding:6px 10px}button{cursor:pointer}section{padding:12px;margin:12px 0;border:1px solid #ccd3dc}label{display:inline-flex;gap:5px;margin:5px}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #245aa5;outline-offset:2px}p{white-space:pre-wrap}.actions{display:flex;flex-wrap:wrap;gap:6px}.candidate{max-height:70vh;overflow:auto}table{border-collapse:collapse}td,th{padding:4px 8px;border:1px solid #ccd3dc}.error{color:#a00000}[hidden]{display:none!important}";
     const workspace = options.appearance === "workspace";
     if (workspace) style.textContent += workspaceControls + `
-      section{margin:0;padding:10px 18px;border:0;border-bottom:1px solid #dfe7da;background:#fcfdfb}section[aria-label="PPT 请求与提案"]{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
-      h2{font-size:11px;font-weight:550;margin:0;color:#91a187}.actions{gap:5px}.actions button,.actions select{font-size:10px;padding:5px 7px}.actions>button:nth-of-type(2){background:#eaf2e6;color:#4c7850;border-color:#d8e5ce}
-      div[aria-label="选择提交的批注"]{width:100%;font-size:10px;color:#91a181}label{margin:0 15px 0 0;font-size:10px;line-height:1.8}input[type=checkbox]{accent-color:#558151}
-      p[aria-label="协作状态"]{font-size:10px;color:#809774;margin:0}p[aria-label="协作状态"]:empty{display:none}.error{margin:0;width:100%}
-      section[aria-label="提案差异"]{width:100%;max-height:40vh;overflow:auto;background:#f4f8f0;border:1px solid #dbe7d2;border-radius:6px}.candidate:not(:empty){width:100%;max-height:50vh;overflow:auto}
+      section{margin:0;padding:10px 18px;border:0;border-bottom:1px solid #e0e6f0;background:#f8faff}section[aria-label="PPT 请求与提案"]{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
+      h2{font-size:11px;font-weight:550;margin:0;color:#8596b0}.actions{gap:5px}.actions button,.actions select{font-size:10px;padding:5px 7px}.actions>button:nth-of-type(2){background:#eaf1ff;color:#3567b6;border-color:#cdddf7}
+      div[aria-label="选择提交的批注"]{width:100%;font-size:10px;color:#8193ae}label{margin:0 15px 0 0;font-size:10px;line-height:1.8}input[type=checkbox]{accent-color:#175ce5}
+      p[aria-label="协作状态"]{font-size:10px;color:#8193ae;margin:0}p[aria-label="协作状态"]:empty{display:none}.error{margin:0;width:100%}
+      section[aria-label="提案差异"]{width:100%;max-height:40vh;overflow:auto;background:#f3f7ff;border:1px solid #d5e1f7;border-radius:6px}.candidate:not(:empty){width:100%;max-height:50vh;overflow:auto}
     `;
     panel.setAttribute("aria-label", "PPT 请求与提案");
     choices.setAttribute("aria-label", "选择提交的批注");
@@ -338,7 +339,7 @@ export function mountPresentationWorkbench(container: HTMLElement, session: Docu
         return; ++generation; pending = false; clearCandidate(false); if (request && request.baseRevision !== event.revision)
         status.textContent = "文稿已变化，请重新生成请求。"; refreshChoices(); });
     refreshChoices();
-    return { element, editor, get ready() { return Promise.all([editor.ready, candidateReady]).then(() => { }); }, selection: () => editor.selection(), fonts: () => editor.fonts(), layout: () => editor.layout(), setMode: mode => editor.setMode(mode), setZoom: value => editor.setZoom(value), focusAnnotation: id => editor.focusAnnotation(id), request: () => { ensure(); return request; }, buildRequest, submitAnnotations, loadProposal, applyProposal, rejectProposal,
+    return { element, editor, setReviewVisible(visible) { ensure(); panel.hidden = !visible; panel.style.display = visible ? workspace ? "flex" : "block" : "none"; }, get ready() { return Promise.all([editor.ready, candidateReady]).then(() => { }); }, selection: () => editor.selection(), fonts: () => editor.fonts(), layout: () => editor.layout(), setMode: mode => editor.setMode(mode), setZoom: value => editor.setZoom(value), focusAnnotation: id => editor.focusAnnotation(id), startAnnotation: () => editor.startAnnotation(), request: () => { ensure(); return request; }, buildRequest, submitAnnotations, loadProposal, applyProposal, rejectProposal,
         dispose() { if (disposed)
             return; disposed = true; ++generation; unsubscribe(); controls.abort(); choiceControls.abort(); clearCandidate(); editor.dispose(); element.remove(); } };
 }

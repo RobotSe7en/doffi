@@ -1,9 +1,12 @@
+import { presentationCommandIds } from "../commands.js";
+import type { EditorCommandRegistry } from "../commands.js";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
 type ChartData = Extract<DocumentOperation, {
     op: "setPresentationChartData";
 }>["data"];
 export interface ChartControlsHost {
     readonly session: DocumentEditingSession;
+    readonly commands?: EditorCommandRegistry;
     target(): string | undefined;
     parent(): string;
     perform(operations: DocumentOperation[]): void;
@@ -21,7 +24,7 @@ export function createChartControls(document: Document, parent: HTMLElement, hos
     parent.append(pane);
     let gridControls = new AbortController();
     const read = () => { const p = host.session.snapshot().metadata.presentation!, chart = p.charts.find(c => c.nodeId === host.target()); return { chart, data: chart ? p.dataSets.find(d => d.dataSetId === chart.dataSetId) : undefined }; };
-    const button = (label: string, action: () => void, container: HTMLElement = pane, signal = controls.signal): HTMLButtonElement => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", () => host.attempt(action), { signal }); container.append(node); return node; };
+    const button = (label: string, action: () => void, container: HTMLElement = pane, signal = controls.signal): HTMLButtonElement => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", () => host.attempt(action), { signal }); container.append(node); const id = presentationCommandIds[label]; if (id) host.commands?.register(id, label, action, () => !node.disabled); return node; };
     const choice = (label: string, values: readonly (readonly [
         string,
         string

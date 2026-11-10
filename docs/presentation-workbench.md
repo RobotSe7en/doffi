@@ -51,3 +51,7 @@ session.undo();
 人工与提案共用 UTF-16 映射、结构锚点和区域失效规则。测量区域还绑定当前画布、字体和布局环境；环境改变后需重定位，再生成请求。经典批注的原生固定点按页内坐标保留，不作为字体测量区域处理。
 
 核心测试覆盖冻结、严格契约、预算、只读依赖、间接影响、候选槽位释放、资源隔离、原子应用与旧修订拒绝。浏览器用例覆盖普通 JS 与 React、候选图片、差异应用及撤销、人工修改后迟到提案和字体环境变化。CI 还保留 Word 工作台和打包消费回归；外部 PowerPoint/WPS 原生导出重开不由这些编辑测试替代。
+
+宿主自定义功能区可读取 `view.editor.commands()` 或订阅 `onCommandStateChange`，通过 `executeCommand(id)` 调用与 SDK 内置按钮相同的操作。命令可用性依赖当前选区、输入法及异步更新状态；不可用或已卸载的命令明确拒绝。`formatState()` / `onFormatStateChange` 与 `executeTextCommand()` 供宿主显示文字格式并设置开关、字体、字号和对齐，复用原选区及事务历史。`annotationTrigger: "command"` 关闭选择即弹批注的行为，宿主通过 `startAnnotation()` 显式打开批注框。
+
+Playground 通过 `setReviewVisible(boolean)` 显式显示／隐藏请求与提案区，避免仅依赖跨 Shadow DOM 的 CSS 自定义属性动态切换，导致 WebKit 的绘制与控件可见状态不一致。显示状态不改变源、批注选择或历史。

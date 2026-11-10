@@ -44,6 +44,17 @@ test("one paragraph spans pages and maps a cross-page selection to one canonical
     to: window.paginationHost.session!.getNode("long")!.text.length, quote: window.paginationHost.session!.getNode("long")!.text })));
   expect((await page.evaluate(() => window.paginationHost.layout().nodePages.long))!.length).toBeGreaterThan(1);
 });
+test("hiding a preview preserves its accepted pages and revealing it remeasures the visible canvas", async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await mount(page, pagedFiles(Array.from({ length: 40 }, (_, index) => `<p data-node-id="p-${index}">LINE-${index}</p>`).join('')));
+  const original = await page.evaluate(() => window.paginationHost.layout()); expect(original.pages).toHaveLength(4);
+  const hidden = await page.evaluate(async () => { (document.body.firstElementChild as HTMLElement).hidden = true; return window.paginationHost.view!.settled(); });
+  expect(hidden.pages).toEqual(original.pages); expect(hidden.nodePages).toEqual(original.nodePages);
+  await page.evaluate(() => { (document.body.firstElementChild as HTMLElement).hidden = false; });
+  await expect.poll(() => page.evaluate(async () => (await window.paginationHost.view!.settled()).pages)).toEqual(original.pages);
+  await expect.poll(() => page.frameLocator('iframe').locator('[data-node-id="p-12"]').evaluate(node => node.getBoundingClientRect().top)).toBeGreaterThan(300);
+  expect(errors).toEqual([]);
+});
 test("editing reflows pages immediately and undo restores layout without persisting page wrappers", async ({ page }) => {
   await mount(page, pagedFiles('<p data-node-id="a">Start</p>'), "edit");
   const before = await page.evaluate(() => window.paginationHost.layout().pages.length);

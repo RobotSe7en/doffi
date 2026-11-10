@@ -1,3 +1,5 @@
+import type { TextFormatState } from "../text-format-state.js";
+import type { EditorCommandState, EditorCommandTarget } from "../commands.js";
 import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, TransactionReceipt, WorkbookRange } from "@doffi/core";
 import type { WorkbookPreviewOptions, WorkbookRenderReport } from "@doffi/render";
 import type { WorkbookInputState } from "./input-controller.js";
@@ -16,6 +18,9 @@ export interface WorkbookValidationConfirmation {
 }
 export interface WorkbookEditorOptions {
   readonly title?: string;
+  readonly appearance?: "default" | "workspace";
+  readonly onFormatStateChange?: (state: TextFormatState) => void;
+  readonly onCommandStateChange?: (commands: readonly EditorCommandState[]) => void;
   readonly widthPt?: number;
   readonly heightPt?: number;
   readonly locale?: string;
@@ -31,7 +36,9 @@ export interface WorkbookEditorOptions {
   readonly onSelectionChange?: (selection: DocumentSelection | undefined) => void;
   readonly onPendingChange?: (pending: boolean) => void;
 }
-export interface WorkbookEditorView {
+export interface WorkbookEditorView extends EditorCommandTarget {
+  formatState(): TextFormatState;
+  formatCells(properties: Readonly<Record<string, string>>): Promise<void>;
   readonly element: HTMLDivElement;
   readonly ready: Promise<void>;
   settled(): Promise<WorkbookRenderReport>;

@@ -10,7 +10,7 @@ const samples = fileURLToPath(new URL("../../examples/docx/", import.meta.url));
 test.beforeEach(async ({ page }) => {
   // Keep R1-10's continuous reading baselines; pagination has its own fixed
   // fixtures and all three browser-engine gates in pagination.spec.ts.
-  await page.addInitScript(() => { if (window === window.top) localStorage.setItem("doffi:layout", "continuous"); });
+  await page.addInitScript(() => { if (window === window.top) { localStorage.setItem("doffi:layout", "continuous"); localStorage.setItem("doffi:editing", "preview"); } });
 });
 test("fixed-font continuous rich-text input fixture", async ({ page }) => {
   await page.goto("/"); await page.getByRole("button", { name: "打开报告协作样例" }).click();
@@ -45,7 +45,7 @@ for (const [terminator, escapedLessThan] of [
       name: "stylesheet.zip", mimeType: "application/zip",
       buffer: Buffer.from(stylesheetPackageFixture('p{--payload:"' + (escapedLessThan ? '\\' : '') + payload + '";color:#123456}')),
     });
-    await expect(page.getByRole("status")).toContainText("已打开");
+    await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
     const frame = page.frameLocator("iframe");
     await expect(frame.locator("input,a[href]")).toHaveCount(0);
     await expect(frame.locator("style")).toHaveCount(2);
@@ -70,7 +70,7 @@ test("positions custom and default tabs from the unindented text origin", async 
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from(indentedTabsFixture()),
   });
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const frame = page.frameLocator("iframe");
   await expect(frame.locator("[data-word-tab]").last()).toHaveCSS("display", "inline-block");
   const positions = await frame.locator("[data-word-tab]").evaluateAll((tabs) => tabs.map((tab) => {
@@ -97,7 +97,7 @@ test("opens a DOCX sample through the public APIs and releases its preview on re
     page.getByRole("link", { name: "doffi Playground", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "打开 DOCX 样例" }).click();
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const frame = page.frameLocator('iframe[title="文档只读预览"]');
   await expect(frame.getByRole("heading", { name: "实施报告" })).toBeVisible();
   await expect(frame.locator(".sdk-number-marker")).toHaveText([
@@ -135,7 +135,7 @@ for (const item of cases) {
     });
     await page.goto("/");
     await page.getByLabel("打开文件").setInputFiles(samples + item.file);
-    await expect(page.getByRole("status")).toContainText("已打开");
+    await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
     const frame = page.frameLocator("iframe");
     await expect(frame.locator("article")).toBeVisible();
     await frame.locator("body").evaluate(async () => {
@@ -169,7 +169,7 @@ test("downloads its document package and reopens it", async ({
   await page
     .getByLabel("打开文件")
     .setInputFiles(samples + "08-comments-revisions.docx");
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下载文档包" }).click();
   const path = info.outputPath("document.zip");
@@ -186,7 +186,7 @@ test("keeps distinct Latin and Chinese faces and reports missing Chinese fonts",
   await page
     .getByLabel("打开文件")
     .setInputFiles(samples + "09-chinese-fonts.docx");
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const frame = page.frameLocator("iframe");
   const source = frame.locator('[data-word-script="eastAsia"]').first();
   await expect(source).toBeVisible();
@@ -214,7 +214,7 @@ for (const [family, selected] of [
     });
     await page.goto("/");
     await page.getByLabel("打开文件").setInputFiles({ name: "chinese-font.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(bytes) });
-    await expect(page.getByRole("status")).toContainText("已打开");
+    await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
     const frame = page.frameLocator("iframe");
     const eastAsian = frame.locator('[data-word-script="eastAsia"]').first();
     await expect(eastAsian).toBeVisible();
@@ -229,7 +229,7 @@ for (const [family, selected] of [
 test("previews a committed/reopened Chinese font edit with independent Latin and east-Asian roles", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("打开文件").setInputFiles({ name: "edited-fonts.zip", mimeType: "application/zip", buffer: Buffer.from(editedChineseFontFixture()) });
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const frame = page.frameLocator("iframe");
   const inserted = frame.locator('[data-word-script="eastAsia"]').filter({ hasText: "新增仿宋" }).first();
   expect(await inserted.evaluate((node) => getComputedStyle(node).fontFamily)).toContain("FandolFang");
@@ -279,7 +279,7 @@ test("previews partial font overrides, cleared highlighting, inherited tabs and 
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from(styleInheritanceFixture()),
   });
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const frame = page.frameLocator("iframe");
   const run = frame.locator("[data-word-run]").filter({ hasText: "ABCé中文" });
   const font = await run.evaluate((node) => ({
@@ -322,7 +322,7 @@ for (const simple of [false, true]) {
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       buffer: Buffer.from(nestedFieldFixture(simple)),
     });
-    await expect(page.getByRole("status")).toContainText("已打开");
+    await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
     const frame = page.frameLocator("iframe");
     await expect(frame.getByText("outer result", { exact: true })).toBeVisible();
     await expect(frame.getByText("cache", { exact: true })).toBeHidden();
@@ -353,7 +353,7 @@ test("uses each section's width and margins in continuous view", async ({ page }
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from(bytes),
   });
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const frame = page.frameLocator("iframe");
   const geometry = await frame.locator("section").evaluateAll((sections) => sections.map((node) => {
     const computed = getComputedStyle(node);
@@ -385,7 +385,7 @@ for (const articleRoot of [false, true]) {
       mimeType: "application/zip",
       buffer: Buffer.from(sectionPackageFixture(articleRoot)),
     });
-    await expect(page.getByRole("status")).toContainText("已打开");
+    await expect(page.locator(".office-app")).toHaveAttribute("data-loading", "false"); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
     const frame = page.frameLocator("iframe");
     const widths = await frame.locator(articleRoot ? "article" : "section").evaluateAll(
       (nodes) => nodes.map((node) => node.getBoundingClientRect().width * 72 / 96),

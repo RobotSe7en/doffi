@@ -1,3 +1,5 @@
+export type { TextFormatState } from "./text-format-state.js";
+export type { EditorCommandState, EditorCommandTarget } from "./commands.js";
 export { mountDocumentPreview } from "./preview.js";
 export type { DocumentPreview, DocumentPreviewOptions } from "./preview.js";
 export type { FontResolution } from "./fonts.js";
@@ -8,7 +10,7 @@ export type { DocumentInteractionMode, DocumentInteractionOptions, DocumentInter
 export { mountDocumentWorkbench } from "./workbench.js";
 export type { DocumentWorkbenchEvent, DocumentWorkbenchOptions, DocumentWorkbenchView } from "./workbench.js";
 export { mountDocumentTextEditor } from "./rich-text.js";
-export type { DocumentTextEditor, DocumentTextEditorOptions } from "./rich-text.js";
+export type { DocumentTextEditor, DocumentTextEditorOptions, DocumentTextCommand } from "./rich-text.js";
 export { mountPresentationEditor } from "./presentation-editor.js";
 export type { PresentationEditorOptions, PresentationEditorView } from "./presentation-editor.js";
 export { mountPresentationWorkbench } from "./presentation-workbench.js";

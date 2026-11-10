@@ -1,7 +1,14 @@
+import { createWordViewport, mountWordRulers } from "./word-ruler.js";
+import { bindWordLineSelection } from "./line-selection.js";
+import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
+import type { ZoomAnchor } from "./viewport-zoom.js";
+import { executeClipboard } from "./clipboard-command.js";
+import { readTextFormat } from "./text-format-state.js";
+import type { TextFormatState } from "./text-format-state.js";
 import { DocumentError } from "@doffi/core";
-import type { DocumentEditingSession, ReconciledTextEdit } from "@doffi/core";
+import type { DocumentEditingSession, DocumentSelection, ReconciledTextEdit } from "@doffi/core";
 import { mountDocumentPreview } from "./preview.js";
-import { sourceSelectionText, stripClipboardIdentities } from "@doffi/render";
+import { PreviewSource, sourceSelectionText, stripClipboardIdentities } from "@doffi/render";
 import type { DocumentPreviewOptions } from "./preview.js";
 import type { DocumentRenderReport } from "@doffi/render";
 import { blockSelector, bookmark, caretAt, inputProofs, inputStep, offsetAt, restoreBookmark, sourceText } from "./rich-text/dom.js";
@@ -10,12 +17,23 @@ import { SourceProjection } from "./rich-text/projection.js";
 import { deleteNativeRange, nativeDeletionRange, styleNativeRange } from "./rich-text/operations.js";
 import { workspaceControls } from "./workspace.js";
 
-export interface DocumentTextEditorOptions extends DocumentPreviewOptions { readonly appearance?: "default" | "workspace"; readonly onError?: (error: Error) => void }
+export interface DocumentTextEditorOptions extends DocumentPreviewOptions { readonly appearance?: "default" | "workspace"; readonly onFormatStateChange?: (state: TextFormatState) => void; readonly onError?: (error: Error) => void }
+export type DocumentTextCommand =
+  | { readonly type: "toggle"; readonly property: "bold" | "italic" | "underline" }
+  | { readonly type: "format"; readonly property: "font-weight" | "font-style" | "text-decoration" | "color" | "font-size" | "font-family"; readonly value: string }
+  | { readonly type: "align"; readonly value: "left" | "center" | "right" };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
+  settled(): Promise<DocumentRenderReport>;
   layout(): DocumentRenderReport;
   focus(): void;
+  execute(command: DocumentTextCommand): void;
+  formatState(): TextFormatState;
+  setZoom(zoom: number): void;
+  setRulers(visible: boolean): void;
+  selection(): DocumentSelection | undefined;
+  clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
   /** Core owns persistent state and history. Disposal releases only this view. */
   dispose(): void;
 }
@@ -31,11 +49,13 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   const document = container.ownerDocument, element = document.createElement("div"), shadow = element.attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = ":host{display:block;font:14px system-ui}button,select{font:inherit;padding:6px 10px}.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.stage{max-height:70vh;overflow:auto;border:1px solid #ccd3dc}.error{color:#a00000}";
-  if (options.appearance === "workspace") style.textContent += workspaceControls + ".toolbar{margin:0;padding:10px 20px;background:#fcfdfb;border-bottom:1px solid #dfe7df}.stage{border:0;min-height:420px;max-height:calc(100dvh - 350px);background:#edf1ee}.toolbar button,.toolbar select{font-size:11px}";
+  if (options.appearance === "workspace") style.textContent += workspaceControls + ".toolbar{display:var(--doffi-text-controls,flex);margin:0;padding:7px 16px;background:#f8faff;border-bottom:1px solid #e0e6f0}.stage{border:0;min-height:420px;height:var(--doffi-canvas-height,calc(100dvh - 282px));max-height:var(--doffi-canvas-height,calc(100dvh - 282px));background:#eceef1}.toolbar button,.toolbar select{font-size:11px}";
   const toolbar = document.createElement("div"); toolbar.className = "toolbar"; toolbar.setAttribute("role", "toolbar"); toolbar.setAttribute("aria-label", "正文格式");
   const stage = document.createElement("div"); stage.className = "stage";
   const error = document.createElement("p"); error.setAttribute("role", "alert"); error.className = "error"; error.hidden = true;
-  shadow.append(style, toolbar, stage, error); container.append(element);
+  const plane = document.createElement("div"); plane.style.cssText = "position:relative;margin-inline:auto;min-width:0"; stage.append(plane);
+  const viewport = createWordViewport(stage);
+  shadow.append(style, toolbar, viewport, error); container.append(element);
   const controls = new AbortController(), initial = session.snapshot();
   let viewControls = new AbortController();
   let disposed = false, committing = false, composing = false, compositionRevision: number | undefined;
@@ -45,6 +65,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   let compositionInsertion: { from: number; to: number } | undefined;
   let wholeStoryReplacement = false;
   const typingStyles = new Map<string, string>();
+  let typingAnchor: string | undefined;
   const report = (reason: unknown): void => {
     if (disposed) return;
     const value = reason instanceof Error ? reason : new Error("正文输入失败。");
@@ -63,6 +84,13 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const range = selection.getRangeAt(0);
     return root.contains(range.startContainer) && root.contains(range.endContainer) ? range.cloneRange() : undefined;
   };
+  function formatState(): TextFormatState { return !root || composing || disposed ? { enabled: false } : { ...readTextFormat(root, selectedRange(), typingStyles, projection.ignored), editingText: true }; }
+  let lastFormatState = "";
+  function notifyFormat(): void { if (disposed) return; const state = formatState(), key = JSON.stringify(state); if (key === lastFormatState) return; lastFormatState = key; try { options.onFormatStateChange?.(state); } catch { /* Host UI only. */ } }
+  function toggle(property: "bold" | "italic" | "underline"): void {
+    const state = formatState(), active = state[property] === true;
+    format(property === "bold" ? "font-weight" : property === "italic" ? "font-style" : "text-decoration", property === "bold" ? active ? "400" : "700" : property === "italic" ? active ? "normal" : "italic" : active ? "none" : "underline"); notifyFormat();
+  }
   const select = (node: Node, offset: number): void => {
     const range = frame!.createRange(); range.setStart(node, offset); range.collapse(true);
     const selection = frame!.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
@@ -73,9 +101,9 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     viewControls.abort(); viewControls = new AbortController();
     try {
       preview.update(session); root = rootElement(frame); projection = new SourceProjection();
-      activate(source); revision = session.snapshot().manifest.revision; proofs = []; pending = undefined; typingStyles.clear(); compositionInsertion = undefined; wholeStoryReplacement = false;
+      activate(source); revision = session.snapshot().manifest.revision; proofs = []; pending = undefined; typingStyles.clear(); typingAnchor = undefined; compositionInsertion = undefined; wholeStoryReplacement = false;
     } catch (reason) { root.contentEditable = "false"; report(reason); return; }
-    root.focus(); restoreBookmark(root, selection, projection.ignored); savedSelection = bookmark(root, projection.ignored);
+    root.focus(); restoreBookmark(root, selection, projection.ignored); savedSelection = bookmark(root, projection.ignored); notifyFormat();
   }
   function normalizedRoot(): HTMLElement {
     const value = projection.serialize(root!), source = sourceDocument(), original = rootElement(source);
@@ -174,24 +202,28 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if (!root || composing) return;
     root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
     const range = selectedRange(); if (!range) return;
+    const properties = new Map([[property, value]]);
+    if (property === "font-family") for (const role of ["ascii", "hAnsi", "eastAsia", "cs"]) properties.set("--word-font-" + role, value);
     if (range.collapsed) {
-      typingStyles.set(property, value); return;
+      for (const [name, value] of properties) typingStyles.set(name, value); typingAnchor = JSON.stringify(bookmark(root, projection.ignored)); notifyFormat(); return;
     }
-    mutate(range, () => styleRange(range, new Map([[property, value]])));
+    const selection = bookmark(root, projection.ignored);
+    mutate(range, () => { styleRange(range, properties); if (root) restoreBookmark(root, selection, projection.ignored); });
   }
-  function styleRange(range: Range, properties: ReadonlyMap<string, string>): void { if (root) styleNativeRange(root, range, properties, projection.ignored); }
+  function styleRange(range: Range, properties: ReadonlyMap<string, string>): void { if (root) styleNativeRange(root, range, properties, projection.ignored, projection.setStyles); }
   function button(label: string, action: () => void): void {
     const control = document.createElement("button"); control.type = "button"; control.textContent = label;
     control.addEventListener("mousedown", (event) => event.preventDefault(), { signal: controls.signal });
     control.addEventListener("click", () => { try { action(); } catch (reason) { report(reason); } }, { signal: controls.signal }); toolbar.append(control);
   }
-  button("加粗", () => format("font-weight", "700")); button("常规字重", () => format("font-weight", "400"));
-  button("斜体", () => format("font-style", "italic")); button("下划线", () => format("text-decoration", "underline")); button("深蓝色", () => format("color", "#1f4b99"));
+  button("加粗", () => toggle("bold")); button("常规字重", () => format("font-weight", "400"));
+  button("斜体", () => toggle("italic")); button("下划线", () => toggle("underline")); button("深蓝色", () => format("color", "#1f4b99"));
   const size = document.createElement("select"); size.setAttribute("aria-label", "字号");
   for (const value of [9, 10, 11, 12, 14, 16, 18, 24]) { const option = document.createElement("option"); option.value = value + "pt"; option.textContent = value + " 磅"; size.append(option); }
   size.value = "12pt"; size.addEventListener("change", () => format("font-size", size.value), { signal: controls.signal }); toolbar.append(size);
-  for (const [label, alignment] of [["左对齐", "left"], ["居中", "center"], ["右对齐", "right"]] as const) button(label, () => {
+  function align(alignment: "left" | "center" | "right"): void {
     if (!root || composing) return;
+    root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
     const range = selectedRange(); if (!range) return;
     const nodes = [...root.querySelectorAll<HTMLElement>(blockSelector)].filter((node) => range.intersectsNode(node) && node.dataset.nodeId);
     if (!nodes.length) return;
@@ -199,7 +231,8 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const candidate = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: revision,
       operations: nodes.map((node) => ({ op: "setStyle" as const, nodeId: node.dataset.nodeId!, property: "text-align", value: alignment })) });
     try { session.commit(candidate); } catch (reason) { session.discard(candidate); throw reason; }
-  });
+  }
+  for (const [label, alignment] of [["左对齐", "left"], ["居中", "center"], ["右对齐", "right"]] as const) button(label, () => align(alignment));
   button("撤销输入", () => { session.undo(); }); button("重做输入", () => { session.redo(); });
 
   function paste(event: ClipboardEvent): void {
@@ -255,10 +288,11 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   function keydown(event: KeyboardEvent): void {
     if (!root || composing) return;
     const key = event.key.toLowerCase();
-    if ((event.ctrlKey || event.metaKey) && ["z", "b", "i", "u"].includes(key)) {
+    if ((event.ctrlKey || event.metaKey) && ["z", "y", "b", "i", "u", "e", "l", "r"].includes(key)) {
       event.preventDefault();
-      try { if (key === "z") { if (event.shiftKey) session.redo(); else session.undo(); }
-        else format(key === "b" ? "font-weight" : key === "i" ? "font-style" : "text-decoration", key === "b" ? "700" : key === "i" ? "italic" : "underline"); }
+      try { if (key === "z" || key === "y") { if (event.shiftKey || key === "y") session.redo(); else session.undo(); }
+        else if (["e", "l", "r"].includes(key)) align(key === "e" ? "center" : key === "l" ? "left" : "right");
+        else toggle(key === "b" ? "bold" : key === "i" ? "italic" : "underline"); }
       catch (reason) { report(reason); } return;
     }
     const range = selectedRange(); if (!range) return;
@@ -301,6 +335,8 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     root.contentEditable = "true"; root.setAttribute("data-office-editor", ""); root.setAttribute("role", "textbox"); root.setAttribute("aria-label", "文档正文"); root.setAttribute("aria-multiline", "true"); root.spellcheck = false;
     for (const marker of root.querySelectorAll<HTMLElement>(".sdk-number-marker,[data-word-tab]")) marker.contentEditable = "false";
     projection.capture(root, source);
+    bindWordLineSelection(frame, root, { signal: viewControls.signal, enabled: () => !disposed && !composing, ignored: projection.ignored,
+      layout: () => preview.layout(), setup: () => wordMetadata().pageSetup, changed() { if (root) savedSelection = bookmark(root, projection.ignored); notifyFormat(); } });
     if (!frame.querySelector("style[data-sdk-input]")) {
       const viewStyle = frame.createElement("style"); viewStyle.setAttribute("data-sdk-input", "");
       viewStyle.textContent = "[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all}"; frame.head.append(viewStyle);
@@ -326,7 +362,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     root.addEventListener("copy", ((event: ClipboardEvent) => copy(event, false)) as EventListener, { signal: viewControls.signal });
     root.addEventListener("cut", ((event: ClipboardEvent) => copy(event, true)) as EventListener, { signal: viewControls.signal });
     root.addEventListener("drop", (event) => { event.preventDefault(); report(new DocumentError("UnsupportedFeature", "请通过粘贴或宿主资源接口插入内容。")); }, { signal: viewControls.signal });
-    root.addEventListener("compositionstart", () => { composing = true; compositionRevision = revision; }, { signal: viewControls.signal });
+    root.addEventListener("compositionstart", () => { composing = true; compositionRevision = revision; notifyFormat(); }, { signal: viewControls.signal });
     root.addEventListener("compositionend", () => { queueMicrotask(() => {
       if (disposed || !root || !frame) return;
       composing = false;
@@ -339,17 +375,49 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }); }, { signal: viewControls.signal });
   }
   const unsubscribe = session.subscribe((event) => { if (event.type !== "error" && !committing && !disposed && !composing) refresh(); });
-  const preview = mountDocumentPreview(stage, session, { ...options, title: "正文编辑" });
+  const preview = mountDocumentPreview(plane, session, { ...options, title: "正文编辑" });
+  let zoom = 1;
+  const rulers = mountWordRulers(stage, preview.element, () => root, () => preview.layout(), () => wordMetadata().pageSetup);
+  function resizePlane(anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom)): void {
+    if (disposed || !stage.clientWidth) return;
+    const word = wordMetadata(), minimum = Math.max(word.pageSetup.width, ...word.sections.map(section => (section.pageSetup ?? word.pageSetup).width)) * 4 / 3 + 48;
+    const viewportWidth = Math.max(stage.clientWidth, minimum) + "px"; if (preview.element.style.width !== viewportWidth) preview.element.style.width = viewportWidth;
+    preview.element.style.transformOrigin = "0 0"; preview.element.style.transform = `scale(${zoom})`;
+    const width = preview.element.offsetWidth * zoom + "px", height = preview.element.offsetHeight * zoom + "px";
+    if (plane.style.width !== width) plane.style.width = width; if (plane.style.height !== height) plane.style.height = height;
+    restoreZoomAnchor(stage, plane, zoom, anchor); rulers.refresh();
+  }
+  function setZoom(value: number): void {
+    if (disposed || !Number.isFinite(value) || value < .5 || value > 2) throw new DocumentError("InvalidOperation", "缩放范围为 50% 至 200%。");
+    const anchor = captureZoomAnchor(stage, plane, zoom); zoom = value; resizePlane(anchor);
+  }
+  const geometryObserver = new ResizeObserver(() => resizePlane()); geometryObserver.observe(stage); geometryObserver.observe(preview.element);
   const ready = preview.ready.then(() => {
     if (disposed) return;
     frame = preview.element.contentDocument!; root = rootElement(frame);
     const source = rootElement(new DOMParser().parseFromString(initial.html, "text/html"));
     activate(source);
     if (revision !== session.snapshot().manifest.revision) refresh();
-    frame.addEventListener("selectionchange", () => { if (root) savedSelection = bookmark(root, projection.ignored) ?? savedSelection; }, { signal: controls.signal });
+    resizePlane(); notifyFormat();
+    frame.addEventListener("selectionchange", () => { if (root) { const next = bookmark(root, projection.ignored); if (!composing && typingAnchor && next && JSON.stringify(next) !== typingAnchor) { typingStyles.clear(); typingAnchor = undefined; } savedSelection = next ?? savedSelection; notifyFormat(); } }, { signal: controls.signal });
   }).catch((reason: unknown) => { report(reason); throw reason; });
-  return { element, ready, layout: () => preview.layout(), focus: () => { root?.focus(); }, dispose: () => {
-    if (disposed) return; disposed = true; unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
+  return { element, ready, async settled() { await ready; const result = await preview.settled(); resizePlane(); return result; }, formatState, setZoom, setRulers(visible) { const anchor = captureZoomAnchor(stage, plane, zoom); rulers.setVisible(visible); resizePlane(anchor); }, selection() {
+    const range = selectedRange(); if (!frame || !range || range.collapsed || composing || disposed) return undefined;
+    const anchor = new PreviewSource(frame, session).textAnchor(range, session); if (!anchor) return undefined;
+    const manifest = session.snapshot().manifest; return { documentId: manifest.documentId, baseRevision: manifest.revision, anchor };
+  }, clipboard(action) {
+    if (!root || disposed || composing) return Promise.reject(new DocumentError("InvalidOperation", "正文尚不可编辑。"));
+    const expected = revision, selection = JSON.stringify(bookmark(root, projection.ignored));
+    return executeClipboard(root, () => { root?.focus(); if (root) restoreBookmark(root, savedSelection, projection.ignored); }, action, () => !disposed && !composing && revision === expected && (!root || JSON.stringify(bookmark(root, projection.ignored)) === selection));
+  }, layout: () => preview.layout(), focus: () => { root?.focus(); }, execute(command) {
+    if (disposed || !root || composing) throw new DocumentError("InvalidOperation", "请等待正文输入就绪或完成输入法组合。");
+    if (command?.type === "toggle" && ["bold", "italic", "underline"].includes(command.property)) toggle(command.property);
+    else if (command?.type === "format" && ["font-weight", "font-style", "text-decoration", "color", "font-size", "font-family"].includes(command.property) && typeof command.value === "string") format(command.property, command.value);
+    else if (command?.type === "align" && ["left", "center", "right"].includes(command.value)) align(command.value);
+    else throw new DocumentError("InvalidOperation", "未知正文格式命令。");
+    notifyFormat();
+  }, dispose: () => {
+    if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
     root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

@@ -17,18 +17,18 @@ export function WorkbookWorkbench(props: WorkbookWorkbenchProps): ReactElement {
   useEffect(() => {
     if (!container.current) return;
     const view = mountWorkbookWorkbench(container.current, props.session, {
-      ...(props.title !== undefined ? { title: props.title } : {}), ...(props.widthPt !== undefined ? { widthPt: props.widthPt } : {}), ...(props.heightPt !== undefined ? { heightPt: props.heightPt } : {}),
+      ...(props.appearance ? { appearance: props.appearance } : {}), ...(props.title !== undefined ? { title: props.title } : {}), ...(props.widthPt !== undefined ? { widthPt: props.widthPt } : {}), ...(props.heightPt !== undefined ? { heightPt: props.heightPt } : {}),
       ...(props.locale !== undefined ? { locale: props.locale } : {}), ...(props.limits ? { limits: props.limits } : {}), ...(props.scope ? { scope: props.scope } : {}), ...(props.allowGlobalScope !== undefined ? { allowGlobalScope: props.allowGlobalScope } : {}),
       ...(props.readRanges ? { readRanges: props.readRanges } : {}), ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}), ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
       ...(props.prepareOptions ? { prepareOptions: () => latest.current.prepareOptions!() } : {}),
       ...(props.confirmValidationWarnings ? { confirmValidationWarnings: confirmation => latest.current.confirmValidationWarnings!(confirmation) } : {}),
       ...(hasSubmission ? { onSubmitAnnotations: (request, context) => latest.current.onSubmitAnnotations!(request, context) } : {}),
-      onError: error => latest.current.onError?.(error), onSelectionChange: selection => latest.current.onSelectionChange?.(selection), onPendingChange: pending => latest.current.onPendingChange?.(pending), onEvent: event => latest.current.onEvent?.(event),
+      onCommandStateChange: commands => latest.current.onCommandStateChange?.(commands), onFormatStateChange: state => latest.current.onFormatStateChange?.(state), onError: error => latest.current.onError?.(error), onSelectionChange: selection => latest.current.onSelectionChange?.(selection), onPendingChange: pending => latest.current.onPendingChange?.(pending), onEvent: event => latest.current.onEvent?.(event),
     });
     try { latest.current.onViewChange?.(view); } catch (error) { view.dispose(); throw error; }
     void view.ready.catch(() => { /* The ordinary workbench reports errors. */ });
     return () => { view.dispose(); latest.current.onViewChange?.(undefined); };
-  }, [props.session, props.title, props.widthPt, props.heightPt, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), Boolean(props.confirmValidationWarnings), hasSubmission]);
+  }, [props.session, props.appearance, props.title, props.widthPt, props.heightPt, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), Boolean(props.confirmValidationWarnings), hasSubmission]);
   return createElement("div", { ref: container, className: props.className });
 }
 import { mountDocumentWorkbench } from "./workbench.js";
@@ -49,15 +49,15 @@ export function PresentationWorkbench(props:PresentationWorkbenchProps):ReactEle
   useEffect(()=>{
     if(!container.current)return;
     const view=mountPresentationWorkbench(container.current,props.session,{
-      ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),...(props.presentationSurfaceId?{presentationSurfaceId:props.presentationSurfaceId}:{}),...(props.appearance?{appearance:props.appearance}:{}),
+      ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),...(props.presentationSurfaceId?{presentationSurfaceId:props.presentationSurfaceId}:{}),...(props.appearance?{appearance:props.appearance}:{}),...(props.annotationTrigger?{annotationTrigger:props.annotationTrigger}:{}),
       ...(props.supportedOperations?{supportedOperations:props.supportedOperations}:{}),...(props.contextLimits?{contextLimits:props.contextLimits}:{}),...(props.proposalResources?{proposalResources:props.proposalResources}:{}),
       ...(hasSubmission?{onSubmitAnnotations:request=>latest.current.onSubmitAnnotations!(request)}:{}),
-      onSelectionChange:selection=>latest.current.onSelectionChange?.(selection),onError:error=>latest.current.onError?.(error),onInputRecovery:text=>latest.current.onInputRecovery?.(text),onEvent:event=>latest.current.onEvent?.(event),
+      onCommandStateChange:commands=>latest.current.onCommandStateChange?.(commands),onFormatStateChange:state=>latest.current.onFormatStateChange?.(state),onSelectionChange:selection=>latest.current.onSelectionChange?.(selection),onError:error=>latest.current.onError?.(error),onInputRecovery:text=>latest.current.onInputRecovery?.(text),onEvent:event=>latest.current.onEvent?.(event),
     });
     try{latest.current.onViewChange?.(view);}catch(error){view.dispose();throw error;}
     void view.ready.catch(()=>{/* The JS workbench reports rendering failures. */});
     return()=>{view.dispose();latest.current.onViewChange?.(undefined);};
-  },[props.session,props.title,props.layout,props.limits,props.presentationSurfaceId,props.supportedOperations,props.contextLimits,props.proposalResources,props.appearance,hasSubmission]);
+  },[props.session,props.title,props.layout,props.limits,props.presentationSurfaceId,props.supportedOperations,props.contextLimits,props.proposalResources,props.appearance,props.annotationTrigger,hasSubmission]);
   return createElement("div",{ref:container,className:props.className});
 }
 
@@ -72,9 +72,9 @@ export function PresentationEditor(props:PresentationEditorProps):ReactElement {
     if(!container.current)return;
     const view=mountPresentationEditor(container.current,props.session,{
       ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),
-      onSelectionChange:selection=>latest.current.onSelectionChange?.(selection),onError:error=>latest.current.onError?.(error),onInputRecovery:text=>latest.current.onInputRecovery?.(text),
+      onCommandStateChange:commands=>latest.current.onCommandStateChange?.(commands),onFormatStateChange:state=>latest.current.onFormatStateChange?.(state),onSelectionChange:selection=>latest.current.onSelectionChange?.(selection),onError:error=>latest.current.onError?.(error),onInputRecovery:text=>latest.current.onInputRecovery?.(text),
       ...(props.presentationSurfaceId?{presentationSurfaceId:props.presentationSurfaceId}:{}),
-      ...(props.appearance?{appearance:props.appearance}:{}),
+      ...(props.appearance?{appearance:props.appearance}:{}),...(props.annotationTrigger?{annotationTrigger:props.annotationTrigger}:{}),
     });
     try{latest.current.onViewChange?.(view);}catch(error){view.dispose();throw error;}
     void view.ready.catch(()=>{/* The mounted editor forwards rendering errors through onError. */});
@@ -99,11 +99,13 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
     const workbenchOptions:DocumentWorkbenchOptions={
       ...(props.editable !== undefined ? { editable: props.editable } : {}),
       ...(props.appearance ? { appearance: props.appearance } : {}),
+      ...(props.annotationTrigger ? { annotationTrigger: props.annotationTrigger } : {}),
       ...(props.title ? { title: props.title } : {}),
       ...(props.layout ? { layout: props.layout } : {}), ...(props.limits ? { limits: props.limits } : {}),
       ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}),
       ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
       ...(hasSubmission ? { onSubmitAnnotations: (request) => latest.current.onSubmitAnnotations?.(request) } : {}),
+      onFormatStateChange: state => latest.current.onFormatStateChange?.(state),
       onSelectionChange: (selection) => latest.current.onSelectionChange?.(selection),
       onError: (error) => latest.current.onError?.(error),
       onEvent: (event) => latest.current.onEvent?.(event),
@@ -113,6 +115,10 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
     let active = true;
     void view.ready.catch((error: unknown) => { if (active) latest.current.onError?.(error instanceof Error ? error : new Error("Preview failed.")); });
     return () => { active = false; view.dispose(); latest.current.onViewChange?.(undefined); };
-  }, [props.session, props.title, props.layout, props.limits, props.supportedOperations, props.contextLimits, props.editable, props.appearance, hasSubmission]);
+  }, [props.session, props.title, props.layout, props.limits, props.supportedOperations, props.contextLimits, props.editable, props.appearance, props.annotationTrigger, hasSubmission]);
   return createElement("div", { ref: container, className: props.className });
 }
+
+export { OfficeRibbon } from "./react-office/OfficeRibbon.js";
+export type { OfficeActions, OfficeRibbonProps } from "./react-office/OfficeRibbon.js";
+export { OfficeIcon } from "./react-office/icons.js";

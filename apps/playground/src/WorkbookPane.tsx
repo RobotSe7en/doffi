@@ -1,16 +1,17 @@
 import { useEffect, useRef } from "react";
 import { DocumentError } from "@doffi/core";
 import { mountWorkbookEditor } from "@doffi/editor";
-import type { WorkbookRemoteEditorView } from "@doffi/editor";
+import type { WorkbookRemoteEditorView, EditorCommandState, TextFormatState } from "@doffi/editor";
 import type { HostedWorkbook } from "./open-workbook.js";
 
 interface Mounted { readonly document: HostedWorkbook; readonly slot: HTMLDivElement; readonly editor: WorkbookRemoteEditorView; dispose(): void }
-export function WorkbookPane({ document: hosted, preparing, activation, onReady, onUpdate, onError }: {
+export function WorkbookPane({ document: hosted, preparing, activation, onReady, onUpdate, onError, onEditor, onCommands, onFormat }: {
   document: HostedWorkbook; preparing: boolean; activation?: object | undefined;
+  onEditor(document: HostedWorkbook, editor: WorkbookRemoteEditorView): void; onCommands(document: HostedWorkbook, commands: readonly EditorCommandState[]): void; onFormat(document: HostedWorkbook, state: TextFormatState): void;
   onReady(document: HostedWorkbook): void; onUpdate(document: HostedWorkbook): void; onError(document: HostedWorkbook, error: Error): void;
 }) {
   const container = useRef<HTMLDivElement>(null), active = useRef<Mounted>(undefined), pending = useRef<Mounted>(undefined), changing = useRef(false);
-  const callbacks = useRef({ onReady, onUpdate, onError }); callbacks.current = { onReady, onUpdate, onError };
+  const callbacks = useRef({ onReady, onUpdate, onError, onEditor, onCommands, onFormat }); callbacks.current = { onReady, onUpdate, onError, onEditor, onCommands, onFormat };
   const hidden = useRef(preparing); hidden.current = preparing;
   const resize = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
@@ -34,19 +35,21 @@ export function WorkbookPane({ document: hosted, preparing, activation, onReady,
       // A viewport job started before hiding must not gate its reactivation.
       const editor = active.current.editor;
       const accepted = editor.layout().revision === hosted.session.state().revision ? Promise.resolve() : editor.settled();
-      void accepted.then(() => { if (!cancelled) { changing.current = false; callbacks.current.onReady(hosted); void resize.current(); } }).catch(error => { if (!cancelled) { changing.current = false; callbacks.current.onError(hosted, error instanceof Error ? error : new Error("工作簿显示失败。")); } });
+      void accepted.then(() => { if (!cancelled) { changing.current = false; callbacks.current.onReady(hosted); callbacks.current.onEditor(hosted, editor); void resize.current(); } }).catch(error => { if (!cancelled) { changing.current = false; callbacks.current.onError(hosted, error instanceof Error ? error : new Error("工作簿显示失败。")); } });
       return () => { cancelled = true; };
     }
     const slot = container.current!.ownerDocument.createElement("div");
     slot.style.cssText = "position:absolute;inset:0;transform:translateX(-200vw);opacity:0;visibility:hidden;pointer-events:none"; slot.inert = true; slot.setAttribute("aria-hidden", "true"); container.current!.append(slot);
     let mounted: Mounted | undefined;
     try {
-      const editor = mountWorkbookEditor(slot, hosted.session, { widthPt: Math.max(180, container.current!.clientWidth * .75 - 49.5), heightPt: 450,
+      const editor = mountWorkbookEditor(slot, hosted.session, { appearance: "workspace", widthPt: Math.max(180, container.current!.clientWidth * .75 - 49.5), heightPt: 450,
         prepareOptions: () => ({ calculationContext: { now: { unixMilliseconds: Date.now(), utcOffsetMinutes: -new Date().getTimezoneOffset() } } }),
         confirmValidationWarnings(confirmation) {
           return window.confirm(confirmation.warnings.map(warning => `${warning.message}（${warning.sheetId}，行 ${warning.row + 1}，列 ${warning.column + 1}）`).join("\n") + "\n是否仍应用本次更改？");
         },
         onViewChange(snapshot) { if (mounted && (active.current === mounted || pending.current === mounted)) { hosted.acceptView(snapshot); if (active.current === mounted) callbacks.current.onUpdate(hosted); } },
+        onCommandStateChange(commands) { if (mounted && active.current === mounted) callbacks.current.onCommands(hosted, commands); },
+        onFormatStateChange(state) { if (mounted && active.current === mounted) callbacks.current.onFormat(hosted, state); },
         onPendingChange(value) { if (mounted && (active.current === mounted || pending.current === mounted)) hosted.setPendingInput(value); },
         onError(error) { if (mounted && active.current === mounted && !changing.current) callbacks.current.onError(hosted, error); },
       });
@@ -58,7 +61,7 @@ export function WorkbookPane({ document: hosted, preparing, activation, onReady,
         if (active.current?.editor.hasPendingInput()) throw new DocumentError("InvalidOperation", "请先确认或取消当前单元格输入或操作，再切换文档。");
         const previous = active.current; active.current = current; pending.current = undefined;
         slot.style.cssText = "position:relative"; slot.inert = false; slot.removeAttribute("aria-hidden"); previous?.dispose();
-        changing.current = false; callbacks.current.onReady(hosted); void resize.current();
+        changing.current = false; callbacks.current.onReady(hosted); callbacks.current.onEditor(hosted, editor); void resize.current();
       }).catch(error => {
         if (cancelled) return; current.dispose(); if (pending.current === current) pending.current = undefined;
         changing.current = false; callbacks.current.onError(hosted, error instanceof Error ? error : new Error("工作簿显示失败。"));

@@ -1,3 +1,4 @@
+import type { TextFormatState } from "./text-format-state.js";
 import { DocumentError, parseContract } from "@doffi/core";
 import type {
   AnnotationSubmissionHandler, CandidateChange, DocumentInteractionRequest, ContentDocumentModel, DocumentSelection,
@@ -9,7 +10,7 @@ import type { DocumentInteractionOptions, DocumentInteractionView } from "./inte
 import { mountDocumentPreview } from "./preview.js";
 import type { DocumentPreview } from "./preview.js";
 import { mountDocumentTextEditor } from "./rich-text.js";
-import type { DocumentTextEditor } from "./rich-text.js";
+import type { DocumentTextCommand, DocumentTextEditor } from "./rich-text.js";
 import { mountPresentationWorkbench } from "./presentation-workbench.js";
 import type { PresentationWorkbenchOptions,PresentationWorkbenchView } from "./presentation-workbench.js";
 import { createLayoutFieldTransaction } from "@doffi/render";
@@ -31,6 +32,7 @@ export type DocumentWorkbenchEvent =
   | { readonly type: "annotationsSubmitted"; readonly request: DocumentInteractionRequest }
   | { readonly type: "proposalReady"; readonly proposal: EditProposal; readonly candidate: CandidateChange };
 export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
+  readonly onFormatStateChange?: (state: TextFormatState) => void;
   readonly format?:"document";
   readonly editable?: boolean;
   readonly onSubmitAnnotations?: AnnotationSubmissionHandler;
@@ -39,6 +41,11 @@ export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
   readonly onEvent?: (event: DocumentWorkbenchEvent) => void;
 }
 export interface DocumentWorkbenchView extends DocumentInteractionView {
+  setEditing(editing: boolean): Promise<void>;
+  formatState(): TextFormatState;
+  clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
+  executeTextCommand(command: DocumentTextCommand): void;
+  updateFields(): void;
   request(): DocumentInteractionRequest | undefined;
   buildRequest(annotationIds?: readonly string[]): DocumentInteractionRequest;
   submitAnnotations(annotationIds?: readonly string[]): Promise<void>;
@@ -68,16 +75,21 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
   style.textContent = ":host{display:block;font:14px system-ui;color:#20252b}button,input{font:inherit}button{padding:6px 10px;cursor:pointer}button:disabled{cursor:default}section{margin:16px 0;padding:12px;border:1px solid #d5dbe2}h2{font-size:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}label{display:block;margin:8px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}li{margin:12px 0}.error{color:#a00000}.candidate{max-height:60vh;overflow:auto}button:focus-visible,input:focus-visible{outline:2px solid #245aa5;outline-offset:2px}";
   const workspace = options.appearance === "workspace";
   if (workspace) style.textContent += workspaceControls + `
-    :host{background:#f2f5f1}.editing-controls{display:flex;gap:6px;padding:10px 20px 0;background:#fcfdfb}
-    section{margin:0;padding:10px 20px;border:0;border-bottom:1px solid #e1e8df;background:#fcfdfb}
-    section[aria-label="请求与提案"]{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
-    h2{font-size:11px;font-weight:550;margin:0;color:#91a187}.actions{gap:5px;margin:0;flex-wrap:wrap}
-    button{font-size:11px}.actions>button:nth-child(2){background:#eaf2e6;color:#4c7850;border-color:#d8e5ce}
-    label{margin:0;font-size:10px;color:#90a084}.proposal-import{position:relative}.proposal-import input{position:absolute;width:1px;height:1px;opacity:0;clip-path:inset(50%)}
-    details{font-size:10px;color:#8b9c7f}details summary{cursor:pointer}details>div{position:absolute;z-index:20;max-width:350px;max-height:200px;overflow:auto;padding:12px;background:white;border:1px solid #dfe7da;border-radius:6px;box-shadow:0 5px 20px #23432112}details label{display:flex;align-items:flex-start;gap:6px;margin:8px 0;line-height:1.7}
-    p[aria-label="协作状态"]:empty{display:none}p[aria-label="协作状态"]{font-size:10px;color:#809774;margin:0}
-    section[aria-label="提案差异"]{width:100%;max-height:65vh;overflow:auto;border:1px solid #d7e4d0;border-radius:6px;background:#f5f8f2;margin:8px 0;padding:15px}
-    section[aria-label="提案差异"] h2{font-size:13px;color:#547846}.candidate{background:#eef2eb}.error{width:100%;margin:0}
+    :host{background:#f2f5fa}.editing-controls{display:var(--doffi-editing-controls,flex);gap:4px;padding:5px 16px;background:#fff;border-bottom:1px solid #e0e6f0}.editing-controls button{border-color:transparent;color:#526b92}.editing-controls button:first-child{background:#eaf1ff;color:#175ce5}
+    section{margin:0;padding:5px 16px;border:0;border-bottom:1px solid #e0e6f0;background:#f8faff}
+    section[aria-label="请求与提案"]{display:var(--doffi-collaboration-controls,flex);align-items:center;flex-wrap:wrap;gap:8px 12px}
+    h2{font-size:11px;font-weight:550;margin:0;color:#8596b0}.actions{gap:5px;margin:0;flex-wrap:wrap}
+    button{font-size:11px;padding:5px 8px}.actions>button:nth-child(2){background:#eaf1ff;color:#3567b6;border-color:#cdddf7}
+    label{margin:0;font-size:10px;color:#8193ae}.proposal-import{position:relative}.proposal-import input{position:absolute;width:1px;height:1px;opacity:0;clip-path:inset(50%)}
+    details{font-size:10px;color:#8193ae}details summary{cursor:pointer}details>div{position:absolute;z-index:20;max-width:350px;max-height:200px;overflow:auto;padding:12px;background:white;border:1px solid #e0e6f0;border-radius:6px;box-shadow:0 5px 20px #23437112}details label{display:flex;align-items:flex-start;gap:6px;margin:8px 0;line-height:1.7}
+    p[aria-label="协作状态"]:empty{display:none}p[aria-label="协作状态"]{font-size:10px;color:#8193ae;margin:0}
+    section[aria-label="提案差异"]{width:100%;max-height:65vh;overflow:auto;border:1px solid #d4e0f5;border-radius:6px;background:#f3f7ff;margin:8px 0;padding:15px}
+    section[aria-label="提案差异"] h2{font-size:13px;color:#5274a8}.candidate{background:#edf2fa}.error{width:100%;margin:0}
+    :host([data-editing=true]){display:grid;grid-template-columns:minmax(0,1fr) var(--doffi-annotations-width,240px)}
+    :host([data-editing=true])>.editing-controls,:host([data-editing=true])>section{grid-column:1/-1}
+    :host([data-editing=true])>.editing-host{min-width:0;grid-column:1}
+    :host([data-editing=true])>.interaction-host{min-width:0;grid-column:2;--doffi-interaction-controls:none;--doffi-preview-stage:none;--doffi-interaction-columns:minmax(0,1fr)}
+    @media(max-width:800px){:host([data-editing=true]){grid-template-columns:minmax(0,1fr)}:host([data-editing=true])>.interaction-host{grid-column:1}}
     @media(max-width:680px){.editing-controls{padding:9px 12px 0}section{padding:9px 12px}.actions{gap:4px}.actions button{font-size:10px;padding:5px 6px}}
   `;
   const interactionHost = document.createElement("div"), collaboration = document.createElement("section");
@@ -91,7 +103,7 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
   if (workspace) { const details = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "选择提交的批注"; details.append(summary, choices); collaboration.append(heading, actions, details, status, error, diff); }
   else collaboration.append(heading, choices, actions, status, error, diff);
   const editingControls = document.createElement("div"), editingHost = document.createElement("div"); editingHost.hidden = true;
-  editingControls.className = "editing-controls";
+  editingControls.className = "editing-controls"; editingHost.className = "editing-host"; interactionHost.className = "interaction-host";
   if (workspace) shadow.append(style, editingControls, collaboration, editingHost, interactionHost);
   else shadow.append(style, editingControls, editingHost, interactionHost, collaboration);
   container.append(element);
@@ -125,27 +137,37 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
   }
   const interaction = mountDocumentInteraction(interactionHost, session, {
     ...(options.layout ? { layout: options.layout } : {}), ...(options.limits ? { limits: options.limits } : {}),
-    ...(options.title ? { title: options.title } : {}),
+    ...(options.title ? { title: options.title } : {}), ...(options.annotationTrigger ? { annotationTrigger: options.annotationTrigger } : {}),
     ...(options.appearance ? { appearance: options.appearance } : {}),
     onSelectionChange: (selection) => { options.onSelectionChange?.(selection); notify({ type: "selectionChanged", selection }); },
     onError: report,
   });
-  if (options.editable !== false) {
-    const edit = button("编辑正文", () => {
+  let edit: HTMLButtonElement | undefined, zoom = 1, rulerVisible = false;
+  function setRulers(visible: boolean): void { ensureActive(); rulerVisible = visible; interaction.setRulers(visible); textEditor?.setRulers(visible); }
+  function setZoom(value: number): void { ensureActive(); if (textEditor) textEditor.setZoom(value); else interaction.setZoom(value); zoom = value; }
+  function setEditing(value: boolean): Promise<void> {
+    ensureActive();
+    if (value && options.editable === false) throw new DocumentError("InvalidOperation", "当前工作台未开放正文编辑。");
+    if (value === Boolean(textEditor)) return textEditor?.ready ?? Promise.resolve();
       if (textEditor) {
-        textEditor.dispose(); textEditor = undefined; editingHost.hidden = true; interactionHost.hidden = false; edit.textContent = "编辑正文";
+        textEditor.dispose(); textEditor = undefined; editingHost.hidden = true; interactionHost.hidden = false; delete element.dataset.editing; interaction.setZoom(zoom); if (edit) edit.textContent = "编辑正文";
       } else {
-        textEditor = mountDocumentTextEditor(editingHost, session, { ...(options.layout ? { layout: options.layout } : {}), ...(options.limits ? { limits: options.limits } : {}), ...(options.appearance ? { appearance: options.appearance } : {}), onError: report });
-        editingHost.hidden = false; interactionHost.hidden = true; edit.textContent = "返回预览与批注";
-        void textEditor.ready.catch(report);
+        textEditor = mountDocumentTextEditor(editingHost, session, { ...(options.onFormatStateChange ? { onFormatStateChange: options.onFormatStateChange } : {}), ...(options.layout ? { layout: options.layout } : {}), ...(options.limits ? { limits: options.limits } : {}), ...(options.appearance ? { appearance: options.appearance } : {}), onError: report });
+        textEditor.setZoom(zoom); textEditor.setRulers(rulerVisible); editingHost.hidden = false; interactionHost.hidden = !workspace; element.dataset.editing = "true"; if (edit) edit.textContent = "返回预览与批注";
       }
-    }, editingControls);
-    button("更新页码与目录", () => {
+    if (!textEditor) options.onFormatStateChange?.({ enabled: false });
+    return textEditor?.ready ?? interaction.settled().then(() => {});
+  }
+  function updateFields(): void {
+      ensureActive();
       const layout = textEditor?.layout() ?? interaction.layout();
       if (!layout?.pages.length) throw new DocumentError("InvalidOperation", "请等待页面布局完成。");
       const prepared = session.prepare(createLayoutFieldTransaction(session, layout));
       try { session.commit(prepared); } catch (reason) { session.discard(prepared); throw reason; }
-    }, editingControls);
+  }
+  if (options.editable !== false) {
+    edit = button("编辑正文", () => { void setEditing(!textEditor).catch(report); }, editingControls);
+    button("更新页码与目录", updateFields, editingControls);
   }
   function update(): void {
     if (disposed) return;
@@ -280,7 +302,10 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
   update();
   return {
     element, get ready() { return Promise.all([interaction.ready, candidateReady, textEditor?.ready]).then(() => {}); },
-    selection: interaction.selection, fonts: interaction.fonts, layout: () => textEditor?.layout() ?? interaction.layout(), setMode: interaction.setMode, setZoom: interaction.setZoom, focusAnnotation: interaction.focusAnnotation,
+    settled: () => textEditor ? textEditor.settled() : interaction.settled(),
+    clipboard(action) { ensureActive(); if (!textEditor) return Promise.reject(new DocumentError("InvalidOperation", "请先进入正文编辑。")); return textEditor.clipboard(action); },
+    setEditing, updateFields, formatState: () => textEditor?.formatState() ?? { enabled: false }, executeTextCommand(command) { ensureActive(); if (!textEditor) throw new DocumentError("InvalidOperation", "请先进入正文编辑模式。"); textEditor.execute(command); },
+    selection: () => textEditor ? textEditor.selection() : interaction.selection(), fonts: interaction.fonts, layout: () => textEditor?.layout() ?? interaction.layout(), setMode: interaction.setMode, setZoom, setRulers, focusAnnotation: interaction.focusAnnotation, startAnnotation: interaction.startAnnotation,
     request: () => activeRequest, buildRequest, submitAnnotations, loadProposal, applyProposal, rejectProposal,
     dispose: () => {
       if (disposed) return;

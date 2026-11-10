@@ -9,6 +9,7 @@ export interface WorkbookTextBindingOptions {
   readonly prepareOptions?: () => TransactionPrepareOptions;
   readonly onApplied?: (receipt: TransactionReceipt) => void;
   readonly onCancelled?: () => void;
+  readonly onEditingChange?: (editing: boolean) => void;
   readonly onNavigate?: (direction: WorkbookNavigationDirection, extend: boolean) => void;
   readonly onHistory?: (direction: "undo" | "redo") => void;
   readonly onClear?: (selection: DocumentSelection) => void;
@@ -43,10 +44,11 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
   const view = input?.ownerDocument?.defaultView;
   if (!view || !(input instanceof view.HTMLTextAreaElement) || !input.isConnected) throw new DocumentError("InvalidOperation", "Workbook text binding requires a connected native textarea.");
   if (!options || typeof options !== "object" || Array.isArray(options)
-    || Object.keys(options).some(key => !["prepareOptions", "onApplied", "onCancelled", "onNavigate", "onHistory", "onClear", "onPaste", "onCopy", "onError"].includes(key))
+    || Object.keys(options).some(key => !["prepareOptions", "onApplied", "onCancelled", "onEditingChange", "onNavigate", "onHistory", "onClear", "onPaste", "onCopy", "onError"].includes(key))
     || Object.values(options).some(value => value !== undefined && typeof value !== "function")) throw new DocumentError("InvalidOperation", "Invalid workbook text binding options.");
   const abort = new view.AbortController(), events = { signal: abort.signal };
   let disposed = false, editing = false;
+  function setEditing(value: boolean): void { if (editing === value) return; editing = value; notify(options.onEditingChange, value); }
   function check(): void { if (disposed) throw new DocumentError("InvalidOperation", "This workbook text binding has been disposed."); }
   function report(error: unknown): void {
     const detail = error instanceof DocumentError ? error : new DocumentError("InvalidOperation", error instanceof Error ? error.message : "Workbook input failed.");
@@ -58,7 +60,7 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
   function refresh(): void {
     check(); const state = controller.state();
     const visible = workbookInputTextView(state.text); if (input.value !== visible) input.value = visible;
-    if (!state.dirty && !state.composing) editing = false;
+    if (!state.dirty && !state.composing) setEditing(false);
   }
   function complete(receipt: Receipt): Receipt {
     if (!disposed) {
@@ -80,12 +82,12 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
     return complete(receipt);
   }
   input.addEventListener("input", () => {
-    editing = true;
+    setEditing(true);
     try { controller.setText(reconcileWorkbookInputText(controller.state().text, input.value)); } catch (error) { report(error); }
   }, events);
-  input.addEventListener("pointerdown", () => { editing = true; }, events);
+  input.addEventListener("pointerdown", () => { setEditing(true); }, events);
   input.addEventListener("compositionstart", () => {
-    try { controller.compositionStart(); editing = true; } catch (error) { report(error); }
+    try { controller.compositionStart(); setEditing(true); } catch (error) { report(error); }
   }, events);
   input.addEventListener("compositionend", () => {
     try { controller.compositionEnd(reconcileWorkbookInputText(controller.state().text, input.value)); } catch (error) { report(error); }
@@ -109,13 +111,13 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
     if (event.isComposing || event.keyCode === 229 || state.composing) return;
     const command = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
     if (key === "escape") { event.preventDefault(); try { controller.cancel(); refresh(); input.select(); notify(options.onCancelled); } catch (error) { report(error); } return; }
-    if (key === "f2") { event.preventDefault(); editing = true; input.setSelectionRange(input.value.length, input.value.length); return; }
+    if (key === "f2") { event.preventDefault(); setEditing(true); input.setSelectionRange(input.value.length, input.value.length); return; }
     if (key === "enter" && event.altKey && !command) {
       event.preventDefault();
       try {
         const from = input.selectionStart, to = input.selectionEnd;
         controller.setText(reconcileWorkbookInputText(controller.state().text, input.value.slice(0, from) + "\n" + input.value.slice(to)));
-        input.setRangeText("\n", from, to, "end"); editing = true;
+        input.setRangeText("\n", from, to, "end"); setEditing(true);
       } catch (error) { report(error); }
       return;
     }
@@ -147,7 +149,7 @@ function bindInput<Receipt>(input: HTMLTextAreaElement, controller: InputDriver<
       check(); if (typeof selectAll !== "boolean") throw new DocumentError("InvalidOperation", "Invalid workbook input focus mode.");
       // Firefox can otherwise retain keyboard focus in the preview iframe
       // even after the parent shadow textarea reports itself focused.
-      view!.focus(); input.focus({ preventScroll: true }); editing = !selectAll;
+      view!.focus(); input.focus({ preventScroll: true }); setEditing(!selectAll);
       if (selectAll) input.select(); else input.setSelectionRange(input.value.length, input.value.length);
     },
     apply,

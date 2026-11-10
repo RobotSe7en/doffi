@@ -16,6 +16,8 @@ import type { WorkbookSelectionNavigation } from "./selection-navigation.js";
 import { workbookRowInvalidation } from "./row-invalidation.js";
 import { DEFAULT_AUTO_ROW_LIMITS } from "./auto-rows.js";
 import { waitForWorkbookRead } from "./read-cancellation.js";
+import { WorkbookCellSources } from "./cell-source.js";
+import { createSourceStyleResolver, sourceStyleProjection } from "../source-style-probe.js";
 
 interface PreviewWindow { readonly controls: WorkbookPreviewDecoration; commitChrome(): void }
 interface PreviewContext {
@@ -60,7 +62,9 @@ function reportOf(window: WorkbookRenderedWindow): WorkbookRenderReport {
 /** One preview owns its surfaces, candidates and format caches. Authorized
  * providers (including their Worker) remain owned by the host. */
 export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPreviewInput, options: WorkbookPreviewOptions = {}): WorkbookPreview {
-  if (Object.keys(options).some(key => !["title", "widthPt", "heightPt", "sheetId", "locale", "retainSelection", "limits", "onError", "onSelectionChange"].includes(key))
+  const cellStyles = new WeakMap<WorkbookRenderedWindow, Map<number, Readonly<Record<string, string>>>>();
+  const sourceStyles = new WeakMap<Document, ReturnType<typeof createSourceStyleResolver>>();
+  if (Object.keys(options).some(key => !["title", "widthPt", "heightPt", "sheetId", "locale", "retainSelection", "limits", "onError", "onCellActivate", "onSelectionChange"].includes(key))
     || options.retainSelection !== undefined && typeof options.retainSelection !== "boolean")
     throw new DocumentError("InvalidOperation", "Workbook preview received an unsupported option.");
   const config = { ...options, limits: { ...options.limits, read: { ...options.limits?.read }, cells: { ...options.limits?.cells },
@@ -264,6 +268,10 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
             if (!cell) return;
             selectSourceRange(merges.at(cell.row, cell.column) ?? { from: cell, to: cell });
           }), { signal: events.signal });
+          window.element.addEventListener("dblclick", event => attempt(() => {
+            if (active?.controller.current?.element !== window.element || !selection || (event.target as Element).closest('button,[data-office-view="workbook-preview-comments"],[data-office-view="workbook-drawings"]')) return;
+            config.onCellActivate?.(selection);
+          }), { signal: events.signal });
           return { get nodes() { return controls.nodes; }, get fonts() { return controls.fonts; }, dispose() { events.abort(); controls.dispose(); } };
         }, { deferPublication: true, ...(share && rows ? { measurements: share.controller.measurementSeeds(rows),
           // Conditional appearances can change without changing source HTML;
@@ -298,6 +306,28 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
   }
   try { update(input); } catch (error) { chrome.dispose(); throw error; }
   return Object.freeze({ kind: "workbook", element: chrome.element, ready, snapshot: () => current().context.snapshot,
+    cellTextStyle(at: WorkbookCoordinate) {
+      const point = WorkbookCoordinateSchema.safeParse(at); if (!point.success) throw new DocumentError("InvalidOperation", "Invalid cell coordinate.");
+      const { window, context } = current(), key = at.row * 16_384 + at.column;
+      if (!window.cells.some(cell => cell.projection.row === at.row && cell.projection.column === at.column)) return undefined;
+      const cached = cellStyles.get(window)?.get(key); if (cached) return cached;
+      // One accepted coordinate, including a blank styled cell. No Worker read,
+      // full-sheet projection or retained source DOM is needed for ribbon state.
+      const sources = new WorkbookCellSources(context.surface.source, context.snapshot, { ...window.frame, sourceCoordinates: [at] }, 50_000, window.rules);
+      try {
+        const element = sources.get(at.row, at.column)!.element, computed = element.ownerDocument.defaultView!.getComputedStyle(element);
+        const values = Object.fromEntries(["font-weight", "font-style", "font-size", "font-family", "color", "text-align", "text-decoration-line", "--office-font-underline", "--office-font-strike", "--office-cell-horizontal", "--office-cell-wrap", "--office-font-east-asia", "--office-font-ascii"].map(name => [name, computed.getPropertyValue(name).trim()]));
+        // Keep exact source points rather than Firefox's quantized computed
+        // pixels. Reuse the existing first-party cascade once per source CSS
+        // document; coordinate/window caches retain no temporary source DOM.
+        let resolver = sourceStyles.get(element.ownerDocument);
+        if (!resolver) { resolver = createSourceStyleResolver(element.ownerDocument); sourceStyles.set(element.ownerDocument, resolver); }
+        const points = parseFloat(resolver.get(sourceStyleProjection(element, true))["font-size"] ?? "");
+        if (Number.isFinite(points) && Math.abs(points - parseFloat(values["font-size"]!) * .75) < .02) values["font-size"] = points * 4 / 3 + "px";
+        const style = Object.freeze(values);
+        let cache = cellStyles.get(window); if (!cache) { cache = new Map(); cellStyles.set(window, cache); } cache.set(key, style); return style;
+      } finally { sources.dispose(); }
+    },
     layout: () => reportOf(current().window), fonts: () => current().window.fonts, selection: () => { check(); return selection; }, settled, update, showSheet, setViewport,
     sourceOffset(at: WorkbookCoordinate) {
       check(); const parsed = WorkbookCoordinateSchema.safeParse(at); if (!parsed.success) throw new DocumentError("InvalidOperation", "Workbook source offsets require a valid coordinate.");

@@ -1,4 +1,8 @@
-import { createOpaqueId, DocumentError } from "@doffi/core";
+import { createWordViewport, mountWordRulers } from "./word-ruler.js";
+import { bindWordLineSelection } from "./line-selection.js";
+import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
+import type { ZoomAnchor } from "./viewport-zoom.js";
+import { AnchorSchema, createOpaqueId, DocumentError } from "@doffi/core";
 import type {
   Anchor, DeepReadonly, DocumentEditingSession, ContentDocumentModel, DocumentOperation, DocumentSelection, Rectangle,
 } from "@doffi/core";
@@ -13,6 +17,7 @@ import type { AnnotationPopover } from "./workspace.js";
 export type DocumentInteractionMode = "text" | "node" | "region";
 export interface DocumentInteractionOptions extends DocumentPreviewOptions {
   readonly appearance?: "default" | "workspace";
+  readonly annotationTrigger?: "selection" | "command";
   readonly onSelectionChange?: (selection: DocumentSelection | undefined) => void;
   readonly onError?: (error: Error) => void;
 }
@@ -20,12 +25,16 @@ export interface DocumentInteractionView {
   readonly element: HTMLElement;
   /** Resolves for the currently rendering revision. Read again after a content commit. */
   readonly ready: Promise<void>;
+  /** Wait for a visible canvas to measure the current revision. */
+  settled(): Promise<DocumentRenderReport>;
   selection(): DocumentSelection | undefined;
   fonts(): readonly FontResolution[];
   layout(): DocumentRenderReport | undefined;
   setMode(mode: DocumentInteractionMode): void;
   setZoom(zoom: number): void;
+  setRulers(visible: boolean): void;
   focusAnnotation(annotationId: string): void;
+  startAnnotation(selection?: DocumentSelection): void;
   /** Releases only this view; the supplied session remains owned by the host. */
   dispose(): void;
 }
@@ -68,18 +77,18 @@ export function mountDocumentInteraction(
   style.textContent = `:host{display:block;color:#20252b;font:14px system-ui,sans-serif}*{box-sizing:border-box}button,select,textarea{font:inherit}button,select{padding:6px 10px}button{cursor:pointer}button:disabled{cursor:default}button[aria-pressed=true]{background:#e5efff;border-color:#245aa5}button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #245aa5;outline-offset:2px}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.stage{overflow:auto;max-height:70vh;border:1px solid #d5dbe2}.panel{padding:12px 0}.composer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}textarea{display:block;width:100%;min-height:64px;padding:8px}.selection{white-space:pre-wrap;overflow-wrap:anywhere}.card{padding:12px;margin-top:10px;border:1px solid #d5dbe2;border-radius:4px}.card p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.error{color:#a00000}.summary{margin:8px 0}h2{font-size:16px;margin:12px 0}`;
   const workspace = options.appearance === "workspace";
   if (workspace) style.textContent += workspaceControls + annotationPopoverStyles + `
-    :host{display:block}.toolbar{gap:6px;margin:0;padding:10px 20px;background:#fcfdfb;border-bottom:1px solid #dfe7df}
-    .workspace-body{display:grid;grid-template-columns:minmax(0,1fr) 258px}
-    .stage{border:0;background:#edf1ee;max-height:calc(100dvh - 420px);min-height:340px;min-width:0}
-    .panel{margin:0;padding:17px 14px;border-left:1px solid #e0e8e0;background:#fafcf9;max-height:calc(100dvh - 420px);min-height:340px;overflow:auto}
-    .panel h2{margin:0 0 10px;font-size:12px;font-weight:600}.summary{font-size:10px;color:#9aa695;margin:0 0 15px}
-    .selection{font-size:10px;color:#8b9b85;max-height:40px;overflow:hidden;line-height:1.7}
-    .card{padding:12px;margin-top:10px;border:1px solid #dfe8dc;border-radius:7px;background:white;box-shadow:0 2px 4px #25422504}
-    .card p{font-size:11px;line-height:1.7}.card p:first-child{font-size:9px;color:#8ba07e;margin:0 0 9px}.card p:nth-child(2){border-left:2px solid #bed0ae;padding-left:8px;color:#93a187;font-size:10px;max-height:65px;overflow:hidden}
-    .actions{gap:4px}.actions button{font-size:9px;padding:4px 6px;border-color:transparent;background:#f4f7f1}
-    .empty-annotations{font-size:11px;color:#9da992;line-height:1.9;padding:26px 8px;text-align:center}
-    @media(max-width:1050px){.workspace-body{grid-template-columns:minmax(0,1fr) 220px}.panel{padding:14px 10px}.toolbar{padding:9px 13px;gap:4px}.toolbar button,.toolbar select{font-size:11px;padding:5px 7px}}
-    @media(max-width:800px){.workspace-body{grid-template-columns:minmax(0,1fr)}.panel{border-left:0;border-top:1px solid #dfe7df;min-height:0;max-height:280px}.stage{max-height:65vh;min-height:330px}}
+    :host{display:block}.toolbar{display:var(--doffi-interaction-controls,flex);gap:5px;margin:0;padding:6px 16px;background:#f8faff;border-bottom:1px solid #e0e6f0}
+    .workspace-body{display:grid;grid-template-columns:var(--doffi-interaction-columns,minmax(0,1fr) var(--doffi-annotations-width,240px))}
+    .stage{display:var(--doffi-preview-stage,block);border:0;background:#eceef1;height:var(--doffi-canvas-height,calc(100dvh - 282px));max-height:var(--doffi-canvas-height,calc(100dvh - 282px));min-height:360px;min-width:0}
+    .panel{display:var(--doffi-annotations-display,block);margin:0;padding:17px 14px;border-left:1px solid #e0e6f0;background:#f9fbfe;height:var(--doffi-canvas-height,calc(100dvh - 282px));max-height:var(--doffi-canvas-height,calc(100dvh - 282px));min-height:360px;overflow:auto}
+    .panel h2{margin:0 0 10px;font-size:12px;font-weight:600}.summary{font-size:10px;color:#96a4b9;margin:0 0 15px}
+    .selection{font-size:10px;color:#8191aa;max-height:40px;overflow:hidden;line-height:1.7}
+    .card{padding:12px;margin-top:10px;border:1px solid #dfe6f1;border-radius:7px;background:white;box-shadow:0 2px 4px #25427504}
+    .card p{font-size:12px;line-height:1.7}.card p:first-child{font-size:10px;color:#8197b6;margin:0 0 9px}.card p:nth-child(2){border-left:2px solid #b8cbed;padding-left:8px;color:#8193ae;font-size:10px;max-height:65px;overflow:hidden}
+    .actions{gap:4px}.actions button{font-size:10px;padding:4px 6px;border-color:transparent;background:#f0f4fb}
+    .empty-annotations{font-size:11px;color:#92a2ba;line-height:1.9;padding:26px 8px;text-align:center}
+    @media(max-width:1350px){.workspace-body{grid-template-columns:minmax(0,1fr) var(--doffi-annotations-width,220px)}.panel{padding:14px 10px}.toolbar{padding:9px 13px;gap:4px}.toolbar button,.toolbar select{font-size:11px;padding:5px 7px}}
+    @media(max-width:800px){.workspace-body{grid-template-columns:minmax(0,1fr)}.panel{border-left:0;border-top:1px solid #e0e6f0;min-height:0;max-height:280px}.stage{height:65vh;max-height:65vh;min-height:330px}.panel{height:auto}}
   `;
   const toolbar = document.createElement("div");
   toolbar.className = "toolbar";
@@ -88,8 +97,9 @@ export function mountDocumentInteraction(
   const stage = document.createElement("div");
   stage.className = "stage";
   const plane = document.createElement("div");
-  plane.style.position = "relative";
+  plane.style.cssText = "position:relative;margin-inline:auto;min-width:0";
   stage.append(plane);
+  const viewport = createWordViewport(stage);
   const panel = document.createElement("section");
   panel.className = "panel";
   panel.setAttribute("aria-label", "文档批注");
@@ -114,15 +124,15 @@ export function mountDocumentInteraction(
   error.setAttribute("role", "alert");
   error.hidden = true;
   panel.append(heading, summary, selectionText, draft, composer, list, error);
-  if (workspace) { const body = document.createElement("div"); body.className = "workspace-body"; body.append(stage, panel); shadow.append(style, toolbar, body); }
-  else shadow.append(style, toolbar, stage, panel);
+  if (workspace) { const body = document.createElement("div"); body.className = "workspace-body"; body.append(viewport, panel); shadow.append(style, toolbar, body); }
+  else shadow.append(style, toolbar, viewport, panel);
   container.append(element);
 
   let disposed = false, mode: DocumentInteractionMode = "text", zoom = 1;
   let selection: DocumentSelection | undefined, activeAnnotation: string | undefined;
   let nativeDragging = false, regionDragging = false;
   let cancelPointerSelection = (): void => { nativeDragging = false; };
-  let source: PreviewSource | undefined, layoutKey = "";
+  let source: PreviewSource | undefined, layoutKey = "", needsVisibleRender = false;
   let preview: ReturnType<typeof mountPreview> | undefined;
   let ready: Promise<void> = Promise.resolve();
   let frameCleanup: (() => void) | undefined;
@@ -135,7 +145,7 @@ export function mountDocumentInteraction(
   let popover: AnnotationPopover | undefined;
   let newComment: HTMLButtonElement | undefined;
 
-  function showComposer(): void { if (selection && !nativeDragging && !regionDragging) popover?.open(); }
+  function showComposer(): void { if (options.annotationTrigger !== "command" && selection && !nativeDragging && !regionDragging) popover?.open(); }
 
   function report(reason: unknown): void {
     if (disposed) return;
@@ -231,8 +241,9 @@ export function mountDocumentInteraction(
     const cancel = button("取消", () => { draft.value = ""; clearSelection(); }, composer);
     cancel.title = "取消批注";
     popover = createAnnotationPopover(shadow, draft, [draft, composer], {
-      bounds: () => stage.getBoundingClientRect(),
+      bounds: () => stage.clientWidth ? stage.getBoundingClientRect() : element.getBoundingClientRect(),
       rect: () => {
+        if (!stage.clientWidth) return undefined;
         const rect = selection && source?.rectangles(selection.anchor).at(-1), frame = preview?.element.getBoundingClientRect();
         return rect && frame ? new DOMRect(frame.left + rect.left * zoom, frame.top + rect.top * zoom, rect.width * zoom, rect.height * zoom) : undefined;
       },
@@ -247,7 +258,7 @@ export function mountDocumentInteraction(
     const focused = shadow.activeElement as HTMLTextAreaElement | null;
     const focusedId = focused?.dataset.editAnnotation;
     const caret = focusedId ? [focused!.selectionStart, focused!.selectionEnd] as const : undefined;
-    summary.textContent = "修订 " + snapshot.manifest.revision + " · 批注 " + snapshot.annotations.length;
+    summary.textContent = workspace ? snapshot.annotations.length + " 条批注" : "修订 " + snapshot.manifest.revision + " · 批注 " + snapshot.annotations.length;
     undo.disabled = history.undoSteps === 0;
     redo.disabled = history.redoSteps === 0;
     cardControls.abort();
@@ -348,7 +359,7 @@ export function mountDocumentInteraction(
   function setZoom(value: number): void {
     if (disposed) return;
     if (!Number.isFinite(value) || value < 0.5 || value > 2) throw new DocumentError("InvalidOperation", "缩放范围为 50% 至 200%。");
-    zoom = value;
+    const anchor = captureZoomAnchor(stage, plane, zoom); zoom = value;
     zoomSelect.querySelector("[data-custom-zoom]")?.remove();
     if (![...zoomSelect.options].some((option) => option.value === String(value))) {
       const option = document.createElement("option");
@@ -358,17 +369,21 @@ export function mountDocumentInteraction(
       zoomSelect.append(option);
     }
     zoomSelect.value = String(value);
-    resizePlane();
+    resizePlane(anchor);
     highlight();
   }
-  function resizePlane(): void {
+  let rulers: ReturnType<typeof mountWordRulers> | undefined, rulerVisible = false;
+  function resizePlane(anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom)): void {
     if (!preview) return;
     // Transform the entire iframe: its viewport, typography and source layout stay unscaled.
-    preview.element.style.width = stage.clientWidth + "px";
+    const metadata = session.snapshot().metadata, word = metadata.presentation ? undefined : metadata;
+    const minimum = word ? Math.max(word.pageSetup.width, ...word.sections.map(section => (section.pageSetup ?? word.pageSetup).width)) * 4 / 3 + 48 : 0;
+    const width = Math.max(stage.clientWidth, minimum) + "px"; if (preview.element.style.width !== width) preview.element.style.width = width;
     preview.element.style.transformOrigin = "0 0";
     preview.element.style.transform = `scale(${zoom})`;
     plane.style.width = preview.element.offsetWidth * zoom + "px";
     plane.style.height = preview.element.offsetHeight * zoom + "px";
+    restoreZoomAnchor(stage, plane, zoom, anchor); rulers?.refresh();
   }
 
   function invalidateRegions(): void {
@@ -384,8 +399,10 @@ export function mountDocumentInteraction(
   }
 
   function connect(): void {
+    if (!stage.clientWidth) needsVisibleRender = true;
     const frame = preview!.element.contentDocument!, view = frame.defaultView!;
     source = preview!.source()!;
+    rulers?.dispose(); rulers = mountWordRulers(stage, preview!.element, () => source?.root, () => preview?.layout(), () => { const metadata = session.snapshot().metadata; if (metadata.presentation) throw new DocumentError("UnsupportedFormat", "Word rulers require Word metadata."); return metadata.pageSetup; }); rulers.setVisible(rulerVisible);
     layoutKey = source.layoutKey();
     source.root.style.userSelect = mode === "text" ? "text" : "none";
     const listeners = new AbortController();
@@ -400,6 +417,9 @@ export function mountDocumentInteraction(
         if (!signal.aborted) attempt(invalidateRegions);
       });
     };
+    bindWordLineSelection(frame, source.root, { signal, enabled: () => mode === "text" && !disposed,
+      ignored: node => !!(node.nodeType === 1 ? node as Element : node.parentElement)?.closest(".sdk-number-marker,.sdk-page-gap,.sdk-page-story"),
+      layout: () => preview?.layout(), setup: () => { const metadata = session.snapshot().metadata; if (metadata.presentation) throw new DocumentError("UnsupportedFormat", "Word selection requires Word metadata."); return metadata.pageSetup; }, changed: () => selectionChanged() });
     const selectionChanged = (): void => {
       if (mode !== "text") return;
       const selected = view.getSelection();
@@ -482,7 +502,10 @@ export function mountDocumentInteraction(
       if (resizeQueued !== undefined || signal.aborted) return;
       resizeQueued = document.defaultView!.requestAnimationFrame(() => {
         resizeQueued = undefined;
-        if (!signal.aborted) { resizePlane(); layout(); }
+        if (!signal.aborted) {
+          if (needsVisibleRender && stage.clientWidth) { void settled().catch(report); return; }
+          resizePlane(); layout();
+        }
       });
     });
     observer.observe(source.root);
@@ -512,6 +535,7 @@ export function mountDocumentInteraction(
     return JSON.stringify([snapshot.html, snapshot.styles, snapshot.metadata, snapshot.manifest.assets]);
   }
   function render(): void {
+    needsVisibleRender = !stage.clientWidth;
     const current = ++generation;
     frameCleanup?.();
     frameCleanup = undefined;
@@ -540,7 +564,9 @@ export function mountDocumentInteraction(
         if (session.snapshot().manifest.revision !== renderedRevision) {
           setSelection(undefined);
           renderedRevision = session.snapshot().manifest.revision;
-          if (renderedContent !== contentKey()) render();
+          if (renderedContent !== contentKey()) {
+            if (stage.clientWidth) render(); else needsVisibleRender = true;
+          }
         }
         updatePanel();
         highlight();
@@ -550,12 +576,20 @@ export function mountDocumentInteraction(
   setSelection(undefined);
   updatePanel();
   render();
+  async function settled(): Promise<DocumentRenderReport> {
+    await ready;
+    if (disposed || !stage.clientWidth) throw new DocumentError("InvalidOperation", "请在可见的文档画布中等待分页完成。");
+    if (needsVisibleRender) { render(); await ready; }
+    const accepted = preview!, result = await accepted.settled();
+    if (disposed || preview !== accepted) throw new DocumentError("InvalidOperation", "等待中的文档画布已被替换。");
+    resizePlane(); invalidateRegions(); return result;
+  }
   return {
-    element, get ready() { return ready; }, selection: () => selection, fonts: () => preview?.fonts() ?? [], layout: () => preview?.layout(),
-    setMode, setZoom, focusAnnotation,
+    element, get ready() { return ready; }, settled, selection: () => selection, fonts: () => preview?.fonts() ?? [], layout: () => needsVisibleRender ? undefined : preview?.layout(),
+    setMode, setZoom, setRulers(visible) { const anchor = captureZoomAnchor(stage, plane, zoom); rulerVisible = visible; rulers?.setVisible(visible); resizePlane(anchor); }, focusAnnotation, startAnnotation(chosen) { if (chosen) { const manifest = session.snapshot().manifest; if (chosen.documentId !== manifest.documentId || chosen.baseRevision !== manifest.revision) throw new DocumentError("RevisionConflict", "批注选区已过期。"); setSelection(AnchorSchema.parse(chosen.anchor)); } requireSelection(); popover?.open(); draft.focus(); },
     dispose: () => {
       if (disposed) return;
-      disposed = true;
+      disposed = true; rulers?.dispose();
       generation++;
       unsubscribe();
       controls.abort();

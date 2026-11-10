@@ -33,6 +33,7 @@ export interface WorkbookPreviewOptions {
   readonly retainSelection?: boolean;
   readonly limits?: WorkbookWindowControllerOptions;
   readonly onError?: (error: DocumentErrorData) => void;
+  readonly onCellActivate?: (selection: DocumentSelection) => void;
   readonly onSelectionChange?: (selection: DocumentSelection | undefined) => void;
 }
 export interface WorkbookRenderReport {
@@ -68,6 +69,8 @@ export interface WorkbookPreview {
   update(input: WorkbookPreviewInput): void;
   showSheet(sheetId: string): Promise<WorkbookRenderReport>;
   setViewport(viewport: WorkbookViewport): Promise<WorkbookRenderReport>;
+  /** Effective source cell style, including blank cells, in the accepted window. */
+  cellTextStyle(at: WorkbookCoordinate): Readonly<Record<string, string>> | undefined;
   /** Measured logical grid offset, including hidden axes and automatic row
    * heights. The identity belongs to the currently accepted source/view. */
   sourceOffset(at: WorkbookCoordinate): Readonly<{ documentId: string; revision: number; sheetId: string; leftPt: number; topPt: number }>;

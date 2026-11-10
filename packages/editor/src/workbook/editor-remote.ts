@@ -1,3 +1,5 @@
+import type { TextFormatState } from "../text-format-state.js";
+import { createEditorCommands, workbookCommandIds } from "../commands.js";
 import { DocumentError, parseContract } from "@doffi/core";
 import type { DeepReadonly, DocumentOperation, DocumentSelection, TransactionPrepareOptions, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import { createWorkbookLayoutService, mountDocumentPreview } from "@doffi/render";
@@ -50,9 +52,11 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || !client || typeof client.readInput !== "function" || typeof client.view !== "function") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its authorized session connection.");
   client.state();
-  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "appearance", "onCommandStateChange", "onFormatStateChange", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (options.appearance !== undefined && options.appearance !== "default" && options.appearance !== "workspace") throw new DocumentError("InvalidOperation", "Invalid workbook editor appearance.");
   if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
-  const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑"), events = new view.AbortController();
+  const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑", config.appearance), events = new view.AbortController();
+  const commandRegistry = createEditorCommands(() => !disposed, config.onCommandStateChange);
   const layoutService = createWorkbookLayoutService(ui.preview, { ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
     ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
   const authorizedClient = client;
@@ -112,6 +116,22 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   }
   function pendingInput(): boolean { return binding?.hasPendingInput() ?? false; }
   function pendingForms(): boolean { return [drawingControls, commentControls, nameControls, worksheetControls, hyperlinkControls, tableControls, tableStyleControls, filterControls, rulesControls].some(controls => controls?.hasPendingInput()); }
+  let textEditing = false, pendingInteractions = 0;
+  let lastFormatState = "";
+  function formatState(): TextFormatState {
+    const state = input.state(), selected = state.selection, enabled = !pendingInteractions && !textEditing && !refreshing && !commandAbort && !state.selecting && !state.applying && !state.dirty && !state.composing && !!source;
+    if (!selected || selected.anchor.kind !== "cells") return { enabled: false };
+    let style: Readonly<Record<string, string>> | undefined; try { style = preview?.cellTextStyle(selected.anchor.ranges[0]!.from); } catch { /* A replacement has no accepted style yet. */ }
+    if (!style) return { enabled };
+    const size = parseFloat(style["font-size"] ?? "") * .75;
+    return { enabled, bold: style["font-weight"] === "bold" || Number(style["font-weight"]) >= 600, italic: style["font-style"] === "italic", underline: !["", "none"].includes(style["--office-font-underline"] ?? "") || (style["text-decoration-line"] ?? "").includes("underline"),
+      ...(Number.isFinite(size) ? { fontSize: Math.round(size * 100) / 100 } : {}), fontFamily: style["--office-font-east-asia"] || style["font-family"] || "", color: style["color"] ?? "", alignment: style["--office-cell-horizontal"] || style["text-align"] || "" };
+  }
+  function notifyFormat(): void {
+    if (disposed || !config.onFormatStateChange) return;
+    const appearance = formatState(), key = JSON.stringify(appearance);
+    if (key !== lastFormatState) { lastFormatState = key; try { config.onFormatStateChange(appearance); } catch { /* Host UI only. */ } }
+  }
   function controls(): void {
     if (disposed) return; const state = input.state(), busy = !!commandAbort || state.applying || state.selecting;
     // Keep the draft editable while a remote operation is preparing or its
@@ -132,6 +152,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     tableStyleControls?.refresh();
     filterControls?.refresh();
     rulesControls?.refresh();
+    commandRegistry.notify();
+    notifyFormat();
     const pending = pendingInput() || state.applying || !!commandAbort || pendingForms();
     if (reportedPending !== pending) { reportedPending = pending; try { config.onPendingChange?.(pending); } catch { /* Host owns navigation decisions. */ } }
   }
@@ -140,7 +162,11 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     return cell(range.from) + (range.from.row === range.to.row && range.from.column === range.to.column ? "" : ":" + cell(range.to));
   }
   function notify(): void { try { config.onSelectionChange?.(input.state().selection); } catch { /* Host callback. */ } }
-  function runInteraction<T>(action: () => Promise<T>): Promise<T> { const next = interaction.then(action); interaction = next.then(() => {}, report); return next; }
+  function runInteraction<T>(action: () => Promise<T>): Promise<T> {
+    pendingInteractions++; notifyFormat();
+    const next = interaction.then(action).finally(() => { pendingInteractions--; notifyFormat(); });
+    interaction = next.then(() => {}, report); return next;
+  }
   // Internal controls use the queue's reporting boundary. Public methods keep
   // the rejecting Promise for their caller; a control must not report it twice.
   function queueInteraction(action: () => Promise<unknown>): void { void runInteraction(action); }
@@ -201,7 +227,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
         if (preview) { preview.update(candidate); await preview.settled(); }
         else {
           preview = mountDocumentPreview(ui.preview, candidate, { retainSelection: true, ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
-            ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits === undefined ? {} : { limits: config.limits }), onSelectionChange: sourceSelection, onError: error => report(new DocumentError(error.code, error.message, error.details)) });
+            ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits === undefined ? {} : { limits: config.limits }), onSelectionChange: sourceSelection, onCellActivate: selected => queueInteraction(async () => { await sourceSettled(); if (!idle()) throw new DocumentError("InvalidOperation", "请先完成或取消当前输入。"); await acceptSelection(selected); binding.focus(false); }), onError: error => report(new DocumentError(error.code, error.message, error.details)) });
           await preview.ready;
         }
         if (disposed || ticket !== generation || abort.signal.aborted) return;
@@ -210,7 +236,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
         const range = anchor?.kind === "cells" && anchor.sheetId === sheetId ? anchor.ranges[0]! : { from: { row: 0, column: 0 }, to: { row: 0, column: 0 } };
         const selected = await preview.selectRange(range, false);
         if (!pendingInput() && !state.applying && !state.composing) await acceptSelection(selected);
-        const current = input.state(); ui.status.textContent = current.dirty || current.composing ? current.selection?.baseRevision !== client.state().revision ? "文档已更新；当前输入仍绑定原修订。" : "输入尚未确认。" : "修订 " + client.state().revision;
+        const current = input.state(); ui.status.textContent = current.dirty || current.composing ? current.selection?.baseRevision !== client.state().revision ? "文档已更新；当前输入仍绑定原修订。" : "输入尚未确认。" : config.appearance === "workspace" ? "" : "修订 " + client.state().revision;
         try { config.onViewChange?.(source.cells.snapshot, preview.layout()); } catch { /* Host metadata cannot roll back the accepted view. */ }
       } finally { choosing--; }
     } catch (error) { if (!disposed && ticket === generation && !abort.signal.aborted) throw error; }
@@ -415,6 +441,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     const next = withWorkbookAsyncValidationConfirmation(value => input.apply(value), options ?? {}, context); inputTask = next.then(() => {}, () => {}); return next;
   } };
   binding = bindWorkbookAsyncTextInput(ui.input, boundInput, {
+    onEditingChange(value) { textEditing = value; controls(); },
     prepareOptions: () => preparation(), onError: report,
     onApplied() { controls(); ui.error.hidden = true; void scheduleRefresh(); if (!pendingInput()) binding.focus(); },
     onCancelled() { void runInteraction(cancelInput); },
@@ -456,6 +483,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void {
     const element = ui.element.ownerDocument.createElement("button"); element.type = "button"; element.textContent = label;
     element.addEventListener("click", () => { try { const result = action(); if (result instanceof Promise) void result.catch(report); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(element); buttons.push({ button: element, available });
+    const id = workbookCommandIds[label]; if (id) commandRegistry.register(id, label, action, () => !element.disabled);
   }
   button("确认输入", () => binding.apply(), () => !!input.state().selection && !input.state().composing && !input.state().applying && !commandAbort && !refreshing);
   button("取消输入", () => queueInteraction(cancelInput), () => !!input.state().selection && !input.state().applying && !commandAbort);
@@ -485,6 +513,9 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);
   button("全部替换", () => queueInteraction(() => search("all")), () => idle() && ui.findField.value !== "display" && !!ui.find.value, ui.searchTools);
+  const panels = { formatCells: ui.format.element, drawings: drawingControls.element, comments: commentControls.element, names: nameControls.element, worksheets: worksheetControls.element, hyperlinks: hyperlinkControls.element, tables: tableControls.element, tableStyles: tableStyleControls.element, filters: filterControls.element, rules: rulesControls.element };
+  for (const [id, panel] of Object.entries(panels)) commandRegistry.register(id, panel.querySelector("summary")?.textContent ?? id, () => { panel.dataset.officePanel = id; panel.open = true; panel.scrollIntoView({ block: "nearest" }); panel.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled),textarea:not(:disabled)")?.focus(); }, () => !!source && !commandAbort);
+  for (const id of ["find", "replace"]) commandRegistry.register(id, id === "find" ? "查找" : "替换", () => { ui.element.style.setProperty("--doffi-workbook-search", "flex"); ui.find.focus(); ui.find.select(); }, () => !ui.find.disabled);
   for (const field of [ui.find, ui.findField, ui.findScope, ui.matchCase, ui.entireCell]) for (const type of ["input", "change"]) field.addEventListener(type, () => { found = undefined; findSelectionScope = undefined; controls(); }, { signal: events.signal });
   ui.find.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); void runInteraction(() => search()); } }, { signal: events.signal });
   ui.element.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing && ["f", "h"].includes(event.key.toLowerCase())) { event.preventDefault(); if (!commandAbort) { ui.find.focus(); ui.find.select(); } } }, { signal: events.signal });
@@ -508,7 +539,13 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
       const result = await sourceSettled(); await systemClipboard.settled(); if (current === interaction && pendingInput === inputTask && pendingCommand === commandTask) return result;
     }
   }
-  return Object.freeze({ element: ui.element, ready, settled, selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); },
+  return Object.freeze({ element: ui.element, ready, settled,
+    formatState, commands: commandRegistry.commands, async executeCommand(id: string) { check(); await commandRegistry.executeCommand(id); await settled(); },
+    formatCells: async (properties: Readonly<Record<string, string>>) => runInteraction(async () => {
+      check(); if (!idle()) throw new DocumentError("InvalidOperation", "请先完成或取消当前输入。");
+      const selected = input.state().selection; if (!selected || selected.anchor.kind !== "cells") throw new DocumentError("InvalidOperation", "请先选择单元格。");
+      await perform([{ op: "formatWorkbookRanges", sheetId: selected.anchor.sheetId, ranges: selected.anchor.ranges.map(range => ({ from: { ...range.from }, to: { ...range.to } })), properties: { ...properties } }]); await sourceSettled(); binding.focus();
+    }), selection() { check(); return input.state().selection; }, inputState() { check(); return input.state(); },
     hasPendingInput() { check(); return pendingInput() || input.state().applying || !!commandAbort || pendingForms(); },
     layout() { check(); if (!preview) throw new DocumentError("InvalidOperation", "The workbook editor has no accepted view yet."); return preview.layout(); },
     setViewport: async (viewport: Parameters<WorkbookPreview["setViewport"]>[0]) => { await sourceSettled(); check(); return preview!.setViewport(viewport); },
