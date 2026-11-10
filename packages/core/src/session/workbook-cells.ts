@@ -43,6 +43,9 @@ function cellTail(html: string): string {
 
 /** A preparation owns only touched, bounded cell blocks. Other bytes stay shared. */
 export class WorkbookCellEdit {
+  /** Only freshly encoded private bytes enter this preparation-owned memo.
+   * Public package copies never acquire this identity proof. */
+  readonly serializedDigests = new WeakMap<Uint8Array, string>();
   private formulaEquivalent?: ReturnType<typeof createWorkbookFormulaEquivalence>;
   private readonly chunks = new Map<string, EditedChunk>();
   private readonly originals: ReadonlyMap<string, import("../workbook/chunk-index.js").ChunkIndex>;
@@ -225,7 +228,8 @@ export class WorkbookCellEdit {
     const { sheetId, row, column } = chunk.descriptor, identity = JSON.stringify([sheetId, row, column]);
     if (chunk.serialized?.identity === identity) return chunk.serialized;
     const bytes = this.serialize(chunk.descriptor, chunk.cells);
-    return chunk.serialized = { identity, bytes, sha256: assetDigest(bytes) };
+    const sha256 = assetDigest(bytes); this.serializedDigests.set(bytes, sha256);
+    return chunk.serialized = { identity, bytes, sha256 };
   }
   /** Project pending chunks without pruning or changing the mutable editor.
    * An intermediate measurement must allow later operations to reuse a chunk. */

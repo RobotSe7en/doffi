@@ -33,8 +33,10 @@ export function openWorkbookModel(files: Map<string, Uint8Array>, manifest: Work
 }
 
 /** Chunk checkpoints keep candidate validation private until the final model is
- * registered. The synchronous reader consumes these exact same steps. */
-export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest: WorkbookManifest, documentLimits: DocumentReadLimits, inputLimits?: Partial<WorkbookReadLimits>, previous?: WorkbookModel): Generator<{ completed: number; total: number }, WorkbookModel | undefined> {
+ * registered. The synchronous reader consumes these exact same steps. The
+ * optional digest memo belongs solely to the current transaction serializer;
+ * public opens never supply it or borrow its private byte identities. */
+export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest: WorkbookManifest, documentLimits: DocumentReadLimits, inputLimits?: Partial<WorkbookReadLimits>, previous?: WorkbookModel, ownedChunkDigests?: WeakMap<Uint8Array, string>): Generator<{ completed: number; total: number }, WorkbookModel | undefined> {
   const limits = readLimits(inputLimits), metadata = parseContract("document-metadata", readJson(files, manifest.metadata));
   if (!("workbook" in metadata)) invalid("Manifest kind and workbook metadata must match.");
   const annotations = parseContract("annotations", readJson(files, manifest.annotations));
@@ -72,11 +74,13 @@ export function* openWorkbookModelSteps(files: Map<string, Uint8Array>, manifest
     const bytes = files.get(chunk.path);
     if (!bytes) invalid("Workbook chunk bytes do not match their digest.");
     checkLimit(bytes.byteLength, documentLimits.maxFileBytes);
-    // New buffers always hash. A matching prior digest can then retain the
-    // private owned bytes/index; the mutable input never becomes its proof.
+    // Public buffers always hash. A transaction-owned immutable buffer can
+    // reuse its serializer's digest, still checked against the descriptor.
+    // A matching prior digest can then retain private bytes/index; mutable
+    // public input never becomes its own identity proof.
     const sameDigest = priorDescriptors.get(chunk.path)?.sha256 === chunk.sha256;
     const unchanged = prior?.files.get(chunk.path) === bytes && sameDigest;
-    if (!unchanged && assetDigest(bytes) !== chunk.sha256) invalid("Workbook chunk bytes do not match their digest.");
+    if (!unchanged && (ownedChunkDigests?.get(bytes) ?? assetDigest(bytes)) !== chunk.sha256) invalid("Workbook chunk bytes do not match their digest.");
     const ownedBytes = sameDigest ? prior!.files.get(chunk.path)! : bytes;
     if (sameDigest) files.set(chunk.path, ownedBytes);
     const known = canReuse && sameDigest ? prior.chunks.get(chunk.path) : undefined;

@@ -14,6 +14,16 @@ const number = (row: number, column: number, value: number): DocumentOperation =
   cells: [{ row, column, source: { kind: "value", value: { type: "number", value } } }] });
 
 describe("workbook shared transaction and history boundary", () => {
+  test("a privately hashed edit still rejects changed public serialized bytes with the old digest", () => {
+    const s = session(); s.commit(prepare(s, [number(0, 0, 12), number(256, 32, 25)]));
+    const copied = s.serialize(), chunk = s.snapshot().manifest.chunks[0]!, bytes = copied.get(chunk.path)!;
+    const source = new TextDecoder().decode(bytes), changed = source.replace('data-value="12"', 'data-value="99"');
+    expect(changed).not.toBe(source); bytes.set(new TextEncoder().encode(changed));
+    expect(() => openDocument(copied, { kind: "workbook" })).toThrowError(/digest/);
+    expect(s.getCell(sheetId, 0, 0)).toMatchObject({ value: { type: "number", value: 12 } });
+    expect(openDocument(s.serialize(), { kind: "workbook" }).getCell(sheetId, 0, 0)).toMatchObject({ value: { type: "number", value: 12 } });
+    s.undo(); s.redo(); expect(s.getCell(sheetId, 256, 32)).toMatchObject({ value: { type: "number", value: 25 } }); s.dispose();
+  });
   test("prepares isolated cross-block candidates and saves/reopens a single monotonic revision", () => {
     const s = session(), before = s.serialize();
     const candidate = prepare(s, [number(0, 0, 12), number(256, 32, 25), { op: "setWorkbookCells", sheetId, cells: [

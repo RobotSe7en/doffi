@@ -3,6 +3,53 @@ import { createDocumentSession, createWorkbookCalculator, createWorkbookScalarEv
 import { scalarWorkbook } from "./workbook-scalar-fixture.js";
 const location = (row: number, column = 0) => ({ sheetId: "sheet-1", row, column });
 const number = (value: number) => ({ type: "number" as const, value });
+test('incremental output charges retain untouched strings and exact UTF-16 totals across growth, shrinkage and scalar types', () => {
+  const other = '乙𠀀'.repeat(2000), expression = '=A1', untouched = '=D1';
+  const text = (value: string) => ({ type: 'text' as const, value });
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: text('initial') },
+    { row: 0, column: 1, value: number(999), formula: expression }, { row: 0, column: 2, value: number(999), formula: untouched },
+    { row: 0, column: 3, value: text(other) }]));
+  const calculator = createWorkbookCalculator(session), original = calculator.calculateSync();
+  for (const value of [text('甲𠀀禰󠄀'.repeat(64)), number(42), { type: 'error' as const, value: '#N/A' as const }, text('Z'), text('甲𠀀禰󠄀'.repeat(90))]) {
+    const manifest = session.snapshot().manifest;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision,
+      operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row: 0, column: 0, source: { kind: 'value', value } }] }] }));
+    expect(calculator.calculateSync()).toMatchObject({ calculated: 1, reused: 1 });
+    const expected = expression.length + untouched.length + JSON.stringify(['sheet-1', 0, 1]).length + (value.type === 'text' ? value.value.length : 0)
+      + JSON.stringify(['sheet-1', 0, 2]).length + other.length;
+    const seed = calculator.calculateSync(); expect(seed).toMatchObject({ calculated: 0, reused: 2, codeUnits: expected });
+    const bounded = createWorkbookCalculator(session, { maxCodeUnits: expected - 1 }, seed);
+    expect(() => bounded.calculateSync()).toThrowError(expect.objectContaining({ code: 'ResourceLimitExceeded' })); bounded.dispose();
+    expect(seed.cells.map(cell => cell.state === 'valid' && cell.value)).toEqual([value, text(other)]);
+  }
+  expect(original.cells[0]).toMatchObject({ value: text('initial') }); calculator.dispose(); session.dispose();
+});
+test('immutable chunk summaries keep complete budgets and rebuild after cross-chunk formula changes', () => {
+  const session = createDocumentSession(scalarWorkbook([{ row: 0, column: 0, value: number(2) },
+    ...[0, 256, 512].map(row => ({ row, column: 1, value: number(999), formula: '=A1+' + row }))]));
+  const original = createWorkbookCalculator(session), seed = original.calculateSync();
+  const set = (row: number, column: number, source: { kind: 'value'; value: ReturnType<typeof number> } | { kind: 'formula'; expression: string }) => {
+    const manifest = session.snapshot().manifest;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: manifest.documentId, baseRevision: manifest.revision,
+      operations: [{ op: 'setWorkbookCells', sheetId: 'sheet-1', cells: [{ row, column, source }] }] }));
+  };
+  set(0, 0, { kind: 'value', value: number(7) });
+  const probe = createWorkbookCalculator(session, {}, seed), changed = probe.calculateSync();
+  expect(changed).toMatchObject({ calculated: 3, reused: 0, dependencies: 3 });
+  expect(changed.cells.map(cell => cell.state === 'valid' && cell.value)).toEqual([number(7), number(263), number(519)]);
+  for (const limits of [{ maxFormulas: 2 }, { maxDependencies: 2 }, { maxSteps: changed.steps - 1 }]) {
+    const bounded = createWorkbookCalculator(session, limits, seed);
+    expect(() => bounded.calculateSync()).toThrowError(expect.objectContaining({ code: 'ResourceLimitExceeded' })); bounded.dispose();
+  }
+  set(512, 1, { kind: 'formula', expression: '=A1*2' });
+  const next = probe.calculateSync(); expect(next).toMatchObject({ calculated: 1, reused: 2, dependencies: 3 });
+  expect(probe.getCell(location(512, 1))).toMatchObject({ value: number(14) });
+  set(256, 1, { kind: 'value', value: number(8) });
+  const reduced = createWorkbookCalculator(session, { maxFormulas: 2, maxDependencies: 2 }, next);
+  expect(reduced.calculateSync()).toMatchObject({ calculated: 0, reused: 2, dependencies: 2 });
+  expect(seed.cells.map(cell => cell.state === 'valid' && cell.value)).toEqual([number(2), number(258), number(514)]);
+  original.dispose(); probe.dispose(); reduced.dispose(); session.dispose();
+});
 test('completed immutable seeds retain full step and UTF-16 output budgets on constant-time reuse', () => {
   const text = '甲𠀀'.repeat(80), model = scalarWorkbook([{ row: 0, column: 0, value: { type: 'text', value: text } },
     { row: 0, column: 1, value: number(999), formula: '=A1' }, { row: 0, column: 2, value: number(999), formula: '=B1&"尾"' }]);

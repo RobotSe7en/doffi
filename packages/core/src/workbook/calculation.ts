@@ -41,7 +41,13 @@ export interface WorkbookCalculator {
 }
 interface FormulaRecord { readonly key: string; readonly location: WorkbookReferenceLocation; readonly expression: string; readonly ast: FormulaExpression;
   readonly dependencies: readonly DeepReadonly<WorkbookReferenceArea>[]; readonly lazy: boolean; readonly volatile: boolean; readonly subtotal: boolean }
-interface Graph { readonly model: WorkbookModel; readonly namespace: string; readonly records: Map<string, FormulaRecord>; readonly chunks: Map<ChunkIndex, readonly FormulaRecord[]>;
+interface FormulaChunk { readonly records: readonly FormulaRecord[]; readonly dependencies: number; readonly volatile: boolean }
+function formulaChunk(records: readonly FormulaRecord[]): FormulaChunk {
+  let dependencies = 0, volatile = false;
+  for (const record of records) { dependencies += record.dependencies.length; volatile ||= record.volatile; }
+  return { records, dependencies, volatile };
+}
+interface Graph { readonly model: WorkbookModel; readonly namespace: string; readonly records: Map<string, FormulaRecord>; readonly chunks: Map<ChunkIndex, FormulaChunk>;
   readonly reverse: WorkbookDependencyIndex; readonly points: WorkbookDependencyIndex; readonly dependencies: number; readonly volatile: boolean }
 interface CalculationSeed { readonly graph: Graph; readonly values: ReadonlyMap<string, ScalarResolved>; readonly contextKey: string; readonly localeKey: string;
   readonly expressionCodeUnits: number; readonly outputCodeUnits: number }
@@ -74,6 +80,7 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
       const resolvedLocale = calculationContext.locale ?? snapshot.metadata.locale ?? "zh-CN", changedLocale = resolvedLocale !== localeKey;
       let steps = 0, units = 0, calculated = 0, reused = 0, yields = 0;
       const readCells = new Set<string>();
+      const updatedValues = new Set<string>();
       function guard(): void {
         if (options.signal?.aborted || mine !== batch || !provider) throw new DocumentError("OperationCancelled", "Workbook calculation was cancelled.");
         const active = current(); if (active !== model || active.snapshot().manifest.revision !== manifest.revision || active.snapshot().manifest.documentId !== manifest.documentId) throw new DocumentError("RevisionConflict", "Calculation belongs to a previous workbook source.");
@@ -85,7 +92,13 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
       guard(); yield; guard();
       const publish = (next: Graph, calculatedValues: ReadonlyMap<string, ScalarResolved>): WorkbookCalculationResult => {
         let nextExpressionUnits = expressionCodeUnits, nextOutputUnits = outputCodeUnits;
-        if (next.records === graph?.records && calculatedValues === values) account(nextOutputUnits);
+        if (next.records === graph?.records) {
+          // Record identities fix every key/expression. Only evaluated values
+          // can change the completed table's exact UTF-16 output charge.
+          const textUnits = (value: ScalarResolved): number => "type" in value && value.type === "text" ? value.value.length : 0;
+          if (calculatedValues !== values) for (const id of updatedValues) nextOutputUnits += textUnits(calculatedValues.get(id)!) - textUnits(values.get(id)!);
+          account(nextOutputUnits);
+        }
         else {
           nextExpressionUnits = 0; nextOutputUnits = 0;
           for (const record of next.records.values()) {
@@ -114,12 +127,12 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
         reused = graph.records.size; return publish(graph, values);
       }
       const namespace = JSON.stringify([snapshot.metadata.workbook.dateSystem, snapshot.metadata.workbook.sheets.map(sheet => [sheet.sheetId, sheet.name, sheet.tables]), snapshot.metadata.workbook.names]);
-      const chunks = new Map<ChunkIndex, readonly FormulaRecord[]>(), compatibleGraph = graph?.namespace === namespace ? graph : undefined;
-      const previousRecords = compatibleGraph?.records, previousOrder = previousRecords?.values();
-      let dependencyCount = 0, recordCount = 0, sameTopology = previousRecords !== undefined, volatile = false;
+      const chunks = new Map<ChunkIndex, FormulaChunk>(), compatibleGraph = graph?.namespace === namespace ? graph : undefined;
+      const previousRecords = compatibleGraph?.records, previousChunks = compatibleGraph?.chunks.values();
+      let dependencyCount = 0, recordCount = 0, sameTopology = previousRecords !== undefined && compatibleGraph!.chunks.size === manifest.chunks.length, volatile = false;
       for (const descriptor of manifest.chunks) {
         step(); const index = privateSource.chunks.get(descriptor.path)!, known = compatibleGraph?.chunks.get(index);
-        const parsed: FormulaRecord[] = [], items: readonly FormulaRecord[] = known ?? parsed;
+        const parsed: FormulaRecord[] = [], items: readonly FormulaRecord[] = known?.records ?? parsed;
         if (!known) for (const formula of index.formulaLocations()) {
           step(); checkLimit(recordCount + items.length + 1, limits.maxFormulas);
           const location = { sheetId: descriptor.sheetId, row: formula.row, column: formula.column }, cell = model.getCell(location.sheetId, location.row, location.column)!;
@@ -141,19 +154,24 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           account(cell.formula!.expression.length); parsed.push({ key: key(location), location, expression: cell.formula!.expression, ast: formula.expression, dependencies: areas, lazy, volatile, subtotal });
           yield* checkpoint();
         }
-        chunks.set(index, items);
-        for (const record of items) {
-          step(); checkLimit(++recordCount, limits.maxFormulas);
-          sameTopology &&= previousOrder!.next().value === record;
-          volatile ||= record.volatile;
-          dependencyCount += record.dependencies.length; checkLimit(dependencyCount, limits.maxDependencies);
+        const summary = known ?? formulaChunk(items), before = previousChunks?.next().value?.records;
+        chunks.set(index, summary);
+        if (sameTopology && items !== before) {
+          sameTopology = before !== undefined && items.length === before.length;
+          if (sameTopology) for (let offset = 0; offset < items.length; offset++) if (items[offset] !== before![offset]) { sameTopology = false; break; }
         }
+        // An immutable chunk already owns its exact edge/volatile summary.
+        // Charge every original logical step and limit, without allocating a
+        // second per-formula iterator result for unchanged source chunks.
+        checkLimit(steps += items.length, limits.maxSteps); guard();
+        checkLimit(recordCount += items.length, limits.maxFormulas);
+        checkLimit(dependencyCount += summary.dependencies, limits.maxDependencies); volatile ||= summary.volatile;
         progress("index", recordCount, limits.maxFormulas); yield* checkpoint();
       }
       sameTopology &&= recordCount === previousRecords!.size;
       const sharedRecords = sameTopology ? previousRecords : undefined;
       let records = sharedRecords ?? new Map<string, FormulaRecord>();
-      if (!sharedRecords) for (const items of chunks.values()) for (const record of items) records.set(record.key, record);
+      if (!sharedRecords) for (const chunk of chunks.values()) for (const record of chunk.records) records.set(record.key, record);
       // Validate the complete edge count even when reusing a graph. Materialize
       // edge records only for a changed topology, avoiding large throwaway
       // arrays on every small input edit and its committed view calculation.
@@ -199,7 +217,7 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
         if (!newDependencies) return;
         const entries = [...records.values()].flatMap(record => record.dependencies.map(area => ({ area, owner: record.key })));
         next = { ...next, reverse: new WorkbookDependencyIndex(entries, step), dependencies: entries.length,
-          chunks: new Map([...chunks].map(([index, items]) => [index, items.map(record => records.get(record.key)!)])) };
+          chunks: new Map([...chunks].map(([index, chunk]) => [index, formulaChunk(chunk.records.map(record => records.get(record.key)!))])) };
         newDependencies = false;
       }
       const evaluator = createWorkbookScalarKernel(model, { maxSteps: limits.maxSteps, maxCells: limits.maxReadCells, maxCodeUnits: limits.maxCodeUnits }, calculationContext, {
@@ -236,7 +254,8 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
             }
             try {
               const value = evaluateRecord(frame.record);
-              calculatedValues.set(frame.record.key, value); active.delete(frame.record.key); stack.pop(); calculated++;
+              calculatedValues.set(frame.record.key, value); if (records === graph?.records) updatedValues.add(frame.record.key);
+              active.delete(frame.record.key); stack.pop(); calculated++;
               progress("calculate", calculated + reused, records.size); yield* checkpoint();
             } catch (error) {
               if (!(error instanceof DependencyPending)) throw error;
@@ -256,7 +275,8 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
           step(); const id = retry.values().next().value!; retry.delete(id);
           const record = records.get(id)!, value = evaluateRecord(record);
           if (!("type" in value) && value.reason === "circular-reference") continue;
-          calculatedValues.set(id, value); provisional.delete(id); refreshDependencies();
+          calculatedValues.set(id, value); if (records === graph?.records) updatedValues.add(id);
+          provisional.delete(id); refreshDependencies();
           for (const owner of next.reverse.query({ sheetId: record.location.sheetId, from: record.location, to: record.location }, step)) if (provisional.has(owner)) retry.add(owner);
           yield* checkpoint();
         }

@@ -118,7 +118,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
       projectedFiles.set("manifest.json", encode(JSON.stringify(projectedManifest)));
       projectedFiles.set(manifest.metadata, encode(JSON.stringify(metadata))); projectedFiles.set(manifest.annotations, encode(JSON.stringify(annotations)));
       if (sameWorkbookFiles(measuredModel, projectedFiles)) return measuredModel;
-      const loader = openWorkbookModelSteps(projectedFiles, projectedManifest, limits, options.workbookLimits, measuredModel);
+      const loader = openWorkbookModelSteps(projectedFiles, projectedManifest, limits, options.workbookLimits, measuredModel, cells.serializedDigests);
       try {
         for (;;) {
           const step = loader.next();
@@ -308,7 +308,7 @@ export function createWorkbookSession(document: WorkbookModel, options: Document
     yield { kind: "progress", value: { phase: "validation", completed: 0, total: 0 } };
     validatePackage(files, limits);
     const loadedManifest = readManifest(files); if (loadedManifest.kind !== "workbook") invalid("Workbook transactions cannot change the document kind.");
-    const loader = sameWorkbookFiles(measuredModel, files) ? undefined : openWorkbookModelSteps(files, loadedManifest, limits, options.workbookLimits, measuredModel);
+    const loader = sameWorkbookFiles(measuredModel, files) ? undefined : openWorkbookModelSteps(files, loadedManifest, limits, options.workbookLimits, measuredModel, cells.serializedDigests);
     let next: WorkbookModel;
     if (!loader) next = measuredModel;
     else try {
