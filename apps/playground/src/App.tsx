@@ -18,6 +18,8 @@ import { Icon } from "./icons.js";
 import { openWorkbookFile } from "./open-workbook.js";
 import type { HostedWorkbook, OpenedWorkspaceDocument } from "./open-workbook.js";
 import { WorkbookPane } from "./WorkbookPane.js";
+import brandLogo from "../../../docs/assets/doffi-logo-color.svg";
+import brandIcon from "../../../docs/assets/doffi-icon-color.svg";
 type WorkspaceFile = { id: string; name: string; kind: "word" | "presentation" | "workbook"; detail: string };
 interface WorkbookCandidate { document: HostedWorkbook; accept(): void; reject(error: Error): void }
 const examples: WorkspaceFile[] = [
@@ -293,7 +295,11 @@ export function App() {
   return (
     <main className="office-app">
       <aside className="document-sidebar" aria-label="文档列表">
-        <a className="brand" href="./" aria-label="doffi Playground"><span className="brand-mark"><Icon name="grid" size={22} /></span><span>do<span className="brand-office">ffi</span><small>人与智能体的文档工作空间</small></span></a>
+        <a className="brand" href="./" aria-label="doffi Playground">
+          <img className="brand-logo" src={brandLogo} alt="" width="1150" height="572" />
+          <img className="brand-icon" src={brandIcon} alt="" width="512" height="512" />
+          <small>人与智能体的文档工作空间</small>
+        </a>
         <div className="library-heading"><span>工作空间</span><span className="workspace-label">PLAYGROUND</span></div>
         <label className="document-search"><Icon name="search" size={16} /><input aria-label="搜索文档" placeholder="搜索文档…" value={search} onChange={event => setSearch(event.currentTarget.value)} /><kbd>⌕</kbd></label>
         <div className="library-title"><h2>我的文档</h2><span>{files.length}</span></div>

@@ -1,90 +1,182 @@
-# doffi
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/doffi-logo-on-dark.svg">
+    <img src="docs/assets/doffi-logo-color.svg" alt="doffi" width="420">
+  </picture>
+</p>
 
-面向人和宿主智能体协作的通用办公文档 SDK 与可嵌入工作台。采用 TypeScript 和带语义的 HTML 文档格式，提供 Office 导入、保留样式的网页编辑、框选批注、结构化修改提案和可编辑 Office 导出。达智平台是首个宿主，SDK 同时面向其他应用独立发布。
+<p align="center">
+  <strong>让人与智能体，共同编辑同一份文档。</strong>
+</p>
 
-五个 SDK 包使用 `@doffi/*`，命令行为 `doffi`；文档包和协议标识统一使用 `doffi`，详见[本地开发](docs/development.md)。
+<p align="center">
+  <a href="#文档"><img alt="中文文档" src="https://img.shields.io/badge/docs-中文文档-blue"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&amp;logoColor=white"></a>
+  <a href="docs/development.md"><img alt="Node.js 24+" src="https://img.shields.io/badge/Node.js-24%2B-5FA04E?logo=nodedotjs&amp;logoColor=white"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-green"></a>
+</p>
 
-**许可：AGPL-3.0-only 或另行取得的商业许可。** 版权所有 © 2026 RobotSe7en。公开版本按 [AGPL 第 3 版](LICENSE)使用；商业授权联系及边界见[商业授权说明](COMMERCIAL-LICENSE.md)。第三方内容保留各自许可。
+<p align="center">
+  <a href="#快速开始">快速开始</a> |
+  <a href="#架构">架构</a> |
+  <a href="#文档">文档</a> |
+  <a href="docs/implementation-plan.md">路线图</a> |
+  <a href="COMMERCIAL-LICENSE.md">商业授权</a>
+</p>
 
-**当前状态：独立 Word 与 PPT 闭环已实现；第三轮已完成[工作簿模型及 XLSX 只读验收](docs/workbook-reading-acceptance.md)，包含样式、表、规则、图表、绘图和两类批注；Excel 编辑计算实施中，原生输出仍属后续阶段。** 三格式模型设计已明确，`core` 提供严格契约、17 份 JSON Schema、Word 语义及文档包；`office` 提供有界 ZIP 和原生 DOCX 导入／导出。`editor` 提供无脚本预览、文字／对象／矩形选择、批注面板与重定位，见[预览与交互](docs/preview-interaction.md)。Playground 可打开 DOCX、添加或管理批注、缩放、撤销重做、下载文档包并重开，包含中文字体替代和缺字诊断。读取验收使用实际 DOCX、LibreOffice 重存文件与固定字体参考图，范围和限制见 [DOCX 读取](docs/docx-import.md)。隔离候选、七类内容操作、批注事务、单调修订和精确锚点映射见[核心事务与历史](docs/document-session.md)。工作台支持多批注请求、固定提案导入、候选差异和整批应用，见[工作台与协议](docs/workbench.md)。连续正文与表格支持富文本及中文输入，见[正文输入](docs/rich-text.md)。`render` 提供独立只读预览和共享页面画布，`node` 提供受管理的 Chromium、PDF/PNG 与字节协议，见[分页与渲染](docs/pagination-rendering.md)。预览直接显示 HTML，分页覆盖旧 Chromium、Firefox 和 WebKit。原生可编辑导出和批注报告见 [DOCX 导出](docs/docx-export.md)。Playground 原生 DOCX 下载、导出报告和独立打包运行验收见 [Word 闭环](docs/word-closure.md)。R1-15 达智智能体验证按用户决定延期，R1-16 保留尚未完成的宿主验收项；第二轮 PPT 已完成 R2-01 计划、[R2-02 Presentation 契约与文档模型](docs/presentation-model.md)和 [R2-03 独立 PPTX 样例与参考环境](examples/pptx/README.md)，支持 PPT HTML 包的新建、校验、查询与保存重开；[R2-04/05 PPTX 读取](docs/pptx-import.md)已实现，包括三类图表及常量数据、备注和经典／现代批注；[R2-06 只读画布与读取验收](docs/presentation-preview.md)已实现；[R2-07 核心事务](docs/presentation-transactions.md)支持 PPT 几何、尺寸、授权资源及按页锚点映射，[R2-08 至 R2-13 编辑闭环](docs/presentation-editing.md)提供第一方对象、文字、表格、备注、主题／母版／布局、基础图表和两类批注编辑，以及 [PPT 工作台](docs/presentation-workbench.md)。[R2-14 至 R2-16 原生导出与独立 PPT 闭环](docs/pptx-export.md)已实现，包括可编辑 PPTX、图表常量工作簿、两类批注报告、Node PDF/PNG、Playground 和独立 JS/React/Node 打包验收。外部 Office 验收使用固定的 LibreOffice 25.8.1.1；PowerPoint/WPS 未实机验证。尚未发布 npm 包。
+**doffi** 是面向人和宿主智能体协作的 TypeScript 办公文档 SDK 与可嵌入工作台。它以带语义的 HTML 文档包保存内容、样式、资源和批注，提供 Office 导入、浏览器编辑、框选批注、修改提案审阅与可编辑 Office 导出。Word、PPT 和 Excel 共用文档身份、事务与历史，各自保留适合的布局和编辑方式。
 
-## 本地开发
+用户可以直接修改文档，也可以选中内容、添加批注，再由宿主智能体返回结构化提案。提案先在隔离候选中展示差异，确认后整批应用，并进入与人工编辑相同的撤销历史。达智是首个宿主；其他应用可通过普通 JavaScript、可选 React 包装或底层 API 接入。
 
-准备 Node.js 24 和 pnpm 10.28.2：
+> **当前进度：** 独立 Word 与 PPT 的读取、编辑、原生输出及打包闭环已完成。Excel 已完成声明范围的读取，以及编辑与计算阶段（[PR #31](https://github.com/RobotSe7en/doffi/pull/31)）；XLSX 原生导出、工作簿 PDF/PNG 和输出闭环仍待 R3-17～20。项目尚未发布 npm 包。
+
+---
+
+## 核心理念
+
+**1. 一份可保存的文档源。**
+HTML、CSS、格式元数据、资源和批注共同组成版本化文档包。编辑器 DOM、分页测量和公式计算结果均由源派生，保存与重开沿用同一格式。
+
+**2. 人工与智能体共享事务。**
+输入、对象操作、批注和模型提案均经过类型化事务。完整批次先校验，再提交一个修订和一个撤销步骤；候选预览保持隔离，过期提案按修订拒绝。
+
+**3. 保留每种格式的语义。**
+Word 使用流式正文与分页，PPT 使用固定画布与定位对象，Excel 使用分块来源、虚拟网格与第一方公式计算。共享协作协议，同时保留段落、幻灯片、单元格各自的结构。
+
+**4. 原生格式处理与边界可核验。**
+OOXML 读写、样式映射、公式解析和引用重写由本项目实现；ZIP、XML、哈希等通用能力复用成熟库。导入对不支持或超预算的结构明确失败，导出报告无法表达的批注等损失；独立来源、实际 Office 重存和固定字体参考共同验证已声明范围。
+
+**5. 宿主拥有产品与智能体运行。**
+SDK 管理文档、选区、批注、候选和历史。宿主提供身份、授权字节、资源、正式存储、模型执行与部署；批注请求和提案通过公开协议交换。SDK 可独立运行，也可嵌入宿主现有的工作空间。
+
+## 支持进度
+
+以下状态均限于各格式已声明的支持范围；完整 OOXML 兼容性仍需逐项验收。
+
+| 格式 | 读取与预览 | 编辑与协作 | 原生输出与独立闭环 |
+| --- | --- | --- | --- |
+| Word / DOCX | 段落、样式、表格、图片、字段、经典批注与文字修订 | 富文本与中文输入、选择批注、提案差异、统一历史 | 可编辑 DOCX、PDF/PNG、JS/React/Node 打包与重开已完成 |
+| PPT / PPTX | 主题、母版、布局、对象、三类基础图表、备注与两类批注 | 对象、文字、表格、定义、图表、批注及页面／全局提案 | 可编辑 PPTX、PDF/PNG、外部编辑与独立打包已完成 |
+| Excel / XLSX | 样式、公式源、智能表、规则、图表、绘图、经典备注与现代线程 | 单元格、结构、排序筛选、表与规则、绘图、批注、提案及增量计算已完成 | 文档包可保存重开；原生 XLSX、工作簿 PDF/PNG 及输出闭环待实施 |
+
+Excel 编辑阶段已通过最终源的日常与容量验收，覆盖一万行、20 万实际单元格、2 万公式及固定资源下的四引擎读取／编辑。范围与证据见[读取验收](docs/workbook-reading-acceptance.md)、[编辑验收矩阵](docs/workbook-editing-acceptance.md)及 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。
+
+外部 Office 验收使用固定的 LibreOffice 25.8.1.1。已有 Excel 网页版名称语义观测仅适用于所记录的案例；Word／PowerPoint／WPS 尚未实机验证，删除合并区域首行／首列的 Excel 对照验收仍按用户决定延期。R1-15 达智集成验证延期，R1-16 的宿主验收仍有未完成项。正式宿主存储、多人实时共同编辑与发布准备见[整体计划](docs/implementation-plan.md)。
+
+## 快速开始
+
+### 运行 Playground
+
+准备 Node.js 24 和 pnpm 10.28.2，在仓库根目录运行：
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-构建与工程测试使用 `pnpm check`，本地打包使用 `pnpm pack:packages`。浏览器安装、烟测和命令说明见[本地开发](docs/development.md)。
+打开终端显示的本地地址，即可载入 Word、PPT 或一万行 XLSX 样例，也可打开自己的受支持文件。Playground 提供编辑、批注、撤销重做和文档包保存重开；Word/PPT 还可下载原生文件及 PDF。固定提案样例用于演示请求、差异审阅和整批应用，实际模型执行由宿主接入。
 
-## 已确定的方向
+### 使用 SDK
 
-- 独立维护，不依赖 ONLYOFFICE，不将 ibisOffice 源码作为当前实现基础。
-- DOCX/PPTX/XLSX 的 OOXML 读写和样式映射自行实现，不使用 docx、PptxGenJS、ExcelJS；ZIP、XML、哈希等通用基础能力可复用成熟库。
-- HTML、CSS、资源和格式元数据共同组成可保存的文档源；浏览器 DOM 是其编辑视图。
-- Word、PPT、Excel 共用文档身份、事务、批注、修改提案和版本协议，各自使用适合的布局和编辑适配器。
-- 人工操作和模型操作均经过同一事务层。模型能够改文字、HTML 区块、样式、图片及布局。
-- TypeScript 实现第一版。格式处理保留适配接口，后续可引入 Rust 或 WASM。
-- 模型服务、授权、凭据、文件存储和正式版本提交由宿主提供。
-- SDK 提供预览、文字划选、矩形框选、批注、差异、应用和撤销界面；宿主复用自己的页面容器与智能体入口。
-- 多条批注通过通用文档交互协议统一交给宿主智能体。SDK 不设独立 `ai` 包、模型调用接口或文档内 AI 对话弹窗。
-- 第一版以单用户与模型协作为目标；多人实时共同编辑属于后续版本。
+五个库使用 `@doffi/*` 包名，目前通过 workspace 或本地 tarball 消费。下面的 Node.js 示例读取 DOCX、通过统一事务标记一条已有批注为已解决，再导出当前源：
 
-## 设计入口
+```ts
+import { readFile, writeFile } from "node:fs/promises";
+import { createDocumentSession, openDocument } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
 
-| 文档 | 内容 |
-| --- | --- |
-| [总体架构](docs/architecture.md) | 产品边界、交付形态、模块职责、依赖方向、状态模型及运行位置 |
-| [三格式数据模型](docs/data-model.md) | 唯一持久化来源、公共基座及 Word/PPT/Excel 语义 |
-| [文档格式](docs/document-format.md) | HTML 文档包、三种格式的表达和版本规则 |
-| [编辑与宿主交互协议](docs/editing-protocol.md) | 事务、锚点、批注请求、修改提案、事件及冲突 |
-| [结构契约与 JSON Schema](docs/contracts.md) | 已实现的校验 API、严格字段、类型、静态 Schema 与语义校验边界 |
-| [文档包读取与模型](docs/document-model.md) | 只读打开、节点查询、HTML/CSS 支持范围、引用、预算和保存重开 |
-| [Presentation 模型](docs/presentation-model.md) | PPT 严格契约、新建文稿、源几何与引用、完整样例和保存重开 |
-| [PPT 编辑](docs/presentation-editing.md) | 幻灯片、对象、输入、定义、图表、批注与统一历史 |
-| [PPT 工作台](docs/presentation-workbench.md) | 页面／全局请求、只读依赖、候选资源、差异和宿主提案 |
-| [PPT 只读画布](docs/presentation-preview.md) | 固定页面、母版／布局投影、形状与图表、字体、参考图及生命周期验收 |
-| [核心事务与历史](docs/document-session.md) | 编辑会话、操作、候选、修订、历史、事件及预算 |
-| [正文富文本输入](docs/rich-text.md) | 自研输入适配、中文输入法、身份保留、跨段落与表格输入及统一历史 |
-| [工作台与协议](docs/workbench.md) | 多批注请求、宿主提交、提案校验、差异应用及 React 包装 |
-| [预览与交互](docs/preview-interaction.md) | 普通 JS 挂载、文字与对象选择、矩形坐标、批注面板、布局失效与生命周期 |
-| [分页与渲染](docs/pagination-rendering.md) | 纯预览、页面画布、字段、Node PDF/PNG、CLI、浏览器与预算边界 |
-| [中文字体](docs/fonts.md) | 常用宋体、仿宋、楷体名称保留、开源字体环境与预览替代 |
-| [PPTX 原生导出与闭环](docs/pptx-export.md) | 当前 PPT 源、可编辑部件、两类批注报告、Node、Playground 与独立打包验收 |
-| [DOCX 原生导出](docs/docx-export.md) | 当前文档源、样式、字段、批注状态、导出报告及实际重开 |
-| [DOCX 读取与只读预览](docs/docx-import.md) | 导入 API、范围、中文字体、样例、参考渲染和限制 |
-| [资源与 ZIP](docs/resources-and-zip.md) | 资源摘要、图片容器识别、宿主资源收集、ZIP 预算及保真样例 |
-| [整体实施计划](docs/implementation-plan.md) | 五轮交付顺序、具体产物、能力范围和验收门槛 |
-| [第一轮实施细则](docs/iteration-1.md) | Word 支持范围、任务依赖、独立闭环及延期的宿主验收 |
-| [第二轮实施细则](docs/iteration-2.md) | PPT 已定范围、自研路线、任务依赖及读取／编辑／导出验收门槛 |
-| [第三轮实施细则](docs/iteration-3.md) | Excel、自研公式、一万行目标、智能表、绘图、批注与分阶段验收 |
-| [独立 XLSX 样例](examples/xlsx/README.md) | 16 个正例、17 个负例、固定 Calc 重存、20 页打印参考与外部差异 |
-| [本地开发](docs/development.md) | 环境、启动、构建、类型检查、工程测试及本地打包 |
-| [达智集成](docs/dagent-integration.md) | 平台接入、身份隔离、工作区及运行边界 |
-| [技术选型](docs/technology-selection.md) | 候选依赖、复用范围及参考工程 |
+const files = importDocx(new Uint8Array(await readFile("input.docx")), {
+  documentId: "host-authorized-document",
+});
+const session = createDocumentSession(openDocument(files, { kind: "document" }));
 
-实现前阅读总体架构、文档格式与交互协议，再按整体计划进入对应迭代细则。后续开发遵循 [AGENTS.md](AGENTS.md)。
+try {
+  const annotation = session.getAnnotations()[0];
+  if (annotation) {
+    const { documentId, revision } = session.snapshot().manifest;
+    const candidate = session.prepare({
+      protocolVersion: 1,
+      documentId,
+      baseRevision: revision,
+      operations: [{
+        op: "updateAnnotation",
+        annotationId: annotation.annotationId,
+        changes: { status: "resolved" },
+      }],
+    });
+    session.commit(candidate);
+  }
 
-## 最小示例
-
-[examples/report](examples/report/) 是一份 `document` 类型的文档包目录，包含中文报告、表格和两条批注。[report.request.json](examples/report.request.json) 表示统一交给宿主的请求，[report.proposal.json](examples/report.proposal.json) 表示宿主智能体针对该请求返回的修改提案。三者共享文档身份和基准修订。报告包已能通过 `openDocument` 读取、查询和保存重开，示例提案中的内容操作已能通过 `prepare/commit` 执行；请求生成和关联提案的 `prepareProposal` 已实现，内容与有效的已处理批注一次提交，旧修订提案明确拒绝。
-
-```text
-Office 文件
-    ↕ 导入导出适配器
-HTML 文档包
-    ↕ 统一事务层
-浏览器编辑、框选批注、修改提案、差异查看和撤销
-    ↕ 文档交互请求与提案
-宿主现有智能体、对话与执行链路
+  const { bytes, report } = exportDocx(session);
+  await writeFile("output.docx", bytes);
+  console.log(report);
+} finally {
+  session.dispose();
+}
 ```
 
-## 计划中的交付方式
+浏览器工作台、请求生成与提案回传见[工作台与协议](docs/workbench.md)；原生导入导出范围见 [DOCX 读取](docs/docx-import.md)和 [DOCX 导出](docs/docx-export.md)。[报告文档包](examples/report/)、[请求](examples/report.request.json)与[提案](examples/report.proposal.json)提供可检查的协作样例。
 
-使用一个 TypeScript monorepo，组织 `@doffi/core`、`@doffi/render`、`@doffi/editor`、`@doffi/office`、`@doffi/node` 五个库模块，并提供独立 Playground。编辑器提供普通 JavaScript 挂载、可选 React 包装和底层 API；其他产品主要适配批注提交、提案回传、授权资源和存储。Node 转换进程用于服务端导出和浏览器渲染，具体运行方式由宿主选择。自有内容采用 AGPL-3.0-only 与另行商业授权的模式；正式版本在初次发布时确定，发布前确认 npm scope 归属。
+### 开发与验证
 
-第一轮的三格式模型设计、DOCX 读取验收、事务与历史、富文本、分页、批注、提案、DOCX/PDF 导出与重开已完成独立闭环。R1-15 达智真实智能体验证延期，保留原编号及未通过的宿主验收项。第二轮独立 PPT 已完成。当前按[第三轮细则](docs/iteration-3.md)推进 Excel，依次完成模型与独立样例、完整读取与只读验收、统一事务和自研计算编辑、原生输出与独立闭环；随后为正式宿主存储和发布准备。Playground 使用固定提案文件，不提供独立模型服务。
+```bash
+pnpm check          # 架构边界、构建、类型、工程测试及 Playground 构建
+pnpm pack:packages  # 在 .cache/packages 生成五个本地 tarball
+```
 
-第一版正式交付覆盖 DOCX、PPTX 和 XLSX 的常见办公内容。WPS 生成的这三种文件走同一条路径；`.wps`、`.et`、`.dps` 通过可选格式转换适配器导入，第一版统一导出标准 OOXML 文件。
+浏览器安装、原生参考环境和独立打包验证见[本地开发](docs/development.md)。普通推送运行快速检查；阶段合并前显式执行完整日常与容量验收，见 [CI 执行](docs/ci-performance.md)。
+
+## 架构
+
+```mermaid
+flowchart TD
+  Host["宿主应用：身份、存储、智能体执行"] --> Editor["editor：工作台、输入、选择与批注"]
+  Host --> Office["office：ZIP 与原生 Office 读写"]
+  Editor --> Render["render：预览、字体与页面投影"]
+  Editor --> Core["core：文档源、事务、锚点、提案与历史"]
+  Render --> Core
+  Office --> Core
+  Node["node：CLI、转换进程、PDF/PNG"] --> Office
+  Node --> Render
+  Node --> Core
+```
+
+箭头表示代码依赖。`core` 定义格式模型与协作契约，`office` 负责原生格式转换，`render` 提供共享画布，`editor` 负责浏览器交互，`node` 管理服务端转换与渲染进程。
+
+宿主通过请求／提案协议对接智能体，通过授权资源接口提供字节。文档 ID、节点 ID 和缓存键只用于关联；身份、权限与正式版本提交均由宿主控制。模块职责、运行环境和状态边界见[总体架构](docs/architecture.md)与[达智集成](docs/dagent-integration.md)。
+
+## 项目结构
+
+```text
+packages/
+  core/             文档模型、严格契约、事务、公式、锚点与历史
+  render/           共享预览、字体、分页与源投影
+  editor/           普通 JS 工作台、输入适配及可选 React 包装
+  office/           ZIP/XML 适配、原生 Office 导入导出
+  node/             CLI、受管理的 Chromium、PDF/PNG 与字节协议
+apps/playground/    独立 React + Vite 演示宿主
+docs/               设计、使用说明、验收记录与品牌素材
+examples/           文档包、请求／提案及独立 DOCX/PPTX/XLSX 来源
+scripts/            构建、打包、原生参考与验收工具
+tests/              浏览器、集成及独立打包消费检查
+```
+
+各包通过公开入口消费能力。`core` 与 `office` 可用于浏览器及 Node，普通 JavaScript 工作台不要求 React；React 包装位于可选的 `@doffi/editor/react` 入口。
+
+## 文档
+
+| 入口 | 内容 |
+| --- | --- |
+| [总体架构](docs/architecture.md) · [三格式数据模型](docs/data-model.md) · [文档格式](docs/document-format.md) | 模块边界、唯一文档源与格式语义 |
+| [结构契约](docs/contracts.md) · [文档模型](docs/document-model.md) · [事务与历史](docs/document-session.md) | 校验、读取、隔离候选、修订与撤销 |
+| [工作台](docs/workbench.md) · [交互协议](docs/editing-protocol.md) · [选择与批注](docs/preview-interaction.md) | 普通 JS/React 接入、请求与提案 |
+| [DOCX 读取](docs/docx-import.md) · [富文本输入](docs/rich-text.md) · [DOCX 导出](docs/docx-export.md) · [Word 闭环](docs/word-closure.md) | Word 支持范围、编辑与独立验收 |
+| [PPTX 读取](docs/pptx-import.md) · [PPT 编辑](docs/presentation-editing.md) · [PPT 工作台](docs/presentation-workbench.md) · [PPTX 输出](docs/pptx-export.md) | 幻灯片对象、协作与原生输出 |
+| [工作簿模型](docs/workbook-model.md) · [公式与引用](docs/workbook-formulas.md) · [读取验收](docs/workbook-reading-acceptance.md) · [编辑验收](docs/workbook-editing-acceptance.md) | Excel 分块模型、计算、范围和证据 |
+| [分页与渲染](docs/pagination-rendering.md) · [中文字体](docs/fonts.md) · [资源与 ZIP](docs/resources-and-zip.md) | 页面投影、字体诊断与资源预算 |
+| [整体计划](docs/implementation-plan.md) · [Word](docs/iteration-1.md) · [PPT](docs/iteration-2.md) · [Excel](docs/iteration-3.md) | 交付顺序、已定范围和阶段门槛 |
+| [本地开发](docs/development.md) · [CI 执行](docs/ci-performance.md) · [技术选型](docs/technology-selection.md) · [开发约定](AGENTS.md) | 环境、命令、检查与依赖边界 |
+
+## 许可
+
+版权所有 © 2026 RobotSe7en。第一方代码、文档和示例按 **AGPL-3.0-only** 或另行签订的商业许可提供，详见 [LICENSE](LICENSE)、[NOTICE](NOTICE) 和[商业授权说明](COMMERCIAL-LICENSE.md)。第三方依赖、ECMA 材料及字体保留各自许可。

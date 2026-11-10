@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img">
+  <title>Doffi</title>
+  <svg width="60" height="60" viewBox="64 64 482 444" role="img" aria-labelledby="title desc" x="2" y="2" preserveAspectRatio="xMidYMid meet">
+    <title id="favicon-title">Doffi icon — full color, transparent</title>
+    <desc id="favicon-desc">Native editable vector paths reconstructed from the approved Doffi artwork. The D counter and separation channel are transparent negative space. Upright offi; two lowercase f crossbars connected. No embedded raster images or font dependencies. Colors standardized in sRGB; SVG gradients are the authoritative specifications.</desc>
+    <defs>
+      <linearGradient id="favicon-wordmark-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="416" x2="0" y2="716">
+        <stop offset="0" stop-color="#008CFA" />
+        <stop offset="0.45" stop-color="#0066F2" />
+        <stop offset="1" stop-color="#0045EB" />
+      </linearGradient>
+      <linearGradient id="favicon-d-gradient" gradientUnits="userSpaceOnUse" x1="397" y1="423" x2="620" y2="735">
+        <stop offset="0" stop-color="#70E7FE" />
+        <stop offset="0.10" stop-color="#70E7FE" />
+        <stop offset="0.42" stop-color="#008CFA" />
+        <stop offset="0.72" stop-color="#0066F2" />
+        <stop offset="1" stop-color="#0045EB" />
+      </linearGradient>
+      <linearGradient id="favicon-sky-gradient" gradientUnits="userSpaceOnUse" x1="245" y1="436" x2="320" y2="734">
+        <stop offset="0" stop-color="#8DE8FE" />
+        <stop offset="1" stop-color="#50ADFD" />
+      </linearGradient>
+      <linearGradient id="favicon-cyan-gradient" gradientUnits="userSpaceOnUse" x1="320" y1="370" x2="440" y2="650">
+        <stop offset="0" stop-color="#00F2FE" />
+        <stop offset="1" stop-color="#0380EF" />
+      </linearGradient>
+      <linearGradient id="favicon-mint-gradient" gradientUnits="userSpaceOnUse" x1="425" y1="310" x2="675" y2="435">
+        <stop offset="0" stop-color="#98FCD9" />
+        <stop offset="1" stop-color="#48F4C9" />
+      </linearGradient>
+    </defs>
+    <g id="favicon-logo" transform="translate(-149 -227)">
+      <g id="favicon-pages" fill-rule="evenodd">
+        <path id="favicon-page-sky" fill="url(#favicon-sky-gradient)" d="M 308.5 734.3 C 293.51 732.31 277.01 721.78 268.18 708.58 C 261.65 698.81 261.7 698.98 249.58 644.5 C 237.78 591.39 225.2 535.37 218.26 505 C 212.63 480.4 212.12 470.77 215.85 459.81 C 224.15 435.41 246.12 421.16 275.62 421.03 L 283.74 421 L 283.73 409.25 C 283.71 377.82 304.58 353.67 334.52 350.46 C 339.84 349.89 366.1 353.31 374.25 355.64 C 375.78 356.07 376 355.35 376.02 349.82 C 376.11 316.85 400.86 291.09 432.5 291.03 C 442.35 291.02 442.82 291.13 464 298.42 C 475.82 302.49 504.62 312.39 528 320.43 C 582.67 339.22 592.84 343.08 604.36 349.45 C 638.78 368.47 665.82 399.33 680 435.8 C 685.19 449.16 685.09 449.48 678.11 441.86 C 656.55 418.33 619.13 400.55 579.5 395.02 C 568.36 393.47 417.48 393.61 411.09 395.18 C 391.56 399.98 374.74 416.53 368.56 437 C 366.76 442.98 360.48 476.56 344.9 563.5 C 339.38 594.3 334.26 622.88 333.52 627 C 325.48 671.73 322 693.34 322.02 698.42 C 322.05 710.55 325.69 721.95 332.13 730.14 C 333.71 732.15 335 734.06 335 734.39 C 335 735.04 313.51 734.97 308.5 734.3 Z" />
+        <path id="favicon-page-mint" fill="url(#favicon-mint-gradient)" d="M 677.89 441.66 C 655.88 417.42 612.43 397.69 574 394.49 C 569.88 394.14 565.6 393.46 564.5 392.97 C 563.4 392.47 546.52 389.1 527 385.47 C 507.48 381.85 478.68 376.42 463 373.42 C 447.32 370.42 425.27 366.2 414 364.04 C 402.73 361.88 390.57 359.62 387 359.02 C 383.43 358.42 379.37 357.71 377.98 357.44 L 375.46 356.94 L 376.15 347.51 C 378.61 313.87 401.34 291.09 432.5 291.03 C 442.35 291.02 442.82 291.13 464 298.42 C 475.82 302.49 504.62 312.39 528 320.43 C 582.67 339.22 592.84 343.08 604.36 349.45 C 638.82 368.49 665.82 399.33 680.03 435.89 C 685.06 448.81 684.86 449.33 677.89 441.66 Z" />
+        <path id="favicon-page-cyan" fill="url(#favicon-cyan-gradient)" d="M 325 723.1 C 325 722.61 323.2 719.24 321 715.62 C 314.31 704.6 312.46 697.25 310.07 672 C 308.89 659.62 307.26 643.2 306.44 635.5 C 305.62 627.8 302.04 592.25 298.48 556.5 C 290.94 480.7 285.48 427.81 284.02 416.47 C 279.77 383.29 302.24 353.92 334.52 350.46 C 340.88 349.78 370.54 353.97 374.32 356.09 C 375.32 356.65 382.07 358.16 389.32 359.46 C 396.57 360.75 411.95 363.62 423.5 365.84 C 461.99 373.22 544.37 388.81 554 390.53 C 559.23 391.47 563.89 392.59 564.37 393.04 C 564.85 393.48 531.58 393.89 490.43 393.96 C 438.93 394.03 414.2 394.42 411.06 395.19 C 391.56 399.98 374.73 416.54 368.56 437 C 366.76 442.98 360.48 476.56 344.9 563.5 C 339.38 594.3 334.26 622.88 333.52 627 C 325.48 671.73 322 693.34 322.02 698.42 C 322.04 705.59 324.2 716.56 326.46 720.91 C 327.87 723.65 327.88 724 326.53 724 C 325.69 724 325 723.6 325 723.1 Z" />
+      </g>
+      <path id="favicon-front-D" fill="url(#favicon-d-gradient)" fill-rule="evenodd" d="M 366.03 733.29 C 359.85 731.07 351.82 722.86 349.68 716.56 C 346.63 707.62 347.07 704 358.5 644.5 C 360.93 631.85 368.13 593.6 374.5 559.5 C 397.28 437.46 395.56 444.32 406.14 433.72 C 412.8 427.04 420.09 423.32 429.36 421.88 C 441.09 420.05 578.82 421.35 588.97 423.39 C 670.97 439.8 711.1 511.57 688.04 600.55 C 670.19 669.44 624.13 716.83 560.5 731.77 L 549.5 734.35 L 460 734.62 C 379.94 734.87 370.03 734.72 366.03 733.29 Z M 528.5 650.15 C 600.3 630.6 623.73 527.36 563.42 496.32 C 547.71 488.24 541.69 487.2 507.25 486.61 L 480 486.14 L 479.53 488.32 C 478.94 491.05 452.65 624.7 449.89 639 C 448.78 644.77 447.63 650.33 447.34 651.34 C 446.47 654.36 516.83 653.32 528.5 650.15 Z" />
+    </g>
+  </svg>
+</svg>
