@@ -457,6 +457,11 @@ export function mountPreview(
     const snapshot = model.snapshot();
     const sourceFonts = resolvePreviewFonts(frame);
     source = new PreviewSource(frame, model);
+    // Empty native runs still need a real line box in preview and editing.
+    // A derived break provides it without adding a source newline/identity.
+    for (const paragraph of source.root.querySelectorAll("p,h1,h2,h3,h4,h5,h6")) {
+      if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
+    }
     decorate(frame, snapshot.metadata.word);
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);

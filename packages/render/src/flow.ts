@@ -203,7 +203,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       if (height <= area && box.top > start(current) + 0.5 && box.top + height > start(current) + area + 0.5) before(element, current + 1);
     }
     if (element.localName === "table") table(element as HTMLTableElement);
-    else if (!element.querySelector("p,h1,h2,h3,h4,h5,h6,li,table,div,section") && (element.textContent?.trim() || element.querySelector("br,img"))) paragraph(element, 0);
+    else if (!element.querySelector("p,h1,h2,h3,h4,h5,h6,li,table,div,section") && (element.matches("p,h1,h2,h3,h4,h5,h6,li") || element.textContent?.trim() || element.querySelector("br,img"))) paragraph(element, 0);
     else if (element.localName === "img") {
       const box = element.getBoundingClientRect(); if (box.height > area) throw new DocumentError("UnsupportedFeature", "An object exceeds the printable page height.");
       if (box.bottom > start(page(box.top)) + area) before(element, page(box.top) + 1);

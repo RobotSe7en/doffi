@@ -534,3 +534,40 @@ test('the SDK Office ribbon owns its styles, preview behavior and independent in
   await second.getByRole('tab', { name: '开始', exact: true }).press('End'); await expect(second.getByRole('tab', { name: '帮助', exact: true })).toBeFocused(); await expect(first.getByRole('tab', { name: '文件', exact: true })).toHaveAttribute('aria-selected', 'true');
   await first.getByRole('button', { name: '切换编辑', exact: true }).click(); await expect(firstFont).toBeVisible(); await expect(firstFont).toHaveValue('FandolKai');
 });
+
+for (const [label, offset] of [['实施报告', 0], ['实施报告', 4], ['第一项', 0], ['第一项', 3], ['子项', 2], ['第二项', 3], ['从四开始', 4]] as const) {
+  test(`native DOCX Enter keeps its new paragraph editable: ${label} at ${offset}`, async ({ page, browserName }, info) => {
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/'); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles('examples/docx/01-text-numbering.docx');
+    const frame = page.frameLocator('iframe[title="正文编辑"]'), original = frame.locator('[data-word-script]').filter({ hasText: label }).first();
+    const id = await original.evaluate((node, offset) => {
+      node.closest<HTMLElement>('[contenteditable]')!.focus(); const text = document.createTreeWalker(node, 4).nextNode()!, range = document.createRange(); range.setStart(text, offset); range.collapse(true);
+      const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range); return node.closest<HTMLElement>('p,h1')!.dataset.nodeId!;
+    }, offset);
+    await page.keyboard.press('Enter'); await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '1');
+    const previous = frame.locator(`[data-node-id="${id}"]`), nextId = await previous.evaluate(node => { let next = node.nextElementSibling; while (next && !next.hasAttribute('data-node-id')) next = next.nextElementSibling; return next!.getAttribute('data-node-id')!; });
+    const next = frame.locator(`[data-node-id="${nextId}"]`), logical = async (node: typeof next) => node.evaluate(element => { const marker = element.querySelector('.sdk-number-marker'); return element.textContent!.slice(marker?.textContent?.length ?? 0); });
+    await next.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect((await next.boundingBox())!.height).toBeGreaterThan(0);
+    if (browserName === 'chromium') {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Input.imeSetComposition', { text: 'xinzeng', selectionStart: 7, selectionEnd: 7 });
+      await cdp.send('Input.imeSetComposition', { text: '新增中文', selectionStart: 4, selectionEnd: 4 });
+      await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '1');
+      await cdp.send('Input.insertText', { text: '新增中文😀' }); await cdp.detach();
+    } else await page.keyboard.insertText('新增中文😀');
+    await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '2');
+    await expect.poll(() => logical(previous)).toBe(label.slice(0, offset)); await expect.poll(() => logical(next)).toBe('新增中文😀' + label.slice(offset));
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect.poll(() => logical(next)).toBe(label.slice(offset));
+    await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(next).toHaveCount(0); await expect.poll(() => logical(previous)).toBe(label);
+    await page.getByRole('button', { name: '重做', exact: true }).click(); await page.getByRole('button', { name: '重做', exact: true }).click(); await expect.poll(() => logical(next)).toBe('新增中文😀' + label.slice(offset));
+    if (offset === label.length && (label === '实施报告' || label === '第一项')) {
+      await page.getByRole('tab', { name: '文件', exact: true }).click(); const download = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
+      const path = info.outputPath('enter-reopen.docx'); await (await download).saveAs(path); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles(path);
+      await expect(page.getByRole('heading', { name: 'enter-reopen.docx', exact: true })).toBeVisible();
+      await expect(frame.locator('[data-office-editor]')).toContainText('新增中文😀'); await expect(page.getByRole('alert')).toHaveCount(0);
+    }
+    expect(errors).toEqual([]);
+  });
+}

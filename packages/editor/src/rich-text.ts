@@ -334,12 +334,19 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if (!root || !frame) return;
     root.contentEditable = "true"; root.setAttribute("data-office-editor", ""); root.setAttribute("role", "textbox"); root.setAttribute("aria-label", "文档正文"); root.setAttribute("aria-multiline", "true"); root.spellcheck = false;
     for (const marker of root.querySelectorAll<HTMLElement>(".sdk-number-marker,[data-word-tab]")) marker.contentEditable = "false";
+    // Noneditable marker text corrupts Chromium's native composition offsets:
+    // later preedit updates can target the number instead of the new paragraph.
+    // Keep the same visible label without adding text to the input DOM.
+    for (const marker of root.querySelectorAll<HTMLElement>(".sdk-number-marker")) {
+      if (!projection.ignored(marker)) continue;
+      marker.setAttribute("data-sdk-number-text", marker.textContent ?? ""); marker.replaceChildren();
+    }
     projection.capture(root, source);
     bindWordLineSelection(frame, root, { signal: viewControls.signal, enabled: () => !disposed && !composing, ignored: projection.ignored,
       layout: () => preview.layout(), setup: () => wordMetadata().pageSetup, changed() { if (root) savedSelection = bookmark(root, projection.ignored); notifyFormat(); } });
     if (!frame.querySelector("style[data-sdk-input]")) {
       const viewStyle = frame.createElement("style"); viewStyle.setAttribute("data-sdk-input", "");
-      viewStyle.textContent = "[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all}"; frame.head.append(viewStyle);
+      viewStyle.textContent = "[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}"; frame.head.append(viewStyle);
     }
     if (!root.querySelector(blockSelector)) {
       const first = wordMetadata().sections[0]!.rootNodeId;

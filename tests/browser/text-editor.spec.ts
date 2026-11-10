@@ -202,6 +202,71 @@ test("real Chromium composition commits one Chinese input batch", async ({ page 
   expect(await page.evaluate(() => window.textEditorHost.errors)).toEqual([]);
 });
 
+for (const label of ["实施报告", "第一项", "子项", "第二项", "从四开始"]) {
+  test("native DOCX Enter retains Chinese composition and exact shared undo: " + label, async ({ page }) => {
+    const files = importDocx(readFileSync(new URL("../../examples/docx/01-text-numbering.docx", import.meta.url)), { documentId: "enter-ime-docx" });
+    const cdp = await page.context().newCDPSession(page), value = "中文😀漢\u{e0100}";
+    const paragraphTexts = () => page.evaluate(() => {
+      const source = new DOMParser().parseFromString(window.textEditorHost.session!.snapshot().html, "text/html");
+      return [...source.querySelectorAll("h1,p")].map(node => node.textContent!);
+    });
+    const compose = async (text: string) => {
+      await cdp.send("Input.imeSetComposition", { text: "zhong", selectionStart: 5, selectionEnd: 5 });
+      await cdp.send("Input.imeSetComposition", { text: "中", selectionStart: 1, selectionEnd: 1 });
+      await cdp.send("Input.imeSetComposition", { text: "中文", selectionStart: 2, selectionEnd: 2 });
+      await cdp.send("Input.insertText", { text });
+    };
+    for (const offset of [0, Math.floor(label.length / 2), label.length]) {
+      await mount(page, files);
+      const initial = await page.evaluate(() => window.textEditorHost.session!.snapshot().html), original = await paragraphTexts(), index = original.indexOf(label);
+      expect(index).toBeGreaterThanOrEqual(0);
+      const frame = page.frameLocator('iframe[title="正文编辑"]'), run = frame.locator("[data-word-script]").filter({ hasText: label }).first();
+      await run.evaluate((node, offset) => {
+        node.closest<HTMLElement>("[contenteditable]")!.focus();
+        const text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode()!, range = document.createRange();
+        range.setStart(text, offset); range.collapse(true);
+        const selected = document.getSelection()!; selected.removeAllRanges(); selected.addRange(range);
+      }, offset);
+      await page.keyboard.press("Enter");
+      const split = await page.evaluate(() => window.textEditorHost.session!.snapshot().html);
+      await cdp.send("Input.imeSetComposition", { text: "zhong", selectionStart: 5, selectionEnd: 5 });
+      await cdp.send("Input.imeSetComposition", { text: "中", selectionStart: 1, selectionEnd: 1 });
+      await cdp.send("Input.imeSetComposition", { text: "中文", selectionStart: 2, selectionEnd: 2 });
+      expect(await page.evaluate(() => window.textEditorHost.session!.snapshot().manifest.revision)).toBe(1);
+      await cdp.send("Input.insertText", { text: value });
+      await expect.poll(() => page.evaluate(() => window.textEditorHost.session!.snapshot().manifest.revision)).toBe(2);
+      const saved = await page.evaluate(() => window.textEditorHost.session!.snapshot().html);
+      expect(await page.evaluate(() => window.textEditorHost.session!.history().undoSteps)).toBe(2);
+      expect(saved).not.toMatch(/sdk-inline-flow|data-sdk-number-text|display:|hyphens:|clip-path|contenteditable/);
+      const expected = [...original]; expected.splice(index, 1, label.slice(0, offset), value + label.slice(offset));
+      expect(await paragraphTexts()).toEqual(expected);
+      if (label !== "实施报告") {
+        const marker = frame.locator("p[data-word-numbering]").filter({ hasText: value }).locator(".sdk-number-marker");
+        expect(await marker.evaluate(node => getComputedStyle(node, "::before").content)).toMatch(/\d/);
+        await expect(marker).toHaveText("");
+      }
+      let final = saved, steps = 2;
+      if (offset === label.length) {
+        await page.keyboard.press("Enter");
+        const repeatedSplit = await page.evaluate(() => window.textEditorHost.session!.snapshot().html);
+        await compose("继续中文");
+        expected.splice(index + 2, 0, "继续中文");
+        expect(await paragraphTexts()).toEqual(expected);
+        expect(await page.evaluate(() => window.textEditorHost.session!.history().undoSteps)).toBe(4);
+        final = await page.evaluate(() => window.textEditorHost.session!.snapshot().html); steps = 4;
+        await page.keyboard.press("Control+z"); expect(await page.evaluate(() => window.textEditorHost.session!.snapshot().html)).toBe(repeatedSplit);
+        await page.keyboard.press("Control+z"); expect(await page.evaluate(() => window.textEditorHost.session!.snapshot().html)).toBe(saved);
+      }
+      await page.keyboard.press("Control+z"); expect(await page.evaluate(() => window.textEditorHost.session!.snapshot().html)).toBe(split);
+      await page.keyboard.press("Control+z"); expect(await page.evaluate(() => window.textEditorHost.session!.snapshot().html)).toBe(initial);
+      for (let step = 0; step < steps; step++) await page.keyboard.press("Control+y");
+      expect(await page.evaluate(() => window.textEditorHost.session!.snapshot().html)).toBe(final);
+      expect(await page.evaluate(() => window.textEditorHost.errors)).toEqual([]);
+    }
+    await cdp.detach();
+  });
+}
+
 test("a collapsed character format applies to IME text in its first and only undo step", async ({ page }) => {
   await mount(page); await selection(page, "a", 1);
   await page.getByRole("button", { name: "加粗", exact: true }).click();
