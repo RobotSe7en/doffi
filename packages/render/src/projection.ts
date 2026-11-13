@@ -60,7 +60,7 @@ export class SourceProjection {
     return this.project(root) as HTMLElement;
   }
   shell(element: Element): Element | undefined {
-    if (this.ignored(element) || this.wrappers.has(element)) return;
+    if (this.ignored(element) || !this.editableRoots.has(element) && (this.wrappers.has(element) || viewNodeRole(element) === "unwrap")) return;
     return this.project(element, undefined, true) as Element;
   }
   /** Clone from live provenance, rather than guessing the origin of cloneContents nodes. */
@@ -78,7 +78,9 @@ export class SourceProjection {
       if (this.ignored(node)) return;
       if (range && hiddenFromViewSelection(node)) return;
       if (range && node !== root && !range.intersectsNode(node)) return;
-      if (this.wrappers.has(node)) {
+      // Pagination can add owned wrappers after capture (e.g. a later resize).
+      // Resolve live ownership as well as the initial projection snapshot.
+      if (!this.editableRoots.has(node) && (this.wrappers.has(node) || viewNodeRole(node) === "unwrap")) {
         const fragment = node.ownerDocument!.createDocumentFragment();
         for (const child of node.childNodes) { const value = clone(child); if (value) fragment.append(value); }
         return fragment;

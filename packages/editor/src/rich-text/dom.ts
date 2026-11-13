@@ -98,7 +98,7 @@ export function bookmark(root: HTMLElement, ignored: IgnoreNode): SelectionBookm
   return { anchor: point(selected.anchorNode, selected.anchorOffset), focus: point(selected.focusNode, selected.focusOffset) };
 }
 export function caretAt(root: Node, requested: number, ignored: IgnoreNode, affinity?: "forward"): [Node, number] {
-  let remaining = requested, fallback: [Node, number] | undefined;
+  let remaining = requested, fallback: [Node, number] | undefined, empty: [Node, number] | undefined;
   const visit = (node: Node): [Node, number] | undefined => {
     if (ignored(node)) return;
     if (node.nodeType === 3) {
@@ -111,9 +111,14 @@ export function caretAt(root: Node, requested: number, ignored: IgnoreNode, affi
       remaining--; return;
     }
     for (const child of node.childNodes) { const found = visit(child); if (found) return found; }
+    // Keep an empty authored run's character formatting. Derived line fillers
+    // must not place the restored caret after its paragraph's trailing break.
+    if (remaining === 0 && node.nodeType === 1 && (node as Element).matches("span,strong,em,b,i,u,s,sub,sup,a,ins,del") && ![...node.childNodes].some(child => !ignored(child))) empty = [node, 0];
     return;
   };
-  return visit(root) ?? fallback ?? [root, root.childNodes.length];
+  const point = visit(root); if (point || fallback || empty) return point ?? fallback ?? empty!;
+  let end = root.childNodes.length; while (end && ignored(root.childNodes[end - 1]!)) end--;
+  return [root, end];
 }
 export function restoreBookmark(root: HTMLElement, value: SelectionBookmark | undefined, ignored: IgnoreNode): void {
   if (!value) return;

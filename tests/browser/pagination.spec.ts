@@ -22,6 +22,13 @@ async function mount(page: Page, files: DocumentPackage, mode: "preview" | "edit
     entries: [...files].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]), mode, options,
   });
 }
+test('source projection strips late owned wrappers while preserving bound roots and unowned lookalikes', async ({ page }) => {
+  await mount(page, pagedFiles('<p data-node-id="text">文档</p>'));
+  const result = await page.evaluate(() => window.paginationHost.lateProjection());
+  expect(result.html).toBe(result.original); expect(result.instance).toBe(result.original); expect(result.shellMissing).toBe(true);
+  expect(result.copy).toBe('<span data-node-id="run" style="color:#123456">原文</span>');
+  expect(result.unowned).toContain('<span class="sdk-inline-flow" style="display: block;">源内容</span>');
+});
 test("read-only pagination requires no editing session and preserves the complete package source", async ({ page }) => {
   const files = pagedFiles(Array.from({ length: 40 }, (_, index) => '<p data-node-id="p-' + index + '">LINE-' + index + "</p>").join(""));
   await mount(page, files);
