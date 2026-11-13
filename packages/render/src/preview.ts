@@ -90,6 +90,10 @@ export function decorate(
   scope: ParentNode = document,
 ): void {
   if (!word) return;
+  for (const object of scope.querySelectorAll<HTMLElement>("[data-word-native-object]")) {
+    object.contentEditable = "false";
+    object.setAttribute("aria-label", object.title || "保留的原生内容");
+  }
   const byId = new Map(
     [...scope.querySelectorAll<HTMLElement>("[data-node-id]")].map(
       (node) => [node.dataset.nodeId!, node],
@@ -98,6 +102,10 @@ export function decorate(
   if ((scope as Node).nodeType === 1) {
     const root = scope as HTMLElement;
     if (root.dataset.nodeId) byId.set(root.dataset.nodeId, root);
+  }
+  for (const cell of scope.querySelectorAll<HTMLElement>("td,th")) {
+    const direction=cell.dataset.wordTextDirection || document.defaultView!.getComputedStyle(cell).getPropertyValue("--word-cell-text-direction").trim();
+    if(direction && direction!=="lrTb"){cell.style.writingMode="vertical-rl";if(direction==="btLr")cell.style.transform="rotate(180deg)";}
   }
   for (const run of scope.querySelectorAll<HTMLElement>("[data-word-run]")) {
     const computed = document.defaultView!.getComputedStyle(run);
@@ -340,7 +348,7 @@ function prepareDocument(input: ContentDocumentModel): { model: ContentDocumentM
   parsed.head.append(style);
   const frameStyle = parsed.createElement("style");
   const setup = snapshot.metadata.pageSetup;
-  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}`;
+  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`;
   parsed.head.insertBefore(frameStyle, style);
   const byId = new Map(
     [...parsed.querySelectorAll<HTMLElement>("[data-node-id]")].map(

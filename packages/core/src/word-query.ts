@@ -1,0 +1,32 @@
+import { DocumentError } from './errors.js';
+import type { ContentDocumentModel,DocumentNode } from './runtime.js';
+export interface WordTextMatch { readonly nodeId:string;readonly from:number;readonly to:number;readonly expectedText:string }
+export interface WordTextFindOptions { readonly matchCase?:boolean;readonly wholeWord?:boolean }
+export interface WordOutlineEntry { readonly nodeId:string;readonly level:number;readonly text:string }
+export interface WordTextStatistics { readonly words:number;readonly characters:number;readonly charactersWithoutSpaces:number;readonly paragraphs:number }
+function paragraphs(model:ContentDocumentModel):DocumentNode[]{
+ const snapshot=model.snapshot();if(snapshot.manifest.kind!=='document'||snapshot.metadata.presentation!==undefined)throw new DocumentError('UnsupportedFormat','Word queries require a Word document.');
+ const root=snapshot.metadata.word?.stories.find(s=>s.kind==='main')?.rootNodeId;
+ const sections=snapshot.metadata.sections;
+ if(!sections)throw new DocumentError('UnsupportedFormat','Word queries require Word page metadata.');
+ const start=root?model.getNode(root):model.getNode(sections[0]!.rootNodeId);
+ const result:DocumentNode[]=[];
+ const visit=(node:DocumentNode):void=>{const before=result.length;if(node.attributes['data-word-native-object'])return;if(/^p$|^h[1-6]$/.test(node.tagName)){result.push(node);return;}for(const id of node.childNodeIds){const child=model.getNode(id);if(child)visit(child);}if(['li','td','th'].includes(node.tagName)&&result.length===before&&node.text)result.push(node);};
+ if(start)visit(start);return result;
+}
+/** Source offsets are UTF-16 and never span a paragraph boundary. */
+export function findWordText(model:ContentDocumentModel,query:string,options:WordTextFindOptions={}):readonly WordTextMatch[]{
+ if(!query)return[];
+ const regex=new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),options.matchCase?'gu':'giu'),result:WordTextMatch[]=[];
+ for(const paragraph of paragraphs(model))for(const match of paragraph.text.matchAll(regex)){
+  const from=match.index,to=from+match[0].length;
+  if(options.wholeWord){const before=paragraph.text.slice(0,from).match(/.$/u)?.[0]??'',after=paragraph.text.slice(to).match(/^./u)?.[0]??'';if(/[\p{L}\p{N}_]/u.test(before)||/[\p{L}\p{N}_]/u.test(after))continue;}
+  result.push(Object.freeze({nodeId:paragraph.nodeId,from,to,expectedText:match[0]}));
+ }
+ return Object.freeze(result);
+}
+export function getWordOutline(model:ContentDocumentModel):readonly WordOutlineEntry[]{return Object.freeze(paragraphs(model).filter(p=>/^h[1-6]$/.test(p.tagName)).map(p=>Object.freeze({nodeId:p.nodeId,level:Number(p.tagName[1]),text:p.text})));}
+export function getWordTextStatistics(model:ContentDocumentModel):WordTextStatistics{
+ const nodes=paragraphs(model),text=nodes.map(p=>p.text).join('\n').replaceAll('\ufffc',''),cjk=text.match(/\p{Script=Han}/gu)?.length??0,western=text.replace(/\p{Script=Han}/gu,' ').match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu)?.length??0;
+ return Object.freeze({words:cjk+western,characters:Array.from(text.replaceAll('\n','')).length,charactersWithoutSpaces:Array.from(text.replace(/\s/gu,'')).length,paragraphs:nodes.length});
+}

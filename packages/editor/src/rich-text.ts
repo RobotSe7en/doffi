@@ -1,3 +1,4 @@
+import { createWordTableControls } from "./word-table-controls.js";
 import { createWordViewport, mountWordRulers } from "./word-ruler.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
@@ -5,7 +6,7 @@ import type { ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
 import { readTextFormat } from "./text-format-state.js";
 import type { TextFormatState } from "./text-format-state.js";
-import { DocumentError } from "@doffi/core";
+import { findWordText, getWordOutline, getWordTextStatistics, createOpaqueId, WordStyleSchema, DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentSelection, ReconciledTextEdit } from "@doffi/core";
 import { mountDocumentPreview } from "./preview.js";
 import { PreviewSource, sourceSelectionText, stripClipboardIdentities } from "@doffi/render";
@@ -20,8 +21,17 @@ import { workspaceControls } from "./workspace.js";
 export interface DocumentTextEditorOptions extends DocumentPreviewOptions { readonly appearance?: "default" | "workspace"; readonly onFormatStateChange?: (state: TextFormatState) => void; readonly onError?: (error: Error) => void }
 export type DocumentTextCommand =
   | { readonly type: "toggle"; readonly property: "bold" | "italic" | "underline" }
-  | { readonly type: "format"; readonly property: "font-weight" | "font-style" | "text-decoration" | "color" | "font-size" | "font-family"; readonly value: string }
-  | { readonly type: "align"; readonly value: "left" | "center" | "right" };
+  | { readonly type: "format"; readonly property: "font-weight" | "font-style" | "text-decoration" | "color" | "font-size" | "font-family" | "background-color" | "vertical-align" | "letter-spacing" | "text-decoration-line"; readonly value: string }
+  | { readonly type: "align"; readonly value: "left" | "center" | "right" | "justify" }
+  | { readonly type: "word"; readonly action: "paragraph"; readonly properties: Readonly<Record<string,string>> }
+  | { readonly type: "word"; readonly action: "style"; readonly styleId: string }
+  | { readonly type: "word"; readonly action: "list"; readonly kind: "bullet" | "numbering" | "none"; readonly level?: number }
+  | { readonly type: "word"; readonly action: "clearFormat" }
+  | { readonly type: "word"; readonly action: "indent"; readonly direction: -1 | 1 }
+  | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
+  | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
+  | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -66,11 +76,17 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   let wholeStoryReplacement = false;
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
+  let wordPanel: HTMLElement | undefined;
   const report = (reason: unknown): void => {
     if (disposed) return;
     const value = reason instanceof Error ? reason : new Error("正文输入失败。");
     error.textContent = value.message; error.hidden = false; options.onError?.(value);
   };
+  const tableControls = createWordTableControls(shadow, viewport, session, () => {
+    const range=selectedRange(),node=range?.startContainer;const element=node?.nodeType===1?node as Element:node?.parentElement;
+    const paragraphId=element?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6")?.dataset.nodeId,tableId=element?.closest<HTMLElement>("table")?.dataset.nodeId,cellId=element?.closest<HTMLElement>("td,th")?.dataset.nodeId;
+    return {...(paragraphId?{paragraphId}:{}),...(tableId?{tableId}:{}),...(cellId?{cellId}:{})};
+  }, report);
   const sourceDocument = (): Document => new DOMParser().parseFromString(session.snapshot().html, "text/html");
   const rootElement = (source: Document): HTMLElement => {
     const main = session.snapshot().metadata.word?.stories.find((story) => story.kind === "main");
@@ -89,6 +105,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   function notifyFormat(): void { if (disposed) return; const state = formatState(), key = JSON.stringify(state); if (key === lastFormatState) return; lastFormatState = key; try { options.onFormatStateChange?.(state); } catch { /* Host UI only. */ } }
   function toggle(property: "bold" | "italic" | "underline"): void {
     const state = formatState(), active = state[property] === true;
+    if (property === "underline") { format("text-decoration", [!active ? "underline" : "", state.strikethrough ? "line-through" : ""].filter(Boolean).join(" ") || "none"); notifyFormat(); return; }
     format(property === "bold" ? "font-weight" : property === "italic" ? "font-style" : "text-decoration", property === "bold" ? active ? "400" : "700" : property === "italic" ? active ? "normal" : "italic" : active ? "none" : "underline"); notifyFormat();
   }
   const select = (node: Node, offset: number): void => {
@@ -221,7 +238,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   const size = document.createElement("select"); size.setAttribute("aria-label", "字号");
   for (const value of [9, 10, 11, 12, 14, 16, 18, 24]) { const option = document.createElement("option"); option.value = value + "pt"; option.textContent = value + " 磅"; size.append(option); }
   size.value = "12pt"; size.addEventListener("change", () => format("font-size", size.value), { signal: controls.signal }); toolbar.append(size);
-  function align(alignment: "left" | "center" | "right"): void {
+  function align(alignment: "left" | "center" | "right" | "justify"): void {
     if (!root || composing) return;
     root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
     const range = selectedRange(); if (!range) return;
@@ -231,6 +248,81 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const candidate = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: revision,
       operations: nodes.map((node) => ({ op: "setStyle" as const, nodeId: node.dataset.nodeId!, property: "text-align", value: alignment })) });
     try { session.commit(candidate); } catch (reason) { session.discard(candidate); throw reason; }
+  }
+  function openWordPanel(action: "find" | "replace" | "outline" | "wordCount"): void {
+    wordPanel?.remove(); const panel=document.createElement("section"); wordPanel=panel;
+    panel.setAttribute("role","region"); panel.setAttribute("aria-label",action === "outline" ? "文档大纲" : action === "wordCount" ? "字数统计" : "查找和替换");
+    panel.style.cssText="padding:12px;background:white;border:1px solid #dbe3ef;max-height:240px;overflow:auto;display:flex;flex-wrap:wrap;gap:8px";
+    const addButton=(label:string,run:()=>void):HTMLButtonElement=>{const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",()=>{try{run();}catch(error){report(error);}},{signal:controls.signal});panel.append(button);return button;};
+    addButton("关闭",()=>{panel.remove();wordPanel=undefined;});
+    const focus=(nodeId:string,from?:number,to?:number):void=>{const node=root?.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(nodeId)+'"]');if(!node||!root||!frame)return;root.focus();node.scrollIntoView({block:"center"});const range=frame.createRange();if(from===undefined)range.selectNodeContents(node);else{range.setStart(...caretAt(node,from,projection.ignored,"forward"));range.setEnd(...caretAt(node,to??from,projection.ignored));}const selected=frame.getSelection()!;selected.removeAllRanges();selected.addRange(range);savedSelection=bookmark(root,projection.ignored);notifyFormat();};
+    if(action==="outline")for(const heading of getWordOutline(session)){const button=addButton(heading.text||"空标题",()=>focus(heading.nodeId));button.style.marginLeft=(heading.level-1)*12+"px";}
+    else if(action==="wordCount"){const stats=getWordTextStatistics(session),text=document.createElement("p");text.textContent=`字数 ${stats.words} · 字符数 ${stats.characters} · 不计空格 ${stats.charactersWithoutSpaces} · 段落 ${stats.paragraphs}`;panel.append(text);}
+    else{
+      const query=document.createElement("input"),replacement=document.createElement("input"),matchCase=document.createElement("input"),wholeWord=document.createElement("input"),results=document.createElement("div"),summary=document.createElement("span");
+      query.setAttribute("aria-label","查找内容");query.placeholder="查找内容";replacement.setAttribute("aria-label","替换为");replacement.placeholder="替换为";matchCase.type=wholeWord.type="checkbox";
+      panel.append(query);if(action==="replace")panel.append(replacement);
+      for(const[input,label]of [[matchCase,"区分大小写"],[wholeWord,"全字匹配"]] as const){const wrapper=document.createElement("label");wrapper.append(input,label);panel.append(wrapper);}
+      let matches: ReturnType<typeof findWordText> = [],current=0;
+      const search=():void=>{matches=findWordText(session,query.value,{matchCase:matchCase.checked,wholeWord:wholeWord.checked});current=Math.min(current,Math.max(0,matches.length-1));summary.textContent=matches.length+" 处匹配";results.replaceChildren();for(const[index,match]of matches.entries()){const button=document.createElement("button");button.type="button";button.textContent=(index+1)+" · "+session.getNode(match.nodeId)!.text.slice(Math.max(0,match.from-12),match.to+24);button.addEventListener("click",()=>{current=index;focus(match.nodeId,match.from,match.to);},{signal:controls.signal});results.append(button);}};
+      const next=(direction:number):void=>{search();if(!matches.length)return;current=(current+direction+matches.length)%matches.length;const match=matches[current]!;focus(match.nodeId,match.from,match.to);};
+      query.addEventListener("input",search,{signal:controls.signal});matchCase.addEventListener("change",search,{signal:controls.signal});wholeWord.addEventListener("change",search,{signal:controls.signal});query.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();next(event.shiftKey?-1:1);}},{signal:controls.signal});
+      addButton("上一处",()=>next(-1));addButton("下一处",()=>next(1));
+      const replace=(all:boolean):void=>{search();const selected=all?matches:matches.slice(current,current+1);if(!selected.length)return;const snapshot=session.snapshot();session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[...selected].reverse().map(match=>({op:"replaceText" as const,...match,text:replacement.value}))}));search();};
+      if(action==="replace"){addButton("替换当前",()=>replace(false));addButton("全部替换",()=>replace(true));}panel.append(summary,results);queueMicrotask(()=>query.focus());
+    }
+    shadow.insertBefore(panel,viewport);
+  }
+  function selectedParagraphs(): HTMLElement[] {
+    if (!root) return [];
+    root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
+    const range = selectedRange(); if (!range) return [];
+    if (range.collapsed) {
+      const element = range.startContainer.nodeType === 1 ? range.startContainer as Element : range.startContainer.parentElement;
+      const paragraph = element?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li"); return paragraph?.dataset.nodeId ? [paragraph] : [];
+    }
+    return [...root.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")].filter(node => node.dataset.nodeId && range.intersectsNode(node));
+  }
+  function wordCommand(command: Extract<DocumentTextCommand, { type: "word" }>): void {
+    if (!root || composing) return;
+    if (command.action === "insertTable" || command.action === "tableSettings") { tableControls.open(command.action === "insertTable"); return; }
+    if (["find","replace","outline","wordCount"].includes(command.action)) { openWordPanel(command.action as "find"|"replace"|"outline"|"wordCount"); return; }
+    if (command.action === "showMarks") { root.toggleAttribute("data-doffi-show-marks", command.visible); return; }
+    const paragraphs = selectedParagraphs(); if (!paragraphs.length) return;
+    savedSelection = bookmark(root, projection.ignored);
+    const snapshot = session.snapshot(), operations: import("@doffi/core").DocumentOperation[] = [];
+    const documentRoot = new DOMParser().parseFromString(snapshot.html, "text/html").querySelector<HTMLElement>('[data-office-kind="document"]')!.dataset.nodeId!;
+    if (command.action === "find" || command.action === "replace" || command.action === "outline" || command.action === "wordCount") return;
+    if (command.action === "defineStyle") {
+      const current = snapshot.metadata.word?.styles.find(style=>style.styleId===command.styleId);
+      const definition = current ? WordStyleSchema.parse(current) : { styleId: command.styleId, kind: "paragraph" as const, cssClass: "word-style-" + createOpaqueId().replaceAll("-", "") };
+      operations.push({ op: "setWordStyle", nodeId: documentRoot, style: definition, runProperties: { ...command.properties } });
+    } else if (command.action === "style") {
+      const known = snapshot.metadata.word?.styles.find(style => style.styleId === command.styleId);
+      if (!known) {
+        const heading = /^Heading([1-6])$/.exec(command.styleId), cssClass = "word-user-" + command.styleId.toLowerCase();
+        operations.push({ op: "setWordStyle", nodeId: documentRoot, style: { styleId: command.styleId, kind: "paragraph", cssClass },
+          paragraphProperties: { "margin-top": heading ? "12pt" : "0pt", "margin-bottom": heading ? "6pt" : "0pt", ...(heading ? { "break-after": "avoid" } : {}) },
+          runProperties: { "font-size": heading ? (20 - Number(heading[1]) * 2) + "pt" : "12pt", "font-weight": heading ? "700" : "400" } });
+      }
+      for (const paragraph of paragraphs) operations.push({ op: "setWordParagraph", nodeId: paragraph.dataset.nodeId!, styleId: command.styleId, clearDirectFormatting: true });
+    } else if (command.action === "paragraph") {
+      for (const paragraph of paragraphs) operations.push({ op: "setWordParagraph", nodeId: paragraph.dataset.nodeId!, properties: { ...command.properties } });
+    } else if (command.action === "list") {
+      const numberingId = command.kind === "none" ? null : "word-user-" + command.kind;
+      if (numberingId && !snapshot.metadata.word?.numbering.some(n => n.numberingId === numberingId)) {
+        operations.push({ op: "setWordNumbering", nodeId: documentRoot, numberingId, levels: Array.from({ length: 9 }, (_,level) => ({ level, start: 1, format: command.kind === "bullet" ? "bullet" as const : "decimal" as const, text: command.kind === "bullet" ? ["•","◦","▪"][level % 3]! : Array.from({length:level+1},(_,n)=>"%"+(n+1)).join(".")+".", suffix: "tab" as const, cssClass: "word-list-" + command.kind + "-" + level })) });
+      }
+      for (const paragraph of paragraphs) operations.push({ op: "setWordList", nodeId: paragraph.dataset.nodeId!, numberingId, level: command.level ?? 0 });
+    } else if (command.action === "indent") {
+      for (const paragraph of paragraphs) operations.push({ op: "setWordParagraph", nodeId: paragraph.dataset.nodeId!, properties: { "margin-left": Math.max(0, parseFloat(frame!.defaultView!.getComputedStyle(paragraph).marginLeft) * .75 + command.direction * 24) + "pt" } });
+    } else {
+      const range = selectedRange(); if (!range) return;
+      const selection = bookmark(root, projection.ignored);
+      mutate(range, () => { styleRange(range, new Map(command.action === "paintFormat" ? Object.entries({...command.properties,...(command.properties["font-family"] ? Object.fromEntries(["ascii","hAnsi","eastAsia","cs"].map(role=>["--word-font-"+role,command.properties["font-family"]!])) : {})}) : [["font-weight","400"],["font-style","normal"],["text-decoration","none"],["vertical-align","baseline"],["background-color","transparent"],["color","#000000"]])); if(root)restoreBookmark(root,selection,projection.ignored); });
+      return;
+    }
+    session.commit(session.prepare({ protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations }));
   }
   for (const [label, alignment] of [["左对齐", "left"], ["居中", "center"], ["右对齐", "right"]] as const) button(label, () => align(alignment));
   button("撤销输入", () => { session.undo(); }); button("重做输入", () => { session.redo(); });
@@ -346,7 +438,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       layout: () => preview.layout(), setup: () => wordMetadata().pageSetup, changed() { if (root) savedSelection = bookmark(root, projection.ignored); notifyFormat(); } });
     if (!frame.querySelector("style[data-sdk-input]")) {
       const viewStyle = frame.createElement("style"); viewStyle.setAttribute("data-sdk-input", "");
-      viewStyle.textContent = "[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}"; frame.head.append(viewStyle);
+      viewStyle.textContent = "[data-office-editor][data-doffi-show-marks] p::after,[data-office-editor][data-doffi-show-marks] h1::after,[data-office-editor][data-doffi-show-marks] h2::after{content:\"¶\";color:#8a9ab0;font-weight:normal}[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}"; frame.head.append(viewStyle);
     }
     if (!root.querySelector(blockSelector)) {
       const first = wordMetadata().sections[0]!.rootNodeId;
@@ -419,12 +511,13 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   }, layout: () => preview.layout(), focus: () => { root?.focus(); }, execute(command) {
     if (disposed || !root || composing) throw new DocumentError("InvalidOperation", "请等待正文输入就绪或完成输入法组合。");
     if (command?.type === "toggle" && ["bold", "italic", "underline"].includes(command.property)) toggle(command.property);
-    else if (command?.type === "format" && ["font-weight", "font-style", "text-decoration", "color", "font-size", "font-family"].includes(command.property) && typeof command.value === "string") format(command.property, command.value);
-    else if (command?.type === "align" && ["left", "center", "right"].includes(command.value)) align(command.value);
+    else if (command?.type === "format" && ["font-weight", "font-style", "text-decoration", "color", "font-size", "font-family", "background-color", "vertical-align", "letter-spacing", "text-decoration-line"].includes(command.property) && typeof command.value === "string") format(command.property, command.value);
+    else if (command?.type === "align" && ["left", "center", "right", "justify"].includes(command.value)) align(command.value);
+    else if (command?.type === "word") wordCommand(command);
     else throw new DocumentError("InvalidOperation", "未知正文格式命令。");
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

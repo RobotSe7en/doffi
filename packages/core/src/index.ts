@@ -90,3 +90,9 @@ export type {
   WorkbookSession, WorkbookCandidateChange, WorkbookInteractionRequestInput, WorkbookRangeChange, WorkbookStructureMapping, TransactionPreparationExecution, TransactionPreparationProgress,
   PresentationInteractionRequestInput,PresentationAnnotationSubmissionHandler,
 } from "./runtime.js";
+
+export { createWordDocument } from "./word.js";
+export type { CreateWordDocumentOptions } from "./word.js";
+
+export { findWordText, getWordOutline, getWordTextStatistics } from "./word-query.js";
+export type { WordTextMatch, WordTextFindOptions, WordOutlineEntry, WordTextStatistics } from "./word-query.js";

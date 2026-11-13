@@ -4,10 +4,12 @@ import { expect, test } from "vitest";
 import type { WordDocumentMetadata } from "@doffi/core";
 import { DocumentError } from "@doffi/core";
 import {
-  importDocx,
+  importDocx as importNativeDocx,
   readDocumentZip,
   writeDocumentZip,
 } from "@doffi/office";
+// These historical rejection cases exercise the explicitly retained strict policy.
+const importDocx: typeof importNativeDocx = (bytes, options) => importNativeDocx(bytes, { ...options, unsupportedContent: "reject" });
 import { zipSync, unzipSync, strFromU8, strToU8 } from "fflate";
 
 const directory = new URL("../../../examples/docx/", import.meta.url);

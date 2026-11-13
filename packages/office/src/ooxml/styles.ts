@@ -1044,11 +1044,8 @@ export class DocxStyles {
       result["vertical-align"] = align === "center" ? "middle" : align;
     }
     if (on(child(properties, "noWrap"))) result["white-space"] = "nowrap";
-    if (
-      val(child(properties, "textDirection")) &&
-      val(child(properties, "textDirection")) !== "lrTb"
-    )
-      unsupported(properties);
+    const direction=val(child(properties,"textDirection"));
+    if(direction){if(!["lrTb","tbRl","btLr"].includes(direction))unsupported(properties!);result["--word-cell-text-direction"]=direction;}
     Object.assign(result, this.margins(child(properties, "tcMar")));
     return result;
   }

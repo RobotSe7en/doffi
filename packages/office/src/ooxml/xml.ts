@@ -41,6 +41,10 @@ export interface XmlNode {
 export interface XmlBudget {
   nodes: number;
 }
+const unsupportedSources = new WeakMap<object, { node: XmlNode; attribute?: string }>();
+export function unsupportedSource(error: unknown): { node: XmlNode; attribute?: string } | undefined {
+  return typeof error === "object" && error !== null ? unsupportedSources.get(error) : undefined;
+}
 export function fail(
   node: Pick<XmlNode, "part" | "name">,
   message: string,
@@ -53,8 +57,13 @@ export function fail(
 export function unsupported(
   node: XmlNode,
   message = "The document contains an unsupported OOXML feature.",
+  attribute?: string,
 ): never {
-  return fail(node, message, "UnsupportedFeature");
+  const error = new DocumentError("UnsupportedFeature", message, [
+    { code: "UnsupportedFeature", path: [node.part.slice(0, 128), node.name.slice(0, 128)], message },
+  ]);
+  unsupportedSources.set(error, { node, ...(attribute ? { attribute } : {}) });
+  throw error;
 }
 export function attr(
   node: XmlNode | undefined,
@@ -67,7 +76,10 @@ export function attr(
 export function checkAttributes(node: XmlNode, names: readonly string[], uri = ""): void {
   for (const key of node.attrs.keys()) {
     if (key.startsWith("http://www.w3.org/2000/xmlns/ ")) continue;
-    if (!names.some(name => key === uri + " " + name)) unsupported(node, "This OOXML attribute is not supported.");
+    if (!names.some(name => key === uri + " " + name)) {
+      try { unsupported(node, "This OOXML attribute is not supported."); }
+      catch (error) { if (typeof error === "object" && error) unsupportedSources.set(error, { node, attribute: key }); throw error; }
+    }
   }
 }
 export function elements(

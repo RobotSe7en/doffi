@@ -25,6 +25,7 @@ import { checkResourceUse, stageResources } from "./session/resources.js";
 import { affectedPresentationSlides, guardPresentationContent, removeDeletedCommentBodies, updatePresentationMetadata, updatePresentationRecovery } from "./session/presentation.js";
 import { updatePresentationConnectors } from "./session/presentation-geometry.js";
 import { applyPresentationOperation, isPresentationOperation, validatePresentationTargets } from "./session/presentation-edit.js";
+import { applyWordOperation, isWordOperation } from "./session/word-edit.js";
 import { PresentationStyleEdit } from "./session/presentation-styles.js";
 export { DEFAULT_INTERACTION_LIMITS } from "./session/interaction.js";
 
@@ -38,6 +39,7 @@ function invalid(message: string): never { throw new DocumentError("InvalidOpera
 function updateWordMetadata(metadata: ContentDocumentMetadata, before: DocumentState, after: ParsedHtml): void {
   const word = metadata.word;
   if (!word) return;
+  if (word.nativeContent) word.nativeContent.fragments = word.nativeContent.fragments.filter(item => !item.nodeId || after.hasNode(item.nodeId));
   word.hyperlinks = word.hyperlinks.filter((item) => after.hasNode(item.nodeId));
   word.revisions = word.revisions.filter((item) => after.hasNode(item.nodeId));
   word.tables = word.tables.filter((item) => after.hasNode(item.nodeId));
@@ -129,6 +131,10 @@ export function createDocumentSession(document: DocumentModel, options: Document
       else if (isPresentationOperation(operation)) {
         if (!metadata.presentation) invalid("Presentation operations cannot target a Word document.");
         applyPresentationOperation({ base, p: metadata.presentation, edit, parse: parseEdited, allocate, limits,styles,annotations,explicit }, operation);
+      }
+      else if (isWordOperation(operation)) {
+        if (metadata.presentation) invalid("Word operations require a Word document.");
+        applyWordOperation(metadata, edit, parseEdited, styles, operation, limits);
       }
       else if ("nodeId" in operation) { guardPresentationContent(base, operation); edit.apply(operation); }
       else applyAnnotation(operation, annotations, explicit);

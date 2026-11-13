@@ -16,6 +16,8 @@ import { ExportStyles } from "./export/styles.js";
 import { color, fontName, nativeInteger } from "./export/values.js";
 import { attributes, declaration, empty, escapeXml, namespaces, orderedProperties, value, XmlParts } from "./export/xml.js";
 
+import { nativeMarker, nativeObjectMarker, restoreDocxNative } from "./docx-native-export.js";
+
 export interface DocxExportOptions extends DocumentZipOptions {}
 export interface DocxExportReport {
   readonly documentId: string;
@@ -130,7 +132,7 @@ class Exporter {
   }
   private setup(section: DeepReadonly<DocumentSection>): DeepReadonly<PageSetup> { return section.pageSetup ?? this.snapshot.metadata.pageSetup; }
   private sectionProperties(section: DeepReadonly<DocumentSection>): string {
-    const setup = this.setup(section); let out = "<w:sectPr>";
+    const setup = this.setup(section); let out = "<w:sectPr" + this.nativeMark(section.rootNodeId) + ">";
     for (const [key, kind] of [["headers", "header"], ["footers", "footer"]] as const) for (const [type, id] of Object.entries(section[key] ?? {})) {
       const story = id ? this.auxiliary.get(id) : undefined; if (!story || story.kind !== kind) unsupported("A section auxiliary story cannot be exported.");
       out += empty("w:" + kind + "Reference", { "w:type": type, "r:id": story!.relation });
@@ -161,6 +163,14 @@ class Exporter {
     const r = (character ? value("rStyle", this.styles.ids.get(character) ?? character) : "") + runProperties(properties, expected, false, role) + (language ? empty("w:lang", { "w:val": language }) : "");
     return r ? "<w:rPr>" + r + "</w:rPr>" : "";
   }
+  private nativeMark(nodeId: string | undefined): string { return this.snapshot.metadata.word?.nativeContent ? nativeMarker(nodeId) : ""; }
+  private nativeRunOwner(node: SourceNode): string | undefined {
+    for (let current: SourceNode | undefined = node; current; current = current.parent) if (element(current)) {
+      const id = current.attrs["data-node-id"];
+      if (id && this.snapshot.metadata.word?.nativeContent?.fragments.some(f => f.nodeId === id && f.ownerName === "r")) return id;
+    }
+    return undefined;
+  }
   private emitText(node: SourceNode, text: string, css: Css, expected: Css, character?: string, role?: string, language?: string): void {
     const boundaries = [...new Set([0, text.length, ...this.annotations.offsets(node)])].sort((a, b) => a - b);
     for (let index = 0; index < boundaries.length; index++) {
@@ -168,7 +178,7 @@ class Exporter {
       const end = boundaries[index + 1]; if (end === undefined || end <= start) continue;
       const textName = this.deleted ? "delText" : "t", raw = text.slice(start, end);
       const pieces = raw.split(/([\t\n])/);
-      this.add("<w:r>" + this.nativeRun(css, expected, character, role ?? (/^[\u0000-\u007f]*$/.test(raw) ? "ascii" : undefined), language));
+      this.add("<w:r" + this.nativeMark(this.nativeRunOwner(node)) + ">" + this.nativeRun(css, expected, character, role ?? (/^[\u0000-\u007f]*$/.test(raw) ? "ascii" : undefined), language));
       for (const piece of pieces) if (piece) this.add(piece === "\t" ? "<w:tab/>" : piece === "\n" ? "<w:br/>" : "<w:" + textName + ' xml:space="preserve">' + escapeXml(piece) + "</w:" + textName + ">");
       this.add("</w:r>");
     }
@@ -187,6 +197,7 @@ class Exporter {
       const textCss = ["td", "th"].includes(node.parent.tag) ? { ...css, "vertical-align": "baseline", "background-color": "transparent" } : css;
       this.emitText(node, node.text, textCss, this.styles.runContext(paragraphStyle, character), character, role, language); return;
     }
+    if (node.attrs["data-word-native-object"]) { this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false)); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
     const requestedStyle = node.attrs["data-word-style"] ?? node.attrs["data-word-ignored-character-style"];
     if (requestedStyle) character = requestedStyle;
@@ -250,7 +261,7 @@ class Exporter {
   }
   private paragraph(node: SourceElement, section?: string, paragraphId?: string, list?: { id: string; level: number }): void {
     const css = this.flowStyles.get(node) ?? this.css.get(node), id = node.attrs["data-node-id"] ?? "", style = node.attrs["data-word-style"];
-    this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + ">");
+    this.add("<w:p" + this.nativeMark(id) + attributes({ "w14:paraId": paragraphId }) + ">");
     let props = (style ? value("pStyle", this.styles.ids.get(style) ?? style) : "");
     const numId = node.attrs["data-word-numbering"] ? this.styles.numberingIds.get(node.attrs["data-word-numbering"]) : list?.id;
     if (numId) props += '<w:numPr>' + value("ilvl", node.attrs["data-word-level"] ?? list?.level ?? 0) + value("numId", numId) + "</w:numPr>";
@@ -302,7 +313,11 @@ class Exporter {
     if (!significant.length) { this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>"); return; }
     for (let index = 0; index < significant.length; index++) {
       const node = significant[index]!, last = index === significant.length - 1;
-      if (element(node) && node.from === node.to && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? ""))) {
+      if (element(node) && node.attrs["data-word-native-object"]) {
+        this.add(nativeObjectMarker(node.attrs["data-word-native-object"], true));
+        if (last && finalSection) this.add("<w:p><w:pPr>" + finalSection + "</w:pPr></w:p>");
+      }
+      else if (element(node) && node.from === node.to && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? ""))) {
         this.inline(node, undefined);
         if (last && (finalSection || paragraphId)) this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>");
       }
@@ -349,14 +364,14 @@ class Exporter {
     const tableWidth = css.width && css.width !== "auto" ? points(css.width, css, this.width) : this.width;
     const grid = info?.grid ?? Array.from({ length: columns }, () => tableWidth / columns);
     if (grid.length !== columns) unsupported("The current table structure no longer matches its native column grid.");
-    this.add("<w:tbl><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(css) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr><w:tblGrid>");
+    this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(css) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr><w:tblGrid>");
     for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add("</w:tblGrid>");
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = this.css.get(row);
-      this.add("<w:tr><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + (rowCss.height && rowCss.height !== "auto" ? empty("w:trHeight", { "w:val": nativeInteger(points(rowCss.height, rowCss), 20, 0), "w:hRule": "atLeast" }) : "") + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + "</w:trPr>");
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + (rowCss.height && rowCss.height !== "auto" ? empty("w:trHeight", { "w:val": nativeInteger(points(rowCss.height, rowCss), 20, 0), "w:hRule": "atLeast" }) : "") + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + "</w:trPr>");
       for (const cell of cells) {
         const cellCss = this.css.get(cell.node);
-        this.add("<w:tc><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(cellCss)) + "</w:tcPr>");
+        this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(cellCss) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])) + "</w:tcPr>");
         if (cell.continuation) this.add("<w:p/>"); else {
           const width = this.width; this.width = grid.slice(cell.column, cell.column + cell.span).reduce((total, value) => total + value, 0); this.blocks(cell.node.children); this.width = width;
         }
@@ -452,7 +467,7 @@ class Exporter {
     this.opc.relate("word/document.xml", "comments", "comments.xml");
     const extended = this.opc.part("word/commentsExtended.xml", "application/vnd.ms-word.commentsExtended+xml");
     extended.add(declaration + '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">');
-    for (const comment of this.annotations.comments) extended.add(empty("w15:commentEx", { "w15:paraId": comment.paragraphId, "w15:done": comment.annotation.status === "resolved" ? 1 : 0 }));
+    for (const comment of this.annotations.comments) extended.add("<w15:commentEx" + this.nativeMark(comment.annotation.bodyNodeId) + attributes( { "w15:paraId": comment.paragraphId, "w15:done": comment.annotation.status === "resolved" ? 1 : 0 }) + "/>");
     extended.add("</w15:commentsEx>"); extended.finish(); this.opc.relate("word/document.xml", "http://schemas.microsoft.com/office/2011/relationships/commentsExtended", "commentsExtended.xml");
   }
   private writeSettings(): void {
@@ -467,5 +482,5 @@ export function exportDocx(document: ContentDocumentModel, options: DocxExportOp
   const model = openDocument(document.serialize(), { ...options, kind: "document" }), limits = { ...DEFAULT_DOCUMENT_READ_LIMITS, ...options.limits };
   if (model.snapshot().manifest.kind !== "document") throw new DocumentError("UnsupportedFormat", "DOCX export requires a Word document package.");
   const output = new Exporter(model, limits).write();
-  return Object.freeze({ bytes: writeOpcZip(output.files, options), report: output.report });
+  return Object.freeze({ bytes: writeOpcZip(restoreDocxNative(model, output.files, limits), options), report: output.report });
 }

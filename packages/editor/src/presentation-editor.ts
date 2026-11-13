@@ -793,7 +793,8 @@ export function mountPresentationEditor(container: HTMLElement, session: Documen
             if (!input || input.composing()) throw new DocumentError("InvalidOperation", "请选择可编辑的文字。");
             if (command.type === "toggle") input.toggle(command.property);
             else if (command.type === "format") input.format(command.property, command.value);
-            else input.paragraph("text-align", command.value);
+            else if (command.type === "align") input.paragraph("text-align", command.value);
+            else throw new DocumentError("InvalidOperation", "Word 文档命令不能应用到演示文稿。");
             notifyTextFormat();
         }, get ready() { return ready; }, selection, selectObjects, selectRegion, regionLayoutKey, setDefinitionSurface, editText, editNotes, editComment, finishInput, activeSlide: () => { ensure(); return active; }, setActiveSlide, perform, insertImage, layout: () => { ensure(); return preview.layout(); }, fonts: () => { ensure(); return preview.fonts(); }, setZoom, setMode, focusAnnotation, startAnnotation: () => commentControls.start(),
         dispose() { if (disposed)

@@ -43,7 +43,7 @@ export function buildDocumentState(input: DocumentPackage, limits: DocumentReadL
       sectionIds.add(section.sectionId);
       sectionRoots.add(section.rootNodeId);
     }
-    validateWord(metadata, annotations, html);
+    validateWord(metadata, annotations, html, manifest.assets);
   } else validatePresentation(metadata.presentation, annotations, html, styles, limits);
   validateAnnotations(annotations, manifest, html);
   const snapshot: ContentDocumentSnapshot = freeze({ manifest, html: html.html, styles, metadata, annotations });

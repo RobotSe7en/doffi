@@ -45,7 +45,10 @@ import {
 } from "./ooxml/xml.js";
 import type { XmlNode } from "./ooxml/xml.js";
 
+import { DocxNativeImport } from "./docx-native-import.js";
+
 export interface DocxImportOptions extends DocumentZipOptions {
+  readonly unsupportedContent?: "preserve" | "reject";
   readonly documentId: string;
 }
 interface Html {
@@ -143,6 +146,7 @@ class Importer {
     private readonly opc: OpcPackage,
     private readonly main: string,
     private readonly documentId: string,
+    private readonly native?: DocxNativeImport,
   ) {
     this.currentPart = main;
     this.styles = new DocxStyles(opc, main);
@@ -521,6 +525,7 @@ class Importer {
       annotations: "annotations.json",
       assets: this.assets,
     };
+    this.native?.finish(this.files, manifest, this.word);
     const css =
       ".word-main{white-space:normal}.word-main p,.word-main h1,.word-main h2,.word-main h3,.word-main h4,.word-main h5,.word-main h6{white-space:pre-wrap}.word-main table{border-collapse:collapse}.word-main td{vertical-align:top}.word-main ins{text-decoration:underline;color:#006400}.word-main del{text-decoration:line-through;color:#a00000}\n" +
       this.styles.css.join("\n");
@@ -689,6 +694,7 @@ class Importer {
         }),
       );
     this.paragraphRunClasses = oldRunClasses;
+    this.native?.bind(source, paragraph.attrs);
     return paragraph;
   }
   private hasTab(source: XmlNode): boolean {
@@ -769,6 +775,7 @@ class Importer {
         });
         if (requestedStyleId && !styleId)
           run.attrs["data-word-ignored-character-style"] = requestedStyleId;
+        this.native?.bind(source, run.attrs);
         parent.children.push(run);
         const language = attr(child(properties, "lang"), "val");
         if (language) run.attrs.lang = language;
@@ -1099,6 +1106,7 @@ class Importer {
       unsupported(columns, "Multiple text columns are not supported.");
     const size = child(source, "pgSz");
     const margins = child(source, "pgMar");
+    if (source) this.native?.bind(source, root.attrs);
     const previous = this.sections[this.sections.length - 1];
     const fallback = previous?.pageSetup ?? {
       unit: "pt" as const,
@@ -1270,10 +1278,11 @@ class Importer {
       for (const status of elements(extension, "commentEx", ns)) {
         check(status, [], ns);
         if (attr(status, "paraIdParent", ns) !== undefined) unsupported(status, "Comment replies are not supported.");
-        for (const key of status.attrs.keys()) if (![ns + " paraId", ns + " done"].includes(key)) unsupported(status, "An unknown comment status extension attribute is not supported.");
+        for (const key of status.attrs.keys()) if (![ns + " paraId", ns + " done"].includes(key)) unsupported(status, "An unknown comment status extension attribute is not supported.", key);
         const id = attr(status, "paraId", ns)?.toUpperCase();
         const comment = id ? byParagraph.get(id) : undefined;
         if (!id || !comment || seen.has(id)) fail(status, "A comment status refers to an unknown or repeated comment paragraph.");
+        this.native?.bind(status, { "data-node-id": comment.bodyNodeId });
         seen.add(id);
         const done = attr(status, "done", ns) ?? "0";
         if (!["0", "1", "true", "false", "on", "off"].includes(done)) fail(status, "A comment resolved state is invalid.");
@@ -1409,6 +1418,9 @@ class Importer {
     });
   }
   private validateMergeContinuation(cell: XmlNode): void {
+    const direction = child(child(cell, "tcPr"), "textDirection");
+    if (direction && attr(direction, "val") !== "lrTb") unsupported(direction, "A vertical merge continuation has independent cell formatting.");
+
     // Only empty paragraphs/runs may disappear into the spanning cell. Text
     // extraction alone misses breaks, drawings, range markers and revisions.
     for (const paragraph of this.compat(cell)) {
@@ -1560,12 +1572,15 @@ class Importer {
           ? { "data-word-repeat-header": "true" }
           : {}),
       });
+      this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);
       let column = 0;
       const next = new Map<number, { cell: Html; span: number }>();
       for (const cell of elements(row, "tc")) {
         const props = child(cell, "tcPr");
         const cellCss = this.styles.cell(props);
+        const textDirection = attr(child(props, "textDirection"), "val");
+        if (textDirection) delete cellCss["--word-cell-text-direction"];
         const span = number(attr(child(props, "gridSpan"), "val"), cell, 1);
         if (span < 1 || column + span > grid.length)
           fail(cell, "A table cell exceeds its grid.");
@@ -1670,6 +1685,8 @@ class Importer {
               },
             ),
           );
+          if (textDirection) htmlCell.attrs["data-word-text-direction"] = textDirection;
+          this.native?.bind(cell, htmlCell.attrs);
           htmlRow.children.push(htmlCell);
           if (merge) next.set(column, { cell: htmlCell, span });
         }
@@ -1680,6 +1697,7 @@ class Importer {
       previous = next;
       rowIndex++;
     }
+    this.native?.bind(source, table.attrs);
     return table;
   }
 }
@@ -1705,8 +1723,17 @@ export function importDocx(
       "UnsupportedFormat",
       "The input is not a supported DOCX document.",
     );
+  if (options.unsupportedContent !== undefined && !["preserve", "reject"].includes(options.unsupportedContent))
+    throw new DocumentError("InvalidDocument", "Unknown DOCX unsupported-content policy.");
   try {
-    return new Importer(opc, main, options.documentId).import();
+    if (options.unsupportedContent === "reject") return new Importer(opc, main, options.documentId).import();
+    const native = new DocxNativeImport(opc, main), view = native.initialize();
+    native.suppressModernParts();
+    for (;;) {
+      native.beginAttempt();
+      try { return new Importer(view, main, options.documentId, native).import(); }
+      catch (error) { if (!native.recover(error)) throw error; }
+    }
   } catch (error) {
     if (error instanceof DocumentError) throw error;
     throw new DocumentError(
@@ -1714,4 +1741,13 @@ export function importDocx(
       "The DOCX document could not be mapped to the supported document model.",
     );
   }
+}
+
+export interface DocxImportReport { readonly documentId: string; readonly preserved: readonly { readonly nativeId: string; readonly nodeId?: string; readonly kind: "inline" | "block" | "property"; readonly label: string }[] }
+export interface DocxImportResult { readonly files: DocumentPackage; readonly report: DocxImportReport }
+/** Same importer, with a bounded capability report derived from the saved source. */
+export function importDocxWithReport(bytes: Uint8Array, options: DocxImportOptions): DocxImportResult {
+  const files = importDocx(bytes, options), model = openDocument(files, { kind: "document", ...(options.limits ? { limits: options.limits } : {}) });
+  const preserved = (model.snapshot().metadata.word?.nativeContent?.fragments ?? []).map(({ nativeId, nodeId, kind, label }) => Object.freeze({ nativeId, ...(nodeId ? { nodeId } : {}), kind, label }));
+  return Object.freeze({ files, report: Object.freeze({ documentId: options.documentId, preserved: Object.freeze(preserved) }) });
 }

@@ -183,7 +183,7 @@ export class SourceStyleEdit {
             rule: Rule;
             item: ListItem<CssNode>;
         };
-        const matches = (node: CssNode): boolean => node.type === "Selector" && node.children.size === 1 && node.children.first?.type === "ClassSelector" && ident.decode(node.children.first.name) === name;
+        const matches = (node: CssNode): boolean => node.type === "Selector" && node.children.size > 0 && node.children.toArray().every(part => part.type === "ClassSelector" && ident.decode(part.name) === name);
         const detach = (entry: Entry): Rule => {
             const rule = entry.rule;
             if (rule.prelude.type !== "SelectorList")
@@ -211,12 +211,13 @@ export class SourceStyleEdit {
             let destination: Entry | undefined, winner: (Entry & {
                 declaration: Declaration;
                 index: number;
+                specificity: number;
             }) | undefined;
             for (const sheet of sheets)
                 sheet.ast.children.forEach((rule, item) => { if (rule.type !== "Rule" || rule.prelude.type !== "SelectorList" || !rule.prelude.children.toArray().some(matches))
-                    return; const entry = { sheet, rule, item }; destination = entry; rule.block.children.toArray().forEach((node, index) => { if (node.type !== "Declaration" || ident.decode(node.property) !== property)
-                    return; if (!winner || node.important || !winner.declaration.important)
-                    winner = { ...entry, declaration: node, index }; }); });
+                    return; const entry = { sheet, rule, item }; const specificity = Math.max(...rule.prelude.children.toArray().filter(matches).map(selector => selector.type === "Selector" ? selector.children.size : 0)); destination = entry; rule.block.children.toArray().forEach((node, index) => { if (node.type !== "Declaration" || ident.decode(node.property) !== property)
+                    return; if (!winner || node.important && !winner.declaration.important || node.important === winner.declaration.important && specificity >= winner.specificity)
+                    winner = { ...entry, declaration: node, index, specificity }; }); });
             if (winner && generate(winner.declaration.value) === generate(incoming.value) && (!incoming.important || winner.declaration.important))
                 continue;
             let target: Rule;

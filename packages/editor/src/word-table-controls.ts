@@ -1,0 +1,40 @@
+import { DocumentError } from '@doffi/core';
+import type { DocumentEditingSession, DocumentOperation } from '@doffi/core';
+export interface WordTableSelection { readonly paragraphId?:string;readonly tableId?:string;readonly cellId?:string }
+/** Transient Word table forms delegate every write to the shared source transaction. */
+export function createWordTableControls(parent:ShadowRoot,before:HTMLElement,session:DocumentEditingSession,selection:()=>WordTableSelection,onError:(error:unknown)=>void):{open(insert:boolean):void;dispose():void}{
+ const document=before.ownerDocument;let panel:HTMLElement|undefined,controller:AbortController|undefined;
+ const close=():void=>{controller?.abort();controller=undefined;panel?.remove();panel=undefined;};
+ function open(insert:boolean,fixed?:WordTableSelection):void{
+  close();const selected=fixed??selection();if(insert&&!selected.paragraphId)throw new DocumentError('InvalidOperation','请先在正文段落中放置光标。');if(!insert&&!selected.tableId)throw new DocumentError('InvalidOperation','请先选择表格中的单元格。');
+  controller=new AbortController();const signal=controller.signal;panel=document.createElement('section');panel.setAttribute('role','region');panel.setAttribute('aria-label',insert?'插入表格':'表格设置');panel.style.cssText='padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px';parent.insertBefore(panel,before);
+  const apply=(operations:DocumentOperation[]):void=>{const snapshot=session.snapshot();session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations}));if(!insert)queueMicrotask(()=>{if(panel&&session.getNode(selected.tableId!))open(false,selected);});};
+  const button=(name:string,run:()=>void):void=>{const node=document.createElement('button');node.type='button';node.textContent=name;node.addEventListener('click',()=>{try{run();}catch(error){onError(error);}},{signal});panel!.append(node);};
+  const field=(name:string,value:number|string,type='number'):HTMLInputElement=>{const label=document.createElement('label'),input=document.createElement('input');label.textContent=name;input.setAttribute('aria-label',name);input.type=type;input.value=String(value);input.style.width=type==='number'?'70px':'120px';if(type==='number'){input.min='0';input.step='1';}label.append(input);panel!.append(label);return input;};
+  const choose=(name:string,options:readonly(readonly[string,string])[],value:string):HTMLSelectElement=>{const label=document.createElement('label'),input=document.createElement('select');label.textContent=name;input.setAttribute('aria-label',name);for(const[key,text]of options){const option=document.createElement('option');option.value=key;option.textContent=text;input.append(option);}input.value=value;label.append(input);panel!.append(label);return input;};
+  button('关闭表格设置',close);
+  if(insert){const rows=field('表格行数',3),columns=field('表格列数',3);rows.min=columns.min='1';button('插入表格',()=>{apply([{op:'insertWordTable',nodeId:selected.paragraphId!,position:'after',rows:Number(rows.value),columns:Number(columns.value)}]);close();});return;}
+  const tableId=selected.tableId!,table=session.getNode(tableId)!;
+  const rowIds=table.childNodeIds.flatMap(id=>{const node=session.getNode(id)!;return node.tagName==='tr'?[id]:node.childNodeIds;});
+  const grid=session.snapshot().metadata.word?.tables.find(table=>table.nodeId===tableId)?.grid;
+  const cells:{id:string;row:number;column:number;rows:number;columns:number}[]=[],occupied:string[][]=Array.from({length:rowIds.length},()=>[]);let columnCount=0;
+  for(const[r,id]of rowIds.entries())for(const cellId of session.getNode(id)!.childNodeIds){const cell=session.getNode(cellId)!;let c=0;while(occupied[r]![c])c++;const rows=Number(cell.attributes.rowspan??1)||rowIds.length-r,columns=Number(cell.attributes.colspan??1);cells.push({id:cellId,row:r,column:c,rows,columns});for(let y=r;y<r+rows;y++)for(let x=c;x<c+columns;x++)occupied[y]![x]=cellId;columnCount=Math.max(columnCount,c+columns);}
+  const active=cells.find(cell=>cell.id===selected.cellId)??cells[0]!;
+  const row=field('起始行',active.row+1),column=field('起始列',active.column+1),rows=field('选区行数',active.rows),columns=field('选区列数',active.columns);row.min=column.min=rows.min=columns.min='1';
+  const change=(value:Extract<DocumentOperation,{op:'editWordTable'}>['change']):void=>{apply([{op:'editWordTable',nodeId:tableId,change:value}]);};
+  button('在上方插入行',()=>change({kind:'insertRows',at:Number(row.value)-1,count:Number(rows.value)}));button('在下方插入行',()=>change({kind:'insertRows',at:Number(row.value),count:Number(rows.value)}));button('删除表格行',()=>change({kind:'deleteRows',at:Number(row.value)-1,count:Number(rows.value)}));
+  button('在左侧插入列',()=>change({kind:'insertColumns',at:Number(column.value)-1,count:Number(columns.value)}));button('在右侧插入列',()=>change({kind:'insertColumns',at:Number(column.value),count:Number(columns.value)}));button('删除表格列',()=>change({kind:'deleteColumns',at:Number(column.value)-1,count:Number(columns.value)}));
+  button('合并单元格',()=>change({kind:'mergeCells',row:Number(row.value)-1,column:Number(column.value)-1,rows:Number(rows.value),columns:Number(columns.value)}));button('拆分单元格',()=>change({kind:'splitCell',row:Number(row.value)-1,column:Number(column.value)-1}));
+  const widths=field('各列宽度（磅，以逗号分隔）',(grid??Array.from({length:columnCount},()=>120)).join(','),'text');button('设置列宽',()=>change({kind:'resize',grid:widths.value.split(',').map(Number)}));
+  button('平均分布各列',()=>{const latest=session.snapshot().metadata.word?.tables.find(table=>table.nodeId===tableId)?.grid??grid;if(!latest)return;change({kind:'resize',grid:latest.map(()=>latest.reduce((a,b)=>a+b,0)/latest.length)});});
+  const height=field('行高（磅）',20);button('设置行高',()=>{const latest=session.getNode(tableId)!;const count=latest.childNodeIds.flatMap(id=>{const node=session.getNode(id)!;return node.tagName==='tr'?[id]:node.childNodeIds;}).length;change({kind:'resize',rowHeights:Array.from({length:count},()=>Number(height.value))});});
+  const headers=field('重复表头行数',rowIds.filter(id=>session.getNode(id)!.attributes['data-word-repeat-header']==='true').length);button('设置重复表头',()=>apply([{op:'formatWordTable',nodeId:tableId,repeatHeaderRows:Number(headers.value)}]));
+  const split=choose('跨页断行',[['allow','允许'],['avoid','禁止']],'allow');button('设置跨页断行',()=>apply([{op:'formatWordTable',nodeId:tableId,allowRowSplit:split.value==='allow'}]));
+  const alignment=choose('单元格垂直对齐',[['top','顶端'],['middle','居中'],['bottom','底端']],'top'),direction=choose('单元格文字方向',[['lrTb','横排'],['tbRl','从上到下'],['btLr','从下到上']],'lrTb');
+  const fill=field('单元格底纹','#ffffff','color'),border=field('单元格边框颜色','#000000','color'),borderWidth=field('边框宽度（磅）',0.5),padding=field('单元格边距（磅）',4);borderWidth.step=padding.step='0.1';
+  button('应用单元格设置',()=>{const selectedIds=new Set<string>();for(let r=Number(row.value)-1;r<Number(row.value)-1+Number(rows.value);r++)for(let c=Number(column.value)-1;c<Number(column.value)-1+Number(columns.value);c++){const id=occupied[r]?.[c];if(!id)throw new DocumentError('InvalidOperation','单元格选区超出表格。');selectedIds.add(id);}apply([...selectedIds].map(nodeId=>({op:'formatWordCell',nodeId,properties:{'vertical-align':alignment.value,'background-color':fill.value,border:borderWidth.value+'pt solid '+border.value,padding:padding.value+'pt'},textDirection:direction.value as 'lrTb'|'tbRl'|'btLr'})));});
+  const styles=session.snapshot().metadata.word?.styles.filter(style=>style.kind==='table')??[];if(styles.length){const style=choose('表格样式',[['','无样式'],...styles.map(style=>[style.styleId,style.styleId] as const)],table.attributes['data-word-style']??'');button('应用表格样式',()=>apply([{op:'formatWordTable',nodeId:tableId,styleId:style.value||null}]));}
+  button('删除表格',()=>{apply([{op:'removeNode',nodeId:tableId}]);close();});
+ }
+ return{open,dispose:close};
+}

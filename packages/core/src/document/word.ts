@@ -1,4 +1,4 @@
-import type { WordDocumentMetadata } from "../contracts/document.js";
+import type { WordDocumentMetadata, AssetDescriptor } from "../contracts/document.js";
 import type { Annotation } from "../contracts/annotations.js";
 import type { ParsedHtml } from "./html.js";
 import { invalid } from "./validation.js";
@@ -8,6 +8,7 @@ export function validateWord(
   metadata: WordDocumentMetadata,
   annotations: readonly Annotation[],
   html: ParsedHtml,
+  assets: readonly AssetDescriptor[] = [],
 ): void {
   if (annotations.some((annotation) => annotation.replies !== undefined)) invalid("Word comment replies are not implemented.");
   if (annotations.some((annotation) => annotation.status === "closed")) invalid("Closed native comment state is supported only for presentation threads.");
@@ -30,6 +31,34 @@ export function validateWord(
     return map;
   };
   if (word) {
+    if (word.nativeContent) {
+      const native = word.nativeContent, paths = new Set(assets.map(asset => asset.path));
+      const ids = new Set<string>(), parts = new Set<string>();
+      for (const fragment of native.fragments) {
+        if (ids.has(fragment.nativeId) || !paths.has(fragment.assetPath)) invalid("Native fragments require unique identities and declared resources.");
+        ids.add(fragment.nativeId);
+        if (fragment.nodeId) {
+          const owner = node(fragment.nodeId);
+          if (fragment.kind !== "property" && (owner.attributes["data-word-native-object"] !== fragment.nativeId || html.getNode(fragment.nodeId)!.text !== "\ufffc"))
+            invalid("Native objects require an intact atomic source placeholder.");
+        } else if (fragment.kind !== "property") invalid("Native objects must have a source node.");
+      }
+      for (const part of native.parts) {
+        if (parts.has(part.sourcePart) || !paths.has(part.assetPath)) invalid("Native parts require unique paths and declared resources.");
+        parts.add(part.sourcePart);
+      }
+      const relations = new Set<string>();
+      for (const relation of native.relationships) {
+        const key = relation.sourcePart + "\n" + relation.id;
+        if (relations.has(key)) invalid("Native relationships require unique identities within each part.");
+        relations.add(key);
+      }
+    }
+    for (const id of html.nodeIds()) {
+      const nativeId = node(id).attributes["data-word-native-object"];
+      if (nativeId && !word.nativeContent?.fragments.some(fragment => fragment.nativeId === nativeId && fragment.nodeId === id && fragment.kind !== "property"))
+        invalid("A native object marker requires its matching typed descriptor.");
+    }
     const stories = unique(word.stories, (item) => item.storyId);
     const storyRoots = unique(word.stories, (item) => item.rootNodeId);
     const order = new Map(html.nodeIds().map((id, index) => [id, index]));

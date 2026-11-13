@@ -3,6 +3,9 @@ import { AnchorSchema, AnnotationSchema, AnnotationStatusSchema } from "./annota
 import { IdentifierSchema, PackagePathSchema, PROTOCOL_VERSION, RevisionSchema } from "./primitives.js";
 import { PresentationOperationSchema } from "./presentation-operations.js";
 import { WorkbookOperationSchema } from "./workbook-operations.js";
+import { WordOperationSchema } from "./word-operations.js";
+export { WordOperationSchema } from "./word-operations.js";
+export type { WordOperation } from "./word-operations.js";
 export * from "./workbook-operations.js";
 export { PresentationOperationSchema, PresentationObjectInputSchema } from "./presentation-operations.js";
 export type { PresentationOperation, PresentationObjectInput } from "./presentation-operations.js";
@@ -14,6 +17,7 @@ export const ReconciledTextEditSchema = z.strictObject({
 export type ReconciledTextEdit = z.infer<typeof ReconciledTextEditSchema>;
 
 export const DocumentContentOperationSchema = z.discriminatedUnion("op", [
+  ...WordOperationSchema.options,
   z.strictObject({
     op: z.literal("replaceText"),
     nodeId: IdentifierSchema,

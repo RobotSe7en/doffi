@@ -1,7 +1,7 @@
 export { DEFAULT_MAX_ZIP_BYTES, readDocumentZip, writeDocumentZip } from "./document-zip.js";
 export type { DocumentZipOptions } from "./document-zip.js";
-export { importDocx } from "./docx-import.js";
-export type { DocxImportOptions } from "./docx-import.js";
+export { importDocx, importDocxWithReport } from "./docx-import.js";
+export type { DocxImportOptions, DocxImportReport, DocxImportResult } from "./docx-import.js";
 export { importPptx } from "./pptx-import.js";
 export type { PptxImportOptions } from "./pptx-import.js";
 export { importXlsx } from "./xlsx-import.js";

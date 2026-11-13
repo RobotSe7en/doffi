@@ -1,5 +1,27 @@
 import { z } from "zod";
-import { IdentifierSchema } from "./primitives.js";
+import { IdentifierSchema, PackagePathSchema } from "./primitives.js";
+
+/** Residual OOXML owns only content that has no editable HTML representation. */
+export const WordNativeContentSchema = z.strictObject({
+  mainPart: PackagePathSchema,
+  fragments: z.array(z.strictObject({
+    nativeId: IdentifierSchema,
+    nodeId: IdentifierSchema.optional(),
+    kind: z.enum(["inline", "block", "property"]),
+    sourcePart: PackagePathSchema,
+    assetPath: PackagePathSchema,
+    fragmentKey: IdentifierSchema.optional(),
+    propertyPath: z.array(z.string().min(1)),
+    ownerName: z.string().min(1),
+    styleId: IdentifierSchema.optional(),
+    label: z.string(),
+  })),
+  parts: z.array(z.strictObject({ sourcePart: PackagePathSchema, assetPath: PackagePathSchema, contentType: z.string().min(1) })),
+  relationships: z.array(z.strictObject({
+    sourcePart: z.string(), id: z.string().min(1), type: z.string().min(1), target: z.string().min(1), external: z.boolean(), root: z.boolean().optional(),
+  })),
+});
+export type WordNativeContent = z.infer<typeof WordNativeContentSchema>;
 
 export const WordStorySchema = z.strictObject({
   storyId: IdentifierSchema,
@@ -60,6 +82,7 @@ export const WordNumberLevelSchema = z.strictObject({
   cssClass: IdentifierSchema,
 });
 export const WordMetadataSchema = z.strictObject({
+  nativeContent: WordNativeContentSchema.optional(),
   stories: z.array(WordStorySchema).min(1),
   evenAndOddHeaders: z.boolean().optional(),
   automaticHyphenation: z.boolean().optional(),

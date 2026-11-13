@@ -19,8 +19,8 @@ function Miniature({ kind }: { kind: "word" | "workbook" | "presentation" }) {
   </div>;
 }
 
-export function WelcomeScreen({ loading, onOpen, onChooseFile, onFile, onNewPresentation }: {
-  loading: boolean; onOpen(id: string): void; onChooseFile(): void; onFile(file: File): void; onNewPresentation(): void;
+export function WelcomeScreen({ loading, onOpen, onChooseFile, onFile, onNewPresentation, onNewWord }: {
+  loading: boolean; onOpen(id: string): void; onChooseFile(): void; onFile(file: File): void; onNewPresentation(): void; onNewWord(): void;
 }) {
   const [dragging, setDragging] = useState(false);
   function drop(event: DragEvent<HTMLDivElement>) {
@@ -40,7 +40,7 @@ export function WelcomeScreen({ loading, onOpen, onChooseFile, onFile, onNewPres
     <section className="welcome-samples" id="sample-documents"><div className="welcome-container">
       <div className="section-heading"><div><h2>样例文档</h2><p>选择一种格式，体验完整的文档工作台。</p></div><span>三种格式，一个工作空间</span></div>
       <div className="sample-cards">{samples.map(item => <button key={item.id} className={"sample-card " + item.kind} aria-label={item.label} disabled={loading} onClick={() => onOpen(item.id)}><Miniature kind={item.kind} /><div className="sample-card-body"><span className="format-badge">{item.format}</span><h3>{item.title}</h3><p>{item.detail}</p><span className="sample-open">打开文档 <Icon name="arrow" size={16} /></span></div></button>)}</div>
-      <div className="collaboration-samples"><Icon name="comment" size={19} /><span>体验人和智能体的文档协作</span><button disabled={loading} aria-label="打开报告协作样例" onClick={() => onOpen("report")}>报告与批注 <Icon name="arrow" size={14} /></button><button disabled={loading} aria-label="打开 PPT 协作样例" onClick={() => onOpen("presentation")}>演示与提案 <Icon name="arrow" size={14} /></button><button disabled={loading} onClick={onNewPresentation}><Icon name="plus" size={14} />新建 PPT</button></div>
+      <div className="collaboration-samples"><Icon name="comment" size={19} /><span>体验人和智能体的文档协作</span><button disabled={loading} aria-label="打开报告协作样例" onClick={() => onOpen("report")}>报告与批注 <Icon name="arrow" size={14} /></button><button disabled={loading} aria-label="打开 PPT 协作样例" onClick={() => onOpen("presentation")}>演示与提案 <Icon name="arrow" size={14} /></button><button disabled={loading} onClick={onNewWord}><Icon name="plus" size={14} />新建 Word</button><button disabled={loading} onClick={onNewPresentation}><Icon name="plus" size={14} />新建 PPT</button></div>
     </div></section>
     <section className="welcome-upload welcome-container"><h2>打开自己的文件</h2><p>支持 .docx、.xlsx、.pptx 和 doffi 文档包 .zip。</p><div className={"upload-zone" + (dragging ? " dragging" : "")} onDragOver={event => { event.preventDefault(); if (!loading) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={drop}>
       <Icon name="upload" size={28} /><strong>将文件拖放到这里</strong><span>或从电脑中选择一份文档</span><button className="primary-button" disabled={loading} onClick={onChooseFile}>选择文件</button><small>最大 64 MiB</small>

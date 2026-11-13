@@ -5,10 +5,14 @@ export interface TextFormatState {
   readonly bold?: boolean;
   readonly italic?: boolean;
   readonly underline?: boolean;
+  readonly strikethrough?: boolean;
+  readonly verticalAlign?: string;
+  readonly backgroundColor?: string;
   readonly fontSize?: number;
   readonly fontFamily?: string;
   readonly color?: string;
   readonly alignment?: string;
+  readonly paragraphStyleId?: string;
 }
 function pointSize(element: Element, style: CSSStyleDeclaration, root: HTMLElement): number {
   const measured = parseFloat(style.fontSize) * .75;
@@ -55,6 +59,9 @@ export function readTextFormat(root: HTMLElement, range: Range | undefined, typi
     for (let node: Element | null = element; node && root.contains(node); node = node.parentElement) if (view.getComputedStyle(node).textDecorationLine.includes("underline")) return "underline";
     return "none";
   }));
+  const strike = same(elements.map(element => { for(let node:Element|null=element;node&&root.contains(node);node=node.parentElement)if(view.getComputedStyle(node).textDecorationLine.includes("line-through"))return true;return false; }));
+  const verticalAlign = range.collapsed && typing.has("vertical-align") ? typing.get("vertical-align") : uniform(style => style.verticalAlign);
+  const backgroundColor = range.collapsed && typing.has("background-color") ? typing.get("background-color") : uniform(style => style.backgroundColor);
   const size = range.collapsed && typing.has("font-size") ? parseFloat(typing.get("font-size")!) : same(elements.map((element, index) => pointSize(element, styles[index]!, root)));
   const fontFamily = range.collapsed && typing.has("font-family") ? typing.get("font-family") : same(elements.map((element, index) => {
     const style = styles[index]!, scope = element.closest<HTMLElement>("[data-word-script],[data-office-script]"), role = scope?.dataset.wordScript ?? scope?.dataset.officeScript;
@@ -62,7 +69,8 @@ export function readTextFormat(root: HTMLElement, range: Range | undefined, typi
     const officeRole = wordRole === "eastAsia" ? "east-asia" : wordRole === "cs" ? "complex-script" : wordRole === "hAnsi" ? "h-ansi" : "ascii";
     return style.getPropertyValue("--word-font-" + wordRole).trim() || style.getPropertyValue("--office-font-" + officeRole).trim() || style.fontFamily;
   }));
+  const paragraphStyleId = same(elements.map(element => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")?.dataset.wordStyle));
   const color = range.collapsed && typing.has("color") ? typing.get("color") : uniform(style => style.color), alignment = uniform(style => style.textAlign);
-  return { enabled: true, hasSelection: !range.collapsed, ...(weight === undefined ? {} : { bold: weight === "bold" || Number(weight) >= 600 }), ...(italic === undefined ? {} : { italic: italic !== "normal" }), ...(decoration === undefined ? {} : { underline: decoration.includes("underline") }),
+  return { enabled: true, hasSelection: !range.collapsed, ...(paragraphStyleId === undefined ? {} : { paragraphStyleId }), ...(strike === undefined ? {} : { strikethrough: strike }), ...(verticalAlign === undefined ? {} : { verticalAlign }), ...(backgroundColor === undefined ? {} : { backgroundColor }), ...(weight === undefined ? {} : { bold: weight === "bold" || Number(weight) >= 600 }), ...(italic === undefined ? {} : { italic: italic !== "normal" }), ...(decoration === undefined ? {} : { underline: decoration.includes("underline") }),
     ...(size === undefined ? {} : { fontSize: size }), ...(fontFamily === undefined ? {} : { fontFamily }), ...(color === undefined ? {} : { color }), ...(alignment === undefined ? {} : { alignment }) };
 }

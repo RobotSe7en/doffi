@@ -2,7 +2,9 @@ import { openContentFixture as openDocument } from "../../../tests/content-fixtu
 import { expect, test } from "vitest";
 import {} from "@doffi/core";
 import type { ContentDocumentModel as DocumentModel, DocumentNode } from "@doffi/core";
-import { exportDocx, importDocx, readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { exportDocx, importDocx as importNativeDocx, readDocumentZip, writeDocumentZip } from "@doffi/office";
+// These historical rejection cases exercise the explicitly retained strict policy.
+const importDocx: typeof importNativeDocx = (bytes, options) => importNativeDocx(bytes, { ...options, unsupportedContent: "reject" });
 import {
   body, complexField, crossSectionRangesFixture, mutateDocx, nestedFieldFixture, styleInheritanceFixture, styles, wordNamespace,
 } from "./regression-fixtures.js";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createPresentation, createDocumentSession, createOpaqueId, DocumentError, openDocument } from "@doffi/core";
+import { createWordDocument, createPresentation, createDocumentSession, createOpaqueId, DocumentError, openDocument } from "@doffi/core";
 import type { ContentDocumentModel as DocumentModel, DocumentSession, DocumentSnapshot } from "@doffi/core";
 import {
   importDocx,
@@ -358,7 +358,8 @@ export function App() {
           const active = state[command.property] === true;
           properties[command.property === "bold" ? "font-weight" : command.property === "italic" ? "font-style" : "--office-font-underline"] = command.property === "bold" ? active ? "normal" : "bold" : command.property === "italic" ? active ? "normal" : "italic" : active ? "none" : "single";
         } else if (command.type === "align") properties["--office-cell-horizontal"] = command.value;
-        else { properties[command.property] = command.value; if (command.property === "font-family") for (const role of ["ascii", "h-ansi", "east-asia"]) properties["--office-font-" + role] = command.value; }
+        else if (command.type === "format") { properties[command.property] = command.value; if (command.property === "font-family") for (const role of ["ascii", "h-ansi", "east-asia"]) properties["--office-font-" + role] = command.value; }
+        else throw new Error("Word 文档命令不能应用到工作簿。");
         return editor.formatCells(properties).catch(reason => setError(reason.message));
       } else if (isPresentation) presentationRef.current?.editor.executeTextCommand(command);
       else workbenchRef.current?.executeTextCommand(command);
@@ -405,6 +406,12 @@ export function App() {
     void load(file.arrayBuffer(), name.endsWith(".docx") ? "docx" : name.endsWith(".pptx") ? "pptx" : name.endsWith(".xlsx") ? "xlsx" : "package",
       { id: createOpaqueId(), name: file.name, kind: name.endsWith(".xlsx") ? "workbook" : name.endsWith(".pptx") ? "presentation" : "word", detail: "本地导入 · " + (file.size < 1024 * 1024 ? Math.max(1, Math.round(file.size / 1024)) + " KB" : (file.size / 1024 / 1024).toFixed(1) + " MB") });
   }
+  function newWordDocument(): void {
+    if (!canLeaveWorkbook()) return;
+    generation.current++; exportRef.current?.controller.abort(); exportRef.current = undefined; setExporting(undefined);
+    loadRef.current?.abort(); loadRef.current = undefined;
+    activate(openDocument(createWordDocument({ documentId: createOpaqueId() }), { kind: "document" }), { id: createOpaqueId(), name: "未命名文档", kind: "word", detail: "新建 Word 文档" }); setError("");
+  }
   function newPresentation(): void {
     if (!canLeaveWorkbook()) return;
     generation.current++; exportRef.current?.controller.abort(); exportRef.current = undefined; setExporting(undefined);
@@ -413,7 +420,7 @@ export function App() {
   }
   return (
     <main data-office-tab={officeTab} data-revision={workbook?.snapshot().manifest.revision ?? snapshot?.manifest.revision} data-annotation-count={workbook?.snapshot().annotations.length ?? snapshot?.annotations.length} data-sheet-count={workbook?.snapshot().metadata.workbook.sheets.length} data-document-id={workbook?.snapshot().manifest.documentId ?? snapshot?.manifest.documentId} data-loading={loading} className={"office-app" + (home ? " is-home" : "") + (!libraryVisible ? " library-hidden" : "") + (!workbook && !isPresentation ? " word-office" : isPresentation ? " presentation-office" : " workbook-office") + (!commentsVisible ? " hide-comments" : "")}>
-      {home && <WelcomeScreen loading={loading} onOpen={id => { const file = files.find(item => item.id === id); if (file) openFile(file); }} onChooseFile={() => fileInput.current?.click()} onFile={importFile} onNewPresentation={newPresentation} />}
+      {home && <WelcomeScreen loading={loading} onOpen={id => { const file = files.find(item => item.id === id); if (file) openFile(file); }} onChooseFile={() => fileInput.current?.click()} onFile={importFile} onNewPresentation={newPresentation} onNewWord={newWordDocument} />}
       {home && (loading || error) && <div className="welcome-feedback" aria-label="文件读取状态">{loading && <p role="status">{progress ? `${progressLabels[progress.phase]} · ${progress.completed} / ${progress.total}` : candidate ? "正在准备工作簿预览…" : "正在读取…"} <button onClick={cancelLoad}>取消读取</button></p>}{error && <p role="alert">{error}</p>}</div>}
       <aside className="document-sidebar" aria-label="文档列表" hidden={home || !libraryVisible}>
         <a className="brand" href="./" aria-label="doffi Playground">
@@ -442,7 +449,7 @@ export function App() {
           <div className="document-navigation"><button aria-label="返回首页" title="返回首页" onClick={() => { if (canLeaveWorkbook()) { setHome(true); window.scrollTo(0, 0); } }}><Icon name="home" size={17} /></button><button aria-label="显示文档列表" title="显示或收起文档列表" aria-expanded={libraryVisible} onClick={() => setLibraryVisible(value => !value)}><Icon name="panel" size={17} /></button></div>
           <div className="quick-access" role="toolbar" aria-label="快速访问">{!workbook && <button title="下载文档包" aria-label="下载文档包" disabled={!session || loading} onClick={download}><Icon name="save" size={17} /></button>}<button title="撤销" aria-label="撤销" disabled={loading || actions.undo?.disabled} onMouseDown={event => event.preventDefault()} onClick={actions.undo?.run}><Icon name="undo" size={17} /></button><button title="重做" aria-label="重做" disabled={loading || actions.redo?.disabled} onMouseDown={event => event.preventDefault()} onClick={actions.redo?.run}><Icon name="redo" size={17} /></button></div>
           <div className="document-title"><span className={"file-icon " + (workbook ? "workbook" : isPresentation ? "presentation" : "word")}><Icon name={workbook ? "grid" : isPresentation ? "slides" : "file"} size={18} /></span><div><h1>{activeFile?.name ?? "文档工作台"}</h1><p>{workbook ? "Excel" : isPresentation ? "PowerPoint" : "Word"} · doffi Playground</p></div></div>
-          <div className="document-header-actions">{!workbook && !isPresentation && <button className="editing-mode-button" aria-label={editing ? "返回预览与批注" : "编辑正文"} disabled={loading || changingMode || !session} onClick={() => { void changeEditing(!editing); }}><Icon name={editing ? "edit" : "book"} size={15} />{editing ? "返回预览与批注" : "编辑正文"}<span className="dropdown-arrow" aria-hidden="true">⌄</span></button>}<button className="subtle-button" disabled={loading} onClick={newPresentation}><Icon name="plus" size={16} />新建 PPT</button><button className="primary-button" disabled={loading} onClick={() => fileInput.current?.click()}><Icon name="upload" size={16} />打开文件</button></div>
+          <div className="document-header-actions">{!workbook && !isPresentation && <button className="editing-mode-button" aria-label={editing ? "返回预览与批注" : "编辑正文"} disabled={loading || changingMode || !session} onClick={() => { void changeEditing(!editing); }}><Icon name={editing ? "edit" : "book"} size={15} />{editing ? "返回预览与批注" : "编辑正文"}<span className="dropdown-arrow" aria-hidden="true">⌄</span></button>}<button className="subtle-button" disabled={loading} onClick={newWordDocument}><Icon name="plus" size={16} />新建 Word</button><button className="subtle-button" disabled={loading} onClick={newPresentation}><Icon name="plus" size={16} />新建 PPT</button><button className="primary-button" disabled={loading} onClick={() => fileInput.current?.click()}><Icon name="upload" size={16} />打开文件</button></div>
           <input
             ref={fileInput}
             className="file-input"

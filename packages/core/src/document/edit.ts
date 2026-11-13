@@ -129,6 +129,10 @@ export class DocumentEdit {
     }
   }
 
+  renameSource(nodeId: string, tag: string): void {
+    const node = this.index().get(nodeId); if (!node || !bodyTags.has(tag)) fail("A source rename requires a supported existing node.");
+    node.tagName = tag; node.nodeName = tag;
+  }
   shellAncestors(): readonly { tagName: string; attributes: Readonly<Record<string,string>> }[] {
     const html=this.tree.childNodes.find(node=>isElement(node)&&node.tagName==="html");
     if(!html || !isElement(html)) return [];
@@ -450,7 +454,7 @@ export class DocumentEdit {
     }
   }
 
-  apply(operation: DocumentContentOperation): void {
+  apply(operation: Exclude<DocumentContentOperation, import("../contracts/word-operations.js").WordOperation>): void {
     this.createdNodes = 0;
     if (!this.baseIds.has(operation.nodeId)) fail("Operation targets must belong to the transaction's base snapshot.");
     const target = this.index().get(operation.nodeId);

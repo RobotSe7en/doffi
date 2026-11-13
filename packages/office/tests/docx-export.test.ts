@@ -2,7 +2,9 @@ import { openContentFixture as openDocument } from "../../../tests/content-fixtu
 import { readFileSync, readdirSync } from "node:fs";
 import { expect, test } from "vitest";
 import { createDocumentSession, DocumentError } from "@doffi/core";
-import { exportDocx, importDocx } from "@doffi/office";
+import { exportDocx, importDocx as importNativeDocx } from "@doffi/office";
+// These historical rejection cases exercise the explicitly retained strict policy.
+const importDocx: typeof importNativeDocx = (bytes, options) => importNativeDocx(bytes, { ...options, unsupportedContent: "reject" });
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 const directory = new URL("../../../examples/docx/", import.meta.url);
 const fixture = (name: string) => new Uint8Array(readFileSync(new URL(name, directory)));

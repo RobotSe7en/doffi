@@ -78,14 +78,14 @@ export function nativeDeletionRange(root: HTMLElement, range: Range, kind: strin
 /** CSS underline propagates through descendants: an inner `none` cannot cancel
  * the ancestor's line. Keep the ancestor identity and restore only the text
  * outside the chosen range, rather than changing unrelated characters. */
-function clearSelectedUnderline(root: HTMLElement, range: Range, ignored: IgnoreNode): void {
+function clearSelectedDecoration(root: HTMLElement, range: Range, ignored: IgnoreNode, line: "underline" | "line-through"): void {
     const document = root.ownerDocument, view = document.defaultView!, ancestors = new Set<HTMLElement>(), visited = new Set<HTMLElement>();
     const walker = document.createTreeWalker(root, 4);
     let node: Node | null;
     while ((node = walker.nextNode())) {
         if (ignored(node) || !range.intersectsNode(node)) continue;
         for (let element = node.parentElement; element && root.contains(element); element = element.parentElement)
-            if (!visited.has(element)) { visited.add(element); if (view.getComputedStyle(element).textDecorationLine.includes("underline")) ancestors.add(element); }
+            if (!visited.has(element)) { visited.add(element); if (view.getComputedStyle(element).textDecorationLine.includes(line)) ancestors.add(element); }
     }
     const restore: { range: Range; color: string; style: string }[] = [];
     for (const ancestor of ancestors) {
@@ -99,20 +99,21 @@ function clearSelectedUnderline(root: HTMLElement, range: Range, ignored: Ignore
             if (from > 0) { const part = document.createRange(); part.setStart(node, 0); part.setEnd(node, from); restore.push({ range: part, color, style }); }
             if (!outside && to < length) { const part = document.createRange(); part.setStart(node, to); part.setEnd(node, length); restore.push({ range: part, color, style }); }
         }
-        const remaining = computed.textDecorationLine.split(/\s+/).filter(value => value !== "underline" && value !== "none").join(" ");
+        const remaining = computed.textDecorationLine.split(/\s+/).filter(value => value !== line && value !== "none").join(" ");
         ancestor.style.setProperty("text-decoration-line", remaining || "none");
     }
     for (const saved of restore.reverse()) {
         if (saved.range.collapsed) continue;
-        const span = document.createElement("span"); span.style.textDecorationLine = "underline"; span.style.textDecorationStyle = saved.style; span.style.textDecorationColor = saved.color;
+        const span = document.createElement("span"); span.style.textDecorationLine = line; span.style.textDecorationStyle = saved.style; span.style.textDecorationColor = saved.color;
         saved.range.surroundContents(span);
     }
 }
 export function styleNativeRange(root: HTMLElement, range: Range, properties: ReadonlyMap<string, string>, ignored: IgnoreNode, setStyles?: (node: HTMLElement, properties: ReadonlyMap<string, string>) => boolean): void {
     const frame = root.ownerDocument;
-    if (properties.get("text-decoration") === "none" || properties.get("text-decoration-line") === "none") {
+    const decoration = properties.get("text-decoration") ?? properties.get("text-decoration-line");
+    if (decoration !== undefined) {
         const from = offsetAt(root, range.startContainer, range.startOffset, ignored), to = offsetAt(root, range.endContainer, range.endOffset, ignored);
-        clearSelectedUnderline(root, range, ignored);
+        for (const line of ["underline", "line-through"] as const) if (!decoration.includes(line)) clearSelectedDecoration(root, range, ignored, line);
         range.setStart(...caretAt(root, from, ignored, "forward")); range.setEnd(...caretAt(root, to, ignored));
     }
     const walker = frame.createTreeWalker(root, 4), ranges: Range[] = [];

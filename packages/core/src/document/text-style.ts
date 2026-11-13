@@ -22,8 +22,8 @@ export interface SourceTextStyleRepresentation {
 export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation): void {
   properties = textFormattingProperties(properties);
   const fail: (message: string) => never = message => { throw new DocumentError("InvalidOperation", message); };
-  for (const property of Object.keys(properties)) if (!/^(?:color|font-(?:family|size|weight|style)|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)
-    && !(representation && /^(?:font-variant|word-spacing|--office-cell-foreground-(?:color|tint|native-alpha))$/.test(property))) fail("Text range appearance accepts only font and text properties.");
+  for (const property of Object.keys(properties)) if (!/^(?:color|background-color|font-(?:family|size|weight|style)|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)
+    && !/^--word-font-(?:ascii|hAnsi|eastAsia|cs)$/.test(property) && !(representation && /^(?:font-variant|word-spacing|--office-cell-foreground-(?:color|tint|native-alpha))$/.test(property))) fail("Text range appearance accepts only font and text properties.");
   const patch = (source: string): string => {
     for (const [property, value] of Object.entries(properties)) source = setDrawingInlineStyle(source, property, value, limits); return source;
   };
