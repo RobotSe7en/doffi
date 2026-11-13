@@ -23,6 +23,7 @@ export interface DocxExportReport {
   readonly documentId: string;
   readonly revision: number;
   readonly exportedAnnotationIds: readonly string[];
+  readonly preservedNativeIds?: readonly string[];
   readonly unexportedAnnotations: readonly UnexportedAnnotation[];
 }
 export interface DocxExportResult { readonly bytes: Uint8Array; readonly report: DocxExportReport }
@@ -139,9 +140,13 @@ class Exporter {
     }
     out += value("type", section.breakType ?? "nextPage");
     out += empty("w:pgSz", { "w:w": nativeInteger(setup.width, 20, 1), "w:h": nativeInteger(setup.height, 20, 1), ...(setup.width > setup.height ? { "w:orient": "landscape" } : {}) });
-    out += empty("w:pgMar", { "w:top": nativeInteger(setup.margins.top, 20, 0), "w:right": nativeInteger(setup.margins.right, 20, 0), "w:bottom": nativeInteger(setup.margins.bottom, 20, 0), "w:left": nativeInteger(setup.margins.left, 20, 0), "w:header": nativeInteger(section.headerDistance ?? 36, 20, 0), "w:footer": nativeInteger(section.footerDistance ?? 36, 20, 0), "w:gutter": 0 });
+    out += empty("w:pgMar", { "w:top": nativeInteger(setup.margins.top, 20, 0), "w:right": nativeInteger(setup.margins.right, 20, 0), "w:bottom": nativeInteger(setup.margins.bottom, 20, 0), "w:left": nativeInteger(setup.margins.left, 20, 0), "w:header": nativeInteger(section.headerDistance ?? 36, 20, 0), "w:footer": nativeInteger(section.footerDistance ?? 36, 20, 0), "w:gutter": nativeInteger(section.gutter ?? 0,20,0) });
     if (section.pageNumberStart !== undefined || section.pageNumberFormat) out += empty("w:pgNumType", { "w:start": section.pageNumberStart, "w:fmt": section.pageNumberFormat });
-    out += value("titlePg", section.differentFirstPage ? "1" : "0") + "</w:sectPr>"; return out;
+    if(section.columns) out += empty("w:cols", {"w:num":section.columns.count,"w:space":nativeInteger(section.columns.gap,20,0),"w:equalWidth":1,"w:sep":section.columns.separator?1:0});
+    out += value("titlePg", section.differentFirstPage ? "1" : "0");
+    if(section.gutterPosition === "right") out += value("rtlGutter",1);
+    if(section.grid) out += empty("w:docGrid", {"w:type":section.grid.type,"w:linePitch":section.grid.linePitch === undefined ? undefined : nativeInteger(section.grid.linePitch,20,1),"w:charSpace":section.grid.characterSpacing});
+    out += "</w:sectPr>"; return out;
   }
   private runDifference(css: Css, expected: Css): Record<string, string> {
     const properties = { ...difference(css, expected, runKeys) };
@@ -197,7 +202,7 @@ class Exporter {
       const textCss = ["td", "th"].includes(node.parent.tag) ? { ...css, "vertical-align": "baseline", "background-color": "transparent" } : css;
       this.emitText(node, node.text, textCss, this.styles.runContext(paragraphStyle, character), character, role, language); return;
     }
-    if (node.attrs["data-word-native-object"]) { this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false)); return; }
+    if (node.attrs["data-word-native-object"]) { this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"])); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
     const requestedStyle = node.attrs["data-word-style"] ?? node.attrs["data-word-ignored-character-style"];
     if (requestedStyle) character = requestedStyle;
@@ -232,7 +237,7 @@ class Exporter {
     const previousDeleted = this.deleted;
     if (revision) { this.add("<w:" + (revision.kind === "insert" ? "ins" : "del") + attributes({ "w:id": this.snapshot.metadata.word!.revisions.indexOf(revision), "w:author": revision.author ?? "", "w:date": date(revision.date) }) + ">"); this.deleted = revision.kind === "delete"; }
     if (node.tag === "br") {
-      this.add("<w:r>" + this.nativeRun(css, this.styles.runContext(paragraphStyle, character), character, role, language) + empty("w:br", node.attrs["data-word-break"] === "page" ? { "w:type": "page" } : {}) + "</w:r>");
+      this.add("<w:r>" + this.nativeRun(css, this.styles.runContext(paragraphStyle, character), character, role, language) + empty("w:br", ["page","column"].includes(node.attrs["data-word-break"]??"") ? { "w:type": node.attrs["data-word-break"] } : {}) + "</w:r>");
       this.add(this.annotations.at(node, 1));
     } else if (node.tag === "img") { this.image(node, css, paragraphStyle, character, role, language); this.add(this.annotations.at(node, 1)); }
     else if (node.attrs["data-word-tab"]) this.emitText(node, "\t", css, this.styles.runContext(paragraphStyle, character), character, role, language);
@@ -314,7 +319,7 @@ class Exporter {
     for (let index = 0; index < significant.length; index++) {
       const node = significant[index]!, last = index === significant.length - 1;
       if (element(node) && node.attrs["data-word-native-object"]) {
-        this.add(nativeObjectMarker(node.attrs["data-word-native-object"], true));
+        this.add(nativeObjectMarker(node.attrs["data-word-native-object"], true, node.attrs["data-node-id"]));
         if (last && finalSection) this.add("<w:p><w:pPr>" + finalSection + "</w:pPr></w:p>");
       }
       else if (element(node) && node.from === node.to && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? ""))) {
@@ -473,7 +478,9 @@ class Exporter {
   private writeSettings(): void {
     const out = this.opc.part("word/settings.xml", contentType("settings")), tabs = this.snapshot.metadata.word?.tabs ?? [], intervals = new Set(tabs.map((tab) => tab.defaultInterval));
     if (intervals.size > 1) unsupported("DOCX has one document-wide default tab interval.");
-    out.add(declaration + "<w:settings" + namespaces + ">" + value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0) + value("updateFields", 0) + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
+    const sections=this.snapshot.metadata.sections;
+    if(sections.some(section=>section.gutterPosition === "top" && section.gutter) && sections.some(section=>section.gutterPosition !== "top" && section.gutter)) unsupported("DOCX gutterAtTop is document-wide; nonzero top and side gutters cannot be mixed.");
+    out.add(declaration + "<w:settings" + namespaces + ">" + value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
   }
 }
 /** Generate a native, editable DOCX exclusively from the current validated HTML
@@ -482,5 +489,5 @@ export function exportDocx(document: ContentDocumentModel, options: DocxExportOp
   const model = openDocument(document.serialize(), { ...options, kind: "document" }), limits = { ...DEFAULT_DOCUMENT_READ_LIMITS, ...options.limits };
   if (model.snapshot().manifest.kind !== "document") throw new DocumentError("UnsupportedFormat", "DOCX export requires a Word document package.");
   const output = new Exporter(model, limits).write();
-  return Object.freeze({ bytes: writeOpcZip(restoreDocxNative(model, output.files, limits), options), report: output.report });
+  return Object.freeze({ bytes: writeOpcZip(restoreDocxNative(model, output.files, limits), options), report: Object.freeze({ ...output.report, preservedNativeIds: Object.freeze(model.snapshot().metadata.word?.nativeContent?.fragments.map(fragment => fragment.nativeId) ?? []) }) });
 }

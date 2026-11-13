@@ -2,6 +2,7 @@ export interface TextFormatState {
   readonly enabled: boolean;
   readonly hasSelection?: boolean;
   readonly editingText?: boolean;
+  readonly storyKind?: string;
   readonly bold?: boolean;
   readonly italic?: boolean;
   readonly underline?: boolean;

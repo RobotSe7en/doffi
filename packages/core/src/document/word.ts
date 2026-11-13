@@ -89,6 +89,10 @@ export function validateWord(
     }
     const main = word.stories.find((story) => story.kind === "main")!;
     for (const section of metadata.sections) {
+      const setup=section.pageSetup??metadata.pageSetup;
+      if(setup.width<=setup.margins.left+setup.margins.right||setup.height<=setup.margins.top+setup.margins.bottom)invalid("Page margins must leave a positive printable area.");
+      if(section.gutter && ((section.gutterPosition === 'top' ? setup.height-setup.margins.top-setup.margins.bottom : setup.width-setup.margins.left-setup.margins.right) <= section.gutter)) invalid("The binding gutter must leave a positive printable area.");
+      if(section.columns){const columns=section.columns;if(columns.gap*(columns.count-1)>=setup.width-setup.margins.left-setup.margins.right-(section.gutterPosition==='top'?0:section.gutter??0))invalid("Column spacing must leave a positive text width.");}
       let parent: string | null = section.rootNodeId;
       while (parent !== null && parent !== main.rootNodeId)
         parent = node(parent).parentNodeId;

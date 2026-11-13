@@ -7,6 +7,7 @@ import type { DocumentPackage } from "@doffi/core";
 import type { DocumentPreviewOptions } from "@doffi/editor";
 import { fieldsFiles, longTable, pagedFiles } from "./fixtures/pagination-files.js";
 import type { PaginationHost } from "./fixtures/pagination-host.js";
+import { createDocumentSession,createWordDocument,openDocument as openWordDocument } from '@doffi/core';
 declare global { interface Window { paginationHost: PaginationHost } }
 let code: string;
 test.beforeAll(async () => {
@@ -22,6 +23,20 @@ async function mount(page: Page, files: DocumentPackage, mode: "preview" | "edit
     entries: [...files].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]), mode, options,
   });
 }
+function columnFiles(table=false):DocumentPackage{
+ const session=createDocumentSession(openWordDocument(createWordDocument({documentId:'columns',pageSetup:{unit:'pt',width:300,height:240,margins:{top:24,right:24,bottom:24,left:24}}}),{kind:'document'}));
+ const content=table?'<table style="width:100pt;border-collapse:collapse"><tr data-word-repeat-header="true"><th style="border:1pt solid black"><p>HEADER</p></th></tr>'+Array.from({length:32},(_,n)=>'<tr><td style="border:1pt solid black;padding:0"><p>ROW-'+n+'</p></td></tr>').join('')+'</table>':'<p style="line-height:16pt;margin:0">'+Array.from({length:40},(_,n)=>'LINE-'+n+' 😀').join('<br>')+'</p>';
+ session.commit(session.prepare({protocolVersion:1,documentId:'columns',baseRevision:0,operations:[{op:'replaceFragment',nodeId:'section-root-1',html:content},{op:'setWordSection',nodeId:'section-root-1',changes:{columns:{count:2,gap:24,separator:true}}}]}));return session.serialize();
+}
+test('physical columns keep one source paragraph, precise selection and reversible rich input',async({page})=>{
+ await mount(page,columnFiles(),'edit');const before=await page.evaluate(()=>window.paginationHost.session!.snapshot()),main=before.metadata.word!.stories.find(story=>story.kind==='main')!;
+ const frame=page.frameLocator('iframe'),paragraph=frame.locator('[data-office-editor] p').first();const positions=await paragraph.evaluate(element=>{const base=element.closest('.sdk-page-flow')!.getBoundingClientRect(),walker=document.createTreeWalker(element,4),result:{x:number;y:number}[]=[];for(let node=walker.nextNode();node;node=walker.nextNode()){const range=document.createRange();range.selectNodeContents(node);for(const rect of range.getClientRects())if(rect.width>.1)result.push({x:rect.x-base.x,y:rect.y-base.y});}return result;});expect(positions.some(rect=>rect.x>150&&rect.y<256)).toBe(true);expect(positions.some(rect=>rect.y>344)).toBe(true);
+ await paragraph.evaluate(element=>{const walker=document.createTreeWalker(element,4),base=element.closest('.sdk-page-flow')!.getBoundingClientRect();for(let node=walker.nextNode();node;node=walker.nextNode()){const range=document.createRange();range.selectNodeContents(node);if(range.getBoundingClientRect().left-base.left>150){range.setStart(node,0);range.collapse(true);const selection=document.getSelection()!;selection.removeAllRanges();selection.addRange(range);(element.closest('[data-office-editor]') as HTMLElement).focus();return;}}throw new Error('Missing second-column text.');});await page.keyboard.press('Enter');await page.keyboard.insertText('EDIT');
+ const result=await page.evaluate(()=>({snapshot:window.paginationHost.session!.snapshot(),text:window.paginationHost.session!.getNode(window.paginationHost.session!.snapshot().metadata.word!.stories.find(story=>story.kind==='main')!.rootNodeId)!.text,errors:window.paginationHost.errors}));expect(result.text.replace('EDIT','')).toBe(await page.evaluate(id=>window.paginationHost.model!.getNode(id)!.text,main.rootNodeId));expect(result.snapshot.html).not.toMatch(/position:relative|sdk-page|sdk-repeat-header/);expect(result.errors).toEqual([]);
+});
+test('table header projections repeat at every physical column without entering source',async({page})=>{
+ await mount(page,columnFiles(true));const frame=page.frameLocator('iframe'),headers=frame.locator('.sdk-repeat-header');expect(await headers.count()).toBeGreaterThan(1);const boxes=await headers.evaluateAll(nodes=>nodes.map(node=>({x:node.getBoundingClientRect().left,y:node.getBoundingClientRect().top})));expect(boxes.some((box,index)=>boxes.some((other,ordinal)=>index!==ordinal&&Math.abs(box.y-other.y)<1&&Math.abs(box.x-other.x)>100))).toBe(true);expect((await page.evaluate(()=>window.paginationHost.model!.snapshot())).html).not.toContain('sdk-repeat-header');
+});
 test('source projection strips late owned wrappers while preserving bound roots and unowned lookalikes', async ({ page }) => {
   await mount(page, pagedFiles('<p data-node-id="text">文档</p>'));
   const result = await page.evaluate(() => window.paginationHost.lateProjection());

@@ -824,11 +824,11 @@ class Importer {
       case "br":
       case "cr": {
         const type = attr(source, "type") ?? "textWrapping";
-        if (!["textWrapping", "page"].includes(type))
-          unsupported(source, "Column breaks are not supported.");
+        if (!["textWrapping", "page", "column"].includes(type))
+          unsupported(source, "The break type is not supported.");
         const mark = this.make(
           "br",
-          type === "page" ? { "data-word-break": "page" } : {},
+          type === "page" || type === "column" ? { "data-word-break": type } : {},
         );
         const offset = this.offset(parent, "\n");
         parent.children.push(mark);
@@ -1087,7 +1087,6 @@ class Importer {
       (child(source, "vAlign") &&
         attr(child(source, "vAlign"), "val") !== "top") ||
       on(child(source, "bidi")) ||
-      on(child(source, "rtlGutter")) ||
       on(child(source, "formProt"))
     )
       unsupported(
@@ -1095,15 +1094,11 @@ class Importer {
         "The section writing direction or protection is not supported.",
       );
     const grid = child(source, "docGrid");
-    if (grid && attr(grid, "type") && attr(grid, "type") !== "default")
-      unsupported(grid, "Document line and character grids are not supported.");
+    const gridType = attr(grid, "type") ?? "default";
+    if (!["default", "lines", "linesAndChars", "snapToChars"].includes(gridType))
+      unsupported(grid!, "The document grid type is not supported.");
     const columns = child(source, "cols");
-    if (
-      columns &&
-      (number(attr(columns, "num"), columns, 1) !== 1 ||
-        elements(columns, "col").length > 1)
-    )
-      unsupported(columns, "Multiple text columns are not supported.");
+    if(columns && (attr(columns,"equalWidth")==='0'||attr(columns,"equalWidth")==='false'||attr(columns,"equalWidth")==='off'))unsupported(columns,"Unequal text columns are retained as native layout properties.");
     const size = child(source, "pgSz");
     const margins = child(source, "pgMar");
     if (source) this.native?.bind(source, root.attrs);
@@ -1126,8 +1121,6 @@ class Importer {
         if (value !== undefined)
           setup.margins[side] = number(value, margins) / 20;
       }
-      if (number(attr(margins, "gutter"), margins, 0) !== 0)
-        unsupported(margins, "Page gutters are not supported.");
     }
     const headers = { ...previous?.headers };
     const footers = { ...previous?.footers };
@@ -1187,6 +1180,10 @@ class Importer {
         : {}),
       sectionId: "section-" + (this.sections.length + 1),
       rootNodeId: this.id(root),
+      ...(columns?{columns:{count:number(attr(columns,"num"),columns,1),gap:number(attr(columns,"space"),columns,720)/20,separator:["1","true","on"].includes(attr(columns,"sep")??"")}}:{}),
+      ...(grid ? { grid: { type: gridType as "default" | "lines" | "linesAndChars" | "snapToChars", ...(attr(grid,"linePitch") !== undefined ? {linePitch: number(attr(grid,"linePitch"),grid) / 20} : {}), ...(attr(grid,"charSpace") !== undefined ? {characterSpacing: number(attr(grid,"charSpace"),grid)} : {}) } } : {}),
+      ...(margins && attr(margins,"gutter") !== undefined ? {gutter: number(attr(margins,"gutter"),margins) / 20} : {}),
+      gutterPosition: on(child(this.settings,"gutterAtTop")) ? "top" : on(child(source,"rtlGutter")) ? "right" : "left",
       pageSetup: setup,
       breakType: breakType as DocumentSection["breakType"] & string,
       differentFirstPage: on(child(source, "titlePg")),

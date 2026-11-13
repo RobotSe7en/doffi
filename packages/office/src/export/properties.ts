@@ -3,8 +3,8 @@ import type { Css } from "./css.js";
 import { color, fontName, length, nativeInteger } from "./values.js";
 import { empty, orderedProperties, value } from "./xml.js";
 
-export const runKeys: readonly string[] = ["font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading"];
-export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
+export const runKeys: readonly string[] = ["font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid"];
+export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
 export const pick = (css: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key]) => keys.includes(key)));
 export const difference = (css: Css, expected: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key, val]) => keys.includes(key) && val !== expected[key]));
 export function unsupported(message: string): never { throw new DocumentError("UnsupportedFeature", message); }
@@ -23,6 +23,7 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
     if (role) fonts["w:" + role] = name;
     else if (!Object.keys(fonts).length) for (const key of ["ascii", "hAnsi", "eastAsia", "cs"]) fonts["w:" + key] = name;
   }
+  if(css["--word-run-snap-to-grid"] !== undefined) out += toggle("snapToGrid",css["--word-run-snap-to-grid"] === "1");
   if (Object.keys(fonts).length) out += empty("w:rFonts", fonts);
   for (const [prop, name, active] of [["font-weight", "b", "bold"], ["font-style", "i", "italic"], ["text-transform", "caps", "uppercase"], ["font-variant", "smallCaps", "small-caps"]]) {
     if (css[prop!] === undefined) continue;
@@ -91,6 +92,7 @@ export function paragraphProperties(css: Css, width = 468): string {
     if ([css.widows, css.orphans].some((value) => value !== undefined && !["1", "2"].includes(value))) unsupported("DOCX widow control supports one or two lines in this profile.");
     out += toggle("widowControl", css.widows !== "1" && css.orphans !== "1");
   }
+  if(css["--word-paragraph-snap-to-grid"] !== undefined) out += toggle("snapToGrid",css["--word-paragraph-snap-to-grid"] === "1");
   out += borders(css, "pBdr") + shade(css);
   for (const [key, name] of [["--word-suppress-auto-hyphens", "suppressAutoHyphens"], ["--word-overflow-punctuation", "overflowPunct"]]) if (css[key!] !== undefined) out += toggle(name!, css[key!] === "1");
   const spacing: Record<string, string | number> = {};

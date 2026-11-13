@@ -16,8 +16,8 @@ export const value = (name: string, val: string | number | undefined): string =>
 export const declaration = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 export const namespaces = ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';
 const propertyOrder: Readonly<Record<string, readonly string[]>> = {
-  rPr: ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "color", "spacing", "kern", "sz", "szCs", "highlight", "u", "shd", "vertAlign", "lang"],
-  pPr: ["pStyle", "keepNext", "keepLines", "pageBreakBefore", "widowControl", "numPr", "pBdr", "shd", "tabs", "suppressAutoHyphens", "overflowPunct", "spacing", "ind", "jc", "outlineLvl", "rPr", "sectPr"],
+  rPr: ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "snapToGrid", "color", "spacing", "kern", "sz", "szCs", "highlight", "u", "shd", "vertAlign", "lang"],
+  pPr: ["pStyle", "keepNext", "keepLines", "pageBreakBefore", "widowControl", "numPr", "pBdr", "shd", "tabs", "suppressAutoHyphens", "overflowPunct", "snapToGrid", "spacing", "ind", "jc", "outlineLvl", "rPr", "sectPr"],
   tblPr: ["tblStyle", "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook"],
   tcPr: ["tcW", "gridSpan", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "vAlign"],
 };

@@ -4,9 +4,11 @@ import type { LayoutDiagnostic, RenderedPage, RenderLimits } from "./contracts.j
 import { markViewNode } from "./view-nodes.js";
 import { repeatTableHeaders } from "./table-headers.js";
 import { pageFlow } from "./flow.js";
+import { columnFlow } from './column-flow.js';
 import type { PageFlow } from "./flow.js";
 import { ownViewStyle } from "./view-nodes.js";
 import type { PreviewSource } from "./source-index.js";
+import { applyWordGrid, wordPageSetup } from './word-grid.js';
 
 const px = (value: number): number => value * 96 / 72;
 const pt = (value: number): number => value * 72 / 96;
@@ -28,6 +30,7 @@ export function pageLabel(value: number, format = "decimal"): string {
 }
 interface SectionView { readonly definition: DeepReadonly<DocumentSection>; readonly element: HTMLElement }
 interface Group {
+  readonly columns:string;
   readonly setup: DeepReadonly<PageSetup>;
   readonly box: HTMLElement;
   readonly flow: HTMLElement;
@@ -79,21 +82,24 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
   const article = root.closest<HTMLElement>('[data-office-kind="document"]')!;
   article.style.width = maximumWidth + "pt"; article.style.padding = "0"; article.style.background = "transparent"; article.style.position = "relative"; article.style.zIndex = "1";
   const layoutStyle = document.createElement("style");
-  layoutStyle.textContent = ".sdk-page-group{position:relative;box-sizing:border-box;margin:0 auto 18pt}.sdk-page-group:last-child{margin-bottom:0}.sdk-page-flow{position:relative;display:flow-root}.sdk-page-flow .sdk-section{display:flow-root}.sdk-page-layer{position:absolute;pointer-events:none;z-index:0}.sdk-paper{position:absolute;box-sizing:border-box;background:white;box-shadow:0 1px 5px #0003}.sdk-page-story{position:absolute;box-sizing:border-box;overflow:hidden}.sdk-page-story p{min-height:0}.sdk-page-story .sdk-auxiliary{display:block;border:0;padding:0}.sdk-story-label,.sdk-auxiliary{display:none}.sdk-page-story{display:block}.sdk-page-number{position:absolute;right:0;bottom:-14pt;color:#68717b;font:9px system-ui}[data-word-break=page]{border:0!important;margin:0!important;height:0;line-height:0;display:block}";
+  layoutStyle.textContent = ".sdk-page-group{position:relative;box-sizing:border-box;margin:0 auto 18pt}.sdk-page-group:last-child{margin-bottom:0}.sdk-page-flow{position:relative;display:flow-root}.sdk-page-flow .sdk-section{display:flow-root}.sdk-page-layer{position:absolute;pointer-events:none;z-index:0}.sdk-paper{position:absolute;box-sizing:border-box;background:white;box-shadow:0 1px 5px #0003}.sdk-page-story{position:absolute;box-sizing:border-box;overflow:hidden}.sdk-page-story p{min-height:0}.sdk-page-story .sdk-auxiliary{display:block;border:0;padding:0}.sdk-story-label,.sdk-auxiliary{display:none}.sdk-page-story{display:block}.sdk-page-number{position:absolute;right:0;bottom:-14pt;color:#68717b;font:9px system-ui}[data-word-break]{border:0!important;margin:0!important;height:0;line-height:0;display:block}";
   document.head.append(layoutStyle);
   for (const section of mainSections) {
-    const setup = section.definition.pageSetup ?? metadata.pageSetup, { width, height, margins } = setup;
+    applyWordGrid(document,section.element,section.definition,limits);
+    const setup = wordPageSetup(section.definition,metadata.pageSetup), { width, height, margins } = setup;
     if (width - margins.left - margins.right <= 0 || height - margins.top - margins.bottom <= 0 || width > 20_000 || height > 20_000)
       throw new DocumentError("UnsupportedFeature", "Page dimensions must provide a positive printable area within the render size limit.");
     let group = groups.at(-1);
-    if (!group || JSON.stringify(group.setup) !== JSON.stringify(setup)) {
+    const columns=JSON.stringify(section.definition.columns??{count:1,gap:0});
+    if (!group || JSON.stringify(group.setup) !== JSON.stringify(setup) || group.columns!==columns) {
       if (group && section.definition.breakType === "continuous") diagnostics.push({ code: "SectionGeometryChange", nodeId: section.definition.rootNodeId, message: "A continuous section with different page geometry starts on a new page." });
       const box = markViewNode(document.createElement("div"), "unwrap"), flow = markViewNode(document.createElement("div"), "unwrap");
       box.className = "sdk-page-group"; flow.className = "sdk-page-flow";
-      box.style.cssText = `width:${width}pt;padding:${margins.top}pt 0 ${margins.bottom}pt`;
+      box.style.cssText = `width:${width}pt;padding:${margins.top}pt 0 ${margins.bottom}pt;overflow:clip`;
       flow.style.cssText = `width:${width - margins.left - margins.right}pt;margin-left:${margins.left}pt`;
       box.append(flow);
-      group = { setup, box, flow, sections: [], paginator: pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits) }; groups.push(group);
+      const definition=section.definition.columns;
+      group = { setup, columns, box, flow, sections: [], paginator: definition&&definition.count>1 ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition.count,px(definition.gap),definition.separator??false,limits,source) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits) }; groups.push(group);
       if (section.element === root) { flow.append(...root.childNodes); root.append(box); }
       else root.insertBefore(box, section.element);
     }
@@ -123,6 +129,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       }
       physical += group.paginator.count;
       if (physical > limits.maxPages) throw new DocumentError("ResourceLimitExceeded", "Document exceeds the render page budget.");
+      group.paginator.project?.();
     }
     source.reindex();
     const result: RenderedPage[] = [], surface = root.getBoundingClientRect();

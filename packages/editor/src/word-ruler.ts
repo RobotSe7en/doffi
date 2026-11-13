@@ -3,6 +3,11 @@ import type { DocumentRenderReport } from '@doffi/render';
 
 const svgNS = 'http://www.w3.org/2000/svg', px = 4 / 3, centimeter = 96 / 2.54;
 export interface WordRulers { refresh(): void; setVisible(visible: boolean): void; dispose(): void }
+export interface WordRulerEditing {
+ read():{left:number;right:number;first:number;tabs:readonly number[]}|undefined;
+ commit(kind:'left'|'right'|'first'|'tab',value:number,previous?:number):void;
+ onError(error:unknown):void;
+}
 /** Build chrome before inserting an iframe: moving a live iframe resets its document. */
 export function createWordViewport(stage: HTMLElement): HTMLElement {
   const document = stage.ownerDocument, viewport = document.createElement('div'), across = document.createElement('div'), down = document.createElement('div'), corner = document.createElement('div');
@@ -17,7 +22,7 @@ export function createWordViewport(stage: HTMLElement): HTMLElement {
 }
 
 /** Two derived rulers in viewport rails; no document nodes or per-page ruler trees. */
-export function mountWordRulers(stage: HTMLElement, frame: HTMLIFrameElement, root: () => HTMLElement | undefined, layout: () => DocumentRenderReport | undefined, defaultSetup: () => Readonly<PageSetup>): WordRulers {
+export function mountWordRulers(stage: HTMLElement, frame: HTMLIFrameElement, root: () => HTMLElement | undefined, layout: () => DocumentRenderReport | undefined, defaultSetup: () => Readonly<PageSetup>, editing?:WordRulerEditing): WordRulers {
   const document = stage.ownerDocument, viewport = stage.parentElement!, across = viewport.querySelector<HTMLElement>('[data-doffi-ruler-rail=horizontal]')!, down = viewport.querySelector<HTMLElement>('[data-doffi-ruler-rail=vertical]')!, corner = viewport.firstElementChild as HTMLElement;
   const original = { height: stage.style.height, minHeight: stage.style.minHeight, maxHeight: stage.style.maxHeight };
   stage.style.gridArea = '2/2'; stage.style.minWidth = '0';
@@ -27,6 +32,29 @@ export function mountWordRulers(stage: HTMLElement, frame: HTMLIFrameElement, ro
     ruler.style.cssText = 'position:absolute;z-index:4;pointer-events:none;overflow:hidden;background:#f5f5f5;color:#525965'; ruler.style.display = 'none'; (axis === 'horizontal' ? across : down).append(ruler);
   }
   let visible = false, disposed = false, queued: number | undefined, painted = '';
+  const controls=new AbortController();let handleControls=new AbortController(),handleKey='',dragging=false;let horizontalGeometry:{start:number;end:number;width:number;zoom:number}|undefined;
+  function handles():void{
+    if(dragging)return;
+    const nextKey=JSON.stringify([editing?.read(),horizontalGeometry]);if(nextKey===handleKey&&horizontal.querySelector('[data-ruler-handle]'))return;handleKey=nextKey;handleControls.abort();handleControls=new AbortController();
+    horizontal.querySelectorAll('[data-ruler-handle]').forEach(node=>node.remove());
+    const state=editing?.read(),geometry=horizontalGeometry;if(!state||!geometry)return;
+    const scale=px*geometry.zoom,origin=geometry.start*scale,available=geometry.width-geometry.start-geometry.end;
+    const add=(kind:'left'|'right'|'first'|'tab',value:number,label:string):void=>{
+      const handle=document.createElementNS(svgNS,'path');handle.dataset.rulerHandle=kind;handle.setAttribute('d',kind==='first'?'M-5 0H5L0 7Z':kind==='tab'?'M-3 11V18H4':'M-5 19H5L0 12Z');handle.setAttribute('fill',kind==='tab'?'#2271cf':'#657b96');
+      const at=()=>origin+(kind==='right'?available-value:kind==='first'?state.left+value:value)*scale;
+      handle.setAttribute('transform',`translate(${at()} 0)`);handle.style.cssText='pointer-events:all;cursor:ew-resize;outline:none';handle.setAttribute('role','slider');handle.setAttribute('aria-label',label);handle.setAttribute('tabindex','0');handle.setAttribute('aria-valuenow',String(value));
+      const finish=(next:number):void=>{const keepFocus=(handle.getRootNode() as ShadowRoot).activeElement===handle;try{editing!.commit(kind,next,kind==='tab'?value:undefined);}catch(error){editing!.onError(error);}refresh();if(keepFocus)queueMicrotask(()=>horizontal.querySelector<SVGElement>('[data-ruler-handle='+kind+']')?.focus());};
+      handle.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Delete','Backspace'].includes(event.key))return;event.preventDefault();if((event.key==='Delete'||event.key==='Backspace')&&kind==='tab')finish(-1);else if(event.key.startsWith('Arrow'))finish(value+(event.key==='ArrowRight'?1:-1)*(kind==='right'?-1:1)*(event.shiftKey?10:1));},{signal:handleControls.signal});
+      handle.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();dragging=true;handle.setPointerCapture(event.pointerId);const start=event.clientX;let next=value;
+        const move=(move:PointerEvent):void=>{next=value+(move.clientX-start)/scale*(kind==='right'?-1:1);next=Math.round(Math.max(kind==='first'?-state.left:0,Math.min(available,next))*2)/2;handle.setAttribute('transform',`translate(${origin+(kind==='right'?available-next:kind==='first'?state.left+next:next)*scale} 0)`);};
+        const end=(up:PointerEvent):void=>{dragging=false;handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',end);handle.removeEventListener('pointercancel',cancel);finish(kind==='tab'&&Math.abs(up.clientY-horizontal.getBoundingClientRect().top)>40?-1:next);};
+        const cancel=():void=>{dragging=false;handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',end);handle.removeEventListener('pointercancel',cancel);refresh();};
+        handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',cancel);
+      },{signal:handleControls.signal});horizontal.append(handle);
+    };
+    add('left',state.left,'段落左缩进');add('right',state.right,'段落右缩进');add('first',state.first,'首行缩进');state.tabs.forEach(value=>add('tab',value,'制表位 '+value+' 磅'));
+  }
+  if(editing){horizontal.style.pointerEvents='auto';horizontal.addEventListener('dblclick',event=>{if((event.target as Element).closest('[data-ruler-handle]')||!horizontalGeometry)return;const geometry=horizontalGeometry,value=(event.clientX-horizontal.getBoundingClientRect().left)/(px*geometry.zoom)-geometry.start;if(value<0||value>geometry.width-geometry.start-geometry.end)return;try{editing.commit('tab',Math.round(value*2)/2);}catch(error){editing.onError(error);}refresh();},{signal:controls.signal});}
   function paint(ruler: SVGSVGElement, length: number, start: number, end: number, zoom: number, vertical: boolean): void {
     const size = length * zoom, origin = start * zoom, unit = centimeter * zoom / 10;
     ruler.setAttribute('width', String(vertical ? 20 : size)); ruler.setAttribute('height', String(vertical ? size : 20));
@@ -59,11 +87,13 @@ export function mountWordRulers(stage: HTMLElement, frame: HTMLIFrameElement, ro
     if (!page) { horizontal.style.display = vertical.style.display = 'none'; return; }
     const setup: Readonly<PageSetup> = page.setup, left = frameBox.left - stageBox.left + (sourceBox.left + page.rect.x * px) * zoom, y = frameBox.top - stageBox.top + (sourceBox.top + page.rect.y * px) * zoom;
     horizontal.style.left = left + 'px'; horizontal.style.top = '2px'; vertical.style.left = '1px'; vertical.style.top = y + 'px';
-    const key = JSON.stringify([setup, zoom]); if (key === painted) return; painted = key;
+    horizontalGeometry={start:setup.margins.left,end:setup.margins.right,width:setup.width,zoom};
+    const key = JSON.stringify([setup, zoom]); if (key === painted) {handles();return;} painted = key;
     paint(horizontal, setup.width * px, setup.margins.left * px, setup.margins.right * px, zoom, false);
     paint(vertical, setup.height * px, setup.margins.top * px, setup.margins.bottom * px, zoom, true);
+    handles();
   }
   const schedule = () => { if (queued === undefined && !disposed) queued = document.defaultView!.requestAnimationFrame(() => { queued = undefined; refresh(); }); };
   stage.addEventListener('scroll', schedule, { passive: true });
-  return { refresh, setVisible(value: boolean) { visible = value; refresh(); }, dispose() { disposed = true; stage.removeEventListener('scroll', schedule); if (queued !== undefined) document.defaultView!.cancelAnimationFrame(queued); horizontal.remove(); vertical.remove(); for (const [name, value] of Object.entries(original)) stage.style[name as keyof typeof original] = value; } };
+  return { refresh, setVisible(value: boolean) { visible = value; refresh(); }, dispose() { disposed = true; controls.abort();handleControls.abort(); stage.removeEventListener('scroll', schedule); if (queued !== undefined) document.defaultView!.cancelAnimationFrame(queued); horizontal.remove(); vertical.remove(); for (const [name, value] of Object.entries(original)) stage.style[name as keyof typeof original] = value; } };
 }

@@ -1,0 +1,19 @@
+import type { WordMetadata } from '../contracts/word.js';
+import type { DocumentEdit } from '../document/edit.js';
+import type { ParsedHtml } from '../document/html.js';
+/** Clone semantic ownership with the HTML IDs allocated by the shared editor. */
+export function copyWordStorySemantics(word:WordMetadata,identities:ReadonlyMap<string,string>,edit:DocumentEdit,source:ParsedHtml,cloneId:string):void{
+ const map=(id:string):string=>identities.get(id)??id;
+ for(const [before,after]of identities){const node=source.peekNode(before)!;const attributes:Record<string,string>={};for(const key of ['data-word-field-end','data-word-field-result'])if(node.attributes[key])attributes[key]=map(node.attributes[key]!);if(Object.keys(attributes).length)edit.attributes(after,attributes);}
+ word.fields.push(...word.fields.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:map(item.nodeId),...(item.endNodeId?{endNodeId:map(item.endNodeId)}:{}),...(item.resultNodeIds?{resultNodeIds:item.resultNodeIds.map(map)}:{}),...(item.instructionFields?{instructionFields:item.instructionFields.map(field=>({...field,fieldNodeId:map(field.fieldNodeId)}))}:{})})));
+ word.tabs.push(...word.tabs.filter(item=>identities.has(item.paragraphNodeId)).map(item=>({...item,paragraphNodeId:map(item.paragraphNodeId),stops:item.stops.map(stop=>({...stop}))})));
+ word.tables.push(...word.tables.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:map(item.nodeId),grid:[...item.grid]})));
+ word.revisions.push(...word.revisions.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:map(item.nodeId),sourceId:map(item.nodeId)})));
+ const names=new Map<string,string>();
+ word.bookmarks.push(...word.bookmarks.filter(item=>identities.has(item.startNodeId)&&identities.has(item.endNodeId)).map(item=>{const name=item.name+'_'+cloneId;names.set(item.name,name);return{...item,bookmarkId:map(item.startNodeId),name,startNodeId:map(item.startNodeId),endNodeId:map(item.endNodeId)};}));
+ word.hyperlinks.push(...word.hyperlinks.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:map(item.nodeId),...(item.bookmark&&names.has(item.bookmark)?{bookmark:names.get(item.bookmark)!}:{})})));
+ if(word.nativeContent){const native=word.nativeContent,parts=new Map<string,string>();
+  const fragments=native.fragments.filter(item=>item.nodeId&&identities.has(item.nodeId)).map((item,index)=>{let sourcePart=parts.get(item.sourcePart);if(!sourcePart){sourcePart='doffi-clone/'+cloneId+'/'+parts.size+'.xml';parts.set(item.sourcePart,sourcePart);}const nodeId=map(item.nodeId!),nativeId=cloneId+'-native-'+index;if(item.kind!=='property')edit.attributes(nodeId,{'data-word-native-object':nativeId});return{...item,nodeId,nativeId,sourcePart};});
+  native.fragments.push(...fragments);native.relationships.push(...native.relationships.filter(item=>parts.has(item.sourcePart)).map(item=>({...item,sourcePart:parts.get(item.sourcePart)!,root:false})));
+ }
+}

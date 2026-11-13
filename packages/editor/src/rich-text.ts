@@ -1,3 +1,5 @@
+import { createWordPageControls } from "./word-page-controls.js";
+import { wordStoryPreview } from "./word-story-preview.js";
 import { createWordTableControls } from "./word-table-controls.js";
 import { createWordViewport, mountWordRulers } from "./word-ruler.js";
 import { bindWordLineSelection } from "./line-selection.js";
@@ -18,7 +20,7 @@ import { SourceProjection } from "./rich-text/projection.js";
 import { deleteNativeRange, nativeDeletionRange, styleNativeRange } from "./rich-text/operations.js";
 import { workspaceControls } from "./workspace.js";
 
-export interface DocumentTextEditorOptions extends DocumentPreviewOptions { readonly appearance?: "default" | "workspace"; readonly onFormatStateChange?: (state: TextFormatState) => void; readonly onError?: (error: Error) => void }
+export interface DocumentTextEditorOptions extends DocumentPreviewOptions { readonly appearance?: "default" | "workspace"; readonly storyId?: string; readonly onFormatStateChange?: (state: TextFormatState) => void; readonly onError?: (error: Error) => void }
 export type DocumentTextCommand =
   | { readonly type: "toggle"; readonly property: "bold" | "italic" | "underline" }
   | { readonly type: "format"; readonly property: "font-weight" | "font-style" | "text-decoration" | "color" | "font-size" | "font-family" | "background-color" | "vertical-align" | "letter-spacing" | "text-decoration-line"; readonly value: string }
@@ -31,7 +33,7 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
   | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
-  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" };
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -42,6 +44,7 @@ export interface DocumentTextEditor {
   formatState(): TextFormatState;
   setZoom(zoom: number): void;
   setRulers(visible: boolean): void;
+  editStory(storyId?: string): void;
   selection(): DocumentSelection | undefined;
   clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
   /** Core owns persistent state and history. Disposal releases only this view. */
@@ -76,6 +79,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   let wholeStoryReplacement = false;
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
+  let activeStoryId = options.storyId;
   let wordPanel: HTMLElement | undefined;
   const report = (reason: unknown): void => {
     if (disposed) return;
@@ -87,9 +91,16 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const paragraphId=element?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6")?.dataset.nodeId,tableId=element?.closest<HTMLElement>("table")?.dataset.nodeId,cellId=element?.closest<HTMLElement>("td,th")?.dataset.nodeId;
     return {...(paragraphId?{paragraphId}:{}),...(tableId?{tableId}:{}),...(cellId?{cellId}:{})};
   }, report);
+  const currentSection = (): string => {
+    const range=selectedRange(),metadata=wordMetadata();
+    return metadata.sections.find(section=>{const element=root?.querySelector('[data-node-id="'+CSS.escape(section.rootNodeId)+'"]')??(root?.dataset.nodeId===section.rootNodeId?root:undefined);return element&&range&&element.contains(range.startContainer);})?.rootNodeId??metadata.sections[0]!.rootNodeId;
+  };
+  const pageControls=createWordPageControls(shadow,viewport,session,currentSection,editStory,report);
+  const viewModel = () => { if(activeStoryId && !session.snapshot().metadata.word?.stories.some(story=>story.storyId===activeStoryId))activeStoryId=undefined;return wordStoryPreview(session,activeStoryId); };
+  function editStory(storyId?: string): void { if(composing)throw new DocumentError("InvalidOperation","请先完成当前输入法组合。");activeStoryId=storyId;savedSelection=undefined;refresh(); }
   const sourceDocument = (): Document => new DOMParser().parseFromString(session.snapshot().html, "text/html");
   const rootElement = (source: Document): HTMLElement => {
-    const main = session.snapshot().metadata.word?.stories.find((story) => story.kind === "main");
+    const main = session.snapshot().metadata.word?.stories.find((story) => activeStoryId ? story.storyId === activeStoryId : story.kind === "main");
     const result = main ? source.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(main.rootNodeId) + '"]')
       : source.querySelector<HTMLElement>('body > [data-office-kind="document"]');
     if (!result) throw new DocumentError("InvalidDocument", "正文内容域不存在。"); return result;
@@ -100,7 +111,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const range = selection.getRangeAt(0);
     return root.contains(range.startContainer) && root.contains(range.endContainer) ? range.cloneRange() : undefined;
   };
-  function formatState(): TextFormatState { return !root || composing || disposed ? { enabled: false } : { ...readTextFormat(root, selectedRange(), typingStyles, projection.ignored), editingText: true }; }
+  function formatState(): TextFormatState { return !root || composing || disposed ? { enabled: false } : { ...readTextFormat(root, selectedRange(), typingStyles, projection.ignored), editingText: true, storyKind: session.snapshot().metadata.word?.stories.find(story => activeStoryId ? story.storyId === activeStoryId : story.kind === "main")?.kind ?? "main" }; }
   let lastFormatState = "";
   function notifyFormat(): void { if (disposed) return; const state = formatState(), key = JSON.stringify(state); if (key === lastFormatState) return; lastFormatState = key; try { options.onFormatStateChange?.(state); } catch { /* Host UI only. */ } }
   function toggle(property: "bold" | "italic" | "underline"): void {
@@ -114,10 +125,11 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   };
   function refresh(selection = savedSelection): void {
     if (!root || !frame || disposed) return;
+    const renderedModel = viewModel();
     const source = rootElement(sourceDocument());
     viewControls.abort(); viewControls = new AbortController();
     try {
-      preview.update(session); root = rootElement(frame); projection = new SourceProjection();
+      preview.update(renderedModel); root = rootElement(frame); projection = new SourceProjection();
       activate(source); revision = session.snapshot().manifest.revision; proofs = []; pending = undefined; typingStyles.clear(); typingAnchor = undefined; compositionInsertion = undefined; wholeStoryReplacement = false;
     } catch (reason) { root.contentEditable = "false"; report(reason); return; }
     root.focus(); restoreBookmark(root, selection, projection.ignored); savedSelection = bookmark(root, projection.ignored); notifyFormat();
@@ -213,7 +225,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const tail = frame!.createRange(); tail.setStart(range.startContainer, range.startOffset); tail.setEnd(block, block.childNodes.length);
     const authored = projection.serialize(block), next = frame!.createElement(block.localName);
     for (const attribute of authored.attributes) if (!["id", "data-node-id"].includes(attribute.name)) next.setAttribute(attribute.name, attribute.value);
-    next.append(tail.extractContents()); block.after(next); select(next, 0);
+    const content=projection.serializeRange(tail);tail.deleteContents();next.append(content);block.after(next);select(next,0);
   }
   function format(property: string, value: string): void {
     if (!root || composing) return;
@@ -273,9 +285,9 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }
     shadow.insertBefore(panel,viewport);
   }
-  function selectedParagraphs(): HTMLElement[] {
+  function selectedParagraphs(focus=true): HTMLElement[] {
     if (!root) return [];
-    root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
+    if(focus){root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);}
     const range = selectedRange(); if (!range) return [];
     if (range.collapsed) {
       const element = range.startContainer.nodeType === 1 ? range.startContainer as Element : range.startContainer.parentElement;
@@ -285,6 +297,10 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   }
   function wordCommand(command: Extract<DocumentTextCommand, { type: "word" }>): void {
     if (!root || composing) return;
+    if (command.action === "pageSettings") { pageControls.open(); return; }
+    if (command.action === "mainStory") { editStory(); return; }
+    if (command.action === "pageBreak") { const range=selectedRange();if(!range)return;mutate(range,()=>{const breaker=frame!.createElement("br");breaker.dataset.wordBreak="page";insert(range,breaker);});return; }
+    if (command.action === "sectionBreak" || command.action === "pageNumber") { const paragraph=selectedParagraphs()[0];if(!paragraph)return;const snapshot=session.snapshot();session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[command.action==="sectionBreak"?{op:"splitWordSection",nodeId:paragraph.dataset.nodeId!,breakType:"nextPage"}:{op:"insertWordField",nodeId:paragraph.dataset.nodeId!,instruction:" PAGE ",cachedText:"1"}]}));return; }
     if (command.action === "insertTable" || command.action === "tableSettings") { tableControls.open(command.action === "insertTable"); return; }
     if (["find","replace","outline","wordCount"].includes(command.action)) { openWordPanel(command.action as "find"|"replace"|"outline"|"wordCount"); return; }
     if (command.action === "showMarks") { root.toggleAttribute("data-doffi-show-marks", command.visible); return; }
@@ -474,9 +490,15 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }); }, { signal: viewControls.signal });
   }
   const unsubscribe = session.subscribe((event) => { if (event.type !== "error" && !committing && !disposed && !composing) refresh(); });
-  const preview = mountDocumentPreview(plane, session, { ...options, title: "正文编辑" });
+  const preview = mountDocumentPreview(plane, viewModel(), { ...options, title: "正文编辑" });
   let zoom = 1;
-  const rulers = mountWordRulers(stage, preview.element, () => root, () => preview.layout(), () => wordMetadata().pageSetup);
+  const rulers = mountWordRulers(stage, preview.element, () => root, () => preview.layout(), () => wordMetadata().pageSetup, {
+    read(){const paragraph=selectedParagraphs(false)[0];if(!paragraph||!frame)return;const style=frame.defaultView!.getComputedStyle(paragraph),tabs=wordMetadata().word?.tabs.find(tab=>tab.paragraphNodeId===paragraph.dataset.nodeId);return{left:Math.round((parseFloat(style.marginLeft)*.75||0)*100)/100,right:Math.round((parseFloat(style.marginRight)*.75||0)*100)/100,first:Math.round((parseFloat(style.textIndent)*.75||0)*100)/100,tabs:tabs?.stops.filter(stop=>stop.alignment!=="clear").map(stop=>stop.position)??[]};},
+    commit(kind,value,previous){const snapshot=session.snapshot(),operations:import("@doffi/core").DocumentOperation[]=[];for(const paragraph of selectedParagraphs()){
+      if(kind==='tab'){const tabs=snapshot.metadata.word?.tabs.find(tab=>tab.paragraphNodeId===paragraph.dataset.nodeId);operations.push({op:'setWordTabs',nodeId:paragraph.dataset.nodeId!,defaultInterval:tabs?.defaultInterval??snapshot.metadata.word?.tabs[0]?.defaultInterval??36,stops:[...(tabs?.stops??[]).filter(stop=>stop.position!==previous&&stop.position!==value),...(value>=0?[{position:value,alignment:'left' as const,leader:'none' as const}]:[])].sort((a,b)=>a.position-b.position)});}
+      else operations.push({op:'setWordParagraph',nodeId:paragraph.dataset.nodeId!,properties:{[kind==='left'?'margin-left':kind==='right'?'margin-right':'text-indent']:value+'pt'}});
+    }if(operations.length)session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations}));},onError:report,
+  });
   function resizePlane(anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom)): void {
     if (disposed || !stage.clientWidth) return;
     const word = wordMetadata(), minimum = Math.max(word.pageSetup.width, ...word.sections.map(section => (section.pageSetup ?? word.pageSetup).width)) * 4 / 3 + 48;
@@ -498,11 +520,11 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     activate(source);
     if (revision !== session.snapshot().manifest.revision) refresh();
     resizePlane(); notifyFormat();
-    frame.addEventListener("selectionchange", () => { if (root) { const next = bookmark(root, projection.ignored); if (!composing && typingAnchor && next && JSON.stringify(next) !== typingAnchor) { typingStyles.clear(); typingAnchor = undefined; } savedSelection = next ?? savedSelection; notifyFormat(); } }, { signal: controls.signal });
+    frame.addEventListener("selectionchange", () => { if (root) { const next = bookmark(root, projection.ignored); if (!composing && typingAnchor && next && JSON.stringify(next) !== typingAnchor) { typingStyles.clear(); typingAnchor = undefined; } savedSelection = next ?? savedSelection; notifyFormat();rulers.refresh(); } }, { signal: controls.signal });
   }).catch((reason: unknown) => { report(reason); throw reason; });
-  return { element, ready, async settled() { await ready; const result = await preview.settled(); resizePlane(); return result; }, formatState, setZoom, setRulers(visible) { const anchor = captureZoomAnchor(stage, plane, zoom); rulers.setVisible(visible); resizePlane(anchor); }, selection() {
+  return { element, ready, async settled() { await ready; const result = await preview.settled(); resizePlane(); return result; }, formatState, setZoom, editStory, setRulers(visible) { const anchor = captureZoomAnchor(stage, plane, zoom); rulers.setVisible(visible); resizePlane(anchor); }, selection() {
     const range = selectedRange(); if (!frame || !range || range.collapsed || composing || disposed) return undefined;
-    const anchor = new PreviewSource(frame, session).textAnchor(range, session); if (!anchor) return undefined;
+    const anchor = new PreviewSource(frame, viewModel()).textAnchor(range, session); if (!anchor) return undefined;
     const manifest = session.snapshot().manifest; return { documentId: manifest.documentId, baseRevision: manifest.revision, anchor };
   }, clipboard(action) {
     if (!root || disposed || composing) return Promise.reject(new DocumentError("InvalidOperation", "正文尚不可编辑。"));
@@ -518,6 +540,6 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

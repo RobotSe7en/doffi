@@ -1,4 +1,5 @@
 import { editSourceTable } from "./table-edit.js";
+import { copyWordStorySemantics } from './word-story-copy.js';
 import { checkLimit } from "../document/validation.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import { DocumentError } from '../errors.js';
@@ -8,7 +9,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return ['insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return ['cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
 export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -17,6 +18,50 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
+  if(operation.op==='setWordOptions'){
+    if(node.parentNodeId!==null)fail('Shared Word settings require the document root.');
+    if(operation.evenAndOddHeaders!==undefined)word.evenAndOddHeaders=operation.evenAndOddHeaders;
+    if(operation.automaticHyphenation!==undefined)word.automaticHyphenation=operation.automaticHyphenation;
+    return;
+  }
+  if(operation.op==='setWordTabs'){
+    if(!/^p$|^h[1-6]$/.test(node.tagName))fail('Tab stops require a paragraph.');
+    const definition={paragraphNodeId:operation.nodeId,defaultInterval:operation.defaultInterval,stops:operation.stops},index=word.tabs.findIndex(item=>item.paragraphNodeId===operation.nodeId);
+    if(index<0)word.tabs.push(definition);else word.tabs[index]=definition;return;
+  }
+  if(operation.op==='insertWordField'){
+    if(!/^p$|^h[1-6]$/.test(node.tagName))fail('A field insertion requires a paragraph.');
+    const cached=operation.cachedText??'1',escape=(value:string):string=>value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    const id=edit.insertSource(operation.nodeId,'<span data-word-field="simple">'+escape(cached)+'</span>').rootNodeIds[0]!;
+    word.fields.push({nodeId:id,instruction:operation.instruction,resultState:'cached'});return;
+  }
+  if(operation.op==='setWordSection') {
+    const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId);if(!section)fail('Page changes require a section root.');
+    Object.assign(section,operation.changes);return;
+  }
+  if(operation.op==='splitWordSection') {
+    if(!/^p$|^h[1-6]$/.test(node.tagName))fail('A section break requires a paragraph.');
+    const index=metadata.sections.findIndex(section=>section.rootNodeId===node.parentNodeId),section=metadata.sections[index];if(!section)fail('A section break requires a paragraph directly in its section.');
+    const main=word.stories.find(story=>story.kind==='main')!,html=parse(),siblings=html.peekNode(main.rootNodeId)!.childNodeIds,ordinal=siblings.indexOf(section.rootNodeId);
+    const rootId=edit.insertSource(main.rootNodeId,'<section></section>',siblings[ordinal+1]).rootNodeIds[0]!;
+    const children=html.peekNode(section.rootNodeId)!.childNodeIds,tail=children.slice(children.indexOf(operation.nodeId)+1);if(tail.length)edit.moveSource(tail,rootId);else edit.insertSource(rootId,'<p></p>');
+    const next={...section,sectionId:rootId,rootNodeId:rootId,breakType:operation.breakType};delete next.pageNumberStart;metadata.sections.splice(index+1,0,next);return;
+  }
+  if(operation.op==='insertWordStory') {
+    const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId);if(!section)fail('Header/footer creation requires a section.');
+    const main=word.stories.find(story=>story.kind==='main')!,html=parse(),rootId=html.nodeIds().find(id=>html.peekNode(id)!.parentNodeId===null)!;
+    if(main.rootNodeId===rootId){const children=[...html.peekNode(rootId)!.childNodeIds],wrapper=edit.insertSource(rootId,'<div data-office-story="main"></div>').rootNodeIds[0]!;edit.moveSource(children,wrapper);edit.attributes(rootId,{'data-office-story':undefined});main.rootNodeId=wrapper;for(const item of metadata.sections)if(item.rootNodeId===rootId)item.rootNodeId=wrapper;}
+    const storyRoot=edit.insertSource(rootId,'<div data-office-story="'+operation.kind+'">'+operation.html+'</div>').rootNodeIds[0]!;
+    word.stories.push({storyId:storyRoot,kind:operation.kind,rootNodeId:storyRoot});const normal=word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal');if(normal){const tree=parse(),visit=(id:string):void=>{const paragraph=tree.peekNode(id)!;if(paragraph.tagName==='p'&&!paragraph.attributes['data-word-style'])edit.attributes(id,{'data-word-style':normal.styleId,class:[paragraph.attributes.class,normal.cssClass].filter(Boolean).join(' ')});for(const child of paragraph.childNodeIds)visit(child);};visit(storyRoot);}const key=operation.kind==='header'?'headers':'footers';section[key]={...section[key],[operation.variant]:storyRoot};if(operation.variant==='first')section.differentFirstPage=true;if(operation.variant==='even')word.evenAndOddHeaders=true;return;
+  }
+  if(operation.op==='cloneWordStory'){
+    const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId),story=word.stories.find(story=>story.storyId===operation.storyId);if(!section||!story||!['header','footer'].includes(story.kind))fail('Copying a header/footer requires its source story and target section.');
+    const source=parse(),article=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!,clone=edit.cloneSource(story.rootNodeId,article),rootId=clone.rootNodeIds[0]!;
+    copyWordStorySemantics(word,clone.identities,edit,source,rootId);word.stories.push({...story,storyId:rootId,rootNodeId:rootId});const key=story.kind==='header'?'headers':'footers';section[key]={...section[key],[operation.variant]:rootId};if(operation.variant==='first')section.differentFirstPage=true;if(operation.variant==='even')word.evenAndOddHeaders=true;return;
+  }
+  if(operation.op==='setWordStoryContent'){
+    if(!word.stories.some(story=>story.rootNodeId===operation.nodeId&&story.kind!=='main'))fail('Auxiliary story editing requires an existing header, footer or comment story.');edit.replaceSourceContent(operation.nodeId,operation.html);return;
+  }
   if(operation.op==='insertWordTable') {
     if (!/^p$|^h[1-6]$/.test(node.tagName)) fail('Insert a table beside an existing paragraph.');
     checkLimit(operation.rows * operation.columns * 3, limits.maxNodes);

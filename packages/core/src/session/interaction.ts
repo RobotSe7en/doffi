@@ -118,6 +118,14 @@ export function validateProposal(state: DocumentState, request: DocumentInteract
   for (const operation of proposal.operations) {
     if (!request.supportedOperations.includes(operation.op)) invalid("The proposal uses an operation not declared by the request.");
     if (!scope.has(operation.nodeId)) invalid("A proposal operation targets a node outside the request context.");
+    if(operation.op==='splitWordSection'){
+      const parent=state.html.peekNode(operation.nodeId)!.parentNodeId;
+      if(!parent||!scope.has(parent))invalid('A section split requires its complete section in the request context.');
+    }
+    if(operation.op==='cloneWordStory'){
+      const story=state.snapshot.metadata.word?.stories.find(story=>story.storyId===operation.storyId);
+      if(!story||!scope.has(story.rootNodeId))invalid('Copying a Word story requires its source in the request context.');
+    }
     if (operation.op === "replaceAsset" && !request.context.assets.some((asset) => asset.path === operation.assetPath))
       invalid("The proposal references a resource outside the request context.");
   }

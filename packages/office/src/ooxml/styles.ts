@@ -521,6 +521,7 @@ export class DocxStyles {
       "oMath",
     ]);
     const css: Css = {};
+    if(child(properties,"snapToGrid")) css["--word-run-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
     const fonts = child(properties, "rFonts");
     if (fonts) {
       for (const [name, themeName] of [
@@ -787,6 +788,7 @@ export class DocxStyles {
         unsupported(item, "This paragraph layout property is not yet mapped.");
     }
     const css: Css = {};
+    if(child(properties,"snapToGrid")) css["--word-paragraph-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
     const overflowPunctuation = child(properties, "overflowPunct");
     if (overflowPunctuation) {
       if (on(overflowPunctuation))

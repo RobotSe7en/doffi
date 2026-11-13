@@ -9,10 +9,11 @@ export interface PageFlow {
   readonly blanks: ReadonlySet<number>;
   pageAt(element: HTMLElement): number;
   headerHeight(table: HTMLTableElement): number;
+  project?():void;
 }
 /** Portable single-DOM fragmentation. Empty, owned spacers carry page margins;
  * source paragraphs and cells keep their identity even when a text node splits. */
-export function pageFlow(document: Document, flow: HTMLElement, area: number, pitch: number, limits: Readonly<RenderLimits>): PageFlow {
+export function pageFlow(document: Document, flow: HTMLElement, area: number, pitch: number, limits: Readonly<RenderLimits>, pageStride=1): PageFlow {
   const view = document.defaultView!, gaps: HTMLElement[] = [], blanks = new Set<number>();
   const excluded = (node: Node): boolean => {
     for (let item: Node | null = node; item && item !== flow; item = item.parentNode)
@@ -30,6 +31,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     if (++operations > limits.maxNodes + limits.maxPages * 32) throw new DocumentError("ResourceLimitExceeded", "Pagination exceeds the measurement budget.");
   };
   const topPage = (element: HTMLElement): number => page(element.getBoundingClientRect().top);
+  const nextPhysical = (index:number):number => (Math.floor(index/pageStride)+1)*pageStride;
   function spacer(parent: Node, before: Node | null, target: number): HTMLElement {
     const gap = markViewNode(document.createElement("span")); gap.className = "sdk-page-gap";
     gap.contentEditable = "false"; gap.setAttribute("aria-hidden", "true");
@@ -92,7 +94,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       const owner = node.nodeType === 1 ? node as HTMLElement : node.parentElement!;
       if (excluded(owner) || view.getComputedStyle(owner).visibility === "hidden") continue;
       if (node.nodeType === 1) {
-        if (owner.matches("br[data-word-break=page]")) {
+        if (owner.matches("br[data-word-break=page],br[data-word-break=column]")) {
           if (owner.style.display === "none") continue;
           return { node: owner, rect: owner.getBoundingClientRect() };
         }
@@ -129,7 +131,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     if ((style.breakInside.startsWith("avoid") || style.pageBreakInside === "avoid") && box.height <= capacity && box.bottom > start(current) + area + 0.5)
       before(element, current + 1, inset);
     for (let line = overflow(element, inset); line; line = overflow(element, inset)) {
-      if (!(line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break=page]"))) {
+      if (!(line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]"))) {
         const lines = visualLines(element), ordinal = lines.findIndex((item) => Math.abs(item.rect.top - line!.rect.top) < 0.5);
         if (ordinal >= 0) {
           const fragmentPage = page(line.rect.top + line.rect.height / 2), fragmentStart = lines.findIndex((item) => page(item.rect.top + item.rect.height / 2) === fragmentPage);
@@ -143,8 +145,8 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
         }
       }
       const currentPage = page(line.rect.top + line.rect.height / 2);
-      const hard = line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break=page]");
-      const next = line.rect.top < start(currentPage) + inset - 5 ? currentPage : currentPage + 1;
+      const hard = line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]");
+      const next = hard && (line.node as HTMLElement).dataset.wordBreak==='page' ? nextPhysical(currentPage) : line.rect.top < start(currentPage) + inset - 5 ? currentPage : currentPage + 1;
       ensure(next);
       if (hard) {
         const breaker = line.node as HTMLElement;
@@ -185,7 +187,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     if (viewNodeRole(element) === "remove") return;
     const style = view.getComputedStyle(element), rect = element.getBoundingClientRect();
     const force = ["page", "always", "left", "right"].includes(style.breakBefore) || style.pageBreakBefore === "always";
-    if (force && rect.top > start(page(rect.top)) + 0.5) before(element, page(rect.top) + 1);
+    if (force && (rect.top > start(page(rect.top)) + 0.5 || page(rect.top)%pageStride)) before(element, nextPhysical(page(rect.top)));
     if (style.breakAfter.startsWith("avoid") || style.pageBreakAfter === "avoid") {
       let height = element.getBoundingClientRect().height, next = element.nextElementSibling as HTMLElement | null;
       while (next && viewNodeRole(next) === "remove") next = next.nextElementSibling as HTMLElement | null;
@@ -228,7 +230,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       flush();
     }
     if (["page", "always"].includes(style.breakAfter) || style.pageBreakAfter === "always") {
-      const box = element.getBoundingClientRect(), next = page(box.bottom - 0.5) + 1; ensure(next);
+      const box = element.getBoundingClientRect(), next = nextPhysical(page(box.bottom - 0.5)); ensure(next);
       spacer(element.parentNode!, element.nextSibling, start(next));
     }
   }
@@ -236,13 +238,13 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     reset() {
       for (const gap of gaps.splice(0)) gap.remove();
       for (const [cell, span] of canonicalSpans) cell.rowSpan = span;
-      for (const breaker of flow.querySelectorAll<HTMLElement>('br[data-word-break="page"]')) breaker.style.removeProperty("display");
+      for (const breaker of flow.querySelectorAll<HTMLElement>('br[data-word-break]')) breaker.style.removeProperty("display");
       flow.style.minHeight = "0"; last = 0; operations = 0; blanks.clear();
     },
     layout(element, forcePage = false, parity) {
       let index = topPage(element);
-      if (forcePage && element.getBoundingClientRect().top > start(index) + 0.5) { index++; before(element, index); }
-      if (parity !== undefined && index % 2 !== parity) { blanks.add(index); index++; before(element, index); }
+      if (forcePage && (element.getBoundingClientRect().top > start(index) + 0.5 || index%pageStride)) { index=nextPhysical(index); before(element, index); }
+      if (parity !== undefined && Math.floor(index/pageStride) % 2 !== parity) {for(let n=Math.floor(index/pageStride)*pageStride;n<nextPhysical(index);n++)blanks.add(n);index=nextPhysical(index);before(element,index);}
       if (element === flow) for (const child of [...flow.children]) walk(child as HTMLElement); else walk(element);
       flow.style.minHeight = last * pitch + area + "px";
     },

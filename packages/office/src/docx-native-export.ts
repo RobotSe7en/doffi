@@ -88,12 +88,15 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     let mapping = relationMaps.get(rel.sourcePart); if(!mapping){mapping=new Map();relationMaps.set(rel.sourcePart,mapping);} mapping.set(rel.id,id);
   }
   const fragmentXml = (fragment: DeepReadonly<NonNullable<WordMetadata['nativeContent']>['fragments'][number]>): XmlNode => {
-    const root=readFragment(fragment), mapping=relationMaps.get(fragment.sourcePart);
+    const copy=(node:XmlNode):XmlNode=>({...node,attrs:new Map(node.attrs),content:node.content.map(item=>typeof item==='string'?item:copy(item))});
+    const root=copy(readFragment(fragment)), mapping=relationMaps.get(fragment.sourcePart);
     const rewrite=(node:XmlNode):void=>{for(const [key,value]of node.attrs)if(key.startsWith(R+' ')&&mapping?.has(value))(node.attrs as Map<string,string>).set(key,mapping.get(value)!);for(const item of node.content)if(typeof item!=='string')rewrite(item);};rewrite(root);return root;
   };
+  const restored=new Set<string>();
   const byNode=new Map<string,typeof native.fragments[number][]>();
   for(const fragment of native.fragments)if(fragment.nodeId){const list=byNode.get(fragment.nodeId)??[];list.push(fragment);byNode.set(fragment.nodeId,list);}
   const applyProperty=(root:XmlNode,fragment:typeof native.fragments[number]):void=>{
+    restored.add(fragment.nativeId);
     let target=root;
     for(const path of fragment.propertyPath){let next=target.content.find((n):n is XmlNode=>typeof n!=='string'&&name(n)===path);if(!next){const split=path.lastIndexOf(' ');next={uri:path.slice(0,split),name:path.slice(split+1),attrs:new Map(),namespaces:{},content:[],part:root.part};target.content.unshift(next);}target=next;}
     const original=fragmentXml(fragment);
@@ -102,7 +105,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   };
   const apply=(root:XmlNode):XmlNode=>{
     const id=root.attrs.get(NATIVE_MARKER+' node'), object=root.attrs.get(NATIVE_MARKER+' object');
-    if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');return fragmentXml(fragment);}
+    if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');restored.add(fragment.nativeId);return fragmentXml(fragment);}
     (root.attrs as Map<string,string>).delete(NATIVE_MARKER+' node');
     for(let index=0;index<root.content.length;index++){const child=root.content[index]!;if(typeof child!=='string')root.content[index]=apply(child);}
     for(const fragment of id?byNode.get(id)??[]:[])if(fragment.kind==='property')applyProperty(root,fragment);
@@ -115,6 +118,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   }
   for(const part of retained){const bytes=sourceFiles.get(part.assetPath);if(!bytes)throw new DocumentError('AssetUnavailable','A retained OPC part is missing.');files.set(partMap.get(part.sourcePart)!,bytes);}
   for(const [part,root]of relationRoots)files.set(relPath(part),encoder.encode(declaration+serializeXml(root)));
+  for(const fragment of native.fragments)if(!restored.has(fragment.nativeId)&&!retained.some(part=>part.sourcePart===fragment.sourcePart))throw new DocumentError('ExportFailed','A preserved native fragment could not be attached to its current source owner.',[{code:'UnattachedNativeContent',path:[fragment.sourcePart,fragment.nativeId],message:fragment.label}]);
   const types=read(files.get('[Content_Types].xml')!,'[Content_Types].xml');
   for(const part of retained)types.content.push({name:'Override',uri:CT,attrs:new Map([[' PartName','/'+partMap.get(part.sourcePart)!],[' ContentType',part.contentType]]),namespaces:{},content:[],part:'[Content_Types].xml'});
   files.set('[Content_Types].xml',encoder.encode(declaration+serializeXml(types)));
@@ -123,4 +127,4 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   return files;
 }
 /** Markers exist only between compilation and native reattachment. */
-export function nativeObjectMarker(id:string,block:boolean):string{return '<w:'+ (block?'p':'r')+' xmlns:w="'+W+'" xmlns:dn="'+NATIVE_MARKER+'" dn:object="'+escapeXml(id)+'"/>';}
+export function nativeObjectMarker(id:string,block:boolean,nodeId?:string):string{return '<w:'+ (block?'p':'r')+' xmlns:w="'+W+'" xmlns:dn="'+NATIVE_MARKER+'" dn:object="'+escapeXml(id)+'"'+(nodeId?' dn:node="'+escapeXml(nodeId)+'"':'')+'/>';}
