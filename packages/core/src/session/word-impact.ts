@@ -21,7 +21,7 @@ export function wordSemanticChanges(before: DeepReadonly<ContentDocumentMetadata
     compare(before.sections, after.sections, item => item.rootNodeId);
     if (JSON.stringify(before.pageSetup) !== JSON.stringify(after.pageSetup))
         ids.add(rootNodeId);
-    const globals = (word: DeepReadonly<WordMetadata> | undefined) => word ? Object.fromEntries(['styles', 'numbering', 'mirrorMargins','evenAndOddHeaders', 'automaticHyphenation', 'defaultRunCssClass','trackChanges','trackingAuthor', 'footnoteOptions', 'endnoteOptions'].map(key => [key, Reflect.get(word, key)])) : undefined;
+    const globals = (word: DeepReadonly<WordMetadata> | undefined) => word ? Object.fromEntries(['bordersDoNotSurroundHeader','bordersDoNotSurroundFooter','styles', 'numbering', 'mirrorMargins','evenAndOddHeaders', 'automaticHyphenation', 'defaultRunCssClass','trackChanges','trackingAuthor', 'footnoteOptions', 'endnoteOptions'].map(key => [key, Reflect.get(word, key)])) : undefined;
     if (JSON.stringify(globals(left)) !== JSON.stringify(globals(right)))
         ids.add(rootNodeId);
     const notes = new Map([...(left?.notes ?? []), ...(right?.notes ?? [])].map(note => [note.noteId, note]));

@@ -46,6 +46,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     if(operation.mirrorMargins!==undefined){word.mirrorMargins=operation.mirrorMargins;if(word.nativeContent)word.nativeContent.fragments=word.nativeContent.fragments.filter(fragment=>!(fragment.ownerName==='settings'&&fragment.propertyName==='http://schemas.openxmlformats.org/wordprocessingml/2006/main mirrorMargins'));}
     if(operation.evenAndOddHeaders!==undefined)word.evenAndOddHeaders=operation.evenAndOddHeaders;
     if(operation.automaticHyphenation!==undefined)word.automaticHyphenation=operation.automaticHyphenation;
+    for(const key of ['bordersDoNotSurroundHeader','bordersDoNotSurroundFooter']as const)if(operation[key]!==undefined)word[key]=operation[key];
     return;
   }
   if(operation.op==='setWordTabs'){
@@ -62,6 +63,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   if(operation.op==='setWordSection') {
     const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId);if(!section)fail('Page changes require a section root.');
+    if(operation.changes.pageBorders&&word.nativeContent)word.nativeContent.fragments=word.nativeContent.fragments.filter(fragment=>!(fragment.nodeId===section.rootNodeId&&(fragment.propertyName?.endsWith(' pgBorders')||fragment.propertyPath.some(name=>name.endsWith(' pgBorders')))));
     Object.assign(section,operation.changes);return;
   }
   if(operation.op==='splitWordSection') {

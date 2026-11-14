@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { FORMAT_VERSION, IdentifierSchema, PackagePathSchema, RevisionSchema } from "./primitives.js";
 import { WordMetadataSchema } from "./word.js";
+import {WordPageBordersSchema} from './word-page.js';
 import { PresentationDocumentMetadataSchema } from "./presentation.js";
 import type { PresentationDocumentMetadata } from "./presentation.js";
 import { WorkbookChunkDescriptorSchema, WorkbookDocumentMetadataSchema } from "./workbook.js";
@@ -50,6 +51,7 @@ export const DocumentSectionSchema = z.strictObject({
   breakType: z.enum(["continuous", "nextPage", "evenPage", "oddPage"]).optional(),
   differentFirstPage: z.boolean().optional(),
   columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional() }).optional(),
+  pageBorders:WordPageBordersSchema.optional(),
   grid: z.strictObject({ type: z.enum(["default", "lines", "linesAndChars", "snapToChars"]), linePitch: z.number().positive().optional(), characterSpacing: z.number().int().optional() }).optional(),
   gutter: z.number().nonnegative().optional(),
   gutterPosition: z.enum(["left", "right", "top"]).optional(),

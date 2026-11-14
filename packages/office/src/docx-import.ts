@@ -1,4 +1,5 @@
 import {WordMoveReader}from'./docx-moves.js';
+import{readWordPageBorders}from'./docx-page-borders.js';
 import {readWordFormatRevision}from'./docx-revisions-import.js';
 import { readWordCommentExtensions,wordCommentAnnotations } from './docx-comments.js';
 import type { WordCommentState as CommentState } from './docx-comments.js';
@@ -182,6 +183,7 @@ class Importer {
         720,
       ) / 20;
     this.word.trackChanges=on(child(this.settings,"trackRevisions"));this.word.mirrorMargins=on(child(this.settings,"mirrorMargins"));
+    this.word.bordersDoNotSurroundHeader=on(child(this.settings,'bordersDoNotSurroundHeader'));this.word.bordersDoNotSurroundFooter=on(child(this.settings,'bordersDoNotSurroundFooter'));
     this.word.automaticHyphenation = on(
       child(this.settings, "autoHyphenation"),
     );
@@ -1031,8 +1033,8 @@ class Importer {
       "type",
       "pgSz",
       "pgMar",
-      "paperSrc",
       "pgBorders",
+      "paperSrc",
       "lnNumType",
       "pgNumType",
       "cols",
@@ -1049,7 +1051,6 @@ class Importer {
     for (const feature of [
       "footnotePr",
       "endnotePr",
-      "pgBorders",
       "lnNumType",
     ]) {
       if (child(source, feature)) unsupported(child(source, feature)!);
@@ -1153,6 +1154,7 @@ class Importer {
         : {}),
       sectionId: "section-" + (this.sections.length + 1),
       rootNodeId: this.id(root),
+      ...(child(source,'pgBorders')?{pageBorders:readWordPageBorders(child(source,'pgBorders'))!}:{}),
       ...(columns?{columns:{count:number(attr(columns,"num"),columns,1),gap:number(attr(columns,"space"),columns,720)/20,separator:["1","true","on"].includes(attr(columns,"sep")??"")}}:{}),
       ...(grid ? { grid: { type: gridType as "default" | "lines" | "linesAndChars" | "snapToChars", ...(attr(grid,"linePitch") !== undefined ? {linePitch: number(attr(grid,"linePitch"),grid) / 20} : {}), ...(attr(grid,"charSpace") !== undefined ? {characterSpacing: number(attr(grid,"charSpace"),grid)} : {}) } } : {}),
       ...(margins && attr(margins,"gutter") !== undefined ? {gutter: number(attr(margins,"gutter"),margins) / 20} : {}),

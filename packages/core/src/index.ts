@@ -103,6 +103,9 @@ export { createWordDocument } from "./word.js";
 export type { CreateWordDocumentOptions } from "./word.js";
 
 export { findWordText, getWordOutline, getWordTextStatistics, getWordTextDefaults } from "./word-query.js";
+export{WordPageBorderSchema,WordPageBordersSchema}from'./contracts/word-page.js';
+export type{WordPageBorder,WordPageBorders}from'./contracts/word-page.js';
+export{wordColorLuminance}from'./word-color.js';
 export type { WordTextMatch, WordTextFindOptions, WordOutlineEntry, WordTextStatistics } from "./word-query.js";
 export { wordDrawingTransforms } from './word-drawing.js';
 

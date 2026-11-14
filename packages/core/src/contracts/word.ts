@@ -94,6 +94,7 @@ export const WordNumberLevelSchema = z.strictObject({
   cssClass: IdentifierSchema,
 });
 export const WordMetadataSchema = z.strictObject({
+    bordersDoNotSurroundHeader:z.boolean().optional(),bordersDoNotSurroundFooter:z.boolean().optional(),
   comments:z.array(WordCommentSchema).optional(),people:z.array(WordPersonSchema).optional(),
   trackChanges:z.boolean().optional(),trackingAuthor:z.string().optional(),
   moves:z.array(WordMoveRangeSchema).optional(),

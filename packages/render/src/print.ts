@@ -15,7 +15,7 @@ function copyHead(document: Document, output: Document): void {
 export function createPrintDocument(document: Document, root: HTMLElement, pages: readonly RenderedPage[], limits: Readonly<RenderLimits>): Document {
   if (root.dataset.officeKind === "presentation") return printPresentation(document, root, pages, limits);
   const article = root.closest<HTMLElement>('[data-office-kind="document"]')!;
-  const nodes = article.querySelectorAll("*").length + 1;
+  const nodes = article.querySelectorAll("*").length + 1+document.querySelectorAll('.sdk-paper *,.sdk-page-border-layer *').length;
   if (pages.length * nodes > limits.maxPrintNodes) throw new DocumentError("ResourceLimitExceeded", "Print projection exceeds its node budget.");
   const output = document.implementation.createHTMLDocument("");
   copyHead(document, output); output.body.replaceChildren();
@@ -34,7 +34,9 @@ export function createPrintDocument(document: Document, root: HTMLElement, pages
     }
     const content = output.importNode(article, true);
     content.style.cssText += `;position:absolute;left:${-(page.rect.x + (surface.left - origin.left) * 72 / 96)}pt;top:${-(page.rect.y + (surface.top - origin.top) * 72 / 96)}pt;margin:0;`;
-    paper.append(content); output.body.append(paper);
+    paper.append(content);
+    for(const border of document.querySelectorAll<HTMLElement>('.sdk-page-border-layer [data-page-id="'+CSS.escape(page.pageId)+'"]')){const clone=output.importNode(border,true);clone.style.left=parseFloat(border.style.left)-page.rect.x+'pt';clone.style.top=parseFloat(border.style.top)-page.rect.y+'pt';clone.style.zIndex='3';paper.append(clone);}
+    output.body.append(paper);
   }
   output.head.append(style); return output;
 }

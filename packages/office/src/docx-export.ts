@@ -1,4 +1,5 @@
 import{ExportWordRevisions}from'./docx-revisions-export.js';
+import{writeWordPageBorders}from'./docx-page-borders.js';
 import { W15,CID,CEX } from './docx-comments.js';
 import { WordChartWriter } from './docx-chart-export.js';
 import { writeWordControlProperties } from './docx-control.js';
@@ -162,6 +163,7 @@ class Exporter {
     out += value("type", section.breakType ?? "nextPage");
     out += empty("w:pgSz", { "w:w": nativeInteger(setup.width, 20, 1), "w:h": nativeInteger(setup.height, 20, 1), ...(setup.width > setup.height ? { "w:orient": "landscape" } : {}) });
     out += empty("w:pgMar", { "w:top": nativeInteger(setup.margins.top, 20, 0), "w:right": nativeInteger(setup.margins.right, 20, 0), "w:bottom": nativeInteger(setup.margins.bottom, 20, 0), "w:left": nativeInteger(setup.margins.left, 20, 0), "w:header": nativeInteger(section.headerDistance ?? 36, 20, 0), "w:footer": nativeInteger(section.footerDistance ?? 36, 20, 0), "w:gutter": nativeInteger(section.gutter ?? 0,20,0) });
+    out+=writeWordPageBorders(section.pageBorders);
     if (section.pageNumberStart !== undefined || section.pageNumberFormat) out += empty("w:pgNumType", { "w:start": section.pageNumberStart, "w:fmt": section.pageNumberFormat });
     if(section.columns) out += empty("w:cols", {"w:num":section.columns.count,"w:space":nativeInteger(section.columns.gap,20,0),"w:equalWidth":1,"w:sep":section.columns.separator?1:0});
     out += value("titlePg", section.differentFirstPage ? "1" : "0");
@@ -534,7 +536,7 @@ class Exporter {
     if (intervals.size > 1) unsupported("DOCX has one document-wide default tab interval.");
     const sections=this.snapshot.metadata.sections;
     if(sections.some(section=>section.gutterPosition === "top" && section.gutter) && sections.some(section=>section.gutterPosition !== "top" && section.gutter)) unsupported("DOCX gutterAtTop is document-wide; nonzero top and side gutters cannot be mixed.");
-    out.add(declaration + "<w:settings" + namespaces + ">" + orderedProperties("settings",value("mirrorMargins",this.snapshot.metadata.word?.mirrorMargins?1:0)+value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0)+value("trackRevisions",this.snapshot.metadata.word?.trackChanges?1:0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + this.noteSettings('footnote')+this.noteSettings('endnote')) + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
+    out.add(declaration + "<w:settings" + namespaces + ">" + orderedProperties("settings",value("bordersDoNotSurroundHeader",this.snapshot.metadata.word?.bordersDoNotSurroundHeader?1:0)+value("bordersDoNotSurroundFooter",this.snapshot.metadata.word?.bordersDoNotSurroundFooter?1:0)+value("mirrorMargins",this.snapshot.metadata.word?.mirrorMargins?1:0)+value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0)+value("trackRevisions",this.snapshot.metadata.word?.trackChanges?1:0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + this.noteSettings('footnote')+this.noteSettings('endnote')) + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
   }
 }
 /** Generate a native, editable DOCX exclusively from the current validated HTML

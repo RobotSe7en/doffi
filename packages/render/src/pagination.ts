@@ -5,6 +5,7 @@ import { markViewNode } from "./view-nodes.js";
 import { repeatTableHeaders } from "./table-headers.js";
 import { pageFlow } from "./flow.js";
 import { columnFlow } from './column-flow.js';
+import{composeWordPageBorders}from'./word-page-borders.js';
 import type { PageFlow } from "./flow.js";
 import { ownViewStyle } from "./view-nodes.js";
 import type { PreviewSource } from "./source-index.js";
@@ -115,6 +116,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     }
   }
   const layer = markViewNode(document.createElement("div")); layer.className = "sdk-page-layer"; article.before(layer);
+  const front=markViewNode(document.createElement('div'));front.className='sdk-page-border-layer';front.style.cssText='position:absolute;pointer-events:none;z-index:3';article.after(front);
   const storyTemplates = new Map((metadata.word?.stories ?? []).map((story) => [story.rootNodeId, document.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(story.rootNodeId) + '"]')]));
   const repeated = repeatTableHeaders(document, root, source, limits);
   let pages: readonly RenderedPage[] = [], disposed = false;
@@ -144,7 +146,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       Object.assign(previousRefs.headers, section.definition.headers); Object.assign(previousRefs.footers, section.definition.footers);
       refs.set(section.definition.sectionId, { headers: { ...previousRefs.headers }, footers: { ...previousRefs.footers } });
     }
-    layer.replaceChildren(); layer.style.left = surface.left - document.body.getBoundingClientRect().left + "px"; layer.style.top = surface.top - document.body.getBoundingClientRect().top + "px"; layer.style.width = maximumWidth + "pt";
+    layer.replaceChildren();front.replaceChildren(); layer.style.left = surface.left - document.body.getBoundingClientRect().left + "px"; layer.style.top = surface.top - document.body.getBoundingClientRect().top + "px"; layer.style.width = maximumWidth + "pt";
+    front.style.left=layer.style.left;front.style.top=layer.style.top;front.style.width=layer.style.width;
     let renderNodes = document.querySelectorAll("*").length;
     for (const group of groups) {
       const { setup } = group, starts = sectionStarts(group), pitch = px(setup.height + gutter);
@@ -182,6 +185,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
           if (story.scrollHeight > px(available) + 1 && !diagnostics.some((item) => item.code === "ContentOverflow" && item.nodeId === id))
             diagnostics.push({ code: "ContentOverflow", nodeId: id!, message: "A header or footer exceeds the available margin area and is clipped." });
         }
+        renderNodes+=composeWordPageBorders(document,article,paper,front,page,definition.pageBorders,first,metadata.word);if(renderNodes>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Page borders exceed the rendering node budget.');
         const label = document.createElement("span"); label.className = "sdk-page-number"; label.textContent = String(page.index + 1); paper.append(label); layer.append(paper);
       }
     }
@@ -202,5 +206,5 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       result[id] = Object.freeze(current.filter((page) => !page.blank && rectangles.some((rect) => rect.bottom > surface.top + px(page.rect.y + page.setup.margins.top) + 0.1 && rect.top < surface.top + px(page.rect.y + page.rect.height - page.setup.margins.bottom) - 0.1)).map((page) => page.pageId));
     }
     return Object.freeze(result);
-  }, dispose() { disposed = true; repeated.dispose(); layer.remove(); layoutStyle.remove(); } };
+  }, dispose() { disposed = true; repeated.dispose(); layer.remove();front.remove(); layoutStyle.remove(); } };
 }
