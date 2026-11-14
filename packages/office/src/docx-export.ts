@@ -485,13 +485,13 @@ class Exporter {
       for (const child of node.children) collect(child);
     };
     this.mainStories.forEach(collect);
-    this.add(declaration + '<w:document' + namespaces + ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"><w:body>');
+    this.add(declaration + '<w:document' + namespaces +this.nativeMark(this.tree.root.attrs['data-node-id'])+ ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"><w:body>');
     sections.forEach(({ section, nodes }, index) => { const setup = this.setup(section); this.width = setup.width - setup.margins.left - setup.margins.right; this.blocks(nodes, index === sections.length - 1 ? undefined : this.sectionProperties(section)); });
     this.add(this.sectionProperties(sections.at(-1)!.section) + "</w:body></w:document>"); this.output.finish();
     if (this.fieldStack.length) unsupported("The main story has an unclosed field.");
     for (const story of this.snapshot.metadata.word?.stories ?? []) {
       const info = this.auxiliary.get(story.storyId); if (!info) continue;
-      this.withStory(info.path, () => { this.output = this.opc.part(info.path, contentType(info.kind)); const tag = info.kind === "header" ? "hdr" : "ftr"; this.add(declaration + "<w:" + tag + namespaces + ">"); this.blocks(this.tree.byId.get(story.rootNodeId)!.children); this.add("</w:" + tag + ">"); this.output.finish(); });
+      this.withStory(info.path, () => { this.output = this.opc.part(info.path, contentType(info.kind)); const tag = info.kind === "header" ? "hdr" : "ftr"; this.add(declaration + "<w:" + tag + namespaces +this.nativeMark(story.rootNodeId)+ ">"); this.blocks(this.tree.byId.get(story.rootNodeId)!.children); this.add("</w:" + tag + ">"); this.output.finish(); });
     }
     this.writeNotes();this.writeComments(); this.styles.write(this.opc); this.styles.writeNumbering(this.opc, this.htmlLists); this.writeSettings();
     const core = this.opc.part("docProps/core.xml", "application/vnd.openxmlformats-package.core-properties+xml");

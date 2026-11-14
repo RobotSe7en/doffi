@@ -19,8 +19,9 @@ export function copyWordStorySemantics(word:WordMetadata,identities:ReadonlyMap<
  const names=new Map<string,string>();
  word.bookmarks.push(...word.bookmarks.filter(item=>identities.has(item.startNodeId)&&identities.has(item.endNodeId)).map(item=>{const name=item.name+'_'+cloneId;names.set(item.name,name);return{...item,bookmarkId:map(item.startNodeId),name,startNodeId:map(item.startNodeId),endNodeId:map(item.endNodeId)};}));
  word.hyperlinks.push(...word.hyperlinks.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:map(item.nodeId),...(item.endNodeId?{endNodeId:map(item.endNodeId)}:{}),...(item.bookmark&&names.has(item.bookmark)?{bookmark:names.get(item.bookmark)!}:{})})));
- if(word.nativeContent){const native=word.nativeContent,parts=new Map<string,string>();
+ if(word.nativeContent){const native=word.nativeContent,parts=new Map<string,string>();const clonePart=(part:string):string=>{let copy=parts.get(part);if(!copy){copy='doffi-clone/'+cloneId+'/'+parts.size+'.xml';parts.set(part,copy);}return copy;};
   const fragments=native.fragments.filter(item=>item.nodeId&&identities.has(item.nodeId)).map((item,index)=>{let sourcePart=parts.get(item.sourcePart);if(!sourcePart){sourcePart='doffi-clone/'+cloneId+'/'+parts.size+'.xml';parts.set(item.sourcePart,sourcePart);}const nodeId=map(item.nodeId!),nativeId=cloneId+'-native-'+index;if(item.kind!=='property')edit.attributes(nodeId,{'data-word-native-object':nativeId});return{...item,nodeId,nativeId,sourcePart,...(item.revisionSourceId?{revisionSourceId:revisionSources.get(item.nodeId!+'\n'+item.revisionSourceId)??item.revisionSourceId}:{})};});
+  if(native.identities)native.identities.push(...native.identities.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:map(item.nodeId),sourcePart:clonePart(item.sourcePart)})));
   native.fragments.push(...fragments);native.relationships.push(...native.relationships.filter(item=>parts.has(item.sourcePart)).map(item=>({...item,sourcePart:parts.get(item.sourcePart)!,root:false})));
  }
 }

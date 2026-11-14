@@ -10,6 +10,7 @@ import {WordRevisionSchema,WordMoveRangeSchema}from'./word-revision.js';
 /** Residual OOXML owns only content that has no editable HTML representation. */
 export const WordNativeContentSchema = z.strictObject({
   mainPart: PackagePathSchema,
+  identities:z.array(z.strictObject({nodeId:IdentifierSchema,sourcePart:PackagePathSchema,sourceId:z.string().regex(/^\d+$/),kind:z.enum(["frame","object"])})).optional(),
   fragments: z.array(z.strictObject({
     nativeId: IdentifierSchema,
     nodeId: IdentifierSchema.optional(),

@@ -46,6 +46,7 @@ export function validateWord(
     if (word.nativeContent) {
       const native = word.nativeContent, paths = new Set(assets.map(asset => asset.path));
       const ids = new Set<string>(), parts = new Set<string>();
+      for(const identity of native.identities??[])node(identity.nodeId);
       for (const fragment of native.fragments) {
         if (ids.has(fragment.nativeId) || !paths.has(fragment.assetPath)) invalid("Native fragments require unique identities and declared resources.");
         ids.add(fragment.nativeId);

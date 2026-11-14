@@ -43,7 +43,7 @@ function invalid(message: string): never { throw new DocumentError("InvalidOpera
 function updateWordMetadata(metadata: ContentDocumentMetadata, before: DocumentState, after: ParsedHtml): void {
   const word = metadata.word;
   if (!word) return;
-  if (word.nativeContent) word.nativeContent.fragments = word.nativeContent.fragments.filter(item => !item.nodeId || after.hasNode(item.nodeId));
+  if (word.nativeContent){word.nativeContent.fragments = word.nativeContent.fragments.filter(item => !item.nodeId || after.hasNode(item.nodeId));if(word.nativeContent.identities)word.nativeContent.identities=word.nativeContent.identities.filter(item=>after.hasNode(item.nodeId));}
   word.hyperlinks = word.hyperlinks.filter((item) => after.hasNode(item.nodeId));
   word.revisions = word.revisions.filter((item) => after.hasNode(item.nodeId));
   if(word.moves)word.moves=word.moves.filter(move=>after.hasNode(move.startNodeId)||after.hasNode(move.endNodeId));

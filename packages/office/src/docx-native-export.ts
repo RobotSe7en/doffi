@@ -1,7 +1,8 @@
+import{NativeDrawingIdentities}from'./docx-native-identities.js';
 import {sortWordSettings}from'./ooxml/word-settings-order.js';
 import { DocumentError } from '@doffi/core';
 import type { ContentDocumentModel, DocumentReadLimits, DeepReadonly, WordMetadata } from '@doffi/core';
-import { W, R, PKG, xml } from './ooxml/xml.js';
+import { W, R, MC, PKG, xml } from './ooxml/xml.js';
 import type { XmlNode } from './ooxml/xml.js';
 import { serializeXml } from './ooxml/serialize.js';
 import { declaration, escapeXml } from './export/xml.js';
@@ -12,7 +13,8 @@ const codecs = globalThis as unknown as { TextEncoder: new () => { encode(text: 
 function relPath(part: string): string { const slash = part.lastIndexOf('/'); return part ? part.slice(0, slash + 1) + '_rels/' + part.slice(slash + 1) + '.rels' : '_rels/.rels'; }
 function name(node: XmlNode): string { return node.uri + ' ' + node.name; }
 function merge(target: XmlNode, source: XmlNode): void {
-  for (const [key, value] of source.attrs) (target.attrs as Map<string, string>).set(key, value);
+  Object.assign(target.namespaces,source.namespaces);
+  for (const [key, value] of source.attrs) (target.attrs as Map<string, string>).set(key,key===MC+' Ignorable'?[...new Set([...(target.attrs.get(key)??'').split(/\s+/),...value.split(/\s+/)].filter(Boolean))].join(' '):value);
   if (source.content.length) target.content.splice(0, target.content.length, ...source.content);
 }
 /** Reattach residual native data to the just-compiled current source. */
@@ -47,7 +49,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     const mapped = locations?.find(location=>location.name===fragment.ownerName)?.path??locations?.[0]?.path;
     if (mapped) partMap.set(fragment.sourcePart, mapped);
     else if (fragment.kind === 'property' && !fragment.nodeId) {
-      const rootNames: Record<string,string> = { settings: 'settings', style: 'styles', styles: 'styles', numbering: 'numbering', fonts: 'fonts', commentsEx: 'commentsEx', commentsExtensible: 'commentsExtensible', commentsIds: 'commentsIds',people:'people' };
+      const rootNames: Record<string,string> = { comments:'comments',footnotes:'footnotes',endnotes:'endnotes',settings: 'settings', style: 'styles', styles: 'styles', numbering: 'numbering', fonts: 'fonts', commentsEx: 'commentsEx', commentsExtensible: 'commentsExtensible', commentsIds: 'commentsIds',people:'people' };
       const rootName = rootNames[fragment.ownerName];
       const entry = rootName ? [...parsed].find(([,root]) => root.name === rootName) : undefined;
       if (entry) partMap.set(fragment.sourcePart, entry[0]);
@@ -89,9 +91,10 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     }
     let mapping = relationMaps.get(rel.sourcePart); if(!mapping){mapping=new Map();relationMaps.set(rel.sourcePart,mapping);} mapping.set(rel.id,id);
   }
+  const drawingIdentities=new NativeDrawingIdentities(native,parsed.values());
   const fragmentXml = (fragment: DeepReadonly<NonNullable<WordMetadata['nativeContent']>['fragments'][number]>): XmlNode => {
     const copy=(node:XmlNode):XmlNode=>({...node,attrs:new Map(node.attrs),content:node.content.map(item=>typeof item==='string'?item:copy(item))});
-    const root=copy(readFragment(fragment)), mapping=relationMaps.get(fragment.sourcePart);
+    const root=copy(readFragment(fragment)), mapping=relationMaps.get(fragment.sourcePart);drawingIdentities.mark(root,fragment.sourcePart,fragment.nativeId);
     const rewrite=(node:XmlNode):void=>{for(const [key,value]of node.attrs)if(key.startsWith(R+' ')&&mapping?.has(value))(node.attrs as Map<string,string>).set(key,mapping.get(value)!);for(const item of node.content)if(typeof item!=='string')rewrite(item);};rewrite(root);return root;
   };
   const restored=new Set<string>();
@@ -111,7 +114,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     if(beforeSource&&beforeProperty){const target=root.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&node.name===beforeProperty);if(!target)throw new DocumentError('ExportFailed','The previous native property owner is missing.');for(const fragment of byNode.get(beforeSource)??[]){if(fragment.kind!=='property'||fragment.revisionPrevious||fragment.propertyPath.some(path=>path.endsWith('Change')))continue;if(fragment.propertyPath[0]===W+' '+beforeProperty)applyProperty(target,{...fragment,propertyPath:fragment.propertyPath.slice(1),...(fragment.propertyIndices?{propertyIndices:fragment.propertyIndices.slice(1)}:{})});else if(!fragment.propertyPath.length&&fragment.propertyName===W+' '+beforeProperty)applyProperty(target,fragment);}}
     const id=root.attrs.get(NATIVE_MARKER+' node'), object=root.attrs.get(NATIVE_MARKER+' object');
     if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');restored.add(fragment.nativeId);if(!fragment.runChild)return fragmentXml(fragment);const container=root.attrs.get(NATIVE_MARKER+' container');for(const key of ['node','object','container'])(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' '+key);root.content.push(fragmentXml(fragment));for(const residual of container?byNode.get(container)??[]:[])if(residual.kind==='property')applyProperty(root,residual);return root;}
-    const container=root.attrs.get(NATIVE_MARKER+' container');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' node');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' container');
+    const container=root.attrs.get(NATIVE_MARKER+' container');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' identity');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' node');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' container');
     for(let index=0;index<root.content.length;index++){const child=root.content[index]!;if(typeof child!=='string')root.content[index]=apply(child);}
     for(const fragment of [...(id?byNode.get(id)??[]:[]),...(container?byNode.get(container)??[]:[])])if(fragment.kind==='property'&&fragment.ownerName===root.name)applyProperty(root,fragment);
     return root;
@@ -119,7 +122,10 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   for(const [path,root]of parsed){
     apply(root);
     for(const fragment of native.fragments)if(fragment.kind==='property'&&!fragment.nodeId&&partMap.get(fragment.sourcePart)===path){const target=fragment.styleId?root.content.find((n):n is XmlNode=>typeof n!=='string'&&n.name==='style'&&n.attrs.get(W+' styleId')===fragment.styleId):root;if(!target)throw new DocumentError('ExportFailed','A preserved native style owner is missing.');applyProperty(target,fragment);}
-    sortWordSettings(root);files.set(path,encoder.encode(declaration+serializeXml(root)));
+    sortWordSettings(root);
+  }
+  drawingIdentities.rewrite(parsed.values());
+  for(const[path,root]of parsed){files.set(path,encoder.encode(declaration+serializeXml(root)));
   }
   for(const part of retained){const bytes=sourceFiles.get(part.assetPath);if(!bytes)throw new DocumentError('AssetUnavailable','A retained OPC part is missing.');files.set(partMap.get(part.sourcePart)!,bytes);}
   for(const [part,root]of relationRoots)files.set(relPath(part),encoder.encode(declaration+serializeXml(root)));

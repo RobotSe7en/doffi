@@ -2,7 +2,7 @@ import { createAssetDescriptor, DocumentError } from '@doffi/core';
 import type { ContentDocumentManifest, WordMetadata } from '@doffi/core';
 import type { OpcPackage } from './ooxml/package.js';
 import { W, R, MC, WP, unsupportedSource } from './ooxml/xml.js';
-import type { XmlNode } from './ooxml/xml.js';
+import type { XmlNode,UnsupportedXmlSource } from './ooxml/xml.js';
 import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
@@ -19,6 +19,8 @@ export class DocxNativeImport {
   private readonly suppressed = new Set<string>();
   private readonly recovered = new WeakMap<XmlNode, Set<string>>();
   private serial = 0;
+  private readonly detached=new WeakSet<XmlNode>();private readonly batched=new Map<string,WeakSet<XmlNode>>();
+  private readonly identities=new Map<string,NonNullable<Native['identities']>[number]>();
   private readonly ordinals=new WeakMap<XmlNode,number>();
   constructor(readonly original: OpcPackage, readonly main: string) {}
   initialize(): OpcPackage {
@@ -41,11 +43,23 @@ export class DocxNativeImport {
     const placeholder = this.placeholders.get(source);
     if (placeholder) { attrs['data-word-native-object'] = placeholder.id; attrs.title = placeholder.label; }
   }
-  beginAttempt(): void { this.bindings.clear(); }
+  identity(source:XmlNode,nodeId:string,sourceId:string):void{const kind=source.uri===WP?'frame':'object';this.identities.set(nodeId+'\n'+kind,{nodeId,sourcePart:source.part,sourceId,kind});}
+  beginAttempt(): void { this.bindings.clear();this.identities.clear(); }
   isPlaceholder(node:XmlNode):boolean{return this.placeholders.has(node);}
   recover(error: unknown): boolean {
     const info = unsupportedSource(error);
     if (!info) return false;
+    const collection=info.collection,parent=collection?this.parents.get(collection.owner):undefined;
+    if(collection&&collection.owner.uri===W&&propertyRoots.has(collection.owner.name)){
+      const key=[collection.owner.uri,collection.owner.name,parent?.uri??'',parent?.name??'',collection.uri,...collection.names].join('\n'),seen=this.batched.get(key)??new WeakSet<XmlNode>();this.batched.set(key,seen);const targets:XmlNode[]=[];
+      const scan=(node:XmlNode):void=>{const owner=this.parents.get(node);if(node.uri===collection.owner.uri&&node.name===collection.owner.name&&owner?.uri===parent?.uri&&owner?.name===parent?.name)for(const child of node.content)if(typeof child!=='string'&&(child.uri!==collection.uri||!collection.names.includes(child.name)))targets.push(child);for(const child of node.content)if(typeof child!=='string')scan(child);};
+      for(const root of this.roots.values())if(!seen.has(root)){seen.add(root);scan(root);}
+      if(targets.length){for(const node of targets)if(!this.isDetached(node)&&!this.recoverSource({node},error))return false;return true;}
+    }
+    return this.recoverSource(info,error);
+  }
+  private isDetached(node:XmlNode):boolean{for(let current:XmlNode|undefined=node;current;current=this.parents.get(current))if(this.detached.has(current))return true;return false;}
+  private recoverSource(info:UnsupportedXmlSource,error:unknown):boolean{
     const key = info.attribute ?? "#node";
     const recovered = this.recovered.get(info.node) ?? new Set<string>();
     if (recovered.has(key)) throw new DocumentError('UnsupportedFeature', 'A native feature could not be isolated without changing its surrounding content.', [{ code:'NativeRecoveryStalled',path:[info.node.part,info.node.name],message:'Native compatibility recovery made no progress.' }]);
@@ -77,7 +91,7 @@ export class DocxNativeImport {
         const parent = this.parents.get(target);
         if (!parent || parent.content.indexOf(target) < 0) return false;
         this.pending.push({ ...revisionInfo,owner, original: target, kind: 'property', path,indices,propertyIndex:this.ordinals.get(target)??0, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
-        parent.content.splice(parent.content.indexOf(target), 1);
+        this.detached.add(target);parent.content.splice(parent.content.indexOf(target), 1);
       }
       return true;
     }
@@ -103,13 +117,20 @@ export class DocxNativeImport {
     const run: XmlNode = { ...leaf, name: 'r', content: [leaf] };
     const replacement: XmlNode = inline ? run : { ...leaf, name: 'p', content: [run] };
     pending.owner = replacement; this.pending.push(pending); this.placeholders.set(replacement, pending);
-    parent.content.splice(parent.content.indexOf(target), 1, replacement); this.parents.set(replacement, parent); this.index(replacement);
+    this.detached.add(target);parent.content.splice(parent.content.indexOf(target), 1, replacement); this.parents.set(replacement, parent); this.index(replacement);
     return true;
   }
   finish(files: Map<string, Uint8Array>, manifest: ContentDocumentManifest, word: WordMetadata): void {
     // Settings outside the editable model still belong to the native package.
     // Capture them directly once, rather than requiring one recovery pass per
     // harmless producer preference or compatibility flag.
+    // Unmapped extension attributes on supported Word nodes remain native data.
+    const XMLNS='http://www.w3.org/2000/xmlns/',XML='http://www.w3.org/XML/1998/namespace',W14='http://schemas.microsoft.com/office/word/2010/wordml';
+    const capture=(node:XmlNode):void=>{
+      if(node.uri===W){const attrs=new Map([...node.attrs].filter(([key])=>{const split=key.lastIndexOf(' '),uri=key.slice(0,split),name=key.slice(split+1);if(uri===MC&&name==='Ignorable'&&(node.attrs.get(key)??'').split(/\s+/).filter(Boolean).every(prefix=>[W,R,WP,MC,W14,'http://schemas.openxmlformats.org/drawingml/2006/main','http://schemas.openxmlformats.org/drawingml/2006/picture','http://schemas.microsoft.com/office/word/2010/wordprocessingShape','http://schemas.microsoft.com/office/word/2010/wordprocessingGroup'].includes(node.namespaces[prefix]??'')))return false;return uri&&![W,R,XMLNS,XML].includes(uri)&&!(uri===W14&&['paraId','textId'].includes(name))||uri===W&&this.bindings.has(node)&&['p','r','tbl','tr','tc','sectPr','sdt'].includes(node.name);}));
+      if(attrs.size){let owner:XmlNode|undefined=node;while(owner&&!this.bindings.has(owner)&&!['style','styles','settings','numbering','fonts','document','comments','footnotes','endnotes'].includes(owner.name))owner=this.parents.get(owner);if(owner){const path:string[]=[],indices:number[]=[];for(let current=node===owner?undefined:this.parents.get(node);current&&current!==owner;current=this.parents.get(current)){path.unshift(current.uri+' '+current.name);indices.unshift(this.ordinals.get(current)??0);}let change:XmlNode|undefined;for(let current:XmlNode|undefined=node;current&&current!==owner;current=this.parents.get(current))if(current.uri===W&&current.name.endsWith('PrChange')){change=current;break;}this.pending.push({owner,original:{...node,attrs,content:[]},kind:'property',path,indices,propertyIndex:this.ordinals.get(node)??0,label:'原生扩展属性 '+node.name,id:'native-'+(++this.serial),...(change?.attrs.get(W+' id')?{revisionSourceId:change.attrs.get(W+' id')!,revisionPrevious:change!==node}:{})});}}}
+      for(const child of node.content)if(typeof child!=='string')capture(child);
+    };for(const root of this.roots.values())capture(root);
     const writtenSettings=new Set(['evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','trackRevisions','footnotePr','endnotePr']);
     for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content)if(typeof item!=='string'&&!(item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??''))))this.pending.push({owner:root,original:item,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
     const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
@@ -172,6 +193,6 @@ export class DocxNativeImport {
         if (!rel.external) part(rel.target);
       }
     }
-    if (native.fragments.length || native.parts.length) word.nativeContent = native;
+    if (native.fragments.length || native.parts.length){native.identities=[...this.identities.values()];word.nativeContent = native;}
   }
 }

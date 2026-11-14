@@ -400,6 +400,7 @@ class Importer {
   }
   import(): DocumentPackage {
     const source = this.opc.read(this.main);
+    this.native?.bind(source,this.root.attrs);
     if (source.uri !== W || source.name !== "document")
       fail(source, "The main part is not a Word document.");
     check(source, ["background", "body"]);
@@ -1191,7 +1192,7 @@ class Importer {
     const storyId = kind + "-" + this.loadedStories.size;
     this.loadedStories.set(part, storyId);
     const root = this.story(kind, storyId);
-    root.attrs.class = "word-main";
+    root.attrs.class = "word-main";this.native?.bind(source,root.attrs);
     root.children.push(...this.readStoryContent(part, storyId, source));
     this.auxiliary.push(root);
     return storyId;
@@ -1272,7 +1273,7 @@ class Importer {
   private image(source:XmlNode):Html{
     return importWordDrawing(source,{word:this.word,opc:this.opc,part:this.currentPart,main:this.main,make:(tag,attrs)=>this.make(tag,attrs),asset:(part,mime)=>{let path=this.assetSources.get(part);if(path)return path;const ext=/\.([a-zA-Z0-9]{1,8})$/.exec(part)?.[1]??'bin';path='assets/chart-'+(this.assets.length+1)+'.'+ext;const bytes=this.opc.files.get(part);if(!bytes)fail(source,'A chart resource is missing.');this.files.set(path,new Uint8Array(bytes));this.assets.push(createAssetDescriptor(path,mime,bytes));this.assetSources.set(part,path);return path;},image:(part,source)=>{
       let path=this.assetSources.get(part);if(path)return path;const mime=this.opc.contentType(part),extensions:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};if(!mime||!extensions[mime])unsupported(source,'This image encoding is preserved as native content.');path='assets/image-'+(this.assets.length+1)+'.'+extensions[mime];const bytes=this.opc.files.get(part);if(!bytes)fail(source,'An embedded image resource is missing.');this.files.set(path,new Uint8Array(bytes));this.assets.push(createAssetDescriptor(path,mime,bytes));this.assetSources.set(part,path);return path;
-    },story:source=>{const id='text-box-'+this.word.stories.length,root=this.story('textBox',id);root.attrs.class='word-main';root.children.push(...this.readStoryContent(this.currentPart,id,source));this.auxiliary.push(root);return id;},native:(source,node)=>this.native?.bind(source,node.attrs),identity:(source,id,nativeId)=>{if(nativeId===undefined)return;number(nativeId,source);const key=this.currentPart+'\n'+nativeId;if(source.uri===WP){const previous=this.drawingNativeIds.get(key);if(previous&&previous!==id)fail(source,'A drawing frame identity is repeated.');this.drawingNativeIds.set(key,id);}else if(nativeId!=='0'){const previous=this.drawingAliases.get(key);this.drawingAliases.set(key,previous===undefined||previous===id?id:null);}},connector:(source,nodeId,start,end,local)=>this.drawingConnections.push({source,nodeId,part:this.currentPart,...(start!==undefined?{start}:{}),...(end!==undefined?{end}:{}),local})});
+    },story:source=>{const id='text-box-'+this.word.stories.length,root=this.story('textBox',id);root.attrs.class='word-main';root.children.push(...this.readStoryContent(this.currentPart,id,source));this.auxiliary.push(root);return id;},native:(source,node)=>this.native?.bind(source,node.attrs),identity:(source,id,nativeId)=>{if(nativeId===undefined)return;number(nativeId,source);this.native?.identity(source,id,nativeId);const key=this.currentPart+'\n'+nativeId;if(source.uri===WP){const previous=this.drawingNativeIds.get(key);if(previous&&previous!==id)fail(source,'A drawing frame identity is repeated.');this.drawingNativeIds.set(key,id);}else if(nativeId!=='0'){const previous=this.drawingAliases.get(key);this.drawingAliases.set(key,previous===undefined||previous===id?id:null);}},connector:(source,nodeId,start,end,local)=>this.drawingConnections.push({source,nodeId,part:this.currentPart,...(start!==undefined?{start}:{}),...(end!==undefined?{end}:{}),local})});
   }
   private validateMergeContinuation(cell: XmlNode): void {
     const direction = child(child(cell, "tcPr"), "textDirection");

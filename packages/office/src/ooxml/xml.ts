@@ -41,8 +41,9 @@ export interface XmlNode {
 export interface XmlBudget {
   nodes: number;
 }
-const unsupportedSources = new WeakMap<object, { node: XmlNode; attribute?: string }>();
-export function unsupportedSource(error: unknown): { node: XmlNode; attribute?: string } | undefined {
+export interface UnsupportedXmlSource{node:XmlNode;attribute?:string;collection?:{owner:XmlNode;names:readonly string[];uri:string}}
+const unsupportedSources = new WeakMap<object, UnsupportedXmlSource>();
+export function unsupportedSource(error: unknown): UnsupportedXmlSource | undefined {
   return typeof error === "object" && error !== null ? unsupportedSources.get(error) : undefined;
 }
 export function fail(
@@ -142,8 +143,9 @@ export function check(
   for (const item of node.content) {
     if (typeof item === "string") {
       if (item.trim()) fail(node, "Unexpected OOXML text content.");
-    } else if (item.uri !== uri || !names.includes(item.name))
-      unsupported(item);
+    } else if (item.uri !== uri || !names.includes(item.name)){
+      try{unsupported(item);}catch(error){if(typeof error==="object"&&error)unsupportedSources.set(error,{node:item,collection:{owner:node,names,uri}});throw error;}
+    }
   }
 }
 export function xml(
