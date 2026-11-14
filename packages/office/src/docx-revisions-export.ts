@@ -1,0 +1,60 @@
+import { DocumentError } from '@doffi/core';
+import type { DeepReadonly, WordMetadata, WordRevision } from '@doffi/core';
+import type { SourceNode, SourceElement } from './export/source.js';
+import { element } from './export/source.js';
+import type { ExportCss } from './export/css.js';
+import type { ExportStyles } from './export/styles.js';
+import type { Css } from './ooxml/styles.js';
+import { attributes, empty, value, orderedProperties } from './export/xml.js';
+import { paragraphProperties, paragraphKeys, runProperties, runKeys, tableProperties, cellProperties, difference } from './export/properties.js';
+import { nativeInteger } from './export/values.js';
+export class ExportWordRevisions {
+    private next = 0;
+    private readonly formats = new Map<string, DeepReadonly<WordRevision>[]>();
+    constructor(word: DeepReadonly<WordMetadata> | undefined, private readonly css: ExportCss, private readonly styles: ExportStyles) { this.next = word?.revisions.length ?? 0; for (const revision of word?.revisions ?? [])
+        if (revision.kind === 'format') {
+            const entries = this.formats.get(revision.nodeId) ?? [];
+            entries.push(revision);
+            this.formats.set(revision.nodeId, entries);
+        } }
+    private revision(node: SourceNode, property: WordRevision['property']): {
+        revision: DeepReadonly<WordRevision>;
+        owner: SourceElement;
+    } | undefined { for (let current: SourceNode | undefined = node; current; current = current.parent)
+        if (element(current)) {
+            const revision = this.formats.get(current.attrs['data-node-id'] ?? '')?.find(item => item.property === property);
+            if (revision)
+                return { revision, owner: current };
+            if (property !== 'run')
+                break;
+        } return; }
+    private paragraphStyle(node: SourceElement): string | undefined { for (let current: SourceElement | undefined = node; current; current = current.parent)
+        if (/^p$|^h[1-6]$/.test(current.tag))
+            return current.attrs['data-word-style']; return undefined; }
+    private old(owner: SourceElement, revision: DeepReadonly<WordRevision>, fallback: Css): {
+        node: SourceElement;
+        css: Css;
+    } { const attrs = { ...owner.attrs }; for (const [key, value] of Object.entries(revision.before?.attributes ?? {})) {
+        if (value == null)
+            delete attrs[key];
+        else
+            attrs[key] = value;
+    } const node = { ...owner, attrs, tag: revision.before?.tagName ?? owner.tag }; return { node, css: revision.before?.properties ? { ...fallback, ...revision.before.properties } : this.css.get(node) }; }
+    private change(revision: DeepReadonly<WordRevision>, name: string, previous: string): string { if (revision.date !== undefined && (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(revision.date) || !Number.isFinite(Date.parse(revision.date))))
+        throw new DocumentError('UnsupportedFeature', 'A revision date is not an XML dateTime.'); return '<w:' + name + 'Change' + attributes({ 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': revision.date }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>'; }
+    run(node: SourceNode, expected: Css): string { const entry = this.revision(node, 'run'); if (!entry)
+        return ''; const old = this.old(entry.owner, entry.revision, expected), style = old.node.attrs['data-word-style'], context = this.styles.runContext(this.paragraphStyle(entry.owner), style), props = (style ? value('rStyle', this.styles.ids.get(style) ?? style) : '') + runProperties(difference(old.css, { ...expected, ...context }, [...runKeys, ...Object.keys(old.css).filter(key => key.startsWith('--'))]), { ...expected, ...context }); return this.change(entry.revision, 'rPr', props); }
+    paragraph(node: SourceElement, width: number): string { const entry = this.revision(node, 'paragraph'); if (!entry)
+        return ''; const old = this.old(node, entry.revision, {}), style = old.node.attrs['data-word-style']; let props = (style ? value('pStyle', this.styles.ids.get(style) ?? style) : '') + paragraphProperties({ ...difference(old.css, this.styles.paragraphContext(style), [...paragraphKeys, ...Object.keys(old.css).filter(key => key.startsWith('border-'))]), 'font-size': old.css['font-size']! }, width); const num = old.node.attrs['data-word-numbering']; if (num)
+        props += '<w:numPr>' + value('ilvl', old.node.attrs['data-word-level'] ?? 0) + value('numId', this.styles.numberingIds.get(num) ?? num) + '</w:numPr>'; const tabs = entry.revision.before?.tabs; if (tabs?.stops.length)
+        props += '<w:tabs>' + tabs.stops.map(tab => empty('w:tab', { 'w:pos': nativeInteger(tab.position), 'w:val': tab.alignment, 'w:leader': tab.leader })).join('') + '</w:tabs>'; if (/^h[1-6]$/.test(old.node.tag))
+        props += value('outlineLvl', Number(old.node.tag[1]) - 1); return this.change(entry.revision, 'pPr', orderedProperties('pPr', props)); }
+    table(node: SourceElement): string { const entry = this.revision(node, 'table'); if (!entry)
+        return ''; return this.change(entry.revision, 'tblPr', tableProperties(this.old(node, entry.revision, {}).css)); }
+    cell(node: SourceElement): string { const entry = this.revision(node, 'cell'); if (!entry)
+        return ''; const old = this.old(node, entry.revision, {}); return this.change(entry.revision, 'tcPr', cellProperties(old.css) + value('textDirection', old.node.attrs['data-word-text-direction'] ?? old.css['--word-cell-text-direction'])); }
+    row(node: SourceElement): string { const entry = this.revision(node, 'row'); if (!entry)
+        return ''; const old = this.old(node, entry.revision, {}); let props = old.css['break-inside'] === 'avoid' ? '<w:cantSplit/>' : ''; if (old.css.height)
+        props += empty('w:trHeight', { 'w:val': nativeInteger(Number.parseFloat(old.css.height)) }); if (old.node.attrs['data-word-repeat-header'])
+        props += '<w:tblHeader/>'; return this.change(entry.revision, 'trPr', props); }
+}

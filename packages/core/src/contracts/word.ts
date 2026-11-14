@@ -5,6 +5,7 @@ import { WordNoteSchema,WordNoteReferenceSchema,WordNoteOptionsSchema } from './
 import { WordEquationSchema } from './word-math.js';
 import { WordControlSchema } from './word-control.js';
 import { WordCommentSchema,WordPersonSchema } from './word-comment.js';
+import {WordRevisionSchema}from'./word-revision.js';
 
 /** Residual OOXML owns only content that has no editable HTML representation. */
 export const WordNativeContentSchema = z.strictObject({
@@ -21,6 +22,7 @@ export const WordNativeContentSchema = z.strictObject({
     ownerName: z.string().min(1),
     styleId: IdentifierSchema.optional(),
     label: z.string(),
+    propertyName:z.string().min(1).optional(),revisionSourceId:IdentifierSchema.optional(),revisionPrevious:z.boolean().optional(),
   })),
   parts: z.array(z.strictObject({ sourcePart: PackagePathSchema, assetPath: PackagePathSchema, contentType: z.string().min(1) })),
   relationships: z.array(z.strictObject({
@@ -89,6 +91,7 @@ export const WordNumberLevelSchema = z.strictObject({
 });
 export const WordMetadataSchema = z.strictObject({
   comments:z.array(WordCommentSchema).optional(),people:z.array(WordPersonSchema).optional(),
+  trackChanges:z.boolean().optional(),trackingAuthor:z.string().optional(),
   controls:z.array(WordControlSchema).optional(),
   equations:z.array(WordEquationSchema).optional(),
   notes:z.array(WordNoteSchema).optional(),noteReferences:z.array(WordNoteReferenceSchema).optional(),
@@ -161,15 +164,7 @@ export const WordMetadataSchema = z.strictObject({
       ),
     }),
   ),
-  revisions: z.array(
-    z.strictObject({
-      nodeId: IdentifierSchema,
-      sourceId: IdentifierSchema,
-      kind: z.enum(["insert", "delete"]),
-      author: z.string().optional(),
-      date: z.string().optional(),
-    }),
-  ),
+  revisions: z.array(WordRevisionSchema),
   tables: z.array(
     z.strictObject({
       nodeId: IdentifierSchema,

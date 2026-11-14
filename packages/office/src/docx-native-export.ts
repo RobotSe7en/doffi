@@ -1,3 +1,4 @@
+import {sortWordSettings}from'./ooxml/word-settings-order.js';
 import { DocumentError } from '@doffi/core';
 import type { ContentDocumentModel, DocumentReadLimits, DeepReadonly, WordMetadata } from '@doffi/core';
 import { W, R, PKG, xml } from './ooxml/xml.js';
@@ -115,7 +116,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   for(const [path,root]of parsed){
     apply(root);
     for(const fragment of native.fragments)if(fragment.kind==='property'&&!fragment.nodeId&&partMap.get(fragment.sourcePart)===path){const target=fragment.styleId?root.content.find((n):n is XmlNode=>typeof n!=='string'&&n.name==='style'&&n.attrs.get(W+' styleId')===fragment.styleId):root;if(!target)throw new DocumentError('ExportFailed','A preserved native style owner is missing.');applyProperty(target,fragment);}
-    files.set(path,encoder.encode(declaration+serializeXml(root)));
+    sortWordSettings(root);files.set(path,encoder.encode(declaration+serializeXml(root)));
   }
   for(const part of retained){const bytes=sourceFiles.get(part.assetPath);if(!bytes)throw new DocumentError('AssetUnavailable','A retained OPC part is missing.');files.set(partMap.get(part.sourcePart)!,bytes);}
   for(const [part,root]of relationRoots)files.set(relPath(part),encoder.encode(declaration+serializeXml(root)));

@@ -99,7 +99,7 @@ test('more than 1024 unsupported native content nodes are accepted within normal
   expect(model.snapshot().metadata.word!.nativeContent!.fragments).toHaveLength(1025);
 });
 
-test('unmodeled document settings and native compatibility flags survive repeated native export',()=>{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'settings-native'}),{kind:'document'})),files=unzipSync(exportDocx(session).bytes);files['word/settings.xml']=strToU8(strFromU8(files['word/settings.xml']!).replace('</w:settings>','<w:trackRevisions/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'));let bytes:Uint8Array=zipSync(files);
- for(let i=0;i<2;i++){const model=openDocument(importDocxWithReport(bytes,{documentId:'preserved-settings'}).files,{kind:'document'});bytes=exportDocx(model).bytes;const settings=strFromU8(unzipSync(bytes)['word/settings.xml']!);expect(settings).toMatch(/:trackRevisions\b/);expect(settings).toContain('compatibilityMode');expect(settings).toContain('15');}
+test('track settings and unmodeled native compatibility flags survive repeated native export',()=>{
+ const session=createDocumentSession(openDocument(createWordDocument({documentId:'settings-native'}),{kind:'document'})),files=unzipSync(exportDocx(session).bytes);files['word/settings.xml']=strToU8(strFromU8(files['word/settings.xml']!).replace(/<w:trackRevisions[^>]*\/>/,'').replace('</w:settings>','<w:trackRevisions/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'));let bytes:Uint8Array=zipSync(files);
+ for(let i=0;i<2;i++){const model=openDocument(importDocxWithReport(bytes,{documentId:'preserved-settings'}).files,{kind:'document'});expect(model.snapshot().metadata.word!.trackChanges).toBe(true);bytes=exportDocx(model).bytes;const settings=strFromU8(unzipSync(bytes)['word/settings.xml']!);expect(settings).toMatch(/:trackRevisions\b/);expect(settings).toContain('compatibilityMode');expect(settings).toContain('15');}
 });

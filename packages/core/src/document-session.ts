@@ -1,3 +1,4 @@
+import {trackWordText}from'./session/word-revisions.js';
 import type { Anchor,Annotation } from "./contracts/annotations.js";
 import { isPresentationCommentPoint } from "./document/presentation.js";
 import type { ContentDocumentMetadata } from "./contracts/document.js";
@@ -142,7 +143,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
         if (metadata.presentation) invalid("Word operations require a Word document.");
         applyWordOperation(metadata, edit, parseEdited, styles, operation, limits,annotations);
       }
-      else if ("nodeId" in operation) { guardPresentationContent(base, operation); edit.apply(operation); }
+      else if ("nodeId" in operation) { guardPresentationContent(base, operation);if(operation.op==="replaceText"&&metadata.word?.trackChanges)trackWordText(metadata.word,edit,parseEdited,operation);else edit.apply(operation); }
       else applyAnnotation(operation, annotations, explicit);
     }
     for (const annotation of annotations) {

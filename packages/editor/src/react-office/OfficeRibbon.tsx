@@ -134,7 +134,7 @@ export function OfficeRibbon({ kind, tab: requestedTab, onTab, mode, busy, actio
   else if (tab === "审阅") content = <>
     <Group title="校对"><Tool label="编辑器" icon="proof" large /><div className="ribbon-tool-stack"><Tool label="同义词库" icon="book" /><Tool label="字数统计" icon="numbering" disabled={!word || !canFormat} run={word?()=>wordCommand({type:"word",action:"wordCount"}):undefined}/></div></Group>
     {selectionTools}<Group title="批注">{command("comments", "显示批注", "comment", true)}</Group>
-    {kind === "document" && <><Group title="修订"><Tool label="修订" icon="edit" large /><Tool label="显示标记" icon="file" large /></Group><Group title="更改"><Tool label="接受" icon="check" large /><Tool label="拒绝" icon="close" large /></Group></>}
+    {kind === "document" && <><Group title="修订"><Tool label="修订" icon="edit" large disabled={!canFormat} run={()=>wordCommand({type:"word",action:"review"})}/><Tool label="显示标记" icon="file" large disabled={!canFormat} run={()=>wordCommand({type:"word",action:"review"})}/></Group><Group title="更改"><Tool label="接受" icon="check" large disabled={!canFormat} run={()=>wordCommand({type:"word",action:"review"})}/><Tool label="拒绝" icon="close" large disabled={!canFormat} run={()=>wordCommand({type:"word",action:"review"})}/></Group></>}
     <Group title="协作提案">{command("proposal", "载入固定示例提案", "sparkles", true)}</Group>
   </>;
   else if (tab === "数据" && kind === "workbook") content = <>

@@ -1,0 +1,74 @@
+import type { WordMetadata, WordRevision } from '@doffi/core';
+import { attr, child, check, fail, on, number, unsupported } from './ooxml/xml.js';
+import type { XmlNode } from './ooxml/xml.js';
+import { declarations, mergeTabs, pt } from './ooxml/styles.js';
+import type { DocxStyles, Css } from './ooxml/styles.js';
+const propertyNames = { run: 'rPr', paragraph: 'pPr', table: 'tblPr', row: 'trPr', cell: 'tcPr' } as const;
+export function readWordFormatRevision(word: WordMetadata, properties: XmlNode | undefined, owner: {
+    tag: string;
+    attrs: Record<string, string>;
+}, property: keyof typeof propertyNames, styles: DocxStyles, options: {
+    inheritedRun?: Css;
+    runClasses?: readonly string[];
+    defaultTab?: number;
+} = {}): void {
+    const name = propertyNames[property], change = child(properties, name + 'Change');
+    if (!change)
+        return;
+    check(change, [name]);
+    const previous = child(change, name), sourceId = attr(change, 'id');
+    if (!previous || sourceId === undefined || child(previous, name + 'Change'))
+        fail(change, 'A formatting revision requires one original property set and an identity.');
+    const attributes: Record<string, string | null> = { style: null }, before: NonNullable<WordRevision['before']> = { attributes };
+    let css: Css = {};
+    if (property === 'run') {
+        const styleId = attr(child(previous, 'rStyle'), 'val'), inherited = styles.runStyle(styleId ?? styles.defaultCharacter, options.inheritedRun ?? {});
+        css = styles.run(previous, inherited);
+        if (styleId) {
+            const standalone = styles.get(styleId).r;
+            for (const name of ['font-weight', 'font-style', 'font-variant', 'text-transform'])
+                if (standalone[name] !== undefined && inherited[name] !== standalone[name] && css[name] === undefined)
+                    css[name] = inherited[name]!;
+        }
+        attributes['data-word-style'] = styleId ?? null;
+        attributes.class = [...options.runClasses ?? [], ...styleId ? [styles.styleClass(styleId)] : []].join(' ') || null;
+        attributes.lang = attr(child(previous, 'lang'), 'val') ?? null;
+    }
+    else if (property === 'paragraph') {
+        const styleId = attr(child(previous, 'pStyle'), 'val') ?? styles.defaultParagraph, style = styles.get(styleId);
+        css = styles.paragraph(previous);
+        attributes['data-word-style'] = styleId ?? null;
+        attributes.class = styleId ? styles.styleClass(styleId) : null;
+        const outline = child(previous, 'outlineLvl'), level = outline ? number(attr(outline, 'val'), outline) : style.outline;
+        before.tagName = level !== undefined && level < 6 ? 'h' + (level + 1) as 'h1' : 'p';
+        attributes['data-word-line-rule'] = css['line-height'] && /^\d+(?:\.\d+)?$/.test(css['line-height']) ? 'auto' : null;
+        const num = child(previous, 'numPr'), id = attr(child(num, 'numId'), 'val') ?? style.numbering?.id;
+        attributes['data-word-numbering'] = id && id !== '0' ? id : null;
+        attributes['data-word-level'] = id && id !== '0' ? String(number(attr(child(num, 'ilvl'), 'val'), num ?? previous, style.numbering?.level ?? 0)) : null;
+        before.tabs = { defaultInterval: options.defaultTab ?? 36, stops: mergeTabs(style.tabs ?? styles.defaults.tabs, child(previous, 'tabs')) };
+    }
+    else if (property === 'table') {
+        if (attr(child(previous, 'tblStyle'), 'val') !== attr(child(properties, 'tblStyle'), 'val'))
+            unsupported(change, 'A table-style revision is preserved until all conditional regions can be recomposed.');
+        css = styles.table(previous);
+    }
+    else if (property === 'cell') {
+        if (attr(child(previous, 'gridSpan'), 'val') !== attr(child(properties, 'gridSpan'), 'val') || attr(child(previous, 'vMerge'), 'val') !== attr(child(properties, 'vMerge'), 'val'))
+            unsupported(change, 'A cell merge revision is preserved with its native grid.');
+        css = styles.cell(previous);
+        attributes['data-word-text-direction'] = attr(child(previous, 'textDirection'), 'val') ?? null;
+    }
+    else {
+        check(previous, ['cnfStyle', 'divId', 'gridBefore', 'gridAfter', 'wBefore', 'wAfter', 'cantSplit', 'trHeight', 'tblHeader', 'tblCellSpacing', 'jc', 'hidden']);
+        if (on(child(previous, 'hidden')) || child(previous, 'gridBefore') || child(previous, 'gridAfter'))
+            unsupported(change, 'This row format revision remains native.');
+        if (on(child(previous, 'cantSplit')))
+            css['break-inside'] = 'avoid';
+        const height = child(previous, 'trHeight');
+        if (height)
+            css.height = pt(number(attr(height, 'val'), height) / 20);
+        attributes['data-word-repeat-header'] = on(child(previous, 'tblHeader')) ? 'true' : null;
+    }
+    attributes.style = declarations(css) || null;
+    word.revisions.push({ nodeId: owner.attrs['data-node-id']!, revisionId: owner.attrs['data-node-id'] + '-format-' + property, sourceId, kind: 'format', property, before, ...(attr(change, 'author') !== undefined ? { author: attr(change, 'author')! } : {}), ...(attr(change, 'date') !== undefined ? { date: attr(change, 'date')! } : {}) });
+}

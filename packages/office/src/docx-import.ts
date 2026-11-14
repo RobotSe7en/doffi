@@ -1,3 +1,4 @@
+import {readWordFormatRevision}from'./docx-revisions-import.js';
 import { readWordCommentExtensions,wordCommentAnnotations } from './docx-comments.js';
 import type { WordCommentState as CommentState } from './docx-comments.js';
 import { readWordControl } from './docx-control.js';
@@ -176,6 +177,7 @@ class Importer {
         this.settings ?? opc.read(main),
         720,
       ) / 20;
+    this.word.trackChanges=on(child(this.settings,"trackRevisions"));
     this.word.automaticHyphenation = on(
       child(this.settings, "autoHyphenation"),
     );
@@ -643,6 +645,7 @@ class Importer {
       this.inline(item, paragraph, paragraphRun);
     }
     const mark = child(properties, "rPr");
+    if(child(mark,"rPrChange"))unsupported(child(mark,"rPrChange")!,"Paragraph-mark formatting revisions are preserved natively.");
     if (mark)
       paragraph.children.push(
         this.make("span", {
@@ -650,6 +653,7 @@ class Importer {
           style: declarations(this.styles.run(mark, paragraphRun)),
         }),
       );
+    readWordFormatRevision(this.word,properties,paragraph,'paragraph',this.styles,{defaultTab:this.defaultTab});
     this.paragraphRunClasses = oldRunClasses;
     this.native?.bind(source, paragraph.attrs);
     return paragraph;
@@ -738,6 +742,7 @@ class Importer {
         });
         if (requestedStyleId && !styleId)
           run.attrs["data-word-ignored-character-style"] = requestedStyleId;
+        readWordFormatRevision(this.word,properties,run,'run',this.styles,{inheritedRun:{...this.styles.defaults.r,...paragraphStyle},runClasses:this.paragraphRunClasses});
         this.native?.bind(source, run.attrs);
         parent.children.push(run);
         const language = attr(child(properties, "lang"), "val");
@@ -1398,7 +1403,7 @@ class Importer {
         "tblHeader",
         "tblCellSpacing",
         "jc",
-        "hidden",
+        "hidden","trPrChange",
       ]);
       if (
         child(rowProperties, "gridBefore") ||
@@ -1417,6 +1422,7 @@ class Importer {
           ? { "data-word-repeat-header": "true" }
           : {}),
       });
+      readWordFormatRevision(this.word,rowProperties,htmlRow,'row',this.styles);
       this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);
       let column = 0;
@@ -1531,6 +1537,7 @@ class Importer {
             ),
           );
           if (textDirection) htmlCell.attrs["data-word-text-direction"] = textDirection;
+          readWordFormatRevision(this.word,props,htmlCell,'cell',this.styles);
           this.native?.bind(cell, htmlCell.attrs);
           htmlRow.children.push(htmlCell);
           if (merge) next.set(column, { cell: htmlCell, span });
@@ -1542,6 +1549,7 @@ class Importer {
       previous = next;
       rowIndex++;
     }
+    readWordFormatRevision(this.word,properties,table,'table',this.styles);
     this.native?.bind(source, table.attrs);
     return table;
   }

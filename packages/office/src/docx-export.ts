@@ -1,3 +1,4 @@
+import{ExportWordRevisions}from'./docx-revisions-export.js';
 import { W15,CID,CEX } from './docx-comments.js';
 import { WordChartWriter } from './docx-chart-export.js';
 import { writeWordControlProperties } from './docx-control.js';
@@ -58,6 +59,7 @@ class Exporter {
   private readonly fieldEnds: ReadonlyMap<string, Field>;
   private readonly links: ReadonlyMap<string, DeepReadonly<WordMetadata["hyperlinks"][number]>>;
   private readonly linkEnds:ReadonlySet<string>;
+  private readonly review:ExportWordRevisions;
   private readonly revisions: ReadonlyMap<string, DeepReadonly<WordMetadata["revisions"][number]>>;
   private readonly bookmarkStarts: ReadonlyMap<string, { id: number; name: string }>;
   private readonly bookmarkEnds: ReadonlyMap<string, number>;
@@ -88,7 +90,7 @@ class Exporter {
     for (const node of this.tree.elements) if (contains(this.tree.root, node)) this.assertFormatting(node, this.css.get(node));
     const main = word?.stories.filter((story) => story.kind === "main").map((story) => this.tree.byId.get(story.rootNodeId)!) ?? [this.tree.root];
     this.styles = new ExportStyles(this.css, word, this.snapshot.metadata.locale, limits, this.css.get(main[0]!));
-    this.mainStories = main;
+    this.mainStories = main;this.review=new ExportWordRevisions(word,this.css,this.styles);
     const stories = word?.stories.filter((story) => story.kind !== "comment").map((story) => this.tree.byId.get(story.rootNodeId)!) ?? main;
     this.opc = new OutputOpc(new XmlParts(limits,this.packageBudget));this.charts=new WordChartWriter(this.opc,this.files,limits,this.packageBudget);
     this.output = this.opc.part(this.part, "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
@@ -96,7 +98,7 @@ class Exporter {
     this.fieldEnds = new Map(word?.fields.filter((field) => field.endNodeId).map((field) => [field.endNodeId!, field]) ?? []);
     this.links = new Map(word?.hyperlinks.map((link) => [link.nodeId, link]) ?? []);
     this.linkEnds=new Set(word?.hyperlinks.flatMap(link=>link.endNodeId?[link.endNodeId]:[])??[]);
-    this.revisions = new Map(word?.revisions.map((revision) => [revision.nodeId, revision]) ?? []);
+    this.revisions = new Map(word?.revisions.filter(revision=>["insert","delete","moveFrom","moveTo"].includes(revision.kind)).map((revision) => [revision.nodeId, revision]) ?? []);
     this.bookmarkStarts = new Map(word?.bookmarks.map((bookmark, index) => [bookmark.startNodeId, { id: index, name: bookmark.name }]) ?? []);
     this.bookmarkEnds = new Map(word?.bookmarks.map((bookmark, index) => [bookmark.endNodeId, index]) ?? []);
     for (const story of word?.stories ?? []) if (story.kind === "header" || story.kind === "footer") {
@@ -172,7 +174,7 @@ class Exporter {
     if (properties["text-decoration-color"] && expected["text-decoration-color"]?.toLowerCase() === "currentcolor" && color(properties["text-decoration-color"], css.color) === color(css.color!)) delete properties["text-decoration-color"];
     return properties;
   }
-  private nativeRun(css: Css, expected: Css, character?: string, role?: string, language?: string): string {
+  private nativeRun(css: Css, expected: Css, character?: string, role?: string, language?: string,changes=""): string {
     const properties = this.runDifference(css, expected);
     // A script span selects its source role. Preserve the other three source
     // families even when a host changes just one script's font-family.
@@ -181,7 +183,7 @@ class Exporter {
       else delete properties["font-family"];
     }
     const r = (character ? value("rStyle", this.styles.ids.get(character) ?? character) : "") + runProperties(properties, expected, false, role) + (language ? empty("w:lang", { "w:val": language }) : "");
-    return r ? "<w:rPr>" + r + "</w:rPr>" : "";
+    return r||changes ? "<w:rPr>" + r+changes + "</w:rPr>" : "";
   }
   private nativeMark(nodeId: string | undefined): string { return this.snapshot.metadata.word?.nativeContent ? nativeMarker(nodeId) : ""; }
   private nativeRunOwner(node: SourceNode): string | undefined {
@@ -198,7 +200,7 @@ class Exporter {
       const end = boundaries[index + 1]; if (end === undefined || end <= start) continue;
       const textName = this.deleted ? "delText" : "t", raw = text.slice(start, end);
       const pieces = raw.split(/([\t\n])/);
-      this.add("<w:r" + this.nativeMark(this.nativeRunOwner(node)) + ">" + this.nativeRun(css, expected, character, role ?? (/^[\u0000-\u007f]*$/.test(raw) ? "ascii" : undefined), language));
+      this.add("<w:r" + this.nativeMark(this.nativeRunOwner(node)) + ">" + this.nativeRun(css, expected, character, role ?? (/^[\u0000-\u007f]*$/.test(raw) ? "ascii" : undefined), language,this.review.run(node,expected)));
       for (const piece of pieces) if (piece) this.add(piece === "\t" ? "<w:tab/>" : piece === "\n" ? "<w:br/>" : "<w:" + textName + ' xml:space="preserve">' + escapeXml(piece) + "</w:" + textName + ">");
       this.add("</w:r>");
     }
@@ -304,12 +306,12 @@ class Exporter {
     for (const side of ["top", "right", "bottom", "left"]) if (!paragraphCss["border-" + side + "-style"] && expectedParagraph["border-" + side + "-style"] && expectedParagraph["border-" + side + "-style"] !== "none") { paragraphCss["border-" + side + "-style"] = "none"; paragraphCss["border-" + side + "-width"] = "0pt"; }
     props += paragraphProperties({ ...difference(paragraphCss, expectedParagraph, [...paragraphKeys, ...borderKeys(paragraphCss)]), "font-size": css["font-size"]! }, this.width);
     const tabs = this.snapshot.metadata.word?.tabs.find((tab) => tab.paragraphNodeId === id);
-    if (tabs) props += '<w:tabs>' + tabs.stops.map((tab) => empty("w:tab", { "w:val": tab.alignment, "w:leader": tab.leader, "w:pos": nativeInteger(tab.position) })).join("") + "</w:tabs>";
+    if (tabs?.stops.length) props += '<w:tabs>' + tabs.stops.map((tab) => empty("w:tab", { "w:val": tab.alignment, "w:leader": tab.leader, "w:pos": nativeInteger(tab.position) })).join("") + "</w:tabs>";
     if (/^h[1-6]$/.test(node.tag)) props += value("outlineLvl", Number(node.tag[1]) - 1);
     const mark = children(node).find((child) => child.attrs["data-word-paragraph-mark"]);
     const markProperties = mark ? this.runDifference(this.css.get(mark), this.styles.runContext(style)) : pick(this.runDifference(css, this.styles.runContext(style)), runKeys.filter((key) => key !== "background-color" && !key.startsWith("text-decoration") && !["vertical-align", "letter-spacing", "--word-run-shading", "--word-kerning-threshold"].includes(key)));
     if (Object.keys(markProperties).length) props += "<w:rPr>" + runProperties(markProperties, this.styles.runContext(style)) + "</w:rPr>";
-    props += section ?? ""; this.add("<w:pPr>" + orderedProperties("pPr", props) + "</w:pPr>");
+    props += section ?? "";props+=this.review.paragraph(node,this.width); this.add("<w:pPr>" + orderedProperties("pPr", props) + "</w:pPr>");
     this.add(this.annotations.at(node, 0));
     for (const child of node.children) this.inline(child, style);
     this.add("</w:p>");
@@ -403,14 +405,14 @@ class Exporter {
     const tableWidth = css.width && css.width !== "auto" ? points(css.width, css, this.width) : this.width;
     const grid = info?.grid ?? Array.from({ length: columns }, () => tableWidth / columns);
     if (grid.length !== columns) unsupported("The current table structure no longer matches its native column grid.");
-    this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(css) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr><w:tblGrid>");
+    this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(css) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + this.review.table(node)+"</w:tblPr><w:tblGrid>");
     for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add("</w:tblGrid>");
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = this.css.get(row);
-      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + (rowCss.height && rowCss.height !== "auto" ? empty("w:trHeight", { "w:val": nativeInteger(points(rowCss.height, rowCss), 20, 0), "w:hRule": "atLeast" }) : "") + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + "</w:trPr>");
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + (rowCss.height && rowCss.height !== "auto" ? empty("w:trHeight", { "w:val": nativeInteger(points(rowCss.height, rowCss), 20, 0), "w:hRule": "atLeast" }) : "") + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + this.review.row(row)+"</w:trPr>");
       for (const cell of cells) {
         const cellCss = this.css.get(cell.node);
-        this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(cellCss) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])) + "</w:tcPr>");
+        this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(cellCss) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+this.review.cell(cell.node)) + "</w:tcPr>");
         if (cell.continuation) this.add("<w:p/>"); else {
           const width = this.width; this.width = grid.slice(cell.column, cell.column + cell.span).reduce((total, value) => total + value, 0); this.blocks(cell.node.children); this.width = width;
         }
@@ -524,7 +526,7 @@ class Exporter {
     if (intervals.size > 1) unsupported("DOCX has one document-wide default tab interval.");
     const sections=this.snapshot.metadata.sections;
     if(sections.some(section=>section.gutterPosition === "top" && section.gutter) && sections.some(section=>section.gutterPosition !== "top" && section.gutter)) unsupported("DOCX gutterAtTop is document-wide; nonzero top and side gutters cannot be mixed.");
-    out.add(declaration + "<w:settings" + namespaces + ">" + value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + this.noteSettings('footnote')+this.noteSettings('endnote') + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
+    out.add(declaration + "<w:settings" + namespaces + ">" + orderedProperties("settings",value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0)+value("trackRevisions",this.snapshot.metadata.word?.trackChanges?1:0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + this.noteSettings('footnote')+this.noteSettings('endnote')) + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
   }
 }
 /** Generate a native, editable DOCX exclusively from the current validated HTML

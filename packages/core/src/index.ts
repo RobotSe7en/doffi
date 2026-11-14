@@ -106,5 +106,6 @@ export { wordDrawingTransforms } from './word-drawing.js';
 
 export * from './contracts/word-chart.js';
 export * from './contracts/word-comment.js';
+export * from './contracts/word-revision.js';
 
 export * from './contracts/word-text-style.js';

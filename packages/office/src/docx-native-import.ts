@@ -6,7 +6,7 @@ import type { XmlNode } from './ooxml/xml.js';
 import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
-interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
+interface Pending { revisionSourceId?:string;revisionPrevious?:boolean; owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
 const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
 const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
 const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended','commentsIds','commentsExtensible','people', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'chart', 'hyperlink']);
@@ -52,6 +52,7 @@ export class DocxNativeImport {
     let target = info.node;
     const chain: XmlNode[] = [target];
     for (let parent = this.parents.get(target); parent; parent = this.parents.get(parent)) chain.push(parent);
+    const change=chain.find(node=>node.uri===W&&/^(?:rPr|pPr|tblPr|trPr|tcPr|sectPr|tblGrid)Change$/.test(node.name)),revisionInfo=change?.attrs.get(W+' id')?{revisionSourceId:change.attrs.get(W+' id')!,revisionPrevious:chain.indexOf(change)>0}:{};
     const mergeContinuation = error instanceof Error && /vertical merge continuation/i.test(error.message);
     const root = chain.at(-1)!;
     if (root.uri !== W && !['commentsEx','commentsExtensible','commentsIds','people'].includes(root.name)) {
@@ -68,12 +69,12 @@ export class DocxNativeImport {
       for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) path.unshift(current.uri + ' ' + current.name);
       if (info.attribute) {
         const attrs = new Map<string, string>([[info.attribute, target.attrs.get(info.attribute)!]]);
-        this.pending.push({ owner, original: { ...target, attrs, content: [] }, kind: 'property', path, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
+        this.pending.push({ ...revisionInfo,owner, original: { ...target, attrs, content: [] }, kind: 'property', path, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
         (target.attrs as Map<string, string>).delete(info.attribute);
       } else {
         const parent = this.parents.get(target);
         if (!parent || parent.content.indexOf(target) < 0) return false;
-        this.pending.push({ owner, original: target, kind: 'property', path, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
+        this.pending.push({ ...revisionInfo,owner, original: target, kind: 'property', path, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
         parent.content.splice(parent.content.indexOf(target), 1);
       }
       return true;
@@ -106,7 +107,7 @@ export class DocxNativeImport {
     // Settings outside the editable model still belong to the native package.
     // Capture them directly once, rather than requiring one recovery pass per
     // harmless producer preference or compatibility flag.
-    const writtenSettings=new Set(['evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','footnotePr','endnotePr']);
+    const writtenSettings=new Set(['evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','trackRevisions','footnotePr','endnotePr']);
     for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content)if(typeof item!=='string'&&!(item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??''))))this.pending.push({owner:root,original:item,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
     const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
     const encoder = new (globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } }).TextEncoder(), parts = new Set<string>();
@@ -137,7 +138,7 @@ export class DocxNativeImport {
       if (!nodeId && item.kind !== 'property') throw new DocumentError('InvalidDocument', 'A native content placeholder is not bound to the document.');
       const assetPath = fragmentAssetPath;
       fragmentXml.push('<native:item id="' + item.id + '">' + serializeXml(item.original) + '</native:item>');
-      native.fragments.push({ nativeId: item.id, ...(nodeId ? { nodeId } : {}), kind: item.kind, ...(item.runChild?{runChild:true}:{}), sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path, ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label });
+      native.fragments.push({ nativeId: item.id, ...(nodeId ? { nodeId } : {}), kind: item.kind, ...(item.runChild?{runChild:true}:{}), sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path, ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label,propertyName:item.original.uri+' '+item.original.name,...(item.revisionSourceId?{revisionSourceId:item.revisionSourceId,revisionPrevious:item.revisionPrevious}: {}) });
       // Relationships are package-local data; preserving never follows external links.
       const visit = (node: XmlNode): void => {
         for (const [key, id] of node.attrs) if (key.startsWith(R + ' ')) {

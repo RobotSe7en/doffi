@@ -184,7 +184,9 @@ export function validateWord(
     const linkEnds=new Map(word.hyperlinks.filter(link=>link.endNodeId).map(link=>[link.endNodeId!,link]));
     unique(word.hyperlinks.filter(link=>link.endNodeId),link=>link.endNodeId!);
     const fields = unique(word.fields, (item) => item.nodeId);
-    const revisions = unique(word.revisions, (item) => item.nodeId);
+    const revisions = unique(word.revisions, (item) => item.revisionId??item.nodeId);
+    const revisionNodes=new Set(word.revisions.filter(revision=>["insert","delete","moveFrom","moveTo"].includes(revision.kind)).map(revision=>revision.nodeId));
+    unique(word.revisions,item=>item.nodeId+"\n"+item.kind+"\n"+(item.property??""));
     const tabs = unique(word.tabs, (item) => item.paragraphNodeId);
     const bookmarks = unique(word.bookmarks, (item) => item.bookmarkId);
     unique(word.bookmarks, (item) => item.name);
@@ -268,12 +270,12 @@ export function validateWord(
           stack.push({ id: nested.fieldNodeId, exit: false });
       }
     }
-    for (const revision of revisions.values()) {
-      if (
-        node(revision.nodeId).tagName !==
-        (revision.kind === "insert" ? "ins" : "del")
-      )
-        invalid("A revision must refer to the matching revision container.");
+    for(const revision of revisions.values()){
+      const tag=node(revision.nodeId).tagName;
+      if(['insert','delete','moveFrom','moveTo'].includes(revision.kind)&&tag!==(['insert','moveTo'].includes(revision.kind)?'ins':'del'))invalid('A text revision requires its matching source container.');
+      if(revision.kind==='format'&&(!revision.property||!revision.before))invalid('A formatting revision requires its previous properties.');
+      if(revision.kind.startsWith('paragraph')&&!/^p$|^h[1-6]$/.test(tag)||revision.kind.startsWith('row')&&tag!=='tr'||revision.kind.startsWith('cell')&&!['td','th'].includes(tag))invalid('A structural revision requires its matching Word source.');
+      const style=revision.before?.attributes?.['data-word-style'];if(style&&!styles.has(style))invalid('A previous revision style is missing.');
     }
     for (const tab of tabs.values()) {
       if (
@@ -306,7 +308,7 @@ export function validateWord(
         invalid("A field has no semantic definition.");
       if (attrs["data-word-link"] !== undefined && !links.has(id)&&!linkEnds.has(id))
         invalid("A link has no semantic definition.");
-      if (["ins", "del"].includes(current.tagName) && !revisions.has(id))
+      if (["ins", "del"].includes(current.tagName) && !revisionNodes.has(id))
         invalid("A revision has no semantic definition.");
     }
   } else {

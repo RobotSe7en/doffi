@@ -9,7 +9,7 @@ export function wordSemanticChanges(before: DeepReadonly<ContentDocumentMetadata
     const left = before.word, right = after.word;
     if (!left && !right)
         return ids;
-    const compare = <T>(a: readonly T[], b: readonly T[], key: (value: T) => string): void => { const previous = new Map(a.map(value => [key(value), JSON.stringify(value)])), next = new Map(b.map(value => [key(value), JSON.stringify(value)])); for (const id of new Set([...previous.keys(), ...next.keys()]))
+    const compare = <T>(a: readonly T[], b: readonly T[], key: (value: T) => string): void => { const group=(items:readonly T[]):Map<string,string>=>{const rows=new Map<string,T[]>();for(const item of items){const id=key(item),values=rows.get(id)??[];values.push(item);rows.set(id,values);}return new Map([...rows].map(([id,values])=>[id,JSON.stringify(values)]));};const previous=group(a),next=group(b); for (const id of new Set([...previous.keys(), ...next.keys()]))
         if (previous.get(id) !== next.get(id))
             ids.add(id); };
     for (const name of ['drawings', 'equations', 'controls', 'fields', 'hyperlinks', 'tables', 'revisions', 'noteReferences'] as const)
@@ -21,7 +21,7 @@ export function wordSemanticChanges(before: DeepReadonly<ContentDocumentMetadata
     compare(before.sections, after.sections, item => item.rootNodeId);
     if (JSON.stringify(before.pageSetup) !== JSON.stringify(after.pageSetup))
         ids.add(rootNodeId);
-    const globals = (word: DeepReadonly<WordMetadata> | undefined) => word ? Object.fromEntries(['styles', 'numbering', 'evenAndOddHeaders', 'automaticHyphenation', 'defaultRunCssClass', 'footnoteOptions', 'endnoteOptions'].map(key => [key, Reflect.get(word, key)])) : undefined;
+    const globals = (word: DeepReadonly<WordMetadata> | undefined) => word ? Object.fromEntries(['styles', 'numbering', 'evenAndOddHeaders', 'automaticHyphenation', 'defaultRunCssClass','trackChanges','trackingAuthor', 'footnoteOptions', 'endnoteOptions'].map(key => [key, Reflect.get(word, key)])) : undefined;
     if (JSON.stringify(globals(left)) !== JSON.stringify(globals(right)))
         ids.add(rootNodeId);
     const notes = new Map([...(left?.notes ?? []), ...(right?.notes ?? [])].map(note => [note.noteId, note]));

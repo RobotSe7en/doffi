@@ -133,7 +133,9 @@ export class DocxStyles {
   private readonly locale: string;
   readonly language: string | undefined;
 
+  private readonly stylePart:string|undefined;
   constructor(opc: OpcPackage, main: string) {
+    this.stylePart=opc.related(main,"styles");
     const stylePath = opc.related(main, "styles");
     const styleRoot = stylePath ? opc.read(stylePath) : undefined;
     const defaultLanguage = child(
@@ -484,6 +486,7 @@ export class DocxStyles {
     toggle = false,
   ): Css {
     if (!properties) return {};
+    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
     check(properties, [
       "rStyle",
       "rFonts",
@@ -523,7 +526,7 @@ export class DocxStyles {
       "lang",
       "eastAsianLayout",
       "specVanish",
-      "oMath",
+      "oMath", "rPrChange",
     ]);
     const css: Css = {};
     if(child(properties,"snapToGrid")) css["--word-run-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
@@ -737,6 +740,7 @@ export class DocxStyles {
   }
   paragraph(properties: XmlNode | undefined): Css {
     if (!properties) return {};
+    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
     check(properties, [
       "pStyle",
       "keepNext",
@@ -772,7 +776,7 @@ export class DocxStyles {
       "divId",
       "cnfStyle",
       "rPr",
-      "sectPr",
+      "sectPr", "pPrChange",
     ]);
     for (const name of [
       "kinsoku",
@@ -964,6 +968,7 @@ export class DocxStyles {
   }
   table(properties: XmlNode | undefined): Css {
     if (!properties) return {};
+    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
     check(properties, [
       "tblStyle",
       "tblpPr",
@@ -981,7 +986,7 @@ export class DocxStyles {
       "tblCellMar",
       "tblLook",
       "tblCaption",
-      "tblDescription",
+      "tblDescription", "tblPrChange",
     ]);
     if (child(properties, "tblpPr") || on(child(properties, "bidiVisual")))
       unsupported(properties, "Floating or bidi tables are not supported.");
@@ -1021,6 +1026,7 @@ export class DocxStyles {
   }
   cell(properties: XmlNode | undefined): Css {
     if (!properties) return {};
+    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
     check(properties, [
       "cnfStyle",
       "tcW",
@@ -1034,7 +1040,7 @@ export class DocxStyles {
       "textDirection",
       "tcFitText",
       "vAlign",
-      "hideMark",
+      "hideMark", "tcPrChange",
     ]);
     if (child(properties, "hMerge") || on(child(properties, "tcFitText")))
       unsupported(properties);

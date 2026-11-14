@@ -35,6 +35,7 @@ export function expandWordContextRoots(state: DocumentState, roots: Set<string>,
                 link(id, ids[0]!);
             }
         }
+        const revisionGroups=new Map<string,string[]>();for(const revision of word.revisions){const id=revision.groupId??revision.moveId;if(!id)continue;const nodes=revisionGroups.get(id)??[];nodes.push(revision.nodeId);revisionGroups.set(id,nodes);}for(const nodes of revisionGroups.values())for(const node of nodes.slice(1)){link(nodes[0]!,node);link(node,nodes[0]!);}
         for (const hyperlink of word.hyperlinks)
             if (hyperlink.endNodeId) {
                 link(hyperlink.nodeId, hyperlink.endNodeId);

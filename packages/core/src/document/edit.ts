@@ -171,7 +171,7 @@ export class DocumentEdit {
       const text=leaves.map(node=>node.nodeName==='#text'&&'value'in node?node.value:isElement(node)&&node.tagName==='img'?'\ufffc':'\n').join('');if(!Number.isSafeInteger(insertionOffset)||insertionOffset<0||insertionOffset>text.length||!isTextBoundary(text,insertionOffset))fail('A format insertion requires an exact UTF-16 source boundary.');
       from=range.from+insertionOffset;const leaf=leaves.find(node=>positions.get(node)!.to>from)||leaves.at(-1);
       if(leaf){
-        let atomic:Element|undefined;for(let node:Tree.Node|null=leaf.parentNode;node&&node!==container;node='parentNode'in node?node.parentNode:null)if(isElement(node)&&(attr(node,'data-word-native-object')||attr(node,'data-word-drawing')||attr(node,'data-word-note-reference')||attr(node,'data-word-equation')||['checkBox','dropDown','date','picture'].includes(attr(node,'data-word-content-control')??'')))atomic=node;
+        let atomic:Element|undefined;for(let node:Tree.Node|null=leaf.parentNode;node&&node!==container;node='parentNode'in node?node.parentNode:null)if(isElement(node)&&(node.tagName==='del'||attr(node,'data-word-native-object')||attr(node,'data-word-drawing')||attr(node,'data-word-note-reference')||attr(node,'data-word-equation')||['checkBox','dropDown','date','picture'].includes(attr(node,'data-word-content-control')??'')))atomic=node;
         if(atomic){const bounds=positions.get(atomic)!;if(from!==bounds.from&&from!==bounds.to)fail('An atomic object cannot contain a partial insertion.');parent=atomic.parentNode as Element;before=from===bounds.from?atomic:parent.childNodes[parent.childNodes.indexOf(atomic)+1];}
         else{parent=leaf.parentNode as Element;const local=from-positions.get(leaf)!.from;
           if(leaf.nodeName==='#text'&&'value'in leaf&&local>0&&local<leaf.value.length){const tail=this.text(leaf.value.slice(local));leaf.value=leaf.value.slice(0,local);const next=parent.childNodes[parent.childNodes.indexOf(leaf)+1];if(next)adapter.insertBefore(parent,tail,next);else adapter.appendChild(parent,tail);before=tail;}
@@ -214,6 +214,23 @@ export class DocumentEdit {
     const styles = this.state.snapshot.manifest.styles.map(path => decodeText(this.state.files.get(path)!));
     styleSourceText(target, range, properties, this.limits, this.allocate, styles);
   }
+  /** Revision containers retain source leaves and object ownership; wrapping
+   * changes no UTF-16 text offsets. A wrapper is allocated for each text leaf. */
+  wrapSourceText(nodeId:string,from:number,to:number,tag:'ins'|'del'|'span'):string[]{
+    const target=this.index().get(nodeId);if(!target)fail('The revision source is missing.');
+    const positions=textPositions(this.tree),bounds=positions.get(target)!,leaves=textLeaves(target),value=leaves.map(leaf=>leaf.value).join('');
+    if(from>to||!isTextBoundary(value,from)||!isTextBoundary(value,to))fail('A revision range requires exact UTF-16 boundaries.');
+    const ids:string[]=[],wrapped=new Set<Node>();
+    for(const leaf of leaves){if(leaf.end<=from||leaf.start>=to)continue;let node:Tree.ChildNode=leaf.node as Tree.ChildNode;
+      for(let parent:Node|null=node;parent&&parent!==target;parent='parentNode'in parent?parent.parentNode:null)if(isElement(parent)&&(attr(parent,'data-word-native-object')||attr(parent,'data-word-drawing')||attr(parent,'data-word-equation')||attr(parent,'data-word-note-reference')||attr(parent,'data-word-field')||attr(parent,'data-word-content-control')))node=parent;
+      if(wrapped.has(node))continue;wrapped.add(node);const span=positions.get(node)!,begin=Math.max(bounds.from+from,span.from),end=Math.min(bounds.from+to,span.to);
+      if(isElement(node)&&(begin!==span.from||end!==span.to))fail('A revision cannot split an atomic Word object.');
+      const parent=node.parentNode;if(!parent||!isElement(parent))fail('A revision requires a source parent.');const wrapper=this.make(tag);ids.push(attr(wrapper,'data-node-id')!);
+      if(node.nodeName==='#text'&&'value'in node){const localFrom=begin-span.from,localTo=end-span.from;if(localFrom)adapter.insertBefore(parent,this.text(node.value.slice(0,localFrom)),node);adapter.insertBefore(parent,wrapper,node);adapter.appendChild(wrapper,this.text(node.value.slice(localFrom,localTo)));if(localTo<node.value.length)adapter.insertBefore(parent,this.text(node.value.slice(localTo)),node);adapter.detachNode(node);}
+      else{adapter.insertBefore(parent,wrapper,node);adapter.detachNode(node);adapter.appendChild(wrapper,node);}
+    }
+    return ids;
+  }
   /** A format adapter has already checked the owning source identity. */
   replaceSourceText(nodeId: string, edit: { readonly from: number; readonly to: number; readonly expectedText: string; readonly text: string }): void {
     const target = this.index().get(nodeId); if (!target) fail("The source text target is unavailable.");
@@ -226,6 +243,13 @@ export class DocumentEdit {
     if(contents)for(const child of [...target.childNodes])adapter.detachNode(child);else adapter.detachNode(target);
   }
   unwrapSource(nodeId:string):void{const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode)||target.parentNode.tagName==='body')fail('The document root cannot be unwrapped.');const parent=target.parentNode;for(const child of [...target.childNodes]){adapter.detachNode(child);adapter.insertBefore(parent,child,target);}adapter.detachNode(target);}
+  mergeSourceParagraphMark(nodeId:string):void{
+    const node=this.index().get(nodeId);if(!node||!/^p$|^h[1-6]$/.test(node.tagName)||!node.parentNode||!isElement(node.parentNode))fail('A paragraph mark requires its paragraph.');
+    const parent=node.parentNode,siblings=parent.childNodes;let next:Element|undefined;
+    for(let index=siblings.indexOf(node)+1;index<siblings.length;index++){const candidate=siblings[index]!;if(candidate.nodeName==='#text'&&'value'in candidate&&!candidate.value.trim())continue;if(isElement(candidate)&&/^p$|^h[1-6]$/.test(candidate.tagName))next=candidate;break;}
+    if(!next)return;const before=next.childNodes[0];for(const child of [...node.childNodes]){if(isElement(child)&&attr(child,'data-word-paragraph-mark')){adapter.detachNode(child);continue;}adapter.detachNode(child);if(before)adapter.insertBefore(next,child,before);else adapter.appendChild(next,child);}adapter.detachNode(node);
+    for(const ancestor of ancestors(next)){const id=attr(ancestor,'data-node-id');if(id)this.structuralTextNodes.add(id);}
+  }
 
   /** Format-owned bodies accept new fragments without exposing writable source
    * identities. Equal canonical content retains the original nodes and bytes. */
