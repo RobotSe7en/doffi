@@ -2,6 +2,7 @@ import { createWordPageControls } from "./word-page-controls.js";
 import { createWordListControls } from './word-list-controls.js';
 import { wordStoryPreview } from "./word-story-preview.js";
 import { createWordTableControls } from "./word-table-controls.js";
+import { createWordDrawingControls } from './word-drawing-controls.js';
 import { createWordViewport, mountWordRulers } from "./word-ruler.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { bindWordSelectionScroll } from './word-selection-scroll.js';
@@ -36,7 +37,7 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
   | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
-  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" };
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -101,6 +102,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   };
   const pageControls=createWordPageControls(shadow,viewport,session,currentSection,editStory,report);
   const listControls=createWordListControls(shadow,viewport,session,()=>selectedParagraphs().map(node=>node.dataset.nodeId!),report);
+  const drawingControls=createWordDrawingControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph)return;return{paragraphId:paragraph.dataset.nodeId!,offset:offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored)};},editStory,report);
   const viewModel = () => { if(activeStoryId && !session.snapshot().metadata.word?.stories.some(story=>story.storyId===activeStoryId))activeStoryId=undefined;return wordStoryPreview(session,activeStoryId); };
   function editStory(storyId?: string): void { if(composing)throw new DocumentError("InvalidOperation","请先完成当前输入法组合。");activeStoryId=storyId;savedSelection=undefined;refresh(); }
   const sourceDocument = (): Document => new DOMParser().parseFromString(session.snapshot().html, "text/html");
@@ -304,6 +306,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   function wordCommand(command: Extract<DocumentTextCommand, { type: "word" }>): void {
     if (!root || composing) return;
     if (command.action === "listSettings") { listControls.open(); return; }
+    if(command.action==='insertImage'||command.action==='insertShape'||command.action==='insertTextBox'||command.action==='insertConnector'||command.action==='drawingSettings'){drawingControls.open(command.action);return;}
     if (command.action === "pageSettings") { pageControls.open(); return; }
     if (command.action === "mainStory") { editStory(); return; }
     if (command.action === "pageBreak") { const range=selectedRange();if(!range)return;mutate(range,()=>{const breaker=frame!.createElement("br");breaker.dataset.wordBreak="page";insert(range,breaker);});return; }
@@ -358,6 +361,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
 
   function paste(event: ClipboardEvent): void {
     event.preventDefault(); if (!event.clipboardData || composing || !root) return;
+    const image=Array.from(event.clipboardData?.files??[]).find(file=>/^image\/(?:png|jpeg|webp)$/.test(file.type));if(image){event.preventDefault();void drawingControls.insertImage(image).catch(report);return;}
     try {
       const raw = event.clipboardData.getData("text/html"), text = event.clipboardData.getData("text/plain");
       if (raw.length > 1024 * 1024 || text.length > 1024 * 1024) throw new DocumentError("ResourceLimitExceeded", "粘贴内容超过大小限制。");
@@ -470,6 +474,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   function updateMarks():void{clearMarks();clearMarks=()=>{};if(!root)return;projection.setViewAttribute(root,'data-doffi-show-marks',showMarks?'':null);if(showMarks)clearMarks=showWordWhitespace(root,projection,options.limits?.maxNodes??DEFAULT_RENDER_LIMITS.maxNodes);}
   function activate(source: HTMLElement): void {
     if (!root || !frame) return;
+    drawingControls.bind(root,projection,viewControls.signal);
     bindWordSelectionScroll(stage,preview.element,root,{signal:viewControls.signal,enabled:()=>!composing&&!disposed,ignored:projection.ignored,changed(){if(root)savedSelection=bookmark(root,projection.ignored);notifyFormat();}});
     root.contentEditable = "true"; root.setAttribute("data-office-editor", ""); root.setAttribute("role", "textbox"); root.setAttribute("aria-label", "文档正文"); root.setAttribute("aria-multiline", "true"); root.spellcheck = false;
     for (const marker of root.querySelectorAll<HTMLElement>(".sdk-number-marker,[data-word-tab]")) marker.contentEditable = "false";
@@ -508,7 +513,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     root.addEventListener("keydown", keydown, { signal: viewControls.signal }); root.addEventListener("paste", paste as EventListener, { signal: viewControls.signal });
     root.addEventListener("copy", ((event: ClipboardEvent) => copy(event, false)) as EventListener, { signal: viewControls.signal });
     root.addEventListener("cut", ((event: ClipboardEvent) => copy(event, true)) as EventListener, { signal: viewControls.signal });
-    root.addEventListener("drop", (event) => { event.preventDefault(); report(new DocumentError("UnsupportedFeature", "请通过粘贴或宿主资源接口插入内容。")); }, { signal: viewControls.signal });
+    root.addEventListener("drop", (event) => { event.preventDefault();const image=Array.from(event.dataTransfer?.files??[]).find(file=>/^image\/(?:png|jpeg|webp)$/.test(file.type));if(image){void drawingControls.insertImage(image).catch(report);return;}report(new DocumentError("UnsupportedFeature", "请通过粘贴或宿主资源接口插入内容。")); }, { signal: viewControls.signal });
     root.addEventListener("compositionstart", () => { composing = true; compositionRevision = revision; notifyFormat(); }, { signal: viewControls.signal });
     root.addEventListener("compositionend", () => { queueMicrotask(() => {
       if (disposed || !root || !frame) return;
@@ -572,6 +577,6 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    clearMarks();listControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    clearMarks();drawingControls.dispose();listControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

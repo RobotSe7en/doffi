@@ -1,5 +1,5 @@
 import { DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, openDocument } from "@doffi/core";
-import type { DeepReadonly, ContentDocumentModel, DocumentPackage, DocumentReadLimits, DocumentSection, ContentDocumentSnapshot, PageSetup, WordMetadata, WordDocumentMetadata } from "@doffi/core";
+import type { DeepReadonly, ContentDocumentModel, DocumentPackage, DocumentReadLimits, DocumentSection, ContentDocumentSnapshot, PageSetup, WordMetadata, WordDocumentMetadata,WordDrawing } from "@doffi/core";
 import type { DocumentZipOptions } from "./document-zip.js";
 import { writeOpcZip } from "./document-zip.js";
 import { xml } from "./ooxml/xml.js";
@@ -16,6 +16,7 @@ import { ExportStyles } from "./export/styles.js";
 import { color, fontName, nativeInteger } from "./export/values.js";
 import { attributes, declaration, empty, escapeXml, namespaces, orderedProperties, value, XmlParts } from "./export/xml.js";
 
+import { writeWordDrawing } from "./docx-drawing-export.js";
 import { nativeMarker, nativeObjectMarker, restoreDocxNative } from "./docx-native-export.js";
 
 export interface DocxExportOptions extends DocumentZipOptions {}
@@ -61,6 +62,8 @@ class Exporter {
   private deleted = false;
   private width = 468;
   private drawingId = 0;
+  private readonly drawingIds=new Map<string,number>();
+  private readonly drawings:ReadonlyMap<string,DeepReadonly<WordDrawing>>;
   private mappedCells = 0;
   private tableWork = 0;
   private readonly flowStyles = new WeakMap<SourceElement, Css>();
@@ -70,7 +73,7 @@ class Exporter {
     const snapshot = document.snapshot();
     if (snapshot.metadata.presentation !== undefined) unsupported("PPT sources cannot be exported as DOCX.");
     this.files = document.serialize(); this.snapshot = { ...snapshot, metadata: snapshot.metadata }; this.tree = parseSource(this.snapshot.html, limits);
-    const word = this.snapshot.metadata.word;
+    const word = this.snapshot.metadata.word;this.drawings=new Map((word?.drawings??[]).map(item=>[item.nodeId,item]));for(const item of word?.drawings??[])this.drawingIds.set(item.nodeId,++this.drawingId);
     this.css = new ExportCss(this.snapshot.styles.map((style) => style.css), limits, new Set(word?.revisions.map((item) => item.nodeId)));
     for (const node of this.tree.elements) if (contains(this.tree.root, node)) this.assertFormatting(node, this.css.get(node));
     const main = word?.stories.filter((story) => story.kind === "main").map((story) => this.tree.byId.get(story.rootNodeId)!) ?? [this.tree.root];
@@ -97,6 +100,7 @@ class Exporter {
   }
   private add(value: string): void { this.output.add(value); }
   private assertFormatting(node: SourceElement, css: Css): void {
+    if(this.drawings.has(node.attrs["data-node-id"]??""))return;
     if (css["word-spacing"] && !["normal", "0", "0pt", "0px"].includes(css["word-spacing"])) unsupported("Native DOCX cannot preserve independent word spacing in this profile.");
     if (css["font-weight"] && !["normal", "bold", "400", "700"].includes(css["font-weight"])) unsupported("Native DOCX supports regular and bold font weights in this profile.");
     if (["pre", "pre-line", "break-spaces"].includes(css["white-space"] ?? "")) unsupported("This whitespace layout has no supported native DOCX representation.");
@@ -202,7 +206,8 @@ class Exporter {
       const textCss = ["td", "th"].includes(node.parent.tag) ? { ...css, "vertical-align": "baseline", "background-color": "transparent" } : css;
       this.emitText(node, node.text, textCss, this.styles.runContext(paragraphStyle, character), character, role, language); return;
     }
-    if (node.attrs["data-word-native-object"]) {let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id'])); return; }
+    if(this.drawings.has(node.attrs["data-node-id"]??"")){this.add(this.annotations.at(node,0));this.add(writeWordDrawing({word:this.snapshot.metadata.word!,tree:this.tree,css:node=>this.css.get(node),raw:node=>this.css.specified(node),id:id=>this.drawingIds.get(id)??unsupported("A drawing identity is missing."),image:node=>this.imageRelation(node),text:(id,width)=>this.captureStory(id,width),marker:node=>{let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;return this.nativeMark(node.attrs['data-node-id']!)+(this.snapshot.metadata.word?.nativeContent&&container?' dn:container="'+escapeXml(container.attrs['data-node-id']!)+'"':'');}},this.drawings.get(node.attrs["data-node-id"]!)!));this.add(this.annotations.at(node,node.to-node.from));return;}
+    if (node.attrs["data-word-native-object"]) {this.add(this.annotations.at(node,0));let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id']));this.add(this.annotations.at(node,node.to-node.from)); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
     const requestedStyle = node.attrs["data-word-style"] ?? node.attrs["data-word-ignored-character-style"];
     if (requestedStyle) character = requestedStyle;
@@ -245,7 +250,7 @@ class Exporter {
     if (revision) { this.add("</w:" + (revision.kind === "insert" ? "ins" : "del") + ">"); this.deleted = previousDeleted; }
     if (link) this.add("</w:hyperlink>");
   }
-  private image(node: SourceElement, css: Css, paragraphStyle?: string, character?: string, role?: string, language?: string): void {
+  private imageRelation(node:SourceElement):string{
     const parts = this.snapshot.manifest.entrypoint.split("/").slice(0, -1);
     // Source was validated against this entrypoint by core; decode exactly one
     // URL layer, then look up only the already supplied resource bytes.
@@ -258,10 +263,16 @@ class Exporter {
       if (!ext[descriptor.mimeType]) unsupported("An image container is outside the native DOCX export profile.");
       path = "word/media/image" + (this.media.size + 1) + "." + ext[descriptor.mimeType]; this.media.set(src, path); this.opc.binary(path, descriptor.mimeType, this.files.get(src)!);
     }
+    return this.opc.relate(this.part,"image",path.slice(5));
+  }
+  private captureStory(storyId:string,width:number):string{
+    const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===storyId)!;const output=this.output,chunks:string[]=[];let length=0;this.output={add:value=>{length+=value.length;if(length>this.limits.maxFileBytes)throw new DocumentError("ResourceLimitExceeded","Drawing text exceeds the native part budget.");chunks.push(value);},finish:()=>{}};try{this.withStory(this.part,()=>{this.width=width;this.blocks(this.tree.byId.get(story.rootNodeId)!.children);});return chunks.join("");}finally{this.output=output;}
+  }
+  private image(node: SourceElement, css: Css, paragraphStyle?: string, character?: string, role?: string, language?: string): void {
     const width = css.width ? points(css.width, css, this.width) : Number(node.attrs.width) * .75, height = css.height ? points(css.height, css, this.width) : Number(node.attrs.height) * .75;
     if (!(width > 0) || !(height > 0)) unsupported("An inline image requires finite native dimensions.");
     const cx = nativeInteger(width, 12700, 1), cy = nativeInteger(height, 12700, 1), id = ++this.drawingId;
-    const rel = this.opc.relate(this.part, "image", path.slice(5));
+    const rel = this.imageRelation(node);
     this.add("<w:r>" + this.nativeRun(css, this.styles.runContext(paragraphStyle, character), character, role, language) + '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' + empty("wp:extent", { cx, cy }) + empty("wp:docPr", { id, name: "Image " + id, descr: node.attrs.alt ?? "" }) + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>' + '<pic:nvPicPr>' + empty("pic:cNvPr", { id: 0, name: "Image " + id, descr: node.attrs.alt ?? "" }) + '<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill>' + empty("a:blip", { "r:embed": rel }) + '<a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/>' + empty("a:ext", { cx, cy }) + '</a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>');
   }
   private paragraph(node: SourceElement, section?: string, paragraphId?: string, list?: { id: string; level: number }): void {

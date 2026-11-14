@@ -271,8 +271,7 @@ test("accepts explicit zero table and row spacing", () => {
   }));
 });
 test.each([
-  '<a:ln w="12700"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>',
-  "<a:ln/>", "<a:effectDag/>", "<a:scene3d/>", "<a:sp3d/>",
+  "<a:effectDag/>", "<a:scene3d/>", "<a:sp3d/>",
   '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>',
 ])("rejects unmapped picture appearance: %s", (appearance) => {
   const bytes = mutateDocx("03-images.docx", {
@@ -281,6 +280,9 @@ test.each([
   expect(() => importDocx(bytes, { documentId: "picture" })).toThrowError(
     expect.objectContaining({ code: "UnsupportedFeature" }),
   );
+});
+test.each(['<a:ln w="12700"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>', '<a:ln/>'])("maps editable native picture outlines: %s",appearance=>{
+ const model=reopen(mutateDocx('03-images.docx',{'word/document.xml':source=>source.replace('</pic:spPr>',appearance+'</pic:spPr>')}));expect(model.snapshot().metadata.word!.drawings!.some(item=>item.kind==='image')).toBe(true);expect(model.snapshot().html).toContain('--office-line-');
 });
 test("accepts explicit no-fill picture outlines and empty effects", () => {
   reopen(mutateDocx("03-images.docx", {

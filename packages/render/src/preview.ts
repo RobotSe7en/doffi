@@ -10,6 +10,7 @@ import type { Pagination } from "./pagination.js";
 import { createPrintDocument } from "./print.js";
 import { markViewNode } from "./view-nodes.js";
 import { layoutFields } from "./fields.js";
+import { composeWordDrawings } from './word-drawings.js';
 import type { LayoutFields } from "./fields.js";
 import { SourceProjection } from "./projection.js";
 import { copyPreviewSelection } from "./clipboard.js";
@@ -432,6 +433,7 @@ export function mountPreview(
   let fontReport: readonly FontResolution[] = [], source: PreviewSource | undefined, pagination: Pagination | undefined;
   let baseFonts: readonly FontResolution[] = [], fields: LayoutFields | undefined;
   let projection: SourceProjection | undefined;
+  let drawings:ReturnType<typeof composeWordDrawings>|undefined;
   let disposed = false, loaded = false, generation = 0, scheduled: number | undefined, observer: ResizeObserver | undefined;
   let report: DocumentRenderReport = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
     layout: options.layout ?? "pages", pages: [], nodePages: {}, fields: [], diagnostics: [], fonts: [] });
@@ -454,6 +456,7 @@ export function mountPreview(
     }
     if (!stable) throw new DocumentError("ResourceLimitExceeded", "Layout fields did not converge within the render pass budget.");
     fields?.repeat(pages);
+    drawings?.measure(pages,source.root);
     source.setPages(pages);
     report = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
       layout: options.layout ?? "pages", pages, nodePages, fields: results, diagnostics: Object.freeze([...(pagination?.diagnostics ?? []), ...(fields?.diagnostics ?? [])]), fonts: fontReport });
@@ -473,6 +476,7 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
+    drawings=composeWordDrawings(frame,model,limits);
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);
       pagination = paginate(frame, source, snapshot.metadata, limits);

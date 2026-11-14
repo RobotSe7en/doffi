@@ -2,6 +2,8 @@ export { FORMAT_VERSION, PROTOCOL_VERSION, DocumentKindSchema, PackagePathSchema
 export type { DocumentKind, Rectangle } from "./contracts/primitives.js";
 export * from "./contracts/document.js";
 export * from "./contracts/word.js";
+export * from './contracts/word-drawing.js';
+export { DrawingGeometrySchema,DrawingPresetSchema,DrawingTextPropertiesSchema } from './contracts/drawing.js';
 export * from "./contracts/presentation.js";
 export type { DrawingTextProperties } from "./contracts/drawing.js";
 export type { ChartAppearance } from "./contracts/chart.js";
@@ -96,3 +98,4 @@ export type { CreateWordDocumentOptions } from "./word.js";
 
 export { findWordText, getWordOutline, getWordTextStatistics, getWordTextDefaults } from "./word-query.js";
 export type { WordTextMatch, WordTextFindOptions, WordOutlineEntry, WordTextStatistics } from "./word-query.js";
+export { wordDrawingTransforms } from './word-drawing.js';

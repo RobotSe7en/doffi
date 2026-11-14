@@ -1,14 +1,11 @@
 import { ChartAppearanceSchema } from "./chart.js";
 import { z } from "zod";
 import { IdentifierSchema } from "./primitives.js";
-import { DrawingPresetSchema, DrawingTextPropertiesSchema } from "./drawing.js";
+import { DrawingPresetSchema, DrawingTextPropertiesSchema,DrawingGeometrySchema } from "./drawing.js";
 
 export const PresentationSizeSchema = z.strictObject({ unit: z.literal("pt"), width: z.number().positive(), height: z.number().positive() });
 export type PresentationSize = z.infer<typeof PresentationSizeSchema>;
-export const PresentationGeometrySchema = z.strictObject({
-  x: z.number(), y: z.number(), width: z.number().min(0), height: z.number().min(0),
-  rotation: z.number(), flipH: z.boolean(), flipV: z.boolean(),
-});
+export const PresentationGeometrySchema = DrawingGeometrySchema;
 export type PresentationGeometry = z.infer<typeof PresentationGeometrySchema>;
 export const PresentationPresetSchema = DrawingPresetSchema;
 const placeholder = z.strictObject({

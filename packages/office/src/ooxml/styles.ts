@@ -385,6 +385,11 @@ export class DocxStyles {
     const numPath = opc.related(main, "numbering");
     if (numPath) this.readNumbering(opc.read(numPath));
   }
+  drawingThemeProperties():Css{
+    const result:Css={};for(const[role,value]of this.themeColors)result['--office-theme-'+role]='#'+value;
+    for(const[role,name]of Object.entries({bg1:'lt1',tx1:'dk1',bg2:'lt2',tx2:'dk2'}))if(result['--office-theme-'+name])result['--office-theme-'+role]=result['--office-theme-'+name]!;
+    return result;
+  }
   color(node: XmlNode, attribute = "val"): string | undefined {
     if (attribute === "fill") {
       const pattern = attr(node, "val");

@@ -1,3 +1,4 @@
+import { importWordDrawing,WPS,WPG } from "./docx-drawing-import.js";
 import {
   createAssetDescriptor,
   DocumentError,
@@ -161,7 +162,7 @@ class Importer {
     this.word.defaultRunCssClass = "word-default-run";
     this.word.styles = this.styles.styles;
     this.word.numbering = this.styles.numbering;
-    this.root = this.make("article", { "data-office-kind": "document" });
+    this.root = this.make("article", { "data-office-kind": "document",style:declarations(this.styles.drawingThemeProperties()) });
     const settingsPath = opc.related(main, "settings");
     this.settings = settingsPath ? opc.read(settingsPath) : undefined;
     if (
@@ -356,7 +357,7 @@ class Importer {
     }
   }
   private story(
-    kind: "main" | "header" | "footer" | "comment",
+    kind: "main" | "header" | "footer" | "comment" | "textBox",
     storyId: string,
   ): Html {
     const root = this.make("div", { "data-office-story": kind });
@@ -371,7 +372,7 @@ class Importer {
         continue;
       }
       if (item.uri === MC && item.name === "AlternateContent") {
-        const supported = new Set([W, R, A, WP, PIC]);
+        const supported = new Set([W, R, A, WP, PIC, WPS, WPG]);
         const branch =
           elements(item, "Choice", MC).find((choice) =>
             (attr(choice, "Requires", "") ?? "")
@@ -459,6 +460,7 @@ class Importer {
       this.bookmarkStarts.size
     )
       fail(source, "A field, comment range or bookmark is not closed.");
+    this.resolveDrawingConnections();
     this.root.children.push(mainStory, ...this.auxiliary);
     const annotations: Annotation[] = [];
     for (const [id, comment] of this.comments) {
@@ -854,10 +856,10 @@ class Importer {
         break;
       case "drawing": {
         const image = this.image(source);
-        const offset = this.offset(parent, "\ufffc");
+        const value=(node:Html):string=>node.tag==="img"?"\ufffc":node.children.map(child=>typeof child==="string"?child:value(child)).join("");const content=value(image),offset=this.offset(parent,content);
         parent.children.push(image);
         this.fieldResult(image);
-        this.record(parent, offset, "\ufffc");
+        this.record(parent, offset, content);
         break;
       }
       case "hyperlink": {
@@ -1290,132 +1292,18 @@ class Importer {
       }
     }
   }
-  private image(source: XmlNode): Html {
-    const inline = child(source, "inline", WP);
-    if (!inline || elements(source, "anchor", WP).length)
-      unsupported(source, "Floating drawings are not supported.");
-    for (const item of this.compat(source))
-      if (item.uri !== WP || item.name !== "inline")
-        unsupported(item, "Only inline pictures are supported.");
-    const effects = child(inline, "effectExtent", WP);
-    if (
-      effects &&
-      ["l", "r", "t", "b"].some(
-        (side) => number(attr(effects, side, ""), effects, 0) !== 0,
-      )
-    )
-      unsupported(effects, "Picture effect extents are not supported.");
-    const graphic = child(inline, "graphic", A);
-    const data = child(graphic, "graphicData", A);
-    const picture = child(data, "pic", PIC);
-    if (!picture || elements(data, undefined, A).length)
-      unsupported(source, "Only native inline pictures are supported.");
-    const fill = child(picture, "blipFill", PIC);
-    const blip = child(fill, "blip", A);
-    if (!blip || attr(blip, "link", R))
-      unsupported(source, "An external picture is not supported.");
-    const relation = this.opc
-      .relationships(this.currentPart)
-      .get(attr(blip, "embed", R) ?? "");
-    if (!relation || relation.external || !relation.type.endsWith("/image"))
-      fail(source, "An image relationship is invalid.");
-    for (const effect of elements(blip, undefined, A)) {
-      if (effect.name !== "extLst")
-        unsupported(
-          effect,
-          "Picture color and transparency effects are not supported.",
-        );
-      for (const extension of elements(effect, "ext", A))
-        for (const item of extension.content)
-          if (typeof item !== "string" && item.name !== "useLocalDpi")
-            unsupported(
-              item,
-              "An embedded picture extension is not supported.",
-            );
+  private readonly drawingNativeIds=new Map<string,string>();
+  private readonly drawingAliases=new Map<string,string|null>();
+  private readonly drawingConnections:{source:XmlNode;nodeId:string;part:string;start?:string;end?:string;local:ReadonlyMap<string,string>}[]=[];
+  private resolveDrawingConnections():void{
+    for(const connection of this.drawingConnections){const definition=this.word.drawings!.find(item=>item.nodeId===connection.nodeId)!;if(definition.kind!=='connector')continue;
+      for(const side of ['start','end']as const){const nativeId=connection[side];if(nativeId===undefined)continue;const key=connection.part+'\n'+nativeId,candidates=[connection.local.get(nativeId),this.drawingNativeIds.get(key),this.drawingAliases.get(key)];const target=candidates.find(id=>id&&id!==definition.nodeId);if(!target)unsupported(connection.source,'The connector endpoint is preserved with its native drawing.');definition.connector[side==='start'?'startNodeId':'endNodeId']=target;}
     }
-    if (child(fill, "tile", A))
-      unsupported(fill!, "Tiled picture fills are not supported.");
-    const shape = child(picture, "spPr", PIC);
-    if (shape) {
-      if (attr(shape, "bwMode", "") && attr(shape, "bwMode", "") !== "auto")
-        unsupported(
-          shape,
-          "Picture black-and-white rendering is not supported.",
-        );
-      for (const appearance of this.compat(shape)) {
-        if (
-          appearance.uri !== A ||
-          !["xfrm", "prstGeom", "noFill", "ln", "effectLst"].includes(appearance.name)
-        )
-          unsupported(appearance, "The picture appearance is not supported.");
-        if (
-          appearance.name === "ln" &&
-          (!child(appearance, "noFill", A) ||
-            this.compat(appearance).some(
-              (item) => item.uri !== A || item.name !== "noFill",
-            ))
-        )
-          unsupported(appearance, "Picture outlines are not supported.");
-        if (appearance.name === "noFill" && this.compat(appearance).length)
-          unsupported(appearance, "The picture fill is not supported.");
-      }
-    }
-    const geometry = child(shape, "prstGeom", A);
-    if (
-      child(shape, "custGeom", A) ||
-      (geometry && attr(geometry, "prst", "") !== "rect")
-    )
-      unsupported(shape!, "Nonrectangular picture geometry is not supported.");
-    const effectList = child(shape, "effectLst", A);
-    if (effectList && this.compat(effectList).length)
-      unsupported(effectList, "Picture effects are not supported.");
-    const crop = child(fill, "srcRect", A);
-    if (
-      crop &&
-      ["l", "r", "t", "b"].some(
-        (side) => number(attr(crop, side, ""), crop, 0) !== 0,
-      )
-    )
-      unsupported(crop, "Cropped images are not yet supported.");
-    const transform = child(child(picture, "spPr", PIC), "xfrm", A);
-    if (
-      transform &&
-      (number(attr(transform, "rot", ""), transform, 0) !== 0 ||
-        ["flipH", "flipV"].some((key) =>
-          ["1", "true"].includes(attr(transform, key, "") ?? ""),
-        ))
-    )
-      unsupported(transform, "Rotated or flipped images are not supported.");
-    let path = this.assetSources.get(relation.target);
-    if (!path) {
-      const mime = this.opc.contentType(relation.target);
-      const extensions: Record<string, string> = {
-        "image/png": "png",
-        "image/jpeg": "jpg",
-        "image/webp": "webp",
-      };
-      if (!mime || !extensions[mime])
-        unsupported(source, "The picture format is not supported.");
-      path =
-        "assets/image-" + (this.assets.length + 1) + "." + extensions[mime];
-      const bytes = this.opc.files.get(relation.target)!;
-      this.files.set(path, new Uint8Array(bytes));
-      this.assets.push(createAssetDescriptor(path, mime, bytes));
-      this.assetSources.set(relation.target, path);
-    }
-    const extent = child(inline, "extent", WP);
-    if (!extent) fail(source, "An inline image has no dimensions.");
-    const width = number(attr(extent, "cx", ""), extent) / 12700,
-      height = number(attr(extent, "cy", ""), extent) / 12700;
-    if (width <= 0 || height <= 0)
-      fail(extent, "An image dimension must be positive.");
-    const description = child(inline, "docPr", WP);
-    return this.make("img", {
-      src: path,
-      alt:
-        attr(description, "descr", "") ?? attr(description, "name", "") ?? "",
-      style: "width:" + pt(width) + ";height:" + pt(height),
-    });
+  }
+  private image(source:XmlNode):Html{
+    return importWordDrawing(source,{word:this.word,opc:this.opc,part:this.currentPart,main:this.main,make:(tag,attrs)=>this.make(tag,attrs),image:(part,source)=>{
+      let path=this.assetSources.get(part);if(path)return path;const mime=this.opc.contentType(part),extensions:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};if(!mime||!extensions[mime])unsupported(source,'This image encoding is preserved as native content.');path='assets/image-'+(this.assets.length+1)+'.'+extensions[mime];const bytes=this.opc.files.get(part);if(!bytes)fail(source,'An embedded image resource is missing.');this.files.set(path,new Uint8Array(bytes));this.assets.push(createAssetDescriptor(path,mime,bytes));this.assetSources.set(part,path);return path;
+    },story:source=>{const id='text-box-'+this.word.stories.length,root=this.story('textBox',id);root.attrs.class='word-main';root.children.push(...this.readStoryContent(this.currentPart,id,source));this.auxiliary.push(root);return id;},native:(source,node)=>this.native?.bind(source,node.attrs),identity:(source,id,nativeId)=>{if(nativeId===undefined)return;number(nativeId,source);const key=this.currentPart+'\n'+nativeId;if(source.uri===WP){const previous=this.drawingNativeIds.get(key);if(previous&&previous!==id)fail(source,'A drawing frame identity is repeated.');this.drawingNativeIds.set(key,id);}else if(nativeId!=='0'){const previous=this.drawingAliases.get(key);this.drawingAliases.set(key,previous===undefined||previous===id?id:null);}},connector:(source,nodeId,start,end,local)=>this.drawingConnections.push({source,nodeId,part:this.currentPart,...(start!==undefined?{start}:{}),...(end!==undefined?{end}:{}),local})});
   }
   private validateMergeContinuation(cell: XmlNode): void {
     const direction = child(child(cell, "tcPr"), "textDirection");

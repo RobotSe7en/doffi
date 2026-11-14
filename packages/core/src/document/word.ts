@@ -2,6 +2,7 @@ import type { WordDocumentMetadata, AssetDescriptor } from "../contracts/documen
 import type { Annotation } from "../contracts/annotations.js";
 import type { ParsedHtml } from "./html.js";
 import { invalid } from "./validation.js";
+import { wordDrawingTransforms } from '../word-drawing.js';
 
 /** Validate native semantic references against the same HTML source, never an XML copy. */
 export function validateWord(
@@ -87,6 +88,22 @@ export function validateWord(
         if (storyRoots.has(parent)) invalid("Word stories cannot be nested.");
       }
     }
+    const drawings=unique(word.drawings??[],item=>item.nodeId),textOwners=new Set<string>();
+    const transforms=wordDrawingTransforms(word,{getNode:id=>html.getNode(id)});
+    const parentDrawing=(id:string):string|undefined=>{for(let parent=node(id).parentNodeId;parent;parent=node(parent).parentNodeId)if(drawings.has(parent))return parent;return;};
+    for(const drawing of drawings.values()){
+      const source=node(drawing.nodeId);if(source.attributes['data-word-drawing']!==drawing.kind)invalid('A Word drawing requires its matching source marker.');
+      if(drawing.kind==='image'?source.tagName!=='img':source.tagName!=='span')invalid('A Word drawing has the wrong source element.');
+      if(drawing.kind!=='image'&&drawing.kind!=='group'&&html.getNode(source.nodeId)!.text!=='\ufffc')invalid('A Word drawing must retain its atomic source character.');
+      if(drawing.kind!=='connector'&&(drawing.geometry.width<=0||drawing.geometry.height<=0))invalid('Drawing dimensions must be positive.');
+      if(drawing.kind==='image'&&drawing.crop&&(drawing.crop.left+drawing.crop.right>=1||drawing.crop.top+drawing.crop.bottom>=1))invalid('Cropping must retain a positive image area.');
+      const parent=parentDrawing(drawing.nodeId);if(parent){if(drawings.get(parent)!.kind!=='group'||drawing.layout.mode!=='inline')invalid('Only a group can contain Word drawing objects.');}
+      if(drawing.kind==='group'&&(!source.childNodeIds.length||source.childNodeIds.some(id=>!drawings.has(id))))invalid('A group must contain only drawing sources.');
+      if('textStoryId'in drawing&&drawing.textStoryId){if(stories.get(drawing.textStoryId)?.kind!=='textBox'||textOwners.has(drawing.textStoryId))invalid('Drawing text requires an independently owned text box story.');textOwners.add(drawing.textStoryId);}
+      if(drawing.kind==='connector')for(const id of [drawing.connector.startNodeId,drawing.connector.endNodeId])if(id&&(!drawings.has(id)||!transforms.sameCanvas(drawing.nodeId,id)||storyOf(id)!==storyOf(drawing.nodeId)))invalid('Connector endpoints require other floating drawings in the same source canvas.');
+    }
+    for(const id of html.nodeIds())if(node(id).attributes['data-word-drawing']&&!drawings.has(id))invalid('A drawing marker requires typed drawing metadata.');
+    const activeStories=new Set<string>(),completeStories=new Set<string>();const inspectStory=(id:string):void=>{if(activeStories.has(id))invalid('Drawing text story references cannot be cyclic.');if(completeStories.has(id))return;activeStories.add(id);for(const drawing of drawings.values())if(storyOf(drawing.nodeId)===stories.get(id)?.rootNodeId&&'textStoryId'in drawing&&drawing.textStoryId)inspectStory(drawing.textStoryId);activeStories.delete(id);completeStories.add(id);};for(const story of word.stories)inspectStory(story.storyId);
     const main = word.stories.find((story) => story.kind === "main")!;
     for (const section of metadata.sections) {
       const setup=section.pageSetup??metadata.pageSetup;

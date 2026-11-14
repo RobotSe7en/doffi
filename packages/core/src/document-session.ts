@@ -26,6 +26,7 @@ import { affectedPresentationSlides, guardPresentationContent, removeDeletedComm
 import { updatePresentationConnectors } from "./session/presentation-geometry.js";
 import { applyPresentationOperation, isPresentationOperation, validatePresentationTargets } from "./session/presentation-edit.js";
 import { applyWordOperation, isWordOperation } from "./session/word-edit.js";
+import { updateWordDrawingConnectors } from './word-drawing.js';
 import { PresentationStyleEdit } from "./session/presentation-styles.js";
 export { DEFAULT_INTERACTION_LIMITS } from "./session/interaction.js";
 
@@ -43,6 +44,7 @@ function updateWordMetadata(metadata: ContentDocumentMetadata, before: DocumentS
   word.hyperlinks = word.hyperlinks.filter((item) => after.hasNode(item.nodeId));
   word.revisions = word.revisions.filter((item) => after.hasNode(item.nodeId));
   word.tables = word.tables.filter((item) => after.hasNode(item.nodeId));
+  if(word.drawings)word.drawings=word.drawings.filter(item=>after.hasNode(item.nodeId));
   word.tabs = word.tabs.filter((item) => after.hasNode(item.paragraphNodeId));
   word.bookmarks = word.bookmarks.filter((item) => after.hasNode(item.startNodeId) || after.hasNode(item.endNodeId));
   word.fields = word.fields.filter((item) => [item.nodeId, ...(item.endNodeId ? [item.endNodeId] : []), ...(item.resultNodeIds ?? [])]
@@ -148,6 +150,14 @@ export function createDocumentSession(document: DocumentModel, options: Document
     }
     removeDeletedCommentBodies(base, annotations, edit,metadata);
     let parsed = parseEdited();
+    if(metadata.word){
+      // Text stories belong to their objects. Remove the complete ownership
+      // closure even when a generic paragraph deletion removed the object.
+      let changed=true;while(changed){changed=false;const owners=new Set((metadata.word.drawings??[]).filter(item=>parsed.hasNode(item.nodeId)).flatMap(item=>'textStoryId'in item&&item.textStoryId?[item.textStoryId]:[]));for(const story of metadata.word.stories)if(story.kind==='textBox'&&!owners.has(story.storyId)&&parsed.hasNode(story.rootNodeId)){edit.removeSource(story.rootNodeId);changed=true;}if(changed)parsed=parseEdited();}
+      metadata.word.stories=metadata.word.stories.filter(story=>parsed.hasNode(story.rootNodeId));
+      if(metadata.word.drawings)metadata.word.drawings=metadata.word.drawings.filter(item=>parsed.hasNode(item.nodeId));
+      updateWordDrawingConnectors(metadata.word,{getNode:id=>parsed.getNode(id)});
+    }
     updatePresentationMetadata(metadata, base, parsed, annotations);
     if (metadata.presentation) { updatePresentationConnectors(metadata.presentation, base.snapshot.metadata.presentation!, base.html, parsed, edit); parsed = parseEdited(); }
     files.set(base.snapshot.manifest.entrypoint, encode(parsed.html));

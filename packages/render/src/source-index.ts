@@ -16,7 +16,7 @@ interface Token {
   readonly owner: HTMLElement;
 }
 const blocks = "p,h1,h2,h3,h4,h5,h6,li,td,th";
-const hitTargets = blocks + ",img,table";
+const hitTargets = blocks + ",img,table,[data-word-drawing]";
 
 function boundary(text: string, offset: number): boolean {
   const before = text.charCodeAt(offset - 1), after = text.charCodeAt(offset), code = text.codePointAt(offset);
@@ -48,6 +48,7 @@ export class PreviewSource {
   elementRectangles(id: string): DOMRect[] {
     const entry = this.elements.get(id), copies = [...this.instances.get(id) ?? []].flatMap((node) => [...node.getClientRects()]);
     if (!entry) return copies;
+    if(entry.element.hasAttribute('data-word-drawing'))return[...(entry.element.closest<HTMLElement>('[data-sdk-word-object]')??entry.element).getClientRects(),...copies];
     if (!entry.element.matches(blocks + ",span,a,strong,em,ins,del")) return [...entry.element.getClientRects(), ...copies];
     let lo = 0, hi = this.tokens.length;
     while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (this.tokens[mid]!.to <= entry.from) lo = mid + 1; else hi = mid; }
@@ -87,7 +88,7 @@ export class PreviewSource {
       if (viewNodeRole(node) === "remove") return;
       const from = offset;
       const element = node.nodeType === 1 ? node as HTMLElement : undefined;
-      const atomic = element?.matches("br,img,[data-word-tab]");
+      const atomic = element?.matches('br,img,[data-word-tab],[data-word-drawing]:not([data-word-drawing="group"])');
       const text = node.nodeType === 3 ? node.nodeValue ?? ""
         : atomic ? element!.tagName === "IMG" ? "\ufffc" : element!.tagName === "BR" ? "\n" : this.model.getNode(element!.dataset.nodeId!)?.text ?? "\t" : undefined;
       if (text !== undefined) {

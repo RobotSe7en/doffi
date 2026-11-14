@@ -77,3 +77,7 @@ Word 增加新建包入口 `createWordDocument`。工作台接入删除线、上
 预览、批注和编辑的最终交付要求是同一份保留 Office 样式的实时文档画布：页面尺寸与边距、字体、段落、表格和图片布局保持一致，输入后即时重排及更新分页。当前连续输入是 R1-11 的阶段实现；统一分页画布在 R1-12 集成并于 R1-14 验收。输入内核是可替换适配器，不能成为另一套文档源或决定最终版式。
 
 R1-12 输入、预览和批注共用[自研页面画布](pagination-rendering.md)，没有引入第二个编辑状态或第三方分页器。组合输入期间保留输入法临时 DOM，组合结束后通过同一核心事务提交并重新分页。
+
+## 图片与绘图
+
+`execute({type: "word", action: "insertImage"})`、`insertShape`、`insertTextBox`、`insertConnector` 和 `drawingSettings` 打开第一方操作面板。单击对象后可拖动、在右下角缩放或用方向键移动；Shift 单击多选，Alt 单击选择组内对象。文本框的“编辑对象文字”打开同一会话中的辅助故事，`mainStory` 返回正文。选择本地图片、粘贴图片或拖入图片只使用本次用户提供的字节；资源与插入共同提交为一个历史步骤。底层可使用类型化 `insertWordDrawing`／`setWordDrawing*`／`groupWordDrawings` 等事务命令。

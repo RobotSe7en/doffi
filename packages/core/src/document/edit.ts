@@ -147,8 +147,8 @@ export class DocumentEdit {
   }
 
   /** Core-owned format insertion; caller HTML is still parsed, bounded and validated. */
-  insertSource(parentId: string, source: string, beforeId?: string,copyIdentities=false): { rootNodeIds: string[]; identities: ReadonlyMap<string, string> } {
-    const index = this.index(), parent = index.get(parentId), before = beforeId === undefined ? undefined : index.get(beforeId);
+  insertSource(parentId: string, source: string, beforeId?: string,copyIdentities=false,insertionOffset?:number): { rootNodeIds: string[]; identities: ReadonlyMap<string, string> } {
+    const index = this.index(), container = index.get(parentId);let parent=container,before:Tree.ChildNode|undefined=beforeId === undefined ? undefined : index.get(beforeId);
     if (!parent || beforeId !== undefined && (!before || before.parentNode !== parent)) fail("A format insertion requires an existing parent and sibling.");
     const fragment = parseHtmlFragment(source, parent, this.limits, bodyTags), identities = new Map<string, string>();
     visit(fragment, node => {
@@ -165,11 +165,29 @@ export class DocumentEdit {
       const style = attr(node, "style");
       if (style !== undefined) setAttribute(node, "style", normalizeCss(style, "declarationList", this.limits, { nodes: 0 }));
     });
-    const positions = textPositions(this.tree), range = positions.get(parent)!, from = before ? positions.get(before)!.from : range.to;
-    this.recordSplice(positions, from, from, parent, textPositions(fragment).get(fragment)!.to, true);
+    const positions = textPositions(this.tree), range = positions.get(parent)!;let from=before ? positions.get(before)!.from : range.to;
+    if(insertionOffset!==undefined){
+      const leaves:Tree.ChildNode[]=[];visit(parent,node=>{if(node.nodeName==='#text'||isElement(node)&&['img','br'].includes(node.tagName))leaves.push(node as Tree.ChildNode);});
+      const text=leaves.map(node=>node.nodeName==='#text'&&'value'in node?node.value:isElement(node)&&node.tagName==='img'?'\ufffc':'\n').join('');if(!Number.isSafeInteger(insertionOffset)||insertionOffset<0||insertionOffset>text.length||!isTextBoundary(text,insertionOffset))fail('A format insertion requires an exact UTF-16 source boundary.');
+      from=range.from+insertionOffset;const leaf=leaves.find(node=>positions.get(node)!.to>from)||leaves.at(-1);
+      if(leaf){
+        let atomic:Element|undefined;for(let node:Tree.Node|null=leaf.parentNode;node&&node!==container;node='parentNode'in node?node.parentNode:null)if(isElement(node)&&(attr(node,'data-word-native-object')||attr(node,'data-word-drawing')))atomic=node;
+        if(atomic){const bounds=positions.get(atomic)!;if(from!==bounds.from&&from!==bounds.to)fail('An atomic object cannot contain a partial insertion.');parent=atomic.parentNode as Element;before=from===bounds.from?atomic:parent.childNodes[parent.childNodes.indexOf(atomic)+1];}
+        else{parent=leaf.parentNode as Element;const local=from-positions.get(leaf)!.from;
+          if(leaf.nodeName==='#text'&&'value'in leaf&&local>0&&local<leaf.value.length){const tail=this.text(leaf.value.slice(local));leaf.value=leaf.value.slice(0,local);const next=parent.childNodes[parent.childNodes.indexOf(leaf)+1];if(next)adapter.insertBefore(parent,tail,next);else adapter.appendChild(parent,tail);before=tail;}
+          else before=local<=0?leaf:parent.childNodes[parent.childNodes.indexOf(leaf)+1];
+        }
+      }
+    }
+    this.recordSplice(positions, from, from, container!, textPositions(fragment).get(fragment)!.to, true);
     const rootNodeIds = fragment.childNodes.filter(isElement).map(node => attr(node, "data-node-id")!);
     for (const child of [...fragment.childNodes]) { adapter.detachNode(child); if (before) adapter.insertBefore(parent, child, before); else adapter.appendChild(parent, child); }
     return { rootNodeIds, identities };
+  }
+  insertSourceAt(nodeId:string,offset:number,source:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,false,offset);}
+  resourceReference(assetPath:string):string{
+    if(!this.state.snapshot.manifest.assets.some(asset=>asset.path===assetPath)||!this.state.files.has(assetPath))throw new DocumentError('AssetUnavailable','The drawing resource is not authorized in this transaction.');
+    const directory=this.state.snapshot.manifest.entrypoint.split('/').slice(0,-1),parts=assetPath.split('/');while(directory.length&&directory[0]===parts[0]){directory.shift();parts.shift();}return[...directory.map(()=>'..'),...parts.map(encodeURIComponent)].join('/');
   }
 
   cloneSource(nodeId: string, parentId: string, beforeId?: string): { rootNodeIds: string[]; identities: ReadonlyMap<string, string> } {
@@ -463,6 +481,7 @@ export class DocumentEdit {
       case "replaceText": this.replaceText(target, operation); break;
       case "reconcileFragment": this.reconcile(target, operation); break;
       case "setStyle": {
+        if(attr(target,'data-word-drawing')&&/^(?:width|height|position|left|right|top|bottom|transform)$/.test(operation.property))fail('Use Word drawing geometry operations to change drawing dimensions and position.');
         const style = (this.state.snapshot.metadata.presentation ? setDrawingInlineStyle : setInlineStyle)(attr(target, "style") ?? "", operation.property, operation.value, this.limits);
         setAttribute(target, "style", style);
         break;

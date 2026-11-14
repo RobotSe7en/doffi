@@ -126,6 +126,11 @@ export function validateProposal(state: DocumentState, request: DocumentInteract
       const story=state.snapshot.metadata.word?.stories.find(story=>story.storyId===operation.storyId);
       if(!story||!scope.has(story.rootNodeId))invalid('Copying a Word story requires its source in the request context.');
     }
+    if(operation.op==='groupWordDrawings'&&operation.nodeIds.some(id=>!scope.has(id)))invalid('Grouping Word drawings requires all selected objects in the request context.');
+    if(operation.op==='setWordDrawingConnector'||operation.op==='insertWordDrawing'&&operation.object.kind==='connector'){
+      const connector=operation.op==='setWordDrawingConnector'?operation.connector:operation.object.kind==='connector'?operation.object.connector:undefined;
+      if(connector&&[connector.startNodeId,connector.endNodeId].some(id=>id&&!scope.has(id)))invalid('Word connector targets must belong to the request context.');
+    }
     if (operation.op === "replaceAsset" && !request.context.assets.some((asset) => asset.path === operation.assetPath))
       invalid("The proposal references a resource outside the request context.");
   }
