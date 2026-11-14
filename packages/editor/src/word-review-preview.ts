@@ -35,7 +35,7 @@ export function wordReviewPreview(model: ContentDocumentModel): ContentDocumentM
         if (before.section) {
             const index = metadata.sections.findIndex(section => section.rootNodeId === revision.nodeId), current = metadata.sections[index];
             if (current)
-                metadata.sections[index] = { sectionId: current.sectionId, rootNodeId: current.rootNodeId, ...JSON.parse(JSON.stringify(before.section)) as typeof before.section };
+                metadata.sections[index] = { sectionId: current.sectionId, rootNodeId: current.rootNodeId, ...JSON.parse(JSON.stringify(before.section)) as Omit<WordDocumentMetadata['sections'][number], 'sectionId'|'rootNodeId'> };
         }
     }
     const files = new Map(model.serialize()), encoder = new TextEncoder();

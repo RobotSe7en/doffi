@@ -204,3 +204,11 @@ Word 请求补充选中对象的文字故事、注释正文、回复、完整字
 “原始状态”现在通过临时格式投影显示最初字符、段落、表格和页面设置；文字、源身份和原会话保持一致。继续输入时投影逆转到当前格式，不把旧格式写入源。临时故事和授权上下文继续裁剪故事引用。
 
 必要验证：相关修订／页面／编辑／上下文首轮已有 33 项通过；原生单位比较按 twip 归一化后，最终四个相关文件 31 项全部通过。4 个 Chromium 用例覆盖原始字符与页面视图、继续输入、最终状态、拒绝、表格行历史和边框回归。节、网格及其他属性修订输出通过固定官方 Transitional XSD；库构建、工具类型、架构边界和 diff 空白检查通过。完整列／单元格结构追踪、一般结构粘贴、移动创建和其余已记录工作仍继续。
+
+## 不等宽分栏检查点
+
+节模型和页面面板支持各栏宽度及逐栏后间距；原生 cols/col 读写按 equalWidth=false 使用子栏定义，保留每栏尺寸。溢出打印宽度的特殊原生布局继续完整保留。依据 [Columns.EqualWidth](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.columns.equalwidth?view=openxml-3.0.1) 和 [Columns.Space](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.columns.space?view=openxml-3.0.1)。
+
+可逆排除轮廓让同一正文按各栏真实宽度重排，再投影到物理位置；底纹、边框和栏分隔线使用对应宽度。连续长文本在安全 UTF-16 栏边界分成显示片段，仍序列化回原段落和原文字。轮廓和定位不进入保存源。与节历史、精确输入和撤销共用当前事务。
+
+必要验证：页面／编辑／原生回归三个文件 64 项通过；3 个 Chromium 用例验证不等宽真实换行、第二栏输入、面板／撤销及原有分栏／表头；同一个不等宽输入用例在 Firefox、WebKit 通过。原生不等宽栏通过固定官方 Transitional XSD。库／浏览器渲染构建、工具类型、架构边界、diff 空白检查通过。连续变栏、节末平衡、完整中文网格、水印等 D5 剩余项及其他阶段缺口仍继续。

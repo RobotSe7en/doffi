@@ -141,7 +141,7 @@ export function validateWord(
       const setup=section.pageSetup??metadata.pageSetup;
       if(setup.width<=setup.margins.left+setup.margins.right||setup.height<=setup.margins.top+setup.margins.bottom)invalid("Page margins must leave a positive printable area.");
       if(section.gutter && ((section.gutterPosition === 'top' ? setup.height-setup.margins.top-setup.margins.bottom : setup.width-setup.margins.left-setup.margins.right) <= section.gutter)) invalid("The binding gutter must leave a positive printable area.");
-      if(section.columns){const columns=section.columns;if(columns.gap*(columns.count-1)>=setup.width-setup.margins.left-setup.margins.right-(section.gutterPosition==='top'?0:section.gutter??0))invalid("Column spacing must leave a positive text width.");}
+      if(section.columns){const columns=section.columns,available=setup.width-setup.margins.left-setup.margins.right-(section.gutterPosition==='top'?0:section.gutter??0);if(columns.widths){if(columns.widths.length!==columns.count||columns.spaces&&columns.spaces.length!==columns.count)invalid('Unequal columns require one width and spacing per column.');if(columns.widths.reduce((sum,value,index)=>sum+value+(index<columns.count-1?(columns.spaces?.[index]??columns.gap):0),0)>available+.1)invalid('Unequal columns exceed the printable page width.');}else if(columns.spaces)invalid('Individual column spacing requires explicit widths.');else if(columns.gap*(columns.count-1)>=available)invalid("Column spacing must leave a positive text width.");}
       let parent: string | null = section.rootNodeId;
       while (parent !== null && parent !== main.rootNodeId)
         parent = node(parent).parentNodeId;

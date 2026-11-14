@@ -133,5 +133,5 @@ export class ExportWordRevisions {
         return this.change(entry.revision, 'trPr', props, entry.owner);
     }
     grid(node:SourceElement):string{const entry=this.revision(node,'tableGrid');if(!entry)return'';return this.change(entry.revision,'tblGrid',(entry.revision.before?.grid??[]).map(width=>empty('w:gridCol',{'w:w':nativeInteger(width)})).join(''),entry.owner);}
-    section(node:SourceElement,compile:(properties:NonNullable<WordRevision['before']>['section'])=>string):string{const entry=this.revision(node,'section');if(!entry)return'';const previous=compile(entry.revision.before?.section).replace(/^<w:sectPr[^>]*>/,'').replace(/<\/w:sectPr>$/,'');return this.change(entry.revision,'sectPr',previous,entry.owner);}
+    section(node:SourceElement,compile:(properties:DeepReadonly<NonNullable<WordRevision['before']>['section']>)=>string):string{const entry=this.revision(node,'section');if(!entry)return'';const previous=compile(entry.revision.before?.section).replace(/^<w:sectPr[^>]*>/,'').replace(/<\/w:sectPr>$/,'');return this.change(entry.revision,'sectPr',previous,entry.owner);}
 }

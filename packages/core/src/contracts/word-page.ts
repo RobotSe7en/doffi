@@ -32,7 +32,7 @@ export const DocumentSectionSchema = z.strictObject({
     pageSetup: PageSetupSchema.optional(),
     breakType: z.enum(["continuous", "nextPage", "evenPage", "oddPage"]).optional(),
     differentFirstPage: z.boolean().optional(),
-    columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional() }).optional(),
+    columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional(),widths:z.array(z.number().positive()).min(1).optional(),spaces:z.array(z.number().nonnegative()).min(1).optional() }).optional(),
     pageBorders: WordPageBordersSchema.optional(),
     grid: z.strictObject({ type: z.enum(["default", "lines", "linesAndChars", "snapToChars"]), linePitch: z.number().positive().optional(), characterSpacing: z.number().int().optional() }).optional(),
     gutter: z.number().nonnegative().optional(),

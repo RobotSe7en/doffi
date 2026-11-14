@@ -1073,7 +1073,7 @@ class Importer {
     if (!["default", "lines", "linesAndChars", "snapToChars"].includes(gridType))
       unsupported(grid!, "The document grid type is not supported.");
     const columns = child(source, "cols");
-    if(columns && (attr(columns,"equalWidth")==='0'||attr(columns,"equalWidth")==='false'||attr(columns,"equalWidth")==='off'))unsupported(columns,"Unequal text columns are retained as native layout properties.");
+    const unequal=columns&&['0','false','off'].includes(attr(columns,'equalWidth')??''),columnDefinitions=unequal?elements(columns,'col'):[];if(columns)check(columns,['col']);if(unequal&&!columnDefinitions.length)fail(columns!,'Unequal columns require explicit column widths.');
     const size = child(source, "pgSz");
     const margins = child(source, "pgMar");
     if (source&&!previousProperties) this.native?.bind(source, root.attrs);
@@ -1156,7 +1156,7 @@ class Importer {
       sectionId: "section-" + (this.sections.length + 1),
       rootNodeId: this.id(root),
       ...(child(source,'pgBorders')?{pageBorders:readWordPageBorders(child(source,'pgBorders'))!}:{}),
-      ...(columns?{columns:{count:number(attr(columns,"num"),columns,1),gap:number(attr(columns,"space"),columns,720)/20,separator:["1","true","on"].includes(attr(columns,"sep")??"")}}:{}),
+      ...(columns?{columns:{count:unequal?columnDefinitions.length:number(attr(columns,"num"),columns,1),gap:number(attr(columns,"space"),columns,720)/20,separator:["1","true","on"].includes(attr(columns,"sep")??""),...(unequal?{widths:columnDefinitions.map(column=>number(attr(column,'w'),column)/20),spaces:columnDefinitions.map(column=>number(attr(column,'space'),column,0)/20)}:{})}}:{}),
       ...(grid ? { grid: { type: gridType as "default" | "lines" | "linesAndChars" | "snapToChars", ...(attr(grid,"linePitch") !== undefined ? {linePitch: number(attr(grid,"linePitch"),grid) / 20} : {}), ...(attr(grid,"charSpace") !== undefined ? {characterSpacing: number(attr(grid,"charSpace"),grid)} : {}) } } : {}),
       ...(margins && attr(margins,"gutter") !== undefined ? {gutter: number(attr(margins,"gutter"),margins) / 20} : {}),
       gutterPosition: on(child(this.settings,"gutterAtTop")) ? "top" : on(child(source,"rtlGutter")) ? "right" : "left",
@@ -1172,6 +1172,7 @@ class Importer {
       headers,
       footers,
     };
+    if(definition.columns?.widths){const columns=definition.columns,available=setup.width-setup.margins.left-setup.margins.right-(definition.gutterPosition==='top'?0:definition.gutter??0);if(columns.widths!.reduce((sum,width,index)=>sum+width+(index<columns.count-1?(columns.spaces?.[index]??columns.gap):0),0)>available+.1)unsupported(child(source,'cols')!,'Overflowing native columns retain their original layout.');}
     const change=child(source,'sectPrChange');if(change){if(previousProperties)fail(change,'Section property histories cannot be nested.');check(change,['sectPr']);const original=child(change,'sectPr'),id=attr(change,'id');if(!original||id===undefined)fail(change,'A section revision requires its previous properties and identity.');const before=this.section(original,root,true),{sectionId:_sectionId,rootNodeId:_rootNodeId,...properties}=before;this.word.revisions.push({nodeId:this.id(root),revisionId:this.id(root)+'-format-section',sourceId:id,kind:'format',property:'section',before:{section:properties},...(attr(change,'author')!==undefined?{author:attr(change,'author')!}:{}),...(attr(change,'date')!==undefined?{date:attr(change,'date')!}:{})});}
     return definition;
   }
