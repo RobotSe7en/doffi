@@ -156,6 +156,7 @@ class Exporter {
     }
   }
   private setup(section: DeepReadonly<DocumentSection>): DeepReadonly<PageSetup> { return section.pageSetup ?? this.snapshot.metadata.pageSetup; }
+  private sectionTextWidth(section:DeepReadonly<DocumentSection>,columns=true):number{const setup=this.setup(section),available=setup.width-setup.margins.left-setup.margins.right-(section.gutterPosition!=='top'?section.gutter??0:0);return columns&&section.columns?(section.columns.widths?Math.min(...section.columns.widths):(available-section.columns.gap*(section.columns.count-1))/section.columns.count):available;}
   private sectionProperties(section: DeepReadonly<DocumentSection>,review=true): string {
     const setup = this.setup(section); let out = "<w:sectPr" + (review?this.nativeMark(section.rootNodeId):'') + ">";
     for (const [key, kind] of [["headers", "header"], ["footers", "footer"]] as const) for (const [type, id] of Object.entries(section[key] ?? {})) {
@@ -444,7 +445,7 @@ class Exporter {
         const cellCss = this.css.get(cell.node);
         this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.continuation?writeWordConditionalFormat(continuation?.format):this.conditionalFormat(cell.node))+(cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(this.tablePropertyDifference(cell.node,cellCss,'cell')) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+(cell.continuation?'':this.review.cell(cell.node))) + "</w:tcPr>");
         if (cell.continuation) this.add(continuation?.paragraphs?.map(format=>format?'<w:p><w:pPr>'+writeWordConditionalFormat(format)+'</w:pPr></w:p>':'<w:p/>').join('')??"<w:p/>"); else {
-          const width = this.width; this.width = grid.slice(cell.column, cell.column + cell.span).reduce((total, value) => total + value, 0); this.blocks(cell.node.children); this.width = width;
+          const width = this.width; this.width = grid.slice(cell.column, cell.column + cell.span).reduce((total, value) => total + value, 0);const cellWidth=this.width;for(const property of ['padding-left','padding-right','border-left-width','border-right-width'])if(cellCss[property])this.width-=points(cellCss[property]!,cellCss,cellWidth);this.width=Math.max(1,this.width);this.blocks(cell.node.children); this.width = width;
         }
         this.add("</w:tc>");
       }
@@ -508,12 +509,12 @@ class Exporter {
     };
     this.mainStories.forEach(collect);
     this.add(declaration + '<w:document' + namespaces +this.nativeMark(this.tree.root.attrs['data-node-id'])+ ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"><w:body>');
-    sections.forEach(({ section, nodes }, index) => { const setup = this.setup(section); this.width = setup.width - setup.margins.left - setup.margins.right; this.blocks(nodes, index === sections.length - 1 ? undefined : this.sectionProperties(section)); });
+    sections.forEach(({ section, nodes }, index) => { this.width=this.sectionTextWidth(section);this.blocks(nodes, index === sections.length - 1 ? undefined : this.sectionProperties(section)); });
     this.add(this.sectionProperties(sections.at(-1)!.section) + "</w:body></w:document>"); this.output.finish();
     if (this.fieldStack.length) unsupported("The main story has an unclosed field.");
     for (const story of this.snapshot.metadata.word?.stories ?? []) {
       const info = this.auxiliary.get(story.storyId); if (!info) continue;
-      this.withStory(info.path, () => { this.output = this.opc.part(info.path, contentType(info.kind)); const tag = info.kind === "header" ? "hdr" : "ftr"; this.add(declaration + "<w:" + tag + namespaces +this.nativeMark(story.rootNodeId)+ ">"); this.blocks(this.tree.byId.get(story.rootNodeId)!.children); this.add("</w:" + tag + ">"); this.output.finish(); });
+      this.withStory(info.path, () => {const section=this.snapshot.metadata.sections.find(section=>[...Object.values(section.headers??{}),...Object.values(section.footers??{})].includes(story.storyId))??this.snapshot.metadata.sections[0]!;this.width=this.sectionTextWidth(section,false);this.output = this.opc.part(info.path, contentType(info.kind)); const tag = info.kind === "header" ? "hdr" : "ftr"; this.add(declaration + "<w:" + tag + namespaces +this.nativeMark(story.rootNodeId)+ ">"); this.blocks(this.tree.byId.get(story.rootNodeId)!.children); this.add("</w:" + tag + ">"); this.output.finish(); });
     }
     this.writeNotes();this.writeComments(); this.styles.write(this.opc); this.styles.writeNumbering(this.opc, this.htmlLists); this.writeSettings();
     const core = this.opc.part("docProps/core.xml", "application/vnd.openxmlformats-package.core-properties+xml");

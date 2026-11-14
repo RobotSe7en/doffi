@@ -1,4 +1,7 @@
 import {moveWordContinuationFormats} from './word-conditional-format.js';
+import{wordContainerWidth}from'../document/word-container.js';
+import{length}from'../document/css-values.js';
+import type{SourceStyleNode}from'../document/source-css.js';
 import{trackWordRowDeletion,wordTableRows}from'./word-row-revisions.js';
 import{applyWordWatermark}from'./word-watermark.js';
 import{recordWordFormat,prepareWordRunFormat}from'./word-format-revisions.js';
@@ -97,7 +100,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='insertWordTable') {
     if (!/^p$|^h[1-6]$/.test(node.tagName)) fail('Insert a table beside an existing paragraph.');
     checkLimit(operation.rows * operation.columns * 3, limits.maxNodes);
-    const width=operation.width??metadata.pageSetup.width-metadata.pageSetup.margins.left-metadata.pageSetup.margins.right;
+    const width=operation.width??wordContainerWidth(metadata,parse(),operation.nodeId,styles.resolver(),limits);
     const tableStyle=word.styles.find(style=>style.kind==='table'&&style.styleId==='TableGrid'&&style.components);
     const escapeStyle=(value:string)=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
     const source='<table'+(tableStyle?' data-word-style="'+escapeStyle(tableStyle.styleId)+'" class="'+escapeStyle(tableStyle.cssClass)+'"':'')+' style="border-collapse:collapse;table-layout:fixed;width:'+width+'pt">'+Array.from({length:operation.rows},()=>'<tr>'+Array.from({length:operation.columns},()=>'<td'+(tableStyle?'':' style="border:0.5pt solid #000000;padding:4pt;vertical-align:top"')+'><p></p></td>').join('')+'</tr>').join('')+'</table>';
@@ -114,7 +117,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     if(!info){
       const occupied:number[][]=Array.from({length:rowIds.length},()=>[]);let columns=0;
       for(const[row,id]of rowIds.entries())for(const cellId of source.peekNode(id)!.childNodeIds){const cell=source.peekNode(cellId)!;let column=0;while(occupied[row]![column])column++;const width=Number(cell.attributes.colspan??1),height=Number(cell.attributes.rowspan??1)||rowIds.length-row;checkLimit((column+width)*rowIds.length,limits.maxNodes);if(row+height>rowIds.length)fail('A merged cell exceeds the table.');for(let r=row;r<row+height;r++)for(let c=column;c<column+width;c++)occupied[r]![c]=1;columns=Math.max(columns,column+width);}
-      if(!columns)fail('An editable table requires a nonempty grid.');const width=metadata.pageSetup.width-metadata.pageSetup.margins.left-metadata.pageSetup.margins.right;
+      if(!columns)fail('An editable table requires a nonempty grid.');const resolver=styles.resolver(),project=(id:string):SourceStyleNode=>{const node=source.peekNode(id)!;return{tag:node.tagName,attrs:node.attributes,parent:node.parentNodeId?project(node.parentNodeId):undefined};},css=resolver.get(project(operation.nodeId)),available=wordContainerWidth(metadata,source,operation.nodeId,resolver,limits),width=css.width&&css.width!=='auto'?length(css.width,{font:12,percent:available}):available;
       info={nodeId:operation.nodeId,grid:Array.from({length:columns},()=>width/columns)};word.tables.push(info);
     }
     if(operation.op==='editWordTable') {

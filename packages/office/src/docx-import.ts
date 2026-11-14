@@ -1278,7 +1278,10 @@ class Importer {
       let path=this.assetSources.get(part);if(path)return path;const mime=this.opc.contentType(part),extensions:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};if(!mime||!extensions[mime])unsupported(source,'This image encoding is preserved as native content.');path='assets/image-'+(this.assets.length+1)+'.'+extensions[mime];const bytes=this.opc.files.get(part);if(!bytes)fail(source,'An embedded image resource is missing.');this.files.set(path,new Uint8Array(bytes));this.assets.push(createAssetDescriptor(path,mime,bytes));this.assetSources.set(part,path);return path;
     },story:source=>{const id='text-box-'+this.word.stories.length,root=this.story('textBox',id);root.attrs.class='word-main';root.children.push(...this.readStoryContent(this.currentPart,id,source));this.auxiliary.push(root);return id;},native:(source,node)=>this.native?.bind(source,node.attrs),identity:(source,id,nativeId)=>{if(nativeId===undefined)return;number(nativeId,source);this.native?.identity(source,id,nativeId);const key=this.currentPart+'\n'+nativeId;if(source.uri===WP){const previous=this.drawingNativeIds.get(key);if(previous&&previous!==id)fail(source,'A drawing frame identity is repeated.');this.drawingNativeIds.set(key,id);}else if(nativeId!=='0'){const previous=this.drawingAliases.get(key);this.drawingAliases.set(key,previous===undefined||previous===id?id:null);}},connector:(source,nodeId,start,end,local)=>this.drawingConnections.push({source,nodeId,part:this.currentPart,...(start!==undefined?{start}:{}),...(end!==undefined?{end}:{}),local})});
   }
-  private validateMergeContinuation(cell: XmlNode): void {
+  private validateMergeContinuation(cell: XmlNode,above:Readonly<Css>,current:Readonly<Css>): void {
+    const canonical=(css:Readonly<Css>)=>JSON.stringify(Object.entries(css).sort(([a],[b])=>a.localeCompare(b)));
+    if(canonical(above)!==canonical(current))unsupported(cell,'A vertical merge continuation has independent cell formatting.');
+    if(cell.attrs.size||child(child(cell,'tcPr'),'hideMark')||child(child(cell,'tcPr'),'tcFitText'))unsupported(cell,'A vertical merge continuation retains independent native properties.');
     const cellChange = child(child(cell, 'tcPr'), 'tcPrChange');
     if (cellChange) unsupported(cellChange, 'A vertical merge continuation has independent formatting history.');
     const direction = child(child(cell, "tcPr"), "textDirection");
@@ -1296,6 +1299,7 @@ class Importer {
       const properties = child(paragraph, "pPr");
       const paragraphChange = child(properties, 'pPrChange');
       if (paragraphChange) unsupported(paragraphChange, 'A vertical merge continuation has independent paragraph history.');
+      if(paragraph.attrs.size||properties&&(properties.attrs.size||elements(properties).some(node=>node.uri!==W||node.name!=='cnfStyle')))unsupported(paragraph,'A vertical merge continuation has independent paragraph formatting.');
       this.styles.paragraph(properties);
       this.styles.run(child(properties, "rPr"));
       this.styles.get(
@@ -1315,6 +1319,7 @@ class Importer {
             "A vertical merge continuation has independent content.",
           );
         this.styles.run(child(run, "rPr"));
+        if(run.attrs.size||child(run,'rPr')&&(child(run,'rPr')!.attrs.size||elements(child(run,'rPr')).length))unsupported(run,'A vertical merge continuation has independent run formatting.');
         const runChange = child(child(run, 'rPr'), 'rPrChange');
         if (runChange) unsupported(runChange, 'A vertical merge continuation has independent run history.');
         for (const content of this.compat(run)) {
@@ -1358,7 +1363,7 @@ class Importer {
     if (!grid.length || grid.some((value) => value <= 0))
       fail(source, "A table requires a valid column grid.");
     this.word.tables.push({ nodeId: this.id(table), grid });
-    let previous = new Map<number, { cell: Html; span: number }>();
+    let previous = new Map<number, { cell: Html; span: number;css:Css }>();
     const rows = elements(source, "tr");
     let rowIndex = 0;
     const look = child(properties, "tblLook");
@@ -1411,12 +1416,9 @@ class Importer {
       this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);
       let column = 0;
-      const next = new Map<number, { cell: Html; span: number }>();
+      const next = new Map<number, { cell: Html; span: number;css:Css }>();
       for (const cell of elements(row, "tc")) {
         const props = child(cell, "tcPr");
-        const cellCss = this.styles.cell(props);
-        const textDirection = attr(child(props, "textDirection"), "val");
-        if (textDirection) delete cellCss["--word-cell-text-direction"];
         const span = number(attr(child(props, "gridSpan"), "val"), cell, 1);
         if (span < 1 || column + span > grid.length)
           fail(cell, "A table cell exceeds its grid.");
@@ -1425,13 +1427,16 @@ class Importer {
         const continuation = merge && value === "continue";
         if (merge && !["continue", "restart"].includes(value))
           fail(merge, "A vertical merge type is invalid.");
+        let cellCss:Css;try{cellCss=this.styles.cell(props);}catch(error){if(continuation&&error instanceof DocumentError&&error.code==='UnsupportedFeature')unsupported(cell,'A vertical merge continuation has independent native properties.');throw error;}
+        const textDirection = attr(child(props, "textDirection"), "val");
+        if (textDirection) delete cellCss["--word-cell-text-direction"];
         if (continuation) {
           const above = previous.get(column);
           if (!above || above.span !== span)
             fail(cell, "A vertical merge has no matching cell above.");
           try{
-            this.validateMergeContinuation(cell);
-            const format=readWordConditionalFormat(props),paragraphs=elements(cell,'p').map(paragraph=>readWordConditionalFormat(child(paragraph,'pPr'))??null);if(format||paragraphs.some(Boolean)){tableInfo.continuationFormats??=[];tableInfo.continuationFormats.push({row:rowIndex,column,...(format?{format}:{}),...(paragraphs.some(Boolean)?{paragraphs}:{})});}
+            this.validateMergeContinuation(cell,above.css,cellCss);
+            const format=readWordConditionalFormat(props),paragraphs=elements(cell,'p').map(paragraph=>readWordConditionalFormat(child(paragraph,'pPr'))??null),keepParagraphs=paragraphs.length>1||paragraphs.some(Boolean);if(format||keepParagraphs){tableInfo.continuationFormats??=[];tableInfo.continuationFormats.push({row:rowIndex,column,...(format?{format}:{}),...(keepParagraphs?{paragraphs}:{})});}
           }catch(error){if(error instanceof DocumentError&&error.code==='UnsupportedFeature')unsupported(cell,'A vertical merge continuation has independent native properties.');throw error;}
           above.cell.attrs.rowspan = String(
             Number(above.cell.attrs.rowspan ?? 1) + 1,
@@ -1472,7 +1477,7 @@ class Importer {
           readWordFormatRevision(this.word,props,htmlCell,'cell',this.styles);
           this.native?.bind(cell, htmlCell.attrs);
           htmlRow.children.push(htmlCell);
-          if (merge) next.set(column, { cell: htmlCell, span });
+          if (merge) next.set(column, { cell: htmlCell, span,css:cellCss });
         }
         column += span;
       }
