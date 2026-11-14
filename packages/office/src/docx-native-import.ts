@@ -1,12 +1,12 @@
 import { createAssetDescriptor, DocumentError } from '@doffi/core';
 import type { ContentDocumentManifest, WordMetadata } from '@doffi/core';
 import type { OpcPackage } from './ooxml/package.js';
-import { W, R, unsupportedSource } from './ooxml/xml.js';
+import { W, R, MC, WP, unsupportedSource } from './ooxml/xml.js';
 import type { XmlNode } from './ooxml/xml.js';
 import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
-interface Pending { revisionSourceId?:string;revisionPrevious?:boolean; owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
+interface Pending { indices?:number[]; propertyIndex?:number; revisionSourceId?:string;revisionPrevious?:boolean; owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
 const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
 const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
 const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended','commentsIds','commentsExtensible','people', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'chart', 'hyperlink']);
@@ -19,6 +19,7 @@ export class DocxNativeImport {
   private readonly suppressed = new Set<string>();
   private readonly recovered = new WeakMap<XmlNode, Set<string>>();
   private serial = 0;
+  private readonly ordinals=new WeakMap<XmlNode,number>();
   constructor(readonly original: OpcPackage, readonly main: string) {}
   initialize(): OpcPackage {
     const view: OpcPackage = {
@@ -33,7 +34,7 @@ export class DocxNativeImport {
     return view;
   }
   private index(root: XmlNode): void {
-    for (const item of root.content) if (typeof item !== 'string') { this.parents.set(item, root); this.index(item); }
+    const counts=new Map<string,number>();for (const item of root.content) if (typeof item !== 'string') {const key=item.uri+' '+item.name,ordinal=counts.get(key)??0;this.ordinals.set(item,ordinal);counts.set(key,ordinal+1);this.parents.set(item, root); this.index(item); }
   }
   bind(source: XmlNode, attrs: Record<string, string>): void {
     this.bindings.set(source, attrs['data-node-id']!);
@@ -59,27 +60,29 @@ export class DocxNativeImport {
       const relation = [...this.original.relationships(this.main).values()].find(rel => !rel.external && rel.target === root.part);
       if (relation) { const key=this.main+'\n'+relation.type.slice(relation.type.lastIndexOf('/')+1); if(!this.suppressed.has(key)){this.suppressed.add(key);return true;} }
     }
-    const propertyIndex = mergeContinuation ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name));
+    const alternate=chain.find(node=>node.uri===MC&&node.name==='AlternateContent');
+    const propertyIndex = mergeContinuation||alternate ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name));
     // A drawing is indivisible until it has an editable geometry implementation.
     const atomicIndex = chain.findIndex(n => n.uri === W && ['drawing','pict','object','sdt'].includes(n.name) || n.uri==='http://schemas.openxmlformats.org/officeDocument/2006/math'&&['oMath','oMathPara'].includes(n.name));
     const drawing=atomicIndex<0?undefined:chain[atomicIndex];
     if (propertyIndex >= 0 && (!drawing || drawing.name==='sdt'&&propertyIndex<atomicIndex)) {
       const owner = chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
-      const path: string[] = [];
-      for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) path.unshift(current.uri + ' ' + current.name);
+      const path: string[] = [],indices:number[]=[];
+      for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) {path.unshift(current.uri + ' ' + current.name);indices.unshift(this.ordinals.get(current)??0);}
       if (info.attribute) {
         const attrs = new Map<string, string>([[info.attribute, target.attrs.get(info.attribute)!]]);
-        this.pending.push({ ...revisionInfo,owner, original: { ...target, attrs, content: [] }, kind: 'property', path, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
+        this.pending.push({ ...revisionInfo,owner, original: { ...target, attrs, content: [] }, kind: 'property', path,indices,propertyIndex:this.ordinals.get(target)??0, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
         (target.attrs as Map<string, string>).delete(info.attribute);
       } else {
         const parent = this.parents.get(target);
         if (!parent || parent.content.indexOf(target) < 0) return false;
-        this.pending.push({ ...revisionInfo,owner, original: target, kind: 'property', path, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
+        this.pending.push({ ...revisionInfo,owner, original: target, kind: 'property', path,indices,propertyIndex:this.ordinals.get(target)??0, label: '原生属性 ' + target.name, id: 'native-' + (++this.serial) });
         parent.content.splice(parent.content.indexOf(target), 1);
       }
       return true;
     }
-    if (mergeContinuation) target = chain.find(n => n.uri === W && n.name === 'tbl') ?? target;
+    if(alternate)target=alternate;
+    else if (mergeContinuation) target = chain.find(n => n.uri === W && n.name === 'tbl') ?? target;
     else if (drawing) target = drawing;
     else if(chain.some(n=>n.uri===W&&n.name==='r'))target=info.node;
     else if (chain.some(n => n.uri === W && n.name === 'tbl') && !['p','r'].includes(target.name)) target = chain.find(n => n.uri === W && n.name === 'tbl')!;
@@ -131,14 +134,21 @@ export class DocxNativeImport {
       if (/(?:\/|\+)xml(?:;|$)/i.test(type) || sourcePart.endsWith('.xml')) this.original.read(sourcePart);
       native.parts.push({ sourcePart, assetPath: add(bytes, type), contentType: type }); relationships(sourcePart);
     };
+    const previews=new Map<string,string>();
+    const preview=(root:XmlNode):Native['fragments'][number]['preview']=>{
+      const fallback=root.uri===MC&&root.name==='AlternateContent'?root.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===MC&&node.name==='Fallback'):undefined;
+      const nodes:XmlNode[]=[],scan=(node:XmlNode):void=>{nodes.push(node);for(const child of node.content)if(typeof child!=='string')scan(child);};scan(fallback??root);
+      for(const node of nodes){const id=node.attrs.get(R+' embed')??(node.name==='imagedata'?node.attrs.get(R+' id'):undefined);if(!id)continue;const relation=this.original.relationships(node.part).get(id);if(!relation||relation.external)continue;const mime=this.original.contentType(relation.target),bytes=this.original.files.get(relation.target);if(!mime||!bytes||!['image/png','image/jpeg','image/webp'].includes(mime))continue;let assetPath=previews.get(relation.target);if(!assetPath){assetPath=add(bytes,mime);previews.set(relation.target,assetPath);}const extent=nodes.find(item=>item.uri===WP&&item.name==='extent'),width=Number(extent?.attrs.get(' cx'))/12700,height=Number(extent?.attrs.get(' cy'))/12700;return{assetPath,...(Number.isFinite(width)&&width>0?{width}:{}),...(Number.isFinite(height)&&height>0?{height}:{})};}
+      return undefined;
+    };
     const fragmentXml: string[] = [];
     const fragmentAssetPath = 'assets/native-fragments.xml';
     for (const item of this.pending) {
       const nodeId = item.owner ? this.bindings.get(item.owner) : undefined;
       if (!nodeId && item.kind !== 'property') throw new DocumentError('InvalidDocument', 'A native content placeholder is not bound to the document.');
-      const assetPath = fragmentAssetPath;
+      const assetPath = fragmentAssetPath,cached=item.kind!=='property'?preview(item.original):undefined;
       fragmentXml.push('<native:item id="' + item.id + '">' + serializeXml(item.original) + '</native:item>');
-      native.fragments.push({ nativeId: item.id, ...(nodeId ? { nodeId } : {}), kind: item.kind, ...(item.runChild?{runChild:true}:{}), sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path, ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label,propertyName:item.original.uri+' '+item.original.name,...(item.revisionSourceId?{revisionSourceId:item.revisionSourceId,revisionPrevious:item.revisionPrevious}: {}) });
+      native.fragments.push({ nativeId: item.id,...(cached?{preview:cached}:{}), ...(nodeId ? { nodeId } : {}), kind: item.kind, ...(item.runChild?{runChild:true}:{}), sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path,...(item.indices?{propertyIndices:item.indices,propertyIndex:item.propertyIndex}:{}), ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label,propertyName:item.original.uri+' '+item.original.name,...(item.revisionSourceId?{revisionSourceId:item.revisionSourceId,revisionPrevious:item.revisionPrevious}: {}) });
       // Relationships are package-local data; preserving never follows external links.
       const visit = (node: XmlNode): void => {
         for (const [key, id] of node.attrs) if (key.startsWith(R + ' ')) {

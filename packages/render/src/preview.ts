@@ -1,3 +1,4 @@
+import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
 import { DocumentError, openDocument } from "@doffi/core";
 import { resolvePreviewFonts } from "./fonts.js";
@@ -333,7 +334,7 @@ export function decorate(
   }
 }
 
-function prepareDocument(input: ContentDocumentModel): { model: ContentDocumentModel; document: Document; urls: string[] } {
+function prepareDocument(input: ContentDocumentModel): { model: ContentDocumentModel; document: Document; urls: string[]; nativeUrls:Map<string,string> } {
   const model = openDocument(input.serialize(), { kind: "document" });
   const snapshot = model.snapshot();
   if (snapshot.manifest.kind !== "document" || snapshot.metadata.presentation !== undefined) throw new DocumentError("UnsupportedFormat", "This renderer supports the document flow view.");
@@ -354,7 +355,7 @@ function prepareDocument(input: ContentDocumentModel): { model: ContentDocumentM
   parsed.head.append(style);
   const frameStyle = parsed.createElement("style");
   const setup = snapshot.metadata.pageSetup;
-  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`;
+  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}`;
   parsed.head.insertBefore(frameStyle, style);
   const byId = new Map(
     [...parsed.querySelectorAll<HTMLElement>("[data-node-id]")].map(
@@ -388,23 +389,17 @@ function prepareDocument(input: ContentDocumentModel): { model: ContentDocumentM
         auxiliary.append(node);
     if (auxiliary.children.length) article.append(auxiliary);
   }
-  const urls: string[] = [];
+  const urls: string[] = [],nativeUrls=new Map<string,string>();
+  const imageUrl=(path:string):string=>{const known=nativeUrls.get(path);if(known)return known;const asset=snapshot.manifest.assets.find(item=>item.path===path)!,bytes=files.get(path)!,buffer=new ArrayBuffer(bytes.length);new Uint8Array(buffer).set(bytes);const url=URL.createObjectURL(new Blob([buffer],{type:asset.mimeType}));urls.push(url);nativeUrls.set(path,url);return url;};
+  for(const fragment of snapshot.metadata.word?.nativeContent?.fragments??[])if(fragment.preview)imageUrl(fragment.preview.assetPath);
   for (const image of parsed.querySelectorAll("img")) {
     const path = packagePath(
       image.getAttribute("src")!,
       snapshot.manifest.entrypoint,
     );
-    const asset = snapshot.manifest.assets.find((item) => item.path === path)!;
-    const bytes = files.get(path)!;
-    const buffer = new ArrayBuffer(bytes.length);
-    new Uint8Array(buffer).set(bytes);
-    const url = URL.createObjectURL(
-      new Blob([buffer], { type: asset.mimeType }),
-    );
-    urls.push(url);
-    image.src = url;
+    image.src = imageUrl(path);
   }
-  return { model, document: parsed, urls };
+  return { model, document: parsed, urls,nativeUrls };
 }
 
 /** Mount a validated, scriptless read-only view. The iframe DOM is never serialized. */
@@ -480,6 +475,7 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
+    composeWordNative(frame,model,prepared.nativeUrls,limits);
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);
     drawings=composeWordDrawings(frame,model,limits);

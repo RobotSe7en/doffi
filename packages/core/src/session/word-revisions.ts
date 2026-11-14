@@ -63,13 +63,13 @@ function nativeReview(word: WordMetadata, revision: WordRevision, decision: 'acc
             return [fragment];
         if (fragment.revisionSourceId === revision.sourceId) {
             if (decision === 'reject' && fragment.revisionPrevious) {
-                const path = [...fragment.propertyPath], index = path.findIndex(name => name.endsWith(' ' + change));
+                const path = [...fragment.propertyPath],indices=fragment.propertyIndices?[...fragment.propertyIndices]:undefined, index = path.findIndex(name => name.endsWith(' ' + change));
                 if (index >= 0) {
-                    path.splice(index, 1);
+                    {path.splice(index, 1);indices?.splice(index,1);}
                     if (path[index] === path[index - 1])
-                        path.splice(index, 1);
+                        {path.splice(index, 1);indices?.splice(index,1);}
                 }
-                const next = { ...fragment, propertyPath: path };
+                const next = { ...fragment, propertyPath: path,...(indices?{propertyIndices:indices}:{}) };
                 delete next.revisionSourceId;
                 delete next.revisionPrevious;
                 return [next];

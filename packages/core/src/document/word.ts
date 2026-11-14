@@ -49,6 +49,7 @@ export function validateWord(
       for (const fragment of native.fragments) {
         if (ids.has(fragment.nativeId) || !paths.has(fragment.assetPath)) invalid("Native fragments require unique identities and declared resources.");
         ids.add(fragment.nativeId);
+        if(fragment.preview&&(fragment.kind==="property"||!assets.some(asset=>asset.path===fragment.preview!.assetPath&&["image/png","image/jpeg","image/webp"].includes(asset.mimeType))))invalid("A native preview requires a declared raster image.");
         if (fragment.nodeId) {
           const owner = node(fragment.nodeId);
           if (fragment.kind !== "property" && (owner.attributes["data-word-native-object"] !== fragment.nativeId || html.getNode(fragment.nodeId)!.text !== "\ufffc"))

@@ -377,6 +377,8 @@ class Importer {
       }
       if (item.uri === MC && item.name === "AlternateContent") {
         const supported = new Set([W, R, A, WP, PIC, WPS, WPG]);
+        const choices=elements(item,"Choice",MC);
+        if(this.native&&choices.some(choice=>(attr(choice,"Requires","")??"").split(/\s+/).filter(Boolean).some(prefix=>!supported.has(choice.namespaces[prefix]??""))))unsupported(item,"The native compatibility choices are preserved together with their cached fallback.");
         const branch =
           elements(item, "Choice", MC).find((choice) =>
             (attr(choice, "Requires", "") ?? "")
