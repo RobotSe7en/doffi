@@ -24,7 +24,7 @@ export const WordOperationSchema=z.discriminatedUnion('op',[
   z.strictObject({op:z.literal('setWordTabs'),nodeId:IdentifierSchema,defaultInterval:z.number().positive(),stops:WordMetadataSchema.shape.tabs.element.shape.stops}),
   z.strictObject({op:z.literal('insertWordField'),nodeId:IdentifierSchema,instruction:z.string().min(1),cachedText:z.string().optional(),offset:RevisionSchema.optional()}),
   z.strictObject({op:z.literal('setWordSection'),nodeId:IdentifierSchema,changes:DocumentSectionSchema.omit({sectionId:true,rootNodeId:true}).partial()}),
-  z.strictObject({op:z.literal('splitWordSection'),nodeId:IdentifierSchema,breakType:z.enum(['continuous','nextPage','evenPage','oddPage'])}),
+  z.strictObject({op:z.literal('splitWordSection'),nodeId:IdentifierSchema,breakType:z.enum(['continuous','nextPage','nextColumn','evenPage','oddPage'])}),
   z.strictObject({op:z.literal('insertWordStory'),nodeId:IdentifierSchema,kind:z.enum(['header','footer']),variant:z.enum(['default','first','even']),html:z.string()}),
   z.strictObject({op:z.literal('cloneWordStory'),nodeId:IdentifierSchema,storyId:IdentifierSchema,variant:z.enum(['default','first','even'])}),
   z.strictObject({op:z.literal('setWordStoryContent'),nodeId:IdentifierSchema,html:z.string()}),

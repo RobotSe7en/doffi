@@ -1133,7 +1133,7 @@ class Importer {
       }
     }
     const breakType = attr(child(source, "type"), "val") ?? "nextPage";
-    if (!["continuous", "nextPage", "evenPage", "oddPage"].includes(breakType))
+    if (!["continuous", "nextPage", "nextColumn", "evenPage", "oddPage"].includes(breakType))
       unsupported(source!, "A section break type is not supported.");
     const pageNumber = child(source, "pgNumType");
     const pageNumberStart = attr(pageNumber, "start");

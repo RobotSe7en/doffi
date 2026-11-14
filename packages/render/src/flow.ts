@@ -12,9 +12,10 @@ export interface PageFlow {
   pageAt(element: HTMLElement): number;
   headerHeight(table: HTMLTableElement): number;
   bottom(index:number):number;
+  readonly endColumn?:number;
   project?():void;
 }
-export interface PageFlowConstraints{firstPageInset?:number;reserved(index:number):number;minimumPage(node:Node):number|undefined}
+export interface PageFlowConstraints{firstPageInset?:number;minimumStart?:number;reserved(index:number):number;minimumPage(node:Node):number|undefined}
 /** Portable single-DOM fragmentation. Empty, owned spacers carry page margins;
  * source paragraphs and cells keep their identity even when a text node splits. */
 export function pageFlow(document: Document, flow: HTMLElement, area: number, pitch: number, limits: Readonly<RenderLimits>, pageStride=1,constraints?:PageFlowConstraints): PageFlow {
@@ -258,6 +259,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     },
     layout(element, forcePage = false, parity) {
       let index = topPage(element);
+      if(index<(constraints?.minimumStart??0)){index=constraints!.minimumStart!;before(element,index);}
       if (forcePage && (element.getBoundingClientRect().top > start(index) + 0.5 || index%pageStride)) { index=nextPhysical(index); before(element, index); }
       if (parity !== undefined && Math.floor(index/pageStride) % 2 !== parity) {for(let n=Math.floor(index/pageStride)*pageStride;n<nextPhysical(index);n++)blanks.add(n);index=nextPhysical(index);before(element,index);}
       if (element === flow) for (const child of [...flow.children]) walk(child as HTMLElement); else walk(element);

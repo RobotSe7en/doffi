@@ -13,3 +13,9 @@ test('column balancing settings edit without losing retained compatibility flags
  }
  session.undo();expect(session.snapshot().metadata.word!.noColumnBalance).toBe(true);
 });
+test('next-column section starts remain editable and survive two native reopens and undo',()=>{
+ const session=createDocumentSession(openDocument(createWordDocument({documentId:'column-breaks'}),{kind:'document'}));
+ session.commit(session.prepare({protocolVersion:1,documentId:'column-breaks',baseRevision:0,operations:[{op:'setWordSection',nodeId:'section-root-1',changes:{columns:{count:2,gap:24}}},{op:'splitWordSection',nodeId:'paragraph-1',breakType:'nextColumn'}]}));
+ let bytes=exportDocx(session).bytes;for(let pass=0;pass<2;pass++){const reopened=openDocument(importDocx(bytes,{documentId:'column-reopen',unsupportedContent:'reject'}),{kind:'document'});expect(reopened.snapshot().metadata.sections![1]!.breakType).toBe('nextColumn');expect(reopened.snapshot().metadata.sections![1]!.columns?.count).toBe(2);bytes=exportDocx(reopened).bytes;}
+ const next=session.snapshot().metadata.sections![1]!.rootNodeId;session.commit(session.prepare({protocolVersion:1,documentId:'column-breaks',baseRevision:1,operations:[{op:'setWordSection',nodeId:next,changes:{breakType:'continuous'}}]}));session.undo();expect(session.snapshot().metadata.sections![1]!.breakType).toBe('nextColumn');
+});

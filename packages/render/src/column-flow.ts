@@ -9,7 +9,7 @@ import{wordRowVisibleRect}from'./word-table-layout.js';
 
 /** Measure one narrow, reversible source flow, then project logical columns onto
  * physical pages. Text and source elements retain identity, order and UTF-16 offsets. */
-export interface ColumnFlowOptions {firstPageInset?:number|(()=>number);balanceEnd?:boolean|(()=>boolean);compact?:boolean;}
+export interface ColumnFlowOptions {firstPageInset?:number|(()=>number);firstColumn?:number|(()=>number);balanceEnd?:boolean|(()=>boolean);compact?:boolean;}
 export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:number,width:number,count:number,gap:number,separator:boolean,limits:Readonly<RenderLimits>,source:PreviewSource,constraints?:PageFlowConstraints,pageOffset?:(page:number)=>number,widths?:readonly number[],spaces?:readonly number[],options?:ColumnFlowOptions):PageFlow{
  if(count===1&&!pageOffset&&!widths&&!options)return pageFlow(document,flow,area,pitch,limits,1,constraints);
  if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Column count exceeds the rendering budget.');
@@ -20,7 +20,7 @@ export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:
  let balancePage=-1,balanceHeight=area;
  const fullCapacity=(page:number):number=>Math.max(Math.min(24,area),area-(constraints?.reserved(page)??0)-(page===0?firstInset():0));
  const capacity=(column:number):number=>Math.floor(column/count)===balancePage?balanceHeight:fullCapacity(Math.floor(column/count));
- const paginator=pageFlow(document,flow,area,area,{...limits,maxPages:limits.maxPages*count},count,{get firstPageInset(){return firstInset();},reserved:index=>area-capacity(index),minimumPage:node=>{const minimum=constraints?.minimumPage(node);return minimum===undefined?undefined:minimum*count;}}),wrappers:HTMLElement[]=[],positions=new Map<HTMLElement,string>(),backgrounds:HTMLElement[]=[],starts=new Map<HTMLElement,number>();
+ const paginator=pageFlow(document,flow,area,area,{...limits,maxPages:limits.maxPages*count},count,{get firstPageInset(){return firstInset();},get minimumStart(){return typeof options?.firstColumn==='function'?options.firstColumn():options?.firstColumn??0;},reserved:index=>area-capacity(index),minimumPage:node=>{const minimum=constraints?.minimumPage(node);return minimum===undefined?undefined:minimum*count;}}),wrappers:HTMLElement[]=[],positions=new Map<HTMLElement,string>(),backgrounds:HTMLElement[]=[],starts=new Map<HTMLElement,number>();
  const view=document.defaultView!,origin=()=>flow.getBoundingClientRect(),columnAt=(y:number)=>Math.max(0,Math.floor((y-origin().top+.25)/area));
  let projected=false;
  const offset=(column:number):{x:number;y:number}=>({x:columnOffsets[column%count]!+(pageOffset?.(Math.floor(column/count))??0),y:Math.floor(column/count)*pitch-column*area-(column>=count?firstInset():0)});
@@ -84,6 +84,6 @@ export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:
   reset(){for(const node of backgrounds.splice(0))node.remove();for(const[element,style]of positions)element.style.cssText=style;positions.clear();for(const wrapper of wrappers.splice(0))wrapper.replaceWith(...wrapper.childNodes);flow.style.removeProperty('height');flow.style.removeProperty('min-height');projected=false;starts.clear();balancePage=-1;paginator.reset();},
   layout,project,get count(){return Math.ceil(paginator.count/count);},get blanks(){return new Set([...paginator.blanks].map(value=>Math.floor(value/count)));},
   pageAt(element){return starts.get(element)??(projected?Math.max(0,Math.floor((element.getBoundingClientRect().top-origin().top+.25+(firstInset()||0))/pitch)):Math.floor(paginator.pageAt(element)/count));},
-  headerHeight:paginator.headerHeight,bottom:index=>Math.max(0,...Array.from({length:count},(_,column)=>paginator.bottom(index*count+column)))
+  headerHeight:paginator.headerHeight,bottom:index=>Math.max(0,...Array.from({length:count},(_,column)=>paginator.bottom(index*count+column))),get endColumn(){return(paginator.count-1)%count;}
  };
 }

@@ -91,6 +91,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
   layoutStyle.textContent = ".sdk-page-group{position:relative;box-sizing:border-box;margin:0 auto 18pt}.sdk-page-group:last-child{margin-bottom:0}.sdk-page-flow{position:relative;display:flow-root}.sdk-page-flow .sdk-section{display:flow-root}.sdk-page-layer{position:absolute;pointer-events:none;z-index:0}.sdk-paper{position:absolute;box-sizing:border-box;background:white;box-shadow:0 1px 5px #0003}.sdk-page-story{position:absolute;box-sizing:border-box;overflow:hidden}.sdk-page-story p{min-height:0}.sdk-page-story .sdk-auxiliary{display:block;border:0;padding:0}.sdk-story-label,.sdk-auxiliary{display:none}.sdk-page-story{display:block}.sdk-page-number{position:absolute;right:0;bottom:-14pt;color:#68717b;font:9px system-ui}[data-word-break]{border:0!important;margin:0!important;height:0;line-height:0;display:block}";
   document.head.append(layoutStyle);
   for (const section of mainSections) {
+    const previousSection=mainSections[mainSections.indexOf(section)-1];
+    if(section.definition.breakType==='nextColumn'&&previousSection&&(previousSection.definition.columns?.count??1)>1&&JSON.stringify(previousSection.definition.columns)!==JSON.stringify(section.definition.columns))diagnostics.push({code:'SectionGeometryChange',nodeId:section.definition.rootNodeId,message:'A next-column section with a different column geometry starts on a new page.'});
     applyWordGrid(document,section.element,section.definition,limits);
     const setup = wordPageSetup(section.definition,metadata.pageSetup), { width, height, margins } = setup;
     if (width - margins.left - margins.right <= 0 || height - margins.top - margins.bottom <= 0 || width > 20_000 || height > 20_000)
@@ -106,7 +108,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       box.append(flow);
       const definition=section.definition.columns;
       const constraints=notes?{reserved:(index:number)=>notes.reserved(group!.startIndex+index),minimumPage:(node:Node)=>{const minimum=notes.minimumPage(node);return minimum===undefined?undefined:Math.max(0,minimum-group!.startIndex);}}:undefined;
-      const balanceEnd=(section:SectionView)=>!metadata.word?.noColumnBalance&&mainSections.indexOf(section)<mainSections.length-1;
+      const balanceEnd=(section:SectionView)=>!metadata.word?.noColumnBalance&&mainSections.indexOf(section)<mainSections.length-1&&mainSections[mainSections.indexOf(section)+1]?.definition.breakType!=='nextColumn';
       group = { startIndex:0,setup, columns, box, flow, sections: [], paginator: columns==='sections'?sectionFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),limits,source,()=>group!.sections,balanceEnd,constraints,metadata.word?.mirrorMargins?(index=>(group!.startIndex+index)%2===1?px(setup.margins.right-setup.margins.left):0):undefined):definition&&(definition.count>1||definition.widths)||metadata.word?.mirrorMargins ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition?.count??1,px(definition?.gap??0),definition?.separator??false,limits,source,constraints,metadata.word?.mirrorMargins?(index=>(group!.startIndex+index)%2===1?px(setup.margins.right-setup.margins.left):0):undefined,definition?.widths?.map(px),definition?.spaces?.map(px),(definition?.count??1)>1?{balanceEnd:()=>balanceEnd(group!.sections.at(-1)!)}:undefined) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits,1,constraints) }; groups.push(group);
       if (section.element === root) { flow.append(...root.childNodes); root.append(box); }
       else root.insertBefore(box, section.element);
@@ -135,7 +137,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       for (const section of group.sections) {
         const kind = section.definition.breakType, first = section === mainSections[0];
         const parity = !first && (kind === "oddPage" || kind === "evenPage") ? ((kind === "oddPage" ? 0 : 1) + physical) % 2 : undefined;
-        group.paginator.layout(section.element === root ? group.flow : section.element, !first && kind !== "continuous", parity);
+        group.paginator.layout(section.element === root ? group.flow : section.element, !first && kind !== "continuous"&&(kind!=='nextColumn'||group.columns!=='sections'), parity);
       }
       physical += group.paginator.count;
       if (physical > limits.maxPages) throw new DocumentError("ResourceLimitExceeded", "Document exceeds the render page budget.");

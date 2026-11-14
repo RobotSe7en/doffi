@@ -30,7 +30,7 @@ export const DocumentSectionSchema = z.strictObject({
     sectionId: IdentifierSchema,
     rootNodeId: IdentifierSchema,
     pageSetup: PageSetupSchema.optional(),
-    breakType: z.enum(["continuous", "nextPage", "evenPage", "oddPage"]).optional(),
+    breakType: z.enum(["continuous", "nextPage", "nextColumn", "evenPage", "oddPage"]).optional(),
     differentFirstPage: z.boolean().optional(),
     columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional(),widths:z.array(z.number().positive()).min(1).optional(),spaces:z.array(z.number().nonnegative()).min(1).optional() }).optional(),
     pageBorders: WordPageBordersSchema.optional(),
