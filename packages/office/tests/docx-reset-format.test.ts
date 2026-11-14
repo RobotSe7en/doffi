@@ -64,6 +64,16 @@ for(const previousSize of [32,24])test('old whole native run properties cannot r
     for (const run of runs(reopened)) expect(run.css).toMatchObject({ color: '#00aa00', 'font-size': previousSize+'pt', 'font-style': 'italic' }); const rejectedBytes=exportDocx(reopened).bytes;expect(strFromU8(unzipSync(rejectedBytes)['word/document.xml']!)).toContain('emboss');const rejected=openDocument(importDocx(rejectedBytes,{documentId:'old-run-rejected'}),{kind:'document'});for(const run of runs(rejected))expect(run.css).toMatchObject({color:'#00aa00','font-size':previousSize+'pt','font-style':'italic'});
 });
 
+test('a cleared unsupported underline stays in original native history and returns after rejecting and exporting again', () => {
+    const { session: initial } = fixture(), native = unzipSync(exportDocx(initial).bytes); native['word/document.xml'] = strToU8(strFromU8(native['word/document.xml']!).replace('<w:r><w:rPr>', '<w:r><w:rPr><w:u w:val="dashedHeavy"/>'));
+    const session = createDocumentSession(openDocument(importDocx(zipSync(native), { documentId: 'opaque-underline' }), { kind: 'document' })), paragraph = session.getNode(session.snapshot().metadata.sections![0]!.rootNodeId)!.childNodeIds[0]!, root = session.getNode(session.snapshot().metadata.word!.stories.find(story => story.kind === 'main')!.rootNodeId)!.parentNodeId!;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: 'opaque-underline', baseRevision: 0, operations: [{ op: 'setWordReview', nodeId: root, trackChanges: true, author: 'A' }, { op: 'resetWordText', nodeId: paragraph, from: 0, to: 7, expectedText: '前禰󠄀😀后' }] }));
+    const output = exportDocx(session).bytes, xml = strFromU8(unzipSync(output)['word/document.xml']!); expect(xml).toMatch(/<w:rPrChange\b[\s\S]*dashedHeavy[\s\S]*<\/w:rPrChange>/);
+    const reopened = createDocumentSession(openDocument(importDocx(output, { documentId: 'underline-review' }), { kind: 'document' })), reviewRoot = reopened.getNode(reopened.snapshot().metadata.word!.stories.find(story => story.kind === 'main')!.rootNodeId)!.parentNodeId!;
+    reopened.commit(reopened.prepare({ protocolVersion: 1, documentId: 'underline-review', baseRevision: 0, operations: [{ op: 'reviewWordRevisions', nodeId: reviewRoot, author: 'A', decision: 'reject' }] }));
+    const rejected = strFromU8(unzipSync(exportDocx(reopened).bytes)['word/document.xml']!); expect(rejected).toContain('dashedHeavy'); expect(rejected).not.toContain('rPrChange');
+});
+
 test('cleared native cell runs follow conditional table styles and their new row position', () => {
     const session = createDocumentSession(openDocument(importDocx(tableStylesFixture(), { documentId: 'reset-table', unsupportedContent: 'reject' }), { kind: 'document' }));
     const nodes=[session.snapshot().metadata.word!.stories.find(story=>story.kind==='main')!.rootNodeId];for(let index=0;index<nodes.length;index++)nodes.push(...session.getNode(nodes[index]!)!.childNodeIds);

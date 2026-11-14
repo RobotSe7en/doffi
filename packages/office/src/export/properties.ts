@@ -1,9 +1,10 @@
+import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from '../ooxml/word-passive-run-properties.js';
 import { DocumentError } from "@doffi/core";
 import type { Css } from "./css.js";
 import { color, fontName, length, nativeInteger } from "./values.js";
 import { empty, orderedProperties, value } from "./xml.js";
 
-export const runKeys: readonly string[] = ["font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid",...["val","eastAsia","bidi"].map(role=>"--word-language-"+role)];
+export const runKeys: readonly string[] = [...passiveWordRunBooleans.map(passiveWordRunCss),...passiveWordRunValues.map(passiveWordRunCss),"font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid",...["val","eastAsia","bidi"].map(role=>"--word-language-"+role)];
 export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", "--word-distributed", "--word-line-rule", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
 export const pick = (css: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key]) => keys.includes(key)));
 export const difference = (css: Css, expected: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key, val]) => keys.includes(key) && val !== expected[key]));
@@ -25,6 +26,8 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
     if (role) fonts["w:" + role] = name;
     else if (!Object.keys(fonts).length) for (const key of ["ascii", "hAnsi", "eastAsia", "cs"]) fonts["w:" + key] = name;
   }
+  for(const name of passiveWordRunBooleans){const raw=css[passiveWordRunCss(name)];if(raw!==undefined){if(raw!=='0'&&raw!=='1')unsupported('A native run Boolean must be zero or one.');out+=toggle(name,raw==='1');}}
+  for(const name of passiveWordRunValues){const raw=css[passiveWordRunCss(name)];if(raw!==undefined){if(raw!==({w:'100',position:'0',em:'none',effect:'none'}as Record<string,string>)[name])unsupported('An active native run effect is outside the editable profile.');out+=value(name,raw);}}
   if(css["--word-run-snap-to-grid"] !== undefined) out += toggle("snapToGrid",css["--word-run-snap-to-grid"] === "1");
   if (Object.keys(fonts).length) out += empty("w:rFonts", fonts);
   for (const [prop, name, active] of [["font-weight", "b", "bold"], ["font-style", "i", "italic"], ["text-transform", "caps", "uppercase"], ["font-variant", "smallCaps", "small-caps"]]) {

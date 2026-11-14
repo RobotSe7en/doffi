@@ -132,8 +132,11 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     const original=fragmentXml(fragment);
     if(resetRun&&!fragment.revisionPrevious&&fragment.propertyPath.length<=1&&original.uri===W){
       if(original.name==='rPr'){
-        const compiled=target.name==='rPr'?target:target.content.find((child):child is XmlNode=>typeof child!=='string'&&child.uri===W&&child.name==='rPr'),unknown=original.content.filter(child=>typeof child==='string'||child.uri!==W||!mappedRunProperties.has(child.name)&&child.name!=='rPrChange'),names=new Set(unknown.filter((child):child is XmlNode=>typeof child!=='string').map(name)),history=compiled?.content.filter(child=>typeof child!=='string'&&child.uri===W&&child.name==='rPrChange')??original.content.filter(child=>typeof child!=='string'&&child.uri===W&&child.name==='rPrChange');
-        original.content.splice(0,original.content.length,...(compiled?.content??[]).filter(child=>typeof child==='string'||!names.has(name(child))&&!(child.uri===W&&child.name==='rPrChange')),...unknown,...history);
+        const compiled=target.name==='rPr'?target:target.content.find((child):child is XmlNode=>typeof child!=='string'&&child.uri===W&&child.name==='rPr');
+        const current=compiled?.content??[],claims=new Set(current.filter((child):child is XmlNode=>typeof child!=='string'&&child.name!=='rPrChange').map(name));
+        const unknown=original.content.filter(child=>typeof child==='string'||(child.uri!==W||!mappedRunProperties.has(child.name)&&child.name!=='rPrChange')&&!claims.has(name(child)));
+        const compiledHistory=current.filter(child=>typeof child!=='string'&&child.uri===W&&child.name==='rPrChange'),history=compiledHistory.length?compiledHistory:original.content.filter(child=>typeof child!=='string'&&child.uri===W&&child.name==='rPrChange');
+        original.content.splice(0,original.content.length,...current.filter(child=>typeof child==='string'||!(child.uri===W&&child.name==='rPrChange')),...unknown,...history);
       }
       else if(fragment.propertyPath[0]===W+' rPr'&&mappedRunProperties.has(original.name))return;
     }

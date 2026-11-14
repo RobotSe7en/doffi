@@ -1,3 +1,4 @@
+import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from './word-passive-run-properties.js';
 import {wordColorLuminance} from '@doffi/core';
 import { DocumentError } from "@doffi/core";
 import type { WordMetadata, WordNumberLevel } from "@doffi/core";
@@ -703,6 +704,8 @@ export class DocxStyles {
       )
         unsupported(item);
     }
+    for(const name of passiveWordRunBooleans){const item=child(properties,name);if(item)css[passiveWordRunCss(name)]=on(item)?'1':'0';}
+    for(const name of passiveWordRunValues){const item=child(properties,name);if(item)css[passiveWordRunCss(name)]=val(item)!;}
     return css;
   }
   paragraph(properties: XmlNode | undefined): Css {
