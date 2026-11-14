@@ -38,7 +38,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation,limits,metadata.sections);return;}
   if(isWordCommentOperation(operation)){applyWordComment(metadata,annotations,edit,parse,operation);return;}
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}
-  if(isWordReferenceOperation(operation)){applyWordReference(word,edit,parse,operation);return;}
+  if(isWordReferenceOperation(operation)){if(operation.op==='setWordNoteOptions'&&node.parentNodeId===null&&Object.keys(operation.options).length){const key=operation.kind==='footnote'?'footnoteOptions':'endnoteOptions';for(const section of metadata.sections){const options={...section[key],...operation.options};if(JSON.stringify(options)!==JSON.stringify(section[key]??{}))applyWordOperation(metadata,edit,parse,styles,{op:'setWordSection',nodeId:section.rootNodeId,changes:{[key]:options}},limits,annotations);}}applyWordReference(word,edit,parse,operation);return;}
   if(isWordMathOperation(operation)){applyWordMath(word,edit,parse,operation);return;}
   if(isWordControlOperation(operation)){applyWordControl(word,edit,parse,operation);return;}
   if(operation.op==='setWordStyle'||operation.op==='deleteWordStyle'){editWordStyle(word,edit,parse,styles,operation,limits);return;}

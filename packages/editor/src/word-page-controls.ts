@@ -1,6 +1,7 @@
 import { DocumentError } from '@doffi/core';
 import type { DocumentEditingSession, DocumentOperation } from '@doffi/core';
 import{addWordPageBorderControls}from'./word-page-border-controls.js';
+import{addWordSectionNoteControls}from'./word-page-note-controls.js';
 /** Page forms edit native section definitions; auxiliary stories use the same
  * rich-text adapter over a temporary view projection of the original session. */
 export function createWordPageControls(parent:ShadowRoot,before:HTMLElement,session:DocumentEditingSession,sectionRoot:()=>string,editStory:(storyId?:string)=>void,onError:(error:unknown)=>void):{open():void;dispose():void}{
@@ -26,6 +27,7 @@ export function createWordPageControls(parent:ShadowRoot,before:HTMLElement,sess
   const scope=choose('应用范围',[['section','本节'],['all','全文']],'section');
   const apply=(operations:DocumentOperation[]):void=>{const snapshot=session.snapshot();session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations}));};
   const loadBorders=addWordPageBorderControls(document,panel,session,selected,()=>scope.value==='all',apply,onError,signal);section.addEventListener('change',loadBorders,{signal});
+  const loadNotes=addWordSectionNoteControls(document,panel,session,selected,()=>scope.value==='all',apply,onError,signal);section.addEventListener('change',loadNotes,{signal});
   button('应用页面设置',()=>{const latest=selected(),targets=scope.value==='all'?latest.metadata.sections:[latest.target];apply(targets.map(target=>({op:'setWordSection',nodeId:target.rootNodeId,changes:{pageSetup:{unit:'pt',width:pt(width.value),height:pt(height.value),margins:{top:pt(marginTop.value),bottom:pt(marginBottom.value),left:pt(marginLeft.value),right:pt(marginRight.value)}}}})));});
   const gutter=field('装订线（毫米）',mm(selected().target.gutter??0)),gutterPosition=choose('装订线位置',[['left','左'],['right','右'],['top','上']],selected().target.gutterPosition??'left');
   button('应用装订线',()=>{const latest=selected(),targets=gutterPosition.value==='top'||scope.value==='all'?latest.metadata.sections:[latest.target];apply(targets.map(target=>({op:'setWordSection',nodeId:target.rootNodeId,changes:{gutter:pt(gutter.value),gutterPosition:gutterPosition.value as 'left'|'right'|'top'}})));});

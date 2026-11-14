@@ -47,7 +47,7 @@ export class PreviewSource {
   }
   instanceElements(nodeId:string):readonly HTMLElement[]{return Object.freeze([...(this.instances.get(nodeId)??[])]);}
   elementRectangles(id: string): DOMRect[] {
-    const entry = this.elements.get(id), copies = [...this.instances.get(id) ?? []].flatMap((node) => [...node.getClientRects()]);
+    const entry = this.elements.get(id), copies = [...this.instances.get(id) ?? []].flatMap((node) => [...node.getClientRects()].flatMap(rect=>this.instanceClip(node,rect)));
     if (!entry) return copies;
     if(entry.element.hasAttribute('data-word-drawing'))return[...(entry.element.closest<HTMLElement>('[data-sdk-word-object]')??entry.element).getClientRects(),...copies];
     if (!entry.element.matches(blocks + ",span,a,strong,em,ins,del")) return [...entry.element.getClientRects(), ...copies];
@@ -126,6 +126,20 @@ export class PreviewSource {
     return token.node.isConnected && style.visibility === "visible" && this.tokenRectangles(token).length > 0;
   }
   private tokenRectangles(token:Token,from=0,to=token.text.length):DOMRect[]{const owner=token.node.nodeType===1?token.node as Element:token.node.parentElement!;return[...this.tokenRange(token,from,to).getClientRects()].flatMap(rect=>{const visible=wordRowVisibleRect(owner,rect);return visible?[visible]:[];});}
+  private instanceClip(node:Element,rect:DOMRect):DOMRect[]{
+    if(this.document.defaultView!.getComputedStyle(node).visibility!=='visible')return[];
+    let left=rect.left,right=rect.right,top=rect.top,bottom=rect.bottom;
+    for(let parent:Element|null=node.parentElement;parent;parent=parent.parentElement){const style=this.document.defaultView!.getComputedStyle(parent),x=/^(?:hidden|clip|scroll|auto)$/.test(style.overflowX),y=/^(?:hidden|clip|scroll|auto)$/.test(style.overflowY);if(x||y){const box=parent.getBoundingClientRect();if(x){left=Math.max(left,box.left);right=Math.min(right,box.right);}if(y){top=Math.max(top,box.top);bottom=Math.min(bottom,box.bottom);}}}
+    return right>left+.01&&bottom>top+.01?[new DOMRect(left,top,right-left,bottom-top)]:[];
+  }
+  private instanceTextRectangles(nodeId:string,from:number,to:number):DOMRect[]{
+    return(this.instances.get(nodeId)??[]).flatMap(root=>{let offset=0;const rects:DOMRect[]=[];
+      const visit=(node:Node):void=>{if(viewNodeRole(node)==='remove')return;const element=node.nodeType===1?node as HTMLElement:undefined,atomic=element?.matches('br,img,[data-word-tab],[data-word-drawing],[data-word-native-object],[data-word-note-reference],[data-word-note-number],[data-word-equation]'),size=node.nodeType===3?node.textContent!.length:atomic?1:undefined;
+        if(size!==undefined){const start=Math.max(from,offset),end=Math.min(to,offset+size);if(start<end){const range=this.document.createRange();if(node.nodeType===3){range.setStart(node,start-offset);range.setEnd(node,end-offset);}else range.selectNode(node);for(const rect of range.getClientRects())rects.push(...this.instanceClip(element??node.parentElement!,rect));}offset+=size;}
+        else for(const child of node.childNodes)visit(child);
+      };visit(root);return rects;
+    });
+  }
 
   textAnchor(range: Range, model: ContentDocumentModel): Anchor | undefined {
     if (range.collapsed) return undefined;
@@ -212,10 +226,10 @@ export class PreviewSource {
       const source = this.elements.get(range.nodeId);
       if (!source) return [];
       const start = source.from + range.from, end = source.from + range.to;
-      return this.tokens.flatMap((token) => {
+      return [...this.instanceTextRectangles(range.nodeId,range.from,range.to),...this.tokens.flatMap((token) => {
         if (token.to <= start || token.from >= end || !this.visible(token)) return [];
         return this.tokenRectangles(token, Math.max(0, start - token.from), Math.min(token.text.length, end - token.from));
-      });
+      })];
     });
   }
 

@@ -531,6 +531,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       if (!paragraph.childNodes.length) { const filler = frame.createElement("br"); projection.markDerived(filler); paragraph.append(filler); }
     }
     root.addEventListener("beforeinput", beforeinput as EventListener, { signal: viewControls.signal });
+    frame.addEventListener('dblclick',event=>{if(composing)return;const target=event.target as Element|null,storyId=target?.closest<HTMLElement>('[data-sdk-word-note-story]')?.dataset.sdkWordNoteStory;if(storyId&&session.snapshot().metadata.word?.stories.some(story=>story.storyId===storyId&&['footnote','endnote'].includes(story.kind))){event.preventDefault();editStory(storyId);}},{signal:viewControls.signal});
     root.addEventListener("input", () => {
       if (!root || disposed) return;
       if (pending) {

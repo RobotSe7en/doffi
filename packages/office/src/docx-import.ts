@@ -1061,8 +1061,6 @@ class Importer {
       "sectPrChange",
     ]);
     for (const feature of [
-      "footnotePr",
-      "endnotePr",
       "lnNumType",
     ]) {
       if (child(source, feature)) unsupported(child(source, feature)!);
@@ -1174,6 +1172,9 @@ class Importer {
       pageSetup: setup,
       breakType: breakType as DocumentSection["breakType"] & string,
       differentFirstPage: on(child(source, "titlePg")),
+      ...(child(source,'footnotePr')?{footnoteOptions:readNoteOptions(child(source,'footnotePr')) as DocumentSection['footnoteOptions']}:{}),
+      ...(child(source,'endnotePr')?{endnoteOptions:readNoteOptions(child(source,'endnotePr')) as DocumentSection['endnoteOptions']}:{}),
+      ...(child(source,'noEndnote')?{noEndnote:on(child(source,'noEndnote'))}:{}),
       headerDistance: margins
         ? number(attr(margins, "header"), margins, 720) / 20
         : 36,

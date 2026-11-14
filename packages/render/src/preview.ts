@@ -486,7 +486,7 @@ export function mountPreview(
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);
     drawings=composeWordDrawings(frame,model,limits);
-    notes=composeWordNotes(frame,model,source,limits);
+    notes=composeWordNotes(frame,model,source,limits,index=>pagination?.contentBottom(index));
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);
       pagination = paginate(frame, source, snapshot.metadata, limits,notes);

@@ -1,4 +1,5 @@
 import { IdentifierSchema } from './primitives.js';
+import{WordNoteOptionsSchema}from'./word-reference.js';
 import { z } from 'zod';
 export const WordPageBorderSchema = z.strictObject({
     style: z.enum(['nil', 'none', 'single', 'double', 'dotted', 'dashed', 'dashSmallGap', 'thick']),
@@ -32,6 +33,9 @@ export const DocumentSectionSchema = z.strictObject({
     pageSetup: PageSetupSchema.optional(),
     breakType: z.enum(["continuous", "nextPage", "nextColumn", "evenPage", "oddPage"]).optional(),
     differentFirstPage: z.boolean().optional(),
+    footnoteOptions:WordNoteOptionsSchema.extend({position:z.enum(['pageBottom','beneathText']).optional()}).optional(),
+    endnoteOptions:WordNoteOptionsSchema.extend({position:z.enum(['sectEnd','docEnd']).optional()}).optional(),
+    noEndnote:z.boolean().optional(),
     columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional(),widths:z.array(z.number().positive()).min(1).optional(),spaces:z.array(z.number().nonnegative()).min(1).optional() }).optional(),
     pageBorders: WordPageBordersSchema.optional(),
     grid: z.strictObject({ type: z.enum(["default", "lines", "linesAndChars", "snapToChars"]), linePitch: z.number().positive().optional(), characterSpacing: z.number().int().optional() }).optional(),

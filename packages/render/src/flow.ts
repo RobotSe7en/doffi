@@ -198,7 +198,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     }
   }
   function walk(element: HTMLElement): void {
-    if (viewNodeRole(element) === "remove") return;
+    if (viewNodeRole(element) === "remove"&&!isMeasuredViewContent(element)) return;
     const style = view.getComputedStyle(element), rect = element.getBoundingClientRect();
     if(style.display==="none"||style.visibility==="collapse")return;
     const force = ["page", "always", "left", "right"].includes(style.breakBefore) || style.pageBreakBefore === "always";
@@ -237,7 +237,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
         inline = [];
       };
       for (const child of [...element.childNodes]) {
-        if (viewNodeRole(child) === "remove") continue;
+        if (viewNodeRole(child) === "remove"&&!isMeasuredViewContent(child)) continue;
         const node = child.nodeType === 1 ? child as HTMLElement : undefined;
         const display = node ? view.getComputedStyle(node).display : "inline";
         if (!node || display === "inline" || display === "inline-block") inline.push(child);

@@ -9,7 +9,7 @@ export interface RepeatedHeaders { clear(): void; project(pages: readonly Render
  * by the measured table flow on subsequent pages. */
 export function repeatTableHeaders(document: Document, root: HTMLElement, source: PreviewSource, limits: Readonly<RenderLimits>): RepeatedHeaders {
   const tables = [...root.querySelectorAll<HTMLTableElement>("table")], clones: HTMLElement[] = [];
-  const clear = (): void => { for (const clone of clones.splice(0)) clone.remove(); source.clearInstances(); };
+  const clear = (): void => { for (const clone of clones.splice(0)) clone.remove(); };
   return { clear, project(pages) {
     clear(); let nodes = root.querySelectorAll("*").length;
     const surface = root.getBoundingClientRect(), px = (value: number): number => value * 96 / 72;

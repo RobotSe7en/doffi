@@ -176,7 +176,16 @@ export class DocxNativeImport {
     };
     const fragmentXml: [string,string][] = [];
     const fragmentAssetPath = 'assets/native-fragments.json';
+    const globals=new Set(['style','styles','settings','numbering','fonts','document','comments','footnotes','endnotes','commentsEx','commentsExtensible','commentsIds','people']);
     for (const item of this.pending) {
+      // Previous sectPr owners are XML nodes without an independent HTML node.
+      // Anchor their complete path at the current bound owner instead of
+      // accidentally restoring their children at the document root.
+      if(item.kind==='property'&&item.owner&&!this.bindings.has(item.owner)&&!globals.has(item.owner.name)){
+        const path:XmlNode[]=[];let owner:XmlNode|undefined=item.owner;
+        while(owner&&!this.bindings.has(owner)&&!globals.has(owner.name)){path.unshift(owner);owner=this.parents.get(owner);}
+        if(owner){item.owner=owner;item.path=[...path.map(node=>node.uri+' '+node.name),...item.path];item.indices=[...path.map(node=>this.ordinals.get(node)??0),...(item.indices??[])];}
+      }
       const nodeId = item.owner ? this.bindings.get(item.owner) : undefined;
       if (!nodeId && item.kind !== 'property') throw new DocumentError('InvalidDocument', 'A native content placeholder is not bound to the document.');
       const assetPath = fragmentAssetPath,cached=item.kind!=='property'?preview(item.original):undefined;

@@ -1,4 +1,5 @@
 import {sectionFlow} from './section-flow.js';
+import{cloneViewTree}from'./view-clone.js';
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, ContentDocumentMetadata, DocumentSection, PageSetup } from "@doffi/core";
 import type { LayoutDiagnostic, RenderedPage, RenderLimits } from "./contracts.js";
@@ -43,6 +44,7 @@ interface Group {
 }
 export interface Pagination {
   measure(): readonly RenderedPage[];
+  contentBottom(index:number):number;
   nodePages(pages: readonly RenderedPage[]): Readonly<Record<string, readonly string[]>>;
   readonly diagnostics: readonly LayoutDiagnostic[];
   dispose(): void;
@@ -82,6 +84,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     mainSections.splice(0, mainSections.length, ...wrappers);
   }
   const variableSections=new Set<SectionView>();
+  notes?.attachSections(mainSections);
   for(let start=0;start<mainSections.length;){let end=start+1;const setup=JSON.stringify(wordPageSetup(mainSections[start]!.definition,metadata.pageSetup));while(end<mainSections.length&&JSON.stringify(wordPageSetup(mainSections[end]!.definition,metadata.pageSetup))===setup)end++;const run=mainSections.slice(start,end);if(run.length>1&&run.some(section=>(section.definition.columns?.count??1)>1||section.definition.columns?.widths))for(const section of run)variableSections.add(section);start=end;}
   const maximumWidth = Math.max(...mainSections.map((item) => (item.definition.pageSetup ?? metadata.pageSetup).width));
   root.style.width = maximumWidth + "pt"; root.style.padding = "0"; root.style.margin = "0 auto"; root.style.background = "transparent"; root.style.position = "relative";
@@ -129,6 +132,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
   const sectionStarts = (group: Group): number[] => group.sections.map(({ element }) => element === root ? 0 : group.paginator.pageAt(element));
   function measure(): readonly RenderedPage[] {
     if (disposed) return pages;
+    source.clearInstances();
     repeated.clear();
     for (const group of groups) group.paginator.reset();
     let physical = 0;
@@ -157,7 +161,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     let renderNodes = document.querySelectorAll("*").length;
     for (const group of groups) {
       const { setup } = group, starts = sectionStarts(group), pitch = px(setup.height + gutter);
-      const count = group.paginator.count;
+      const count = group===groups.at(-1)?Math.max(group.paginator.count,(notes?.requiredPages??0)-group.startIndex):group.paginator.count;
+      group.box.style.minHeight=(count*setup.height+(count-1)*gutter)+'pt';
       const box = group.box.getBoundingClientRect();
       for (let index = 0; index < count; index++) {
         if (result.length >= limits.maxPages) throw new DocumentError("ResourceLimitExceeded", "Document exceeds the render page budget.");
@@ -183,11 +188,12 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
           if (!template) continue;
           renderNodes += template.querySelectorAll("*").length + 1;
           if (renderNodes > limits.maxNodes) throw new DocumentError("ResourceLimitExceeded", "Repeated stories exceed the render node budget.");
-          const story = template.cloneNode(true) as HTMLElement; story.classList.remove("sdk-auxiliary"); story.classList.add("sdk-page-story"); story.dataset.sdkAuxiliary = "true";
+          const story = cloneViewTree(template,limits.maxNodes); story.classList.remove("sdk-auxiliary"); story.classList.add("sdk-page-story"); story.dataset.sdkAuxiliary = "true";
           const distance = kind === "headers" ? definition.headerDistance ?? 36 : definition.footerDistance ?? 36;
           const available = Math.max(0, (kind === "headers" ? setup.margins.top : setup.margins.bottom) - distance);
           story.style.cssText += `;left:${page.setup.margins.left}pt;width:${setup.width - setup.margins.left - setup.margins.right}pt;max-height:${available}pt;${kind === "headers" ? "top:" : "bottom:"}${distance}pt`;
           paper.append(story);story.style.zIndex='1';
+          source.registerInstances(story);
           for(const object of [...story.querySelectorAll<HTMLElement>('[data-sdk-word-object]')]){const definition=metadata.word?.drawings?.find(drawing=>drawing.nodeId===object.dataset.sdkWordObject);if(definition?.layout.mode!=='floating'||!definition.layout.behindText)continue;const paragraph=object.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');if(!paragraph?.dataset.nodeId)continue;object.dataset.sdkWordStoryAnchor=paragraph.dataset.nodeId;object.style.zIndex='0';paper.append(object);}
           if (story.scrollHeight > px(available) + 1 && !diagnostics.some((item) => item.code === "ContentOverflow" && item.nodeId === id))
             diagnostics.push({ code: "ContentOverflow", nodeId: id!, message: "A header or footer exceeds the available margin area and is clipped." });
@@ -206,7 +212,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     }
     return pages;
   }
-  return { measure, diagnostics, nodePages(current) {
+  return { measure, diagnostics,contentBottom(index){const group=groups.find(group=>index>=group.startIndex&&index<group.startIndex+group.paginator.count);return group?group.setup.margins.top+group.paginator.bottom(index-group.startIndex)*.75:pages[index]?.setup.margins.top??0;}, nodePages(current) {
     const surface = root.getBoundingClientRect(), result: Record<string, readonly string[]> = Object.create(null) as Record<string, readonly string[]>;
     for (const [id] of sourceElements) {
       const rectangles = source.elementRectangles(id);

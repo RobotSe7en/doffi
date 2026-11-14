@@ -1,4 +1,5 @@
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
+import{sortWordNoteProperties}from'./ooxml/word-note-order.js';
 import{NativeDrawingIdentities}from'./docx-native-identities.js';
 import {sortWordSettings}from'./ooxml/word-settings-order.js';
 import { DocumentError,WordNativeFragmentCollectionSchema } from '@doffi/core';
@@ -38,10 +39,11 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     const node=entries.get(fragment.fragmentKey);if(!node)throw new DocumentError('InvalidDocument','A native fragment collection entry is missing.');return node;
   };
   const nodeParts = new Map<string, {path:string;name:string}[]>();
+  const compiledNodeIds=new WeakMap<XmlNode,string>();
   for (const [path, bytes] of files) if (path.endsWith('.xml') && path !== '[Content_Types].xml') {
     const root = read(bytes, path); parsed.set(path, root);
     const scan = (node: XmlNode): void => {
-      for(const id of [node.attrs.get(NATIVE_MARKER+' node'),node.attrs.get(NATIVE_MARKER+' container')])if(id){const locations=nodeParts.get(id)??[];locations.push({path,name:node.name});nodeParts.set(id,locations);}
+      for(const id of [node.attrs.get(NATIVE_MARKER+' node'),node.attrs.get(NATIVE_MARKER+' container')])if(id){const locations=nodeParts.get(id)??[];locations.push({path,name:node.name});nodeParts.set(id,locations);compiledNodeIds.set(node,id);}
       for (const item of node.content) if (typeof item !== 'string') scan(item);
     };
     scan(root);
@@ -107,18 +109,34 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     if(target.uri===W&&target.name==='compat'&&mappedCompatibility.size)original.content.splice(0,original.content.length,...target.content.filter(child=>typeof child!=='string'&&child.uri===W&&mappedCompatibility.has(child.name)),...original.content.filter(child=>typeof child==='string'||child.uri!==W||!mappedCompatibility.has(child.name)));
     merge(target,original);
   };
-  const applyProperty=(root:XmlNode,fragment:typeof native.fragments[number]):void=>{
+  const currentNoteProperties=(original:XmlNode,compiled:XmlNode|undefined,fragment:typeof native.fragments[number]):void=>{
+    const metadata=model.snapshot().metadata,section=metadata.sections?.find(section=>section.rootNodeId===(compiled?compiledNodeIds.get(compiled):undefined)||section.rootNodeId===fragment.nodeId),word=metadata.word;
+    const patch=(raw:XmlNode,current:XmlNode|undefined,kind:'footnote'|'endnote'):void=>{
+      const options=fragment.nodeId?section?.[kind==='footnote'?'footnoteOptions':'endnoteOptions']:word?.[kind==='footnote'?'footnoteOptions':'endnoteOptions'];if(!options)return;
+      const names=new Set(Object.entries({pos:options.position,numFmt:options.format,numStart:options.start,numRestart:options.restart}).filter(([,value])=>value!==undefined).map(([name])=>name));if(!names.size)return;
+      if(raw.name===kind+'Pr'){raw.content.splice(0,raw.content.length,...(current?.content??[]).filter(node=>typeof node!=='string'&&node.uri===W&&names.has(node.name)),...raw.content.filter(node=>typeof node==='string'||node.uri!==W||!names.has(node.name)));}
+      else if(names.has(raw.name))(raw.attrs as Map<string,string>).delete(W+' val');
+    };
+    if(original.uri!==W)return;
+    if(original.name==='sectPr'){
+      for(const kind of ['footnote','endnote']as const){const raw=original.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&node.name===kind+'Pr'),current=compiled?.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&node.name===kind+'Pr');if(raw)patch(raw,current,kind);else if(section?.[kind==='footnote'?'footnoteOptions':'endnoteOptions']&&current){const predecessors=['headerReference','footerReference',...(kind==='endnote'?['footnotePr']:[])];let index=0;for(const[slot,node]of original.content.entries())if(typeof node!=='string'&&node.uri===W&&predecessors.includes(node.name))index=slot+1;original.content.splice(index,0,current);}}
+      if(section?.noEndnote!==undefined){const current=compiled?.content.filter(node=>typeof node!=='string'&&node.uri===W&&node.name==='noEndnote')??[];let replaced=false;for(let index=original.content.length-1;index>=0;index--){const child=original.content[index]!;if(typeof child!=='string'&&child.uri===W&&child.name==='noEndnote'){original.content.splice(index,1,...current);replaced=true;}}if(!replaced){const trailing=['titlePg','textDirection','bidi','rtlGutter','docGrid','printerSettings','sectPrChange'],index=original.content.findIndex(node=>typeof node!=='string'&&node.uri===W&&trailing.includes(node.name));original.content.splice(index<0?original.content.length:index,0,...current);}}
+      const history=compiled?.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&node.name==='sectPrChange');if(history&&!original.content.some(node=>typeof node!=='string'&&node.uri===W&&node.name==='sectPrChange'))original.content.push(history);
+    }else for(const kind of ['footnote','endnote']as const)if(original.name===kind+'Pr'||fragment.propertyPath.includes(W+' '+kind+'Pr'))patch(original,compiled,kind);
+  };
+  const applyProperty=(root:XmlNode,fragment:typeof native.fragments[number],previous=false):void=>{
     restored.add(fragment.nativeId);
     let target=root;
     for(const[index,path]of fragment.propertyPath.entries()){let next=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===path&&(path===W+' tblStylePr'&&fragment.styleRegion?n.attrs.get(W+' type')===fragment.styleRegion:true))[path===W+' tblStylePr'&&fragment.styleRegion?0:fragment.propertyIndices?.[index]??0];if(!next){const split=path.lastIndexOf(' ');next={uri:path.slice(0,split),name:path.slice(split+1),attrs:new Map(),namespaces:{},content:[],part:root.part};if(path===W+' tblStylePr'&&fragment.styleRegion)(next.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);target.content.unshift(next);}target=next;}
     const original=fragmentXml(fragment);if(mappedCompatibility.size&&original.uri===W){if(original.name==='compat')original.content.splice(0,original.content.length,...original.content.filter(child=>typeof child==='string'||child.uri!==W||!mappedCompatibility.has(child.name)));else if(mappedCompatibility.has(original.name)&&fragment.propertyPath.some(path=>path===W+' compat'))return;}if(original.name==='tblStylePr'&&fragment.styleRegion&&!original.attrs.has(W+' type'))(original.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);
+    if(!previous&&!fragment.revisionPrevious)currentNoteProperties(original,name(original)===name(target)?target:target.content.find((node):node is XmlNode=>typeof node!=='string'&&name(node)===name(original)),fragment);
     if(name(original)===name(target))mergeProperty(target,original);
     else{const current=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===name(original)&&(original.name==='tblStylePr'&&fragment.styleRegion?n.attrs.get(W+' type')===fragment.styleRegion:true))[original.name==='tblStylePr'&&fragment.styleRegion?0:fragment.propertyIndex??0];if(current)mergeProperty(current,original);else target.content.push(original);}
   };
   const apply=(root:XmlNode):XmlNode=>{
     const beforeSource=root.attrs.get(NATIVE_MARKER+' before-source'),beforeProperty=root.attrs.get(NATIVE_MARKER+' before-property');
     (root.attrs as Map<string,string>).delete(NATIVE_MARKER+' before-source');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' before-property');
-    if(beforeSource&&beforeProperty){const target=root.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&node.name===beforeProperty);if(!target)throw new DocumentError('ExportFailed','The previous native property owner is missing.');for(const fragment of byNode.get(beforeSource)??[]){if(fragment.kind!=='property'||fragment.revisionPrevious||fragment.propertyPath.some(path=>path.endsWith('Change')))continue;if(fragment.ownerName===beforeProperty)applyProperty(target,fragment);else if(fragment.propertyPath[0]===W+' '+beforeProperty)applyProperty(target,{...fragment,propertyPath:fragment.propertyPath.slice(1),...(fragment.propertyIndices?{propertyIndices:fragment.propertyIndices.slice(1)}:{})});else if(!fragment.propertyPath.length&&fragment.propertyName===W+' '+beforeProperty)applyProperty(target,fragment);}}
+    if(beforeSource&&beforeProperty){const target=root.content.find((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&node.name===beforeProperty);if(!target)throw new DocumentError('ExportFailed','The previous native property owner is missing.');for(const fragment of byNode.get(beforeSource)??[]){if(fragment.kind!=='property'||fragment.revisionPrevious||fragment.propertyPath.some(path=>path.endsWith('Change')))continue;if(fragment.ownerName===beforeProperty)applyProperty(target,fragment,true);else if(fragment.propertyPath[0]===W+' '+beforeProperty)applyProperty(target,{...fragment,propertyPath:fragment.propertyPath.slice(1),...(fragment.propertyIndices?{propertyIndices:fragment.propertyIndices.slice(1)}:{})},true);else if(!fragment.propertyPath.length&&fragment.propertyName===W+' '+beforeProperty)applyProperty(target,fragment,true);}}
     const id=root.attrs.get(NATIVE_MARKER+' node'), object=root.attrs.get(NATIVE_MARKER+' object');
     if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');restored.add(fragment.nativeId);if(!fragment.runChild)return fragmentXml(fragment);const container=root.attrs.get(NATIVE_MARKER+' container');for(const key of ['node','object','container'])(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' '+key);root.content.push(fragmentXml(fragment));for(const residual of container?byNode.get(container)??[]:[])if(residual.kind==='property')applyProperty(root,residual);return root;}
     const container=root.attrs.get(NATIVE_MARKER+' container');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' identity');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' node');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' container');
@@ -130,6 +148,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     apply(root);
     for(const fragment of native.fragments)if(fragment.kind==='property'&&!fragment.nodeId&&partMap.get(fragment.sourcePart)===path){const target=fragment.styleId?root.content.find((n):n is XmlNode=>typeof n!=='string'&&n.name==='style'&&n.attrs.get(W+' styleId')===fragment.styleId):root;if(!target)throw new DocumentError('ExportFailed','A preserved native style owner is missing.');applyProperty(target,fragment);}
     sortWordSettings(root);
+    sortWordNoteProperties(root);
   }
   drawingIdentities.rewrite(parsed.values());
   for(const[path,root]of parsed){files.set(path,encoder.encode(declaration+serializeXml(root)));

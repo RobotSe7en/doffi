@@ -17,6 +17,7 @@ export function applyWordGrid(document:Document,root:HTMLElement,section:DeepRea
  const grid=section.grid;if(!grid||grid.type==='default')return;
  const view=document.defaultView!;let nodes=document.getElementsByTagName('*').length;
  for(const paragraph of root.querySelectorAll<HTMLElement>('p,h1,h2,h3,h4,h5,h6,li')){
+  if(paragraph.closest('[data-sdk-word-endnotes]'))continue;
   const computed=view.getComputedStyle(paragraph);
   if(grid.linePitch&&computed.getPropertyValue('--word-paragraph-snap-to-grid').trim()!=='0'&&(word?.adjustLineHeightInTable||!paragraph.closest('td,th'))&&(paragraph.dataset.wordLineRule??computed.getPropertyValue('--word-line-rule').trim())!=='exact'){
    const pitch=grid.linePitch*4/3,line=parseFloat(computed.lineHeight)||parseFloat(computed.fontSize)*1.2;

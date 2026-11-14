@@ -164,12 +164,14 @@ class Exporter {
       const story = id ? this.auxiliary.get(id) : undefined; if (!story || story.kind !== kind) unsupported("A section auxiliary story cannot be exported.");
       out += empty("w:" + kind + "Reference", { "w:type": type, "r:id": story!.relation });
     }
+    out+=writeNoteOptions('footnote',section.footnoteOptions)+writeNoteOptions('endnote',section.endnoteOptions);
     out += value("type", section.breakType ?? "nextPage");
     out += empty("w:pgSz", { "w:w": nativeInteger(setup.width, 20, 1), "w:h": nativeInteger(setup.height, 20, 1), ...(setup.width > setup.height ? { "w:orient": "landscape" } : {}) });
     out += empty("w:pgMar", { "w:top": nativeInteger(setup.margins.top, 20, 0), "w:right": nativeInteger(setup.margins.right, 20, 0), "w:bottom": nativeInteger(setup.margins.bottom, 20, 0), "w:left": nativeInteger(setup.margins.left, 20, 0), "w:header": nativeInteger(section.headerDistance ?? 36, 20, 0), "w:footer": nativeInteger(section.footerDistance ?? 36, 20, 0), "w:gutter": nativeInteger(section.gutter ?? 0,20,0) });
     out+=writeWordPageBorders(section.pageBorders);
     if (section.pageNumberStart !== undefined || section.pageNumberFormat) out += empty("w:pgNumType", { "w:start": section.pageNumberStart, "w:fmt": section.pageNumberFormat });
     if(section.columns){const columns=section.columns,attrs={"w:num":columns.count,"w:space":nativeInteger(columns.gap,20,0),"w:equalWidth":columns.widths?0:1,"w:sep":columns.separator?1:0};out+=columns.widths?'<w:cols'+attributes(attrs)+'>'+columns.widths.map((width,index)=>empty('w:col',{'w:w':nativeInteger(width,20,1),'w:space':nativeInteger(columns.spaces?.[index]??columns.gap,20,0)})).join('')+'</w:cols>':empty('w:cols',attrs);}
+    if(section.noEndnote!==undefined)out+=value('noEndnote',section.noEndnote?1:0);
     out += value("titlePg", section.differentFirstPage ? "1" : "0");
     if(section.gutterPosition === "right") out += value("rtlGutter",1);
     if(section.grid) out += empty("w:docGrid", {"w:type":section.grid.type,"w:linePitch":section.grid.linePitch === undefined ? undefined : nativeInteger(section.grid.linePitch,20,1),"w:charSpace":section.grid.characterSpacing});
