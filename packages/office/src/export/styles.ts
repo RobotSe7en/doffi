@@ -49,7 +49,7 @@ export class ExportStyles {
     this.ids.set(value,value);this.neutralTableId=value;return value;
   }
   style(id: string | undefined): Style | undefined { return id ? this.definitions.get(id) : undefined; }
-  private paragraphStyle(id: string | undefined): Style | undefined { return this.style(id) ?? (!id ? [...this.definitions.values()].find((style) => style.default??(style.kind === "paragraph" && style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind===style.kind&&item.default))) : undefined); }
+  private paragraphStyle(id: string | undefined): Style | undefined { return this.style(id) ?? (!id ? [...this.definitions.values()].find((style) => style.kind==='paragraph'&&(style.default??(style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind==='paragraph'&&item.default)))) : undefined); }
   paragraphContext(id: string | undefined): Css { const style = this.paragraphStyle(id); return { ...this.css.emptyStyle(), ...(style ? this.nativeValues(style).p : {}) }; }
   runContext(paragraph: string | undefined, character?: string): Css {
     const key = JSON.stringify([paragraph ?? null, character ?? null]), known = this.contexts.get(key); if (known) return known;

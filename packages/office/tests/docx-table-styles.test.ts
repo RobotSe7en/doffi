@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { strFromU8, unzipSync,strToU8,zipSync } from 'fflate';
-import { openDocument, createDocumentSession, SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS, WordStyleSchema } from '@doffi/core';
+import { openDocument, createDocumentSession,createWordDocument, SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS, WordStyleSchema } from '@doffi/core';
 import type { DocumentNode, SourceStyleNode, DocumentOperation } from '@doffi/core';
 import { importDocx, exportDocx } from '@doffi/office';
 import { tableStylesFixture,rowStylesFixture } from './table-style-fixture.js';
@@ -120,4 +120,12 @@ test('preserved native conditional properties follow their region after reorderi
  const red=(bytes:Uint8Array)=>strFromU8(unzipSync(bytes)['word/styles.xml']!).match(/<w:style[^>]*w:styleId="Red"[^>]*>([\s\S]*?)<\/w:style>/)![1]!,output=red(exportDocx(session).bytes);
  expect(output.match(/<w:tblStylePr[^>]*w:type="firstRow"[^>]*>([\s\S]*?)<\/w:tblStylePr>/)![1]).toContain('hidden');expect(output.match(/<w:tblStylePr[^>]*w:type="firstCol"[^>]*>([\s\S]*?)<\/w:tblStylePr>/)![1]).not.toContain('hidden');
  session.commit(session.prepare({protocolVersion:1,documentId:'native-condition',baseRevision:1,operations:[{op:'setWordStyle',nodeId:root,style:definition,tableCondition:{region:'firstRow',clear:true}}]}));expect(red(exportDocx(session).bytes)).not.toContain('hidden');expect(session.snapshot().metadata.word!.nativeContent?.fragments.some(fragment=>fragment.styleId==='Red'&&fragment.styleRegion==='firstRow')??false).toBe(false);session.undo();expect(red(exportDocx(session).bytes)).toContain('hidden');
+});
+
+test('new tables use isolated named defaults and switching to plain removes grid defaults while retaining direct cell formats',()=>{
+ const session=createDocumentSession(openDocument(createWordDocument({documentId:'default-grid'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'default-grid',baseRevision:session.snapshot().manifest.revision,operations})),definitions=session.snapshot().metadata.word!.styles;
+ apply([{op:'insertWordTable',nodeId:'paragraph-1',position:'after',rows:2,columns:2}]);const table=session.snapshot().metadata.word!.tables[0]!.nodeId,cells=descendants(session,table).filter(node=>node.tagName==='td');expect(session.getNode(table)!.attributes['data-word-style']).toBe('TableGrid');expect(session.snapshot().metadata.word!.styles).toEqual(definitions);expect(css(session,table)['border-top-style']).toBe('solid');expect(css(session,cells[0]!.nodeId)['padding-left']).toBe('4pt');expect(cells.every(cell=>!cell.attributes.style?.includes('border'))).toBe(true);
+ apply([{op:'formatWordCell',nodeId:cells[0]!.nodeId,properties:{'padding-left':'17pt'}},{op:'formatWordTable',nodeId:table,styleId:'TableNormal'}]);expect(css(session,table)['border-top-style']??'none').toBe('none');expect(css(session,cells[0]!.nodeId)['padding-left']).toBe('17pt');expect(css(session,cells[1]!.nodeId)['padding-left']).toBe('5.4pt');let bytes=exportDocx(session).bytes;expect(strFromU8(unzipSync(bytes)['word/document.xml']!)).not.toContain('tblBorders');
+ for(let pass=0;pass<2;pass++){const reopened=createDocumentSession(openDocument(importDocx(bytes,{documentId:'grid-reopen',unsupportedContent:'reject'}),{kind:'document'})),id=reopened.snapshot().metadata.word!.tables[0]!.nodeId;expect(css(reopened,id)['border-top-style']??'none').toBe('none');expect(css(reopened,descendants(reopened,id).find(node=>node.tagName==='td')!.nodeId)['padding-left']).toBe('17pt');bytes=exportDocx(reopened).bytes;reopened.dispose();}
+ session.undo();expect(css(session,table)['border-top-style']).toBe('solid');
 });

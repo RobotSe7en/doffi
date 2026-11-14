@@ -3,32 +3,47 @@ import type { RenderLimits } from './contracts.js';
 import { markViewNode, ownViewStyle, viewNodeRole } from './view-nodes.js';
 /** Exact row heights clip the view; all hidden cell content remains in source. */
 export function composeWordTableLayout(document: Document, limits: Readonly<RenderLimits>): void {
-    const view = document.defaultView!;
-    let count = document.querySelectorAll('*').length;
-    for (const table of document.querySelectorAll<HTMLTableElement>('table')) {
-        const rows = [...table.rows], heights = rows.map(row => { const css = view.getComputedStyle(row), rule = css.getPropertyValue('--word-row-height-rule').trim(); if (rule === 'auto') {
-            ownViewStyle(row, 'height');
-            row.style.height = 'auto';
-            return undefined;
-        } if (rule !== 'exact')
-            return undefined; const raw = row.style.height, match = /^([\d.]+)(pt|px|in|cm|mm|pc|em|rem)$/.exec(raw); if (!match)
-            return undefined; const factors: Record<string, number> = { pt: 4 / 3, px: 1, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, pc: 16, em: parseFloat(css.fontSize), rem: parseFloat(view.getComputedStyle(document.documentElement).fontSize) }; return Number(match[1]) * factors[match[2]!]!; });
-        for (const [index, row] of rows.entries())
-            for (const cell of row.cells) {
-                const span = cell.rowSpan || rows.length - index, covered = heights.slice(index, index + span);
-                if (!covered.some(height => height !== undefined))
-                    continue;
-                const target = covered.reduce<number>((sum, height, offset) => sum + (height ?? rows[index + offset]!.getBoundingClientRect().height), 0), css = view.getComputedStyle(cell), padding = (parseFloat(css.paddingTop) || 0) + (parseFloat(css.paddingBottom) || 0), border = (parseFloat(css.borderTopWidth) || 0) + (parseFloat(css.borderBottomWidth) || 0), box = markViewNode(document.createElement('div'), 'unwrap'), content = markViewNode(document.createElement('div'), 'unwrap');
-                count += 2;
-                if (count > limits.maxNodes)
-                    throw new DocumentError('ResourceLimitExceeded', 'Fixed row clipping exceeds the rendering node budget.');
-                box.className = 'sdk-word-row-clip';
-                box.style.cssText = `height:${Math.max(0, target - padding - border)}px;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:${css.verticalAlign === 'middle' ? 'center' : css.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start'}`;
-                content.style.cssText = 'display:flow-root;flex:none;min-height:0';
-                content.append(...cell.childNodes);
-                box.append(content);
-                cell.append(box);
+    const view=document.defaultView!;
+    let count=document.querySelectorAll('*').length;
+    for(const table of document.querySelectorAll<HTMLTableElement>('table')){
+        const rows=[...table.rows],heights=rows.map(row=>{
+            const css=view.getComputedStyle(row),rule=css.getPropertyValue('--word-row-height-rule').trim();
+            if(rule==='auto'){ownViewStyle(row,'height');row.style.height='auto';return undefined;}
+            if(rule!=='exact')return undefined;
+            const match=/^([\d.]+)(pt|px|in|cm|mm|pc|em|rem)$/.exec(row.style.height);
+            if(!match)return undefined;
+            const factors:Record<string,number>={pt:4/3,px:1,in:96,cm:96/2.54,mm:96/25.4,pc:16,em:parseFloat(css.fontSize),rem:parseFloat(view.getComputedStyle(document.documentElement).fontSize)};
+            return Number(match[1])*factors[match[2]!]!;
+        });
+        if(!heights.some(height=>height!==undefined))continue;
+        const targets=[0],exact=[0];
+        rows.forEach((row,index)=>{targets.push(targets[index]!+(heights[index]??row.getBoundingClientRect().height));exact.push(exact[index]!+(heights[index]!==undefined?1:0));});
+        const specs:{cell:HTMLTableCellElement;row:number;span:number;target:number;padding:number;border:number;alignment:string}[]=[];
+        for(const[index,row]of rows.entries())for(const cell of row.cells){
+            const span=Math.min(cell.rowSpan||rows.length-index,rows.length-index);
+            if(exact[index+span]===exact[index])continue;
+            const css=view.getComputedStyle(cell);
+            specs.push({cell,row:index,span,target:targets[index+span]!-targets[index]!,padding:(parseFloat(css.paddingTop)||0)+(parseFloat(css.paddingBottom)||0),border:(parseFloat(css.borderTopWidth)||0)+(parseFloat(css.borderBottomWidth)||0),alignment:css.verticalAlign});
+        }
+        const clips:{box:HTMLElement;row:number;span:number;target:number;height:number}[]=[];
+        for(const spec of specs){
+            count+=2;if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Fixed row clipping exceeds the rendering node budget.');
+            const box=markViewNode(document.createElement('div'),'unwrap'),content=markViewNode(document.createElement('div'),'unwrap'),height=Math.max(0,spec.target-spec.padding-spec.border);
+            box.className='sdk-word-row-clip';box.style.cssText=`height:${height}px;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:${spec.alignment==='middle'?'center':spec.alignment==='bottom'?'flex-end':'flex-start'}`;
+            content.style.cssText='display:flow-root;flex:none;min-height:0';content.append(...spec.cell.childNodes);box.append(content);spec.cell.append(box);
+            clips.push({box,row:spec.row,span:spec.span,target:spec.target,height});
+        }
+        // Collapsed borders may come from the table or adjacent cells and are
+        // absent from this cell's computed border widths. Correct their actual
+        // contribution with bounded, batched reads and writes.
+        for(let pass=0;pass<2;pass++){
+            const measured=[0];rows.forEach((row,index)=>measured.push(measured[index]!+row.getBoundingClientRect().height));
+            let changed=false;
+            for(const clip of clips){const excess=measured[clip.row+clip.span]!-measured[clip.row]!-clip.target;
+                if(excess<=.05)continue;const height=Math.max(0,clip.height-excess);if(clip.height-height<=.05)continue;clip.height=height;clip.box.style.height=height+'px';changed=true;
             }
+            if(!changed)break;
+        }
     }
 }
 /** Exclude clipped geometry from pagination and source hit projections. */

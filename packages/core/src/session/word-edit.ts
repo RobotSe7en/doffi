@@ -97,7 +97,10 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     if (!/^p$|^h[1-6]$/.test(node.tagName)) fail('Insert a table beside an existing paragraph.');
     checkLimit(operation.rows * operation.columns * 3, limits.maxNodes);
     const width=operation.width??metadata.pageSetup.width-metadata.pageSetup.margins.left-metadata.pageSetup.margins.right;
-    const source='<table style="border-collapse:collapse;table-layout:fixed;width:'+width+'pt">'+Array.from({length:operation.rows},()=>'<tr>'+Array.from({length:operation.columns},()=>'<td style="border:0.5pt solid #000000;padding:4pt;vertical-align:top"><p></p></td>').join('')+'</tr>').join('')+'</table>';
+    const tableStyle=word.styles.find(style=>style.kind==='table'&&style.styleId==='TableGrid'&&style.components);
+    const escapeStyle=(value:string)=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
+    const source='<table'+(tableStyle?' data-word-style="'+escapeStyle(tableStyle.styleId)+'" class="'+escapeStyle(tableStyle.cssClass)+'"':'')+' style="border-collapse:collapse;table-layout:fixed;width:'+width+'pt">'+Array.from({length:operation.rows},()=>'<tr>'+Array.from({length:operation.columns},()=>'<td'+(tableStyle?'':' style="border:0.5pt solid #000000;padding:4pt;vertical-align:top"')+'><p></p></td>').join('')+'</tr>').join('')+'</table>';
+
     const parent=edit.sourceParent(operation.nodeId),siblings=parse().peekNode(parent)!.childNodeIds,index=siblings.indexOf(operation.nodeId);
     const reference=operation.position==='before'?operation.nodeId:siblings[index+1];
     const tableId=edit.insertSource(parent,source,reference).rootNodeIds[0]!;

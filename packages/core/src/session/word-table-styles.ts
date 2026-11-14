@@ -67,7 +67,7 @@ export function refreshWordTableStyles(word: WordMetadata, edit: DocumentEdit, p
                         return;
                     let current = pRun;
                     if (/^p$|^h[1-6]$/.test(node.tagName)) {
-                        const style = word.styles.find(style => style.styleId === node.attributes['data-word-style'] && style.kind === 'paragraph'), p: Record<string, string> = { ...value.p }, chain: typeof word.styles = [];
+                        const style = word.styles.find(style => style.styleId === node.attributes['data-word-style'] && style.kind === 'paragraph')??(!node.attributes['data-word-style']?word.styles.find(style=>style.kind==='paragraph'&&style.default)??word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal'):undefined), p: Record<string, string> = { ...value.p }, chain: typeof word.styles = [];
                         const seen = new Set<string>();
                         for (let item = style; item && !seen.has(item.styleId); item = word.styles.find(next => next.styleId === item!.basedOn)) {
                             seen.add(item.styleId);
@@ -129,5 +129,6 @@ export function wordTableStyleTargets(word: WordMetadata, source: ParsedHtml, be
                 if (node.tagName === 'table')
                     ids.add(node.nodeId);
     }
+    for(const table of word.tables)if(!before.hasNode(table.nodeId)&&source.hasNode(table.nodeId))ids.add(table.nodeId);
     return ids;
 }
