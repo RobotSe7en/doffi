@@ -1,3 +1,4 @@
+import{wordTableRepeatHeader}from'./word-table-layout.js';
 import { DocumentError } from "@doffi/core";
 import type { RenderedPage, RenderLimits } from "./contracts.js";
 import { markViewNode, viewNodeRole } from "./view-nodes.js";
@@ -17,7 +18,7 @@ export function repeatTableHeaders(document: Document, root: HTMLElement, source
       const rows: HTMLTableRowElement[] = [];
       for (const row of table.rows) {
         if (viewNodeRole(row) === "remove") continue;
-        if (row.dataset.wordRepeatHeader !== "true" && row.parentElement?.localName !== "thead") break;
+        if (!wordTableRepeatHeader(row)) break;
         rows.push(row);
       }
       if (!rows.length) continue;

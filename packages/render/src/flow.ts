@@ -1,3 +1,4 @@
+import{wordTableRepeatHeader}from'./word-table-layout.js';
 import { DocumentError } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
 import { isMeasuredViewContent, markViewNode, ownViewAttribute, ownViewStyle, viewNodeRole } from "./view-nodes.js";
@@ -48,7 +49,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
   }
   function headerRows(table: HTMLTableElement): HTMLTableRowElement[] {
     const rows = [...table.rows].filter((row) => viewNodeRole(row) !== "remove"&&view.getComputedStyle(row).display!=="none"&&view.getComputedStyle(row).visibility!=="collapse"), result: HTMLTableRowElement[] = [];
-    for (const row of rows) { if (row.dataset.wordRepeatHeader !== "true" && row.parentElement?.localName !== "thead") break; result.push(row); }
+    for (const row of rows) { if (!wordTableRepeatHeader(row)) break; result.push(row); }
     return result;
   }
   const headerHeight = (table: HTMLTableElement): number => headerRows(table).reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);

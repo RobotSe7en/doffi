@@ -89,6 +89,7 @@ export interface StyleValues {
   r: Css;
   table: Css;
   cell: Css;
+  row?:Css;
   numbering?: { id: string; level: number };
   tabs?: TabStops;
   outline?: number;
@@ -126,7 +127,6 @@ export class DocxStyles {
   readonly defaultParagraph: string | undefined;
   readonly defaultCharacter: string | undefined;
   readonly defaultTable: string | undefined;
-  private readonly conditional = new Map<string, Map<string, StyleValues>>();
   private readonly numberProperties = new Map<string, Css>();
   private readonly definitions = new Map<string, XmlNode>();
   private readonly resolved = new Map<string, StyleValues>();
@@ -248,7 +248,7 @@ export class DocxStyles {
       const conditions: NonNullable<
         WordMetadata["styles"][number]["conditions"]
       > = [];
-      const conditional = new Map<string, StyleValues>();
+      const conditional = new Set<string>();
       this.styles.push({
         styleId: id,
         kind: kind as "paragraph" | "character" | "table" | "numbering",
@@ -299,8 +299,6 @@ export class DocxStyles {
           fail(region, "A conditional table region is invalid.");
         check(region, ["pPr", "rPr", "tblPr", "tcPr", "trPr"]);
         const row = child(region, "trPr");
-        if (row && elements(row).length)
-          unsupported(row, "Conditional row properties are not supported.");
         const table = child(region, "tblPr");
         if (type !== "wholeTable" && child(table, "tblInd"))
           unsupported(
@@ -309,21 +307,21 @@ export class DocxStyles {
           );
         const values: StyleValues = {
           p: this.paragraph(child(region, "pPr")),
-          r: this.run(child(region, "rPr"),{},true),
-          table: this.table(table),
+          r: this.run(child(region, "rPr")),
+          table: this.table(table),row:this.row(row),
           cell: {
             ...this.margins(child(table, "tblCellMar")),
             ...this.cell(child(region, "tcPr")),
           },
         };
-        conditional.set(type, values);
+        conditional.add(type);
         const cssClass = metadata.cssClass + "-" + type;
         conditions.push({
           region: type as NonNullable<
             typeof metadata.conditions
           >[number]["region"],
           cssClass,
-          components:Object.fromEntries((['p','r','table','cell']as const).map(key=>[key,this.component(cssClass+'-'+key,values[key])])),
+          components:Object.fromEntries((['p','r','table','cell','row']as const).map(key=>[key,this.component(cssClass+'-'+key,values[key]??{})])),
         });
         this.css.push(
           "." +
@@ -338,7 +336,6 @@ export class DocxStyles {
             "}",
         );
       }
-      this.conditional.set(id, conditional);
       if (["1", "true", "on"].includes(attr(style, "default") ?? "")) {
         if (kind === "paragraph") this.defaultParagraph = id;
         if (kind === "character") this.defaultCharacter = id;
@@ -360,12 +357,12 @@ export class DocxStyles {
         this.paragraph(child(definition, "pPr")),
       );
       style.runProperties = Object.keys(
-        this.run(child(definition, "rPr"), parent.r, true),
+        this.run(child(definition, "rPr"), parent.r, style.kind!=="table"),
       );
       if(style.kind==='table'||style.kind==='paragraph'||style.kind==='character')style.components={
         p:this.component(style.cssClass+'-p',this.paragraph(child(definition,'pPr'))),
-        r:this.component(style.cssClass+'-r',this.run(child(definition,'rPr'),{},true)),
-        ...(style.kind==='table'?{table:this.component(style.cssClass+'-table',this.table(child(definition,'tblPr'))),cell:this.component(style.cssClass+'-cell',{...this.margins(child(child(definition,'tblPr'),'tblCellMar')),...this.cell(child(definition,'tcPr'))})}:{})
+        r:this.component(style.cssClass+'-r',this.run(child(definition,'rPr'),{},style.kind!=='table')),
+        ...(style.kind==='table'?{table:this.component(style.cssClass+'-table',this.table(child(definition,'tblPr'))),row:this.component(style.cssClass+'-row',this.row(child(definition,'trPr'))),cell:this.component(style.cssClass+'-cell',{...this.margins(child(child(definition,'tblPr'),'tblCellMar')),...this.cell(child(definition,'tcPr'))})}:{})
       };
       const weight =
         style.kind === "character" ? 4 : style.kind === "paragraph" ? 3 : 1;
@@ -989,6 +986,16 @@ export class DocxStyles {
       result["background-color"] = this.color(shade, "fill") ?? "transparent";
     return result;
   }
+  row(properties:XmlNode|undefined):Css{
+    if(!properties)return{};const shared=properties.part===this.stylePart;
+    check(properties,['cnfStyle','divId','gridBefore','gridAfter','wBefore','wAfter','cantSplit','trHeight','tblHeader','tblCellSpacing','jc','hidden','trPrChange','ins','del']);
+    for(const name of ['gridBefore','gridAfter','hidden','jc',...(shared?['trHeight','cnfStyle','divId','wBefore','wAfter','trPrChange','ins','del']:[])] as const){const value=child(properties,name);if(value)unsupported(value,'This row property remains native.');}
+    this.cellSpacing(properties);const result:Css={};
+    const split=child(properties,'cantSplit');if(split)result['break-inside']=on(split)?'avoid':'auto';
+    const header=child(properties,'tblHeader');if(header)result['--word-row-repeat-header']=on(header)?'1':'0';
+    const height=child(properties,'trHeight');if(height){const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(height,'This row height rule remains native.');result.height=pt(number(attr(height,'val'),height,0)/20);result['--word-row-height-rule']=rule;}
+    return result;
+  }
   cellSpacing(properties: XmlNode | undefined): void {
     const spacing = child(properties, "tblCellSpacing");
     if (spacing && number(attr(spacing, "w"), spacing, 0) !== 0)
@@ -1078,7 +1085,7 @@ export class DocxStyles {
     this.cellSpacing(child(source, "trPr"));
     const result: StyleValues = {
       p: { ...parent.p, ...this.paragraph(pPr) },
-      r: { ...parent.r, ...this.run(child(source, "rPr"), parent.r, true) },
+      r: { ...parent.r, ...this.run(child(source, "rPr"), parent.r, attr(source,"type")!=="table") },
       table: { ...parent.table, ...this.table(tableProperties) },
       cell: {
         ...parent.cell,
@@ -1155,34 +1162,6 @@ export class DocxStyles {
     const item = this.styles.find((style) => style.styleId === id);
     if (!item) throw new Error("Missing style");
     return item.cssClass;
-  }
-  tableRegion(id: string | undefined, regions: readonly string[]): StyleValues {
-    const result = empty();
-    if (!id) return result;
-    const chain: string[] = [];
-    let current: string | undefined = id;
-    const seen = new Set<string>();
-    while (current) {
-      if (seen.has(current))
-        throw new DocumentError(
-          "InvalidDocument",
-          "Table style inheritance is cyclic.",
-        );
-      seen.add(current);
-      chain.push(current);
-      current = this.styles.find((item) => item.styleId === current)?.basedOn;
-    }
-    for (const region of ["wholeTable", ...regions])
-      for (const style of [...chain].reverse()) {
-        const value = this.conditional.get(style)?.get(region);
-        if (value) {
-          Object.assign(result.p, value.p);
-          Object.assign(result.r, value.r);
-          Object.assign(result.table, value.table);
-          Object.assign(result.cell, value.cell);
-        }
-      }
-    return result;
   }
   numberingParagraph(id: string, level: number): Css {
     return this.numberProperties.get(id + ":" + level) ?? {};

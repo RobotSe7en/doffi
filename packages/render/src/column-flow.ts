@@ -1,3 +1,4 @@
+import{wordTableRepeatHeader}from'./word-table-layout.js';
 import { DocumentError,isDocumentTextBoundary } from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
 import { pageFlow } from './flow.js';
@@ -35,7 +36,7 @@ export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:
   };
   measure(flow);
   for(const table of flow.querySelectorAll<HTMLTableElement>('table')){
-   const header:HTMLTableRowElement[]=[];for(const row of table.rows){if(viewNodeRole(row)==='remove')continue;if(row.dataset.wordRepeatHeader!=='true'&&row.parentElement?.localName!=='thead')break;header.push(row);}if(!header.length)continue;
+   const header:HTMLTableRowElement[]=[];for(const row of table.rows){if(viewNodeRole(row)==='remove')continue;if(!wordTableRepeatHeader(row))break;header.push(row);}if(!header.length)continue;
    const bounds=nodes.get(table)!;
    for(let column=bounds.from+1;column<=bounds.to;column++){
     reserve(header.reduce((total,row)=>total+row.querySelectorAll('*').length+1,0)+(table.querySelector(':scope > colgroup')?.querySelectorAll('*').length??0)+3);

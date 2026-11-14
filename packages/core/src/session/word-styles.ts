@@ -46,7 +46,7 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         Object.assign(values.p, operation.paragraphProperties);
         Object.assign(values.r, operation.runProperties);
         const baseStyle=definition.basedOn?old.get(definition.basedOn):undefined,baseRun=baseStyle?resolver.classStyle(baseStyle.cssClass):resolver.emptyStyle();
-        for(const[key,active]of [['font-weight','bold'],['font-style','italic'],['font-variant','small-caps'],['text-transform','uppercase']]as const){const value=operation.runProperties?.[key];if(value===undefined)continue;const enabled=key==='font-weight'?value==='bold'||Number(value)>=600:value===active,previous=key==='font-weight'?baseRun[key]==='bold'||Number(baseRun[key])>=600:baseRun[key]===active;if(enabled===previous)delete values.r[key];else values.r[key]=active;}
+        if(definition.kind!=='table')for(const[key,active]of [['font-weight','bold'],['font-style','italic'],['font-variant','small-caps'],['text-transform','uppercase']]as const){const value=operation.runProperties?.[key];if(value===undefined)continue;const enabled=key==='font-weight'?value==='bold'||Number(value)>=600:value===active,previous=key==='font-weight'?baseRun[key]==='bold'||Number(baseRun[key])>=600:baseRun[key]===active;if(enabled===previous)delete values.r[key];else values.r[key]=active;}
 
         definition.paragraphProperties = Object.keys(values.p);
         definition.runProperties = Object.keys(values.r);
@@ -103,7 +103,7 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         return known; if (active.has(style.styleId))
         fail('Style inheritance contains a cycle.'); if (active.size >= limits.maxDepth)
         throw new DocumentError('ResourceLimitExceeded', 'Style inheritance exceeds the depth budget.'); active.add(style.styleId); const parent = style.basedOn ? definitions.get(style.basedOn) ?? fail('The base style is missing.') : undefined; if (parent && parent.kind !== style.kind)
-        fail('A style must inherit from the same native kind.'); const base = parent ? resolve(parent) : { p: {}, r: {}, other: {} }, values = own.get(style.styleId)!; const result = { p: { ...base.p, ...values.p }, r: applyWordStyleRun(base.r,values.r), other: { ...base.other, ...values.other } }; resolved.set(style.styleId, result); active.delete(style.styleId); ordered.push(style); return result; }
+        fail('A style must inherit from the same native kind.'); const base = parent ? resolve(parent) : { p: {}, r: {}, other: {} }, values = own.get(style.styleId)!; const result = { p: { ...base.p, ...values.p }, r: style.kind==='table'?{...base.r,...values.r}:applyWordStyleRun(base.r,values.r), other: { ...base.other, ...values.other } }; resolved.set(style.styleId, result); active.delete(style.styleId); ordered.push(style); return result; }
     for (const style of word.styles)
         resolve(style);
     const entries: {

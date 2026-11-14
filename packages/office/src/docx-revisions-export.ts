@@ -8,7 +8,7 @@ import type { ExportCss } from './export/css.js';
 import type { ExportStyles } from './export/styles.js';
 import type { Css } from './ooxml/styles.js';
 import { attributes, empty, value, orderedProperties } from './export/xml.js';
-import { rowHeightProperties,paragraphProperties, paragraphKeys, runProperties, runKeys, tableProperties, cellProperties, difference } from './export/properties.js';
+import { rowProperties,paragraphProperties, paragraphKeys, runProperties, runKeys, tableProperties, cellProperties, difference } from './export/properties.js';
 import { nativeInteger } from './export/values.js';
 export class ExportWordRevisions {
     private next = 0;
@@ -130,10 +130,8 @@ export class ExportWordRevisions {
         if (!entry)
             return '';
         const old = this.old(node, entry.revision, {});
-        let props = old.css['break-inside'] === 'avoid' ? '<w:cantSplit/>' : '';
-        props+=rowHeightProperties(old.css);
-        if (old.node.attrs['data-word-repeat-header'])
-            props += '<w:tblHeader/>';
+        const css={...this.directTableProperties(old.node)},header=old.node.attrs['data-word-repeat-header'];if(header!==undefined)css['--word-row-repeat-header']=header==='true'?'1':'0';
+        const props=rowProperties(css);
         return this.change(entry.revision, 'trPr', props, entry.owner);
     }
     grid(node:SourceElement):string{const entry=this.revision(node,'tableGrid');if(!entry)return'';return this.change(entry.revision,'tblGrid',(entry.revision.before?.grid??[]).map(width=>empty('w:gridCol',{'w:w':nativeInteger(width)})).join(''),entry.owner);}

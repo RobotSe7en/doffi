@@ -47,3 +47,9 @@ export function wordRowVisibleRect(owner: Element, rect: DOMRect): DOMRect | und
         return;
     return clipped ? new DOMRect(left, top, right - left, bottom - top) : rect;
 }
+
+/** An explicit row override wins over the table style's repeat-header flag. */
+export function wordTableRepeatHeader(row:HTMLTableRowElement):boolean{
+ const direct=row.dataset.wordRepeatHeader;if(direct!==undefined)return direct==='true';
+ return row.parentElement?.localName==='thead'||row.ownerDocument.defaultView!.getComputedStyle(row).getPropertyValue('--word-row-repeat-header').trim()==='1';
+}

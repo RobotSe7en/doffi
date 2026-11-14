@@ -64,12 +64,11 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
         check(previous, ['cnfStyle', 'divId', 'gridBefore', 'gridAfter', 'wBefore', 'wAfter', 'cantSplit', 'trHeight', 'tblHeader', 'tblCellSpacing', 'jc', 'hidden']);
         if (on(child(previous, 'hidden')) || child(previous, 'gridBefore') || child(previous, 'gridAfter'))
             unsupported(change, 'This row format revision remains native.');
-        if (on(child(previous, 'cantSplit')))
-            css['break-inside'] = 'avoid';
+        if (child(previous,'cantSplit'))css['break-inside']=on(child(previous,'cantSplit'))?'avoid':'auto';
         const height = child(previous, 'trHeight');
         if (height)
             {const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(change,'This previous row height rule remains native.');css.height = pt(number(attr(height, 'val'), height,0) / 20);css['--word-row-height-rule']=rule;}
-        attributes['data-word-repeat-header'] = on(child(previous, 'tblHeader')) ? 'true' : null;
+        attributes['data-word-repeat-header'] = child(previous,'tblHeader')?(on(child(previous,'tblHeader'))?'true':'false'):null;
     }
     attributes.style = declarations(css) || null;
     word.revisions.push({ nodeId: owner.attrs['data-node-id']!, revisionId: owner.attrs['data-node-id'] + '-format-' + property, sourceId, kind: 'format', property, before, ...(attr(change, 'author') !== undefined ? { author: attr(change, 'author')! } : {}), ...(attr(change, 'date') !== undefined ? { date: attr(change, 'date')! } : {}) });

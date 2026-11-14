@@ -1,4 +1,4 @@
-import { DocumentError } from '@doffi/core';
+import { DocumentError,SourceStyleResolver,DEFAULT_DOCUMENT_READ_LIMITS } from '@doffi/core';
 import type { DocumentEditingSession, DocumentOperation } from '@doffi/core';
 export interface WordTableSelection { readonly paragraphId?:string;readonly tableId?:string;readonly cellId?:string }
 /** Transient Word table forms delegate every write to the shared source transaction. */
@@ -29,7 +29,8 @@ export function createWordTableControls(parent:ShadowRoot,before:HTMLElement,ses
   const widths=field('各列宽度（磅，以逗号分隔）',(grid??Array.from({length:columnCount},()=>120)).join(','),'text');button('设置列宽',()=>change({kind:'resize',grid:widths.value.split(',').map(Number)}));
   button('平均分布各列',()=>{const latest=session.snapshot().metadata.word?.tables.find(table=>table.nodeId===tableId)?.grid??grid;if(!latest)return;change({kind:'resize',grid:latest.map(()=>latest.reduce((a,b)=>a+b,0)/latest.length)});});
   const heightRule=choose('行高规则',[['atLeast','最小值'],['exact','固定值'],['auto','自动']],/--word-row-height-rule\s*:\s*(auto|atLeast|exact)/.exec(session.getNode(rowIds[0]!)!.attributes.style??'')?.[1]??'atLeast'),height=field('行高（磅）',20);button('设置行高',()=>{const latest=session.getNode(tableId)!;const count=latest.childNodeIds.flatMap(id=>{const node=session.getNode(id)!;return node.tagName==='tr'?[id]:node.childNodeIds;}).length;apply([{op:'editWordTable',nodeId:tableId,change:{kind:'resize',rowHeights:Array.from({length:count},()=>Number(height.value))}},{op:'formatWordTable',nodeId:tableId,rowHeightRule:heightRule.value as 'atLeast'|'exact'|'auto'}]);});
-  const headers=field('重复表头行数',rowIds.filter(id=>session.getNode(id)!.attributes['data-word-repeat-header']==='true').length);button('设置重复表头',()=>apply([{op:'formatWordTable',nodeId:tableId,repeatHeaderRows:Number(headers.value)}]));
+  const rowStyleResolver=new SourceStyleResolver(session.snapshot().styles.map(sheet=>sheet.css),DEFAULT_DOCUMENT_READ_LIMITS),projectRow=(id:string):Parameters<typeof rowStyleResolver.get>[0]=>{const node=session.getNode(id)!;return{tag:node.tagName,attrs:node.attributes,parent:node.parentNodeId?projectRow(node.parentNodeId):undefined};};let headerCount=0;for(const id of rowIds){const row=session.getNode(id)!,direct=row.attributes['data-word-repeat-header'];if(direct!==undefined?direct!=='true':rowStyleResolver.get(projectRow(id))['--word-row-repeat-header']!=='1')break;headerCount++;}
+  const headers=field('重复表头行数',headerCount);button('设置重复表头',()=>apply([{op:'formatWordTable',nodeId:tableId,repeatHeaderRows:Number(headers.value)}]));
   const split=choose('跨页断行',[['allow','允许'],['avoid','禁止']],'allow');button('设置跨页断行',()=>apply([{op:'formatWordTable',nodeId:tableId,allowRowSplit:split.value==='allow'}]));
   const alignment=choose('单元格垂直对齐',[['top','顶端'],['middle','居中'],['bottom','底端']],'top'),direction=choose('单元格文字方向',[['lrTb','横排'],['tbRl','从上到下'],['btLr','从下到上']],'lrTb');
   const fill=field('单元格底纹','#ffffff','color'),border=field('单元格边框颜色','#000000','color'),borderWidth=field('边框宽度（磅）',0.5),padding=field('单元格边距（磅）',4);borderWidth.step=padding.step='0.1';

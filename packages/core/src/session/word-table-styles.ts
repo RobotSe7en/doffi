@@ -4,7 +4,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleNode } from '../document/source-css.js';
 import type { SourceStyleEdit } from './source-styles.js';
-import { resolveWordTableStyle, resolveWordStyleRun, wordTableRegions } from '../word-style-context.js';
+import { resolveWordTableStyle, resolveWordStyleRun, wordTableRegions,wordTableRowRegions,wordTableRowCellProperties } from '../word-style-context.js';
 const canonical = (css: Readonly<Record<string, string>>) => JSON.stringify(Object.fromEntries(Object.entries(css).flatMap(([key, value]) => key.startsWith('--') || value.includes('var(') ? [[key, value]] : expandSourceCssProperty(key, value)).sort(([a], [b]) => a!.localeCompare(b!))));
 const runKey = (key: string) => /^(?:font-|color$|background-color$|text-(?:decoration|transform)|vertical-align$|letter-spacing$|word-spacing$|--word-(?:font|run|kerning|language|bold|italic)|--office-(?:font|text))/.test(key);
 const run = (css: Record<string, string>) => Object.fromEntries(Object.entries(css).filter(([key]) => runKey(key)));
@@ -43,6 +43,8 @@ export function refreshWordTableStyles(word: WordMetadata, edit: DocumentEdit, p
             Object.assign(defaults, read(word.defaultRunCssClass));
         const occupied: number[] = Array(info.grid.length).fill(0), mask = info.lookMask ?? setting('tableLookMask') ?? 0;
         rows.forEach((rowId, rowIndex) => {
+            const rowRegions=wordTableRowRegions(rowIndex,rows.length,info.grid.length,mask,info.rowBandSize??setting('rowBandSize')??0,info.columnBandSize??setting('columnBandSize')??0),rowStyle=resolveWordTableStyle(word,read,styleId,rowRegions),rowCell=wordTableRowCellProperties(rowStyle.cell);
+            assign(rowId,'row',rowStyle.row);
             let column = 0;
             for (const cellId of source.peekNode(rowId)!.childNodeIds) {
                 const cell = source.peekNode(cellId)!;
@@ -58,7 +60,7 @@ export function refreshWordTableStyles(word: WordMetadata, edit: DocumentEdit, p
                     inner['border-top'] = 'var(--word-border-inside-h)';
                 if (base.table['--word-border-inside-v'] && column > 0)
                     inner['border-left'] = 'var(--word-border-inside-v)';
-                assign(cellId, 'cell', { 'padding-left': '5.4pt', 'padding-right': '5.4pt', ...value.cell, ...inner });
+                assign(cellId, 'cell', { 'padding-left': '5.4pt', 'padding-right': '5.4pt', ...value.cell,...rowCell, ...inner });
                 const visit = (id: string, pRun: Record<string, string>) => {
                     const node = source.peekNode(id)!;
                     if (node.tagName === 'table')

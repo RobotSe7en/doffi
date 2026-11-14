@@ -41,7 +41,7 @@ export const WordStorySchema = z.strictObject({
   kind: z.enum(["main", "header", "footer", "comment", "textBox",'footnote','endnote']),
   rootNodeId: IdentifierSchema,
 });
-const WordStyleComponentsSchema=z.strictObject({p:IdentifierSchema.optional(),r:IdentifierSchema.optional(),table:IdentifierSchema.optional(),cell:IdentifierSchema.optional()});
+const WordStyleComponentsSchema=z.strictObject({p:IdentifierSchema.optional(),r:IdentifierSchema.optional(),table:IdentifierSchema.optional(),cell:IdentifierSchema.optional(),row:IdentifierSchema.optional()});
 export const WordStyleSchema = z.strictObject({
   name:z.string().optional(),aliases:z.string().optional(),default:z.boolean().optional(),customStyle:z.boolean().optional(),hidden:z.boolean().optional(),semiHidden:z.boolean().optional(),unhideWhenUsed:z.boolean().optional(),qFormat:z.boolean().optional(),locked:z.boolean().optional(),uiPriority:z.number().int().nonnegative().max(65535).optional(),outlineLevel:z.number().int().min(0).max(9).optional(),
   styleId: IdentifierSchema,
@@ -181,7 +181,7 @@ export const WordMetadataSchema = z.strictObject({
     z.strictObject({
       nodeId: IdentifierSchema,
       grid: z.array(z.number().positive()).min(1),
-      styleContexts:z.array(z.strictObject({nodeId:IdentifierSchema,cssClass:IdentifierSchema,kind:z.enum(['table','cell','paragraph','run'])})).optional(),
+      styleContexts:z.array(z.strictObject({nodeId:IdentifierSchema,cssClass:IdentifierSchema,kind:z.enum(['table','row','cell','paragraph','run'])})).optional(),
       lookMask: z.number().int().min(0).max(65535).optional(),
       rowBandSize: z.number().int().nonnegative().optional(),
       columnBandSize: z.number().int().nonnegative().optional(),

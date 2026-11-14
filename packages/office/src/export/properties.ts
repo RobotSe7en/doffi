@@ -13,6 +13,7 @@ export function rowHeightProperties(css:Css):string{const rule=css['--word-row-h
 const toggle = (name: string, enabled: boolean): string => value(name, enabled ? "1" : "0");
 const shade = (css: Css): string => css["background-color"] === undefined ? "" : empty("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": color(css["background-color"], css.color) ?? "auto" });
 const bold = (value: string | undefined): boolean => value === "bold" || Number(value) >= 600;
+export function rowProperties(css:Css):string{return(css['break-inside']!==undefined?toggle('cantSplit',css['break-inside']==='avoid'||css['break-inside']==='avoid-page'):'')+rowHeightProperties(css)+(css['--word-row-repeat-header']!==undefined?toggle('tblHeader',css['--word-row-repeat-header']==='1'):'');}
 /** Style toggle values are relative to basedOn; direct formatting is absolute. */
 export function runProperties(css: Css, inherited: Css = {}, style = false, role?: string): string {
   let out = ""; const fonts: Record<string, string> = {};

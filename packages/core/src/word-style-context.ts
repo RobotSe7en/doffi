@@ -5,7 +5,7 @@ type Css = Record<string, string>;
 type Word = DeepReadonly<WordMetadata>;
 type Style = Word['styles'][number];
 type Read = (name: string) => Css;
-const empty = () => ({ p: {} as Css, r: {} as Css, table: {} as Css, cell: {} as Css });
+const empty = () => ({ p: {} as Css, r: {} as Css, table: {} as Css, cell: {} as Css,row:{} as Css });
 const toggles: Record<string, [
     string,
     string
@@ -48,28 +48,36 @@ export function resolveWordTableStyle(word: Word, read: Read, id: string | undef
     const result = empty(), styles = chain(word, id);
     for (const style of styles) {
         if (style.components)
-            for (const key of ['p', 'r', 'table', 'cell'] as const) {
+            for (const key of ['p', 'r', 'table', 'cell','row'] as const) {
                 const name = style.components[key];
                 if (name)
-                    result[key] = key === 'r' ? applyWordStyleRun(result.r, read(name)) : { ...result[key], ...read(name) };
+                    result[key] = {...result[key],...read(name)};
             }
         else {
             Object.assign(result.table, read(style.cssClass));
         }
     }
-    for (const region of ['wholeTable', ...regions])
+    for (const region of regions.filter(region=>region!=='wholeTable'))
         for (const style of styles) {
             const condition = style.conditions?.find(item => item.region === region);
             if (!condition)
                 continue;
             if (condition.components)
-                for (const key of ['p', 'r', 'table', 'cell'] as const) {
+                for (const key of ['p', 'r', 'table', 'cell','row'] as const) {
                     const name = condition.components[key];
                     if (name)
-                        result[key] = key === 'r' ? applyWordStyleRun(result.r, read(name)) : { ...result[key], ...read(name) };
+                        result[key] = {...result[key],...read(name)};
                 }
             else
                 Object.assign(result.cell, read(condition.cssClass));
         }
     return result;
 }
+
+const regionOrder=['band1Horz','band2Horz','band1Vert','band2Vert','firstCol','lastCol','firstRow','lastRow','nwCell','neCell','swCell','seCell'];
+/** Only four column samples are needed to cover both bands and table edges. */
+export function wordTableRowRegions(row:number,rows:number,columns:number,mask:number,rowBand=0,columnBand=0):string[]{
+ const start=mask&128?1:0,selected=new Set([0,columns-1,start,start+columnBand].filter(column=>column>=0&&column<columns).flatMap(column=>wordTableRegions(row,column,rows,columns,1,mask,rowBand,columnBand)));
+ return regionOrder.filter(region=>selected.has(region));
+}
+export function wordTableRowCellProperties(css:Record<string,string>):Record<string,string>{return Object.fromEntries(Object.entries(css).filter(([key])=>key.startsWith('padding-')||key==='white-space'||key==='vertical-align'));}

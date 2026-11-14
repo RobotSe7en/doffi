@@ -196,7 +196,7 @@ test("direct table and cell geometry overrides inherited geometry", () => {
   expect(sourceCss(model,cells[1]!)).toContain("padding-left:10pt");
   expect(sourceCss(model,cells[1]!)).toContain("padding-right:40pt");
 });
-test("preserves whole-table geometry and region-specific cell margins", () => {
+test("preserves ignored wholeTable definitions and applies active region-specific margins", () => {
   const bytes = mutateDocx("02-table-merges.docx", {
     "word/styles.xml": () => styles(
       '<w:style w:type="table" w:styleId="T"><w:tblPr><w:tblInd w:w="400"/></w:tblPr>' +
@@ -207,11 +207,11 @@ test("preserves whole-table geometry and region-specific cell margins", () => {
   });
   const model = reopen(bytes);
   const id = model.snapshot().metadata.word!.tables[0]!.nodeId;
-  expect(sourceCss(model,model.getNode(id)!)).toContain("margin-left:40pt");
+  expect(sourceCss(model,model.getNode(id)!)).toContain("margin-left:20pt");
   const cells = descendants(model, id).filter((node) => node.tagName === "td");
   expect(sourceCss(model,cells[0]!)).toContain("padding-left:50pt");
-  expect(sourceCss(model,cells[2]!)).toContain("padding-left:30pt");
-  expect(cells.every((node) => sourceCss(model,node).includes("padding-right:40pt"))).toBe(true);
+  expect(sourceCss(model,cells[2]!)).toContain("padding-left:5.4pt");
+  expect(cells.every((node) => sourceCss(model,node).includes("padding-right:5.4pt"))).toBe(true);
 });
 test("rejects table indentation in a conditional cell region", () => {
   const bytes = mutateDocx("02-table-merges.docx", {

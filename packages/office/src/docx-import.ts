@@ -1,4 +1,4 @@
-import {resolveWordTableStyle,wordTableRegions} from '@doffi/core';
+import {resolveWordTableStyle,wordTableRegions,wordTableRowRegions,wordTableRowCellProperties} from '@doffi/core';
 import {WordMoveReader}from'./docx-moves.js';
 import{readWordPageBorders}from'./docx-page-borders.js';
 import {readWordFormatRevision}from'./docx-revisions-import.js';
@@ -29,7 +29,6 @@ import {
   DocxStyles,
   declarations,
   escapeHtml,
-  pt,
   inheritedRun,
   mergeTabs,
   tableLookMask,
@@ -202,7 +201,7 @@ class Importer {
     }
   }
   private activeTable:WordMetadata['tables'][number]|undefined;
-  private context(node:Html,kind:'table'|'cell'|'paragraph'|'run',css:Css,info=this.activeTable):void{
+  private context(node:Html,kind:'table'|'row'|'cell'|'paragraph'|'run',css:Css,info=this.activeTable):void{
     if(!info)return;const cssClass='wt-'+this.id(node);info.styleContexts??=[];info.styleContexts.push({nodeId:this.id(node),kind,cssClass});
     node.attrs.class=[node.attrs.class,cssClass].filter(Boolean).join(' ');this.styles.css.push(('.'+cssClass).repeat(5)+'{'+declarations(css)+'}');
   }
@@ -1395,38 +1394,14 @@ class Importer {
           "Row-level table property exceptions are not yet supported.",
         );
       const rowProperties = child(row, "trPr");
-      this.styles.cellSpacing(rowProperties);
-      check(rowProperties, [
-        "cnfStyle",
-        "divId",
-        "gridBefore",
-        "gridAfter",
-        "wBefore",
-        "wAfter",
-        "cantSplit",
-        "trHeight",
-        "tblHeader",
-        "tblCellSpacing",
-        "jc",
-        "hidden","trPrChange","ins","del",
-      ]);
-      if (
-        child(rowProperties, "gridBefore") ||
-        child(rowProperties, "gridAfter") ||
-        on(child(rowProperties, "hidden"))
-      )
-        unsupported(rowProperties!);
-      const rowCss: Css = {};
-      if (on(child(rowProperties, "cantSplit")))
-        rowCss["break-inside"] = "avoid";
-      const height = child(rowProperties, "trHeight");
-      if (height){const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(height,'This row height rule is preserved natively.');rowCss.height=pt(number(attr(height,'val'),height,0)/20);rowCss['--word-row-height-rule']=rule;}
+      const rowCss=this.styles.row(rowProperties);
       const htmlRow = this.make("tr", {
         style: declarations(rowCss),
-        ...(on(child(rowProperties, "tblHeader"))
-          ? { "data-word-repeat-header": "true" }
-          : {}),
+        ...(child(rowProperties,'tblHeader')?{'data-word-repeat-header':on(child(rowProperties,'tblHeader'))?'true':'false'}:{}),
       });
+      const rowRegions=wordTableRowRegions(rowIndex,rows.length,grid.length,mask,rowBand,columnBand);
+      const rowStyle=resolveWordTableStyle(this.word,this.styles.readComponent,styleId,rowRegions),rowCell=wordTableRowCellProperties(rowStyle.cell);
+      this.context(htmlRow,'row',rowStyle.row,tableInfo);
       for(const[kind,name]of [['rowInsert','ins'],['rowDelete','del']]as const){const marker=child(rowProperties,name);if(marker){check(marker,[]);const id=attr(marker,'id');if(id===undefined)fail(marker,'A row revision requires an identity.');this.word.revisions.push({nodeId:this.id(htmlRow),sourceId:id,revisionId:this.id(htmlRow)+'-'+kind,kind,...(attr(marker,'author')!==undefined?{author:attr(marker,'author')!}:{}),...(attr(marker,'date')!==undefined?{date:attr(marker,'date')!}:{})});}}
       readWordFormatRevision(this.word,rowProperties,htmlRow,'row',this.styles);
       this.native?.bind(row, htmlRow.attrs);
@@ -1470,7 +1445,7 @@ class Importer {
               ...(span > 1 ? { colspan: String(span) } : {}),
             },
           );
-          this.context(htmlCell,'cell',{'padding-left':'5.4pt','padding-right':'5.4pt',...style.cell,...conditional.cell,...inner},tableInfo);
+          this.context(htmlCell,'cell',{'padding-left':'5.4pt','padding-right':'5.4pt',...style.cell,...conditional.cell,...rowCell,...inner},tableInfo);
           const previousTable=this.activeTable;this.activeTable=tableInfo;
           htmlCell.children.push(
             ...this.blocks(

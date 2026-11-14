@@ -15,7 +15,7 @@ import type { ExportComment,UnexportedAnnotation } from "./export/annotations.js
 import { ExportCss } from "./export/css.js";
 import type { Css } from "./export/css.js";
 import { contentType, OutputOpc } from "./export/opc.js";
-import { rowHeightProperties,cellProperties, difference, paragraphKeys, paragraphProperties, pick, points, runKeys, runProperties, tableProperties, unsupported } from "./export/properties.js";
+import { rowProperties,cellProperties, difference, paragraphKeys, paragraphProperties, pick, points, runKeys, runProperties, tableProperties, unsupported } from "./export/properties.js";
 import { children, contains, element, parseSource } from "./export/source.js";
 import type { SourceElement, SourceNode, SourceTree } from "./export/source.js";
 import type { HtmlNumbering } from "./export/styles.js";
@@ -310,12 +310,12 @@ class Exporter {
   }
   private readonly directCss:ExportCss;
   private readonly tableContexts=new Map<string,{cssClass:string;kind:string}>();
-  private tablePropertyDifference(node:SourceElement,css:Css,kind:'table'|'cell'):Css{
+  private tablePropertyDifference(node:SourceElement,css:Css,kind:'table'|'row'|'cell'):Css{
     const result=difference(css,this.styleContext(node,{},kind),Object.keys(css));
     if(!node.attrs.style)return result;
     const direct=this.directCss.specified({tag:'span',attrs:{style:node.attrs.style},parent:undefined});return{...result,...pick(css,Object.keys(direct))};
   }
-  private styleContext(node:SourceNode,fallback:Css,kind?:'table'|'cell'|'paragraph'):Css{
+  private styleContext(node:SourceNode,fallback:Css,kind?:'table'|'row'|'cell'|'paragraph'):Css{
     const contexts:{name:string;node:SourceElement}[]=[];
     for(let current:SourceNode|undefined=node;current;current=current.parent){if(!element(current))continue;const context=this.tableContexts.get(current.attrs['data-node-id']??'');if(context&&(!kind&&['run','paragraph'].includes(context.kind)||context.kind===kind))contexts.unshift({name:context.cssClass,node:current});if(kind||current.tag==='table')break;}
     let result=fallback;for(const context of contexts){const parent=context.node.parent?this.css.get(context.node.parent):{},variables=Object.fromEntries(Object.entries(parent).filter(([key])=>key.startsWith('--word-border-inside-')));result=this.css.classStyle(context.name,{...result,...variables});}return result;
@@ -433,8 +433,9 @@ class Exporter {
     this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize !== undefined ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize !== undefined ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(this.tablePropertyDifference(node,css,'table')) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + this.review.table(node)+"</w:tblPr><w:tblGrid>");
     for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add(this.review.grid(node)+"</w:tblGrid>");
     matrix.forEach((cells, index) => {
-      const row = rows[index]!, rowCss = this.css.get(row);
-      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + rowHeightProperties(rowCss) + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
+      const row = rows[index]!, rowCss = {...this.tablePropertyDifference(row,this.css.get(row),'row')};
+      const directHeader=row.attrs['data-word-repeat-header'];if(directHeader!==undefined)rowCss['--word-row-repeat-header']=directHeader==='true'?'1':'0';else if(row.parent?.tag==='thead')rowCss['--word-row-repeat-header']='1';
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
       for (const cell of cells) {
         const cellCss = this.css.get(cell.node);
         this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(this.tablePropertyDifference(cell.node,cellCss,'cell')) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+this.review.cell(cell.node)) + "</w:tcPr>");

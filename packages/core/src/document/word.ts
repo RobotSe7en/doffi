@@ -304,7 +304,7 @@ export function validateWord(
       for(const context of unique(table.styleContexts??[],item=>item.nodeId).values()){
         const current=node(context.nodeId);if(!(current.attributes.class??'').split(/\s+/).includes(context.cssClass))invalid('A table style context must bind its source CSS class.');
         let owner=current;while(owner.tagName!=='table'&&owner.parentNodeId)owner=node(owner.parentNodeId);if(owner.nodeId!==table.nodeId)invalid('A table style context must belong to its table.');
-        if(context.kind==='table'&&current.nodeId!==table.nodeId||context.kind==='cell'&&!['td','th'].includes(current.tagName)||context.kind==='paragraph'&&!/^p$|^h[1-6]$/.test(current.tagName))invalid('A table style context has an inconsistent source kind.');
+        if(context.kind==='table'&&current.nodeId!==table.nodeId||context.kind==='row'&&current.tagName!=='tr'||context.kind==='cell'&&!['td','th'].includes(current.tagName)||context.kind==='paragraph'&&!/^p$|^h[1-6]$/.test(current.tagName))invalid('A table style context has an inconsistent source kind.');
       }
 
     }
