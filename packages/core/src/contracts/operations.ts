@@ -1,3 +1,4 @@
+import {ReconciledTextEditSchema}from'./text-edit.js';
 import { z } from "zod";
 import { AnchorSchema, AnnotationSchema, AnnotationStatusSchema } from "./annotations.js";
 import { IdentifierSchema, PackagePathSchema, PROTOCOL_VERSION, RevisionSchema } from "./primitives.js";
@@ -10,11 +11,8 @@ export * from "./workbook-operations.js";
 export { PresentationOperationSchema, PresentationObjectInputSchema } from "./presentation-operations.js";
 export type { PresentationOperation, PresentationObjectInput } from "./presentation-operations.js";
 
-export const ReconciledTextEditSchema = z.strictObject({
-  nodeId: IdentifierSchema, from: RevisionSchema, to: RevisionSchema,
-  expectedText: z.string(), text: z.string(),
-});
-export type ReconciledTextEdit = z.infer<typeof ReconciledTextEditSchema>;
+export {ReconciledTextEditSchema}from'./text-edit.js';
+export type{ReconciledTextEdit}from'./text-edit.js';
 
 export const DocumentContentOperationSchema = z.discriminatedUnion("op", [
   ...WordOperationSchema.options,

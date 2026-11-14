@@ -35,6 +35,7 @@ export function expandWordContextRoots(state: DocumentState, roots: Set<string>,
                 link(id, ids[0]!);
             }
         }
+        const revisionsByMove=new Map<string,string[]>();for(const revision of word.revisions)if(revision.moveId){const nodes=revisionsByMove.get(revision.moveId)??[];nodes.push(revision.nodeId);revisionsByMove.set(revision.moveId,nodes);}for(const move of word.moves??[]){link(move.startNodeId,move.endNodeId);link(move.endNodeId,move.startNodeId);for(const node of revisionsByMove.get(move.moveId)??[]){link(move.startNodeId,node);link(node,move.startNodeId);}}
         const revisionGroups=new Map<string,string[]>();for(const revision of word.revisions){const id=revision.groupId??revision.moveId;if(!id)continue;const nodes=revisionGroups.get(id)??[];nodes.push(revision.nodeId);revisionGroups.set(id,nodes);}for(const nodes of revisionGroups.values())for(const node of nodes.slice(1)){link(nodes[0]!,node);link(node,nodes[0]!);}
         for (const hyperlink of word.hyperlinks)
             if (hyperlink.endNodeId) {
@@ -90,6 +91,7 @@ export function wordInteractionContext(state: DocumentState, nodes: ReadonlySet<
     word.tabs = word.tabs.filter(item => nodes.has(item.paragraphNodeId));
     word.tables = word.tables.filter(item => nodes.has(item.nodeId));
     word.revisions = word.revisions.filter(item => nodes.has(item.nodeId));
+    if(word.moves)word.moves=word.moves.filter(move=>nodes.has(move.startNodeId)&&nodes.has(move.endNodeId));
     word.noteReferences = word.noteReferences?.filter(item => nodes.has(item.nodeId));
     const notes = new Set(word.noteReferences?.map(item => item.noteId));
     word.notes = word.notes?.filter(item => notes.has(item.noteId));

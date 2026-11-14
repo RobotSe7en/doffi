@@ -109,3 +109,5 @@ export * from './contracts/word-comment.js';
 export * from './contracts/word-revision.js';
 
 export * from './contracts/word-text-style.js';
+
+export{expandWordRevisionGroups}from'./word-revision-groups.js';

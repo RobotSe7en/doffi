@@ -6,7 +6,7 @@ import { DocumentError } from "../errors.js";
 import { normalizeCss, setInlineStyle } from "./css.js";
 import { setDrawingInlineStyle } from "./drawing-css.js";
 import { styleSourceText } from "./text-style.js";
-import type { SourceTextRange } from "./text-style.js";
+import type { SourceTextRange,SourceTextStyleChange } from "./text-style.js";
 import { bodyTags, parseHtml, supportedTags } from "./html.js";
 import { parseHtmlFragment, parseHtmlTree, serializeHtmlOuter, serializeHtmlTree } from "./html-parser.js";
 import { decodeText, encode, resolveReference } from "./package.js";
@@ -209,10 +209,10 @@ export class DocumentEdit {
     const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
     setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
   }
-  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>): void {
+  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>,onChange?:(change:SourceTextStyleChange)=>void): void {
     const target = this.index().get(nodeId); if (!target) fail("The text format target is unavailable.");
     const styles = this.state.snapshot.manifest.styles.map(path => decodeText(this.state.files.get(path)!));
-    styleSourceText(target, range, properties, this.limits, this.allocate, styles);
+    styleSourceText(target, range, properties, this.limits, this.allocate, styles,undefined,onChange);
   }
   /** Revision containers retain source leaves and object ownership; wrapping
    * changes no UTF-16 text offsets. A wrapper is allocated for each text leaf. */
@@ -231,6 +231,9 @@ export class DocumentEdit {
     }
     return ids;
   }
+  previewReconciliation(operation:Extract<DocumentContentOperation,{op:'reconcileFragment'}>):ParsedHtml{
+    const html=this.html(),parsed=parseHtml(html,this.state.snapshot.manifest,this.state.files,this.limits,{nodes:0}),preview=new DocumentEdit({...this.state,html:parsed,snapshot:{...this.state.snapshot,html}},this.limits,this.allocate);preview.apply(operation);return parseHtml(preview.html(),this.state.snapshot.manifest,this.state.files,this.limits,{nodes:0});
+  }
   /** A format adapter has already checked the owning source identity. */
   replaceSourceText(nodeId: string, edit: { readonly from: number; readonly to: number; readonly expectedText: string; readonly text: string }): void {
     const target = this.index().get(nodeId); if (!target) fail("The source text target is unavailable.");
@@ -245,11 +248,12 @@ export class DocumentEdit {
   unwrapSource(nodeId:string):void{const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode)||target.parentNode.tagName==='body')fail('The document root cannot be unwrapped.');const parent=target.parentNode;for(const child of [...target.childNodes]){adapter.detachNode(child);adapter.insertBefore(parent,child,target);}adapter.detachNode(target);}
   mergeSourceParagraphMark(nodeId:string):void{
     const node=this.index().get(nodeId);if(!node||!/^p$|^h[1-6]$/.test(node.tagName)||!node.parentNode||!isElement(node.parentNode))fail('A paragraph mark requires its paragraph.');
-    const parent=node.parentNode,siblings=parent.childNodes;let next:Element|undefined;
-    for(let index=siblings.indexOf(node)+1;index<siblings.length;index++){const candidate=siblings[index]!;if(candidate.nodeName==='#text'&&'value'in candidate&&!candidate.value.trim())continue;if(isElement(candidate)&&/^p$|^h[1-6]$/.test(candidate.tagName))next=candidate;break;}
-    if(!next)return;const before=next.childNodes[0];for(const child of [...node.childNodes]){if(isElement(child)&&attr(child,'data-word-paragraph-mark')){adapter.detachNode(child);continue;}adapter.detachNode(child);if(before)adapter.insertBefore(next,child,before);else adapter.appendChild(next,child);}adapter.detachNode(node);
+    const parent=node.parentNode,siblings=parent.childNodes,markers:Element[]=[];let next:Element|undefined;
+    for(let index=siblings.indexOf(node)+1;index<siblings.length;index++){const candidate=siblings[index]!;if(candidate.nodeName==='#text'&&'value'in candidate&&!candidate.value.trim())continue;if(isElement(candidate)&&['div','span'].includes(candidate.tagName)&&textLeaves(candidate).every(leaf=>!leaf.value)){let marker=false;visit(candidate,item=>{if(isElement(item)&&(attr(item,'data-word-move-range')||attr(item,'data-word-bookmark')))marker=true;});if(marker){markers.push(candidate);continue;}}if(isElement(candidate)&&/^p$|^h[1-6]$/.test(candidate.tagName))next=candidate;break;}
+    if(!next)return;const before=next.childNodes[0],append=(child:Tree.ChildNode):void=>{adapter.detachNode(child);if(before)adapter.insertBefore(next!,child,before);else adapter.appendChild(next!,child);};for(const child of [...node.childNodes]){if(isElement(child)&&attr(child,'data-word-paragraph-mark')){adapter.detachNode(child);continue;}append(child);}for(const marker of markers){if(marker.tagName==='span')append(marker);else{for(const child of [...marker.childNodes])append(child);adapter.detachNode(marker);}}adapter.detachNode(node);
     for(const ancestor of ancestors(next)){const id=attr(ancestor,'data-node-id');if(id)this.structuralTextNodes.add(id);}
   }
+
 
   /** Format-owned bodies accept new fragments without exposing writable source
    * identities. Equal canonical content retains the original nodes and bytes. */

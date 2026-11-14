@@ -1,3 +1,5 @@
+import{expandWordRevisionGroups}from'../word-revision-groups.js';
+import{reconcileTrackedWord}from'./word-tracked-structure.js';
 import type { WordMetadata } from '../contracts/word.js';
 import type { WordRevision, WordRevisionOperation } from '../contracts/word-revision.js';
 import type { DocumentEdit } from '../document/edit.js';
@@ -8,7 +10,7 @@ const fail = (message: string): never => { throw new DocumentError('InvalidOpera
 export const wordRevisionId = (revision: Pick<WordRevision, 'nodeId' | 'revisionId'>): string => revision.revisionId ?? revision.nodeId;
 export function isWordRevisionOperation(operation: {
     readonly op: string;
-}): operation is WordRevisionOperation { return ['setWordReview', 'reviewWordRevision', 'reviewWordRevisions', 'trackWordText'].includes(operation.op); }
+}): operation is WordRevisionOperation { return ['reconcileWordTracked','setWordReview', 'reviewWordRevision', 'reviewWordRevisions', 'trackWordText'].includes(operation.op); }
 export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: {
     nodeId: string;
     from: number;
@@ -31,6 +33,7 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
         if (!owner)
             continue;
         const begin = source.textOffset(owner.nodeId)!, finish = begin + owner.text.length;
+        const inside=(id:string,parent:string):boolean=>{for(let current:string|null=id;current;current=source.peekNode(current)!.parentNodeId)if(current===parent)return true;return false;};if(!inside(owner.nodeId,operation.nodeId)&&!inside(operation.nodeId,owner.nodeId))continue;
         if (revision.kind === 'insert' && revision.author === author && start >= begin && end <= finish) {
             edit.replaceSourceText(revision.nodeId, { ...operation, from: start - begin, to: end - begin });
             if (operation.properties && text)
@@ -73,7 +76,7 @@ function nativeReview(word: WordMetadata, revision: WordRevision, decision: 'acc
             }
             return [];
         }
-        if (decision === 'reject' && revision.kind === 'format' && fragment.kind === 'property' && (fragment.propertyPath[0]?.endsWith(' ' + property) || !fragment.propertyPath.length && fragment.propertyName?.endsWith(' ' + property)))
+        if (decision === 'reject' && !revision.before?.inheritNativeProperties && revision.kind === 'format' && fragment.kind === 'property' && (fragment.propertyPath[0]?.endsWith(' ' + property) || !fragment.propertyPath.length && fragment.propertyName?.endsWith(' ' + property)))
             return [];
         return [fragment];
     });
@@ -87,6 +90,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
             word.trackingAuthor = operation.author;
         return;
     }
+    if(operation.op==='reconcileWordTracked'){reconcileTrackedWord(word,edit,parse,operation);return;}
     if (operation.op === 'trackWordText') {
         trackWordText(word, edit, parse, operation);
         return;
@@ -101,6 +105,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
         const revision = word.revisions.find(revision => wordRevisionId(revision) === operation.revisionId && revision.nodeId === operation.nodeId) ?? fail('The selected revision is missing.');
         selected = word.revisions.filter(item => item === revision || revision.groupId && item.groupId === revision.groupId || revision.moveId && item.moveId === revision.moveId);
     }
+    selected=[...expandWordRevisionGroups(word.revisions,selected.map(wordRevisionId))];
     const removals = new Set<string>();
     for (const revision of selected) {
         nativeReview(word, revision, operation.decision);
@@ -131,7 +136,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
             }
             continue;
         }
-        const insertion = ['insert', 'moveTo', 'paragraphInsert', 'rowInsert', 'cellInsert'].includes(revision.kind), remove = operation.decision === 'accept' ? !insertion : insertion;
+        const insertion = ['insert', 'moveTo', 'paragraphInsert','paragraphMoveTo', 'rowInsert', 'cellInsert'].includes(revision.kind), remove = operation.decision === 'accept' ? !insertion : insertion;
         if (['insert', 'delete', 'moveFrom', 'moveTo'].includes(revision.kind)) {
             if (remove) {
                 edit.removeSource(revision.nodeId);
@@ -149,6 +154,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
             removals.add(revision.nodeId);
         }
     }
+    const moves=new Set(selected.flatMap(revision=>revision.moveId?[revision.moveId]:[]));for(const move of word.moves??[])if(moves.has(move.moveId))for(const id of [move.startNodeId,move.endNodeId]){const source=parse(),node=source.peekNode(id);if(!node)continue;const parent=node.parentNodeId?source.peekNode(node.parentNodeId):undefined,wrapper=parent&&parent.tagName==='div'&&parent.childNodeIds.length===1&&Object.keys(parent.attributes).every(name=>name==='data-node-id')&&source.getNode(parent.nodeId)!.text===''&&!word.stories.some(story=>story.rootNodeId===parent.nodeId);edit.removeSource(wrapper?parent!.nodeId:id);}if(word.moves)word.moves=word.moves.filter(move=>!moves.has(move.moveId));
     const reviewed = new Set(selected.map(wordRevisionId));
     word.revisions = word.revisions.filter(revision => !reviewed.has(wordRevisionId(revision)) && !removals.has(revision.nodeId));
 }

@@ -1,10 +1,10 @@
-import { DocumentError, isDocumentTextBoundary } from '@doffi/core';
-import type { DocumentEditingSession, DocumentOperation, ContentDocumentModel } from '@doffi/core';
+import { isDocumentTextBoundary } from '@doffi/core';
+import type { DocumentEditingSession, DocumentOperation, ContentDocumentModel,ReconciledTextEdit } from '@doffi/core';
 import { sourceText, offsetAt } from './dom.js';
 import type { SelectionBookmark, CaretBookmark } from './dom.js';
 /** Text tracking uses the same canonical paragraph positions as native input;
  * composition steps collapse to one exact replacement at commit. */
-export function trackedWordInput(session: DocumentEditingSession, previous: HTMLElement, next: HTMLElement, properties: ReadonlyMap<string, string>): DocumentOperation[] | undefined {
+export function trackedWordInput(session: DocumentEditingSession, previous: HTMLElement, next: HTMLElement, properties: ReadonlyMap<string, string>,textEdits:ReconciledTextEdit[]): DocumentOperation[] | undefined {
     if (!session.snapshot().metadata.word?.trackChanges)
         return;
     const selector = 'p,h1,h2,h3,h4,h5,h6', before = [...previous.querySelectorAll<HTMLElement>(selector)], after = [...next.querySelectorAll<HTMLElement>(selector)];
@@ -14,7 +14,7 @@ export function trackedWordInput(session: DocumentEditingSession, previous: HTML
         after.unshift(next);
     const oldIds = before.map(node => node.dataset.nodeId), newIds = after.map(node => node.dataset.nodeId);
     if (JSON.stringify(oldIds) !== JSON.stringify(newIds))
-        throw new DocumentError('UnsupportedFeature', '此结构更改需要完整的段落修订记录。');
+        return[{op:'reconcileWordTracked',nodeId:previous.dataset.nodeId!,html:next.innerHTML,textEdits,date:new Date().toISOString()}];
     const operations: DocumentOperation[] = [];
     for (let index = 0; index < before.length; index++) {
         const old = sourceText(before[index]!, () => false), current = sourceText(after[index]!, () => false);

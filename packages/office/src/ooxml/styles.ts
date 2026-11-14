@@ -483,7 +483,7 @@ export class DocxStyles {
   run(
     properties: XmlNode | undefined,
     inherited: Css = {},
-    toggle = false,
+    toggle = false,paragraphMark=false,allowRevision=false,
   ): Css {
     if (!properties) return {};
     if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
@@ -526,7 +526,7 @@ export class DocxStyles {
       "lang",
       "eastAsianLayout",
       "specVanish",
-      "oMath", "rPrChange",
+      "oMath",...(allowRevision?["rPrChange"]:[]),...(paragraphMark?["ins","del","moveFrom","moveTo"]:[]),
     ]);
     const css: Css = {};
     if(child(properties,"snapToGrid")) css["--word-run-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";

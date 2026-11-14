@@ -1,3 +1,5 @@
+import {NATIVE_MARKER} from './docx-native-export.js';
+import {W} from './ooxml/xml.js';
 import { DocumentError } from '@doffi/core';
 import type { DeepReadonly, WordMetadata, WordRevision } from '@doffi/core';
 import type { SourceNode, SourceElement } from './export/source.js';
@@ -11,7 +13,7 @@ import { nativeInteger } from './export/values.js';
 export class ExportWordRevisions {
     private next = 0;
     private readonly formats = new Map<string, DeepReadonly<WordRevision>[]>();
-    constructor(word: DeepReadonly<WordMetadata> | undefined, private readonly css: ExportCss, private readonly styles: ExportStyles) { this.next = word?.revisions.length ?? 0; for (const revision of word?.revisions ?? [])
+    constructor(private readonly word: DeepReadonly<WordMetadata> | undefined, private readonly css: ExportCss, private readonly styles: ExportStyles) { this.next = (word?.revisions.length ?? 0)+(word?.moves?.length??0); for (const revision of word?.revisions ?? [])
         if (revision.kind === 'format') {
             const entries = this.formats.get(revision.nodeId) ?? [];
             entries.push(revision);
@@ -40,10 +42,10 @@ export class ExportWordRevisions {
         else
             attrs[key] = value;
     } const node = { ...owner, attrs, tag: revision.before?.tagName ?? owner.tag }; return { node, css: revision.before?.properties ? { ...fallback, ...revision.before.properties } : this.css.get(node) }; }
-    private change(revision: DeepReadonly<WordRevision>, name: string, previous: string): string { if (revision.date !== undefined && (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(revision.date) || !Number.isFinite(Date.parse(revision.date))))
-        throw new DocumentError('UnsupportedFeature', 'A revision date is not an XML dateTime.'); return '<w:' + name + 'Change' + attributes({ 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': revision.date }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>'; }
+    private change(revision: DeepReadonly<WordRevision>, name: string, previous: string,owner?:SourceElement): string { if (revision.date !== undefined && (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(revision.date) || !Number.isFinite(Date.parse(revision.date))))
+        throw new DocumentError('UnsupportedFeature', 'A revision date is not an XML dateTime.'); let beforeSource:string|undefined;if(revision.before?.inheritNativeProperties&&owner){for(let current:SourceElement|undefined=owner;current;current=current.parent){const id=current.attrs['data-node-id'];if(this.word?.nativeContent?.fragments.some(fragment=>fragment.nodeId===id&&fragment.kind==='property'&&!fragment.revisionPrevious&&!fragment.propertyPath.some(path=>path.endsWith('Change'))&&(fragment.propertyPath[0]===W+' '+name||!fragment.propertyPath.length&&fragment.propertyName===W+' '+name))){beforeSource=id;break;}}}return '<w:' + name + 'Change' + (beforeSource?' xmlns:dn="'+NATIVE_MARKER+'"'+attributes({'dn:before-source':beforeSource,'dn:before-property':name}):'')+attributes({ 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': revision.date }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>'; }
     run(node: SourceNode, expected: Css): string { const entry = this.revision(node, 'run'); if (!entry)
-        return ''; const old = this.old(entry.owner, entry.revision, expected), style = old.node.attrs['data-word-style'], context = this.styles.runContext(this.paragraphStyle(entry.owner), style), props = (style ? value('rStyle', this.styles.ids.get(style) ?? style) : '') + runProperties(difference(old.css, { ...expected, ...context }, [...runKeys, ...Object.keys(old.css).filter(key => key.startsWith('--'))]), { ...expected, ...context }); return this.change(entry.revision, 'rPr', props); }
+        return ''; const old = this.old(entry.owner, entry.revision, expected), style = old.node.attrs['data-word-style'], context = this.styles.runContext(this.paragraphStyle(entry.owner), style), props = (style ? value('rStyle', this.styles.ids.get(style) ?? style) : '') + runProperties(difference(old.css, { ...expected, ...context }, [...runKeys, ...Object.keys(old.css).filter(key => key.startsWith('--'))]), { ...expected, ...context }); return this.change(entry.revision, 'rPr', props,entry.owner); }
     paragraph(node: SourceElement, width: number): string { const entry = this.revision(node, 'paragraph'); if (!entry)
         return ''; const old = this.old(node, entry.revision, {}), style = old.node.attrs['data-word-style']; let props = (style ? value('pStyle', this.styles.ids.get(style) ?? style) : '') + paragraphProperties({ ...difference(old.css, this.styles.paragraphContext(style), [...paragraphKeys, ...Object.keys(old.css).filter(key => key.startsWith('border-'))]), 'font-size': old.css['font-size']! }, width); const num = old.node.attrs['data-word-numbering']; if (num)
         props += '<w:numPr>' + value('ilvl', old.node.attrs['data-word-level'] ?? 0) + value('numId', this.styles.numberingIds.get(num) ?? num) + '</w:numPr>'; const tabs = entry.revision.before?.tabs; if (tabs?.stops.length)

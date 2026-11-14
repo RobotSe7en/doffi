@@ -139,7 +139,7 @@ test.each([
     "<w:p><w:pPr><w:pPrChange/></w:pPr></w:p>",
     "UnsupportedFeature",
   ],
-  ["move revision", "<w:p><w:moveFrom/></w:p>", "UnsupportedFeature"],
+  ["malformed move revision", "<w:p><w:moveFrom/></w:p>", "InvalidDocument"],
   [
     "hanging punctuation",
     "<w:p><w:pPr><w:overflowPunct/></w:pPr></w:p>",

@@ -1,3 +1,4 @@
+import {WordMoveReader}from'./docx-moves.js';
 import {readWordFormatRevision}from'./docx-revisions-import.js';
 import { readWordCommentExtensions,wordCommentAnnotations } from './docx-comments.js';
 import type { WordCommentState as CommentState } from './docx-comments.js';
@@ -127,6 +128,7 @@ class Importer {
   private readonly auxiliary: Html[] = [];
   private readonly comments = new Map<string, CommentState>();
   private activeComments = new Set<string>();
+  private moves=new WordMoveReader(this.word);
   private commentRangeCount = 0;
   private commentRangeBytes = 0;
   private fieldResultCount = 0;
@@ -452,7 +454,7 @@ class Importer {
     if (
       this.fieldStack.length ||
       this.activeComments.size ||
-      this.bookmarkStarts.size
+      this.bookmarkStarts.size||this.moves.pending
     )
       fail(source, "A field, comment range or bookmark is not closed.");
     this.resolveDrawingConnections();
@@ -551,11 +553,11 @@ class Importer {
         item.name === "bookmarkStart" ||
         item.name === "bookmarkEnd" ||
         item.name === "commentRangeStart" ||
-        item.name === "commentRangeEnd"
+        item.name === "commentRangeEnd"||/^move(?:From|To)Range(?:Start|End)$/.test(item.name)
       ) {
         const marker = this.make("div");
         this.inline(item, marker);
-        result.push(marker);
+        if(marker.children.length)result.push(marker);
       } else unsupported(item);
     }
     return result;
@@ -634,6 +636,7 @@ class Importer {
         ...this.styles.paragraph(properties),
       });
     }
+    for(const change of elements(child(properties,'rPr')).filter(item=>['ins','del','moveFrom','moveTo'].includes(item.name)&&item.uri===W))this.moves.mark(change,paragraph);
     const oldRunClasses = this.paragraphRunClasses;
     this.paragraphRunClasses = [
       "word-default-run",
@@ -650,7 +653,7 @@ class Importer {
       paragraph.children.push(
         this.make("span", {
           "data-word-paragraph-mark": "true",
-          style: declarations(this.styles.run(mark, paragraphRun)),
+          style: declarations(this.styles.run(mark, paragraphRun,false,true)),
         }),
       );
     readWordFormatRevision(this.word,properties,paragraph,'paragraph',this.styles,{defaultTab:this.defaultTab});
@@ -707,7 +710,7 @@ class Importer {
           styleId ?? this.styles.defaultCharacter,
           { ...this.styles.defaults.r, ...paragraphStyle },
         );
-        const css = this.styles.run(properties, inherited);
+        const css = this.styles.run(properties, inherited,false,false,true);
         // Character-style toggles are relative to paragraph formatting; other
         // inherited font/color values remain inherited CSS rather than copies.
         if (styleId) {
@@ -996,18 +999,19 @@ class Importer {
         state.point = this.id(marker);
         break;
       }
+      case "moveFromRangeStart":case "moveFromRangeEnd":case "moveToRangeStart":case "moveToRangeEnd":{const marker=this.moves.marker(source,(tag,attrs)=>this.make(tag,attrs));if(marker)parent.children.push(marker);break;}
       case "ins":
-      case "del": {
+      case "del":case "moveFrom":case "moveTo": {
         const sourceId = attr(source, "id");
         if (sourceId === undefined) fail(source, "A revision has no identity.");
-        const revision = this.make(source.name);
+        const revision = this.make(["ins","moveTo"].includes(source.name)?"ins":"del");
         parent.children.push(revision);
         const author = attr(source, "author");
         const date = attr(source, "date");
         this.word.revisions.push({
           nodeId: this.id(revision),
           sourceId,
-          kind: source.name === "ins" ? "insert" : "delete",
+          ...(source.name.startsWith("move")?this.moves.revision(source):{kind:source.name==="ins"?"insert"as const:"delete"as const}),
           ...(author !== undefined ? { author } : {}),
           ...(date !== undefined ? { date } : {}),
         });
@@ -1191,9 +1195,9 @@ class Importer {
   }
   private readStoryContent(part: string, storyId: string, source: XmlNode): Html[] {
     const { currentPart, currentStory, fieldStack, activeComments, bookmarkStarts,
-      currentRun, paragraphRunClasses } = this;
+      currentRun, paragraphRunClasses,moves } = this;
     this.currentPart = part;
-    this.currentStory = storyId;
+    this.currentStory = storyId;this.moves=new WordMoveReader(this.word);
     this.fieldStack = [];
     this.activeComments = new Set();
     this.bookmarkStarts = new Map();
@@ -1201,7 +1205,7 @@ class Importer {
     this.paragraphRunClasses = ["word-default-run"];
     try {
       const content = this.blocks(this.compat(source));
-      if (this.fieldStack.length || this.activeComments.size || this.bookmarkStarts.size)
+      if (this.fieldStack.length || this.activeComments.size || this.bookmarkStarts.size||this.moves.pending)
         fail(source, "An auxiliary story has an unclosed content range.");
       return content;
     } finally {
@@ -1211,7 +1215,7 @@ class Importer {
       this.activeComments = activeComments;
       this.bookmarkStarts = bookmarkStarts;
       this.currentRun = currentRun;
-      this.paragraphRunClasses = paragraphRunClasses;
+      this.paragraphRunClasses = paragraphRunClasses;this.moves=moves;
     }
   }
   private control(source:XmlNode,level:'inline'|'block',inherited:{p:Css;r:Css;runClasses?:readonly string[]}):Html {

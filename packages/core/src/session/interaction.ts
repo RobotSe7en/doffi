@@ -126,7 +126,7 @@ export function validateProposal(state: DocumentState, request: DocumentInteract
     if (!request.supportedOperations.includes(operation.op)) invalid("The proposal uses an operation not declared by the request.");
     if (!scope.has(operation.nodeId)) invalid("A proposal operation targets a node outside the request context.");
     if('annotationId'in operation&&!annotationIds.has(operation.annotationId))invalid('A Word proposal cannot edit a comment outside its selected threads.');
-    if(operation.op==='reconcileFragment'&&operation.textEdits.some(edit=>!scope.has(edit.nodeId)))invalid('Reconciled text edits must belong to the request context.');
+    if((operation.op==='reconcileFragment'||operation.op==='reconcileWordTracked')&&operation.textEdits.some(edit=>!scope.has(edit.nodeId)))invalid('Reconciled text edits must belong to the request context.');
     if(operation.op==='setWordSection'&&[...Object.values(operation.changes.headers??{}),...Object.values(operation.changes.footers??{})].some(id=>{const story=state.snapshot.metadata.word?.stories.find(story=>story.storyId===id);return!story||!scope.has(story.rootNodeId);}))invalid('Linked Word stories must belong to the request context.');
     if(operation.op==='splitWordSection'){
       const parent=state.html.peekNode(operation.nodeId)!.parentNodeId;

@@ -59,6 +59,8 @@ class Exporter {
   private readonly fieldEnds: ReadonlyMap<string, Field>;
   private readonly links: ReadonlyMap<string, DeepReadonly<WordMetadata["hyperlinks"][number]>>;
   private readonly linkEnds:ReadonlySet<string>;
+  private readonly revisionIds=new Map<DeepReadonly<WordMetadata["revisions"][number]>,number>();
+  private readonly paragraphRevisions=new Map<string,DeepReadonly<WordMetadata["revisions"][number]>[]>();
   private readonly review:ExportWordRevisions;
   private readonly revisions: ReadonlyMap<string, DeepReadonly<WordMetadata["revisions"][number]>>;
   private readonly bookmarkStarts: ReadonlyMap<string, { id: number; name: string }>;
@@ -71,6 +73,8 @@ class Exporter {
   private fieldStack: FieldState[] = [];
   private deleted = false;
   private width = 468;
+  private readonly moveStarts=new Map<string,{move:DeepReadonly<NonNullable<WordMetadata["moves"]>[number]>;id:number}>();
+  private readonly moveEnds=new Map<string,{move:DeepReadonly<NonNullable<WordMetadata["moves"]>[number]>;id:number}>();
   private readonly noteIds=new Map<string,number>();
   private drawingId = 0;
   private controlId = 0;
@@ -85,7 +89,7 @@ class Exporter {
     const snapshot = document.snapshot();
     if (snapshot.metadata.presentation !== undefined) unsupported("PPT sources cannot be exported as DOCX.");
     this.files = document.serialize(); this.snapshot = { ...snapshot, metadata: snapshot.metadata }; this.tree = parseSource(this.snapshot.html, limits);
-    const word = this.snapshot.metadata.word;this.drawings=new Map((word?.drawings??[]).map(item=>[item.nodeId,item]));for(const item of word?.drawings??[])this.drawingIds.set(item.nodeId,++this.drawingId);
+    const word = this.snapshot.metadata.word;for(const[index,revision]of (word?.revisions??[]).entries()){this.revisionIds.set(revision,index);if(revision.kind.startsWith('paragraph')){const entries=this.paragraphRevisions.get(revision.nodeId)??[];entries.push(revision);this.paragraphRevisions.set(revision.nodeId,entries);}}for(const[ordinal,move]of (word?.moves??[]).entries()){const item={move,id:word!.revisions.length+ordinal};this.moveStarts.set(move.startNodeId,item);this.moveEnds.set(move.endNodeId,item);}this.drawings=new Map((word?.drawings??[]).map(item=>[item.nodeId,item]));for(const item of word?.drawings??[])this.drawingIds.set(item.nodeId,++this.drawingId);
     this.css = new ExportCss(this.snapshot.styles.map((style) => style.css), limits, new Set(word?.revisions.map((item) => item.nodeId)));
     for (const node of this.tree.elements) if (contains(this.tree.root, node)) this.assertFormatting(node, this.css.get(node));
     const main = word?.stories.filter((story) => story.kind === "main").map((story) => this.tree.byId.get(story.rootNodeId)!) ?? [this.tree.root];
@@ -214,6 +218,8 @@ class Exporter {
     if (until > state.offset) this.add('<w:r><w:instrText xml:space="preserve">' + escapeXml(state.definition.instruction.slice(state.offset, until)) + "</w:instrText></w:r>");
     state.offset = until;
   }
+  private moveMarker(nodeId:string):string|undefined{const start=this.moveStarts.get(nodeId),end=this.moveEnds.get(nodeId),item=start??end;if(!item)return;const name='move'+(item.move.kind==='from'?'From':'To')+'Range'+(start?'Start':'End');return '<w:'+name+this.nativeMark(nodeId)+attributes({'w:id':item.id,...(start?{'w:name':item.move.moveId,'w:author':item.move.author,'w:date':date(item.move.date),'w:colFirst':item.move.columnFirst,'w:colLast':item.move.columnLast,'w:displacedByCustomXml':item.move.startDisplaced}:{'w:displacedByCustomXml':item.move.endDisplaced})})+'/>';}
+  private paragraphRevision(nodeId:string):string{const revisions=[...this.paragraphRevisions.get(nodeId)??[]],order=['paragraphInsert','paragraphDelete','paragraphMoveFrom','paragraphMoveTo'];return revisions.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind)).map(revision=>empty('w:'+({paragraphInsert:'ins',paragraphDelete:'del',paragraphMoveFrom:'moveFrom',paragraphMoveTo:'moveTo'}as Record<string,string>)[revision.kind],{'w:id':this.revisionIds.get(revision)!,'w:author':revision.author??'','w:date':date(revision.date)})).join('');}
   private inline(node: SourceNode, paragraphStyle: string | undefined, character?: string, role?: string, language?: string): void {
     if (!element(node)) {
       const css = this.css.get(node.parent);
@@ -225,6 +231,7 @@ class Exporter {
     if(this.drawings.has(node.attrs["data-node-id"]??"")){this.add(this.annotations.at(node,0));this.add(writeWordDrawing({word:this.snapshot.metadata.word!,tree:this.tree,css:node=>this.css.get(node),raw:node=>this.css.specified(node),id:id=>this.drawingIds.get(id)??unsupported("A drawing identity is missing."),image:node=>this.imageRelation(node),chart:chart=>{const node=this.tree.byId.get(chart.nodeId)!;return this.charts.write(chart.chart,this.part,this.css.get(node),this.css.specified(node));},text:(id,width)=>this.captureStory(id,width),marker:node=>{let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;return this.nativeMark(node.attrs['data-node-id']!)+(this.snapshot.metadata.word?.nativeContent&&container?' dn:container="'+escapeXml(container.attrs['data-node-id']!)+'"':'');}},this.drawings.get(node.attrs["data-node-id"]!)!));this.add(this.annotations.at(node,node.to-node.from));return;}
     if (node.attrs["data-word-native-object"]) {this.add(this.annotations.at(node,0));let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id']));this.add(this.annotations.at(node,node.to-node.from)); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
+    const move=this.moveMarker(id);if(move!==undefined){this.add(move);return;}
     if(node.attrs['data-word-equation']){const equation=this.snapshot.metadata.word?.equations?.find(equation=>equation.nodeId===id);if(!equation)unsupported('The equation definition is missing.');this.add(this.annotations.at(node,0));this.add(writeWordMath(equation));this.add(this.annotations.at(node,node.to-node.from));return;}
     if(node.attrs['data-word-note-reference']){const reference=this.snapshot.metadata.word?.noteReferences?.find(reference=>reference.nodeId===id),note=this.snapshot.metadata.word?.notes?.find(note=>note.noteId===reference?.noteId);if(!reference||!note)unsupported('A note reference is missing its source definition.');this.add(this.annotations.at(node,0));this.add('<w:r'+this.nativeMark(id)+'>'+this.nativeRun(css,this.styles.runContext(paragraphStyle,character),character,role,language)+empty('w:'+note.kind+'Reference',{'w:id':this.noteIds.get(note.noteId),'w:customMarkFollows':reference.customMark?1:undefined})+(reference.customMark?'<w:t>'+escapeXml(reference.customMark)+'</w:t>':'')+'</w:r>');this.add(this.annotations.at(node,node.to-node.from));return;}
     if(node.attrs['data-word-note-number']){const note=this.snapshot.metadata.word?.notes?.find(note=>{const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===note.storyId);return!!story&&contains(this.tree.byId.get(story.rootNodeId)!,node);});if(!note)unsupported('A note number requires its note story.');this.add('<w:r>'+this.nativeRun(css,this.styles.runContext(paragraphStyle,character),character,role,language)+empty('w:'+note.kind+'Ref')+'</w:r>');return;}
@@ -261,14 +268,15 @@ class Exporter {
     if(this.linkEnds.has(id)){this.add('</w:hyperlink>');return;}
     if (link) this.add("<w:hyperlink" + attributes({ "w:anchor": link.bookmark, "r:id": link.target ? this.opc.relate(this.part, "hyperlink", link.target, true) : undefined }) + ">");
     const previousDeleted = this.deleted;
-    if (revision) { this.add("<w:" + (revision.kind === "insert" ? "ins" : "del") + attributes({ "w:id": this.snapshot.metadata.word!.revisions.indexOf(revision), "w:author": revision.author ?? "", "w:date": date(revision.date) }) + ">"); this.deleted = revision.kind === "delete"; }
+    const revisionTag=revision?({insert:"ins",delete:"del",moveFrom:"moveFrom",moveTo:"moveTo"}as Record<string,string>)[revision.kind]:undefined;
+    if (revision) { this.add("<w:" + revisionTag + attributes({ "w:id": this.revisionIds.get(revision)!, "w:author": revision.author ?? "", "w:date": date(revision.date) }) + ">"); this.deleted = ["delete","moveFrom"].includes(revision.kind); }
     if (node.tag === "br") {
       this.add("<w:r>" + this.nativeRun(css, this.styles.runContext(paragraphStyle, character), character, role, language) + empty("w:br", ["page","column"].includes(node.attrs["data-word-break"]??"") ? { "w:type": node.attrs["data-word-break"] } : {}) + "</w:r>");
       this.add(this.annotations.at(node, 1));
     } else if (node.tag === "img") { this.image(node, css, paragraphStyle, character, role, language); this.add(this.annotations.at(node, 1)); }
     else if (node.attrs["data-word-tab"]) this.emitText(node, "\t", css, this.styles.runContext(paragraphStyle, character), character, role, language);
     else for (const child of node.children) this.inline(child, paragraphStyle, character, role, language);
-    if (revision) { this.add("</w:" + (revision.kind === "insert" ? "ins" : "del") + ">"); this.deleted = previousDeleted; }
+    if (revision) { this.add("</w:" + revisionTag + ">"); this.deleted = previousDeleted; }
     if (link&&!link.endNodeId) this.add("</w:hyperlink>");
   }
   private imageRelation(node:SourceElement):string{
@@ -310,7 +318,7 @@ class Exporter {
     if (/^h[1-6]$/.test(node.tag)) props += value("outlineLvl", Number(node.tag[1]) - 1);
     const mark = children(node).find((child) => child.attrs["data-word-paragraph-mark"]);
     const markProperties = mark ? this.runDifference(this.css.get(mark), this.styles.runContext(style)) : pick(this.runDifference(css, this.styles.runContext(style)), runKeys.filter((key) => key !== "background-color" && !key.startsWith("text-decoration") && !["vertical-align", "letter-spacing", "--word-run-shading", "--word-kerning-threshold"].includes(key)));
-    if (Object.keys(markProperties).length) props += "<w:rPr>" + runProperties(markProperties, this.styles.runContext(style)) + "</w:rPr>";
+    const markRevisions=this.paragraphRevision(id);if (Object.keys(markProperties).length||markRevisions) props += "<w:rPr>" + markRevisions+runProperties(markProperties, this.styles.runContext(style)) + "</w:rPr>";
     props += section ?? "";props+=this.review.paragraph(node,this.width); this.add("<w:pPr>" + orderedProperties("pPr", props) + "</w:pPr>");
     this.add(this.annotations.at(node, 0));
     for (const child of node.children) this.inline(child, style);
@@ -325,7 +333,7 @@ class Exporter {
       if (!pending.length) return;
       const visible = pending.some((node) => this.visible(node));
       if (!visible) {
-        for (const node of pending) if (element(node) && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? ""))) result.push(node);
+        for (const node of pending) if (element(node) && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? "")||this.moveStarts.has(node.attrs["data-node-id"]??"")||this.moveEnds.has(node.attrs["data-node-id"]??""))) result.push(node);
       } else {
         const parent = container ?? pending[0]!.parent!;
         const paragraph: SourceElement = { tag: "p", attrs: {}, parent, children: pending, from: pending[0]!.from, to: pending.at(-1)!.to };
@@ -354,7 +362,7 @@ class Exporter {
         this.add(nativeObjectMarker(node.attrs["data-word-native-object"], true, node.attrs["data-node-id"]));
         if (last && finalSection) this.add("<w:p><w:pPr>" + finalSection + "</w:pPr></w:p>");
       }
-      else if (element(node) && node.from === node.to && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? ""))) {
+      else if (element(node) && node.from === node.to && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? "")||this.moveStarts.has(node.attrs["data-node-id"]??"")||this.moveEnds.has(node.attrs["data-node-id"]??""))) {
         this.inline(node, undefined);
         if (last && (finalSection || paragraphId)) this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>");
       }

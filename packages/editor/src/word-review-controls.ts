@@ -1,3 +1,4 @@
+import{expandWordRevisionGroups}from'@doffi/core';
 import type { DocumentEditingSession, DocumentOperation } from '@doffi/core';
 export type WordRevisionDisplay = 'all' | 'final' | 'original';
 export function createWordReviewControls(parent: ShadowRoot, before: HTMLElement, session: DocumentEditingSession, onError: (error: unknown) => void, display: () => WordRevisionDisplay, setDisplay: (mode: WordRevisionDisplay) => void, focus: (nodeId: string) => void): {
@@ -45,7 +46,7 @@ export function createWordReviewControls(parent: ShadowRoot, before: HTMLElement
         }
         mode.value = display();
         mode.addEventListener('change', () => setDisplay(mode.value as WordRevisionDisplay), { signal });
-        panel.append(mode);
+        panel.append(mode);const grouping=document.createElement('p');grouping.textContent='移动的来源与目标、同组替换会一起接受或拒绝。';panel.append(grouping);
         const authors = document.createElement('select');
         authors.setAttribute('aria-label', '筛选修订作者');
         for (const name of ['全部作者', ...new Set(word?.revisions.map(revision => revision.author ?? ''))]) {
@@ -60,10 +61,9 @@ export function createWordReviewControls(parent: ShadowRoot, before: HTMLElement
         button('拒绝全部显示的修订', () => all('reject'));
         const list = document.createElement('div');
         panel.append(list);
-        const labels = { insert: '插入', delete: '删除', moveFrom: '移动来源', moveTo: '移动目标', format: '格式更改', paragraphInsert: '插入段落标记', paragraphDelete: '删除段落标记', rowInsert: '插入行', rowDelete: '删除行', cellInsert: '插入单元格', cellDelete: '删除单元格' };
-        const render = (): void => { list.replaceChildren(); for (const revision of word?.revisions ?? []) {
-            if (authors.selectedIndex && authors.value !== (revision.author ?? ''))
-                continue;
+        const labels = { insert: '插入', delete: '删除', moveFrom: '移动来源', moveTo: '移动目标', format: '格式更改', paragraphInsert: '插入段落标记', paragraphDelete: '删除段落标记',paragraphMoveFrom:'移动来源段落标记',paragraphMoveTo:'移动目标段落标记', rowInsert: '插入行', rowDelete: '删除行', cellInsert: '插入单元格', cellDelete: '删除单元格' };
+        const render = (): void => { list.replaceChildren();const visible=new Set(expandWordRevisionGroups(word?.revisions??[],(word?.revisions??[]).filter(revision=>(revision.author??'')===authors.value).map(revision=>revision.revisionId??revision.nodeId))); for (const revision of word?.revisions ?? []) {
+            if(authors.selectedIndex&&!visible.has(revision))continue;
             const row = document.createElement('div'), text = document.createElement('p');
             text.textContent = labels[revision.kind] + ' · ' + (revision.author || '未署名') + ' · ' + (session.getNode(revision.nodeId)?.text.slice(0, 80) || '标记');
             row.append(text);

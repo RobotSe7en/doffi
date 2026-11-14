@@ -210,7 +210,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
         const node = id === normalized.dataset.nodeId ? normalized : normalized.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
         return node && sourceText(node, () => false) !== value;
       }).map(([id]) => id));
-      const tracked=trackedWordInput(session,rootElement(sourceDocument()),normalized,typingStyles);
+      const tracked=trackedWordInput(session,rootElement(sourceDocument()),normalized,typingStyles,proofs.filter((edit)=>!changedByNormalization.has(edit.nodeId)));
       const candidate = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision,
         operations: tracked??[{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: normalized.innerHTML, textEdits: proofs.filter((edit) => !changedByNormalization.has(edit.nodeId)) }] });
       if(tracked)selection=trackedSelection(selection,session,candidate.model);
@@ -262,6 +262,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       for (const [name, value] of properties) typingStyles.set(name, value); typingAnchor = JSON.stringify(bookmark(root, projection.ignored)); notifyFormat(); return;
     }
     const selection = bookmark(root, projection.ignored);
+    if(session.snapshot().metadata.word?.trackChanges){const snapshot=session.snapshot(),anchor=new PreviewSource(frame!,viewModel()).textAnchor(range,session);if(!anchor||anchor.kind!=='text'&&anchor.kind!=='text-set')throw new DocumentError('InvalidOperation','请选择可格式化的正文。');const ranges=anchor.kind==='text'?[anchor]:anchor.ranges;session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:ranges.map(item=>({op:'formatWordText',nodeId:item.nodeId,from:item.from,to:item.to,expectedText:item.quote,properties:Object.fromEntries(properties)}))}));refresh(selection);return;}
     mutate(range, () => { styleRange(range, properties); if (root) restoreBookmark(root, selection, projection.ignored); });
   }
   function styleRange(range: Range, properties: ReadonlyMap<string, string>): void { if (root) styleNativeRange(root, range, properties, projection.ignored, projection.setStyles); }

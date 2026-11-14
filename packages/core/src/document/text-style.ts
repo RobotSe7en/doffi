@@ -12,6 +12,7 @@ import type { SourceStyleNode } from "./source-css.js";
 import { TEXT_DECORATION_RESET, textFormattingProperties } from "./text-decoration.js";
 
 export interface SourceTextRange { readonly from: number; readonly to: number; readonly expectedText: string }
+export interface SourceTextStyleChange {readonly nodeId:string;readonly previousStyle:string|undefined;readonly from:number;readonly to:number}
 export interface SourceTextStyleRepresentation {
   create(identity: string, style: string): Tree.Element;
   read(element: Tree.Element): string | undefined;
@@ -19,7 +20,7 @@ export interface SourceTextStyleRepresentation {
 }
 /** Format existing text leaves, retaining all paragraph/run/link identities.
  * New wrappers are core-owned source nodes; no rendered DOM enters the tree. */
-export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation): void {
+export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void): void {
   properties = textFormattingProperties(properties);
   const fail: (message: string) => never = message => { throw new DocumentError("InvalidOperation", message); };
   for (const property of Object.keys(properties)) if (!/^(?:color|background-color|font-(?:family|size|weight|style|variant)|text-transform|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)
@@ -96,6 +97,7 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
     if (!protectedFields.every(name => own.get(name)?.important)) return false;
     if (representation && !resolver.hasSpecified(projection(parent), Object.fromEntries([...own].map(([name, node]) => [name, generate(node.value) + (node.important ? "!important" : "")])))) return false;
     if (!updated.has(parent)) {
+      if(onChange){const id=parent.attrs.find(attribute=>attribute.name==='data-node-id')?.value;if(!id)fail('Tracked formatting requires an identified source span.');onChange({nodeId:id,previousStyle:source,from:area.from,to:area.to});}
       let next = source;
       for (const node of requestedDeclarations) next = setInlineStyle(next, ident.decode(node.property), generate(node.value) + "!important", limits);
       if (representation) representation.write(parent, next); else attribute!.value = next;
@@ -116,6 +118,7 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
     if (updateCompleteSpan(parent)) continue;
     count(); const nodeId = allocate(), style = neutral(owner, nodeId), span = representation ? representation.create(nodeId, style)
       : adapter.createElement("span", namespaces.NS.HTML, [{ name: "data-node-id", value: nodeId }, { name: "style", value: style }]);
+    onChange?.({nodeId,previousStyle:undefined,from:Math.max(range.from,leaf.from),to:Math.min(range.to,leaf.to)});
     if (!("value" in leaf.node)) { adapter.insertBefore(parent, span, leaf.node); adapter.detachNode(leaf.node); adapter.appendChild(span, leaf.node); continue; }
     const from = Math.max(0, range.from - leaf.from), to = Math.min(leaf.value.length, range.to - leaf.from);
     if (from) adapter.insertBefore(parent, makeText(leaf.value.slice(0, from)), leaf.node);

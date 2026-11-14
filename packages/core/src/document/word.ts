@@ -270,8 +270,12 @@ export function validateWord(
           stack.push({ id: nested.fieldNodeId, exit: false });
       }
     }
+    const moves=unique(word.moves??[],move=>move.moveId+'\n'+move.kind),moveIds=new Map<string,Set<string>>();
+    for(const move of moves.values()){const kinds=moveIds.get(move.moveId)??new Set<string>();kinds.add(move.kind);moveIds.set(move.moveId,kinds);const start=node(move.startNodeId),end=node(move.endNodeId);if(start.attributes['data-word-move-range']!==move.kind+'-start'||end.attributes['data-word-move-range']!==move.kind+'-end'||html.getNode(move.startNodeId)!.text||html.getNode(move.endNodeId)!.text||storyOf(move.startNodeId)!==storyOf(move.endNodeId)||order.get(move.startNodeId)!>order.get(move.endNodeId)!)invalid('A Word move range requires ordered empty markers in one story.');}
+    for(const kinds of moveIds.values())if(kinds.size!==2)invalid('A named Word move requires source and destination ranges.');
     for(const revision of revisions.values()){
       const tag=node(revision.nodeId).tagName;
+      if(['moveFrom','moveTo','paragraphMoveFrom','paragraphMoveTo'].includes(revision.kind)){const kind=revision.kind.endsWith('From')?'from':'to',range=moves.get(revision.moveId+'\n'+kind);if(!range||storyOf(range.startNodeId)!==storyOf(revision.nodeId)||order.get(revision.nodeId)!<order.get(range.startNodeId)!||order.get(revision.nodeId)!>order.get(range.endNodeId)!)invalid('Moved content must belong to its named source or destination range.');}
       if(['insert','delete','moveFrom','moveTo'].includes(revision.kind)&&tag!==(['insert','moveTo'].includes(revision.kind)?'ins':'del'))invalid('A text revision requires its matching source container.');
       if(revision.kind==='format'&&(!revision.property||!revision.before))invalid('A formatting revision requires its previous properties.');
       if(revision.kind.startsWith('paragraph')&&!/^p$|^h[1-6]$/.test(tag)||revision.kind.startsWith('row')&&tag!=='tr'||revision.kind.startsWith('cell')&&!['td','th'].includes(tag))invalid('A structural revision requires its matching Word source.');

@@ -123,7 +123,11 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     for(const[property,value]of Object.entries(operation.properties))edit.sourceStyle(operation.nodeId,property,value);
     if(operation.textDirection!==undefined)edit.attributes(operation.nodeId,{'data-word-text-direction':operation.textDirection});return;
   }
-  if(operation.op==='formatWordText'){edit.formatSourceText(operation.nodeId,operation,operation.properties);return;}
+  if(operation.op==='formatWordText'){
+    if(!word.trackChanges){edit.formatSourceText(operation.nodeId,operation,operation.properties);return;}
+    const source=parse(),base=source.textOffset(operation.nodeId)!,existing=word.revisions.filter(revision=>revision.kind==='format'&&revision.property==='run');let groupId:string|undefined;
+    edit.formatSourceText(operation.nodeId,operation,operation.properties,change=>{for(const revision of existing){const owner=source.getNode(revision.nodeId);if(!owner)continue;const start=source.textOffset(revision.nodeId)!;if(base+change.from<start+owner.text.length&&base+change.to>start)fail('Review the overlapping formatting revision before applying another format.');}const id=change.nodeId+'-format';groupId??=id;word.revisions.push({nodeId:change.nodeId,sourceId:id,revisionId:id,groupId,kind:'format',property:'run',author:word.trackingAuthor??'',date:new Date().toISOString(),before:{inheritNativeProperties:true,attributes:{style:change.previousStyle??null}}});});return;
+  }
   if(operation.op==='setWordStyle'||operation.op==='setWordNumbering'){
     if(node.tagName!=='article'||node.parentNodeId!==null)fail('Shared Word definitions require the complete document root.');
     if(operation.op==='setWordNumbering'){
