@@ -8,7 +8,7 @@ import { columnFlow } from './column-flow.js';
 import type { PageFlow } from "./flow.js";
 import { ownViewStyle } from "./view-nodes.js";
 import type { PreviewSource } from "./source-index.js";
-import { applyWordGrid, wordPageSetup } from './word-grid.js';
+import { applyWordGrid, wordPageSetup,facingWordPageSetup } from './word-grid.js';
 import type { WordNoteLayout } from './word-notes.js';
 
 const px = (value: number): number => value * 96 / 72;
@@ -102,7 +102,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       box.append(flow);
       const definition=section.definition.columns;
       const constraints=notes?{reserved:(index:number)=>notes.reserved(group!.startIndex+index),minimumPage:(node:Node)=>{const minimum=notes.minimumPage(node);return minimum===undefined?undefined:Math.max(0,minimum-group!.startIndex);}}:undefined;
-      group = { startIndex:0,setup, columns, box, flow, sections: [], paginator: definition&&definition.count>1 ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition.count,px(definition.gap),definition.separator??false,limits,source,constraints) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits,1,constraints) }; groups.push(group);
+      group = { startIndex:0,setup, columns, box, flow, sections: [], paginator: definition&&definition.count>1||metadata.word?.mirrorMargins ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition?.count??1,px(definition?.gap??0),definition?.separator??false,limits,source,constraints,metadata.word?.mirrorMargins?(index=>(group!.startIndex+index)%2===1?px(setup.margins.right-setup.margins.left):0):undefined) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits,1,constraints) }; groups.push(group);
       if (section.element === root) { flow.append(...root.childNodes); root.append(box); }
       else root.insertBefore(box, section.element);
     }
@@ -160,7 +160,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
         const first = !blank && !startsBySection.has(definition.sectionId);
         if (first) { startsBySection.set(definition.sectionId, result.length); if (definition.pageNumberStart !== undefined) nextNumber = definition.pageNumberStart; }
         const number = nextNumber++, page: RenderedPage = Object.freeze({ pageId: "page-" + (result.length + 1), index: result.length, sectionId: definition.sectionId,
-          number, label: pageLabel(number, definition.pageNumberFormat), rect: Object.freeze({ x: pt(box.left - surface.left), y: pt(box.top - surface.top + index * pitch), width: setup.width, height: setup.height }), setup: setup as PageSetup, blank: Boolean(blank) });
+          number, label: pageLabel(number, definition.pageNumberFormat), rect: Object.freeze({ x: pt(box.left - surface.left), y: pt(box.top - surface.top + index * pitch), width: setup.width, height: setup.height }), setup:facingWordPageSetup(setup,result.length,metadata.word?.mirrorMargins??false) as PageSetup, blank: Boolean(blank) });
         result.push(page);
         const paper = document.createElement("div"); paper.className = "sdk-paper"; paper.dataset.pageId = page.pageId; paper.setAttribute("aria-hidden", "true");
         paper.style.cssText = `left:${page.rect.x}pt;top:${page.rect.y}pt;width:${setup.width}pt;height:${setup.height}pt`;
@@ -177,7 +177,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
           const story = template.cloneNode(true) as HTMLElement; story.classList.remove("sdk-auxiliary"); story.classList.add("sdk-page-story"); story.dataset.sdkAuxiliary = "true";
           const distance = kind === "headers" ? definition.headerDistance ?? 36 : definition.footerDistance ?? 36;
           const available = Math.max(0, (kind === "headers" ? setup.margins.top : setup.margins.bottom) - distance);
-          story.style.cssText += `;left:${setup.margins.left}pt;width:${setup.width - setup.margins.left - setup.margins.right}pt;max-height:${available}pt;${kind === "headers" ? "top:" : "bottom:"}${distance}pt`;
+          story.style.cssText += `;left:${page.setup.margins.left}pt;width:${setup.width - setup.margins.left - setup.margins.right}pt;max-height:${available}pt;${kind === "headers" ? "top:" : "bottom:"}${distance}pt`;
           paper.append(story);
           if (story.scrollHeight > px(available) + 1 && !diagnostics.some((item) => item.code === "ContentOverflow" && item.nodeId === id))
             diagnostics.push({ code: "ContentOverflow", nodeId: id!, message: "A header or footer exceeds the available margin area and is clipped." });

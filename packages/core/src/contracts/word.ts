@@ -104,6 +104,7 @@ export const WordMetadataSchema = z.strictObject({
   drawings:z.array(WordDrawingSchema).optional(),
   nativeContent: WordNativeContentSchema.optional(),
   stories: z.array(WordStorySchema).min(1),
+  mirrorMargins:z.boolean().optional(),
   evenAndOddHeaders: z.boolean().optional(),
   automaticHyphenation: z.boolean().optional(),
   defaultRunCssClass: IdentifierSchema.optional(),

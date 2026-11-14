@@ -10,6 +10,8 @@ export function wordPageSetup(section:DeepReadonly<DocumentSection>,fallback:Dee
  const side=section.gutterPosition??'left';
  return {...setup,margins:{...setup.margins,[side]:setup.margins[side]+section.gutter}};
 }
+/** Facing-page parity is physical and independent of printed page labels. */
+export function facingWordPageSetup(setup:DeepReadonly<PageSetup>,index:number,mirror:boolean):DeepReadonly<PageSetup>{return mirror&&index%2===1?{...setup,margins:{...setup.margins,left:setup.margins.right,right:setup.margins.left}}:setup;}
 /** A grid changes measured text, never authored paragraph/run formatting. */
 export function applyWordGrid(document:Document,root:HTMLElement,section:DeepReadonly<DocumentSection>,limits:Readonly<RenderLimits>):void{
  const grid=section.grid;if(!grid||grid.type==='default')return;

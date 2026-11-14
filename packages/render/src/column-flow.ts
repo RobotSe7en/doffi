@@ -7,15 +7,15 @@ import type { PreviewSource } from './source-index.js';
 
 /** Measure one narrow, reversible source flow, then project logical columns onto
  * physical pages. Text and source elements retain identity, order and UTF-16 offsets. */
-export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:number,width:number,count:number,gap:number,separator:boolean,limits:Readonly<RenderLimits>,source:PreviewSource,constraints?:PageFlowConstraints):PageFlow{
- if(count===1)return pageFlow(document,flow,area,pitch,limits,1,constraints);
+export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:number,width:number,count:number,gap:number,separator:boolean,limits:Readonly<RenderLimits>,source:PreviewSource,constraints?:PageFlowConstraints,pageOffset?:(page:number)=>number):PageFlow{
+ if(count===1&&!pageOffset)return pageFlow(document,flow,area,pitch,limits,1,constraints);
  if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Column count exceeds the rendering budget.');
  const columnWidth=(width-gap*(count-1))/count;if(columnWidth<=0)throw new DocumentError('InvalidDocument','Column gaps leave no printable width.');
  flow.style.width=columnWidth+'px';
  const paginator=pageFlow(document,flow,area,area,{...limits,maxPages:limits.maxPages*count},count,constraints?{reserved:index=>constraints.reserved(Math.floor(index/count)),minimumPage:node=>{const minimum=constraints.minimumPage(node);return minimum===undefined?undefined:minimum*count;}}:undefined),wrappers:HTMLElement[]=[],positions=new Map<HTMLElement,string>(),backgrounds:HTMLElement[]=[],starts=new Map<HTMLElement,number>();
  const view=document.defaultView!,origin=()=>flow.getBoundingClientRect(),columnAt=(y:number)=>Math.max(0,Math.floor((y-origin().top+.25)/area));
  let projected=false;
- const offset=(column:number):{x:number;y:number}=>({x:(column%count)*(columnWidth+gap),y:Math.floor(column/count)*pitch-column*area});
+ const offset=(column:number):{x:number;y:number}=>({x:(column%count)*(columnWidth+gap)+(pageOffset?.(Math.floor(column/count))??0),y:Math.floor(column/count)*pitch-column*area});
  const move=(element:HTMLElement,column:number):void=>{const delta=offset(column);if(!delta.x&&!delta.y)return;positions.set(element,element.style.cssText);ownViewStyle(element,'position','left','top');const style=view.getComputedStyle(element);element.style.position='relative';element.style.left=(delta.x+(parseFloat(style.left)||0))+'px';element.style.top=(delta.y+(parseFloat(style.top)||0))+'px';};
  function project():void{
   const base=origin(),nodes=new Map<Node,{rect:DOMRect;from:number;to:number}>();let measured=0,renderNodes=document.getElementsByTagName('*').length;
@@ -55,8 +55,8 @@ export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:
   };
   walk(flow);
   const pages=Math.ceil(paginator.count/count);flow.style.height=(Math.max(0,pages-1)*pitch+area)+'px';flow.style.minHeight=flow.style.height;flow.style.isolation='isolate';
-  if(separator)for(let page=0;page<pages;page++)for(let column=1;column<count;column++){reserve();const line=markViewNode(document.createElement('div'));line.style.cssText=`position:absolute;pointer-events:none;left:${column*columnWidth+(column-.5)*gap}px;top:${page*pitch}px;height:${area}px;border-left:.5pt solid #555`;flow.append(line);backgrounds.push(line);}
+  if(separator)for(let page=0;page<pages;page++)for(let column=1;column<count;column++){reserve();const line=markViewNode(document.createElement('div'));line.style.cssText=`position:absolute;pointer-events:none;left:${column*columnWidth+(column-.5)*gap+(pageOffset?.(page)??0)}px;top:${page*pitch}px;height:${area}px;border-left:.5pt solid #555`;flow.append(line);backgrounds.push(line);}
   flow.dataset.sdkColumnCount=String(count);projected=true;
  }
- return{reset(){for(const node of backgrounds.splice(0))node.remove();for(const[element,style]of positions)element.style.cssText=style;positions.clear();for(const wrapper of wrappers.splice(0))wrapper.replaceWith(...wrapper.childNodes);flow.style.removeProperty('height');projected=false;starts.clear();paginator.reset();},layout(element,forcePage,parity){paginator.layout(element,forcePage,parity);starts.set(element,Math.floor(paginator.pageAt(element)/count));},project,get count(){return Math.ceil(paginator.count/count);},get blanks(){return new Set([...paginator.blanks].map(value=>Math.floor(value/count)));},pageAt(element){return starts.get(element)??(projected?Math.max(0,Math.floor((element.getBoundingClientRect().top-origin().top+.25)/pitch)):Math.floor(paginator.pageAt(element)/count));},headerHeight:paginator.headerHeight};
+ return{reset(){for(const node of backgrounds.splice(0))node.remove();for(const[element,style]of positions)element.style.cssText=style;positions.clear();for(const wrapper of wrappers.splice(0))wrapper.replaceWith(...wrapper.childNodes);flow.style.removeProperty('height');flow.style.removeProperty('min-height');projected=false;starts.clear();paginator.reset();},layout(element,forcePage,parity){paginator.layout(element,forcePage,parity);starts.set(element,Math.floor(paginator.pageAt(element)/count));},project,get count(){return Math.ceil(paginator.count/count);},get blanks(){return new Set([...paginator.blanks].map(value=>Math.floor(value/count)));},pageAt(element){return starts.get(element)??(projected?Math.max(0,Math.floor((element.getBoundingClientRect().top-origin().top+.25)/pitch)):Math.floor(paginator.pageAt(element)/count));},headerHeight:paginator.headerHeight};
 }

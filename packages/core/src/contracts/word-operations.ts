@@ -19,7 +19,7 @@ export const WordOperationSchema=z.discriminatedUnion('op',[
   ...WordMathOperationSchema.options,
   ...WordControlOperationSchema.options,
   z.strictObject({op:z.literal('resetWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),resetParagraph:z.boolean().optional()}),
-  z.strictObject({op:z.literal('setWordOptions'),nodeId:IdentifierSchema,evenAndOddHeaders:z.boolean().optional(),automaticHyphenation:z.boolean().optional()}),
+  z.strictObject({op:z.literal('setWordOptions'),nodeId:IdentifierSchema,mirrorMargins:z.boolean().optional(),evenAndOddHeaders:z.boolean().optional(),automaticHyphenation:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordTabs'),nodeId:IdentifierSchema,defaultInterval:z.number().positive(),stops:WordMetadataSchema.shape.tabs.element.shape.stops}),
   z.strictObject({op:z.literal('insertWordField'),nodeId:IdentifierSchema,instruction:z.string().min(1),cachedText:z.string().optional(),offset:RevisionSchema.optional()}),
   z.strictObject({op:z.literal('setWordSection'),nodeId:IdentifierSchema,changes:DocumentSectionSchema.omit({sectionId:true,rootNodeId:true}).partial()}),

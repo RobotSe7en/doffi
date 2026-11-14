@@ -49,6 +49,10 @@ export class DocxNativeImport {
   recover(error: unknown): boolean {
     const info = unsupportedSource(error);
     if (!info) return false;
+    const targetParent=this.parents.get(info.node),alternate=info.node.uri===MC&&info.node.name==='AlternateContent';
+    if(info.elementType||alternate){const supported=new Set([W,R,WP,'http://schemas.openxmlformats.org/drawingml/2006/main','http://schemas.openxmlformats.org/drawingml/2006/picture','http://schemas.microsoft.com/office/word/2010/wordprocessingShape','http://schemas.microsoft.com/office/word/2010/wordprocessingGroup']);const unknownAlternative=(node:XmlNode):boolean=>node.uri===MC&&node.name==='AlternateContent'&&node.content.some(child=>typeof child!=='string'&&child.uri===MC&&child.name==='Choice'&&(child.attrs.get(' Requires')??'').split(/\s+/).filter(Boolean).some(prefix=>!supported.has(child.namespaces[prefix]??'')));
+      if(info.elementType||unknownAlternative(info.node)){const key=['element',info.node.uri,info.node.name,targetParent?.uri??'',targetParent?.name??''].join('\n'),seen=this.batched.get(key)??new WeakSet<XmlNode>();this.batched.set(key,seen);const targets:XmlNode[]=[];const scan=(node:XmlNode):void=>{const parent=this.parents.get(node);if(node.uri===info.node.uri&&node.name===info.node.name&&parent?.uri===targetParent?.uri&&parent?.name===targetParent?.name&&(!alternate||unknownAlternative(node)))targets.push(node);for(const child of node.content)if(typeof child!=='string')scan(child);};for(const root of this.roots.values())if(!seen.has(root)){seen.add(root);scan(root);}if(targets.length){for(const node of targets)if(!this.isDetached(node)&&!this.recoverSource({node},error))return false;return true;}}
+    }
     const collection=info.collection,parent=collection?this.parents.get(collection.owner):undefined;
     if(collection&&collection.owner.uri===W&&propertyRoots.has(collection.owner.name)){
       const key=[collection.owner.uri,collection.owner.name,parent?.uri??'',parent?.name??'',collection.uri,...collection.names].join('\n'),seen=this.batched.get(key)??new WeakSet<XmlNode>();this.batched.set(key,seen);const targets:XmlNode[]=[];
@@ -75,11 +79,11 @@ export class DocxNativeImport {
       if (relation) { const key=this.main+'\n'+relation.type.slice(relation.type.lastIndexOf('/')+1); if(!this.suppressed.has(key)){this.suppressed.add(key);return true;} }
     }
     const alternate=chain.find(node=>node.uri===MC&&node.name==='AlternateContent');
-    const propertyIndex = mergeContinuation||alternate ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name));
+    const propertyIndex = mergeContinuation ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name));
     // A drawing is indivisible until it has an editable geometry implementation.
     const atomicIndex = chain.findIndex(n => n.uri === W && ['drawing','pict','object','sdt'].includes(n.name) || n.uri==='http://schemas.openxmlformats.org/officeDocument/2006/math'&&['oMath','oMathPara'].includes(n.name));
     const drawing=atomicIndex<0?undefined:chain[atomicIndex];
-    if (propertyIndex >= 0 && (!drawing || drawing.name==='sdt'&&propertyIndex<atomicIndex)) {
+    if (propertyIndex >= 0 && (!alternate||propertyIndex>chain.indexOf(alternate)) && (!drawing || drawing.name==='sdt'&&propertyIndex<atomicIndex)) {
       const owner = chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
       const path: string[] = [],indices:number[]=[];
       for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) {path.unshift(current.uri + ' ' + current.name);indices.unshift(this.ordinals.get(current)??0);}
@@ -131,7 +135,7 @@ export class DocxNativeImport {
       if(attrs.size){let owner:XmlNode|undefined=node;while(owner&&!this.bindings.has(owner)&&!['style','styles','settings','numbering','fonts','document','comments','footnotes','endnotes'].includes(owner.name))owner=this.parents.get(owner);if(owner){const path:string[]=[],indices:number[]=[];for(let current=node===owner?undefined:this.parents.get(node);current&&current!==owner;current=this.parents.get(current)){path.unshift(current.uri+' '+current.name);indices.unshift(this.ordinals.get(current)??0);}let change:XmlNode|undefined;for(let current:XmlNode|undefined=node;current&&current!==owner;current=this.parents.get(current))if(current.uri===W&&current.name.endsWith('PrChange')){change=current;break;}this.pending.push({owner,original:{...node,attrs,content:[]},kind:'property',path,indices,propertyIndex:this.ordinals.get(node)??0,label:'原生扩展属性 '+node.name,id:'native-'+(++this.serial),...(change?.attrs.get(W+' id')?{revisionSourceId:change.attrs.get(W+' id')!,revisionPrevious:change!==node}:{})});}}}
       for(const child of node.content)if(typeof child!=='string')capture(child);
     };for(const root of this.roots.values())capture(root);
-    const writtenSettings=new Set(['evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','trackRevisions','footnotePr','endnotePr']);
+    const writtenSettings=new Set(['mirrorMargins','evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','trackRevisions','footnotePr','endnotePr']);
     for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content)if(typeof item!=='string'&&!(item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??''))))this.pending.push({owner:root,original:item,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
     const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
     const encoder = new (globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } }).TextEncoder(), parts = new Set<string>();

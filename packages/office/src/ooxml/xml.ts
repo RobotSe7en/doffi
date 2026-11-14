@@ -41,7 +41,7 @@ export interface XmlNode {
 export interface XmlBudget {
   nodes: number;
 }
-export interface UnsupportedXmlSource{node:XmlNode;attribute?:string;collection?:{owner:XmlNode;names:readonly string[];uri:string}}
+export interface UnsupportedXmlSource{node:XmlNode;attribute?:string;elementType?:boolean;collection?:{owner:XmlNode;names:readonly string[];uri:string}}
 const unsupportedSources = new WeakMap<object, UnsupportedXmlSource>();
 export function unsupportedSource(error: unknown): UnsupportedXmlSource | undefined {
   return typeof error === "object" && error !== null ? unsupportedSources.get(error) : undefined;
@@ -66,6 +66,8 @@ export function unsupported(
   unsupportedSources.set(error, { node, ...(attribute ? { attribute } : {}) });
   throw error;
 }
+/** A grammar slot cannot map this expanded element name, regardless of attributes. */
+export function unsupportedType(node:XmlNode,message?:string):never{try{unsupported(node,message);}catch(error){if(typeof error==="object"&&error)unsupportedSources.set(error,{node,elementType:true});throw error;}}
 export function attr(
   node: XmlNode | undefined,
   name: string,

@@ -12,6 +12,7 @@ import {
   number,
   on,
   unsupported,
+  unsupportedType,
 } from "./xml.js";
 import type { XmlNode } from "./xml.js";
 
@@ -522,9 +523,9 @@ export class DocxStyles {
       "highlight",
       "u",
       "effect",
+      "fitText",
       "bdr",
       "shd",
-      "fitText",
       "vertAlign",
       "rtl",
       "cs",
@@ -587,13 +588,13 @@ export class DocxStyles {
           : inactive!;
       }
     }
+    if(child(properties,"fitText"))unsupportedType(child(properties,"fitText")!);
     for (const feature of [
       "outline",
       "shadow",
       "emboss",
       "imprint",
       "effect",
-      "fitText",
       "eastAsianLayout",
       "oMath",
     ]) {

@@ -48,6 +48,7 @@ import {
   on,
   text,
   unsupported,
+  unsupportedType,
 } from "./ooxml/xml.js";
 import type { XmlNode } from "./ooxml/xml.js";
 
@@ -179,7 +180,7 @@ class Importer {
         this.settings ?? opc.read(main),
         720,
       ) / 20;
-    this.word.trackChanges=on(child(this.settings,"trackRevisions"));
+    this.word.trackChanges=on(child(this.settings,"trackRevisions"));this.word.mirrorMargins=on(child(this.settings,"mirrorMargins"));
     this.word.automaticHyphenation = on(
       child(this.settings, "autoHyphenation"),
     );
@@ -533,7 +534,7 @@ class Importer {
     const result: Html[] = [];
     for (const item of items) {
       if(item.uri===M&&(item.name==='oMath'||item.name==='oMathPara')){const paragraph=this.make('p',{'data-word-math-paragraph':'true'});if(item.name==='oMathPara'){this.mathParagraph(item,paragraph);}else this.math(item,paragraph,'block');result.push(paragraph);continue;}
-      if (item.uri !== W) unsupported(item);
+      if (item.uri !== W) unsupportedType(item);
       if (item.name === "p") result.push(this.paragraph(item, inherited));
       else if (item.name === "tbl") result.push(this.table(item));
       else if (item.name === "sdt") {
@@ -561,7 +562,7 @@ class Importer {
         const marker = this.make("div");
         this.inline(item, marker);
         if(marker.children.length)result.push(marker);
-      } else unsupported(item);
+      } else unsupportedType(item);
     }
     return result;
   }
@@ -699,7 +700,7 @@ class Importer {
     }
     if(source.uri===M&&source.name==='oMath'){this.math(source,parent,'inline');return;}
     if(source.uri===M&&source.name==='oMathPara'){this.mathParagraph(source,parent);return;}
-    if (source.uri !== W) unsupported(source);
+    if (source.uri !== W) unsupportedType(source);
     switch (source.name) {
       case "sdt": parent.children.push(this.control(source,'inline',{p:{},r:paragraphStyle}));return;
       case "r": {
@@ -775,7 +776,7 @@ class Importer {
         for (const item of this.compat(source)) {
           if (item.uri === W && item.name === "rPr") continue;
           if (!this.native?.isPlaceholder(item) && (item.uri !== W || !contentNames.includes(item.name)))
-            unsupported(
+            unsupportedType(
               item,
               "The run contains unsupported or invalid inline content.",
             );
@@ -1032,7 +1033,7 @@ class Importer {
       case "lastRenderedPageBreak":
         break; // Proofing and stale renderer positions carry no source content.
       default:
-        unsupported(source);
+        unsupportedType(source);
     }
   }
   private section(source: XmlNode | undefined, root: Html): DocumentSection {
