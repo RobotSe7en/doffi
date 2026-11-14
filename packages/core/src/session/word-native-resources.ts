@@ -6,6 +6,12 @@ import { assetDigest } from '../document/assets.js';
 import { readJson, encode, resolveReference } from '../document/package.js';
 import { parseContract } from '../schema-registry.js';
 import { checkLimit, invalid } from '../document/validation.js';
+/** Remove resources formerly owned by source images once neither source nor
+ * current Word semantics uses them. Unreferenced host-supplied assets stay put. */
+export function pruneRemovedWordImages(word:WordMetadata,files:Map<string,Uint8Array>,before:ParsedHtml,after:ParsedHtml,entrypoint:string):void{
+ const images=(source:ParsedHtml):Set<string>=>new Set(source.nodeIds().flatMap(id=>{const node=source.peekNode(id)!;return node.tagName==='img'?[resolveReference(node.attributes.src!,entrypoint)]:[];})),owned=images(before),used=images(after);if([...owned].every(path=>used.has(path)))return;
+ const visit=(value:unknown):void=>{if(typeof value==='string'){if(owned.has(value))used.add(value);}else if(Array.isArray(value))for(const item of value)visit(item);else if(value&&typeof value==='object')for(const item of Object.values(value))visit(item);};visit(word);const removed=new Set([...owned].filter(path=>!used.has(path)));if(!removed.size)return;const manifest=parseContract('document-manifest',readJson(files,'manifest.json'));manifest.assets=manifest.assets.filter(asset=>!removed.has(asset.path));for(const path of removed)files.delete(path);files.set('manifest.json',encode(JSON.stringify(manifest)));
+}
 /** The native graph owns opaque resources. Core follows its declared edges,
  * without parsing OOXML or fetching relationships. Older unindexed fragments
  * conservatively retain their source-part dependencies. */

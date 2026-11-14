@@ -181,7 +181,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
           const distance = kind === "headers" ? definition.headerDistance ?? 36 : definition.footerDistance ?? 36;
           const available = Math.max(0, (kind === "headers" ? setup.margins.top : setup.margins.bottom) - distance);
           story.style.cssText += `;left:${page.setup.margins.left}pt;width:${setup.width - setup.margins.left - setup.margins.right}pt;max-height:${available}pt;${kind === "headers" ? "top:" : "bottom:"}${distance}pt`;
-          paper.append(story);
+          paper.append(story);story.style.zIndex='1';
+          for(const object of [...story.querySelectorAll<HTMLElement>('[data-sdk-word-object]')]){const definition=metadata.word?.drawings?.find(drawing=>drawing.nodeId===object.dataset.sdkWordObject);if(definition?.layout.mode!=='floating'||!definition.layout.behindText)continue;const paragraph=object.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');if(!paragraph?.dataset.nodeId)continue;object.dataset.sdkWordStoryAnchor=paragraph.dataset.nodeId;object.style.zIndex='0';paper.append(object);}
           if (story.scrollHeight > px(available) + 1 && !diagnostics.some((item) => item.code === "ContentOverflow" && item.nodeId === id))
             diagnostics.push({ code: "ContentOverflow", nodeId: id!, message: "A header or footer exceeds the available margin area and is clipped." });
         }

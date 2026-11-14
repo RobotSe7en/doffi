@@ -27,6 +27,7 @@ import type { ContentDocumentModel, DocumentEditingSession, DocumentSelection, R
 import { mountDocumentPreview } from "./preview.js";
 import{wordReviewPreview}from'./word-review-preview.js';
 import{bindWordTableResize}from'./word-table-resize.js';
+import{createWordWatermarkControls}from'./word-watermark-controls.js';
 import { PreviewSource, sourceSelectionText, stripClipboardIdentities,DEFAULT_RENDER_LIMITS } from "@doffi/render";
 import type { DocumentPreviewOptions } from "./preview.js";
 import type { DocumentRenderReport } from "@doffi/render";
@@ -49,7 +50,7 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
   | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
-  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' | 'insertFootnote' | 'insertEndnote' | 'referenceSettings' | 'insertLink' | 'bookmarks' | 'crossReference' | 'caption' | 'insertEquation' | 'equationSettings' | 'insertControl' | 'controlSettings' | 'insertChart' | 'chartSettings' | 'review' | 'styleSettings' | 'fontSettings' };
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' | 'insertFootnote' | 'insertEndnote' | 'referenceSettings' | 'insertLink' | 'bookmarks' | 'crossReference' | 'caption' | 'insertEquation' | 'equationSettings' | 'insertControl' | 'controlSettings' | 'insertChart' | 'chartSettings' | 'review' | 'styleSettings' | 'fontSettings' | 'watermark' };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -114,6 +115,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     return metadata.sections.find(section=>{const element=root?.querySelector('[data-node-id="'+CSS.escape(section.rootNodeId)+'"]')??(root?.dataset.nodeId===section.rootNodeId?root:undefined);return element&&range&&element.contains(range.startContainer);})?.rootNodeId??metadata.sections[0]!.rootNodeId;
   };
   const pageControls=createWordPageControls(shadow,viewport,session,currentSection,editStory,report);
+  const watermarkControls=createWordWatermarkControls(shadow,viewport,session,currentSection,report);
   const fontControls=createWordFontControls(shadow,viewport,formatState,formatAppearance,report);
   const styleControls=createWordStyleControls(shadow,viewport,session,style=>{const snapshot=session.snapshot(),range=selectedRange();if(style.kind==='paragraph'){wordCommand({type:'word',action:'style',styleId:style.styleId});return;}let operations:import('@doffi/core').DocumentOperation[]=[];if(style.kind==='character'&&range){const anchor=new PreviewSource(frame!,viewModel()).textAnchor(range,session);if(anchor?.kind==='text'||anchor?.kind==='text-set')operations=(anchor.kind==='text'?[anchor]:anchor.ranges).map(item=>({op:'applyWordCharacterStyle',nodeId:item.nodeId,from:item.from,to:item.to,expectedText:item.quote,styleId:style.styleId}));}if(style.kind==='table'&&range){const node=range.startContainer.nodeType===1?range.startContainer as Element:range.startContainer.parentElement,table=node?.closest<HTMLElement>('table');if(table?.dataset.nodeId)operations=[{op:'formatWordTable',nodeId:table.dataset.nodeId,styleId:style.styleId}];}if(!operations.length)throw new DocumentError('InvalidOperation','请先选择相应文字或表格。');session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations}));},report);
   const listControls=createWordListControls(shadow,viewport,session,()=>selectedParagraphs().map(node=>node.dataset.nodeId!),report);
@@ -336,6 +338,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if(command.action==="fontSettings"){fontControls.open();return;}
     if(command.action==="styleSettings"){styleControls.open();return;}
     if (command.action === "pageSettings") { pageControls.open(); return; }
+    if(command.action==='watermark'){watermarkControls.open();return;}
     if (command.action === "mainStory") { editStory(); return; }
     if (command.action === "pageBreak") { const range=selectedRange();if(!range)return;mutate(range,()=>{const breaker=frame!.createElement("br");breaker.dataset.wordBreak="page";insert(range,breaker);});return; }
     if (command.action === "sectionBreak" || command.action === "pageNumber") { const paragraph=selectedParagraphs()[0];if(!paragraph)return;const snapshot=session.snapshot();session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[command.action==="sectionBreak"?{op:"splitWordSection",nodeId:paragraph.dataset.nodeId!,breakType:"nextPage"}:{op:"insertWordField",nodeId:paragraph.dataset.nodeId!,instruction:" PAGE ",cachedText:"1"}]}));return; }
@@ -607,6 +610,6 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    clearMarks();reviewControls.dispose();chartControls.dispose();controlControls.dispose();mathControls.dispose();linkControls.dispose();referenceControls.dispose();drawingControls.dispose();listControls.dispose();styleControls.dispose();fontControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    clearMarks();reviewControls.dispose();chartControls.dispose();controlControls.dispose();mathControls.dispose();linkControls.dispose();referenceControls.dispose();drawingControls.dispose();listControls.dispose();styleControls.dispose();fontControls.dispose();watermarkControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

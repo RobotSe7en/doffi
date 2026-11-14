@@ -1,4 +1,5 @@
 import{trackWordRowDeletion,wordTableRows}from'./word-row-revisions.js';
+import{applyWordWatermark}from'./word-watermark.js';
 import{recordWordFormat,prepareWordRunFormat}from'./word-format-revisions.js';
 import {editWordStyle} from './word-styles.js';
 import {applyWordRevision,isWordRevisionOperation}from'./word-revisions.js';
@@ -20,7 +21,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordRevisionOperation(operation)||isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','applyWordCharacterStyle','setWordParagraph','setWordStyle','deleteWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordRevisionOperation(operation)||isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['setWordWatermark','resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','applyWordCharacterStyle','setWordParagraph','setWordStyle','deleteWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
 export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits,annotations:Annotation[]=[]):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -29,6 +30,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
+  if(operation.op==='setWordWatermark'){applyWordWatermark(metadata,edit,parse,operation,operation=>applyWordOperation(metadata,edit,parse,styles,operation,limits,annotations));return;}
   if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation,limits,metadata.sections);return;}
   if(isWordCommentOperation(operation)){applyWordComment(metadata,annotations,edit,parse,operation);return;}
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}

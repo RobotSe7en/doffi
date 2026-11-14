@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IdentifierSchema,RevisionSchema } from './primitives.js';
+import { IdentifierSchema,RevisionSchema,PackagePathSchema } from './primitives.js';
 import { DocumentSectionSchema } from "./document.js";
 import { TableChangeSchema } from "./table-operations.js";
 import { WordStyleSchema,WordNumberLevelSchema,WordMetadataSchema } from './word.js';
@@ -12,6 +12,7 @@ import {WordRevisionOperationSchema}from'./word-revision.js';
 const properties=z.record(z.string().min(1),z.string().min(1));
 /** Format operations always name an existing source target for proposal scoping. */
 export const WordOperationSchema=z.discriminatedUnion('op',[
+  z.strictObject({op:z.literal('setWordWatermark'),nodeId:IdentifierSchema,watermark:z.discriminatedUnion('kind',[z.strictObject({kind:z.literal('text'),text:z.string().min(1),fontFamily:z.string().min(1),fontSize:z.number().positive(),color:z.string().regex(/^#[a-fA-F0-9]{6}$/),rotation:z.number().optional()}),z.strictObject({kind:z.literal('image'),assetPath:PackagePathSchema,alt:z.string(),width:z.number().positive(),height:z.number().positive(),rotation:z.number().optional()})]).nullable()}),
   ...WordCommentOperationSchema.options,
   ...WordRevisionOperationSchema.options,
   ...WordDrawingOperationSchema.options,

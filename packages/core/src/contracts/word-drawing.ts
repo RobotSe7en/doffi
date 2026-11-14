@@ -15,7 +15,7 @@ export const WordDrawingLayoutSchema=z.strictObject({
 const crop=z.strictObject({left:z.number().nonnegative().lt(1),top:z.number().nonnegative().lt(1),right:z.number().nonnegative().lt(1),bottom:z.number().nonnegative().lt(1)});
 const connector=z.strictObject({routing:z.enum(['straight','elbow']),startNodeId:IdentifierSchema.optional(),endNodeId:IdentifierSchema.optional(),startSite:z.number().int().min(0).max(3).optional(),endSite:z.number().int().min(0).max(3).optional()});
 export const WordDrawingTextSchema=z.strictObject({insets:z.strictObject({top:z.number(),right:z.number(),bottom:z.number(),left:z.number()}).optional(),vertical:z.enum(['top','middle','bottom']).optional(),direction:z.enum(['horizontal','vertical','vertical270']).optional(),rotation:z.number().optional(),wrap:z.boolean().optional(),autoFit:z.enum(['none','normal','shape']).optional(),fontScale:z.number().positive().max(1).optional(),lineSpacingReduction:z.number().min(0).max(1).optional()});
-const base={nodeId:IdentifierSchema,geometry:DrawingGeometrySchema,layout:WordDrawingLayoutSchema,name:z.string().optional()};
+const base={nodeId:IdentifierSchema,geometry:DrawingGeometrySchema,layout:WordDrawingLayoutSchema,name:z.string().optional(),watermark:z.boolean().optional()};
 export const WordDrawingSchema=z.discriminatedUnion('kind',[
  z.strictObject({...base,kind:z.literal('chart'),chart:WordChartSchema}),
  z.strictObject({...base,kind:z.literal('image'),crop:crop.optional()}),
