@@ -1,3 +1,4 @@
+import { writeWordControlProperties } from './docx-control.js';
 import { writeNoteOptions } from './docx-note-options.js';
 import { writeWordMath } from './docx-math.js';
 import { DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, openDocument } from "@doffi/core";
@@ -66,6 +67,7 @@ class Exporter {
   private width = 468;
   private readonly noteIds=new Map<string,number>();
   private drawingId = 0;
+  private controlId = 0;
   private readonly drawingIds=new Map<string,number>();
   private readonly drawings:ReadonlyMap<string,DeepReadonly<WordDrawing>>;
   private mappedCells = 0;
@@ -198,7 +200,8 @@ class Exporter {
     }
   }
   private fieldControl(type: "begin" | "separate" | "end", field?: Field): void {
-    this.add("<w:r>" + empty("w:fldChar", { "w:fldCharType": type, ...(field ? { "w:fldLock": field.locked === undefined ? undefined : field.locked ? 1 : 0, "w:dirty": field.dirty === undefined ? undefined : field.dirty ? 1 : 0 } : {}) }) + "</w:r>");
+    const source=field?this.tree.byId.get(field.nodeId):undefined;
+    this.add("<w:r"+this.nativeMark(source?this.nativeRunOwner(source):undefined)+">" + empty("w:fldChar", { "w:fldCharType": type, ...(field ? { "w:fldLock": field.locked === undefined ? undefined : field.locked ? 1 : 0, "w:dirty": field.dirty === undefined ? undefined : field.dirty ? 1 : 0 } : {}) }) + "</w:r>");
   }
   private instruction(state: FieldState, until: number): void {
     if (until < state.offset || until > state.definition.instruction.length) unsupported("A nested field instruction offset cannot be exported.");
@@ -211,6 +214,8 @@ class Exporter {
       const textCss = ["td", "th"].includes(node.parent.tag) ? { ...css, "vertical-align": "baseline", "background-color": "transparent" } : css;
       this.emitText(node, node.text, textCss, this.styles.runContext(paragraphStyle, character), character, role, language); return;
     }
+    const control=this.snapshot.metadata.word?.controls?.find(control=>control.nodeId===node.attrs['data-node-id']);
+    if(control){this.add(this.annotations.at(node,0));this.add('<w:sdt'+this.nativeMark(control.nodeId)+'>'+writeWordControlProperties(control,++this.controlId,this.nativeRun(this.css.get(node),this.styles.runContext(paragraphStyle,character),character,role,language))+'<w:sdtContent>');for(const child of node.children)this.inline(child,paragraphStyle,character,role,language);this.add('</w:sdtContent></w:sdt>');this.add(this.annotations.at(node,node.to-node.from));return;}
     if(this.drawings.has(node.attrs["data-node-id"]??"")){this.add(this.annotations.at(node,0));this.add(writeWordDrawing({word:this.snapshot.metadata.word!,tree:this.tree,css:node=>this.css.get(node),raw:node=>this.css.specified(node),id:id=>this.drawingIds.get(id)??unsupported("A drawing identity is missing."),image:node=>this.imageRelation(node),text:(id,width)=>this.captureStory(id,width),marker:node=>{let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;return this.nativeMark(node.attrs['data-node-id']!)+(this.snapshot.metadata.word?.nativeContent&&container?' dn:container="'+escapeXml(container.attrs['data-node-id']!)+'"':'');}},this.drawings.get(node.attrs["data-node-id"]!)!));this.add(this.annotations.at(node,node.to-node.from));return;}
     if (node.attrs["data-word-native-object"]) {this.add(this.annotations.at(node,0));let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id']));this.add(this.annotations.at(node,node.to-node.from)); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
@@ -347,6 +352,10 @@ class Exporter {
         this.inline(node, undefined);
         if (last && (finalSection || paragraphId)) this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>");
       }
+      else if(element(node)&&node.attrs['data-word-content-control']&&node.attrs['data-word-content-control']!=='toc'){
+        const control=this.snapshot.metadata.word?.controls?.find(control=>control.nodeId===node.attrs['data-node-id']);if(!control)unsupported('The content control definition is missing.');
+        this.add('<w:sdt'+this.nativeMark(control.nodeId)+'>'+writeWordControlProperties(control,++this.controlId,this.nativeRun(this.css.get(node),this.styles.runContext(undefined)))+'<w:sdtContent>');this.blocks(node.children,last?finalSection:undefined,last?paragraphId:undefined);this.add('</w:sdtContent></w:sdt>');
+      }
       else if (element(node) && paragraphTags.has(node.tag)) this.paragraph(node, last ? finalSection : undefined, last ? paragraphId : undefined);
       else if (element(node) && node.tag === "table") {
         this.table(node);
@@ -355,7 +364,7 @@ class Exporter {
         if (node.tag === "ul" || node.tag === "ol") this.list(node, last ? finalSection : undefined, last ? paragraphId : undefined);
         else {
           const toc = node.attrs["data-word-content-control"] === "toc";
-          if (toc) this.add("<w:sdt><w:sdtPr>" + ["id", "alias", "tag"].map((key) => value(key, node.attrs["data-word-control-" + key])).join("") + '<w:docPartObj>' + value("docPartGallery", "Table of Contents") + "<w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>");
+          if (toc) this.add("<w:sdt"+this.nativeMark(node.attrs["data-node-id"])+"><w:sdtPr>" + ["id", "alias", "tag"].map((key) => value(key, node.attrs["data-word-control-" + key])).join("") + '<w:docPartObj>' + value("docPartGallery", "Table of Contents") + "<w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>");
           this.blocks(node.children, last ? finalSection : undefined, last ? paragraphId : undefined);
           if (toc) this.add("</w:sdtContent></w:sdt>");
         }

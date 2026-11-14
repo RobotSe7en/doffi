@@ -5,6 +5,7 @@ export * from "./contracts/word.js";
 export * from './contracts/word-drawing.js';
 export * from './contracts/word-reference.js';
 export * from './contracts/word-math.js';
+export * from './contracts/word-control.js';
 export { parseWordMath,validateWordMath } from './word-math.js';
 export { DrawingGeometrySchema,DrawingPresetSchema,DrawingTextPropertiesSchema } from './contracts/drawing.js';
 export * from "./contracts/presentation.js";

@@ -7,8 +7,8 @@ import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
 interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
-const owners = new Set(['p', 'r', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
-const propertyRoots = new Set(['pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
+const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
+const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
 const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'hyperlink']);
 export class DocxNativeImport {
   private readonly pending: Pending[] = [];
@@ -63,8 +63,9 @@ export class DocxNativeImport {
     }
     const propertyIndex = mergeContinuation ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds'].includes(n.name));
     // A drawing is indivisible until it has an editable geometry implementation.
-    const drawing = chain.find(n => n.uri === W && ['drawing', 'pict', 'object'].includes(n.name));
-    if (!drawing && propertyIndex >= 0) {
+    const atomicIndex = chain.findIndex(n => n.uri === W && ['drawing','pict','object','sdt'].includes(n.name) || n.uri==='http://schemas.openxmlformats.org/officeDocument/2006/math'&&['oMath','oMathPara'].includes(n.name));
+    const drawing=atomicIndex<0?undefined:chain[atomicIndex];
+    if (propertyIndex >= 0 && (!drawing || drawing.name==='sdt'&&propertyIndex<atomicIndex)) {
       const owner = chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
       const path: string[] = [];
       for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) path.unshift(current.uri + ' ' + current.name);
@@ -105,6 +106,11 @@ export class DocxNativeImport {
     return true;
   }
   finish(files: Map<string, Uint8Array>, manifest: ContentDocumentManifest, word: WordMetadata): void {
+    // Settings outside the editable model still belong to the native package.
+    // Capture them directly once, rather than requiring one recovery pass per
+    // harmless producer preference or compatibility flag.
+    const writtenSettings=new Set(['evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','footnotePr','endnotePr']);
+    for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content)if(typeof item!=='string'&&!(item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??''))))this.pending.push({owner:root,original:item,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
     const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
     const encoder = new (globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } }).TextEncoder(), parts = new Set<string>();
     const add = (bytes: Uint8Array, mime: string): string => {

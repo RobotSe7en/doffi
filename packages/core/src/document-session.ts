@@ -46,6 +46,7 @@ function updateWordMetadata(metadata: ContentDocumentMetadata, before: DocumentS
   word.tables = word.tables.filter((item) => after.hasNode(item.nodeId));
   if(word.drawings)word.drawings=word.drawings.filter(item=>after.hasNode(item.nodeId));
   if(word.equations)word.equations=word.equations.filter(item=>after.hasNode(item.nodeId));
+  if(word.controls)word.controls=word.controls.filter(item=>after.hasNode(item.nodeId));
   word.tabs = word.tabs.filter((item) => after.hasNode(item.paragraphNodeId));
   word.bookmarks = word.bookmarks.filter((item) => after.hasNode(item.startNodeId) || after.hasNode(item.endNodeId));
   word.fields = word.fields.filter((item) => [item.nodeId, ...(item.endNodeId ? [item.endNodeId] : []), ...(item.resultNodeIds ?? [])]
@@ -151,6 +152,21 @@ export function createDocumentSession(document: DocumentModel, options: Document
     }
     removeDeletedCommentBodies(base, annotations, edit,metadata);
     let parsed = parseEdited();
+    for(const control of base.snapshot.metadata.word?.controls??[]){
+      const current=metadata.word?.controls?.find(item=>item.nodeId===control.nodeId),unlocked=transaction.operations.some(operation=>operation.op==='setWordControl'&&operation.nodeId===control.nodeId&&operation.changes.lock==='unlocked');
+      const before=base.html.getNode(control.nodeId),after=parsed.getNode(control.nodeId),changed=before?.html!==after?.html;
+      if(!unlocked){
+        if((control.lock==='sdtLocked'||control.lock==='sdtContentLocked')&&!after)invalid('The content control container is locked.');
+        if((control.lock==='contentLocked'||control.lock==='sdtContentLocked')&&(changed||current&&['checked','value','fullDate'].some(key=>Reflect.get(control,key)!==Reflect.get(current,key))))invalid('The content control contents are locked.');
+      }
+      if(after&&current&&changed){
+        const typed=transaction.operations.some(operation=>'nodeId'in operation&&operation.nodeId===control.nodeId&&['setWordControl','setWordControlValue','setWordControlPicture','removeWordControl'].includes(operation.op));
+        if(!typed&&['checkBox','dropDown','date'].includes(control.kind)&&before?.text!==after.text)invalid('Use a typed content control value operation.');
+        if(!typed&&control.kind==='comboBox'&&before?.text!==after.text){current.value=after.text;current.showingPlaceholder=false;}
+      }
+    }
+    for(const control of base.snapshot.metadata.word?.controls??[])if(control.temporary&&parsed.hasNode(control.nodeId)&&base.html.getNode(control.nodeId)?.text!==parsed.getNode(control.nodeId)?.text){edit.unwrapSource(control.nodeId);if(metadata.word?.controls)metadata.word.controls=metadata.word.controls.filter(item=>item.nodeId!==control.nodeId);}
+    parsed=parseEdited();
     if(metadata.word){
       if(metadata.word.noteReferences)metadata.word.noteReferences=metadata.word.noteReferences.filter(reference=>parsed.hasNode(reference.nodeId));
       const referencedNotes=new Set((metadata.word.noteReferences??[]).map(reference=>reference.noteId));for(const note of metadata.word.notes??[])if((note.type??'normal')==='normal'&&!referencedNotes.has(note.noteId)&&base.snapshot.metadata.word?.noteReferences?.some(reference=>reference.noteId===note.noteId)){const story=metadata.word.stories.find(story=>story.storyId===note.storyId);if(story&&parsed.hasNode(story.rootNodeId))edit.removeSource(story.rootNodeId);}parsed=parseEdited();

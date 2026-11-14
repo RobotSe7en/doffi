@@ -6,12 +6,14 @@ import { WordStyleSchema,WordNumberLevelSchema,WordMetadataSchema } from './word
 import { WordDrawingOperationSchema } from './word-drawing.js';
 import { WordReferenceOperationSchema } from './word-reference.js';
 import { WordMathOperationSchema } from './word-math.js';
+import { WordControlOperationSchema } from './word-control.js';
 const properties=z.record(z.string().min(1),z.string().min(1));
 /** Format operations always name an existing source target for proposal scoping. */
 export const WordOperationSchema=z.discriminatedUnion('op',[
   ...WordDrawingOperationSchema.options,
   ...WordReferenceOperationSchema.options,
   ...WordMathOperationSchema.options,
+  ...WordControlOperationSchema.options,
   z.strictObject({op:z.literal('resetWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),resetParagraph:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordOptions'),nodeId:IdentifierSchema,evenAndOddHeaders:z.boolean().optional(),automaticHyphenation:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordTabs'),nodeId:IdentifierSchema,defaultInterval:z.number().positive(),stops:WordMetadataSchema.shape.tabs.element.shape.stops}),

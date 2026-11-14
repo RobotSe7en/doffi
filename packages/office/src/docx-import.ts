@@ -1,3 +1,4 @@
+import { readWordControl } from './docx-control.js';
 import { readNoteOptions } from './docx-note-options.js';
 import { M,readWordMath } from './docx-math.js';
 import { importWordDrawing,WPS,WPG } from "./docx-drawing-import.js";
@@ -573,30 +574,21 @@ class Importer {
       if (item.name === "p") result.push(this.paragraph(item, inherited));
       else if (item.name === "tbl") result.push(this.table(item));
       else if (item.name === "sdt") {
-        const properties = child(item, "sdtPr");
-        check(properties, ["docPartObj", "id", "alias", "tag"]);
-        const object = child(properties, "docPartObj");
-        if (
-          !object ||
-          attr(child(object, "docPartGallery"), "val") !== "Table of Contents"
-        )
-          unsupported(
-            item,
-            "Only the table-of-contents content wrapper is supported.",
-          );
-        check(object, ["docPartGallery", "docPartUnique"]);
-        const wrapper = this.make("div", {
-          "data-word-content-control": "toc",
-        });
-        for (const name of ["id", "alias", "tag"]) {
-          const value = attr(child(properties, name), "val");
-          if (value !== undefined)
-            wrapper.attrs["data-word-control-" + name] = value;
-        }
-        const content = child(item, "sdtContent");
-        if (!content) fail(item, "A content control has no content.");
-        wrapper.children.push(...this.blocks(this.compat(content), inherited));
-        result.push(wrapper);
+        const properties = child(item, "sdtPr"), object = child(properties, "docPartObj");
+        if (attr(child(object, "docPartGallery"), "val") === "Table of Contents") {
+          check(properties, ["docPartObj", "id", "alias", "tag"]);
+          check(object, ["docPartGallery", "docPartUnique"]);
+          const wrapper = this.make("div", { "data-word-content-control": "toc" });
+          this.native?.bind(item,wrapper.attrs);
+          for (const name of ["id", "alias", "tag"]) {
+            const value = attr(child(properties, name), "val");
+            if (value !== undefined) wrapper.attrs["data-word-control-" + name] = value;
+          }
+          const content = child(item, "sdtContent");
+          if (!content) fail(item, "A content control has no content.");
+          wrapper.children.push(...this.blocks(this.compat(content), inherited));
+          result.push(wrapper);
+        } else result.push(this.control(item,'block',inherited));
       } else if (
         item.name === "bookmarkStart" ||
         item.name === "bookmarkEnd" ||
@@ -742,6 +734,7 @@ class Importer {
     if(source.uri===M&&source.name==='oMathPara'){this.mathParagraph(source,parent);return;}
     if (source.uri !== W) unsupported(source);
     switch (source.name) {
+      case "sdt": parent.children.push(this.control(source,'inline',{p:{},r:paragraphStyle}));return;
       case "r": {
         const properties = child(source, "rPr");
         const requestedStyleId = attr(child(properties, "rStyle"), "val");
@@ -1259,6 +1252,16 @@ class Importer {
       this.currentRun = currentRun;
       this.paragraphRunClasses = paragraphRunClasses;
     }
+  }
+  private control(source:XmlNode,level:'inline'|'block',inherited:{p:Css;r:Css;runClasses?:readonly string[]}):Html {
+    const definition=readWordControl(source,level), properties=child(source,'sdtPr'), content=child(source,'sdtContent');
+    check(source,['sdtPr','sdtEndPr','sdtContent']);
+    if(!content)fail(source,'A content control has no content.');
+    const css=this.styles.run(child(properties,'rPr'),inherited.r), wrapper=this.make(level==='inline'?'span':'div',{'data-word-content-control':definition.kind,style:declarations(css)});
+    this.native?.bind(source,wrapper.attrs);(this.word.controls??=[]).push({...definition,nodeId:this.id(wrapper)});
+    if(level==='block')wrapper.children.push(...this.blocks(this.compat(content),{...inherited,r:{...inherited.r,...css}}));
+    else for(const item of this.compat(content))this.inline(item,wrapper,{...inherited.r,...css});
+    return wrapper;
   }
   private mathParagraph(source:XmlNode,parent:Html):void{try{check(source,['oMathParaPr','oMath'],M);const properties=child(source,'oMathParaPr',M);check(properties,['jc'],M);const align=attr(child(properties,'jc',M),'val',M)??attr(child(child(this.settings,'mathPr',M),'defJc',M),'val',M)??'centerGroup',maths=elements(source,'oMath',M);if(maths.length!==1||!['left','right','center','centerGroup'].includes(align))unsupported(source,'This math paragraph is preserved natively.');this.math(maths[0]!,parent,'block',align as 'left'|'right'|'center'|'centerGroup');}catch(error){if(error instanceof DocumentError&&error.code==='UnsupportedFeature')unsupported(source,'This math paragraph is preserved natively.');throw error;}}
   private math(source:XmlNode,parent:Html,display:'inline'|'block',alignment?:'left'|'right'|'center'|'centerGroup'):void{const defaults=child(this.settings,'mathPr',M),math=readWordMath(source,{display,...(attr(child(defaults,'intLim',M),'val',M)?{integralLimits:attr(child(defaults,'intLim',M),'val',M)!}:{}),...(attr(child(defaults,'naryLim',M),'val',M)?{naryLimits:attr(child(defaults,'naryLim',M),'val',M)!}:{})}),marker=this.make('span',{'data-word-equation':'true'}),offset=this.offset(parent,'\ufffc');marker.children.push('\ufffc');parent.children.push(marker);(this.word.equations??=[]).push({nodeId:this.id(marker),display,...math,...(alignment?{alignment}:{}),...(attr(child(defaults,'mathFont',M),'val',M)?{fontFamily:attr(child(defaults,'mathFont',M),'val',M)!}:{})});this.native?.bind(source,marker.attrs);this.fieldResult(marker);this.record(parent,offset,'\ufffc');}

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { SaxesParser } from 'saxes';
 import { expect, test } from 'vitest';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
-import { createDocumentSession, openDocument } from '@doffi/core';
+import { createWordDocument, createDocumentSession, openDocument } from '@doffi/core';
 import { importDocx, importDocxWithReport, exportDocx, readDocumentZip, writeDocumentZip } from '@doffi/office';
 const base = () => unzipSync(new Uint8Array(readFileSync(new URL('../../../examples/docx/01-text-numbering.docx', import.meta.url))));
 function fixture(content: string): Uint8Array {
@@ -97,4 +97,9 @@ test('more than 1024 unsupported native content nodes are accepted within normal
   const content='<w:p>'+Array.from({length:1025},(_,index)=>'<x:widget xmlns:x="urn:future" index="'+index+'"/>').join('')+'</w:p>';
   const model=openDocument(importDocx(fixture(content),{documentId:'many-native'}),{kind:'document'});
   expect(model.snapshot().metadata.word!.nativeContent!.fragments).toHaveLength(1025);
+});
+
+test('unmodeled document settings and native compatibility flags survive repeated native export',()=>{
+ const session=createDocumentSession(openDocument(createWordDocument({documentId:'settings-native'}),{kind:'document'})),files=unzipSync(exportDocx(session).bytes);files['word/settings.xml']=strToU8(strFromU8(files['word/settings.xml']!).replace('</w:settings>','<w:trackRevisions/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'));let bytes=zipSync(files);
+ for(let i=0;i<2;i++){const model=openDocument(importDocxWithReport(bytes,{documentId:'preserved-settings'}).files,{kind:'document'});bytes=exportDocx(model).bytes;const settings=strFromU8(unzipSync(bytes)['word/settings.xml']!);expect(settings).toMatch(/:trackRevisions\b/);expect(settings).toContain('compatibilityMode');expect(settings).toContain('15');}
 });

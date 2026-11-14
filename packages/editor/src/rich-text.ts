@@ -1,3 +1,4 @@
+import { createWordControlControls } from './word-control-controls.js';
 import { createWordPageControls } from "./word-page-controls.js";
 import { createWordListControls } from './word-list-controls.js';
 import { wordStoryPreview } from "./word-story-preview.js";
@@ -40,7 +41,7 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
   | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
-  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' | 'insertFootnote' | 'insertEndnote' | 'referenceSettings' | 'insertLink' | 'bookmarks' | 'crossReference' | 'caption' | 'insertEquation' | 'equationSettings' };
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' | 'insertFootnote' | 'insertEndnote' | 'referenceSettings' | 'insertLink' | 'bookmarks' | 'crossReference' | 'caption' | 'insertEquation' | 'equationSettings' | 'insertControl' | 'controlSettings' };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -107,6 +108,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   const listControls=createWordListControls(shadow,viewport,session,()=>selectedParagraphs().map(node=>node.dataset.nodeId!),report);
   const drawingControls=createWordDrawingControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph)return;return{paragraphId:paragraph.dataset.nodeId!,offset:offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored)};},editStory,report);
   const referenceControls=createWordReferenceControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph)return;return{paragraphId:paragraph.dataset.nodeId!,offset:offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored)};},editStory,report);
+  const controlControls=createWordControlControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph)return;return{paragraphId:paragraph.dataset.nodeId!,offset:offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored)};},report);
   const mathControls=createWordMathControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph)return;return{paragraphId:paragraph.dataset.nodeId!,offset:offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored)};},report);
   const linkControls=createWordLinkControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph||!paragraph.contains(range.endContainer))return;const from=offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored),to=offsetAt(paragraph,range.endContainer,range.endOffset,projection.ignored);return{paragraphId:paragraph.dataset.nodeId!,from,to,text:session.getNode(paragraph.dataset.nodeId!)!.text.slice(from,to)};},nodeId=>{const node=root?.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(nodeId)+'"]');if(node){node.scrollIntoView({block:'center'});const range=frame!.createRange();range.selectNode(node);range.collapse(true);root!.focus();frame!.getSelection()!.removeAllRanges();frame!.getSelection()!.addRange(range);}},report);
   const viewModel = () => { if(activeStoryId && !session.snapshot().metadata.word?.stories.some(story=>story.storyId===activeStoryId))activeStoryId=undefined;return wordStoryPreview(session,activeStoryId); };
@@ -315,6 +317,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if(command.action==='insertImage'||command.action==='insertShape'||command.action==='insertTextBox'||command.action==='insertConnector'||command.action==='drawingSettings'){drawingControls.open(command.action);return;}
     if(command.action==='insertFootnote'||command.action==='insertEndnote'||command.action==='referenceSettings'){referenceControls.open(command.action==='insertFootnote'?'footnote':command.action==='insertEndnote'?'endnote':'settings');return;}
     if(command.action==='insertLink'||command.action==='bookmarks'||command.action==='crossReference'||command.action==='caption'){linkControls.open(command.action==='insertLink'?'link':command.action==='bookmarks'?'bookmark':command.action==='crossReference'?'reference':'caption');return;}
+    if(command.action==='insertControl'||command.action==='controlSettings'){controlControls.open(command.action==='insertControl');return;}
     if(command.action==='insertEquation'||command.action==='equationSettings'){mathControls.open(command.action==='insertEquation');return;}
     if (command.action === "pageSettings") { pageControls.open(); return; }
     if (command.action === "mainStory") { editStory(); return; }
@@ -484,6 +487,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   function activate(source: HTMLElement): void {
     if (!root || !frame) return;
     drawingControls.bind(root,projection,viewControls.signal);
+    controlControls.bind(root,viewControls.signal);
     mathControls.bind(root,viewControls.signal);
     bindWordSelectionScroll(stage,preview.element,root,{signal:viewControls.signal,enabled:()=>!composing&&!disposed,ignored:projection.ignored,changed(){if(root)savedSelection=bookmark(root,projection.ignored);notifyFormat();}});
     root.contentEditable = "true"; root.setAttribute("data-office-editor", ""); root.setAttribute("role", "textbox"); root.setAttribute("aria-label", "文档正文"); root.setAttribute("aria-multiline", "true"); root.spellcheck = false;
@@ -587,6 +591,6 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    clearMarks();mathControls.dispose();linkControls.dispose();referenceControls.dispose();drawingControls.dispose();listControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    clearMarks();controlControls.dispose();mathControls.dispose();linkControls.dispose();referenceControls.dispose();drawingControls.dispose();listControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

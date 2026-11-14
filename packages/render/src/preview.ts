@@ -1,3 +1,4 @@
+import { composeWordControls } from './word-controls.js';
 import { DocumentError, openDocument } from "@doffi/core";
 import { resolvePreviewFonts } from "./fonts.js";
 import type { FontResolution } from "./fonts.js";
@@ -479,6 +480,7 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
+    composeWordControls(frame,model);
     composeWordMath(frame,model,limits);
     drawings=composeWordDrawings(frame,model,limits);
     notes=composeWordNotes(frame,model,source,limits);
