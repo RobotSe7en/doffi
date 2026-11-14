@@ -1,6 +1,7 @@
+import { renderWordChart } from './word-chart.js';
 import { DocumentError,evaluatePresentationPreset } from '@doffi/core';
 import type { ContentDocumentModel,DeepReadonly,WordDrawing } from '@doffi/core';
-import type { RenderLimits,RenderedPage } from './contracts.js';
+import type { RenderLimits,RenderedPage,LayoutDiagnostic } from './contracts.js';
 import { createDrawingGeometryView } from './drawing-geometry.js';
 import { markViewNode,ownViewAttribute,ownViewStyle } from './view-nodes.js';
 import { numeric,property,resolvedColor } from './presentation/appearance.js';
@@ -8,7 +9,7 @@ import { numeric,property,resolvedColor } from './presentation/appearance.js';
 const style=(node:HTMLElement,values:Readonly<Record<string,string>>):void=>{ownViewStyle(node,...Object.keys(values));for(const[key,value]of Object.entries(values))node.style.setProperty(key,value);};
 /** Shared Word composition for preview and managed PDF/PNG. Source object
  * characters and text stories stay intact; paint and instances are derived. */
-export function composeWordDrawings(document:Document,model:ContentDocumentModel,limits:Readonly<RenderLimits>):{measure(pages:readonly RenderedPage[],root:HTMLElement):void}{
+export function composeWordDrawings(document:Document,model:ContentDocumentModel,limits:Readonly<RenderLimits>): {readonly diagnostics:readonly LayoutDiagnostic[];measure(pages:readonly RenderedPage[],root:HTMLElement):void}{
  const word=model.snapshot().metadata.word,view=document.defaultView!,definitions=new Map((word?.drawings??[]).map(item=>[item.nodeId,item])),byId=new Map([...document.querySelectorAll<HTMLElement>('[data-node-id]')].map(node=>[node.dataset.nodeId!,node])),floating:{definition:DeepReadonly<WordDrawing>;frame:HTMLElement;paragraph:HTMLElement}[]=[];
  let serial=0,count=document.querySelectorAll('*').length;const composed=new Set<string>();
  const account=(node:Element):void=>{count+=1+node.querySelectorAll('*').length;if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Word drawings exceed the render node budget.');};
@@ -23,6 +24,9 @@ export function composeWordDrawings(document:Document,model:ContentDocumentModel
   if(item.kind==='group'){
    const wrapper=markViewNode(document.createElement('span'),'unwrap'),c=item.coordinateSpace;wrapper.style.cssText=`position:absolute;left:0;top:0;width:${c.width}pt;height:${c.height}pt;transform-origin:0 0;transform:scale(${g.width/c.width},${g.height/c.height}) translate(${-c.x}pt,${-c.y}pt)`;wrapper.append(...node.childNodes);node.append(wrapper);
    for(const child of [...wrapper.children]as HTMLElement[]){const definition=definitions.get(child.dataset.nodeId!);if(definition)compose(definition,true);}
+  }else if(item.kind==='chart'){
+   const background=createDrawingGeometryView(document,computed,{preset:'rect',geometry:evaluatePresentationPreset('rect',g.width,g.height),widthPt:g.width,heightPt:g.height,id:'word-chart-frame-'+ ++serial,fillFallback:'#ffffff',strokeFallback:'none',maxNodes:limits.maxNodes-count});node.append(background);account(background);
+   const svg=renderWordChart(node,item.chart,g.width,g.height,'word-chart-'+ ++serial,amount=>{count+=amount;if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Word charts exceed the render node budget.');},model.snapshot().metadata.locale);node.append(svg);
   }else if(item.kind==='image'){
    const c=item.crop??{top:0,right:0,bottom:0,left:0};frame.style.overflow='hidden';style(node,{display:'block',position:'absolute',left:-c.left/(1-c.left-c.right)*100+'%',top:-c.top/(1-c.top-c.bottom)*100+'%',width:100/(1-c.left-c.right)+'%',height:100/(1-c.top-c.bottom)+'%','max-width':'none',margin:'0',padding:'0',border:'0',transform:'none'});
    const border=createDrawingGeometryView(document,computed,{preset:'rect',geometry:evaluatePresentationPreset('rect',g.width,g.height),widthPt:g.width,heightPt:g.height,id:'word-drawing-'+ ++serial,paint:'stroke',maxNodes:limits.maxNodes-count});frame.append(border);account(border);
@@ -44,7 +48,7 @@ export function composeWordDrawings(document:Document,model:ContentDocumentModel
   }
  };
  for(const item of definitions.values()){let parent=byId.get(item.nodeId)?.parentElement,child=false;while(parent){if(definitions.has(parent.dataset.nodeId??'')){child=true;break;}parent=parent.parentElement;}if(!child)compose(item);}
- return{measure(pages,root){const origin=root.getBoundingClientRect();for(const{definition:item,frame,paragraph}of floating){const p=paragraph.getBoundingClientRect(),g=item.geometry,l=item.layout,page=pages.find(page=>(p.top-origin.top)*.75>=page.rect.y&&(p.top-origin.top)*.75<page.rect.y+page.rect.height);if(!page)continue;const horizontal=l.horizontal??'column',vertical=l.vertical??'paragraph',left=origin.left+page.rect.x/.75,top=origin.top+page.rect.y/.75,setup=page.setup,m=setup.margins;
+ return{diagnostics:Object.freeze([...definitions.values()].flatMap(item=>item.kind==='chart'?(item.chart.native?.previewWarnings??[]).map(message=>Object.freeze({code:'NativeFormatting' as const,nodeId:item.nodeId,message})):[])),measure(pages,root){const origin=root.getBoundingClientRect();for(const{definition:item,frame,paragraph}of floating){const p=paragraph.getBoundingClientRect(),g=item.geometry,l=item.layout,page=pages.find(page=>(p.top-origin.top)*.75>=page.rect.y&&(p.top-origin.top)*.75<page.rect.y+page.rect.height);if(!page)continue;const horizontal=l.horizontal??'column',vertical=l.vertical??'paragraph',left=origin.left+page.rect.x/.75,top=origin.top+page.rect.y/.75,setup=page.setup,m=setup.margins;
   const hStart=horizontal==='page'?left:horizontal==='margin'?left+m.left/.75:p.left,hWidth=horizontal==='page'?setup.width:horizontal==='margin'?setup.width-m.left-m.right:p.width*.75;
   const vStart=vertical==='page'?top:vertical==='margin'?top+m.top/.75:p.top,vHeight=vertical==='page'?setup.height:vertical==='margin'?setup.height-m.top-m.bottom:p.height*.75;
   const aligned=(kind:string|undefined,size:number,object:number,offset:number):number=>kind==='center'?(size-object)/2:kind==='right'||kind==='bottom'||kind==='outside'?size-object:kind==='left'||kind==='top'||kind==='inside'?0:offset;

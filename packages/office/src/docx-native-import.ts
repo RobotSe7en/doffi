@@ -9,7 +9,7 @@ type Native = NonNullable<WordMetadata['nativeContent']>;
 interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
 const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
 const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
-const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'hyperlink']);
+const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'chart', 'hyperlink']);
 export class DocxNativeImport {
   private readonly pending: Pending[] = [];
   private readonly bindings = new Map<XmlNode, string>();
@@ -114,7 +114,7 @@ export class DocxNativeImport {
     const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
     const encoder = new (globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } }).TextEncoder(), parts = new Set<string>();
     const add = (bytes: Uint8Array, mime: string): string => {
-      const path = 'assets/native-' + (manifest.assets.length + 1) + (mime.includes('xml') ? '.xml' : '.bin');
+      const path = 'assets/native-' + (manifest.assets.length + 1) + (/(?:\/|\+)xml(?:;|$)/i.test(mime) ? '.xml' : '.bin');
       files.set(path, bytes); manifest.assets.push(createAssetDescriptor(path, mime, bytes)); return path;
     };
     const relationships = (sourcePart: string): void => {
@@ -124,12 +124,13 @@ export class DocxNativeImport {
       }
     };
     const part = (sourcePart: string): void => {
-      if (parts.has(sourcePart) || sourcePart === this.main || this.roots.has(sourcePart) && !['theme','fontTable'].some(type => this.original.related(this.main,type) === sourcePart)) return;
+      const root=this.roots.get(sourcePart),generated=root?.uri===W&&['document','styles','settings','numbering','comments','hdr','ftr','footnotes','endnotes'].includes(root.name)||root?.name==='commentsEx';
+      if (parts.has(sourcePart) || sourcePart === this.main || generated) return;
       parts.add(sourcePart);
       const bytes = this.original.files.get(sourcePart);
       if (!bytes) throw new DocumentError('InvalidDocument', 'A preserved native dependency is missing.');
       const type = this.original.contentType(sourcePart) ?? 'application/octet-stream';
-      if (type.includes('xml') || sourcePart.endsWith('.xml')) this.original.read(sourcePart);
+      if (/(?:\/|\+)xml(?:;|$)/i.test(type) || sourcePart.endsWith('.xml')) this.original.read(sourcePart);
       native.parts.push({ sourcePart, assetPath: add(bytes, type), contentType: type }); relationships(sourcePart);
     };
     const fragmentXml: string[] = [];

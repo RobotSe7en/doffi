@@ -463,7 +463,7 @@ export function mountPreview(
     drawings?.measure(pages,source.root);
     source.setPages(pages);
     report = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
-      layout: options.layout ?? "pages", pages, nodePages, fields: results, diagnostics: Object.freeze([...(pagination?.diagnostics ?? []), ...(fields?.diagnostics ?? [])]), fonts: fontReport });
+      layout: options.layout ?? "pages", pages, nodePages, fields: results, diagnostics: Object.freeze([...(pagination?.diagnostics ?? []), ...(fields?.diagnostics ?? []),...(drawings?.diagnostics??[])]), fonts: fontReport });
     const body = iframe.contentDocument!.body;
     const height = Math.ceil(Math.max(200, body.scrollHeight, body.getBoundingClientRect().height)) + "px";
     if (iframe.style.height !== height) iframe.style.height = height;
@@ -488,7 +488,7 @@ export function mountPreview(
       fields = layoutFields(frame, source, snapshot.metadata.word);
       pagination = paginate(frame, source, snapshot.metadata, limits,notes);
     }
-    baseFonts = Object.freeze([...sourceFonts, ...resolvePreviewFonts(frame, ".sdk-number-marker,.sdk-word-equation-view,.sdk-word-equation-view *")]); fontReport = baseFonts;
+    baseFonts = Object.freeze([...sourceFonts, ...resolvePreviewFonts(frame, ".sdk-number-marker,.sdk-word-equation-view,.sdk-word-equation-view *,[data-sdk-word-chart] text,[data-sdk-word-chart] tspan")]); fontReport = baseFonts;
     report = Object.freeze({ documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision,
       layout: options.layout ?? "pages", pages: [], nodePages: {}, fields: [], diagnostics: [], fonts: fontReport });
     measure();

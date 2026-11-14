@@ -1,3 +1,4 @@
+import { WordChartSchema,WordChartPropertiesSchema } from './word-chart.js';
 import { z } from 'zod';
 import { IdentifierSchema,PackagePathSchema,RevisionSchema } from './primitives.js';
 import { DrawingGeometrySchema,DrawingPresetSchema } from './drawing.js';
@@ -16,6 +17,7 @@ const connector=z.strictObject({routing:z.enum(['straight','elbow']),startNodeId
 export const WordDrawingTextSchema=z.strictObject({insets:z.strictObject({top:z.number(),right:z.number(),bottom:z.number(),left:z.number()}).optional(),vertical:z.enum(['top','middle','bottom']).optional(),direction:z.enum(['horizontal','vertical','vertical270']).optional(),rotation:z.number().optional(),wrap:z.boolean().optional(),autoFit:z.enum(['none','normal','shape']).optional(),fontScale:z.number().positive().max(1).optional(),lineSpacingReduction:z.number().min(0).max(1).optional()});
 const base={nodeId:IdentifierSchema,geometry:DrawingGeometrySchema,layout:WordDrawingLayoutSchema,name:z.string().optional()};
 export const WordDrawingSchema=z.discriminatedUnion('kind',[
+ z.strictObject({...base,kind:z.literal('chart'),chart:WordChartSchema}),
  z.strictObject({...base,kind:z.literal('image'),crop:crop.optional()}),
  z.strictObject({...base,kind:z.literal('shape'),preset:DrawingPresetSchema,textStoryId:IdentifierSchema.optional(),text:WordDrawingTextSchema.optional(),adjustments:z.record(z.string(),z.number().int()).optional()}),
  z.strictObject({...base,kind:z.literal('textBox'),textStoryId:IdentifierSchema,text:WordDrawingTextSchema.optional()}),
@@ -25,6 +27,7 @@ export const WordDrawingSchema=z.discriminatedUnion('kind',[
 export type WordDrawing=z.infer<typeof WordDrawingSchema>;
 export type WordDrawingLayout=z.infer<typeof WordDrawingLayoutSchema>;
 export const WordDrawingInputSchema=z.discriminatedUnion('kind',[
+ z.strictObject({kind:z.literal('chart'),chart:WordChartPropertiesSchema}),
  z.strictObject({kind:z.literal('image'),assetPath:PackagePathSchema,alt:z.string(),crop:crop.optional()}),
  z.strictObject({kind:z.literal('shape'),preset:DrawingPresetSchema,text:z.string().optional()}),
  z.strictObject({kind:z.literal('textBox'),text:z.string()}),
@@ -32,6 +35,7 @@ export const WordDrawingInputSchema=z.discriminatedUnion('kind',[
 ]);
 export const WordDrawingOperationSchema=z.discriminatedUnion('op',[
  z.strictObject({op:z.literal('insertWordDrawing'),nodeId:IdentifierSchema,offset:RevisionSchema,geometry:DrawingGeometrySchema,layout:WordDrawingLayoutSchema,object:WordDrawingInputSchema,properties:z.record(z.string(),z.string()).optional()}),
+ z.strictObject({op:z.literal('setWordChart'),nodeId:IdentifierSchema,changes:WordChartPropertiesSchema.partial()}),
  z.strictObject({op:z.literal('setWordDrawingGeometry'),nodeId:IdentifierSchema,geometry:DrawingGeometrySchema}),
  z.strictObject({op:z.literal('setWordDrawingLayout'),nodeId:IdentifierSchema,layout:WordDrawingLayoutSchema}),
  z.strictObject({op:z.literal('setWordDrawingAppearance'),nodeId:IdentifierSchema,properties:z.record(z.string(),z.string())}),

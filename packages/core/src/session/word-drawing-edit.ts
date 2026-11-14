@@ -9,7 +9,7 @@ import { copyWordStorySemantics } from './word-story-copy.js';
 import { local,multiply,point } from './presentation-geometry.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
 const escape=(text:string):string=>text.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;').replace(/\r\n?/g,'\n').replaceAll('\n','<br>');
-export const isWordDrawingOperation:(operation:{readonly op:string})=>operation is WordDrawingOperation=(operation):operation is WordDrawingOperation=>['insertWordDrawing','setWordDrawingGeometry','setWordDrawingLayout','setWordDrawingAppearance','setWordDrawingCrop','setWordDrawingPreset','setWordDrawingText','setWordDrawingConnector','removeWordDrawing','copyWordDrawing','groupWordDrawings','ungroupWordDrawing'].includes(operation.op);
+export const isWordDrawingOperation:(operation:{readonly op:string})=>operation is WordDrawingOperation=(operation):operation is WordDrawingOperation=>['setWordChart','insertWordDrawing','setWordDrawingGeometry','setWordDrawingLayout','setWordDrawingAppearance','setWordDrawingCrop','setWordDrawingPreset','setWordDrawingText','setWordDrawingConnector','removeWordDrawing','copyWordDrawing','groupWordDrawings','ungroupWordDrawing'].includes(operation.op);
 export function applyWordDrawing(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,operation:WordDrawingOperation,limits:DocumentReadLimits):void{
  const word=metadata.word!,drawings=word.drawings??=[],source=parse(),target=source.peekNode(operation.nodeId);if(!target)fail('The drawing target is missing.');word.drawings=drawings;
  const article=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -18,7 +18,8 @@ export function applyWordDrawing(metadata:WordDocumentMetadata,edit:DocumentEdit
   if(!/^p$|^h[1-6]$/.test(target.tagName))fail('Insert a drawing in a source paragraph.');checkLimit(drawings.length+1,limits.maxNodes);
   const object=operation.object,html=object.kind==='image'?'<img data-word-drawing="image" src="'+escape(edit.resourceReference(object.assetPath))+'" alt="'+escape(object.alt)+'">':'<span data-word-drawing="'+object.kind+'">\ufffc</span>';
   const id=edit.insertSourceAt(operation.nodeId,operation.offset,html).rootNodeIds[0]!,base={nodeId:id,geometry:operation.geometry,layout:operation.layout};let drawing:WordDrawing;
-  if(object.kind==='image')drawing={...base,kind:'image',...(object.crop?{crop:object.crop}:{})};
+  if(object.kind==='chart')drawing={...base,kind:'chart',chart:object.chart};
+  else if(object.kind==='image')drawing={...base,kind:'image',...(object.crop?{crop:object.crop}:{})};
   else if(object.kind==='shape')drawing={...base,kind:'shape',preset:object.preset,...(object.text!==undefined?{textStoryId:story(object.text)}:{})};
   else if(object.kind==='textBox')drawing={...base,kind:'textBox',textStoryId:story(object.text)};
   else drawing={...base,kind:'connector',connector:object.connector};
@@ -33,7 +34,8 @@ export function applyWordDrawing(metadata:WordDocumentMetadata,edit:DocumentEdit
   const layout={...selected[0]!.layout};for(const item of selected){item.geometry={...item.geometry,x:item.geometry.x-left,y:item.geometry.y-top};item.layout={mode:'inline'};}drawings.push({nodeId:id,kind:'group',geometry:{x:left,y:top,width:Math.max(.01,right-left),height:Math.max(.01,bottom-top),rotation:0,flipH:false,flipV:false},layout:{...layout,mode:'floating'},coordinateSpace:{x:0,y:0,width:Math.max(.01,right-left),height:Math.max(.01,bottom-top)}});return;
  }
  const drawing=drawings.find(item=>item.nodeId===operation.nodeId);if(!drawing)fail('The Word drawing is missing.');
- if(operation.op==='setWordDrawingGeometry')drawing.geometry=operation.geometry;
+ if(operation.op==='setWordChart'){if(drawing.kind!=='chart')fail('Chart settings require a Word chart.');Object.assign(drawing.chart,operation.changes);}
+ else if(operation.op==='setWordDrawingGeometry')drawing.geometry=operation.geometry;
  else if(operation.op==='setWordDrawingLayout')drawing.layout=operation.layout;
  else if(operation.op==='setWordDrawingAppearance')for(const[property,value]of Object.entries(operation.properties))edit.sourceDrawingStyle(drawing.nodeId,property,value);
  else if(operation.op==='setWordDrawingCrop'){if(drawing.kind!=='image')fail('Cropping requires an image.');drawing.crop=operation.crop;}

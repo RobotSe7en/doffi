@@ -1,3 +1,4 @@
+import { WordChartWriter } from './docx-chart-export.js';
 import { writeWordControlProperties } from './docx-control.js';
 import { writeNoteOptions } from './docx-note-options.js';
 import { writeWordMath } from './docx-math.js';
@@ -50,6 +51,8 @@ class Exporter {
   private readonly styles: ExportStyles;
   private readonly annotations: ExportAnnotations;
   private readonly opc: OutputOpc;
+  private readonly packageBudget={bytes:0,nodes:0,files:0};
+  private readonly charts:WordChartWriter;
   private readonly fields: ReadonlyMap<string, Field>;
   private readonly fieldEnds: ReadonlyMap<string, Field>;
   private readonly links: ReadonlyMap<string, DeepReadonly<WordMetadata["hyperlinks"][number]>>;
@@ -86,7 +89,7 @@ class Exporter {
     this.styles = new ExportStyles(this.css, word, this.snapshot.metadata.locale, limits, this.css.get(main[0]!));
     this.mainStories = main;
     const stories = word?.stories.filter((story) => story.kind !== "comment").map((story) => this.tree.byId.get(story.rootNodeId)!) ?? main;
-    this.opc = new OutputOpc(new XmlParts(limits));
+    this.opc = new OutputOpc(new XmlParts(limits,this.packageBudget));this.charts=new WordChartWriter(this.opc,this.files,limits,this.packageBudget);
     this.output = this.opc.part(this.part, "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
     this.fields = new Map(word?.fields.map((field) => [field.nodeId, field]) ?? []);
     this.fieldEnds = new Map(word?.fields.filter((field) => field.endNodeId).map((field) => [field.endNodeId!, field]) ?? []);
@@ -216,7 +219,7 @@ class Exporter {
     }
     const control=this.snapshot.metadata.word?.controls?.find(control=>control.nodeId===node.attrs['data-node-id']);
     if(control){this.add(this.annotations.at(node,0));this.add('<w:sdt'+this.nativeMark(control.nodeId)+'>'+writeWordControlProperties(control,++this.controlId,this.nativeRun(this.css.get(node),this.styles.runContext(paragraphStyle,character),character,role,language))+'<w:sdtContent>');for(const child of node.children)this.inline(child,paragraphStyle,character,role,language);this.add('</w:sdtContent></w:sdt>');this.add(this.annotations.at(node,node.to-node.from));return;}
-    if(this.drawings.has(node.attrs["data-node-id"]??"")){this.add(this.annotations.at(node,0));this.add(writeWordDrawing({word:this.snapshot.metadata.word!,tree:this.tree,css:node=>this.css.get(node),raw:node=>this.css.specified(node),id:id=>this.drawingIds.get(id)??unsupported("A drawing identity is missing."),image:node=>this.imageRelation(node),text:(id,width)=>this.captureStory(id,width),marker:node=>{let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;return this.nativeMark(node.attrs['data-node-id']!)+(this.snapshot.metadata.word?.nativeContent&&container?' dn:container="'+escapeXml(container.attrs['data-node-id']!)+'"':'');}},this.drawings.get(node.attrs["data-node-id"]!)!));this.add(this.annotations.at(node,node.to-node.from));return;}
+    if(this.drawings.has(node.attrs["data-node-id"]??"")){this.add(this.annotations.at(node,0));this.add(writeWordDrawing({word:this.snapshot.metadata.word!,tree:this.tree,css:node=>this.css.get(node),raw:node=>this.css.specified(node),id:id=>this.drawingIds.get(id)??unsupported("A drawing identity is missing."),image:node=>this.imageRelation(node),chart:chart=>{const node=this.tree.byId.get(chart.nodeId)!;return this.charts.write(chart.chart,this.part,this.css.get(node),this.css.specified(node));},text:(id,width)=>this.captureStory(id,width),marker:node=>{let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;return this.nativeMark(node.attrs['data-node-id']!)+(this.snapshot.metadata.word?.nativeContent&&container?' dn:container="'+escapeXml(container.attrs['data-node-id']!)+'"':'');}},this.drawings.get(node.attrs["data-node-id"]!)!));this.add(this.annotations.at(node,node.to-node.from));return;}
     if (node.attrs["data-word-native-object"]) {this.add(this.annotations.at(node,0));let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id']));this.add(this.annotations.at(node,node.to-node.from)); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
     if(node.attrs['data-word-equation']){const equation=this.snapshot.metadata.word?.equations?.find(equation=>equation.nodeId===id);if(!equation)unsupported('The equation definition is missing.');this.add(this.annotations.at(node,0));this.add(writeWordMath(equation));this.add(this.annotations.at(node,node.to-node.from));return;}

@@ -1,8 +1,9 @@
+import { readWordChart } from './docx-chart-import.js';
 import { WordDrawingSchema } from '@doffi/core';
 import type { WordDrawing,WordDrawingLayout,WordMetadata } from '@doffi/core';
 import type { OpcPackage } from './ooxml/package.js';
 import type { XmlNode } from './ooxml/xml.js';
-import { A,PIC,WP,W,R,attr,child,elements,number,text,fail,unsupported,check } from './ooxml/xml.js';
+import { A,C,PIC,WP,W,R,attr,child,elements,number,text,fail,unsupported,check } from './ooxml/xml.js';
 import { fill,outline,effects,paint,onlyColor } from './drawingml/styles.js';
 import { integer,points } from './drawingml/values.js';
 import { declarations } from './ooxml/styles.js';
@@ -11,7 +12,7 @@ export const WPS='http://schemas.microsoft.com/office/word/2010/wordprocessingSh
 export interface WordDrawingHtml {tag:string;attrs:Record<string,string>;children:(WordDrawingHtml|string)[]}
 export interface WordDrawingReadContext {
  readonly word:WordMetadata;readonly opc:OpcPackage;readonly part:string;readonly main:string;
- make(tag:string,attrs:Record<string,string>):WordDrawingHtml;image(part:string,source:XmlNode):string;story(source:XmlNode):string;
+ make(tag:string,attrs:Record<string,string>):WordDrawingHtml;asset(part:string,type:string):string;image(part:string,source:XmlNode):string;story(source:XmlNode):string;
  native(source:XmlNode,node:WordDrawingHtml):void;identity(source:XmlNode,id:string,nativeId:string|undefined):void;
  connector(source:XmlNode,nodeId:string,startId:string|undefined,endId:string|undefined,local:ReadonlyMap<string,string>):void;
 }
@@ -47,9 +48,10 @@ export function importWordDrawing(source:XmlNode,context:WordDrawingReadContext)
  const data=child(child(frame,'graphic',A),'graphicData',A),objects=data?.content.filter((node):node is XmlNode=>typeof node!=='string')??[];if(objects.length!==1)unsupported(source,'A drawing graphic requires one supported object.');
  const localIds=new Map<string,string>();
  const parse=(native:XmlNode,root=false):WordDrawingHtml=>{
-  let definition:WordDrawing,node:WordDrawingHtml;const properties=child(native,native.uri===PIC?'spPr':native.uri===WPG?'grpSpPr':'spPr',native.uri),transform=child(properties,'xfrm',A),g=geometry(transform,size,root),mode=root?layout:{mode:'inline' as const};if(root){g.x=x;g.y=y;}
+  let definition:WordDrawing,node:WordDrawingHtml;const properties=child(native,native.uri===PIC?'spPr':native.uri===WPG?'grpSpPr':'spPr',native.uri),transform=native.uri===WPG&&native.name==='graphicFrame'?child(native,'xfrm',WPG):child(properties,'xfrm',A),g=geometry(transform,size,root),mode=root?layout:{mode:'inline' as const};if(root){g.x=x;g.y=y;}
   const knownProperties=native.uri===WPG?['xfrm']:native.uri===PIC?['xfrm','prstGeom','noFill','ln','effectLst']:['xfrm','prstGeom','solidFill','noFill','gradFill','ln','effectLst'];if(properties?.content.some(node=>typeof node!=='string'&&(node.uri!==A||!knownProperties.includes(node.name))))unsupported(source,'This drawing appearance is preserved as a native object.');
-  if(native.uri===PIC&&native.name==='pic'){
+  if(native.uri===C&&native.name==='chart'||native.uri===WPG&&native.name==='graphicFrame'){const reference=native.uri===C?native:child(child(child(native,'graphic',A),'graphicData',A),'chart',C);if(!reference)unsupported(source,'This grouped graphic remains native.');node=context.make('span',{'data-word-drawing':'chart'});node.children.push('\ufffc');let chart;try{chart=readWordChart(context.opc,context.part,context.main,reference,context.asset);}catch(error){if(error instanceof Error&&'code'in error&&error.code==='UnsupportedFeature')unsupported(source,error.message);throw error;}definition={nodeId:node.attrs['data-node-id']!,kind:'chart',geometry:g,layout:mode,chart};const properties=chart.native?child(context.opc.read(chart.native.chartPart),'spPr',C):undefined,css:Css={};for(const read of [()=>fill(properties),()=>outline(child(properties,'ln',A)),()=>effects(child(properties,'effectLst',A))])try{Object.assign(css,read());}catch(error){if(!(error instanceof Error&&'code'in error&&error.code==='UnsupportedFeature'))throw error;}if(Object.keys(css).length)node.attrs.style=declarations(css);
+  }else if(native.uri===PIC&&native.name==='pic'){
    const fillSource=child(native,'blipFill',PIC),blip=child(fillSource,'blip',A),relation=context.opc.relationships(context.part).get(attr(blip,'embed',R)??'');if(!relation||relation.external||!relation.type.endsWith('/image'))unsupported(source,'Only authorized embedded image relationships can be displayed.');if(child(fillSource,'tile',A))unsupported(source,'Tiled image fills are preserved as native objects.');if(elements(blip,undefined,A).some(effect=>effect.name!=='extLst'))unsupported(source,'This picture color effect is preserved as native content.');
    node=context.make('img',{'data-word-drawing':'image',src:context.image(relation.target,source),alt:attr(child(child(native,'nvPicPr',PIC),'cNvPr',PIC),'descr','')??attr(child(frame,'docPr',WP),'descr','')??''});const crop=child(fillSource,'srcRect',A);definition={nodeId:node.attrs['data-node-id']!,kind:'image',geometry:g,layout:mode,...(crop?{crop:{left:integer(crop,'l',0)/100000,top:integer(crop,'t',0)/100000,right:integer(crop,'r',0)/100000,bottom:integer(crop,'b',0)/100000}}:{})};
    const geometryNode=child(properties,'prstGeom',A);if(geometryNode&&attr(geometryNode,'prst','')!=='rect'||child(properties,'custGeom',A))unsupported(source,'This image geometry is preserved as native content.');

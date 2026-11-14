@@ -1,6 +1,7 @@
+import { WordTextStyleSchema } from './word-text-style.js';
 import { z } from 'zod';
 import { IdentifierSchema, RevisionSchema } from './primitives.js';
-export const WordMathStyleSchema = z.strictObject({ fonts: z.strictObject({ ascii: z.string().optional(), hAnsi: z.string().optional(), eastAsia: z.string().optional(), cs: z.string().optional() }).optional(), fontSize: z.number().positive().optional(), color: z.union([z.literal('auto'), z.string().regex(/^#[a-f0-9]{6}$/i)]).optional(), bold: z.boolean().optional(), italic: z.boolean().optional(), language: z.string().optional() });
+export const WordMathStyleSchema=WordTextStyleSchema;
 const base = { mathId: IdentifierSchema, style: WordMathStyleSchema.optional() }, children = z.array(IdentifierSchema), one = children.length(1), two = children.length(2);
 /** Flat typed math trees keep JSON Schema nonrecursive. Children are local IDs,
  * validated as one bounded tree; no XML, executable guides or second text cache. */

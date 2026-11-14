@@ -103,3 +103,7 @@ export type { CreateWordDocumentOptions } from "./word.js";
 export { findWordText, getWordOutline, getWordTextStatistics, getWordTextDefaults } from "./word-query.js";
 export type { WordTextMatch, WordTextFindOptions, WordOutlineEntry, WordTextStatistics } from "./word-query.js";
 export { wordDrawingTransforms } from './word-drawing.js';
+
+export * from './contracts/word-chart.js';
+
+export * from './contracts/word-text-style.js';
