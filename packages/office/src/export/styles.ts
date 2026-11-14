@@ -5,7 +5,7 @@ import type { Css, ExportCss } from "./css.js";
 import { DocxStyles } from "../ooxml/styles.js";
 import { xml } from "../ooxml/xml.js";
 import type { XmlNode } from "../ooxml/xml.js";
-import { cellMargins, cellProperties, paragraphKeys, paragraphProperties, pick, runKeys, runProperties, tableProperties } from "./properties.js";
+import { cellProperties, paragraphKeys, paragraphProperties, pick, runKeys, runProperties, tableProperties } from "./properties.js";
 import { orderedProperties, attributes, declaration, empty, escapeXml, namespaces, value } from "./xml.js";
 import { contentType } from "./opc.js";
 import type { OutputOpc } from "./opc.js";
@@ -56,7 +56,7 @@ export class ExportStyles {
   private runSource(style: Style): { source: string; node: XmlNode } {
     const known = this.properties.get(style.styleId); if (known) return known;
     const css = this.values(style), parent = style.basedOn ? this.values(this.style(style.basedOn)!) : this.defaults;
-    const source = runProperties(this.own(style, "r", css, parent), parent, true);
+    const source = runProperties(this.own(style, "r", css, parent), style.components?.r?{}:parent, true);
     const encoder = new (globalThis as unknown as { TextEncoder: new () => { encode(value: string): Uint8Array } }).TextEncoder();
     const node = xml(encoder.encode(declaration + "<w:rPr" + namespaces + ">" + source + "</w:rPr>"), "generated-style-properties", this.limits, this.propertyBudget);
     const result = { source, node }; this.properties.set(style.styleId, result); return result;
@@ -66,11 +66,14 @@ export class ExportStyles {
     for (const [key, raw] of Object.entries(result)) if (!key.startsWith("--") && raw.includes("var(")) result[key] = variables(raw, (name) => result[name], 0, this.limits.maxFileBytes) ?? inherited[key]!;
     return result;
   }
+  private component(name:string,parent:Css=this.defaults):Css{return pick(this.css.classStyle(name,parent),this.css.classKeys(name));}
   private values(style: Style): Css {
+    if(style.components){const p=style.components.p?this.component(style.components.p):{},r=style.components.r?this.component(style.components.r):{};return{...p,...r};}
     const result = this.css.classStyle(style.cssClass, this.defaults);
     return style.runCssClass ? { ...result, ...pick(this.css.classStyle(style.runCssClass, result), ["background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color"]) } : result;
   }
   private own(style: Style, kind: "p" | "r", css: Css, parent: Css): Css {
+    if(style.components?.[kind])return this.component(style.components[kind]!);
     const original = kind === "p" ? style.paragraphProperties : style.runProperties;
     const allowed = kind === "p" ? paragraphKeys : runKeys;
     const declared = new Set([...this.css.classKeys(style.cssClass), ...(style.runCssClass && kind === "r" ? this.css.classKeys(style.runCssClass) : [])]);
@@ -98,11 +101,13 @@ export class ExportStyles {
       out.add("<w:pPr>" + orderedProperties("pPr",paragraphProperties({ ...this.own(style, "p", css, parent), "font-size": css["font-size"]! }) +(style.outlineLevel!==undefined?value("outlineLvl",style.outlineLevel):""))+ "</w:pPr>");
       out.add("<w:rPr>" + this.runSource(style).source + "</w:rPr>");
       if (style.kind === "table") {
-        out.add("<w:tblPr>" + (style.rowBandSize ? value("tblStyleRowBandSize", style.rowBandSize) : "") + (style.columnBandSize ? value("tblStyleColBandSize", style.columnBandSize) : "") + tableProperties(css) + cellMargins(css, "tblCellMar") + (style.tableLookMask !== undefined ? empty("w:tblLook", { "w:val": style.tableLookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr>");
-        out.add("<w:tcPr>" + cellProperties(pick(css, Object.keys(css).filter((key) => key.startsWith("padding-")))) + "</w:tcPr>");
+        const tableCss=style.components?.table?this.component(style.components.table):css,cellCss=style.components?.cell?this.component(style.components.cell):pick(css,Object.keys(css).filter(key=>key.startsWith('padding-')));
+        out.add("<w:tblPr>" + (style.rowBandSize !== undefined ? value("tblStyleRowBandSize", style.rowBandSize) : "") + (style.columnBandSize !== undefined ? value("tblStyleColBandSize", style.columnBandSize) : "") + tableProperties(tableCss) + (style.tableLookMask !== undefined ? empty("w:tblLook", { "w:val": style.tableLookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr>");
+        out.add("<w:tcPr>" + cellProperties(cellCss) + "</w:tcPr>");
         for (const condition of style.conditions ?? []) {
           const conditional = pick(this.css.classStyle(condition.cssClass, this.defaults), this.css.classKeys(condition.cssClass));
-          out.add('<w:tblStylePr w:type="' + escapeXml(condition.region) + '"><w:pPr>' + paragraphProperties(pick(conditional, paragraphKeys)) + "</w:pPr><w:rPr>" + runProperties(pick(conditional, runKeys)) + "</w:rPr><w:tblPr>" + tableProperties(conditional) + "</w:tblPr><w:tcPr>" + cellProperties(conditional) + "</w:tcPr></w:tblStylePr>");
+          const component=(key:'p'|'r'|'table'|'cell')=>condition.components?.[key]?this.component(condition.components[key]!):conditional;
+          out.add('<w:tblStylePr w:type="' + escapeXml(condition.region) + '"><w:pPr>' + paragraphProperties(pick(component('p'),paragraphKeys)) + "</w:pPr><w:rPr>" + runProperties(pick(component('r'),runKeys)) + "</w:rPr><w:tblPr>" + tableProperties(component('table')) + "</w:tblPr><w:tcPr>" + cellProperties(component('cell')) + "</w:tcPr></w:tblStylePr>");
         }
       }
       out.add("</w:style>");

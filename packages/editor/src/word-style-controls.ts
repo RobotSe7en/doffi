@@ -74,6 +74,8 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
             const languages=(['val','eastAsia','bidi']as const).map((role,index)=>({role,input:field(['样式西文语言','样式东亚语言','样式复杂文字语言'][index]!,'')}));
             const alignment = choose('样式对齐', [['', '保留'], ['left', '左'], ['center', '中'], ['right', '右'], ['justify', '两端']], '');
             const space = field('样式段后（磅）', '', 'number'), resetFont = field('字体格式恢复继承', '', 'checkbox'), resetParagraph = field('段落格式恢复继承', '', 'checkbox');
+            const cellFill=field('表格样式单元格底纹',''),cellBorder=field('表格样式单元格边框',''),cellPadding=field('表格样式单元格边距（磅）','','number'),tableBorder=field('表格样式外边框','');
+            const tableFields=[cellFill,cellBorder,cellPadding,tableBorder];const updateTableFields=()=>{for(const input of tableFields)input.parentElement!.hidden=kind.value!=='table';};kind.addEventListener('change',updateTableFields,{signal});updateTableFields();
             button('保存样式', () => {
                 const id = current?.styleId ?? selected ?? 'style-' + createOpaqueId(), definition: Style = current ? WordStyleSchema.parse(current) : { styleId: id, kind: kind.value as Style['kind'], cssClass: 'word-style-' + createOpaqueId().replaceAll('-', ''), customStyle: true };
                 if (linked.value)
@@ -116,7 +118,8 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
                     paragraph['text-align'] = alignment.value;
                 if (space.value)
                     paragraph['margin-bottom'] = space.value + 'pt';
-                commit([{ op: 'setWordStyle', nodeId: root, style: definition, runProperties: run, paragraphProperties: paragraph, ...(resetFont.checked ? { removeRunProperties: [...current?.runProperties ?? []] } : {}), ...(resetParagraph.checked ? { removeParagraphProperties: [...current?.paragraphProperties ?? []] } : {}) }]);
+                const cell:Record<string,string>={},table:Record<string,string>={};if(cellFill.value)cell['background-color']=cellFill.value;if(cellBorder.value)cell.border=cellBorder.value;if(cellPadding.value)cell.padding=cellPadding.value+'pt';if(tableBorder.value)table.border=tableBorder.value;
+                commit([{ op: 'setWordStyle', nodeId: root, style: definition, runProperties: run, paragraphProperties: paragraph, ...(kind.value==='table'?{cellProperties:cell,tableProperties:table}:{}), ...(resetFont.checked ? { removeRunProperties: [...current?.runProperties ?? []] } : {}), ...(resetParagraph.checked ? { removeParagraphProperties: [...current?.paragraphProperties ?? []] } : {}) }]);
                 selected = id;
                 open();
             });

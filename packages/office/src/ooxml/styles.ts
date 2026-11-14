@@ -309,18 +309,13 @@ export class DocxStyles {
           );
         const values: StyleValues = {
           p: this.paragraph(child(region, "pPr")),
-          r: this.run(child(region, "rPr")),
+          r: this.run(child(region, "rPr"),{},true),
           table: this.table(table),
           cell: {
             ...this.margins(child(table, "tblCellMar")),
             ...this.cell(child(region, "tcPr")),
           },
         };
-        if (Object.keys(nonInheritedRun(values.r)).length)
-          unsupported(
-            region,
-            "Conditional character shading and decoration are not yet supported.",
-          );
         conditional.set(type, values);
         const cssClass = metadata.cssClass + "-" + type;
         conditions.push({
@@ -328,6 +323,7 @@ export class DocxStyles {
             typeof metadata.conditions
           >[number]["region"],
           cssClass,
+          components:Object.fromEntries((['p','r','table','cell']as const).map(key=>[key,this.component(cssClass+'-'+key,values[key])])),
         });
         this.css.push(
           "." +
@@ -366,6 +362,11 @@ export class DocxStyles {
       style.runProperties = Object.keys(
         this.run(child(definition, "rPr"), parent.r, true),
       );
+      if(style.kind==='table'||style.kind==='paragraph'||style.kind==='character')style.components={
+        p:this.component(style.cssClass+'-p',this.paragraph(child(definition,'pPr'))),
+        r:this.component(style.cssClass+'-r',this.run(child(definition,'rPr'),{},true)),
+        ...(style.kind==='table'?{table:this.component(style.cssClass+'-table',this.table(child(definition,'tblPr'))),cell:this.component(style.cssClass+'-cell',{...this.margins(child(child(definition,'tblPr'),'tblCellMar')),...this.cell(child(definition,'tcPr'))})}:{})
+      };
       const weight =
         style.kind === "character" ? 4 : style.kind === "paragraph" ? 3 : 1;
       const rules =
@@ -395,6 +396,9 @@ export class DocxStyles {
     const numPath = opc.related(main, "numbering");
     if (numPath) this.readNumbering(opc.read(numPath));
   }
+  private readonly componentValues=new Map<string,Css>();
+  component(name:string,values:Css):string{this.componentValues.set(name,values);this.css.push('.'+name+'{'+declarations(values)+'}');return name;}
+  readComponent=(name:string):Css=>this.componentValues.get(name)??{};
   drawingThemeProperties():Css{
     const result:Css={};for(const[role,value]of this.themeColors)result['--office-theme-'+role]='#'+value;
     for(const[role,name]of Object.entries({bg1:'lt1',tx1:'dk1',bg2:'lt2',tx2:'dk2'}))if(result['--office-theme-'+name])result['--office-theme-'+role]=result['--office-theme-'+name]!;

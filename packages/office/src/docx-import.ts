@@ -1,3 +1,4 @@
+import {resolveWordTableStyle,wordTableRegions} from '@doffi/core';
 import {WordMoveReader}from'./docx-moves.js';
 import{readWordPageBorders}from'./docx-page-borders.js';
 import {readWordFormatRevision}from'./docx-revisions-import.js';
@@ -199,6 +200,11 @@ class Importer {
           "Protected or externally dependent document settings are not supported.",
         );
     }
+  }
+  private activeTable:WordMetadata['tables'][number]|undefined;
+  private context(node:Html,kind:'table'|'cell'|'paragraph'|'run',css:Css,info=this.activeTable):void{
+    if(!info)return;const cssClass='wt-'+this.id(node);info.styleContexts??=[];info.styleContexts.push({nodeId:this.id(node),kind,cssClass});
+    node.attrs.class=[node.attrs.class,cssClass].filter(Boolean).join(' ');this.styles.css.push(('.'+cssClass).repeat(5)+'{'+declarations(css)+'}');
   }
   private make(
     tag: string,
@@ -575,7 +581,7 @@ class Importer {
       ),
     );
     const css: Css = {
-      ...contextualParagraph,
+      ...(this.activeTable?{}:contextualParagraph),
       ...this.styles.paragraph(properties),
     };
     const effectiveParagraph = {
@@ -596,6 +602,7 @@ class Importer {
         ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) }
         : {}),
     });
+    if(this.activeTable)this.context(paragraph,'paragraph',{...contextualParagraph,...style.p,...inheritedRun(paragraphRun)});
     if (
       effectiveParagraph["line-height"] &&
       /^\d+(?:\.\d+)?$/.test(effectiveParagraph["line-height"])
@@ -706,7 +713,7 @@ class Importer {
         const css = this.styles.run(properties, inherited,false,false,true);
         // Character-style toggles are relative to paragraph formatting; other
         // inherited font/color values remain inherited CSS rather than copies.
-        if (styleId) {
+        if (styleId&&!this.activeTable) {
           const standalone = this.styles.get(styleId).r;
           for (const name of [
             "font-weight",
@@ -736,6 +743,7 @@ class Importer {
               }
             : {}),
         });
+        if(this.activeTable)this.context(run,'run',{...Object.fromEntries(Object.entries(inherited).filter(([key,value])=>value!==paragraphStyle[key]||key==='background-color'||key.startsWith('text-decoration')))});
         if (requestedStyleId && !styleId)
           run.attrs["data-word-ignored-character-style"] = requestedStyleId;
         readWordFormatRevision(this.word,properties,run,'run',this.styles,{inheritedRun:{...this.styles.defaults.r,...paragraphStyle},runClasses:this.paragraphRunClasses});
@@ -1332,11 +1340,11 @@ class Importer {
     const tableCss: Css = {
       "margin-left": "-5.4pt",
       ...style.table,
-      ...this.styles.tableRegion(styleId, []).table,
+      ...resolveWordTableStyle(this.word,this.styles.readComponent,styleId,[]).table,
       ...this.styles.table(properties),
     };
     const table = this.make("table", {
-      style: declarations(tableCss),
+      style: declarations(this.styles.table(properties)),
       ...(styleId
         ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) }
         : {}),
@@ -1360,6 +1368,7 @@ class Importer {
       this.styles.tableSetting(styleId, "tableLookMask") ??
       0;
     const tableInfo = this.word.tables[this.word.tables.length - 1]!;
+    this.context(table,'table',{'margin-left':'-5.4pt',...style.table,...resolveWordTableStyle(this.word,this.styles.readComponent,styleId,[]).table},tableInfo);
     const ownMask = tableLookMask(look);
     if (ownMask !== undefined) tableInfo.lookMask = ownMask;
     for (const [name, key] of [
@@ -1372,23 +1381,11 @@ class Importer {
     const rowBand =
       tableInfo.rowBandSize ??
       this.styles.tableSetting(styleId, "rowBandSize") ??
-      1;
+      0;
     const columnBand =
       tableInfo.columnBandSize ??
       this.styles.tableSetting(styleId, "columnBandSize") ??
-      1;
-    const enabled = (name: string, bit: number): boolean => {
-      const flag = attr(look, name);
-      if (
-        flag !== undefined &&
-        !["0", "1", "false", "true", "on", "off"].includes(flag)
-      )
-        fail(look!, "A table look flag is invalid.");
-      return flag !== undefined
-        ? ["1", "true", "on"].includes(flag)
-        : (mask & bit) !== 0;
-    };
-
+      0;
     for (const row of rows) {
       check(row, ["tblPrEx", "trPr", "tc"]);
       const exceptions = child(row, "tblPrEx");
@@ -1459,80 +1456,22 @@ class Importer {
           );
           next.set(column, above);
         } else {
-          const regions: string[] = [];
-          if (!enabled("noVBand", 1024))
-            regions.push(
-              Math.floor(column / columnBand) % 2 === 0
-                ? "band1Vert"
-                : "band2Vert",
-            );
-          if (!enabled("noHBand", 512))
-            regions.push(
-              Math.floor(
-                (rowIndex - (enabled("firstRow", 32) ? 1 : 0)) / rowBand,
-              ) %
-                2 ===
-                0
-                ? "band1Horz"
-                : "band2Horz",
-            );
-          if (column === 0 && enabled("firstColumn", 128))
-            regions.push("firstCol");
-          if (column + span === grid.length && enabled("lastColumn", 256))
-            regions.push("lastCol");
-          if (rowIndex === 0 && enabled("firstRow", 32))
-            regions.push("firstRow");
-          if (rowIndex === rows.length - 1 && enabled("lastRow", 64))
-            regions.push("lastRow");
-          if (regions.includes("firstRow") && regions.includes("firstCol"))
-            regions.push("nwCell");
-          if (regions.includes("firstRow") && regions.includes("lastCol"))
-            regions.push("neCell");
-          if (regions.includes("lastRow") && regions.includes("firstCol"))
-            regions.push("swCell");
-          if (regions.includes("lastRow") && regions.includes("lastCol"))
-            regions.push("seCell");
-          const precedence = [
-            "band1Horz",
-            "band2Horz",
-            "band1Vert",
-            "band2Vert",
-            "firstCol",
-            "lastCol",
-            "firstRow",
-            "lastRow",
-            "nwCell",
-            "neCell",
-            "swCell",
-            "seCell",
-          ];
-          regions.sort(
-            (left, right) =>
-              precedence.indexOf(left) - precedence.indexOf(right),
-          );
-          const conditional = this.styles.tableRegion(styleId, regions);
+          const regions=wordTableRegions(rowIndex,column,rows.length,grid.length,span,mask,rowBand,columnBand);
+          const conditional = resolveWordTableStyle(this.word,this.styles.readComponent,styleId,regions);
           const inner: Css = {};
           if (tableCss["--word-border-inside-h"] && table.children.length > 1)
             inner["border-top"] = "var(--word-border-inside-h)";
           if (tableCss["--word-border-inside-v"] && column > 0)
             inner["border-left"] = "var(--word-border-inside-v)";
-          const css: Css = {
-            "padding-left": "5.4pt",
-            "padding-right": "5.4pt",
-            ...style.cell,
-            ...inheritedRun(conditional.r),
-            ...conditional.cell,
-            ...inner,
-            ...this.styles.margins(child(properties, "tblCellMar")),
-            ...cellCss,
-          };
           const htmlCell = this.make(
             on(child(rowProperties, "tblHeader")) ? "th" : "td",
             {
-              style: declarations(css),
+              style: declarations({...this.styles.margins(child(properties,'tblCellMar')),...cellCss}),
               ...(span > 1 ? { colspan: String(span) } : {}),
             },
           );
+          this.context(htmlCell,'cell',{'padding-left':'5.4pt','padding-right':'5.4pt',...style.cell,...conditional.cell,...inner},tableInfo);
+          const previousTable=this.activeTable;this.activeTable=tableInfo;
           htmlCell.children.push(
             ...this.blocks(
               this.compat(cell).filter(
@@ -1545,6 +1484,7 @@ class Importer {
               },
             ),
           );
+          this.activeTable=previousTable;
           if (textDirection) htmlCell.attrs["data-word-text-direction"] = textDirection;
           readWordFormatRevision(this.word,props,htmlCell,'cell',this.styles);
           this.native?.bind(cell, htmlCell.attrs);

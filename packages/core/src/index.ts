@@ -1,3 +1,4 @@
+export {wordTableRegions,resolveWordTableStyle,resolveWordStyleRun} from './word-style-context.js';
 export{wordScriptRole}from'./word-script.js';
 export type{WordScriptRole}from'./word-script.js';
 export { FORMAT_VERSION, PROTOCOL_VERSION, DocumentKindSchema, PackagePathSchema, RectangleSchema } from "./contracts/primitives.js";

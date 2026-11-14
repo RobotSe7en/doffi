@@ -1,6 +1,6 @@
 import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import { expect, test } from "vitest";
-import {} from "@doffi/core";
+import {SourceStyleResolver,DEFAULT_DOCUMENT_READ_LIMITS} from "@doffi/core";
 import type { ContentDocumentModel as DocumentModel, DocumentNode } from "@doffi/core";
 import { exportDocx, importDocx as importNativeDocx, readDocumentZip, writeDocumentZip } from "@doffi/office";
 // These historical rejection cases exercise the explicitly retained strict policy.
@@ -20,6 +20,7 @@ function reopen(bytes: Uint8Array): DocumentModel {
   expect(native.report.unexportedAnnotations).toEqual([]);
   return model;
 }
+function sourceCss(model:DocumentModel,node:DocumentNode):string{const resolver=new SourceStyleResolver(model.snapshot().styles.map(sheet=>sheet.css),DEFAULT_DOCUMENT_READ_LIMITS);const project=(node:DocumentNode):Parameters<typeof resolver.get>[0]=>({tag:node.tagName,attrs:node.attributes,parent:node.parentNodeId?project(model.getNode(node.parentNodeId)!):undefined});return Object.entries(resolver.get(project(node))).map(([key,value])=>key+':'+value).join(';');}
 function descendants(model: DocumentModel, nodeId: string): DocumentNode[] {
   const node = model.getNode(nodeId)!;
   return [node, ...node.childNodeIds.flatMap((id) => descendants(model, id))];
@@ -169,12 +170,12 @@ test("preserves inherited table geometry, partial margin overrides and explicit 
   const model = reopen(styleInheritanceFixture());
   const snapshot = model.snapshot();
   const table = snapshot.metadata.word!.tables[0]!;
-  expect(model.getNode(table.nodeId)!.attributes.style).toContain("margin-left:30pt");
+  expect(sourceCss(model,model.getNode(table.nodeId)!)).toContain("margin-left:30pt");
   for (const cell of descendants(model, table.nodeId).filter((node) => node.tagName === "td")) {
-    expect(cell.attributes.style).toContain("padding-left:30pt");
-    expect(cell.attributes.style).toContain("padding-right:40pt");
-    expect(cell.attributes.style).toContain("padding-top:2pt");
-    expect(cell.attributes.style).toContain("padding-bottom:3pt");
+    expect(sourceCss(model,cell)).toContain("padding-left:30pt");
+    expect(sourceCss(model,cell)).toContain("padding-right:40pt");
+    expect(sourceCss(model,cell)).toContain("padding-top:2pt");
+    expect(sourceCss(model,cell)).toContain("padding-bottom:3pt");
   }
   expect(snapshot.metadata.word!.tabs[0]!.stops.map((stop) => stop.position)).toEqual([100, 200]);
   expect(snapshot.html).toContain("background-color:var(--word-run-shading,transparent)");
@@ -189,11 +190,11 @@ test("direct table and cell geometry overrides inherited geometry", () => {
   });
   const model = reopen(bytes);
   const tableId = model.snapshot().metadata.word!.tables[0]!.nodeId;
-  expect(model.getNode(tableId)!.attributes.style).toContain("margin-left:20pt");
+  expect(sourceCss(model,model.getNode(tableId)!)).toContain("margin-left:20pt");
   const cells = descendants(model, tableId).filter((node) => node.tagName === "td");
-  expect(cells[0]!.attributes.style).toContain("padding-left:5pt");
-  expect(cells[1]!.attributes.style).toContain("padding-left:10pt");
-  expect(cells[1]!.attributes.style).toContain("padding-right:40pt");
+  expect(sourceCss(model,cells[0]!)).toContain("padding-left:5pt");
+  expect(sourceCss(model,cells[1]!)).toContain("padding-left:10pt");
+  expect(sourceCss(model,cells[1]!)).toContain("padding-right:40pt");
 });
 test("preserves whole-table geometry and region-specific cell margins", () => {
   const bytes = mutateDocx("02-table-merges.docx", {
@@ -206,11 +207,11 @@ test("preserves whole-table geometry and region-specific cell margins", () => {
   });
   const model = reopen(bytes);
   const id = model.snapshot().metadata.word!.tables[0]!.nodeId;
-  expect(model.getNode(id)!.attributes.style).toContain("margin-left:40pt");
+  expect(sourceCss(model,model.getNode(id)!)).toContain("margin-left:40pt");
   const cells = descendants(model, id).filter((node) => node.tagName === "td");
-  expect(cells[0]!.attributes.style).toContain("padding-left:50pt");
-  expect(cells[2]!.attributes.style).toContain("padding-left:30pt");
-  expect(cells.every((node) => node.attributes.style!.includes("padding-right:40pt"))).toBe(true);
+  expect(sourceCss(model,cells[0]!)).toContain("padding-left:50pt");
+  expect(sourceCss(model,cells[2]!)).toContain("padding-left:30pt");
+  expect(cells.every((node) => sourceCss(model,node).includes("padding-right:40pt"))).toBe(true);
 });
 test("rejects table indentation in a conditional cell region", () => {
   const bytes = mutateDocx("02-table-merges.docx", {

@@ -1,3 +1,4 @@
+import {applyWordStyleRun} from '../word-style-context.js';
 import type { WordMetadata } from '../contracts/word.js';
 import type { WordOperation } from '../contracts/word-operations.js';
 import type { DocumentEdit } from '../document/edit.js';
@@ -18,6 +19,7 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
     if (source.peekNode(operation.nodeId)!.parentNodeId !== null)
         fail('Shared Word definitions require the document root.');
     const resolver = styles.resolver(), old = new Map(word.styles.map(style => [style.styleId, style])), oldRunClasses = new Set(word.styles.flatMap(style => style.runCssClass ? [style.runCssClass] : []));
+    const select=(css:Record<string,string>,keys:readonly string[])=>Object.fromEntries(Object.entries(css).filter(([key])=>keys.some(name=>name===key||key.startsWith(name+'-')&&/^(border|margin|padding)/.test(name))));
     const own = new Map<string, {
         p: Record<string, string>;
         r: Record<string, string>;
@@ -25,19 +27,27 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
     }>();
     for (const style of word.styles) {
         const paragraph = resolver.specifiedClass(style.cssClass), css = { ...paragraph, ...(style.runCssClass ? resolver.specifiedClass(style.runCssClass) : {}) }, p = style.paragraphProperties ?? Object.keys(css).filter(key => !runKey(key)), r = style.runProperties ?? Object.keys(css).filter(runKey);
-        own.set(style.styleId, { p: Object.fromEntries(p.flatMap(key => paragraph[key] !== undefined ? [[key, paragraph[key]]] : [])), r: Object.fromEntries(r.flatMap(key => css[key] !== undefined ? [[key, css[key]]] : [])), other: style.kind === 'table' ? Object.fromEntries(Object.entries(css).filter(([key]) => !p.includes(key) && !r.includes(key))) : {} });
+        own.set(style.styleId, { p: {...(style.components?.p?resolver.specifiedClass(style.components.p):select(paragraph,p))}, r: {...(style.components?.r?resolver.specifiedClass(style.components.r):select(css,r))}, other: style.kind === 'table' ? Object.fromEntries(Object.entries(css).filter(([key]) => !p.includes(key) && !r.includes(key))) : {} });
     }
     if (operation.op === 'setWordStyle') {
         const previous = old.get(operation.style.styleId);
         if (previous && previous.kind !== operation.style.kind)
             fail('A style cannot change its native kind.');
         const definition = JSON.parse(JSON.stringify(operation.style)) as Style, values = own.get(definition.styleId) ?? { p: {}, r: {}, other: {} };
+        if((operation.tableProperties||operation.cellProperties||operation.removeTableProperties||operation.removeCellProperties)&&definition.kind!=='table')fail('Table and cell style properties require a table style.');
+        if(definition.kind==='table'){
+          definition.components??={};for(const key of ['table','cell']as const){const name=definition.components[key]??definition.cssClass+'-'+key,properties={...(previous?.components?.[key]?resolver.specifiedClass(previous.components[key]!):{})};for(const property of (key==='table'?operation.removeTableProperties:operation.removeCellProperties)??[])for(const candidate of Object.keys(properties))if(candidate===property||candidate.startsWith(property+'-'))delete properties[candidate];Object.assign(properties,key==='table'?operation.tableProperties:operation.cellProperties);definition.components[key]=name;styles.replaceClasses([{name,properties}]);}
+        }
+
         for (const key of operation.removeParagraphProperties ?? [])
             delete values.p[key];
         for (const key of operation.removeRunProperties ?? [])
             delete values.r[key];
         Object.assign(values.p, operation.paragraphProperties);
         Object.assign(values.r, operation.runProperties);
+        const baseStyle=definition.basedOn?old.get(definition.basedOn):undefined,baseRun=baseStyle?resolver.classStyle(baseStyle.cssClass):resolver.emptyStyle();
+        for(const[key,active]of [['font-weight','bold'],['font-style','italic'],['font-variant','small-caps'],['text-transform','uppercase']]as const){const value=operation.runProperties?.[key];if(value===undefined)continue;const enabled=key==='font-weight'?value==='bold'||Number(value)>=600:value===active,previous=key==='font-weight'?baseRun[key]==='bold'||Number(baseRun[key])>=600:baseRun[key]===active;if(enabled===previous)delete values.r[key];else values.r[key]=active;}
+
         definition.paragraphProperties = Object.keys(values.p);
         definition.runProperties = Object.keys(values.r);
         own.set(definition.styleId, values);
@@ -93,7 +103,7 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         return known; if (active.has(style.styleId))
         fail('Style inheritance contains a cycle.'); if (active.size >= limits.maxDepth)
         throw new DocumentError('ResourceLimitExceeded', 'Style inheritance exceeds the depth budget.'); active.add(style.styleId); const parent = style.basedOn ? definitions.get(style.basedOn) ?? fail('The base style is missing.') : undefined; if (parent && parent.kind !== style.kind)
-        fail('A style must inherit from the same native kind.'); const base = parent ? resolve(parent) : { p: {}, r: {}, other: {} }, values = own.get(style.styleId)!; const result = { p: { ...base.p, ...values.p }, r: { ...base.r, ...values.r }, other: { ...base.other, ...values.other } }; resolved.set(style.styleId, result); active.delete(style.styleId); ordered.push(style); return result; }
+        fail('A style must inherit from the same native kind.'); const base = parent ? resolve(parent) : { p: {}, r: {}, other: {} }, values = own.get(style.styleId)!; const result = { p: { ...base.p, ...values.p }, r: applyWordStyleRun(base.r,values.r), other: { ...base.other, ...values.other } }; resolved.set(style.styleId, result); active.delete(style.styleId); ordered.push(style); return result; }
     for (const style of word.styles)
         resolve(style);
     const entries: {
@@ -102,6 +112,9 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         weight: number;
     }[] = [];
     for (const style of ordered) {
+        const original=own.get(style.styleId)!;
+        style.components??={};style.components.p??=style.cssClass+'-p';style.components.r??=style.cssClass+'-r';
+        entries.push({name:style.components.p,properties:original.p,weight:1},{name:style.components.r,properties:original.r,weight:1});
         const values = resolved.get(style.styleId)!, weight = style.kind === 'character' ? 4 : style.kind === 'paragraph' ? 3 : 1;
         entries.push({ name: style.cssClass, weight, properties: style.kind === 'character' ? values.r : { ...values.p, ...values.other, ...Object.fromEntries(Object.entries(values.r).filter(([key]) => !special(key))) } });
         if (style.kind !== 'character') {

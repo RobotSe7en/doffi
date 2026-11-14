@@ -1,0 +1,85 @@
+import { expect, test } from 'vitest';
+import { strFromU8, unzipSync,strToU8,zipSync } from 'fflate';
+import { openDocument, createDocumentSession, SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS, WordStyleSchema } from '@doffi/core';
+import type { DocumentNode, SourceStyleNode, DocumentOperation } from '@doffi/core';
+import { importDocx, exportDocx } from '@doffi/office';
+import { tableStylesFixture } from './table-style-fixture.js';
+function css(session: ReturnType<typeof createDocumentSession>, id: string) { const resolver = new SourceStyleResolver(session.snapshot().styles.map(sheet => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS), project = (id: string): SourceStyleNode => { const node = session.getNode(id)!; return { tag: node.tagName, attrs: node.attributes, parent: node.parentNodeId ? project(node.parentNodeId) : undefined }; }; return resolver.get(project(id)); }
+function descendants(session: ReturnType<typeof createDocumentSession>, id: string): DocumentNode[] { const node = session.getNode(id)!; return [node, ...node.childNodeIds.flatMap(child => descendants(session, child))]; }
+test('switching table styles recomposes conditional cells and run toggles, retains direct formats, and remains style-driven after two native reopens', () => {
+    const session = createDocumentSession(openDocument(importDocx(tableStylesFixture(), { documentId: 'table-style', unsupportedContent: 'reject' }), { kind: 'document' }));
+    const apply = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'table-style', baseRevision: session.snapshot().manifest.revision, operations }));
+    const table = session.snapshot().metadata.word!.tables[0]!.nodeId, get = () => descendants(session, table), cells = () => get().filter(node => node.tagName === 'td'), runs = () => get().filter(node => node.attributes['data-word-run']);
+    expect(css(session, cells()[0]!.nodeId)['background-color']).toBe('#aa1111');
+    expect(css(session, runs()[0]!.nodeId)['font-weight']).toBe('bold');
+    expect(css(session, runs()[1]!.nodeId)['font-weight']).toBe('normal');
+    apply([{ op: 'formatWordCell', nodeId: cells()[2]!.nodeId, properties: { 'padding-left': '17pt' } }, { op: 'formatWordTable', nodeId: table, styleId: 'Blue' }]);
+    expect(css(session, cells()[0]!.nodeId)['background-color']).toBe('#1111aa');
+    expect(css(session, cells()[2]!.nodeId)['background-color']).toBe('#0000cc');
+    expect(css(session, cells()[2]!.nodeId)['padding-left']).toBe('17pt');
+    expect(css(session, cells()[3]!.nodeId)['background-color']).toBe('#00ff00');
+    expect(css(session, runs()[1]!.nodeId)['font-weight']).toBe('normal');
+    let bytes = exportDocx(session).bytes;
+    for (let pass = 0; pass < 2; pass++) {
+        const xml = strFromU8(unzipSync(bytes)['word/document.xml']!);
+        expect(xml.match(/<w:shd/g)).toHaveLength(1);
+        expect(xml).not.toContain('w:fill="1111AA"');
+        const reopened = createDocumentSession(openDocument(importDocx(bytes, { documentId: 'reopen', unsupportedContent: 'reject' }), { kind: 'document' })), all = descendants(reopened, reopened.snapshot().metadata.word!.tables[0]!.nodeId), first = all.find(node => node.tagName === 'td')!;
+        expect(css(reopened, first.nodeId)['background-color']).toBe('#1111aa');
+        expect(all.filter(node => node.attributes['data-word-run']).map(node => css(reopened, node.nodeId)['font-weight'])).toEqual(['bold', 'normal', 'normal', 'normal']);
+        bytes = exportDocx(reopened).bytes;
+        reopened.dispose();
+    }
+    session.undo();
+    expect(css(session, cells()[0]!.nodeId)['background-color']).toBe('#aa1111');
+    session.redo();
+    const style = WordStyleSchema.parse(session.snapshot().metadata.word!.styles.find(style => style.styleId === 'Blue')!);
+    apply([{ op: 'setWordStyle', nodeId: session.getNode(session.snapshot().metadata.word!.stories.find(story => story.kind === 'main')!.rootNodeId)!.parentNodeId!, style, cellProperties: { 'background-color': '#dddddd' } }]);
+    expect(css(session, cells()[2]!.nodeId)['background-color']).toBe('#dddddd');
+    expect(css(session, cells()[0]!.nodeId)['background-color']).toBe('#1111aa');
+});
+test('table-style histories retain original conditional options, reopen and reject without freezing cell paints', () => {
+    const session = createDocumentSession(openDocument(importDocx(tableStylesFixture(), { documentId: 'tracked-table', unsupportedContent: 'reject' }), { kind: 'document' })), table = session.snapshot().metadata.word!.tables[0]!.nodeId, root = session.getNode(session.snapshot().metadata.word!.stories.find(story => story.kind === 'main')!.rootNodeId)!.parentNodeId!, apply = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'tracked-table', baseRevision: session.snapshot().manifest.revision, operations }));
+    apply([{ op: 'setWordReview', nodeId: root, trackChanges: true, author: '甲' }, { op: 'formatWordTable', nodeId: table, styleId: 'Blue', lookMask: 1536, rowBandSize: 2 }]);
+    const first = descendants(session, table).find(node => node.tagName === 'td')!;
+    expect(css(session, first.nodeId)['background-color']).toBe('#0000cc');
+    let bytes = exportDocx(session).bytes;
+    for (let pass = 0; pass < 2; pass++) {
+        const reopened = createDocumentSession(openDocument(importDocx(bytes, { documentId: 'tracked-reopen', unsupportedContent: 'reject' }), { kind: 'document' })), snapshot = reopened.snapshot(), revision = snapshot.metadata.word!.revisions.find(item => item.property === 'table')!;
+        expect(revision.before?.attributes?.['data-word-style']).toBe('Red');
+        expect(revision.before?.tableStyleOptions?.lookMask).toBe(1568);
+        bytes = exportDocx(reopened).bytes;
+        reopened.commit(reopened.prepare({ protocolVersion: 1, documentId: 'tracked-reopen', baseRevision: 0, operations: [{ op: 'reviewWordRevision', nodeId: revision.nodeId, revisionId: revision.revisionId!, decision: 'reject' }] }));
+        expect(css(reopened, descendants(reopened, revision.nodeId).find(node => node.tagName === 'td')!.nodeId)['background-color']).toBe('#aa1111');
+        reopened.dispose();
+    }
+    apply([{ op: 'reviewWordRevisions', nodeId: root, decision: 'reject' }]);
+    expect(css(session, first.nodeId)['background-color']).toBe('#aa1111');
+    session.undo();
+    expect(css(session, first.nodeId)['background-color']).toBe('#0000cc');
+});
+test('table structural edits recompute first-row conditional styles and direct paragraph fonts continue to inherit into runs', () => {
+    const session = createDocumentSession(openDocument(importDocx(tableStylesFixture(), { documentId: 'structure-style', unsupportedContent: 'reject' }), { kind: 'document' })), table = session.snapshot().metadata.word!.tables[0]!.nodeId, apply = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'structure-style', baseRevision: session.snapshot().manifest.revision, operations }));
+    apply([{ op: 'editWordTable', nodeId: table, change: { kind: 'insertRows', at: 0, count: 1 } }]);
+    const nodes = descendants(session, table), cells = nodes.filter(node => node.tagName === 'td');
+    expect(css(session, cells[0]!.nodeId)['background-color']).toBe('#aa1111');
+    expect(css(session, cells[2]!.nodeId)['background-color']).toBe('#cc0000');
+    const paragraph = nodes.find(node => node.tagName === 'p' && node.text === 'R0C0')!, runNode = descendants(session, paragraph.nodeId).find(node => node.attributes['data-word-run'])!;
+    apply([{ op: 'setStyle', nodeId: paragraph.nodeId, property: 'font-size', value: '22pt' }]);
+    expect(css(session, runNode.nodeId)['font-size']).toBe('22pt');
+    apply([{ op: 'editWordTable', nodeId: table, change: { kind: 'deleteRows', at: 0, count: 1 } }]);
+    expect(css(session, descendants(session, table).find(node => node.tagName === 'td')!.nodeId)['background-color']).toBe('#aa1111');
+});
+test('explicit cell formatting equal to a table style is retained when reopened and another style is applied', () => {
+    const session = createDocumentSession(openDocument(importDocx(tableStylesFixture(), { documentId: 'equal-direct', unsupportedContent: 'reject' }), { kind: 'document' })), table = session.snapshot().metadata.word!.tables[0]!.nodeId, cell = descendants(session, table).filter(node => node.tagName === 'td')[2]!;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: 'equal-direct', baseRevision: 0, operations: [{ op: 'formatWordCell', nodeId: cell.nodeId, properties: { 'background-color': '#cc0000' } }] }));
+    const reopened = createDocumentSession(openDocument(importDocx(exportDocx(session).bytes, { documentId: 'equal-reopen', unsupportedContent: 'reject' }), { kind: 'document' })), id = reopened.snapshot().metadata.word!.tables[0]!.nodeId;
+    reopened.commit(reopened.prepare({ protocolVersion: 1, documentId: 'equal-reopen', baseRevision: 0, operations: [{ op: 'formatWordTable', nodeId: id, styleId: 'Blue' }] }));
+    expect(css(reopened, descendants(reopened, id).filter(node => node.tagName === 'td')[2]!.nodeId)['background-color']).toBe('#cc0000');
+});
+
+test.each([undefined,0,1])('Word table band size %s keeps missing/zero unbanded and preserves explicit native zero',size=>{
+ const files=unzipSync(tableStylesFixture());files['word/styles.xml']=strToU8(strFromU8(files['word/styles.xml']!).replace('<w:style w:type="table" w:styleId="Red">','<w:style w:type="table" w:styleId="Red"><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:fill="123456"/></w:tcPr></w:tblStylePr>'));
+ files['word/document.xml']=strToU8(strFromU8(files['word/document.xml']!).replace('<w:tblPr>','<w:tblPr>'+(size!==undefined?'<w:tblStyleRowBandSize w:val="'+size+'"/>':'')).replace(/<w:tblLook[^>]*\/>/,'<w:tblLook w:val="0400"/>'));
+ let bytes:Uint8Array=zipSync(files);for(let pass=0;pass<2;pass++){const session=createDocumentSession(openDocument(importDocx(bytes,{documentId:'bands',unsupportedContent:'reject'}),{kind:'document'})),table=session.snapshot().metadata.word!.tables[0]!.nodeId,cell=descendants(session,table).find(node=>node.tagName==='td')!;expect(css(session,cell.nodeId)['background-color']).toBe(size===1?'#123456':'#cc0000');expect(session.snapshot().metadata.word!.tables[0]!.rowBandSize).toBe(size);bytes=exportDocx(session).bytes;session.dispose();}
+});

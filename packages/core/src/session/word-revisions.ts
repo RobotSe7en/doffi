@@ -133,6 +133,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
                 }
                 for (const [key, value] of Object.entries(before.properties ?? {}))
                     edit.sourceStyle(revision.nodeId, key, value);
+                if(before.tableStyleOptions){const table=word.tables.find(table=>table.nodeId===revision.nodeId);if(table)for(const key of ['lookMask','rowBandSize','columnBandSize']as const){delete table[key];const value=before.tableStyleOptions[key];if(value!==undefined)table[key]=value;}}
                 if (before.grid) {
                     const table = word.tables.find(table => table.nodeId === revision.nodeId);
                     if (table)

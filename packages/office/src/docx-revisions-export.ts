@@ -105,19 +105,24 @@ export class ExportWordRevisions {
             props += value('outlineLvl', Number(old.node.tag[1]) - 1);
         return this.change(entry.revision, 'pPr', orderedProperties('pPr', props), entry.owner);
     }
+    private directTableProperties(node:SourceElement):Css{
+      const owned=new Set(this.word?.tables.flatMap(table=>table.styleContexts?.map(context=>context.cssClass)??[])??[]),style=this.word?.styles.find(style=>style.styleId===node.attrs['data-word-style']);if(style)owned.add(style.cssClass);
+      const direct={...node,attrs:{...node.attrs,class:(node.attrs.class??'').split(/\s+/).filter(name=>!owned.has(name)).join(' ')}};
+      const values=this.css.get(direct);return Object.fromEntries(Object.keys(this.css.specified(direct)).flatMap(key=>values[key]!==undefined?[[key,values[key]!]]:[]));
+    }
     table(node: SourceElement): string {
         const entry = this.revision(node, 'table');
         if (!entry)
             return '';
         const old = this.old(node, entry.revision, {}), style = old.node.attrs['data-word-style'];
-        return this.change(entry.revision, 'tblPr', (style ? value('tblStyle', this.styles.ids.get(style) ?? style) : '') + tableProperties(old.css), entry.owner);
+        return this.change(entry.revision, 'tblPr', orderedProperties('tblPr',(style ? value('tblStyle', this.styles.ids.get(style) ?? style) : '') + tableProperties(this.directTableProperties(old.node))+(entry.revision.before?.tableStyleOptions?.lookMask!==undefined?empty('w:tblLook',{'w:val':entry.revision.before.tableStyleOptions.lookMask.toString(16).padStart(4,'0')}):'')+(['rowBandSize','columnBandSize']as const).map(key=>entry.revision.before?.tableStyleOptions?.[key]!==undefined?value(key==='rowBandSize'?'tblStyleRowBandSize':'tblStyleColBandSize',entry.revision.before.tableStyleOptions[key]):'').join('')), entry.owner);
     }
     cell(node: SourceElement): string {
         const entry = this.revision(node, 'cell');
         if (!entry)
             return '';
         const old = this.old(node, entry.revision, {});
-        return this.change(entry.revision, 'tcPr', cellProperties(old.css) + value('textDirection', old.node.attrs['data-word-text-direction'] ?? old.css['--word-cell-text-direction']), entry.owner);
+        return this.change(entry.revision, 'tcPr', cellProperties(this.directTableProperties(old.node)) + value('textDirection', old.node.attrs['data-word-text-direction'] ?? old.css['--word-cell-text-direction']), entry.owner);
     }
     rowMark(node: SourceElement): string { return (this.rowMarks.get(node.attrs['data-node-id'] ?? '') ?? []).sort((a, b) => a.kind === 'rowInsert' ? -1 : b.kind === 'rowInsert' ? 1 : 0).map(revision => empty('w:' + (revision.kind === 'rowInsert' ? 'ins' : 'del'), { 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': this.revisionDate(revision) })).join(''); }
     row(node: SourceElement): string {

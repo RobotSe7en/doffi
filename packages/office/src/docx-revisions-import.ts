@@ -1,7 +1,7 @@
 import type { WordMetadata, WordRevision } from '@doffi/core';
 import { attr, child, check, fail, on, number, unsupported } from './ooxml/xml.js';
 import type { XmlNode } from './ooxml/xml.js';
-import { declarations, mergeTabs, pt } from './ooxml/styles.js';
+import { declarations, mergeTabs, pt,tableLookMask } from './ooxml/styles.js';
 import type { DocxStyles, Css } from './ooxml/styles.js';
 const propertyNames = { run: 'rPr', paragraph: 'pPr', table: 'tblPr', row: 'trPr', cell: 'tcPr' } as const;
 export function readWordFormatRevision(word: WordMetadata, properties: XmlNode | undefined, owner: {
@@ -49,9 +49,10 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
         before.tabs = { defaultInterval: options.defaultTab ?? 36, stops: mergeTabs(style.tabs ?? styles.defaults.tabs, child(previous, 'tabs')) };
     }
     else if (property === 'table') {
-        if (attr(child(previous, 'tblStyle'), 'val') !== attr(child(properties, 'tblStyle'), 'val'))
-            unsupported(change, 'A table-style revision is preserved until all conditional regions can be recomposed.');
+        const styleId=attr(child(previous,'tblStyle'),'val')??styles.defaultTable;
+        attributes['data-word-style']=styleId??null;attributes.class=styleId?styles.styleClass(styleId):null;
         css = styles.table(previous);
+        before.tableStyleOptions={};const mask=tableLookMask(child(previous,'tblLook'));if(mask!==undefined)before.tableStyleOptions.lookMask=mask;for(const[name,key]of [['tblStyleRowBandSize','rowBandSize'],['tblStyleColBandSize','columnBandSize']]as const){const item=child(previous,name);if(item)before.tableStyleOptions[key]=number(attr(item,'val'),item);}
     }
     else if (property === 'cell') {
         if (attr(child(previous, 'gridSpan'), 'val') !== attr(child(properties, 'gridSpan'), 'val') || attr(child(previous, 'vMerge'), 'val') !== attr(child(properties, 'vMerge'), 'val'))
