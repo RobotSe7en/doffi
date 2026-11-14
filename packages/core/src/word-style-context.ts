@@ -2,7 +2,7 @@ import type { WordMetadata } from './contracts/word.js';
 import type { DeepReadonly } from './runtime.js';
 import { DocumentError } from './errors.js';
 type Css = Record<string, string>;
-type Word = DeepReadonly<WordMetadata>;
+type Word = DeepReadonly<Pick<WordMetadata,'styles'>>;
 type Style = Word['styles'][number];
 type Read = (name: string) => Css;
 const empty = () => ({ p: {} as Css, r: {} as Css, table: {} as Css, cell: {} as Css,row:{} as Css });

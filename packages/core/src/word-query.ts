@@ -62,5 +62,5 @@ export function wordTextReplacementOperations(model:ContentDocumentModel,matches
 /** Authored paragraph defaults for collapsed input and source formatting tools. */
 export function getWordTextDefaults(model:ContentDocumentModel,nodeId:string,options:OpenDocumentOptions={}):Readonly<Record<string,string>>{
  const snapshot=model.snapshot();if(snapshot.metadata.presentation)throw new DocumentError('UnsupportedFormat','Word formatting defaults require a Word document.');let root=model.getNode(nodeId);if(!root)throw new DocumentError('AnchorNotFound','The Word text source is missing.');while(root.parentNodeId)root=model.getNode(root.parentNodeId)!;
- return Object.freeze(wordTextDefaults(snapshot.metadata.word??{stories:[{storyId:'main',kind:'main',rootNodeId:root.nodeId}],styles:[]},{peekNode:id=>model.getNode(id)},nodeId,new SourceStyleResolver(snapshot.styles.map(style=>style.css),readLimits(options.limits))));
+ return Object.freeze(wordTextDefaults(snapshot.metadata.word??{stories:[{storyId:'main',kind:'main',rootNodeId:root.nodeId}],styles:[]},{peekNode:id=>model.getNode(id)},nodeId,new SourceStyleResolver(snapshot.styles.map(style=>style.css),readLimits(options.limits)),readLimits(options.limits).maxNodes*8));
 }

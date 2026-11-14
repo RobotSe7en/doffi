@@ -45,7 +45,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='resetWordText'){
     if(!/^p$|^h[1-6]$/.test(node.tagName))fail('Resetting text formatting requires a paragraph range.');
     if(operation.resetParagraph){if(operation.from!==0||operation.to!==parse().getNode(operation.nodeId)!.text.length)fail('Paragraph formatting can only be reset for a complete paragraph.');const normal=word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal');applyWordOperation(metadata,edit,parse,styles,{op:'setWordParagraph',nodeId:operation.nodeId,clearDirectFormatting:true,...(normal?{styleId:normal.styleId}:{})},limits);}
-    const source=parse(),defaults=wordTextDefaults(word,source,operation.nodeId,styles.resolver());edit.formatSourceText(operation.nodeId,operation,defaults);clearCoveredWordRuns(word,parse(),edit,operation.nodeId,operation.from,operation.to);return;
+    const source=parse(),defaults=wordTextDefaults(word,source,operation.nodeId,styles.resolver(),limits.maxNodes*8);edit.formatSourceText(operation.nodeId,operation,defaults);clearCoveredWordRuns(word,parse(),edit,operation.nodeId,operation.from,operation.to);return;
   }
   if(operation.op==='setWordOptions'){
     if(node.parentNodeId!==null)fail('Shared Word settings require the document root.');
