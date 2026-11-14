@@ -7,6 +7,22 @@ import { WordControlSchema } from './word-control.js';
 import { WordCommentSchema,WordPersonSchema } from './word-comment.js';
 import {WordRevisionSchema,WordMoveRangeSchema}from'./word-revision.js';
 
+export const WordTableRegionSchema=z.enum([
+          "wholeTable",
+          "firstRow",
+          "lastRow",
+          "firstCol",
+          "lastCol",
+          "band1Vert",
+          "band2Vert",
+          "band1Horz",
+          "band2Horz",
+          "neCell",
+          "nwCell",
+          "seCell",
+          "swCell",
+        ]);
+
 /** Residual OOXML owns only content that has no editable HTML representation. */
 export const WordNativeContentSchema = z.strictObject({
   mainPart: PackagePathSchema,
@@ -25,6 +41,7 @@ export const WordNativeContentSchema = z.strictObject({
     propertyIndices:z.array(z.number().int().nonnegative()).optional(),propertyIndex:z.number().int().nonnegative().optional(),
     ownerName: z.string().min(1),
     styleId: IdentifierSchema.optional(),
+    styleRegion:z.string().min(1).optional(),
     label: z.string(),
     propertyName:z.string().min(1).optional(),revisionSourceId:IdentifierSchema.optional(),revisionPrevious:z.boolean().optional(),
   })),
@@ -60,21 +77,7 @@ export const WordStyleSchema = z.strictObject({
   conditions: z
     .array(
       z.strictObject({
-        region: z.enum([
-          "wholeTable",
-          "firstRow",
-          "lastRow",
-          "firstCol",
-          "lastCol",
-          "band1Vert",
-          "band2Vert",
-          "band1Horz",
-          "band2Horz",
-          "neCell",
-          "nwCell",
-          "seCell",
-          "swCell",
-        ]),
+        region: WordTableRegionSchema,
         cssClass: IdentifierSchema,
         components:WordStyleComponentsSchema.optional(),
       }),

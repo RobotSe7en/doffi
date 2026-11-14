@@ -105,10 +105,10 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   const applyProperty=(root:XmlNode,fragment:typeof native.fragments[number]):void=>{
     restored.add(fragment.nativeId);
     let target=root;
-    for(const[index,path]of fragment.propertyPath.entries()){let next=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===path)[fragment.propertyIndices?.[index]??0];if(!next){const split=path.lastIndexOf(' ');next={uri:path.slice(0,split),name:path.slice(split+1),attrs:new Map(),namespaces:{},content:[],part:root.part};target.content.unshift(next);}target=next;}
-    const original=fragmentXml(fragment);
+    for(const[index,path]of fragment.propertyPath.entries()){let next=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===path&&(path===W+' tblStylePr'&&fragment.styleRegion?n.attrs.get(W+' type')===fragment.styleRegion:true))[path===W+' tblStylePr'&&fragment.styleRegion?0:fragment.propertyIndices?.[index]??0];if(!next){const split=path.lastIndexOf(' ');next={uri:path.slice(0,split),name:path.slice(split+1),attrs:new Map(),namespaces:{},content:[],part:root.part};if(path===W+' tblStylePr'&&fragment.styleRegion)(next.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);target.content.unshift(next);}target=next;}
+    const original=fragmentXml(fragment);if(original.name==='tblStylePr'&&fragment.styleRegion&&!original.attrs.has(W+' type'))(original.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);
     if(name(original)===name(target))merge(target,original);
-    else{const current=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===name(original))[fragment.propertyIndex??0];if(current)merge(current,original);else target.content.push(original);}
+    else{const current=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===name(original)&&(original.name==='tblStylePr'&&fragment.styleRegion?n.attrs.get(W+' type')===fragment.styleRegion:true))[original.name==='tblStylePr'&&fragment.styleRegion?0:fragment.propertyIndex??0];if(current)merge(current,original);else target.content.push(original);}
   };
   const apply=(root:XmlNode):XmlNode=>{
     const beforeSource=root.attrs.get(NATIVE_MARKER+' before-source'),beforeProperty=root.attrs.get(NATIVE_MARKER+' before-property');

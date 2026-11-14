@@ -50,6 +50,7 @@ export function validateWord(
       for (const fragment of native.fragments) {
         if (ids.has(fragment.nativeId) || !paths.has(fragment.assetPath)) invalid("Native fragments require unique identities and declared resources.");
         ids.add(fragment.nativeId);
+        if(fragment.styleRegion&&(!fragment.styleId||fragment.ownerName!=='style'||fragment.kind!=='property'))invalid('A native conditional property requires its style and region owner.');
         if(fragment.fragmentFormat==='json'&&(!fragment.fragmentKey||!assets.some(asset=>asset.path===fragment.assetPath&&asset.mimeType==='application/json')))invalid('A native JSON fragment requires a keyed JSON collection.');
         if(fragment.relationshipIds&&(new Set(fragment.relationshipIds).size!==fragment.relationshipIds.length||fragment.relationshipIds.some(id=>!relationshipKeys.has(fragment.sourcePart+'\n'+id))))invalid('A native fragment dependency must refer to its source-part relationship.');
         if(fragment.preview&&(fragment.kind==="property"||!assets.some(asset=>asset.path===fragment.preview!.assetPath&&["image/png","image/jpeg","image/webp"].includes(asset.mimeType))))invalid("A native preview requires a declared raster image.");
@@ -164,6 +165,7 @@ export function validateWord(
     unique(word.styles.filter(style=>style.default),style=>style.kind);
     const visited = new Set<string>();
     for (const style of word.styles) {
+      unique(style.conditions??[],condition=>condition.region);
       for (const reference of [
         style.basedOn,
         style.linkedStyleId,

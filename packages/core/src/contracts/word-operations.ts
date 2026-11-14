@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { IdentifierSchema,RevisionSchema,PackagePathSchema } from './primitives.js';
 import { DocumentSectionSchema } from "./document.js";
 import { TableChangeSchema } from "./table-operations.js";
-import { WordStyleSchema,WordNumberLevelSchema,WordMetadataSchema } from './word.js';
+import { WordStyleSchema,WordTableRegionSchema,WordNumberLevelSchema,WordMetadataSchema } from './word.js';
 import { WordDrawingOperationSchema } from './word-drawing.js';
 import { WordReferenceOperationSchema } from './word-reference.js';
 import { WordMathOperationSchema } from './word-math.js';
@@ -36,7 +36,7 @@ export const WordOperationSchema=z.discriminatedUnion('op',[
   z.strictObject({op:z.literal('formatWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),properties}),
   z.strictObject({op:z.literal('setWordParagraph'),nodeId:IdentifierSchema,outlineLevel:z.number().int().min(0).max(9).nullable().optional(),properties:properties.optional(),styleId:IdentifierSchema.nullable().optional(),clearDirectFormatting:z.boolean().optional()}),
   z.strictObject({op:z.literal('deleteWordStyle'),nodeId:IdentifierSchema,styleId:IdentifierSchema,replacementStyleId:IdentifierSchema}),
-  z.strictObject({op:z.literal('setWordStyle'),nodeId:IdentifierSchema,style:WordStyleSchema,paragraphProperties:properties.optional(),runProperties:properties.optional(),removeParagraphProperties:z.array(z.string().min(1)).optional(),removeRunProperties:z.array(z.string().min(1)).optional(),tableProperties:properties.optional(),cellProperties:properties.optional(),removeTableProperties:z.array(z.string().min(1)).optional(),removeCellProperties:z.array(z.string().min(1)).optional()}),
+  z.strictObject({op:z.literal('setWordStyle'),nodeId:IdentifierSchema,style:WordStyleSchema,paragraphProperties:properties.optional(),runProperties:properties.optional(),removeParagraphProperties:z.array(z.string().min(1)).optional(),removeRunProperties:z.array(z.string().min(1)).optional(),tableProperties:properties.optional(),cellProperties:properties.optional(),rowProperties:properties.optional(),tableCondition:z.strictObject({region:WordTableRegionSchema,clear:z.boolean().optional(),paragraphProperties:properties.optional(),runProperties:properties.optional(),tableProperties:properties.optional(),cellProperties:properties.optional(),rowProperties:properties.optional(),removeParagraphProperties:z.array(z.string().min(1)).optional(),removeRunProperties:z.array(z.string().min(1)).optional(),removeTableProperties:z.array(z.string().min(1)).optional(),removeCellProperties:z.array(z.string().min(1)).optional(),removeRowProperties:z.array(z.string().min(1)).optional()}).optional(),removeTableProperties:z.array(z.string().min(1)).optional(),removeCellProperties:z.array(z.string().min(1)).optional(),removeRowProperties:z.array(z.string().min(1)).optional()}),
   z.strictObject({op:z.literal('setWordNumbering'),nodeId:IdentifierSchema,numberingId:IdentifierSchema,copyFromNumberingId:IdentifierSchema.optional(),levels:z.array(WordNumberLevelSchema).min(1).max(9),levelProperties:z.array(z.strictObject({level:z.number().int().min(0).max(8),properties})).optional()}),
   z.strictObject({op:z.literal('setWordList'),nodeId:IdentifierSchema,numberingId:IdentifierSchema.nullable(),level:z.number().int().min(0).max(8).optional()}),
 ]);

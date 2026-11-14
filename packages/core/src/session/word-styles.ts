@@ -1,3 +1,4 @@
+import {editWordTableDefinition} from './word-style-condition.js';
 import {applyWordStyleRun} from '../word-style-context.js';
 import type { WordMetadata } from '../contracts/word.js';
 import type { WordOperation } from '../contracts/word-operations.js';
@@ -34,11 +35,7 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         if (previous && previous.kind !== operation.style.kind)
             fail('A style cannot change its native kind.');
         const definition = JSON.parse(JSON.stringify(operation.style)) as Style, values = own.get(definition.styleId) ?? { p: {}, r: {}, other: {} };
-        if((operation.tableProperties||operation.cellProperties||operation.removeTableProperties||operation.removeCellProperties)&&definition.kind!=='table')fail('Table and cell style properties require a table style.');
-        if(definition.kind==='table'){
-          definition.components??={};for(const key of ['table','cell']as const){const name=definition.components[key]??definition.cssClass+'-'+key,properties={...(previous?.components?.[key]?resolver.specifiedClass(previous.components[key]!):{})};for(const property of (key==='table'?operation.removeTableProperties:operation.removeCellProperties)??[])for(const candidate of Object.keys(properties))if(candidate===property||candidate.startsWith(property+'-'))delete properties[candidate];Object.assign(properties,key==='table'?operation.tableProperties:operation.cellProperties);definition.components[key]=name;styles.replaceClasses([{name,properties}]);}
-        }
-
+        editWordTableDefinition(word,definition,previous,styles,operation);
         for (const key of operation.removeParagraphProperties ?? [])
             delete values.p[key];
         for (const key of operation.removeRunProperties ?? [])

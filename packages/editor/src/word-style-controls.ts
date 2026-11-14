@@ -1,4 +1,4 @@
-import { createOpaqueId, WordStyleSchema, DocumentError } from '@doffi/core';
+import { createOpaqueId, WordStyleSchema, DocumentError,SourceStyleResolver,DEFAULT_DOCUMENT_READ_LIMITS } from '@doffi/core';
 import type { DocumentEditingSession, DocumentOperation, WordMetadata } from '@doffi/core';
 type Style = WordMetadata['styles'][number];
 export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement, session: DocumentEditingSession, applyStyle: (style: Style) => void, onError: (error: unknown) => void): {
@@ -6,7 +6,7 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
     dispose(): void;
 } {
     const document = before.ownerDocument;
-    let panel: HTMLElement | undefined, controller: AbortController | undefined, selected: string | undefined;
+    let panel: HTMLElement | undefined, controller: AbortController | undefined, selected: string | undefined,tableRegion:NonNullable<Style['conditions']>[number]['region']|''='';
     const close = (): void => { controller?.abort(); panel?.remove(); panel = undefined; };
     const commit = (operations: DocumentOperation[]): void => { const snapshot = session.snapshot(); session.commit(session.prepare({ protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations })); };
     function open(): void {
@@ -36,8 +36,8 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
         } input.value = value; label.append(input); panel!.append(label); return input; };
         button('关闭样式管理', close);
         const existing = choose('已有样式', styles.map(style => [style.styleId, style.name ?? style.styleId]), current?.styleId ?? '');
-        existing.addEventListener('change', () => { selected = existing.value; open(); }, { signal });
-        button('新建样式', () => { selected = 'new-' + createOpaqueId(); open(); });
+        existing.addEventListener('change', () => { selected = existing.value;tableRegion=''; open(); }, { signal });
+        button('新建样式', () => { selected = 'new-' + createOpaqueId();tableRegion=''; open(); });
         openDefinition(current);
         function openDefinition(current: typeof styles[number] | undefined): void {
             if (!panel) {
@@ -75,7 +75,11 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
             const alignment = choose('样式对齐', [['', '保留'], ['left', '左'], ['center', '中'], ['right', '右'], ['justify', '两端']], '');
             const space = field('样式段后（磅）', '', 'number'), resetFont = field('字体格式恢复继承', '', 'checkbox'), resetParagraph = field('段落格式恢复继承', '', 'checkbox');
             const cellFill=field('表格样式单元格底纹',''),cellBorder=field('表格样式单元格边框',''),cellPadding=field('表格样式单元格边距（磅）','','number'),tableBorder=field('表格样式外边框','');
-            const tableFields=[cellFill,cellBorder,cellPadding,tableBorder];const updateTableFields=()=>{for(const input of tableFields)input.parentElement!.hidden=kind.value!=='table';};kind.addEventListener('change',updateTableFields,{signal});updateTableFields();
+            const region=choose('表格样式区域',[['','整张表'],['firstRow','首行'],['lastRow','末行'],['firstCol','首列'],['lastCol','末列'],['band1Horz','奇数行条带'],['band2Horz','偶数行条带'],['band1Vert','奇数列条带'],['band2Vert','偶数列条带'],['nwCell','左上角'],['neCell','右上角'],['swCell','左下角'],['seCell','右下角']],tableRegion);
+            region.addEventListener('change',()=>{tableRegion=region.value as typeof tableRegion;open();},{signal});
+            const rowSplit=choose('样式跨页断行',[['','保留'],['allow','允许'],['avoid','禁止']],''),rowHeader=choose('样式重复表头',[['','保留'],['1','重复'],['0','不重复']],'');
+            const resetTable=field('表格格式恢复继承','','checkbox'),rowBand=field('样式行条带大小',String(current?.rowBandSize??''),'number'),columnBand=field('样式列条带大小',String(current?.columnBandSize??''),'number');rowBand.min=columnBand.min='0';
+            const tableFields=[cellFill,cellBorder,cellPadding,tableBorder,region,rowSplit,rowHeader,resetTable,rowBand,columnBand];const updateTableFields=()=>{for(const input of tableFields)input.parentElement!.hidden=kind.value!=='table';};kind.addEventListener('change',updateTableFields,{signal});updateTableFields();
             button('保存样式', () => {
                 const id = current?.styleId ?? selected ?? 'style-' + createOpaqueId(), definition: Style = current ? WordStyleSchema.parse(current) : { styleId: id, kind: kind.value as Style['kind'], cssClass: 'word-style-' + createOpaqueId().replaceAll('-', ''), customStyle: true };
                 if (linked.value)
@@ -119,10 +123,16 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
                 if (space.value)
                     paragraph['margin-bottom'] = space.value + 'pt';
                 const cell:Record<string,string>={},table:Record<string,string>={};if(cellFill.value)cell['background-color']=cellFill.value;if(cellBorder.value)cell.border=cellBorder.value;if(cellPadding.value)cell.padding=cellPadding.value+'pt';if(tableBorder.value)table.border=tableBorder.value;
-                commit([{ op: 'setWordStyle', nodeId: root, style: definition, runProperties: run, paragraphProperties: paragraph, ...(kind.value==='table'?{cellProperties:cell,tableProperties:table}:{}), ...(resetFont.checked ? { removeRunProperties: [...current?.runProperties ?? []] } : {}), ...(resetParagraph.checked ? { removeParagraphProperties: [...current?.paragraphProperties ?? []] } : {}) }]);
+                const row:Record<string,string>={};if(rowSplit.value)row['break-inside']=rowSplit.value==='avoid'?'avoid':'auto';if(rowHeader.value)row['--word-row-repeat-header']=rowHeader.value;
+                if(kind.value==='table'){if(rowBand.value!=='')definition.rowBandSize=Number(rowBand.value);if(columnBand.value!=='')definition.columnBandSize=Number(columnBand.value);}
+                const resolver=new SourceStyleResolver(snapshot.styles.map(sheet=>sheet.css),DEFAULT_DOCUMENT_READ_LIMITS),condition=current?.conditions?.find(condition=>condition.region===tableRegion),components=tableRegion?condition?.components:current?.components;
+                const keys=(scope:'p'|'r'|'table'|'cell'|'row')=>components?.[scope]?[...resolver.classKeys(components[scope]!)]:[];
+                const patch={runProperties:run,paragraphProperties:paragraph,...(kind.value==='table'?{cellProperties:cell,tableProperties:table,rowProperties:row}:{}),...(resetFont.checked?{removeRunProperties:tableRegion?keys('r'):[...current?.runProperties??[]]}:{}),...(resetParagraph.checked?{removeParagraphProperties:tableRegion?keys('p'):[...current?.paragraphProperties??[]]}:{}),...(resetTable.checked?{removeTableProperties:keys('table'),removeCellProperties:keys('cell'),removeRowProperties:keys('row')}:{})};
+                commit([{op:'setWordStyle',nodeId:root,style:definition,...(kind.value==='table'&&tableRegion?{tableCondition:{region:tableRegion,...patch}}:patch)}]);
                 selected = id;
                 open();
             });
+            if(current?.kind==='table'&&tableRegion)button('删除当前条件格式',()=>{commit([{op:'setWordStyle',nodeId:root,style:WordStyleSchema.parse(current),tableCondition:{region:tableRegion as NonNullable<Style['conditions']>[number]['region'],clear:true}}]);open();});
             if (current) {
                 button('应用到选区', () => applyStyle(WordStyleSchema.parse(current)));
                 const replacement = choose('删除后替换为', peers.map(style => [style.styleId, style.name ?? style.styleId]), peers[0]?.styleId ?? '');
