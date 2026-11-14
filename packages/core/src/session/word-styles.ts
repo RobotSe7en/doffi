@@ -77,6 +77,10 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         }
         if (removed.default)
             replacement.default = true;
+        for(const table of word.tables)for(const entry of table.continuationFormats??[])for(const paragraph of entry.emptyParagraphs??[]){
+            if(paragraph.styleId===removed.styleId)paragraph.styleId=replacement.styleId;
+            for(const run of paragraph.runs)if(run.styleId===removed.styleId)run.styleId=replacement.styleId;
+        }
         for (const id of source.nodeIds()) {
             const node = source.peekNode(id)!;
             if (node.attributes['data-word-style'] !== removed.styleId)

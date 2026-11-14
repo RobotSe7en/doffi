@@ -1,3 +1,4 @@
+import { readWordEmptyContinuation } from './docx-table-continuation.js';
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import {bindWordConditionalFormat,readWordConditionalFormat} from './docx-conditional-format.js';
 import {resolveWordTableStyle,wordTableRegions,wordTableRowRegions,wordTableRowCellProperties} from '@doffi/core';
@@ -23,6 +24,7 @@ import type {
   DocumentSection,
   PageSetup,
   WordMetadata,
+  WordTableEmptyParagraph,
 } from "@doffi/core";
 import type { DocumentZipOptions } from "./document-zip.js";
 import { openOpc } from "./ooxml/package.js";
@@ -1280,7 +1282,7 @@ class Importer {
       let path=this.assetSources.get(part);if(path)return path;const mime=this.opc.contentType(part),extensions:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};if(!mime||!extensions[mime])unsupported(source,'This image encoding is preserved as native content.');path='assets/image-'+(this.assets.length+1)+'.'+extensions[mime];const bytes=this.opc.files.get(part);if(!bytes)fail(source,'An embedded image resource is missing.');this.files.set(path,new Uint8Array(bytes));this.assets.push(createAssetDescriptor(path,mime,bytes));this.assetSources.set(part,path);return path;
     },story:source=>{const id='text-box-'+this.word.stories.length,root=this.story('textBox',id);root.attrs.class='word-main';root.children.push(...this.readStoryContent(this.currentPart,id,source));this.auxiliary.push(root);return id;},native:(source,node)=>this.native?.bind(source,node.attrs),identity:(source,id,nativeId)=>{if(nativeId===undefined)return;number(nativeId,source);this.native?.identity(source,id,nativeId);const key=this.currentPart+'\n'+nativeId;if(source.uri===WP){const previous=this.drawingNativeIds.get(key);if(previous&&previous!==id)fail(source,'A drawing frame identity is repeated.');this.drawingNativeIds.set(key,id);}else if(nativeId!=='0'){const previous=this.drawingAliases.get(key);this.drawingAliases.set(key,previous===undefined||previous===id?id:null);}},connector:(source,nodeId,start,end,local)=>this.drawingConnections.push({source,nodeId,part:this.currentPart,...(start!==undefined?{start}:{}),...(end!==undefined?{end}:{}),local})});
   }
-  private validateMergeContinuation(cell: XmlNode,above:Readonly<Css>,current:Readonly<Css>): void {
+  private validateMergeContinuation(cell: XmlNode,above:Readonly<Css>,current:Readonly<Css>): WordTableEmptyParagraph[] {
     const canonical=(css:Readonly<Css>)=>JSON.stringify(Object.entries(css).sort(([a],[b])=>a.localeCompare(b)));
     if(canonical(above)!==canonical(current))unsupported(cell,'A vertical merge continuation has independent cell formatting.');
     if(cell.attrs.size||child(child(cell,'tcPr'),'hideMark')||child(child(cell,'tcPr'),'tcFitText'))unsupported(cell,'A vertical merge continuation retains independent native properties.');
@@ -1289,57 +1291,13 @@ class Importer {
     const direction = child(child(cell, "tcPr"), "textDirection");
     if (direction && attr(direction, "val") !== "lrTb") unsupported(direction, "A vertical merge continuation has independent cell formatting.");
 
-    // Only empty paragraphs/runs may disappear into the spanning cell. Text
-    // extraction alone misses breaks, drawings, range markers and revisions.
-    for (const paragraph of this.compat(cell)) {
-      if (paragraph.uri === W && paragraph.name === "tcPr") continue;
-      if (paragraph.uri !== W || paragraph.name !== "p")
-        unsupported(
-          paragraph,
-          "A vertical merge continuation has independent content.",
-        );
-      const properties = child(paragraph, "pPr");
-      const paragraphChange = child(properties, 'pPrChange');
-      if (paragraphChange) unsupported(paragraphChange, 'A vertical merge continuation has independent paragraph history.');
-      if(paragraph.attrs.size||properties&&(properties.attrs.size||elements(properties).some(node=>node.uri!==W||node.name!=='cnfStyle')))unsupported(paragraph,'A vertical merge continuation has independent paragraph formatting.');
-      this.styles.paragraph(properties);
-      this.styles.run(child(properties, "rPr"));
-      this.styles.get(
-        attr(child(properties, "pStyle"), "val") ?? this.styles.defaultParagraph,
-      );
-      mergeTabs(undefined, child(properties, "tabs"));
-      if (child(properties, "sectPr"))
-        unsupported(
-          properties!,
-          "A merged cell cannot contain section properties.",
-        );
-      for (const run of this.compat(paragraph)) {
-        if (run.uri === W && run.name === "pPr") continue;
-        if (run.uri !== W || run.name !== "r")
-          unsupported(
-            run,
-            "A vertical merge continuation has independent content.",
-          );
-        this.styles.run(child(run, "rPr"));
-        if(run.attrs.size||child(run,'rPr')&&(child(run,'rPr')!.attrs.size||elements(child(run,'rPr')).length))unsupported(run,'A vertical merge continuation has independent run formatting.');
-        const runChange = child(child(run, 'rPr'), 'rPrChange');
-        if (runChange) unsupported(runChange, 'A vertical merge continuation has independent run history.');
-        for (const content of this.compat(run)) {
-          if (content.uri === W && content.name === "rPr") continue;
-          if (
-            content.uri !== W ||
-            content.name !== "t" ||
-            content.content.some((item) => typeof item !== "string") ||
-            text(content) !== ""
-          )
-            unsupported(
-              content,
-              "A vertical merge continuation has independent content.",
-            );
-        }
-      }
-    }
+    return readWordEmptyContinuation(cell,this.styles,node=>this.compat(node),css=>{
+      if(!Object.keys(css).length)return undefined;
+      const name='word-empty-continuation-'+this.styles.css.length;
+      this.styles.css.push('.'+name+'{'+declarations(css)+'}');return name;
+    });
   }
+
   private table(source: XmlNode): Html {
     check(source, ["tblPr", "tblGrid", "tr"]);
     const properties = child(source, "tblPr");
@@ -1437,8 +1395,8 @@ class Importer {
           if (!above || above.span !== span)
             fail(cell, "A vertical merge has no matching cell above.");
           try{
-            this.validateMergeContinuation(cell,above.css,cellCss);
-            const format=readWordConditionalFormat(props),paragraphs=elements(cell,'p').map(paragraph=>readWordConditionalFormat(child(paragraph,'pPr'))??null),keepParagraphs=paragraphs.length>1||paragraphs.some(Boolean);if(format||keepParagraphs){tableInfo.continuationFormats??=[];tableInfo.continuationFormats.push({row:rowIndex,column,...(format?{format}:{}),...(keepParagraphs?{paragraphs}:{})});}
+            const emptyParagraphs=this.validateMergeContinuation(cell,above.css,cellCss);
+            const format=readWordConditionalFormat(props),paragraphs=elements(cell,'p').map(paragraph=>readWordConditionalFormat(child(paragraph,'pPr'))??null),keepParagraphs=paragraphs.length>1||paragraphs.some(Boolean);if(format||keepParagraphs||emptyParagraphs.length){tableInfo.continuationFormats??=[];tableInfo.continuationFormats.push({row:rowIndex,column,...(format?{format}:{}),...(keepParagraphs?{paragraphs}:{}),...(emptyParagraphs.length?{emptyParagraphs}:{})});}
           }catch(error){if(error instanceof DocumentError&&error.code==='UnsupportedFeature')unsupported(cell,'A vertical merge continuation has independent native properties.');throw error;}
           above.cell.attrs.rowspan = String(
             Number(above.cell.attrs.rowspan ?? 1) + 1,

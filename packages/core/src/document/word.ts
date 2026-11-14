@@ -309,6 +309,11 @@ export function validateWord(
       if (node(table.nodeId).tagName !== "table")
         invalid("A table grid requires a table node.");
       const rowCount=node(table.nodeId).childNodeIds.flatMap(id=>node(id).tagName==='tr'?[id]:node(id).childNodeIds.filter(id=>node(id).tagName==='tr')).length;for(const entry of unique(table.continuationFormats??[],entry=>entry.row+'\n'+entry.column).values())if(entry.row>=rowCount||entry.column>=table.grid.length)invalid('A continuation format marker exceeds its table grid.');
+      for(const entry of table.continuationFormats??[])for(const paragraph of entry.emptyParagraphs??[]){
+        if(paragraph.styleId&&styles.get(paragraph.styleId)?.kind!=='paragraph')invalid('An empty continuation paragraph requires its paragraph style.');
+        for(const run of paragraph.runs)if(run.styleId&&styles.get(run.styleId)?.kind!=='character')invalid('An empty continuation run requires its character style.');
+        if(paragraph.numbering&&!word.numbering.some(item=>item.numberingId===paragraph.numbering!.numberingId&&item.levels.some(level=>level.level===paragraph.numbering!.level)))invalid('An empty continuation paragraph requires its numbering level.');
+      }
       for(const context of unique(table.styleContexts??[],item=>item.nodeId).values()){
         const current=node(context.nodeId);if(!(current.attributes.class??'').split(/\s+/).includes(context.cssClass))invalid('A table style context must bind its source CSS class.');
         let owner=current;while(owner.tagName!=='table'&&owner.parentNodeId)owner=node(owner.parentNodeId);if(owner.nodeId!==table.nodeId)invalid('A table style context must belong to its table.');

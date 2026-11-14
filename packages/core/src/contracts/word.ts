@@ -8,6 +8,8 @@ import { WordControlSchema } from './word-control.js';
 import { WordCommentSchema,WordPersonSchema } from './word-comment.js';
 import {WordRevisionSchema,WordMoveRangeSchema}from'./word-revision.js';
 
+import { WordTableEmptyParagraphSchema } from './word-table-continuation.js';
+
 export const WordTableRegionSchema=z.enum([
           "wholeTable",
           "firstRow",
@@ -188,7 +190,7 @@ export const WordMetadataSchema = z.strictObject({
     z.strictObject({
       nodeId: IdentifierSchema,
       grid: z.array(z.number().positive()).min(1),
-      continuationFormats:z.array(z.strictObject({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),format:WordConditionalFormatValueSchema.optional(),paragraphs:z.array(WordConditionalFormatValueSchema.nullable()).min(1).optional()})).optional(),
+      continuationFormats:z.array(z.strictObject({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),format:WordConditionalFormatValueSchema.optional(),paragraphs:z.array(WordConditionalFormatValueSchema.nullable()).min(1).optional(),emptyParagraphs:z.array(WordTableEmptyParagraphSchema).min(1).optional()})).optional(),
       styleContexts:z.array(z.strictObject({nodeId:IdentifierSchema,cssClass:IdentifierSchema,kind:z.enum(['table','row','cell','paragraph','run'])})).optional(),
       lookMask: z.number().int().min(0).max(65535).optional(),
       rowBandSize: z.number().int().nonnegative().optional(),
