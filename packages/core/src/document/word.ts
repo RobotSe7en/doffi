@@ -281,6 +281,9 @@ export function validateWord(
       if(['moveFrom','moveTo','paragraphMoveFrom','paragraphMoveTo'].includes(revision.kind)){const kind=revision.kind.endsWith('From')?'from':'to',range=moves.get(revision.moveId+'\n'+kind);if(!range||storyOf(range.startNodeId)!==storyOf(revision.nodeId)||order.get(revision.nodeId)!<order.get(range.startNodeId)!||order.get(revision.nodeId)!>order.get(range.endNodeId)!)invalid('Moved content must belong to its named source or destination range.');}
       if(['insert','delete','moveFrom','moveTo'].includes(revision.kind)&&tag!==(['insert','moveTo'].includes(revision.kind)?'ins':'del'))invalid('A text revision requires its matching source container.');
       if(revision.kind==='format'&&(!revision.property||!revision.before))invalid('A formatting revision requires its previous properties.');
+      if(revision.property==='section'&&(!revision.before?.section||!metadata.sections.some(section=>section.rootNodeId===revision.nodeId)))invalid('A section history requires its section and previous properties.');
+      if(revision.property==='tableGrid'&&(tag!=='table'||!revision.before?.grid?.length))invalid('A grid history requires its table and previous columns.');
+      for(const[kind,references]of [['header',revision.before?.section?.headers],['footer',revision.before?.section?.footers]]as const)for(const id of Object.values(references??{}))if(id&&stories.get(id)?.kind!==kind)invalid('A previous section refers to a missing or wrong-kind story.');
       if(revision.kind.startsWith('paragraph')&&!/^p$|^h[1-6]$/.test(tag)||revision.kind.startsWith('row')&&tag!=='tr'||revision.kind.startsWith('cell')&&!['td','th'].includes(tag))invalid('A structural revision requires its matching Word source.');
       const style=revision.before?.attributes?.['data-word-style'];if(style&&!styles.has(style))invalid('A previous revision style is missing.');
     }

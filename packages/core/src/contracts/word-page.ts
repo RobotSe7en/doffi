@@ -1,3 +1,4 @@
+import { IdentifierSchema } from './primitives.js';
 import { z } from 'zod';
 export const WordPageBorderSchema = z.strictObject({
     style: z.enum(['nil', 'none', 'single', 'double', 'dotted', 'dashed', 'dashSmallGap', 'thick']),
@@ -13,3 +14,34 @@ export const WordPageBordersSchema = z.strictObject({
 });
 export type WordPageBorder = z.infer<typeof WordPageBorderSchema>;
 export type WordPageBorders = z.infer<typeof WordPageBordersSchema>;
+export const PageSetupSchema = z.strictObject({
+    unit: z.literal("pt"),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    margins: z.strictObject({
+        top: z.number().min(0),
+        right: z.number().min(0),
+        bottom: z.number().min(0),
+        left: z.number().min(0),
+    }),
+});
+export type PageSetup = z.infer<typeof PageSetupSchema>;
+export const DocumentSectionSchema = z.strictObject({
+    sectionId: IdentifierSchema,
+    rootNodeId: IdentifierSchema,
+    pageSetup: PageSetupSchema.optional(),
+    breakType: z.enum(["continuous", "nextPage", "evenPage", "oddPage"]).optional(),
+    differentFirstPage: z.boolean().optional(),
+    columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional() }).optional(),
+    pageBorders: WordPageBordersSchema.optional(),
+    grid: z.strictObject({ type: z.enum(["default", "lines", "linesAndChars", "snapToChars"]), linePitch: z.number().positive().optional(), characterSpacing: z.number().int().optional() }).optional(),
+    gutter: z.number().nonnegative().optional(),
+    gutterPosition: z.enum(["left", "right", "top"]).optional(),
+    pageNumberStart: z.number().int().min(0).optional(),
+    pageNumberFormat: z.enum(["decimal", "upperRoman", "lowerRoman", "upperLetter", "lowerLetter"]).optional(),
+    headerDistance: z.number().min(0).optional(),
+    footerDistance: z.number().min(0).optional(),
+    headers: z.strictObject({ default: IdentifierSchema.optional(), first: IdentifierSchema.optional(), even: IdentifierSchema.optional() }).optional(),
+    footers: z.strictObject({ default: IdentifierSchema.optional(), first: IdentifierSchema.optional(), even: IdentifierSchema.optional() }).optional(),
+});
+export type DocumentSection = z.infer<typeof DocumentSectionSchema>;

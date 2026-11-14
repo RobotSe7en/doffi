@@ -3,6 +3,7 @@ import type{DocumentReadLimits}from'../runtime.js';
 import{expandWordRevisionGroups}from'../word-revision-groups.js';
 import{reconcileTrackedWord}from'./word-tracked-structure.js';
 import type { WordMetadata } from '../contracts/word.js';
+import type{DocumentSection}from'../contracts/word-page.js';
 import type { WordRevision, WordRevisionOperation } from '../contracts/word-revision.js';
 import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
@@ -68,7 +69,7 @@ function nativeReview(word: WordMetadata, revision: WordRevision, decision: 'acc
                 const path = [...fragment.propertyPath],indices=fragment.propertyIndices?[...fragment.propertyIndices]:undefined, index = path.findIndex(name => name.endsWith(' ' + change));
                 if (index >= 0) {
                     {path.splice(index, 1);indices?.splice(index,1);}
-                    if (path[index] === path[index - 1])
+                    if (path[index] === path[index - 1]||fragment.ownerName===property&&path[index]?.endsWith(' '+property))
                         {path.splice(index, 1);indices?.splice(index,1);}
                 }
                 const next = { ...fragment, propertyPath: path,...(indices?{propertyIndices:indices}:{}) };
@@ -78,12 +79,12 @@ function nativeReview(word: WordMetadata, revision: WordRevision, decision: 'acc
             }
             return [];
         }
-        if (decision === 'reject' && !revision.before?.inheritNativeProperties && revision.kind === 'format' && fragment.kind === 'property' && (fragment.propertyPath[0]?.endsWith(' ' + property) || !fragment.propertyPath.length && fragment.propertyName?.endsWith(' ' + property)))
+        if (decision === 'reject' && !revision.before?.inheritNativeProperties && revision.kind === 'format' && fragment.kind === 'property' && (fragment.ownerName===property||fragment.propertyPath[0]?.endsWith(' ' + property) || !fragment.propertyPath.length && fragment.propertyName?.endsWith(' ' + property)))
             return [];
         return [fragment];
     });
 }
-export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordRevisionOperation,limits:DocumentReadLimits): void {
+export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordRevisionOperation,limits:DocumentReadLimits,sections:DocumentSection[]): void {
     if (operation.op === 'setWordReview') {
         if (parse().peekNode(operation.nodeId)!.parentNodeId !== null)
             fail('Review settings require the document root.');
@@ -118,6 +119,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
         if (revision.kind === 'format') {
             if (operation.decision === 'reject') {
                 const before = revision.before ?? fail('The revision has no previous formatting.');
+                if(before.section){const section=sections.find(section=>section.rootNodeId===revision.nodeId)??fail('The reviewed section is missing.');for(const key of Object.keys(section))if(key!=='rootNodeId'&&key!=='sectionId')Reflect.deleteProperty(section,key);Object.assign(section,JSON.parse(JSON.stringify(before.section)));}
                 if (before.attributes)
                     edit.attributes(revision.nodeId, Object.fromEntries(Object.entries(before.attributes).map(([name, value]) => [name, value ?? undefined])));
                 if (before.tagName)

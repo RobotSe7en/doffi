@@ -101,7 +101,7 @@ export function wordInteractionContext(state: DocumentState, nodes: ReadonlySet<
     word.people = word.people?.filter(person => authors.has(person.author));
     word.stories = word.stories.filter(story => story.kind === 'main' || nodes.has(story.rootNodeId) || bodies.has(story.rootNodeId));
     const storyIds = new Set(word.stories.map(story => story.storyId));
-    for (const section of metadata.sections)
+    for (const section of [...metadata.sections,...word.revisions.flatMap(revision=>revision.before?.section?[revision.before.section]:[])])
         for (const key of ['headers', 'footers'] as const)
             if (section[key]) {
                 section[key] = Object.fromEntries(Object.entries(section[key]!).filter(([, id]) => id !== undefined && storyIds.has(id)));

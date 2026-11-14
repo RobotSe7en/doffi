@@ -1024,7 +1024,7 @@ class Importer {
         unsupportedType(source);
     }
   }
-  private section(source: XmlNode | undefined, root: Html): DocumentSection {
+  private section(source: XmlNode | undefined, root: Html,previousProperties=false): DocumentSection {
     check(source, [
       "headerReference",
       "footerReference",
@@ -1047,6 +1047,7 @@ class Importer {
       "rtlGutter",
       "docGrid",
       "printerSettings",
+      "sectPrChange",
     ]);
     for (const feature of [
       "footnotePr",
@@ -1075,7 +1076,7 @@ class Importer {
     if(columns && (attr(columns,"equalWidth")==='0'||attr(columns,"equalWidth")==='false'||attr(columns,"equalWidth")==='off'))unsupported(columns,"Unequal text columns are retained as native layout properties.");
     const size = child(source, "pgSz");
     const margins = child(source, "pgMar");
-    if (source) this.native?.bind(source, root.attrs);
+    if (source&&!previousProperties) this.native?.bind(source, root.attrs);
     const previous = this.sections[this.sections.length - 1];
     const fallback = previous?.pageSetup ?? {
       unit: "pt" as const,
@@ -1138,7 +1139,7 @@ class Importer {
       ].includes(pageNumberFormat)
     )
       unsupported(pageNumber!, "The page numbering format is not supported.");
-    return {
+    const definition:DocumentSection={
       ...(pageNumberStart !== undefined
         ? { pageNumberStart: number(pageNumberStart, pageNumber!) }
         : {}),
@@ -1171,6 +1172,8 @@ class Importer {
       headers,
       footers,
     };
+    const change=child(source,'sectPrChange');if(change){if(previousProperties)fail(change,'Section property histories cannot be nested.');check(change,['sectPr']);const original=child(change,'sectPr'),id=attr(change,'id');if(!original||id===undefined)fail(change,'A section revision requires its previous properties and identity.');const before=this.section(original,root,true),{sectionId:_sectionId,rootNodeId:_rootNodeId,...properties}=before;this.word.revisions.push({nodeId:this.id(root),revisionId:this.id(root)+'-format-section',sourceId:id,kind:'format',property:'section',before:{section:properties},...(attr(change,'author')!==undefined?{author:attr(change,'author')!}:{}),...(attr(change,'date')!==undefined?{date:attr(change,'date')!}:{})});}
+    return definition;
   }
   private readStory(part: string, kind: "header" | "footer"): string {
     const cached = this.loadedStories.get(part);
@@ -1337,7 +1340,8 @@ class Importer {
         ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) }
         : {}),
     });
-    const grid = elements(child(source, "tblGrid"), "gridCol").map(
+    const gridSource=child(source,"tblGrid");check(gridSource,["gridCol","tblGridChange"]);
+    const grid = elements(gridSource, "gridCol").map(
       (item) => number(attr(item, "w"), item) / 20,
     );
     if (!grid.length || grid.some((value) => value <= 0))
@@ -1553,6 +1557,7 @@ class Importer {
       previous = next;
       rowIndex++;
     }
+    const gridChange=child(gridSource,'tblGridChange');if(gridChange){check(gridChange,['tblGrid']);const before=child(gridChange,'tblGrid'),id=attr(gridChange,'id');if(!before||id===undefined)fail(gridChange,'A table grid revision requires its original grid and identity.');check(before,['gridCol']);const previous=elements(before,'gridCol').map(column=>number(attr(column,'w'),column)/20);if(previous.length!==grid.length)unsupported(gridChange,'A changed column count retains its complete native structure.');this.word.revisions.push({nodeId:this.id(table),revisionId:this.id(table)+'-format-grid',sourceId:id,kind:'format',property:'tableGrid',before:{grid:previous},...(attr(gridChange,'author')!==undefined?{author:attr(gridChange,'author')!}:{}),...(attr(gridChange,'date')!==undefined?{date:attr(gridChange,'date')!}:{})});}
     readWordFormatRevision(this.word,properties,table,'table',this.styles);
     this.native?.bind(source, table.attrs);
     return table;

@@ -29,7 +29,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
-  if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation,limits);return;}
+  if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation,limits,metadata.sections);return;}
   if(isWordCommentOperation(operation)){applyWordComment(metadata,annotations,edit,parse,operation);return;}
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}
   if(isWordReferenceOperation(operation)){applyWordReference(word,edit,parse,operation);return;}
@@ -63,7 +63,8 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   if(operation.op==='setWordSection') {
     const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId);if(!section)fail('Page changes require a section root.');
-    if(operation.changes.pageBorders&&word.nativeContent)word.nativeContent.fragments=word.nativeContent.fragments.filter(fragment=>!(fragment.nodeId===section.rootNodeId&&(fragment.propertyName?.endsWith(' pgBorders')||fragment.propertyPath.some(name=>name.endsWith(' pgBorders')))));
+    if(word.trackChanges){const previous=word.revisions.find(item=>item.nodeId===operation.nodeId&&item.kind==='format'&&item.property==='section');if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();}else{const before=JSON.parse(JSON.stringify(section))as Partial<typeof section>;delete before.sectionId;delete before.rootNodeId;const id=operation.nodeId+'-format-section';word.revisions.push({nodeId:operation.nodeId,sourceId:id,revisionId:id,kind:'format',property:'section',before:{section:before,inheritNativeProperties:true},author:word.trackingAuthor??'',date:new Date().toISOString()});}}
+    if(operation.changes.pageBorders&&word.nativeContent){const revision=word.revisions.find(item=>item.nodeId===operation.nodeId&&item.property==='section'&&item.kind==='format');word.nativeContent.fragments=word.nativeContent.fragments.flatMap(fragment=>{if(fragment.nodeId!==section.rootNodeId||fragment.revisionPrevious||!(fragment.propertyName?.endsWith(' pgBorders')||fragment.propertyPath.some(name=>name.endsWith(' pgBorders'))))return[fragment];if(!word.trackChanges||!revision)return[];return[{...fragment,propertyPath:['http://schemas.openxmlformats.org/wordprocessingml/2006/main sectPrChange','http://schemas.openxmlformats.org/wordprocessingml/2006/main sectPr',...fragment.propertyPath],...(fragment.propertyIndices?{propertyIndices:[0,0,...fragment.propertyIndices]}:{}),revisionPrevious:true,revisionSourceId:revision.sourceId}];});}
     Object.assign(section,operation.changes);return;
   }
   if(operation.op==='splitWordSection') {
@@ -110,6 +111,8 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       info={nodeId:operation.nodeId,grid:Array.from({length:columns},()=>width/columns)};word.tables.push(info);
     }
     if(operation.op==='editWordTable') {
+      if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.grid){const previous=word.revisions.find(item=>item.nodeId===operation.nodeId&&item.kind==='format'&&item.property==='tableGrid');if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();}else{const id=operation.nodeId+'-format-grid';word.revisions.push({nodeId:operation.nodeId,sourceId:id,revisionId:id,kind:'format',property:'tableGrid',before:{grid:[...info.grid],inheritNativeProperties:true},author:word.trackingAuthor??'',date:new Date().toISOString()});}recordWordFormat(word,source,operation.nodeId,'table');for(const id of rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds))if(['td','th'].includes(source.peekNode(id)!.tagName))recordWordFormat(word,source,id,'cell');}
+      if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.rowHeights)for(const id of rowIds)recordWordFormat(word,source,id,'row');
       if(word.trackChanges&&operation.change.kind==='deleteRows'){trackWordRowDeletion(word,edit,parse,operation.nodeId,operation.change.at,operation.change.count,limits);return;}
       const firstCell=rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds).map(id=>source.peekNode(id)!).find(cell=>['td','th'].includes(cell.tagName));
       const escape=(value:string):string=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');

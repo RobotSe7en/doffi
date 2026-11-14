@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { FORMAT_VERSION, IdentifierSchema, PackagePathSchema, RevisionSchema } from "./primitives.js";
 import { WordMetadataSchema } from "./word.js";
-import {WordPageBordersSchema} from './word-page.js';
+import {PageSetupSchema,DocumentSectionSchema} from './word-page.js';
+export {PageSetupSchema,DocumentSectionSchema} from './word-page.js';
+export type {PageSetup,DocumentSection} from './word-page.js';
 import { PresentationDocumentMetadataSchema } from "./presentation.js";
 import type { PresentationDocumentMetadata } from "./presentation.js";
 import { WorkbookChunkDescriptorSchema, WorkbookDocumentMetadataSchema } from "./workbook.js";
@@ -31,38 +33,6 @@ export type WorkbookManifest = z.infer<typeof WorkbookManifestSchema>;
 export const DocumentManifestSchema = z.union([ContentDocumentManifestSchema, WorkbookManifestSchema]);
 export type DocumentManifest = z.infer<typeof DocumentManifestSchema>;
 
-export const PageSetupSchema = z.strictObject({
-  unit: z.literal("pt"),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  margins: z.strictObject({
-    top: z.number().min(0),
-    right: z.number().min(0),
-    bottom: z.number().min(0),
-    left: z.number().min(0),
-  }),
-});
-export type PageSetup = z.infer<typeof PageSetupSchema>;
-
-export const DocumentSectionSchema = z.strictObject({
-  sectionId: IdentifierSchema,
-  rootNodeId: IdentifierSchema,
-  pageSetup: PageSetupSchema.optional(),
-  breakType: z.enum(["continuous", "nextPage", "evenPage", "oddPage"]).optional(),
-  differentFirstPage: z.boolean().optional(),
-  columns: z.strictObject({ count: z.number().int().positive(), gap: z.number().nonnegative(), separator: z.boolean().optional() }).optional(),
-  pageBorders:WordPageBordersSchema.optional(),
-  grid: z.strictObject({ type: z.enum(["default", "lines", "linesAndChars", "snapToChars"]), linePitch: z.number().positive().optional(), characterSpacing: z.number().int().optional() }).optional(),
-  gutter: z.number().nonnegative().optional(),
-  gutterPosition: z.enum(["left", "right", "top"]).optional(),
-  pageNumberStart: z.number().int().min(0).optional(),
-  pageNumberFormat: z.enum(["decimal", "upperRoman", "lowerRoman", "upperLetter", "lowerLetter"]).optional(),
-  headerDistance: z.number().min(0).optional(),
-  footerDistance: z.number().min(0).optional(),
-  headers: z.strictObject({ default: IdentifierSchema.optional(), first: IdentifierSchema.optional(), even: IdentifierSchema.optional() }).optional(),
-  footers: z.strictObject({ default: IdentifierSchema.optional(), first: IdentifierSchema.optional(), even: IdentifierSchema.optional() }).optional(),
-});
-export type DocumentSection = z.infer<typeof DocumentSectionSchema>;
 
 export const WordDocumentMetadataSchema = z.strictObject({
   title: z.string().optional(),

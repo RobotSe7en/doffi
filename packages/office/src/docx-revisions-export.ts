@@ -72,13 +72,13 @@ export class ExportWordRevisions {
         if (revision.before?.inheritNativeProperties && owner) {
             for (let current: SourceElement | undefined = owner; current; current = current.parent) {
                 const id = current.attrs['data-node-id'];
-                if (this.word?.nativeContent?.fragments.some(fragment => fragment.nodeId === id && fragment.kind === 'property' && !fragment.revisionPrevious && !fragment.propertyPath.some(path => path.endsWith('Change')) && (fragment.propertyPath[0] === W + ' ' + name || !fragment.propertyPath.length && fragment.propertyName === W + ' ' + name))) {
+                if (this.word?.nativeContent?.fragments.some(fragment => fragment.nodeId === id && fragment.kind === 'property' && !fragment.revisionPrevious && !fragment.propertyPath.some(path => path.endsWith('Change')) && (fragment.ownerName===name || fragment.propertyPath[0] === W + ' ' + name || !fragment.propertyPath.length && fragment.propertyName === W + ' ' + name))) {
                     beforeSource = id;
                     break;
                 }
             }
         }
-        return '<w:' + name + 'Change' + (beforeSource ? ' xmlns:dn="' + NATIVE_MARKER + '"' + attributes({ 'dn:before-source': beforeSource, 'dn:before-property': name }) : '') + attributes({ 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': revision.date }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>';
+        return '<w:' + name + 'Change' + (beforeSource ? ' xmlns:dn="' + NATIVE_MARKER + '"' + attributes({ 'dn:before-source': beforeSource, 'dn:before-property': name }) : '') + attributes({ 'w:id': this.next++, ...(name==='tblGrid'?{}:{'w:author': revision.author ?? '', 'w:date': revision.date}) }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>';
     }
     run(node: SourceNode, expected: Css): string {
         const entry = this.revision(node, 'run');
@@ -132,4 +132,6 @@ export class ExportWordRevisions {
             props += '<w:tblHeader/>';
         return this.change(entry.revision, 'trPr', props, entry.owner);
     }
+    grid(node:SourceElement):string{const entry=this.revision(node,'tableGrid');if(!entry)return'';return this.change(entry.revision,'tblGrid',(entry.revision.before?.grid??[]).map(width=>empty('w:gridCol',{'w:w':nativeInteger(width)})).join(''),entry.owner);}
+    section(node:SourceElement,compile:(properties:NonNullable<WordRevision['before']>['section'])=>string):string{const entry=this.revision(node,'section');if(!entry)return'';const previous=compile(entry.revision.before?.section).replace(/^<w:sectPr[^>]*>/,'').replace(/<\/w:sectPr>$/,'');return this.change(entry.revision,'sectPr',previous,entry.owner);}
 }

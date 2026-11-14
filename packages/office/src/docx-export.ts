@@ -154,8 +154,8 @@ class Exporter {
     }
   }
   private setup(section: DeepReadonly<DocumentSection>): DeepReadonly<PageSetup> { return section.pageSetup ?? this.snapshot.metadata.pageSetup; }
-  private sectionProperties(section: DeepReadonly<DocumentSection>): string {
-    const setup = this.setup(section); let out = "<w:sectPr" + this.nativeMark(section.rootNodeId) + ">";
+  private sectionProperties(section: DeepReadonly<DocumentSection>,review=true): string {
+    const setup = this.setup(section); let out = "<w:sectPr" + (review?this.nativeMark(section.rootNodeId):'') + ">";
     for (const [key, kind] of [["headers", "header"], ["footers", "footer"]] as const) for (const [type, id] of Object.entries(section[key] ?? {})) {
       const story = id ? this.auxiliary.get(id) : undefined; if (!story || story.kind !== kind) unsupported("A section auxiliary story cannot be exported.");
       out += empty("w:" + kind + "Reference", { "w:type": type, "r:id": story!.relation });
@@ -169,6 +169,7 @@ class Exporter {
     out += value("titlePg", section.differentFirstPage ? "1" : "0");
     if(section.gutterPosition === "right") out += value("rtlGutter",1);
     if(section.grid) out += empty("w:docGrid", {"w:type":section.grid.type,"w:linePitch":section.grid.linePitch === undefined ? undefined : nativeInteger(section.grid.linePitch,20,1),"w:charSpace":section.grid.characterSpacing});
+    if(review)out+=this.review.section(this.tree.byId.get(section.rootNodeId)!,previous=>this.sectionProperties({sectionId:section.sectionId,rootNodeId:section.rootNodeId,...previous},false));
     out += "</w:sectPr>"; return out;
   }
   private runDifference(css: Css, expected: Css): Record<string, string> {
@@ -416,7 +417,7 @@ class Exporter {
     const grid = info?.grid ?? Array.from({ length: columns }, () => tableWidth / columns);
     if (grid.length !== columns) unsupported("The current table structure no longer matches its native column grid.");
     this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(css) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + this.review.table(node)+"</w:tblPr><w:tblGrid>");
-    for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add("</w:tblGrid>");
+    for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add(this.review.grid(node)+"</w:tblGrid>");
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = this.css.get(row);
       this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + (rowCss.height && rowCss.height !== "auto" ? empty("w:trHeight", { "w:val": nativeInteger(points(rowCss.height, rowCss), 20, 0), "w:hRule": "atLeast" }) : "") + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
