@@ -600,6 +600,7 @@ class Importer {
       : style.outline;
     const tag = level !== undefined && level < 6 ? "h" + (level + 1) : "p";
     const paragraph = this.make(tag, {
+      ...(outline?{"data-word-outline-level":String(level)}:{}),
       style: declarations(css),
       ...(styleId
         ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) }

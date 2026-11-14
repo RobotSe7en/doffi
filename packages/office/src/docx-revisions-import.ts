@@ -40,6 +40,7 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
         attributes['data-word-style'] = styleId ?? null;
         attributes.class = styleId ? styles.styleClass(styleId) : null;
         const outline = child(previous, 'outlineLvl'), level = outline ? number(attr(outline, 'val'), outline) : style.outline;
+        attributes['data-word-outline-level']=outline?String(level):null;
         before.tagName = level !== undefined && level < 6 ? 'h' + (level + 1) as 'h1' : 'p';
         attributes['data-word-line-rule'] = css['line-height'] && /^\d+(?:\.\d+)?$/.test(css['line-height']) ? 'auto' : null;
         const num = child(previous, 'numPr'), id = attr(child(num, 'numId'), 'val') ?? style.numbering?.id;

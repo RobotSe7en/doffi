@@ -158,6 +158,7 @@ export function validateWord(
       }
     }
     const styles = unique(word.styles, (item) => item.styleId);
+    unique(word.styles.filter(style=>style.default),style=>style.kind);
     const visited = new Set<string>();
     for (const style of word.styles) {
       for (const reference of [
@@ -297,6 +298,7 @@ export function validateWord(
     }
     for (const id of html.nodeIds()) {
       const current = node(id);
+      if(current.attributes['data-word-outline-level']!==undefined&&(!/^p$|^h[1-6]$/.test(current.tagName)||!/^([0-9])$/.test(current.attributes['data-word-outline-level']!)))invalid('A paragraph outline level must be 0 through 9.');
       const attrs = current.attributes;
       if (attrs["data-word-style"] && !styles.has(attrs["data-word-style"]))
         invalid("A node refers to a missing native style.");
@@ -319,6 +321,7 @@ export function validateWord(
   } else {
     for (const id of html.nodeIds()) {
       const current = node(id);
+      if(current.attributes['data-word-outline-level']!==undefined&&(!/^p$|^h[1-6]$/.test(current.tagName)||!/^([0-9])$/.test(current.attributes['data-word-outline-level']!)))invalid('A paragraph outline level must be 0 through 9.');
       if (["ins", "del"].includes(current.tagName))
         invalid("Native revision containers require Word metadata.");
     }

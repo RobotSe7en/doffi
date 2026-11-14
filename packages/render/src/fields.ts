@@ -41,9 +41,9 @@ export function layoutFields(document: Document, source: PreviewSource, word: De
   let changed = false;
   const all = word?.fields ?? [];
   const instructionOnly = new Set(all.flatMap((field) => field.instructionFields?.map((item) => item.fieldNodeId) ?? []));
-  const headings = [...source.root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")].map((element) => ({
-    id: element.dataset.nodeId!, level: Number(element.localName[1]), text: source.elements.get(element.dataset.nodeId!)?.element.textContent?.trim() ?? "",
-  }));
+  const styles=new Map(word?.styles.map(style=>[style.styleId,style]));
+  const headings=[...source.root.querySelectorAll<HTMLElement>('p,h1,h2,h3,h4,h5,h6')].flatMap(element=>{let level=element.dataset.wordOutlineLevel!==undefined?Number(element.dataset.wordOutlineLevel):undefined;for(let style=styles.get(element.dataset.wordStyle??'');level===undefined&&style;style=style.basedOn?styles.get(style.basedOn):undefined)level=style.outlineLevel;level??=/^h[1-6]$/.test(element.localName)?Number(element.localName[1])-1:undefined;return level!==undefined&&level<9?[{id:element.dataset.nodeId!,level:level+1,text:source.elements.get(element.dataset.nodeId!)?.element.textContent?.trim()??''}]:[];});
+
   for (const field of all) {
     const kind = field.instruction.trim().split(/\s+/)[0]!.toUpperCase();
     if (field.locked) {

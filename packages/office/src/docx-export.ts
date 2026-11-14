@@ -315,7 +315,7 @@ class Exporter {
     props += paragraphProperties({ ...difference(paragraphCss, expectedParagraph, [...paragraphKeys, ...borderKeys(paragraphCss)]), "font-size": css["font-size"]! }, this.width);
     const tabs = this.snapshot.metadata.word?.tabs.find((tab) => tab.paragraphNodeId === id);
     if (tabs?.stops.length) props += '<w:tabs>' + tabs.stops.map((tab) => empty("w:tab", { "w:val": tab.alignment, "w:leader": tab.leader, "w:pos": nativeInteger(tab.position) })).join("") + "</w:tabs>";
-    if (/^h[1-6]$/.test(node.tag)) props += value("outlineLvl", Number(node.tag[1]) - 1);
+    if(node.attrs["data-word-outline-level"]!==undefined)props+=value("outlineLvl",node.attrs["data-word-outline-level"]);else if (/^h[1-6]$/.test(node.tag)) props += value("outlineLvl", Number(node.tag[1]) - 1);
     const mark = children(node).find((child) => child.attrs["data-word-paragraph-mark"]);
     const markProperties = mark ? this.runDifference(this.css.get(mark), this.styles.runContext(style)) : pick(this.runDifference(css, this.styles.runContext(style)), runKeys.filter((key) => key !== "background-color" && !key.startsWith("text-decoration") && !["vertical-align", "letter-spacing", "--word-run-shading", "--word-kerning-threshold"].includes(key)));
     const markRevisions=this.paragraphRevision(id);if (Object.keys(markProperties).length||markRevisions) props += "<w:rPr>" + markRevisions+runProperties(markProperties, this.styles.runContext(style)) + "</w:rPr>";

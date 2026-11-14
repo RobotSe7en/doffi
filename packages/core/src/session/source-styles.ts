@@ -254,6 +254,14 @@ export class SourceStyleEdit {
             if (sheet.dirty)
                 this.files.set(sheet.path, encode(normalizeCss(generate(sheet.ast), "stylesheet", this.limits, { nodes: 0 })));
     }
+    /** Replace standalone class rules without changing unrelated selector branches. */
+    replaceClasses(entries:readonly {name:string;properties:Readonly<Record<string,string>>;weight?:number}[]):void{
+        const names=new Set(entries.map(entry=>entry.name));
+        const matches=(node:CssNode):boolean=>{if(node.type!=='Selector'||!node.children.size)return false;const parts=node.children.toArray(),first=parts[0];return first?.type==='ClassSelector'&&names.has(ident.decode(first.name))&&parts.every(part=>part.type==='ClassSelector'&&part.name===first.name);};
+        let rules='';for(const entry of entries){let declarations='';for(const[key,value]of Object.entries(entry.properties))declarations=setInlineStyle(declarations,key,value,this.limits);rules+=('.'+ident.encode(entry.name)).repeat(entry.weight??1)+'{'+declarations+'}';}
+        for(const sheet of this.snapshot()){const ast=parse(sheet.css,{context:'stylesheet',parseCustomProperty:true});if(ast.type!=='StyleSheet')invalid('Invalid source stylesheet.');let dirty=false;ast.children.forEach((rule,item,list)=>{if(rule.type!=='Rule'||rule.prelude.type!=='SelectorList')return;rule.prelude.children.forEach((selector,item,list)=>{if(matches(selector)){list.remove(item);dirty=true;}});if(!rule.prelude.children.size)list.remove(item);});if(dirty)this.files.set(sheet.path,encode(normalizeCss(generate(ast),'stylesheet',this.limits,{nodes:0})));}
+        this.append(rules);
+    }
     cloneClass(source: string, target: string): void {
         let css = "";
         for (const sheet of this.snapshot()) {

@@ -39,6 +39,7 @@ export const WordStorySchema = z.strictObject({
   rootNodeId: IdentifierSchema,
 });
 export const WordStyleSchema = z.strictObject({
+  name:z.string().optional(),aliases:z.string().optional(),default:z.boolean().optional(),customStyle:z.boolean().optional(),hidden:z.boolean().optional(),semiHidden:z.boolean().optional(),unhideWhenUsed:z.boolean().optional(),qFormat:z.boolean().optional(),locked:z.boolean().optional(),uiPriority:z.number().int().nonnegative().max(65535).optional(),outlineLevel:z.number().int().min(0).max(9).optional(),
   styleId: IdentifierSchema,
   kind: z.enum(["paragraph", "character", "table", "numbering"]),
   cssClass: IdentifierSchema,

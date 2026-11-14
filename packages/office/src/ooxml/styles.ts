@@ -257,6 +257,12 @@ export class DocxStyles {
         conditions,
       });
       const metadata = this.styles[this.styles.length - 1]!;
+      for(const key of ['name','aliases']as const){const value=val(child(style,key));if(value!==undefined)metadata[key]=value;}
+      for(const key of ['default','customStyle']as const){const value=attr(style,key);if(value!==undefined)metadata[key]=['1','true','on'].includes(value);}
+      for(const key of ['hidden','semiHidden','unhideWhenUsed','qFormat','locked']as const){const value=child(style,key);if(value)metadata[key]=on(value);}
+      const priority=child(style,'uiPriority');if(priority)metadata.uiPriority=number(val(priority),priority);
+      const outline=child(child(style,'pPr'),'outlineLvl');if(outline)metadata.outlineLevel=number(val(outline),outline);
+
       const tblPr = child(style, "tblPr");
       const look = tableLookMask(child(tblPr, "tblLook"));
       if (look !== undefined) metadata.tableLookMask = look;

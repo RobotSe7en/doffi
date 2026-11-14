@@ -380,3 +380,13 @@ test('native compatibility cache paints in the editor and surrounding typing lea
  await expect.poll(()=>page.evaluate(()=>window.paginationHost.session!.snapshot().html)).toContain('缓存周围编辑');
  const html=await page.evaluate(()=>window.paginationHost.session!.snapshot().html);expect(html).not.toContain('data-sdk-native-preview');expect(html).not.toContain('blob:');expect(await frame.locator('[data-sdk-native-preview] img').count()).toBe(1);
 });
+
+test('style management edits named inheritance and all outline levels while Enter uses the following style',async({page})=>{
+ await mount(page,createWordDocument({documentId:'style-ui'}),'edit');
+ const frame=page.frameLocator('iframe'),paragraph=frame.locator('[data-node-id="paragraph-1"]');await paragraph.click();await page.keyboard.type('样式标题');
+ await page.evaluate(()=>(window.paginationHost.view as import('@doffi/editor').DocumentTextEditor).execute({type:'word',action:'styleSettings'}));
+ const panel=page.getByRole('region',{name:'样式管理'});await panel.getByLabel('已有样式',{exact:true}).selectOption('Heading1');await panel.getByLabel('样式显示名称',{exact:true}).fill('自定义九级');await panel.getByLabel('大纲级别',{exact:true}).selectOption({value:'8'});await panel.getByLabel('样式字号（磅）',{exact:true}).fill('18');await panel.getByRole('button',{name:'保存样式',exact:true}).click();await panel.getByRole('button',{name:'应用到选区',exact:true}).click();
+ await expect(frame.locator('[data-node-id="paragraph-1"]')).toHaveAttribute('data-word-style','Heading1');await expect.poll(()=>page.evaluate(()=>window.paginationHost.session!.snapshot().metadata.word!.styles.find(style=>style.styleId==='Heading1')!.outlineLevel)).toBe(8);
+ await frame.locator('[data-node-id="paragraph-1"]').click();await page.keyboard.press('End');await page.keyboard.press('Enter');await page.keyboard.type('后续正文');
+ await expect.poll(()=>page.evaluate(()=>window.paginationHost.session!.snapshot().html)).toContain('后续正文');await expect(frame.locator('p').filter({hasText:'后续正文'})).toHaveAttribute('data-word-style','Normal');
+});

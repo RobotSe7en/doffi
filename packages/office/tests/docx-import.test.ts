@@ -135,9 +135,9 @@ test.each([
     "UnsupportedFeature",
   ],
   [
-    "format revision",
+    "malformed format revision",
     "<w:p><w:pPr><w:pPrChange/></w:pPr></w:p>",
-    "UnsupportedFeature",
+    "InvalidDocument",
   ],
   ["malformed move revision", "<w:p><w:moveFrom/></w:p>", "InvalidDocument"],
   [

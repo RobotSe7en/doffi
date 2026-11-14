@@ -6,7 +6,7 @@ import { DocxStyles } from "../ooxml/styles.js";
 import { xml } from "../ooxml/xml.js";
 import type { XmlNode } from "../ooxml/xml.js";
 import { cellMargins, cellProperties, paragraphKeys, paragraphProperties, pick, runKeys, runProperties, tableProperties } from "./properties.js";
-import { attributes, declaration, empty, escapeXml, namespaces, value } from "./xml.js";
+import { orderedProperties, attributes, declaration, empty, escapeXml, namespaces, value } from "./xml.js";
 import { contentType } from "./opc.js";
 import type { OutputOpc } from "./opc.js";
 
@@ -39,7 +39,7 @@ export class ExportStyles {
     word?.numbering.forEach((definition, index) => this.numberingIds.set(definition.numberingId, String(index + 1)));
   }
   style(id: string | undefined): Style | undefined { return id ? this.definitions.get(id) : undefined; }
-  private paragraphStyle(id: string | undefined): Style | undefined { return this.style(id) ?? (!id ? [...this.definitions.values()].find((style) => style.kind === "paragraph" && style.styleId === "Normal") : undefined); }
+  private paragraphStyle(id: string | undefined): Style | undefined { return this.style(id) ?? (!id ? [...this.definitions.values()].find((style) => style.default??(style.kind === "paragraph" && style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind===style.kind&&item.default))) : undefined); }
   paragraphContext(id: string | undefined): Css { const style = this.paragraphStyle(id); return { ...this.css.emptyStyle(), ...(style ? this.nativeValues(style).p : {}) }; }
   runContext(paragraph: string | undefined, character?: string): Css {
     const key = JSON.stringify([paragraph ?? null, character ?? null]), known = this.contexts.get(key); if (known) return known;
@@ -92,9 +92,10 @@ export class ExportStyles {
     out.add("<w:docDefaults><w:rPrDefault><w:rPr>" + runProperties(pick(this.defaults, runKeys.filter((key) => key !== "vertical-align" || this.defaults[key] !== "baseline"))) + (this.locale ? empty("w:lang", { "w:val": this.locale }) : "") + "</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr>" + paragraphProperties(this.paragraphDefaults) + "</w:pPr></w:pPrDefault></w:docDefaults>");
     for (const style of this.definitions.values()) {
       const css = this.values(style), parent = style.basedOn ? this.values(this.definitions.get(style.basedOn)!) : this.defaults;
-      out.add("<w:style" + attributes({ "w:type": style.kind, "w:styleId": this.ids.get(style.styleId)!, ...(style.kind === "paragraph" && style.styleId === "Normal" ? { "w:default": 1 } : {}) }) + ">" + value("name", style.styleId));
-      for (const [key, name] of [["basedOn", "basedOn"], ["linkedStyleId", "link"], ["nextStyleId", "next"]] as const) if (style[key]) out.add(value(name, this.ids.get(style[key])));
-      out.add("<w:pPr>" + paragraphProperties({ ...this.own(style, "p", css, parent), "font-size": css["font-size"]! }) + "</w:pPr>");
+      out.add("<w:style" + attributes({ "w:type": style.kind, "w:styleId": this.ids.get(style.styleId)!,"w:customStyle":style.customStyle===undefined?undefined:Number(style.customStyle), ...(style.default??(style.kind === "paragraph" && style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind===style.kind&&item.default)) ? { "w:default": 1 } : {}) }) + ">" + value("name", style.name??style.styleId)+(style.aliases!==undefined?value("aliases",style.aliases):""));
+      for (const [key, name] of [["basedOn", "basedOn"], ["nextStyleId", "next"], ["linkedStyleId", "link"]] as const) if (style[key]) out.add(value(name, this.ids.get(style[key])));
+      for(const key of ['hidden','uiPriority','semiHidden','unhideWhenUsed','qFormat','locked']as const)if(style[key]!==undefined)out.add(value(key,typeof style[key]==='boolean'?Number(style[key]):style[key]));
+      out.add("<w:pPr>" + orderedProperties("pPr",paragraphProperties({ ...this.own(style, "p", css, parent), "font-size": css["font-size"]! }) +(style.outlineLevel!==undefined?value("outlineLvl",style.outlineLevel):""))+ "</w:pPr>");
       out.add("<w:rPr>" + this.runSource(style).source + "</w:rPr>");
       if (style.kind === "table") {
         out.add("<w:tblPr>" + (style.rowBandSize ? value("tblStyleRowBandSize", style.rowBandSize) : "") + (style.columnBandSize ? value("tblStyleColBandSize", style.columnBandSize) : "") + tableProperties(css) + cellMargins(css, "tblCellMar") + (style.tableLookMask !== undefined ? empty("w:tblLook", { "w:val": style.tableLookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr>");

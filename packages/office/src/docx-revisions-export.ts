@@ -49,14 +49,14 @@ export class ExportWordRevisions {
     paragraph(node: SourceElement, width: number): string { const entry = this.revision(node, 'paragraph'); if (!entry)
         return ''; const old = this.old(node, entry.revision, {}), style = old.node.attrs['data-word-style']; let props = (style ? value('pStyle', this.styles.ids.get(style) ?? style) : '') + paragraphProperties({ ...difference(old.css, this.styles.paragraphContext(style), [...paragraphKeys, ...Object.keys(old.css).filter(key => key.startsWith('border-'))]), 'font-size': old.css['font-size']! }, width); const num = old.node.attrs['data-word-numbering']; if (num)
         props += '<w:numPr>' + value('ilvl', old.node.attrs['data-word-level'] ?? 0) + value('numId', this.styles.numberingIds.get(num) ?? num) + '</w:numPr>'; const tabs = entry.revision.before?.tabs; if (tabs?.stops.length)
-        props += '<w:tabs>' + tabs.stops.map(tab => empty('w:tab', { 'w:pos': nativeInteger(tab.position), 'w:val': tab.alignment, 'w:leader': tab.leader })).join('') + '</w:tabs>'; if (/^h[1-6]$/.test(old.node.tag))
-        props += value('outlineLvl', Number(old.node.tag[1]) - 1); return this.change(entry.revision, 'pPr', orderedProperties('pPr', props)); }
+        props += '<w:tabs>' + tabs.stops.map(tab => empty('w:tab', { 'w:pos': nativeInteger(tab.position), 'w:val': tab.alignment, 'w:leader': tab.leader })).join('') + '</w:tabs>'; if(old.node.attrs['data-word-outline-level']!==undefined)props+=value('outlineLvl',old.node.attrs['data-word-outline-level']);else if (/^h[1-6]$/.test(old.node.tag))
+        props += value('outlineLvl', Number(old.node.tag[1]) - 1); return this.change(entry.revision, 'pPr', orderedProperties('pPr', props),entry.owner); }
     table(node: SourceElement): string { const entry = this.revision(node, 'table'); if (!entry)
-        return ''; return this.change(entry.revision, 'tblPr', tableProperties(this.old(node, entry.revision, {}).css)); }
+        return '';const old=this.old(node,entry.revision,{}),style=old.node.attrs['data-word-style']; return this.change(entry.revision, 'tblPr', (style?value('tblStyle',this.styles.ids.get(style)??style):'')+tableProperties(old.css),entry.owner); }
     cell(node: SourceElement): string { const entry = this.revision(node, 'cell'); if (!entry)
-        return ''; const old = this.old(node, entry.revision, {}); return this.change(entry.revision, 'tcPr', cellProperties(old.css) + value('textDirection', old.node.attrs['data-word-text-direction'] ?? old.css['--word-cell-text-direction'])); }
+        return ''; const old = this.old(node, entry.revision, {}); return this.change(entry.revision, 'tcPr', cellProperties(old.css) + value('textDirection', old.node.attrs['data-word-text-direction'] ?? old.css['--word-cell-text-direction']),entry.owner); }
     row(node: SourceElement): string { const entry = this.revision(node, 'row'); if (!entry)
         return ''; const old = this.old(node, entry.revision, {}); let props = old.css['break-inside'] === 'avoid' ? '<w:cantSplit/>' : ''; if (old.css.height)
         props += empty('w:trHeight', { 'w:val': nativeInteger(Number.parseFloat(old.css.height)) }); if (old.node.attrs['data-word-repeat-header'])
-        props += '<w:tblHeader/>'; return this.change(entry.revision, 'trPr', props); }
+        props += '<w:tblHeader/>'; return this.change(entry.revision, 'trPr', props,entry.owner); }
 }

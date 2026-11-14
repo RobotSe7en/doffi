@@ -29,7 +29,10 @@ export function findWordText(model:ContentDocumentModel,query:string,options:Wor
  }
  return Object.freeze(result);
 }
-export function getWordOutline(model:ContentDocumentModel):readonly WordOutlineEntry[]{return Object.freeze(paragraphs(model).filter(p=>/^h[1-6]$/.test(p.tagName)).map(p=>Object.freeze({nodeId:p.nodeId,level:Number(p.tagName[1]),text:p.text})));}
+export function getWordOutline(model:ContentDocumentModel):readonly WordOutlineEntry[]{
+ const styles=new Map(model.snapshot().metadata.word?.styles.map(style=>[style.styleId,style]));
+ return Object.freeze(paragraphs(model).flatMap(paragraph=>{let level=paragraph.attributes['data-word-outline-level']!==undefined?Number(paragraph.attributes['data-word-outline-level']):undefined;for(let style=styles.get(paragraph.attributes['data-word-style']??'');level===undefined&&style;style=style.basedOn?styles.get(style.basedOn):undefined)level=style.outlineLevel;level??=/^h[1-6]$/.test(paragraph.tagName)?Number(paragraph.tagName[1])-1:undefined;return level!==undefined&&level<9?[Object.freeze({nodeId:paragraph.nodeId,level:level+1,text:paragraph.text})]:[];}));
+}
 export function getWordTextStatistics(model:ContentDocumentModel):WordTextStatistics{
  const nodes=paragraphs(model),text=nodes.map(p=>p.text).join('\n').replaceAll('\ufffc',''),cjk=text.match(/\p{Script=Han}/gu)?.length??0,western=text.replace(/\p{Script=Han}/gu,' ').match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu)?.length??0;
  return Object.freeze({words:cjk+western,characters:Array.from(text.replaceAll('\n','')).length,charactersWithoutSpaces:Array.from(text.replace(/\s/gu,'')).length,paragraphs:nodes.length});
