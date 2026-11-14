@@ -1,3 +1,4 @@
+import{writeWordConditionalFormat}from'./docx-conditional-format.js';
 import{ExportWordRevisions}from'./docx-revisions-export.js';
 import{writeWordPageBorders}from'./docx-page-borders.js';
 import { W15,CID,CEX } from './docx-comments.js';
@@ -90,7 +91,7 @@ class Exporter {
     const snapshot = document.snapshot();
     if (snapshot.metadata.presentation !== undefined) unsupported("PPT sources cannot be exported as DOCX.");
     this.files = document.serialize(); this.snapshot = { ...snapshot, metadata: snapshot.metadata }; this.tree = parseSource(this.snapshot.html, limits);
-    const word = this.snapshot.metadata.word;for(const table of word?.tables??[])for(const context of table.styleContexts??[])this.tableContexts.set(context.nodeId,context);for(const[index,revision]of (word?.revisions??[]).entries()){this.revisionIds.set(revision,index);if(revision.kind.startsWith('paragraph')){const entries=this.paragraphRevisions.get(revision.nodeId)??[];entries.push(revision);this.paragraphRevisions.set(revision.nodeId,entries);}}for(const[ordinal,move]of (word?.moves??[]).entries()){const item={move,id:word!.revisions.length+ordinal};this.moveStarts.set(move.startNodeId,item);this.moveEnds.set(move.endNodeId,item);}this.drawings=new Map((word?.drawings??[]).map(item=>[item.nodeId,item]));for(const item of word?.drawings??[])this.drawingIds.set(item.nodeId,++this.drawingId);
+    const word = this.snapshot.metadata.word;for(const item of word?.conditionalFormats??[])this.conditionalFormats.set(item.nodeId,item.format);for(const table of word?.tables??[])for(const context of table.styleContexts??[])this.tableContexts.set(context.nodeId,context);for(const[index,revision]of (word?.revisions??[]).entries()){this.revisionIds.set(revision,index);if(revision.kind.startsWith('paragraph')){const entries=this.paragraphRevisions.get(revision.nodeId)??[];entries.push(revision);this.paragraphRevisions.set(revision.nodeId,entries);}}for(const[ordinal,move]of (word?.moves??[]).entries()){const item={move,id:word!.revisions.length+ordinal};this.moveStarts.set(move.startNodeId,item);this.moveEnds.set(move.endNodeId,item);}this.drawings=new Map((word?.drawings??[]).map(item=>[item.nodeId,item]));for(const item of word?.drawings??[])this.drawingIds.set(item.nodeId,++this.drawingId);
     this.directCss=new ExportCss([],limits);
     this.css = new ExportCss(this.snapshot.styles.map((style) => style.css), limits, new Set(word?.revisions.map((item) => item.nodeId)));
     for (const node of this.tree.elements) if (contains(this.tree.root, node)) this.assertFormatting(node, this.css.get(node));
@@ -308,6 +309,8 @@ class Exporter {
     const rel = this.imageRelation(node);
     this.add("<w:r>" + this.nativeRun(css, this.styleContext(node,this.styles.runContext(paragraphStyle,character)), character, role, language) + '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' + empty("wp:extent", { cx, cy }) + empty("wp:docPr", { id, name: "Image " + id, descr: node.attrs.alt ?? "" }) + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>' + '<pic:nvPicPr>' + empty("pic:cNvPr", { id: 0, name: "Image " + id, descr: node.attrs.alt ?? "" }) + '<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill>' + empty("a:blip", { "r:embed": rel }) + '<a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/>' + empty("a:ext", { cx, cy }) + '</a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>');
   }
+  private readonly conditionalFormats=new Map<string,import('@doffi/core').DeepReadonly<import('@doffi/core').WordConditionalFormatValue>>();
+  private conditionalFormat(node:SourceElement):string{return writeWordConditionalFormat(this.conditionalFormats.get(node.attrs['data-node-id']??''));}
   private readonly directCss:ExportCss;
   private readonly tableContexts=new Map<string,{cssClass:string;kind:string}>();
   private tablePropertyDifference(node:SourceElement,css:Css,kind:'table'|'row'|'cell'):Css{
@@ -323,7 +326,7 @@ class Exporter {
   private paragraph(node: SourceElement, section?: string, paragraphId?: string, list?: { id: string; level: number }): void {
     const css = this.flowStyles.get(node) ?? this.css.get(node), id = node.attrs["data-node-id"] ?? "", style = node.attrs["data-word-style"];
     this.add("<w:p" + this.nativeMark(id) + attributes({ "w14:paraId": paragraphId }) + ">");
-    let props = (style ? value("pStyle", this.styles.ids.get(style) ?? style) : "");
+    let props = this.conditionalFormat(node)+(style ? value("pStyle", this.styles.ids.get(style) ?? style) : "");
     const numId = node.attrs["data-word-numbering"] ? this.styles.numberingIds.get(node.attrs["data-word-numbering"]) : list?.id;
     if (numId) props += '<w:numPr>' + value("ilvl", node.attrs["data-word-level"] ?? list?.level ?? 0) + value("numId", numId) + "</w:numPr>";
     const expectedParagraph = this.styleContext(node,this.styles.paragraphContext(style),'paragraph'), paragraphCss = { ...css };
@@ -435,11 +438,12 @@ class Exporter {
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = {...this.tablePropertyDifference(row,this.css.get(row),'row')};
       const directHeader=row.attrs['data-word-repeat-header'];if(directHeader!==undefined)rowCss['--word-row-repeat-header']=directHeader==='true'?'1':'0';else if(row.parent?.tag==='thead')rowCss['--word-row-repeat-header']='1';
-      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + this.conditionalFormat(row)+rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
       for (const cell of cells) {
+        const continuation=cell.continuation?info?.continuationFormats?.find(item=>item.row===index&&item.column===cell.column):undefined;
         const cellCss = this.css.get(cell.node);
-        this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(this.tablePropertyDifference(cell.node,cellCss,'cell')) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+this.review.cell(cell.node)) + "</w:tcPr>");
-        if (cell.continuation) this.add("<w:p/>"); else {
+        this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.continuation?writeWordConditionalFormat(continuation?.format):this.conditionalFormat(cell.node))+(cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(this.tablePropertyDifference(cell.node,cellCss,'cell')) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+(cell.continuation?'':this.review.cell(cell.node))) + "</w:tcPr>");
+        if (cell.continuation) this.add(continuation?.paragraphs?.map(format=>format?'<w:p><w:pPr>'+writeWordConditionalFormat(format)+'</w:pPr></w:p>':'<w:p/>').join('')??"<w:p/>"); else {
           const width = this.width; this.width = grid.slice(cell.column, cell.column + cell.span).reduce((total, value) => total + value, 0); this.blocks(cell.node.children); this.width = width;
         }
         this.add("</w:tc>");

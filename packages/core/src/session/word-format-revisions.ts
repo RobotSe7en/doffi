@@ -17,6 +17,7 @@ export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId:
     for (const name of ['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header'])
         attributes[name] = node.attributes[name] ?? null;
     const before: NonNullable<WordRevision['before']> = { attributes, tagName: node.tagName as NonNullable<WordRevision['before']>['tagName'], inheritNativeProperties: true };
+    if(['paragraph','row','cell'].includes(property))before.conditionalFormat=word.conditionalFormats?.find(item=>item.nodeId===nodeId)?.format??null;
     if(property==='table'){const table=word.tables.find(table=>table.nodeId===nodeId);before.tableStyleOptions=Object.fromEntries(['lookMask','rowBandSize','columnBandSize'].flatMap(key=>table&&Reflect.get(table,key)!==undefined?[[key,Reflect.get(table,key)]]:[]));}
     if (property === 'paragraph') {
         const tabs = word.tabs.find(tab => tab.paragraphNodeId === nodeId);

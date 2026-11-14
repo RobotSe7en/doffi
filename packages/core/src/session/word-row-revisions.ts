@@ -1,3 +1,4 @@
+import {moveWordContinuationFormats} from './word-conditional-format.js';
 import type { WordMetadata } from '../contracts/word.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { DocumentEdit } from '../document/edit.js';
@@ -39,6 +40,7 @@ export function removeWordRows(word: WordMetadata, edit: DocumentEdit, parse: ()
         }
         for (const group of groups.reverse()) {
             const current = wordTableRows(parse(), table);
+            moveWordContinuationFormats(info,{kind:'deleteRows',...group});
             editSourceTable({ edit, parse, limits }, table, info.grid, { width: info.grid.reduce((a, b) => a + b, 0), height: current.length * 20 }, { kind: 'deleteRows', ...group });
         }
     }

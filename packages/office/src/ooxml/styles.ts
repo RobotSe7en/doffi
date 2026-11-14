@@ -706,6 +706,7 @@ export class DocxStyles {
     return css;
   }
   paragraph(properties: XmlNode | undefined): Css {
+    if(properties?.part===this.stylePart&&child(properties,'cnfStyle'))unsupported(child(properties,'cnfStyle')!,'Shared-style conditional cache flags remain native.');
     if (!properties) return {};
     if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
     check(properties, [
@@ -757,7 +758,6 @@ export class DocxStyles {
       "suppressOverlap",
       "textAlignment",
       "textboxTightWrap",
-      "cnfStyle",
     ]) {
       const item = child(properties, name);
       if (item)
@@ -1002,6 +1002,7 @@ export class DocxStyles {
       unsupported(spacing, "Nonzero table cell spacing is not supported.");
   }
   cell(properties: XmlNode | undefined): Css {
+    if(properties?.part===this.stylePart&&child(properties,'cnfStyle'))unsupported(child(properties,'cnfStyle')!,'Shared-style conditional cache flags remain native.');
     if (!properties) return {};
     if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
     check(properties, [

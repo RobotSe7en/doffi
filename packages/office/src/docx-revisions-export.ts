@@ -1,3 +1,4 @@
+import{writeWordConditionalFormat}from'./docx-conditional-format.js';
 import { NATIVE_MARKER } from './docx-native-export.js';
 import { W } from './ooxml/xml.js';
 import { DocumentError } from '@doffi/core';
@@ -103,7 +104,7 @@ export class ExportWordRevisions {
             props += value('outlineLvl', old.node.attrs['data-word-outline-level']);
         else if (/^h[1-6]$/.test(old.node.tag))
             props += value('outlineLvl', Number(old.node.tag[1]) - 1);
-        return this.change(entry.revision, 'pPr', orderedProperties('pPr', props), entry.owner);
+        return this.change(entry.revision, 'pPr', orderedProperties('pPr',writeWordConditionalFormat(entry.revision.before?.conditionalFormat??undefined)+props), entry.owner);
     }
     private directTableProperties(node:SourceElement):Css{
       const owned=new Set(this.word?.tables.flatMap(table=>table.styleContexts?.map(context=>context.cssClass)??[])??[]),style=this.word?.styles.find(style=>style.styleId===node.attrs['data-word-style']);if(style)owned.add(style.cssClass);
@@ -122,7 +123,8 @@ export class ExportWordRevisions {
         if (!entry)
             return '';
         const old = this.old(node, entry.revision, {});
-        return this.change(entry.revision, 'tcPr', cellProperties(this.directTableProperties(old.node)) + value('textDirection', old.node.attrs['data-word-text-direction'] ?? old.css['--word-cell-text-direction']), entry.owner);
+        const span=Number(old.node.attrs.colspan??1),rows=Number(old.node.attrs.rowspan??1);
+        return this.change(entry.revision,'tcPr',orderedProperties('tcPr',writeWordConditionalFormat(entry.revision.before?.conditionalFormat??undefined)+(span>1?value('gridSpan',span):'')+(rows>1?value('vMerge','restart'):'')+cellProperties(this.directTableProperties(old.node))+value('textDirection',old.node.attrs['data-word-text-direction']??old.css['--word-cell-text-direction'])),entry.owner);
     }
     rowMark(node: SourceElement): string { return (this.rowMarks.get(node.attrs['data-node-id'] ?? '') ?? []).sort((a, b) => a.kind === 'rowInsert' ? -1 : b.kind === 'rowInsert' ? 1 : 0).map(revision => empty('w:' + (revision.kind === 'rowInsert' ? 'ins' : 'del'), { 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': this.revisionDate(revision) })).join(''); }
     row(node: SourceElement): string {
@@ -132,7 +134,7 @@ export class ExportWordRevisions {
         const old = this.old(node, entry.revision, {});
         const css={...this.directTableProperties(old.node)},header=old.node.attrs['data-word-repeat-header'];if(header!==undefined)css['--word-row-repeat-header']=header==='true'?'1':'0';
         const props=rowProperties(css);
-        return this.change(entry.revision, 'trPr', props, entry.owner);
+        return this.change(entry.revision, 'trPr', writeWordConditionalFormat(entry.revision.before?.conditionalFormat??undefined)+props, entry.owner);
     }
     grid(node:SourceElement):string{const entry=this.revision(node,'tableGrid');if(!entry)return'';return this.change(entry.revision,'tblGrid',(entry.revision.before?.grid??[]).map(width=>empty('w:gridCol',{'w:w':nativeInteger(width)})).join(''),entry.owner);}
     section(node:SourceElement,compile:(properties:DeepReadonly<NonNullable<WordRevision['before']>['section']>)=>string):string{const entry=this.revision(node,'section');if(!entry)return'';const previous=compile(entry.revision.before?.section).replace(/^<w:sectPr[^>]*>/,'').replace(/<\/w:sectPr>$/,'');return this.change(entry.revision,'sectPr',previous,entry.owner);}

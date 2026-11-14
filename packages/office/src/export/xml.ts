@@ -19,9 +19,9 @@ export const namespaces = ' xmlns:w="http://schemas.openxmlformats.org/wordproce
 const propertyOrder: Readonly<Record<string, readonly string[]>> = {
   settings:wordSettingsOrder.filter(name=>!name.includes(":")),
   rPr: ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "snapToGrid", "color", "spacing", "kern", "sz", "szCs", "highlight", "u", "shd", "vertAlign", "lang", "rPrChange"],
-  pPr: ["pStyle", "keepNext", "keepLines", "pageBreakBefore", "widowControl", "numPr", "pBdr", "shd", "tabs", "suppressAutoHyphens", "overflowPunct", "snapToGrid", "spacing", "ind", "jc", "outlineLvl", "rPr", "sectPr", "pPrChange"],
+  pPr: ["pStyle", "keepNext", "keepLines", "pageBreakBefore", "widowControl", "numPr", "pBdr", "shd", "tabs", "suppressAutoHyphens", "overflowPunct", "snapToGrid", "spacing", "ind", "jc", "outlineLvl", "cnfStyle", "rPr", "sectPr", "pPrChange"],
   tblPr: ["tblStyle", "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblPrChange"],
-  tcPr: ["tcW", "gridSpan", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "vAlign", "tcPrChange"],
+  tcPr: ["cnfStyle", "tcW", "gridSpan", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "vAlign", "tcPrChange"],
 };
 /** Put generated property children in the schema sequence. Values have already
  * been escaped; this tokenizer sees only our generated markup, never raw HTML. */

@@ -1,3 +1,4 @@
+import {WordConditionalFormatSchema,WordConditionalFormatValueSchema} from './word-conditional.js';
 import { z } from "zod";
 import { IdentifierSchema, PackagePathSchema } from "./primitives.js";
 import { WordDrawingSchema } from './word-drawing.js';
@@ -102,6 +103,7 @@ export const WordNumberLevelSchema = z.strictObject({
   cssClass: IdentifierSchema,
 });
 export const WordMetadataSchema = z.strictObject({
+  conditionalFormats:z.array(WordConditionalFormatSchema).optional(),
     bordersDoNotSurroundHeader:z.boolean().optional(),bordersDoNotSurroundFooter:z.boolean().optional(),
   comments:z.array(WordCommentSchema).optional(),people:z.array(WordPersonSchema).optional(),
   trackChanges:z.boolean().optional(),trackingAuthor:z.string().optional(),
@@ -184,6 +186,7 @@ export const WordMetadataSchema = z.strictObject({
     z.strictObject({
       nodeId: IdentifierSchema,
       grid: z.array(z.number().positive()).min(1),
+      continuationFormats:z.array(z.strictObject({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),format:WordConditionalFormatValueSchema.optional(),paragraphs:z.array(WordConditionalFormatValueSchema.nullable()).min(1).optional()})).optional(),
       styleContexts:z.array(z.strictObject({nodeId:IdentifierSchema,cssClass:IdentifierSchema,kind:z.enum(['table','row','cell','paragraph','run'])})).optional(),
       lookMask: z.number().int().min(0).max(65535).optional(),
       rowBandSize: z.number().int().nonnegative().optional(),

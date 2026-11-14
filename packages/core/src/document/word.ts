@@ -161,6 +161,7 @@ export function validateWord(
         }
       }
     }
+    for(const format of unique(word.conditionalFormats??[],item=>item.nodeId).values())if(!/^p$|^h[1-6]$|^tr$|^td$|^th$/.test(node(format.nodeId).tagName))invalid('Conditional format markers require a paragraph, row or cell.');
     const styles = unique(word.styles, (item) => item.styleId);
     unique(word.styles.filter(style=>style.default),style=>style.kind);
     const visited = new Set<string>();
@@ -303,6 +304,7 @@ export function validateWord(
     for (const table of unique(word.tables, (item) => item.nodeId).values()) {
       if (node(table.nodeId).tagName !== "table")
         invalid("A table grid requires a table node.");
+      const rowCount=node(table.nodeId).childNodeIds.flatMap(id=>node(id).tagName==='tr'?[id]:node(id).childNodeIds.filter(id=>node(id).tagName==='tr')).length;for(const entry of unique(table.continuationFormats??[],entry=>entry.row+'\n'+entry.column).values())if(entry.row>=rowCount||entry.column>=table.grid.length)invalid('A continuation format marker exceeds its table grid.');
       for(const context of unique(table.styleContexts??[],item=>item.nodeId).values()){
         const current=node(context.nodeId);if(!(current.attributes.class??'').split(/\s+/).includes(context.cssClass))invalid('A table style context must bind its source CSS class.');
         let owner=current;while(owner.tagName!=='table'&&owner.parentNodeId)owner=node(owner.parentNodeId);if(owner.nodeId!==table.nodeId)invalid('A table style context must belong to its table.');

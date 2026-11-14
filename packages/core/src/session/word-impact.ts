@@ -12,7 +12,7 @@ export function wordSemanticChanges(before: DeepReadonly<ContentDocumentMetadata
     const compare = <T>(a: readonly T[], b: readonly T[], key: (value: T) => string): void => { const group=(items:readonly T[]):Map<string,string>=>{const rows=new Map<string,T[]>();for(const item of items){const id=key(item),values=rows.get(id)??[];values.push(item);rows.set(id,values);}return new Map([...rows].map(([id,values])=>[id,JSON.stringify(values)]));};const previous=group(a),next=group(b); for (const id of new Set([...previous.keys(), ...next.keys()]))
         if (previous.get(id) !== next.get(id))
             ids.add(id); };
-    for (const name of ['drawings', 'equations', 'controls', 'fields', 'hyperlinks', 'tables', 'revisions', 'noteReferences'] as const)
+    for (const name of ['conditionalFormats','drawings', 'equations', 'controls', 'fields', 'hyperlinks', 'tables', 'revisions', 'noteReferences'] as const)
         compare<DeepReadonly<{
             nodeId: string;
         }>>(left?.[name] ?? [], right?.[name] ?? [], item => item.nodeId);

@@ -90,6 +90,7 @@ export function wordInteractionContext(state: DocumentState, nodes: ReadonlySet<
     word.hyperlinks = word.hyperlinks.filter(item => nodes.has(item.nodeId));
     word.tabs = word.tabs.filter(item => nodes.has(item.paragraphNodeId));
     word.tables = word.tables.filter(item => nodes.has(item.nodeId));
+    word.conditionalFormats=word.conditionalFormats?.filter(item=>nodes.has(item.nodeId));
     word.revisions = word.revisions.filter(item => nodes.has(item.nodeId));
     if(word.moves)word.moves=word.moves.filter(move=>nodes.has(move.startNodeId)&&nodes.has(move.endNodeId));
     word.noteReferences = word.noteReferences?.filter(item => nodes.has(item.nodeId));

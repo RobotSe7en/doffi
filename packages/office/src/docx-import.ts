@@ -1,3 +1,4 @@
+import {bindWordConditionalFormat,readWordConditionalFormat} from './docx-conditional-format.js';
 import {resolveWordTableStyle,wordTableRegions,wordTableRowRegions,wordTableRowCellProperties} from '@doffi/core';
 import {WordMoveReader}from'./docx-moves.js';
 import{readWordPageBorders}from'./docx-page-borders.js';
@@ -601,6 +602,7 @@ class Importer {
         ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) }
         : {}),
     });
+    bindWordConditionalFormat(this.word,properties,this.id(paragraph));
     if(this.activeTable)this.context(paragraph,'paragraph',{...contextualParagraph,...style.p,...inheritedRun(paragraphRun)});
     if (
       effectiveParagraph["line-height"] &&
@@ -1401,6 +1403,7 @@ class Importer {
       });
       const rowRegions=wordTableRowRegions(rowIndex,rows.length,grid.length,mask,rowBand,columnBand);
       const rowStyle=resolveWordTableStyle(this.word,this.styles.readComponent,styleId,rowRegions),rowCell=wordTableRowCellProperties(rowStyle.cell);
+      bindWordConditionalFormat(this.word,rowProperties,this.id(htmlRow));
       this.context(htmlRow,'row',rowStyle.row,tableInfo);
       for(const[kind,name]of [['rowInsert','ins'],['rowDelete','del']]as const){const marker=child(rowProperties,name);if(marker){check(marker,[]);const id=attr(marker,'id');if(id===undefined)fail(marker,'A row revision requires an identity.');this.word.revisions.push({nodeId:this.id(htmlRow),sourceId:id,revisionId:this.id(htmlRow)+'-'+kind,kind,...(attr(marker,'author')!==undefined?{author:attr(marker,'author')!}:{}),...(attr(marker,'date')!==undefined?{date:attr(marker,'date')!}:{})});}}
       readWordFormatRevision(this.word,rowProperties,htmlRow,'row',this.styles);
@@ -1425,7 +1428,10 @@ class Importer {
           const above = previous.get(column);
           if (!above || above.span !== span)
             fail(cell, "A vertical merge has no matching cell above.");
-          this.validateMergeContinuation(cell);
+          try{
+            this.validateMergeContinuation(cell);
+            const format=readWordConditionalFormat(props),paragraphs=elements(cell,'p').map(paragraph=>readWordConditionalFormat(child(paragraph,'pPr'))??null);if(format||paragraphs.some(Boolean)){tableInfo.continuationFormats??=[];tableInfo.continuationFormats.push({row:rowIndex,column,...(format?{format}:{}),...(paragraphs.some(Boolean)?{paragraphs}:{})});}
+          }catch(error){if(error instanceof DocumentError&&error.code==='UnsupportedFeature')unsupported(cell,'A vertical merge continuation has independent native properties.');throw error;}
           above.cell.attrs.rowspan = String(
             Number(above.cell.attrs.rowspan ?? 1) + 1,
           );
@@ -1445,6 +1451,7 @@ class Importer {
               ...(span > 1 ? { colspan: String(span) } : {}),
             },
           );
+          bindWordConditionalFormat(this.word,props,this.id(htmlCell));
           this.context(htmlCell,'cell',{'padding-left':'5.4pt','padding-right':'5.4pt',...style.cell,...conditional.cell,...rowCell,...inner},tableInfo);
           const previousTable=this.activeTable;this.activeTable=tableInfo;
           htmlCell.children.push(

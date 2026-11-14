@@ -1,3 +1,4 @@
+import{readWordConditionalFormat}from'./docx-conditional-format.js';
 import type { WordMetadata, WordRevision } from '@doffi/core';
 import { attr, child, check, fail, on, number, unsupported } from './ooxml/xml.js';
 import type { XmlNode } from './ooxml/xml.js';
@@ -21,6 +22,7 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
         fail(change, 'A formatting revision requires one original property set and an identity.');
     const attributes: Record<string, string | null> = { style: null }, before: NonNullable<WordRevision['before']> = { attributes };
     let css: Css = {};
+    if(['paragraph','row','cell'].includes(property))before.conditionalFormat=readWordConditionalFormat(previous)??null;
     if (property === 'run') {
         const styleId = attr(child(previous, 'rStyle'), 'val'), inherited = styles.runStyle(styleId ?? styles.defaultCharacter, options.inheritedRun ?? {});
         css = styles.run(previous, inherited);

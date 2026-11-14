@@ -8,3 +8,11 @@ export function rowStylesFixture():Uint8Array{
  files['word/document.xml']=strToU8(strFromU8(files['word/document.xml']!).replace('w:firstRow="1"','w:firstRow="1" w:firstColumn="1"').replace(/(<w:tr>[\s\S]*?<\/w:tr>)(<w:tr>[\s\S]*?<\/w:tr>)/,(_all,first:string,second:string)=>first+Array.from({length:30},(_,index)=>second.replaceAll('R1','ROW'+index)).join('')));
  return zipSync(files);
 }
+
+export function conditionalFormatFixture(header=false):Uint8Array{
+ const files=unzipSync(tableStylesFixture()),w='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+ const table='<w:tbl><w:tblPr><w:tblStyle w:val="Red"/><w:tblLook w:firstRow="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:cnfStyle w:val="100000000000" w:firstRow="0"/></w:trPr><w:tc><w:tcPr><w:cnfStyle w:val="100000000000" w:firstRow="1" w:lastColumn="0"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:cnfStyle/></w:pPr><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:cnfStyle w:val="000000000000" w:lastRow="1"/><w:vMerge/></w:tcPr><w:p><w:pPr><w:cnfStyle w:firstRow="0"/></w:pPr></w:p><w:p/></w:tc><w:tc><w:tcPr><w:cnfStyle w:lastRow="0"/></w:tcPr><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+ files['word/document.xml']=strToU8(strFromU8(files['word/document.xml']!).replace(/<w:body>[\s\S]*<\/w:body>/,'<w:body>'+table+(header?'<w:sectPr><w:headerReference w:type="default" r:id="headerCnf"/></w:sectPr>':'')+'</w:body>'));
+ if(header){files['word/header1.xml']=strToU8('<w:hdr xmlns:w="'+w+'">'+table+'</w:hdr>');files['word/_rels/document.xml.rels']=strToU8(strFromU8(files['word/_rels/document.xml.rels']!).replace('</Relationships>','<Relationship Id="headerCnf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>'));files['[Content_Types].xml']=strToU8(strFromU8(files['[Content_Types].xml']!).replace('</Types>','<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>'));}
+ return zipSync(files);
+}

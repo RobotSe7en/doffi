@@ -50,6 +50,7 @@ function updateWordMetadata(metadata: ContentDocumentMetadata, before: DocumentS
   word.revisions = word.revisions.filter((item) => after.hasNode(item.nodeId));
   if(word.moves)word.moves=word.moves.filter(move=>after.hasNode(move.startNodeId)||after.hasNode(move.endNodeId));
   word.tables = word.tables.filter((item) => after.hasNode(item.nodeId));
+  if(word.conditionalFormats)word.conditionalFormats=word.conditionalFormats.filter(item=>after.hasNode(item.nodeId));
   if(word.drawings)word.drawings=word.drawings.filter(item=>after.hasNode(item.nodeId));
   if(word.equations)word.equations=word.equations.filter(item=>after.hasNode(item.nodeId));
   if(word.controls)word.controls=word.controls.filter(item=>after.hasNode(item.nodeId));

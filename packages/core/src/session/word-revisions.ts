@@ -119,6 +119,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
         if (revision.kind === 'format') {
             if (operation.decision === 'reject') {
                 const before = revision.before ?? fail('The revision has no previous formatting.');
+                if(before.conditionalFormat!==undefined){word.conditionalFormats=word.conditionalFormats?.filter(item=>item.nodeId!==revision.nodeId);if(before.conditionalFormat){word.conditionalFormats??=[];word.conditionalFormats.push({nodeId:revision.nodeId,format:{...before.conditionalFormat}});}}
                 if(before.section){const section=sections.find(section=>section.rootNodeId===revision.nodeId)??fail('The reviewed section is missing.');for(const key of Object.keys(section))if(key!=='rootNodeId'&&key!=='sectionId')Reflect.deleteProperty(section,key);Object.assign(section,JSON.parse(JSON.stringify(before.section)));}
                 if (before.attributes)
                     edit.attributes(revision.nodeId, Object.fromEntries(Object.entries(before.attributes).map(([name, value]) => [name, value ?? undefined])));
