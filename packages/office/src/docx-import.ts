@@ -8,6 +8,7 @@ import { M,readWordMath } from './docx-math.js';
 import { importWordDrawing,WPS,WPG } from "./docx-drawing-import.js";
 import {
   createAssetDescriptor,
+  wordScriptRole,
   DocumentError,
   openDocument,
 } from "@doffi/core";
@@ -255,7 +256,7 @@ class Importer {
     if (node.tag === "span" && !node.attrs["data-word-tab"]) {
       // Flush one script part at a time; reserve text and wrapper budgets before
       // creating substrings or HTML nodes. Never build an unbounded parts array.
-      let script: "ascii" | "hAnsi" | "eastAsia" | undefined;
+      let script: "ascii" | "hAnsi" | "eastAsia" | "cs" | undefined;
       let start = 0, end = 0, bytes = 0;
       const append = (): void => {
         if (!script) return;
@@ -272,22 +273,7 @@ class Importer {
         target.children.push(value.slice(start, end));
       };
       for (const character of value) {
-        const code = character.codePointAt(0)!;
-        const eastAsian =
-          (code >= 0x2e80 && code <= 0xa4cf) ||
-          (code >= 0xac00 && code <= 0xd7af) ||
-          (code >= 0xf900 && code <= 0xfaff) ||
-          (code >= 0xfe10 && code <= 0xfe6f) ||
-          (code >= 0xff00 && code <= 0xffef) ||
-          (code >= 0x20000 && code <= 0x323af);
-        const nextScript =
-          /\p{Mark}/u.test(character) && script
-            ? script
-            : eastAsian
-              ? "eastAsia"
-              : code <= 0x7f
-                ? "ascii"
-                : "hAnsi";
+        const nextScript=wordScriptRole(character,script);
         if (script !== nextScript) {
           append();
           start = end;
@@ -1277,6 +1263,8 @@ class Importer {
     },story:source=>{const id='text-box-'+this.word.stories.length,root=this.story('textBox',id);root.attrs.class='word-main';root.children.push(...this.readStoryContent(this.currentPart,id,source));this.auxiliary.push(root);return id;},native:(source,node)=>this.native?.bind(source,node.attrs),identity:(source,id,nativeId)=>{if(nativeId===undefined)return;number(nativeId,source);this.native?.identity(source,id,nativeId);const key=this.currentPart+'\n'+nativeId;if(source.uri===WP){const previous=this.drawingNativeIds.get(key);if(previous&&previous!==id)fail(source,'A drawing frame identity is repeated.');this.drawingNativeIds.set(key,id);}else if(nativeId!=='0'){const previous=this.drawingAliases.get(key);this.drawingAliases.set(key,previous===undefined||previous===id?id:null);}},connector:(source,nodeId,start,end,local)=>this.drawingConnections.push({source,nodeId,part:this.currentPart,...(start!==undefined?{start}:{}),...(end!==undefined?{end}:{}),local})});
   }
   private validateMergeContinuation(cell: XmlNode): void {
+    const cellChange = child(child(cell, 'tcPr'), 'tcPrChange');
+    if (cellChange) unsupported(cellChange, 'A vertical merge continuation has independent formatting history.');
     const direction = child(child(cell, "tcPr"), "textDirection");
     if (direction && attr(direction, "val") !== "lrTb") unsupported(direction, "A vertical merge continuation has independent cell formatting.");
 
@@ -1290,6 +1278,8 @@ class Importer {
           "A vertical merge continuation has independent content.",
         );
       const properties = child(paragraph, "pPr");
+      const paragraphChange = child(properties, 'pPrChange');
+      if (paragraphChange) unsupported(paragraphChange, 'A vertical merge continuation has independent paragraph history.');
       this.styles.paragraph(properties);
       this.styles.run(child(properties, "rPr"));
       this.styles.get(
@@ -1309,6 +1299,8 @@ class Importer {
             "A vertical merge continuation has independent content.",
           );
         this.styles.run(child(run, "rPr"));
+        const runChange = child(child(run, 'rPr'), 'rPrChange');
+        if (runChange) unsupported(runChange, 'A vertical merge continuation has independent run history.');
         for (const content of this.compat(run)) {
           if (content.uri === W && content.name === "rPr") continue;
           if (

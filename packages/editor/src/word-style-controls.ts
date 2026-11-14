@@ -71,6 +71,7 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
             hint.textContent = '以下留空保留当前设置；勾选恢复继承可取消本样式覆盖。';
             panel!.append(hint);
             const font = field('样式字体', ''), size = field('样式字号（磅）', '', 'number'), color = field('样式文字颜色', ''), weight = choose('样式字重', [['', '保留'], ['400', '常规'], ['700', '加粗']], '');
+            const languages=(['val','eastAsia','bidi']as const).map((role,index)=>({role,input:field(['样式西文语言','样式东亚语言','样式复杂文字语言'][index]!,'')}));
             const alignment = choose('样式对齐', [['', '保留'], ['left', '左'], ['center', '中'], ['right', '右'], ['justify', '两端']], '');
             const space = field('样式段后（磅）', '', 'number'), resetFont = field('字体格式恢复继承', '', 'checkbox'), resetParagraph = field('段落格式恢复继承', '', 'checkbox');
             button('保存样式', () => {
@@ -108,6 +109,7 @@ export function createWordStyleControls(parent: ShadowRoot, before: HTMLElement,
                     run['font-size'] = size.value + 'pt';
                 if (color.value)
                     run.color = color.value;
+                for(const{role,input}of languages)if(input.value.trim())run['--word-language-'+role]=JSON.stringify(input.value.trim());
                 if (weight.value)
                     run['font-weight'] = weight.value;
                 if (alignment.value)

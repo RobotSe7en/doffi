@@ -537,6 +537,7 @@ export class DocxStyles {
     ]);
     const css: Css = {};
     if(child(properties,"snapToGrid")) css["--word-run-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
+    for(const role of ['val','eastAsia','bidi']){const language=attr(child(properties,'lang'),role);if(language!==undefined)css['--word-language-'+role]=JSON.stringify(language);}
     const fonts = child(properties, "rFonts");
     if (fonts) {
       for (const [name, themeName] of [

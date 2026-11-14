@@ -186,7 +186,7 @@ class Exporter {
       if (fontName(css["font-family"]!) !== fontName(expected["--word-font-" + role] ?? expected["font-family"]!)) properties["font-family"] = css["font-family"]!;
       else delete properties["font-family"];
     }
-    const r = (character ? value("rStyle", this.styles.ids.get(character) ?? character) : "") + runProperties(properties, expected, false, role) + (language ? empty("w:lang", { "w:val": language }) : "");
+    const r = (character ? value("rStyle", this.styles.ids.get(character) ?? character) : "") + runProperties({...properties,...(css["--word-language-val"]===undefined&&language?{"--word-language-val":JSON.stringify(language)}:{})}, expected, false, role);
     return r||changes ? "<w:rPr>" + r+changes + "</w:rPr>" : "";
   }
   private nativeMark(nodeId: string | undefined): string { return this.snapshot.metadata.word?.nativeContent ? nativeMarker(nodeId) : ""; }

@@ -14,6 +14,8 @@ export function wordTextDefaults(word:DeepReadonly<Pick<WordMetadata,'stories'|'
  for(const style of chain){css=resolver.classStyle(style.cssClass,css);if(style.runCssClass)css=resolver.classStyle(style.runCssClass,css);}
  const properties:Record<string,string>={'font-family':css['font-family']??'serif','font-size':css['font-size']??'12pt','font-weight':css['font-weight']??'400','font-style':css['font-style']??'normal','font-variant':css['font-variant']??'normal','text-transform':css['text-transform']??'none',color:css.color??'#000000','letter-spacing':css['letter-spacing']??'normal','vertical-align':'baseline','background-color':'transparent','text-decoration':'none'};
  for(const role of ['ascii','hAnsi','eastAsia','cs'])properties['--word-font-'+role]=css['--word-font-'+role]??properties['font-family']!;
+ properties['--word-font-size-cs']=css['--word-font-size-cs']??properties['font-size']!;properties['--word-bold-cs']=css['--word-bold-cs']??(css['font-weight']==='bold'||Number(css['font-weight'])>=600?'1':'0');properties['--word-italic-cs']=css['--word-italic-cs']??(css['font-style']==='italic'?'1':'0');properties['--word-kerning-threshold']=css['--word-kerning-threshold']??'0pt';
+ for(const role of ['val','eastAsia','bidi'])if(css['--word-language-'+role]!==undefined)properties['--word-language-'+role]=css['--word-language-'+role]!;
  return properties;
 }
 export function clearCoveredWordRuns(word:WordMetadata,html:ParsedHtml,edit:DocumentEdit,nodeId:string,from:number,to:number):void{

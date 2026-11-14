@@ -72,6 +72,7 @@ export function OfficeRibbon({ kind, tab: requestedTab, onTab, mode, busy, actio
   const families = [...new Set([fontName(format.fontFamily), "等线", "宋体", "微软雅黑", "Arial", "Calibri", "Aptos", "Times New Roman", "Noto Sans CJK SC", "Noto Serif CJK SC", "FandolSong", "FandolHei", "FandolKai", "FandolFang", "LXGW WenKai", "Liberation Serif", "Liberation Sans", "Liberation Mono"].filter(Boolean))];
   const sizes = [...new Set([8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72, ...format.fontSize ? [format.fontSize] : []])].sort((a, b) => a - b);
   const fontGroup = <Group title="字体" className="font-group">
+    {kind==="document"&&<Tool label="字符格式" icon="file" disabled={!canFormat} run={()=>onTextCommand({type:"word",action:"fontSettings"})}/>}
     <div className="ribbon-font-selects">
       <OfficeComboBox label="字体" className="font-family-field" disabled={!canFormat} value={fontName(format.fontFamily)} options={families} hint={!fontAvailable ? `本机没有“${chosenFont}”，预览使用替代字体；文档保留所选字体。` : undefined}
         commit={value => { if (!value || value.length > 256) return "请输入有效的字体名称。"; return onTextCommand({ type: "format", property: "font-family", value: JSON.stringify(value) }); }} />

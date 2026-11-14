@@ -20,11 +20,11 @@ export interface SourceTextStyleRepresentation {
 }
 /** Format existing text leaves, retaining all paragraph/run/link identities.
  * New wrappers are core-owned source nodes; no rendered DOM enters the tree. */
-export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void): void {
+export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>): void {
   properties = textFormattingProperties(properties);
   const fail: (message: string) => never = message => { throw new DocumentError("InvalidOperation", message); };
   for (const property of Object.keys(properties)) if (!/^(?:color|background-color|font-(?:family|size|weight|style|variant)|text-transform|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)
-    && !/^--word-font-(?:ascii|hAnsi|eastAsia|cs)$/.test(property) && !(representation && /^(?:font-variant|word-spacing|--office-cell-foreground-(?:color|tint|native-alpha))$/.test(property))) fail("Text range appearance accepts only font and text properties.");
+    && !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs)|bold-cs|italic-cs|kerning-threshold|language-(?:val|eastAsia|bidi))$/.test(property) && !(representation && /^(?:font-variant|word-spacing|--office-cell-foreground-(?:color|tint|native-alpha))$/.test(property))) fail("Text range appearance accepts only font and text properties.");
   const patch = (source: string): string => {
     for (const [property, value] of Object.entries(properties)) source = setDrawingInlineStyle(source, property, value, limits); return source;
   };
@@ -81,26 +81,27 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
   const bounds = new Map<Tree.Element, { from: number; to: number }>(), updated = new Set<Tree.Element>();
   for (const leaf of leaves) {
     const parent = leaf.node.parentNode; if (!parent || !("tagName" in parent)) continue;
-    const previous = bounds.get(parent); bounds.set(parent, { from: Math.min(previous?.from ?? leaf.from, leaf.from), to: Math.max(previous?.to ?? leaf.to, leaf.to) });
+    for(let current:Tree.Element|undefined=parent;current;current=current!==target&&current.parentNode&&'tagName'in current.parentNode?current.parentNode:undefined){const previous=bounds.get(current);bounds.set(current,{from:Math.min(previous?.from??leaf.from,leaf.from),to:Math.max(previous?.to??leaf.to,leaf.to)});}
   }
   const protectedFields = [...inheritedFonts, ...roleFonts, ...scalarForeground, TEXT_DECORATION_RESET, "text-decoration-line", "vertical-align", "background-color", "margin", "padding", "border"];
   function updateCompleteSpan(parent: Tree.Element): boolean {
-    if (parent.tagName !== "span" || parent.childNodes.some(node => node.nodeName !== "#text" && !(representation && "tagName" in node && node.tagName === "br"))) return false;
+    const tracked=preferred?.has(parent.attrs.find(attribute=>attribute.name==='data-node-id')?.value??'');
+    if (!tracked&&(parent.tagName !== "span" || parent.childNodes.some(node => node.nodeName !== "#text" && !(representation && "tagName" in node && node.tagName === "br")))) return false;
     const area = bounds.get(parent); if (!area || range.from > area.from || range.to < area.to) return false;
     if (updated.has(parent)) return true;
     const attribute = parent.attrs.find(attribute => attribute.name === "style"), source = representation ? representation.read(parent) : attribute?.value;
-    if (source === undefined) return false;
-    const ast = parse(source, { context: "declarationList", parseCustomProperty: true }); if (ast.type !== "DeclarationList") return false;
+    if (source === undefined&&!tracked) return false;
+    const ast = parse(source??'', { context: "declarationList", parseCustomProperty: true }); if (ast.type !== "DeclarationList") return false;
     const own = new Map(ast.children.toArray().flatMap(node => node.type === "Declaration" ? [[ident.decode(node.property), node] as const] : []));
     // A complete self-protected font span can retain its identity and all
     // unrequested declarations. Partial selections still get their own span.
-    if (!protectedFields.every(name => own.get(name)?.important)) return false;
+    if (!tracked&&!protectedFields.every(name => own.get(name)?.important)) return false;
     if (representation && !resolver.hasSpecified(projection(parent), Object.fromEntries([...own].map(([name, node]) => [name, generate(node.value) + (node.important ? "!important" : "")])))) return false;
     if (!updated.has(parent)) {
       if(onChange){const id=parent.attrs.find(attribute=>attribute.name==='data-node-id')?.value;if(!id)fail('Tracked formatting requires an identified source span.');onChange({nodeId:id,previousStyle:source,from:area.from,to:area.to});}
-      let next = source;
+      let next = source??'';
       for (const node of requestedDeclarations) next = setInlineStyle(next, ident.decode(node.property), generate(node.value) + "!important", limits);
-      if (representation) representation.write(parent, next); else attribute!.value = next;
+      if (representation) representation.write(parent, next); else if(attribute)attribute.value=next;else parent.attrs.push({name:'style',value:next});
       updated.add(parent);
     }
     return true;
@@ -110,11 +111,13 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
   const makeText = (text: string): Tree.TextNode => { count(); return adapter.createTextNode(text); };
   for (const leaf of leaves) {
     if (leaf.to <= range.from || leaf.from >= range.to) continue;
-    if ("tagName" in leaf.node && leaf.node.tagName === "img") fail("Text font formatting cannot change an inline object.");
+    let atomic=false;for(let current:Tree.Node|undefined=leaf.node;current;current='parentNode'in current?current.parentNode??undefined:undefined){if('tagName'in current&&(current.tagName==='img'||current.attrs.some(attribute=>['data-word-native-object','data-word-drawing','data-word-equation','data-word-note-reference'].includes(attribute.name)))){atomic=true;break;}if(current===target)break;}if(atomic)continue;
     const parent = leaf.node.parentNode;
     if (!parent || !("tagName" in parent)) fail("The source text parent is unavailable.");
     const owner = projection(parent);
     if (resolver.hasSpecified(owner, requested)) continue;
+    let tracked:Tree.Element|undefined=parent;for(;tracked;tracked=tracked!==target&&tracked.parentNode&&'tagName'in tracked.parentNode?tracked.parentNode:undefined)if(preferred?.has(tracked.attrs.find(attribute=>attribute.name==='data-node-id')?.value??''))break;
+    if(tracked&&updateCompleteSpan(tracked))continue;
     if (updateCompleteSpan(parent)) continue;
     count(); const nodeId = allocate(), style = neutral(owner, nodeId), span = representation ? representation.create(nodeId, style)
       : adapter.createElement("span", namespaces.NS.HTML, [{ name: "data-node-id", value: nodeId }, { name: "style", value: style }]);

@@ -1,14 +1,18 @@
 import type { WordMetadata } from '../contracts/word.js';
 import type { WordRevision } from '../contracts/word-revision.js';
 import type { ParsedHtml } from '../document/html.js';
-import { DocumentError } from '../errors.js';
-/** One native property history is retained until review; overlapping histories
- * require the separate merge policy currently awaiting a product decision. */
+import type { DocumentEdit } from '../document/edit.js';
+import type { SourceStyleEdit } from './source-styles.js';
+/** Native property histories retain the first value and the latest author. */
 export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId: string, property: 'paragraph' | 'table' | 'row' | 'cell'): void {
     if (!word.trackChanges)
         return;
-    if (word.revisions.some(revision => revision.nodeId === nodeId && revision.kind === 'format' && revision.property === property))
-        throw new DocumentError('InvalidOperation', 'Review the overlapping formatting revision before applying another format.');
+    const previous = word.revisions.find(revision => revision.nodeId === nodeId && revision.kind === 'format' && revision.property === property);
+    if (previous) {
+        previous.author = word.trackingAuthor ?? '';
+        previous.date = new Date().toISOString();
+        return;
+    }
     const node = source.peekNode(nodeId)!, attributes: Record<string, string | null> = {};
     for (const name of ['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header'])
         attributes[name] = node.attributes[name] ?? null;
@@ -19,4 +23,53 @@ export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId:
     }
     const id = nodeId + '-format-' + property;
     word.revisions.push({ nodeId, sourceId: id, revisionId: id, kind: 'format', property, before, author: word.trackingAuthor ?? '', date: new Date().toISOString() });
+}
+/** Partition pending run histories at the new selection, so a partial edit
+ * changes neither the author nor the review group of adjacent text. */
+export function prepareWordRunFormat(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, styles: SourceStyleEdit, range: {
+    nodeId: string;
+    from: number;
+    to: number;
+    expectedText: string;
+}): {
+    nodeId: string;
+    from: number;
+    to: number;
+    expectedText: string;
+    preferred: Set<string>;
+} {
+    const original = parse(), base = original.textOffset(range.nodeId)!, start = base + range.from, end = base + range.to;
+    let target = original.peekNode(range.nodeId)!;
+    for (let parent = target; parent;) {
+        if (/^p$|^h[1-6]$|^li$/.test(parent.tagName)) {
+            target = parent;
+            break;
+        }
+        if (!parent.parentNodeId)
+            break;
+        parent = original.peekNode(parent.parentNodeId)!;
+    }
+    for (const boundary of [end, start])
+        for (const revision of [...word.revisions]) {
+            if (revision.kind !== 'format' || revision.property !== 'run')
+                continue;
+            const source = parse(), node = source.getNode(revision.nodeId);
+            if (!node)
+                continue;
+            const begin = source.textOffset(node.nodeId)!;
+            if (boundary <= begin || boundary >= begin + node.text.length)
+                continue;
+            const identities = edit.splitSourceInline(node.nodeId, boundary - begin);
+            styles.aliasNodeIds(identities);
+            const copies = word.revisions.filter(item => identities.has(item.nodeId)).map(item => { const nodeId = identities.get(item.nodeId)!, id = nodeId + '-format'; return { ...JSON.parse(JSON.stringify(item)) as WordRevision, nodeId, revisionId: id, sourceId: id }; });
+            if (word.nativeContent) {
+                const native = word.nativeContent, oldRevisions = new Map(word.revisions.filter(item => identities.has(item.nodeId)).map(item => [item.nodeId + '\n' + item.sourceId, item]));
+                native.fragments.push(...native.fragments.filter(item => item.nodeId && identities.has(item.nodeId) && item.kind === 'property').map((item, index) => { const nodeId = identities.get(item.nodeId!)!, previous = item.revisionSourceId ? oldRevisions.get(item.nodeId + '\n' + item.revisionSourceId) : undefined; return { ...JSON.parse(JSON.stringify(item)) as typeof item, nodeId, nativeId: nodeId + '-native-' + index, ...(previous ? { revisionSourceId: copies.find(copy => copy.nodeId === nodeId && copy.property === previous.property)!.sourceId } : {}) }; }));
+            }
+            word.hyperlinks.push(...word.hyperlinks.filter(item => identities.has(item.nodeId)).map(item => ({ ...item, nodeId: identities.get(item.nodeId)! })));
+            word.revisions.push(...copies);
+        }
+    const source = parse(), offset = source.textOffset(target.nodeId)!, preferred = new Set(word.revisions.filter(item => { if (item.kind !== 'format' || item.property !== 'run')
+        return false; const begin = source.textOffset(item.nodeId), node = source.getNode(item.nodeId); return begin !== undefined && node && begin >= start && begin + node.text.length <= end; }).map(item => item.nodeId));
+    return { nodeId: target.nodeId, from: start - offset, to: end - offset, expectedText: range.expectedText, preferred };
 }

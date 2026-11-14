@@ -3,7 +3,7 @@ import type { Css } from "./css.js";
 import { color, fontName, length, nativeInteger } from "./values.js";
 import { empty, orderedProperties, value } from "./xml.js";
 
-export const runKeys: readonly string[] = ["font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid"];
+export const runKeys: readonly string[] = ["font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid",...["val","eastAsia","bidi"].map(role=>"--word-language-"+role)];
 export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", "--word-distributed", "--word-line-rule", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
 export const pick = (css: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key]) => keys.includes(key)));
 export const difference = (css: Css, expected: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key, val]) => keys.includes(key) && val !== expected[key]));
@@ -63,6 +63,7 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
     const values: Record<string, string> = { baseline: "baseline", super: "superscript", sub: "subscript" };
     out += value("vertAlign", values[css["vertical-align"]] ?? unsupported("This inline vertical alignment has no supported DOCX representation."));
   }
+  const languages:Record<string,string>={};for(const role of ['val','eastAsia','bidi'])if(css['--word-language-'+role]!==undefined)languages['w:'+role]=fontName(css['--word-language-'+role]!);if(Object.keys(languages).length)out+=empty('w:lang',languages);
   return orderedProperties("rPr", out);
 }
 export function borders(css: Css, container: string, inside = false): string {

@@ -89,7 +89,7 @@ export class ExportStyles {
   write(opc: OutputOpc): void {
     const out = opc.part("word/styles.xml", contentType("styles"));
     out.add(declaration + "<w:styles" + namespaces + ">");
-    out.add("<w:docDefaults><w:rPrDefault><w:rPr>" + runProperties(pick(this.defaults, runKeys.filter((key) => key !== "vertical-align" || this.defaults[key] !== "baseline"))) + (this.locale ? empty("w:lang", { "w:val": this.locale }) : "") + "</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr>" + paragraphProperties(this.paragraphDefaults) + "</w:pPr></w:pPrDefault></w:docDefaults>");
+    out.add("<w:docDefaults><w:rPrDefault><w:rPr>" + runProperties({...pick(this.defaults, runKeys.filter((key) => key !== "vertical-align" || this.defaults[key] !== "baseline")),...(this.defaults["--word-language-val"]===undefined&&this.locale?{"--word-language-val":JSON.stringify(this.locale)}:{})}) + "</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr>" + paragraphProperties(this.paragraphDefaults) + "</w:pPr></w:pPrDefault></w:docDefaults>");
     for (const style of this.definitions.values()) {
       const css = this.values(style), parent = style.basedOn ? this.values(this.definitions.get(style.basedOn)!) : this.defaults;
       out.add("<w:style" + attributes({ "w:type": style.kind, "w:styleId": this.ids.get(style.styleId)!,"w:customStyle":style.customStyle===undefined?undefined:Number(style.customStyle), ...(style.default??(style.kind === "paragraph" && style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind===style.kind&&item.default)) ? { "w:default": 1 } : {}) }) + ">" + value("name", style.name??style.styleId)+(style.aliases!==undefined?value("aliases",style.aliases):""));

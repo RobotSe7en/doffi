@@ -1,3 +1,4 @@
+import{createWordFontControls}from'./word-font-controls.js';
 import{createWordStyleControls}from'./word-style-controls.js';
 import{trackedWordInput,trackedSelection}from'./rich-text/tracked-input.js';
 import {createWordReviewControls}from'./word-review-controls.js';
@@ -46,7 +47,7 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
   | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
-  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' | 'insertFootnote' | 'insertEndnote' | 'referenceSettings' | 'insertLink' | 'bookmarks' | 'crossReference' | 'caption' | 'insertEquation' | 'equationSettings' | 'insertControl' | 'controlSettings' | 'insertChart' | 'chartSettings' | 'review' | 'styleSettings' };
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" | 'insertImage' | 'insertShape' | 'insertTextBox' | 'insertConnector' | 'drawingSettings' | 'insertFootnote' | 'insertEndnote' | 'referenceSettings' | 'insertLink' | 'bookmarks' | 'crossReference' | 'caption' | 'insertEquation' | 'equationSettings' | 'insertControl' | 'controlSettings' | 'insertChart' | 'chartSettings' | 'review' | 'styleSettings' | 'fontSettings' };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -111,6 +112,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     return metadata.sections.find(section=>{const element=root?.querySelector('[data-node-id="'+CSS.escape(section.rootNodeId)+'"]')??(root?.dataset.nodeId===section.rootNodeId?root:undefined);return element&&range&&element.contains(range.startContainer);})?.rootNodeId??metadata.sections[0]!.rootNodeId;
   };
   const pageControls=createWordPageControls(shadow,viewport,session,currentSection,editStory,report);
+  const fontControls=createWordFontControls(shadow,viewport,formatState,formatAppearance,report);
   const styleControls=createWordStyleControls(shadow,viewport,session,style=>{const snapshot=session.snapshot(),range=selectedRange();if(style.kind==='paragraph'){wordCommand({type:'word',action:'style',styleId:style.styleId});return;}let operations:import('@doffi/core').DocumentOperation[]=[];if(style.kind==='character'&&range){const anchor=new PreviewSource(frame!,viewModel()).textAnchor(range,session);if(anchor?.kind==='text'||anchor?.kind==='text-set')operations=(anchor.kind==='text'?[anchor]:anchor.ranges).map(item=>({op:'applyWordCharacterStyle',nodeId:item.nodeId,from:item.from,to:item.to,expectedText:item.quote,styleId:style.styleId}));}if(style.kind==='table'&&range){const node=range.startContainer.nodeType===1?range.startContainer as Element:range.startContainer.parentElement,table=node?.closest<HTMLElement>('table');if(table?.dataset.nodeId)operations=[{op:'formatWordTable',nodeId:table.dataset.nodeId,styleId:style.styleId}];}if(!operations.length)throw new DocumentError('InvalidOperation','请先选择相应文字或表格。');session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations}));},report);
   const listControls=createWordListControls(shadow,viewport,session,()=>selectedParagraphs().map(node=>node.dataset.nodeId!),report);
   const drawingControls=createWordDrawingControls(shadow,viewport,session,()=>{const range=selectedRange(),paragraph=selectedParagraphs()[0];if(!range||!paragraph)return;return{paragraphId:paragraph.dataset.nodeId!,offset:offsetAt(paragraph,range.startContainer,range.startOffset,projection.ignored)};},editStory,report);
@@ -254,18 +256,13 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     for (const attribute of authored.attributes) if (!["id", "data-node-id"].includes(attribute.name)) next.setAttribute(attribute.name, attribute.value);
     const content=projection.serializeRange(tail);tail.deleteContents();next.append(content);if(following){next.dataset.wordStyle=following.styleId;next.className=[...authored.classList].filter(name=>name!==style?.cssClass).concat(following.cssClass).join(' ');next.removeAttribute('data-word-outline-level');for(const run of next.querySelectorAll<HTMLElement>('[data-word-run]')){if(style?.runCssClass)run.classList.remove(style.runCssClass);if(following.runCssClass)run.classList.add(following.runCssClass);}}block.after(next);select(next,0);
   }
-  function format(property: string, value: string): void {
-    if (!root || composing) return;
-    root.focus(); if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
-    const range = selectedRange(); if (!range) return;
-    const properties = new Map([[property, value]]);
-    if (property === "font-family") for (const role of ["ascii", "hAnsi", "eastAsia", "cs"]) properties.set("--word-font-" + role, value);
-    if (range.collapsed) {
-      for (const [name, value] of properties) typingStyles.set(name, value); typingAnchor = JSON.stringify(bookmark(root, projection.ignored)); notifyFormat(); return;
-    }
-    const selection = bookmark(root, projection.ignored);
-    if(session.snapshot().metadata.word?.trackChanges){const snapshot=session.snapshot(),anchor=new PreviewSource(frame!,viewModel()).textAnchor(range,session);if(!anchor||anchor.kind!=='text'&&anchor.kind!=='text-set')throw new DocumentError('InvalidOperation','请选择可格式化的正文。');const ranges=anchor.kind==='text'?[anchor]:anchor.ranges;session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:ranges.map(item=>({op:'formatWordText',nodeId:item.nodeId,from:item.from,to:item.to,expectedText:item.quote,properties:Object.fromEntries(properties)}))}));refresh(selection);return;}
-    mutate(range, () => { styleRange(range, properties); if (root) restoreBookmark(root, selection, projection.ignored); });
+  function format(property:string,value:string):void{const properties=new Map([[property,value]]);if(property==='font-family')for(const role of ['ascii','hAnsi','eastAsia','cs'])properties.set('--word-font-'+role,value);formatAppearance(properties);}
+  function formatAppearance(properties:ReadonlyMap<string,string>):void{
+    if(!root||composing)return;root.focus();if(!selectedRange())restoreBookmark(root,savedSelection,projection.ignored);const range=selectedRange();if(!range)return;
+    if(range.collapsed){for(const[name,value]of properties)typingStyles.set(name,value);typingAnchor=JSON.stringify(bookmark(root,projection.ignored));notifyFormat();return;}
+    const selection=bookmark(root,projection.ignored),snapshot=session.snapshot();
+    if(snapshot.metadata.word){const anchor=new PreviewSource(frame!,viewModel()).textAnchor(range,session);if(!anchor||anchor.kind!=='text'&&anchor.kind!=='text-set')throw new DocumentError('InvalidOperation','请选择可格式化的正文。');const ranges=anchor.kind==='text'?[anchor]:anchor.ranges,candidate=session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:ranges.map(item=>({op:'formatWordText',nodeId:item.nodeId,from:item.from,to:item.to,expectedText:item.quote,properties:Object.fromEntries(properties)}))});committing=true;try{session.commit(candidate);}catch(error){session.discard(candidate);throw error;}finally{committing=false;}refresh(selection);return;}
+    mutate(range,()=>{styleRange(range,properties);if(root)restoreBookmark(root,selection,projection.ignored);});
   }
   function styleRange(range: Range, properties: ReadonlyMap<string, string>): void { if (root) styleNativeRange(root, range, properties, projection.ignored, projection.setStyles); }
   function button(label: string, action: () => void): void {
@@ -333,6 +330,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if(command.action==='insertChart'||command.action==='chartSettings'){chartControls.open(command.action==='insertChart');return;}
     if(command.action==='insertControl'||command.action==='controlSettings'){controlControls.open(command.action==='insertControl');return;}
     if(command.action==='insertEquation'||command.action==='equationSettings'){mathControls.open(command.action==='insertEquation');return;}
+    if(command.action==="fontSettings"){fontControls.open();return;}
     if(command.action==="styleSettings"){styleControls.open();return;}
     if (command.action === "pageSettings") { pageControls.open(); return; }
     if (command.action === "mainStory") { editStory(); return; }
@@ -375,12 +373,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       for (const paragraph of paragraphs) operations.push({ op: "setWordList", nodeId: paragraph.dataset.nodeId!, numberingId, level: command.level ?? 0 });
     } else if (command.action === "indent") {
       for (const paragraph of paragraphs) operations.push({ op: "setWordParagraph", nodeId: paragraph.dataset.nodeId!, properties: { "margin-left": Math.max(0, parseFloat(frame!.defaultView!.getComputedStyle(paragraph).marginLeft) * .75 + command.direction * 24) + "pt" } });
-    } else {
-      const range = selectedRange(); if (!range) return;
-      const selection = bookmark(root, projection.ignored);
-      mutate(range, () => { styleRange(range, new Map(command.action === "paintFormat" ? Object.entries({...command.properties,...(command.properties["font-family"] ? Object.fromEntries(["ascii","hAnsi","eastAsia","cs"].map(role=>["--word-font-"+role,command.properties["font-family"]!])) : {})}) : [["font-weight","400"],["font-style","normal"],["text-decoration","none"],["vertical-align","baseline"],["background-color","transparent"],["color","#000000"]])); if(root)restoreBookmark(root,selection,projection.ignored); });
-      return;
-    }
+    } else if(command.action==='paintFormat'){formatAppearance(new Map(Object.entries({...command.properties,...(command.properties['font-family']?Object.fromEntries(['ascii','hAnsi','eastAsia','cs'].map(role=>['--word-font-'+role,command.properties['font-family']!])):{})})));return;}else throw new DocumentError('InvalidOperation','未知 Word 格式命令。');
     session.commit(session.prepare({ protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations }));
   }
   for (const [label, alignment] of [["左对齐", "left"], ["居中", "center"], ["右对齐", "right"]] as const) button(label, () => align(alignment));
@@ -610,6 +603,6 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    clearMarks();reviewControls.dispose();chartControls.dispose();controlControls.dispose();mathControls.dispose();linkControls.dispose();referenceControls.dispose();drawingControls.dispose();listControls.dispose();styleControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    clearMarks();reviewControls.dispose();chartControls.dispose();controlControls.dispose();mathControls.dispose();linkControls.dispose();referenceControls.dispose();drawingControls.dispose();listControls.dispose();styleControls.dispose();fontControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }

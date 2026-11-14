@@ -1,3 +1,4 @@
+import{composeWordLanguages}from'./word-languages.js';
 import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
 import { DocumentError, openDocument } from "@doffi/core";
@@ -467,7 +468,8 @@ export function mountPreview(
     const frame = iframe.contentDocument!;
     notes?.dispose();notes=undefined;pagination?.dispose(); pagination = undefined; fields = undefined; source = undefined;
     const snapshot = model.snapshot();
-    const sourceFonts = resolvePreviewFonts(frame);
+    composeWordLanguages(frame,model,limits);
+    const sourceFonts = resolvePreviewFonts(frame,"[data-node-id],[data-sdk-word-script-view]");
     source = new PreviewSource(frame, model);
     // Empty native runs still need a real line box in preview and editing.
     // A derived break provides it without adding a source newline/identity.

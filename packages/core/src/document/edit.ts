@@ -14,6 +14,7 @@ import type { HtmlSourceDescriptor, ParsedHtml } from "./html.js";
 import type { DocumentPackage } from "../runtime.js";
 import { checkLimit } from "./validation.js";
 import { isTextBoundary, textPositions } from "./text.js";
+import { wordScriptRole } from '../word-script.js';
 
 type Element = Tree.Element;
 type Node = Tree.Node;
@@ -81,13 +82,8 @@ function fontScript(value: string): FontScript | undefined {
 function scriptParts(value: string, initialScript?: FontScript): { script: FontScript; text: string }[] {
   const parts: ReturnType<typeof scriptParts> = [];
   for (const character of value) {
-    const code = character.codePointAt(0)!;
     const previous = parts.at(-1);
-    const eastAsian = code >= 0x2e80 && code <= 0xa4cf || code >= 0xac00 && code <= 0xd7af
-      || code >= 0xf900 && code <= 0xfaff || code >= 0xfe10 && code <= 0xfe6f
-      || code >= 0xff00 && code <= 0xffef || code >= 0x20000 && code <= 0x323af;
-    const script = /\p{Mark}/u.test(character) && (previous || initialScript) ? previous?.script ?? initialScript!
-      : eastAsian ? "eastAsia" : code <= 0x7f ? "ascii" : "hAnsi";
+    const script = wordScriptRole(character, previous?.script ?? initialScript);
     if (previous?.script === script) previous.text += character;
     else parts.push({ script, text: character });
   }
@@ -209,10 +205,25 @@ export class DocumentEdit {
     const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
     setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
   }
-  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>,onChange?:(change:SourceTextStyleChange)=>void): void {
+  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>): void {
     const target = this.index().get(nodeId); if (!target) fail("The text format target is unavailable.");
     const styles = this.state.snapshot.manifest.styles.map(path => decodeText(this.state.files.get(path)!));
-    styleSourceText(target, range, properties, this.limits, this.allocate, styles,undefined,onChange);
+    styleSourceText(target, range, properties, this.limits, this.allocate, styles,undefined,onChange,preferred);
+  }
+  /** Split an inline property owner without changing text or moving atomic
+   * content out of its owner. Only the split ancestor path receives new IDs. */
+  splitSourceInline(nodeId:string,offset:number):ReadonlyMap<string,string>{
+    const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode))fail('The inline split target is unavailable.');
+    const positions=textPositions(this.tree),area=positions.get(target)!,text=textLeaves(target).map(leaf=>leaf.value).join('');
+    if(offset<=0||offset>=text.length||!isTextBoundary(text,offset))fail('An inline split requires an interior UTF-16 boundary.');
+    const boundary=area.from+offset,identities=new Map<string,string>();
+    const split=(node:Element):Element=>{
+      if(!['span','a','strong','b','em','i','u','s','sub','sup','code'].includes(node.tagName)||node.attrs.some(attribute=>['data-word-field','data-word-content-control','data-word-native-object','data-word-drawing','data-word-equation','data-word-note-reference'].includes(attribute.name)))fail('A formatting boundary cannot split an atomic Word object.');
+      const right=adapter.createElement(node.tagName,node.namespaceURI,node.attrs.map(attribute=>({...attribute}))),old=attr(node,'data-node-id'),id=this.allocate();setAttribute(right,'data-node-id',id);if(old)identities.set(old,id);
+      for(const child of [...node.childNodes]){const span=positions.get(child);if(!span)continue;if(span.from>=boundary){adapter.detachNode(child);adapter.appendChild(right,child);}else if(span.to>boundary){if(child.nodeName==='#text'&&'value'in child){const at=boundary-span.from;adapter.appendChild(right,this.text(child.value.slice(at)));child.value=child.value.slice(0,at);}else if(isElement(child))adapter.appendChild(right,split(child));}}
+      return right;
+    };
+    const right=split(target),parent=target.parentNode,sibling=parent.childNodes[parent.childNodes.indexOf(target)+1];if(sibling)adapter.insertBefore(parent,right,sibling);else adapter.appendChild(parent,right);return identities;
   }
   /** Revision containers retain source leaves and object ownership; wrapping
    * changes no UTF-16 text offsets. A wrapper is allocated for each text leaf. */

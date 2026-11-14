@@ -162,7 +162,7 @@ test.each([
       "<w:tc><w:tcPr><w:vMerge/>" + properties + "</w:tcPr>" + content + "</w:tc>",
     ),
   });
-  expect(() => importDocx(bytes, { documentId: "merge" }))
+  expect(() => importDocx(bytes, { documentId: "merge",unsupportedContent:"reject" }))
     .toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
 });
 test("preserves inherited table geometry, partial margin overrides and explicit highlight removal", () => {

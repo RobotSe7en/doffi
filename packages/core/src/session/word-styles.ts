@@ -10,7 +10,7 @@ type Operation = Extract<WordOperation, {
 }>;
 type Style = WordMetadata['styles'][number];
 const fail = (message: string): never => { throw new DocumentError('InvalidOperation', message); };
-const runKey = (key: string): boolean => /^(?:font-|color$|background-color$|text-(?:decoration|transform)|vertical-align$|letter-spacing$|word-spacing$|--word-(?:font|run|kerning)|--office-(?:font|text))/.test(key);
+const runKey = (key: string): boolean => /^(?:font-|color$|background-color$|text-(?:decoration|transform)|vertical-align$|letter-spacing$|word-spacing$|--word-(?:font|run|kerning|language|bold|italic)|--office-(?:font|text))/.test(key);
 const special = (key: string): boolean => key === 'background-color' || key.startsWith('text-decoration');
 /** Rebuild flattened preview classes from own properties after every definition edit. */
 export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, styles: SourceStyleEdit, operation: Operation, limits: DocumentReadLimits): void {

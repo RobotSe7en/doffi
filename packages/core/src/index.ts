@@ -1,3 +1,5 @@
+export{wordScriptRole}from'./word-script.js';
+export type{WordScriptRole}from'./word-script.js';
 export { FORMAT_VERSION, PROTOCOL_VERSION, DocumentKindSchema, PackagePathSchema, RectangleSchema } from "./contracts/primitives.js";
 export type { DocumentKind, Rectangle } from "./contracts/primitives.js";
 export * from "./contracts/document.js";
