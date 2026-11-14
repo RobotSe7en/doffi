@@ -122,6 +122,8 @@ export function decorate(
     "p,h1,h2,h3,h4,h5,h6",
   )) {
     const computed = document.defaultView!.getComputedStyle(paragraph);
+    if(computed.getPropertyValue("--word-line-rule").trim()==="atLeast"){const minimum=parseFloat(computed.lineHeight)||0;for(const run of [paragraph,...paragraph.querySelectorAll<HTMLElement>("span,strong,em")]){const size=parseFloat(document.defaultView!.getComputedStyle(run).fontSize)*1.2;if(size>minimum)run.style.lineHeight=size+"px";}}
+    if(computed.getPropertyValue("--word-distributed").trim()==="1"){paragraph.style.textAlignLast="justify";paragraph.style.textJustify="inter-character";}
     paragraph.style.hyphens =
       computed.getPropertyValue("--word-suppress-auto-hyphens").trim() === "1"
         ? "manual"

@@ -814,7 +814,7 @@ export class DocxStyles {
       };
       if (!values[align])
         unsupported(properties, "A paragraph alignment is not supported.");
-      css["text-align"] = values[align]!;
+      css["text-align"] = values[align]!;css["--word-distributed"]=align==="distribute"?"1":"0";
     }
     const spacing = child(properties, "spacing");
     if (spacing) {
@@ -836,10 +836,9 @@ export class DocxStyles {
       const line = attr(spacing, "line");
       if (line) {
         const rule = attr(spacing, "lineRule") ?? "auto";
-        if (rule === "atLeast")
-          unsupported(spacing, "Minimum line spacing is not supported.");
-        if (!["auto", "exact"].includes(rule))
+        if (!["auto", "exact", "atLeast"].includes(rule))
           fail(spacing, "A line spacing rule is invalid.");
+        css["--word-line-rule"]=rule;
         css["line-height"] =
           rule === "auto"
             ? String(number(line, spacing) / 240)

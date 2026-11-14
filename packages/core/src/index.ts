@@ -94,5 +94,5 @@ export type {
 export { createWordDocument } from "./word.js";
 export type { CreateWordDocumentOptions } from "./word.js";
 
-export { findWordText, getWordOutline, getWordTextStatistics } from "./word-query.js";
+export { findWordText, getWordOutline, getWordTextStatistics, getWordTextDefaults } from "./word-query.js";
 export type { WordTextMatch, WordTextFindOptions, WordOutlineEntry, WordTextStatistics } from "./word-query.js";

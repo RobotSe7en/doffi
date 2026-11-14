@@ -36,6 +36,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     const root = read(bytes, path); parsed.set(path, root);
     const scan = (node: XmlNode): void => {
       const id = node.attrs.get(NATIVE_MARKER + ' node'); if (id) nodeParts.set(id, path);
+      const container=node.attrs.get(NATIVE_MARKER+' container');if(container)nodeParts.set(container,path);
       for (const item of node.content) if (typeof item !== 'string') scan(item);
     };
     scan(root);
@@ -105,7 +106,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   };
   const apply=(root:XmlNode):XmlNode=>{
     const id=root.attrs.get(NATIVE_MARKER+' node'), object=root.attrs.get(NATIVE_MARKER+' object');
-    if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');restored.add(fragment.nativeId);return fragmentXml(fragment);}
+    if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');restored.add(fragment.nativeId);if(!fragment.runChild)return fragmentXml(fragment);const container=root.attrs.get(NATIVE_MARKER+' container');for(const key of ['node','object','container'])(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' '+key);root.content.push(fragmentXml(fragment));for(const residual of container?byNode.get(container)??[]:[])if(residual.kind==='property')applyProperty(root,residual);return root;}
     (root.attrs as Map<string,string>).delete(NATIVE_MARKER+' node');
     for(let index=0;index<root.content.length;index++){const child=root.content[index]!;if(typeof child!=='string')root.content[index]=apply(child);}
     for(const fragment of id?byNode.get(id)??[]:[])if(fragment.kind==='property')applyProperty(root,fragment);
@@ -127,4 +128,4 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   return files;
 }
 /** Markers exist only between compilation and native reattachment. */
-export function nativeObjectMarker(id:string,block:boolean,nodeId?:string):string{return '<w:'+ (block?'p':'r')+' xmlns:w="'+W+'" xmlns:dn="'+NATIVE_MARKER+'" dn:object="'+escapeXml(id)+'"'+(nodeId?' dn:node="'+escapeXml(nodeId)+'"':'')+'/>';}
+export function nativeObjectMarker(id:string,block:boolean,nodeId?:string,containerId?:string):string{return '<w:'+ (block?'p':'r')+' xmlns:w="'+W+'" xmlns:dn="'+NATIVE_MARKER+'" dn:object="'+escapeXml(id)+'"'+(nodeId?' dn:node="'+escapeXml(nodeId)+'"':'')+(containerId?' dn:container="'+escapeXml(containerId)+'"':'')+'/>';}

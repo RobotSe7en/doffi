@@ -1,5 +1,6 @@
 import { editSourceTable } from "./table-edit.js";
 import { copyWordStorySemantics } from './word-story-copy.js';
+import { wordTextDefaults,clearCoveredWordRuns } from '../document/word-format.js';
 import { checkLimit } from "../document/validation.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import { DocumentError } from '../errors.js';
@@ -9,7 +10,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return ['cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return ['resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
 export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -18,6 +19,11 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
+  if(operation.op==='resetWordText'){
+    if(!/^p$|^h[1-6]$/.test(node.tagName))fail('Resetting text formatting requires a paragraph range.');
+    if(operation.resetParagraph){if(operation.from!==0||operation.to!==parse().getNode(operation.nodeId)!.text.length)fail('Paragraph formatting can only be reset for a complete paragraph.');const normal=word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal');applyWordOperation(metadata,edit,parse,styles,{op:'setWordParagraph',nodeId:operation.nodeId,clearDirectFormatting:true,...(normal?{styleId:normal.styleId}:{})},limits);}
+    const source=parse(),defaults=wordTextDefaults(word,source,operation.nodeId,styles.resolver());edit.formatSourceText(operation.nodeId,operation,defaults);clearCoveredWordRuns(word,parse(),edit,operation.nodeId,operation.from,operation.to);return;
+  }
   if(operation.op==='setWordOptions'){
     if(node.parentNodeId!==null)fail('Shared Word settings require the document root.');
     if(operation.evenAndOddHeaders!==undefined)word.evenAndOddHeaders=operation.evenAndOddHeaders;
@@ -91,7 +97,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       const preserveWidth=operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns';
       info.grid=preserveWidth?result.grid.map(width=>width*previousWidth/result.width):result.grid;
       if(operation.change.kind==='resize'&&operation.change.grid)edit.sourceStyle(operation.nodeId,'width',result.width+'pt');
-      if(preserveWidth||operation.change.kind==='resize'&&operation.change.grid)for(const cell of result.cells)edit.sourceStyle(cell.id,'width',info.grid.slice(cell.column,cell.column+cell.columns).reduce((a,b)=>a+b,0)+'pt');
+      if(preserveWidth||operation.change.kind==='resize'&&operation.change.grid||operation.change.kind==='splitCell')for(const cell of result.cells)edit.sourceStyle(cell.id,'width',info.grid.slice(cell.column,cell.column+cell.columns).reduce((a,b)=>a+b,0)+'pt');
       return;
     }
     if(operation.styleId!==undefined){const style=operation.styleId===null?undefined:word.styles.find(style=>style.styleId===operation.styleId&&style.kind==='table');if(operation.styleId!==null&&!style)fail('The native table style is missing.');const old=word.styles.find(style=>style.styleId===node.attributes['data-word-style']);const classes=(node.attributes.class??'').split(/\s+/).filter(value=>value&&value!==old?.cssClass);if(style)classes.push(style.cssClass);edit.attributes(operation.nodeId,{'data-word-style':operation.styleId??undefined,class:classes.join(' ')});}
@@ -108,6 +114,8 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='setWordStyle'||operation.op==='setWordNumbering'){
     if(node.tagName!=='article'||node.parentNodeId!==null)fail('Shared Word definitions require the complete document root.');
     if(operation.op==='setWordNumbering'){
+      if(operation.copyFromNumberingId){const previous=word.numbering.find(item=>item.numberingId===operation.copyFromNumberingId);if(!previous)fail('The numbering appearance source is missing.');for(const level of operation.levels){const source=previous.levels.find(item=>item.level===level.level)??previous.levels.at(-1)!;if(source.cssClass!==level.cssClass)styles.cloneClass(source.cssClass,level.cssClass);}}
+      for(const item of operation.levelProperties??[]){const level=operation.levels.find(level=>level.level===item.level);if(!level)fail('Numbering appearance requires an existing level.');styles.setClass(level.cssClass,item.properties);}
       const index=word.numbering.findIndex(n=>n.numberingId===operation.numberingId),definition={numberingId:operation.numberingId,levels:operation.levels};if(index<0)word.numbering.push(definition);else word.numbering[index]=definition;return;
     }
     const index=word.styles.findIndex(s=>s.styleId===operation.style.styleId),previous=index<0?undefined:word.styles[index];

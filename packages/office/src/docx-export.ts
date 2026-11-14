@@ -202,7 +202,7 @@ class Exporter {
       const textCss = ["td", "th"].includes(node.parent.tag) ? { ...css, "vertical-align": "baseline", "background-color": "transparent" } : css;
       this.emitText(node, node.text, textCss, this.styles.runContext(paragraphStyle, character), character, role, language); return;
     }
-    if (node.attrs["data-word-native-object"]) { this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"])); return; }
+    if (node.attrs["data-word-native-object"]) {let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id'])); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
     const requestedStyle = node.attrs["data-word-style"] ?? node.attrs["data-word-ignored-character-style"];
     if (requestedStyle) character = requestedStyle;

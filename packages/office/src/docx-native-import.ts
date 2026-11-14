@@ -6,7 +6,7 @@ import type { XmlNode } from './ooxml/xml.js';
 import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
-interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; path: string[]; label: string; id: string }
+interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
 const owners = new Set(['p', 'r', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds']);
 const propertyRoots = new Set(['pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds']);
 const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'image', 'hyperlink']);
@@ -41,6 +41,7 @@ export class DocxNativeImport {
     if (placeholder) { attrs['data-word-native-object'] = placeholder.id; attrs.title = placeholder.label; }
   }
   beginAttempt(): void { this.bindings.clear(); }
+  isPlaceholder(node:XmlNode):boolean{return this.placeholders.has(node);}
   suppressModernParts(): void {
     for (const type of ['commentsExtensible', 'commentsIds', 'people']) this.suppressed.add(this.main + '\n' + type);
   }
@@ -80,8 +81,8 @@ export class DocxNativeImport {
       return true;
     }
     if (mergeContinuation) target = chain.find(n => n.uri === W && n.name === 'tbl') ?? target;
-    else if (drawing) target = chain.find(n => n.uri === W && n.name === 'r') ?? drawing;
-    else if (chain.some(n => n.uri === W && n.name === 'r')) target = chain.find(n => n.uri === W && n.name === 'r')!;
+    else if (drawing) target = drawing;
+    else if(chain.some(n=>n.uri===W&&n.name==='r'))target=info.node;
     else if (chain.some(n => n.uri === W && n.name === 'tbl') && !['p','r'].includes(target.name)) target = chain.find(n => n.uri === W && n.name === 'tbl')!;
     const parent = this.parents.get(target);
     if (!parent || parent.content.indexOf(target) < 0 || this.placeholders.has(target)) return false;
@@ -95,7 +96,7 @@ export class DocxNativeImport {
       for (const path of previous.path) { const found = owner.content.find((n): n is XmlNode => typeof n !== 'string' && n.uri + ' ' + n.name === path); if (found) owner = found; }
       owner.content.push(previous.original); this.pending.splice(index, 1);
     }
-    const pending: Pending = { original: target, kind: inline ? 'inline' : 'block', path: [], label: '原生内容：' + target.name, id: 'native-' + (++this.serial) };
+    const pending: Pending = { original: target, kind: inline ? 'inline' : 'block', ...(parent.uri===W&&parent.name==='r'?{runChild:true}:{}), path: [], label: '原生内容：' + target.name, id: 'native-' + (++this.serial) };
     const leaf: XmlNode = { name: 't', uri: W, attrs: new Map(), namespaces: {}, content: ['\ufffc'], part: target.part };
     const run: XmlNode = { ...leaf, name: 'r', content: [leaf] };
     const replacement: XmlNode = inline ? run : { ...leaf, name: 'p', content: [run] };
@@ -132,7 +133,7 @@ export class DocxNativeImport {
       if (!nodeId && item.kind !== 'property') throw new DocumentError('InvalidDocument', 'A native content placeholder is not bound to the document.');
       const assetPath = fragmentAssetPath;
       fragmentXml.push('<native:item id="' + item.id + '">' + serializeXml(item.original) + '</native:item>');
-      native.fragments.push({ nativeId: item.id, ...(nodeId ? { nodeId } : {}), kind: item.kind, sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path, ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label });
+      native.fragments.push({ nativeId: item.id, ...(nodeId ? { nodeId } : {}), kind: item.kind, ...(item.runChild?{runChild:true}:{}), sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path, ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label });
       // Relationships are package-local data; preserving never follows external links.
       const visit = (node: XmlNode): void => {
         for (const [key, id] of node.attrs) if (key.startsWith(R + ' ')) {

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { SaxesParser } from 'saxes';
 import { expect, test } from 'vitest';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import { createDocumentSession, openDocument } from '@doffi/core';
@@ -56,11 +57,15 @@ test('preserves section columns and document background at their native owners',
   expect(xml).toContain('background');expect(xml).toContain('BEEFFF');expect(xml).toContain('cols');expect(xml).toContain('num="2"');
   expect(()=>importDocx(exportDocx(model).bytes,{documentId:'layout-again'})).not.toThrow();
 });
-test('absorbs an earlier unknown run property when its whole run must be preserved',()=>{
+test('keeps recovered run properties while preserving only its unsupported native child',()=>{
   const bytes=fixture('<w:p><w:r><w:rPr><w:unknownProperty/></w:rPr><w:pict><x:shape xmlns:x="urn:vendor"/></w:pict></w:r></w:p>');
   const model=openDocument(importDocx(bytes,{documentId:'nested'}),{kind:'document'});
   const out=strFromU8(unzipSync(exportDocx(model).bytes)['word/document.xml']!);
-  expect(out).toContain('unknownProperty');expect(out).toContain('shape');expect(model.snapshot().metadata.word!.nativeContent!.fragments).toHaveLength(1);
+  expect(out).toContain('unknownProperty');expect(out).toContain('shape');expect(model.snapshot().metadata.word!.nativeContent!.fragments).toHaveLength(2);
+});
+test('unsupported run children retain editable adjacent text and balanced field controls',()=>{
+ const bytes=fixture('<w:p><w:r><w:rPr><w:unknownProperty/></w:rPr><w:fldChar w:fldCharType="begin"/><w:instrText> IF 1 = 1 "yes" "no" </w:instrText><w:fldChar w:fldCharType="separate"/><w:t>before</w:t><w:pict><x:shape xmlns:x="urn:vendor"/></w:pict><w:t>after</w:t><w:fldChar w:fldCharType="end"/></w:r></w:p>');
+ const model=openDocument(importDocx(bytes,{documentId:'narrow-native'}),{kind:'document'});expect(mainText(model)).toContain('before\ufffcafter');const session=createDocumentSession(model),run=[...model.snapshot().html.matchAll(/data-node-id="([^"]+)"[^>]*>before</g)][0]?.[1];expect(run).toBeDefined();session.commit(session.prepare({protocolVersion:1,documentId:'narrow-native',baseRevision:0,operations:[{op:'replaceText',nodeId:run!,from:0,to:6,expectedText:'before',text:'edited'}]}));const result=exportDocx(session),xml=strFromU8(unzipSync(result.bytes)['word/document.xml']!);expect(xml).toContain('unknownProperty');const stack:string[]=[];let found=false;const parser=new SaxesParser({xmlns:true});parser.on('opentag',tag=>{if(tag.local==='pict'){expect(stack.at(-1)).toBe('r');found=true;}stack.push(tag.local);});parser.on('closetag',()=>{stack.pop();});parser.write(xml).close();expect(found).toBe(true);expect(xml).not.toContain('transient:native');expect(mainText(openDocument(importDocx(result.bytes,{documentId:'narrow-again'}),{kind:'document'}))).toContain('edited\ufffcafter');
 });
 test('keeps recovered style properties inside the owning style',()=>{
   const files=base();files['word/styles.xml']=strToU8(strFromU8(files['word/styles.xml']!).replace('</w:style>','<w:pPr><w:unknownStyleProperty/></w:pPr></w:style>'));

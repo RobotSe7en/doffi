@@ -8,6 +8,7 @@ export const WordNativeContentSchema = z.strictObject({
     nativeId: IdentifierSchema,
     nodeId: IdentifierSchema.optional(),
     kind: z.enum(["inline", "block", "property"]),
+    runChild: z.boolean().optional(),
     sourcePart: PackagePathSchema,
     assetPath: PackagePathSchema,
     fragmentKey: IdentifierSchema.optional(),

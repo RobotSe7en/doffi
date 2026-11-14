@@ -6,6 +6,7 @@ import { WordStyleSchema,WordNumberLevelSchema,WordMetadataSchema } from './word
 const properties=z.record(z.string().min(1),z.string().min(1));
 /** Format operations always name an existing source target for proposal scoping. */
 export const WordOperationSchema=z.discriminatedUnion('op',[
+  z.strictObject({op:z.literal('resetWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),resetParagraph:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordOptions'),nodeId:IdentifierSchema,evenAndOddHeaders:z.boolean().optional(),automaticHyphenation:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordTabs'),nodeId:IdentifierSchema,defaultInterval:z.number().positive(),stops:WordMetadataSchema.shape.tabs.element.shape.stops}),
   z.strictObject({op:z.literal('insertWordField'),nodeId:IdentifierSchema,instruction:z.string().min(1),cachedText:z.string().optional()}),
@@ -21,7 +22,7 @@ export const WordOperationSchema=z.discriminatedUnion('op',[
   z.strictObject({op:z.literal('formatWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),properties}),
   z.strictObject({op:z.literal('setWordParagraph'),nodeId:IdentifierSchema,properties:properties.optional(),styleId:IdentifierSchema.nullable().optional(),clearDirectFormatting:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordStyle'),nodeId:IdentifierSchema,style:WordStyleSchema,paragraphProperties:properties.optional(),runProperties:properties.optional()}),
-  z.strictObject({op:z.literal('setWordNumbering'),nodeId:IdentifierSchema,numberingId:IdentifierSchema,levels:z.array(WordNumberLevelSchema).min(1).max(9)}),
+  z.strictObject({op:z.literal('setWordNumbering'),nodeId:IdentifierSchema,numberingId:IdentifierSchema,copyFromNumberingId:IdentifierSchema.optional(),levels:z.array(WordNumberLevelSchema).min(1).max(9),levelProperties:z.array(z.strictObject({level:z.number().int().min(0).max(8),properties})).optional()}),
   z.strictObject({op:z.literal('setWordList'),nodeId:IdentifierSchema,numberingId:IdentifierSchema.nullable(),level:z.number().int().min(0).max(8).optional()}),
 ]);
 export type WordOperation=z.infer<typeof WordOperationSchema>;

@@ -4,7 +4,7 @@ import { color, fontName, length, nativeInteger } from "./values.js";
 import { empty, orderedProperties, value } from "./xml.js";
 
 export const runKeys: readonly string[] = ["font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid"];
-export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
+export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", "--word-distributed", "--word-line-rule", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
 export const pick = (css: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key]) => keys.includes(key)));
 export const difference = (css: Css, expected: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key, val]) => keys.includes(key) && val !== expected[key]));
 export function unsupported(message: string): never { throw new DocumentError("UnsupportedFeature", message); }
@@ -101,14 +101,14 @@ export function paragraphProperties(css: Css, width = 468): string {
   else if (css["line-height"] !== undefined) {
     const line = css["line-height"];
     if (/^[\d.]+$/.test(line)) { spacing["w:line"] = nativeInteger(Number(line), 240, 1); spacing["w:lineRule"] = "auto"; }
-    else { spacing["w:line"] = nativeInteger(points(line, css, parseFloat(css["font-size"] ?? "12pt")), 20, 1); spacing["w:lineRule"] = "exact"; }
+    else { spacing["w:line"] = nativeInteger(points(line, css, parseFloat(css["font-size"] ?? "12pt")), 20, 1); spacing["w:lineRule"] = css["--word-line-rule"] === "atLeast" ? "atLeast" : "exact"; }
   }
   if (Object.keys(spacing).length) out += empty("w:spacing", spacing);
   const ind: Record<string, number> = {};
   for (const [key, name] of [["margin-left", "left"], ["margin-right", "right"]]) if (css[key!] !== undefined) ind["w:" + name!] = nativeInteger(points(css[key!]!, css, width));
   if (css["text-indent"] !== undefined) { const amount = points(css["text-indent"], css, width); ind[amount < 0 ? "w:hanging" : "w:firstLine"] = nativeInteger(Math.abs(amount)); }
   if (Object.keys(ind).length) out += empty("w:ind", ind);
-  if (css["text-align"] !== undefined) out += value("jc", css["text-align"] === "justify" ? "both" : css["text-align"]);
+  if (css["text-align"] !== undefined) out += value("jc", css["--word-distributed"]==="1"?"distribute":css["text-align"] === "justify" ? "both" : css["text-align"]);
   return orderedProperties("pPr", out);
 }
 export function nativeWidth(name: string, raw: string | undefined, css: Css, width = 468): string {

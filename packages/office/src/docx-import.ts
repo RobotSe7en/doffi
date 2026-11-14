@@ -726,6 +726,9 @@ class Importer {
     parent: Html,
     paragraphStyle: Css = {},
   ): void {
+    if(this.native?.isPlaceholder(source)){
+      const object=this.make('span',{});this.native.bind(source,object.attrs);const offset=this.offset(parent,'\ufffc');object.children.push('\ufffc');parent.children.push(object);this.fieldResult(object);this.record(parent,offset,'\ufffc');return;
+    }
     if (source.uri !== W) unsupported(source);
     switch (source.name) {
       case "r": {
@@ -798,7 +801,7 @@ class Importer {
         ];
         for (const item of this.compat(source)) {
           if (item.uri === W && item.name === "rPr") continue;
-          if (item.uri !== W || !contentNames.includes(item.name))
+          if (!this.native?.isPlaceholder(item) && (item.uri !== W || !contentNames.includes(item.name)))
             unsupported(
               item,
               "The run contains unsupported or invalid inline content.",

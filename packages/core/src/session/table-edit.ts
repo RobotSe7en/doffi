@@ -95,11 +95,32 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
         const cell = area(change.row, change.column)[0]!;
         if (cell.row !== change.row || cell.column !== change.column)
             invalid("Split must identify the starting cell of a merged area.");
-        for (let r = cell.row; r < cell.row + cell.rows; r++)
-            for (let c = cell.column; c < cell.column + cell.columns; c++)
-                if (r !== cell.row || c !== cell.column)
-                    cells.push(newCell(r, c));
-        cell.rows = cell.columns = 1;
+        if(change.rows===undefined&&change.columns===undefined){
+          for (let r = cell.row; r < cell.row + cell.rows; r++)
+              for (let c = cell.column; c < cell.column + cell.columns; c++)
+                  if (r !== cell.row || c !== cell.column)cells.push(newCell(r,c));
+          cell.rows=cell.columns=1;
+        }else{
+          const subdivisions={rows:change.rows??1,columns:change.columns??1};
+          checkLimit((rows.length+subdivisions.rows)*(grid.length+subdivisions.columns),ctx.limits.maxNodes);
+          const refine=(rowAxis:boolean,count:number):number[]=>{
+            const sizes=rowAxis?heights:grid,start=rowAxis?cell.row:cell.column,span=rowAxis?cell.rows:cell.columns;
+            const from=sizes.slice(0,start).reduce((a,b)=>a+b,0),extent=sizes.slice(start,start+span).reduce((a,b)=>a+b,0),boundaries=Array.from({length:count+1},(_,n)=>from+extent*n/count);
+            for(const boundary of boundaries.slice(1,-1)){
+              let at=0,position=0;while(at<sizes.length&&position+sizes[at]!<boundary-1e-6){position+=sizes[at]!;at++;}
+              if(at===sizes.length||Math.abs(position-boundary)<1e-6||Math.abs(position+sizes[at]!-boundary)<1e-6)continue;
+              const first=boundary-position,last=sizes[at]!-first;sizes.splice(at,1,first,last);
+              for(const item of cells){const begin=rowAxis?item.row:item.column,length=rowAxis?item.rows:item.columns;if(begin>at){if(rowAxis)item.row++;else item.column++;}else if(begin+length>at){if(rowAxis)item.rows++;else item.columns++;}}
+              if(rowAxis){const current=rows[at]!,reference=rows[at+1],parent=edit.sourceParent(current),id=edit.insertSource(parent,'<tr></tr>',reference&&edit.sourceParent(reference)===parent?reference:undefined).rootNodeIds[0]!;rows.splice(at+1,0,id);edit.sourceStyle(current,'height',first+'pt');edit.sourceStyle(id,'height',last+'pt');}
+            }
+            const positions=[0];for(const size of sizes)positions.push(positions.at(-1)!+size);return boundaries.map(boundary=>{const index=positions.findIndex(value=>Math.abs(value-boundary)<1e-5);if(index<0)invalid('The refined table boundary is missing.');return index;});
+          };
+          const columnBounds=refine(false,subdivisions.columns),rowBounds=refine(true,subdivisions.rows);
+          for(let r=0;r<subdivisions.rows;r++)for(let c=0;c<subdivisions.columns;c++){
+            const target=r===0&&c===0?cell:newCell(rowBounds[r]!,columnBounds[c]!);target.row=rowBounds[r]!;target.column=columnBounds[c]!;target.rows=rowBounds[r+1]!-target.row;target.columns=columnBounds[c+1]!-target.column;if(target!==cell)cells.push(target);
+          }
+          object.grid=grid;
+        }
     }
     else {
         const rowChange = change.kind.endsWith("Rows"), insert = change.kind.startsWith("insert"), size = rowChange ? rows.length : grid.length;

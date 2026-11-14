@@ -1,17 +1,20 @@
 import { createWordPageControls } from "./word-page-controls.js";
+import { createWordListControls } from './word-list-controls.js';
 import { wordStoryPreview } from "./word-story-preview.js";
 import { createWordTableControls } from "./word-table-controls.js";
 import { createWordViewport, mountWordRulers } from "./word-ruler.js";
 import { bindWordLineSelection } from "./line-selection.js";
+import { bindWordSelectionScroll } from './word-selection-scroll.js';
+import { showWordWhitespace } from './word-marks.js';
 import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
 import { readTextFormat } from "./text-format-state.js";
 import type { TextFormatState } from "./text-format-state.js";
-import { findWordText, getWordOutline, getWordTextStatistics, createOpaqueId, WordStyleSchema, DocumentError } from "@doffi/core";
+import { findWordText, getWordOutline, getWordTextStatistics, getWordTextDefaults, createOpaqueId, WordStyleSchema, DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentSelection, ReconciledTextEdit } from "@doffi/core";
 import { mountDocumentPreview } from "./preview.js";
-import { PreviewSource, sourceSelectionText, stripClipboardIdentities } from "@doffi/render";
+import { PreviewSource, sourceSelectionText, stripClipboardIdentities,DEFAULT_RENDER_LIMITS } from "@doffi/render";
 import type { DocumentPreviewOptions } from "./preview.js";
 import type { DocumentRenderReport } from "@doffi/render";
 import { blockSelector, bookmark, caretAt, inputProofs, inputStep, offsetAt, restoreBookmark, sourceText } from "./rich-text/dom.js";
@@ -33,7 +36,7 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | { readonly type: "word"; readonly action: "paintFormat"; readonly properties: Readonly<Record<string,string>> }
   | { readonly type: "word"; readonly action: "defineStyle"; readonly styleId: string; readonly properties: Readonly<Record<string,string>> }
-  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" };
+  | { readonly type: "word"; readonly action: "find" | "replace" | "outline" | "wordCount" | "insertTable" | "tableSettings" | "listSettings" | "pageSettings" | "mainStory" | "sectionBreak" | "pageBreak" | "pageNumber" };
 export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -80,6 +83,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
   let activeStoryId = options.storyId;
+  let showMarks=false,clearMarks:()=>void=()=>{};
   let wordPanel: HTMLElement | undefined;
   const report = (reason: unknown): void => {
     if (disposed) return;
@@ -96,6 +100,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     return metadata.sections.find(section=>{const element=root?.querySelector('[data-node-id="'+CSS.escape(section.rootNodeId)+'"]')??(root?.dataset.nodeId===section.rootNodeId?root:undefined);return element&&range&&element.contains(range.startContainer);})?.rootNodeId??metadata.sections[0]!.rootNodeId;
   };
   const pageControls=createWordPageControls(shadow,viewport,session,currentSection,editStory,report);
+  const listControls=createWordListControls(shadow,viewport,session,()=>selectedParagraphs().map(node=>node.dataset.nodeId!),report);
   const viewModel = () => { if(activeStoryId && !session.snapshot().metadata.word?.stories.some(story=>story.storyId===activeStoryId))activeStoryId=undefined;return wordStoryPreview(session,activeStoryId); };
   function editStory(storyId?: string): void { if(composing)throw new DocumentError("InvalidOperation","请先完成当前输入法组合。");activeStoryId=storyId;savedSelection=undefined;refresh(); }
   const sourceDocument = (): Document => new DOMParser().parseFromString(session.snapshot().html, "text/html");
@@ -222,6 +227,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     const parent = range.startContainer.nodeType === 1 ? range.startContainer as Element : range.startContainer.parentElement;
     const block = parent?.closest<HTMLElement>(blockSelector);
     if (!block || block === root || block.matches("td,th,li")) { lineBreak(range); return; }
+    if(block.dataset.wordNumbering&&!sourceText(block,projection.ignored).trim()){block.removeAttribute('data-word-numbering');block.removeAttribute('data-word-level');projection.setStyles(block,new Map([['margin-left','0pt'],['text-indent','0pt']]));return;}
     const tail = frame!.createRange(); tail.setStart(range.startContainer, range.startOffset); tail.setEnd(block, block.childNodes.length);
     const authored = projection.serialize(block), next = frame!.createElement(block.localName);
     for (const attribute of authored.attributes) if (!["id", "data-node-id"].includes(attribute.name)) next.setAttribute(attribute.name, attribute.value);
@@ -258,7 +264,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if (!nodes.length) return;
     savedSelection = bookmark(root, projection.ignored);
     const candidate = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: revision,
-      operations: nodes.map((node) => ({ op: "setStyle" as const, nodeId: node.dataset.nodeId!, property: "text-align", value: alignment })) });
+      operations: nodes.map((node) => ({ op: "setWordParagraph" as const, nodeId: node.dataset.nodeId!, properties:{"text-align":alignment,"--word-distributed":"0"} })) });
     try { session.commit(candidate); } catch (reason) { session.discard(candidate); throw reason; }
   }
   function openWordPanel(action: "find" | "replace" | "outline" | "wordCount"): void {
@@ -297,13 +303,20 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   }
   function wordCommand(command: Extract<DocumentTextCommand, { type: "word" }>): void {
     if (!root || composing) return;
+    if (command.action === "listSettings") { listControls.open(); return; }
     if (command.action === "pageSettings") { pageControls.open(); return; }
     if (command.action === "mainStory") { editStory(); return; }
     if (command.action === "pageBreak") { const range=selectedRange();if(!range)return;mutate(range,()=>{const breaker=frame!.createElement("br");breaker.dataset.wordBreak="page";insert(range,breaker);});return; }
     if (command.action === "sectionBreak" || command.action === "pageNumber") { const paragraph=selectedParagraphs()[0];if(!paragraph)return;const snapshot=session.snapshot();session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[command.action==="sectionBreak"?{op:"splitWordSection",nodeId:paragraph.dataset.nodeId!,breakType:"nextPage"}:{op:"insertWordField",nodeId:paragraph.dataset.nodeId!,instruction:" PAGE ",cachedText:"1"}]}));return; }
     if (command.action === "insertTable" || command.action === "tableSettings") { tableControls.open(command.action === "insertTable"); return; }
     if (["find","replace","outline","wordCount"].includes(command.action)) { openWordPanel(command.action as "find"|"replace"|"outline"|"wordCount"); return; }
-    if (command.action === "showMarks") { root.toggleAttribute("data-doffi-show-marks", command.visible); return; }
+    if (command.action === "showMarks") {showMarks=command.visible;updateMarks();return;}
+    if(command.action==='clearFormat'){
+      const paragraph=selectedParagraphs()[0],range=selectedRange();if(!paragraph||!range)return;savedSelection=bookmark(root,projection.ignored);
+      if(range.collapsed){typingStyles.clear();for(const[property,value]of Object.entries(getWordTextDefaults(session,paragraph.dataset.nodeId!)))typingStyles.set(property,value);typingAnchor=JSON.stringify(savedSelection);notifyFormat();return;}
+      const anchor=new PreviewSource(frame!,viewModel()).textAnchor(range,session);if(!anchor||!(anchor.kind==='text'||anchor.kind==='text-set'))return;
+      const snapshot=session.snapshot(),ranges=anchor.kind==='text'?[anchor]:anchor.ranges;session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:ranges.map(range=>({op:'resetWordText',nodeId:range.nodeId,from:range.from,to:range.to,expectedText:range.quote,resetParagraph:range.from===0&&range.to===session.getNode(range.nodeId)!.text.length}))}));return;
+    }
     const paragraphs = selectedParagraphs(); if (!paragraphs.length) return;
     savedSelection = bookmark(root, projection.ignored);
     const snapshot = session.snapshot(), operations: import("@doffi/core").DocumentOperation[] = [];
@@ -393,6 +406,21 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     event.clipboardData.setData("text/plain", sourceSelectionText(source));
     if (cut) mutate(range, () => { deleteRange(range); select(range.startContainer, range.startOffset); });
   }
+  function changeListLevel(direction:-1|1):void{
+    const snapshot=session.snapshot(),definitions=new Map<string,import('@doffi/core').WordMetadata['numbering'][number]>(),operations:import('@doffi/core').DocumentOperation[]=[];
+    for(const paragraph of selectedParagraphs()){
+      const numberingId=paragraph.dataset.wordNumbering;if(!numberingId)continue;const current=Number(paragraph.dataset.wordLevel??0),level=Math.min(8,current+direction);if(level===current)continue;
+      if(level<0){operations.push({op:'setWordList',nodeId:paragraph.dataset.nodeId!,numberingId:null});continue;}
+      const source=snapshot.metadata.word!.numbering.find(item=>item.numberingId===numberingId)!;let definition=definitions.get(numberingId);
+      if(!source.levels.some(item=>item.level===level)&&!definition?.levels.some(item=>item.level===level)){
+        definition??=JSON.parse(JSON.stringify(source)) as import('@doffi/core').WordMetadata['numbering'][number];const base=source.levels.find(item=>item.level===current)??source.levels[0]!;
+        definition.levels.push({...base,level,cssClass:'number-level-'+createOpaqueId(),text:base.format==='bullet'?base.text:Array.from({length:level+1},(_,n)=>'%'+(n+1)).join('.')+'.',start:1});definitions.set(numberingId,definition);
+      }
+      const style=frame!.defaultView!.getComputedStyle(paragraph);operations.push({op:'setWordList',nodeId:paragraph.dataset.nodeId!,numberingId,level},{op:'setWordParagraph',nodeId:paragraph.dataset.nodeId!,properties:{'margin-left':Math.max(0,Math.round(parseFloat(style.marginLeft)*.75*100)/100+direction*24)+'pt','text-indent':Math.round(parseFloat(style.textIndent)*.75*100)/100+'pt'}});
+    }
+    if(!operations.length)return;const article=new DOMParser().parseFromString(snapshot.html,'text/html').querySelector<HTMLElement>('[data-office-kind="document"]')!;savedSelection=root?bookmark(root,projection.ignored):undefined;
+    session.commit(session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[...[...definitions.values()].map(definition=>({op:'setWordNumbering' as const,nodeId:article.dataset.nodeId!,numberingId:definition.numberingId,copyFromNumberingId:definition.numberingId,levels:definition.levels})),...operations]}));
+  }
   function keydown(event: KeyboardEvent): void {
     if (!root || composing) return;
     const key = event.key.toLowerCase();
@@ -409,6 +437,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       const parent = range.startContainer.nodeType === 1 ? range.startContainer as Element : range.startContainer.parentElement;
       const cell = parent?.closest("td,th"), cells = [...root.querySelectorAll("td,th")].filter((node) => !projection.ignored(node));
       if (cell && cells.includes(cell)) { event.preventDefault(); const next = cells[cells.indexOf(cell) + (event.shiftKey ? -1 : 1)]; if (next) select(...caretAt(next, 0, projection.ignored)); }
+      else if(parent?.closest('[data-word-numbering]')){event.preventDefault();try{changeListLevel(event.shiftKey?-1:1);}catch(error){report(error);}}
     }
   }
   function beforeinput(event: InputEvent): void {
@@ -438,8 +467,10 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     else if (["insertParagraph", "insertLineBreak"].includes(event.inputType)) mutate(range, () => event.inputType === "insertParagraph" ? paragraphBreak(range!) : lineBreak(range!), event.inputType === "insertParagraph");
     else report(new DocumentError("UnsupportedFeature", "当前不支持此输入操作：" + event.inputType));
   }
+  function updateMarks():void{clearMarks();clearMarks=()=>{};if(!root)return;projection.setViewAttribute(root,'data-doffi-show-marks',showMarks?'':null);if(showMarks)clearMarks=showWordWhitespace(root,projection,options.limits?.maxNodes??DEFAULT_RENDER_LIMITS.maxNodes);}
   function activate(source: HTMLElement): void {
     if (!root || !frame) return;
+    bindWordSelectionScroll(stage,preview.element,root,{signal:viewControls.signal,enabled:()=>!composing&&!disposed,ignored:projection.ignored,changed(){if(root)savedSelection=bookmark(root,projection.ignored);notifyFormat();}});
     root.contentEditable = "true"; root.setAttribute("data-office-editor", ""); root.setAttribute("role", "textbox"); root.setAttribute("aria-label", "文档正文"); root.setAttribute("aria-multiline", "true"); root.spellcheck = false;
     for (const marker of root.querySelectorAll<HTMLElement>(".sdk-number-marker,[data-word-tab]")) marker.contentEditable = "false";
     // Noneditable marker text corrupts Chromium's native composition offsets:
@@ -450,11 +481,12 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       marker.setAttribute("data-sdk-number-text", marker.textContent ?? ""); marker.replaceChildren();
     }
     projection.capture(root, source);
+    updateMarks();
     bindWordLineSelection(frame, root, { signal: viewControls.signal, enabled: () => !disposed && !composing, ignored: projection.ignored,
       layout: () => preview.layout(), setup: () => wordMetadata().pageSetup, changed() { if (root) savedSelection = bookmark(root, projection.ignored); notifyFormat(); } });
     if (!frame.querySelector("style[data-sdk-input]")) {
       const viewStyle = frame.createElement("style"); viewStyle.setAttribute("data-sdk-input", "");
-      viewStyle.textContent = "[data-office-editor][data-doffi-show-marks] p::after,[data-office-editor][data-doffi-show-marks] h1::after,[data-office-editor][data-doffi-show-marks] h2::after{content:\"¶\";color:#8a9ab0;font-weight:normal}[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}"; frame.head.append(viewStyle);
+      viewStyle.textContent = "[data-office-editor][data-doffi-show-marks] :is(p,h1,h2,h3,h4,h5,h6)::after{content:\"¶\";color:#8a9ab0;font-weight:normal;position:absolute;pointer-events:none}[data-office-editor] .sdk-space-mark{position:relative}[data-office-editor][data-doffi-show-marks] .sdk-space-mark::after{content:attr(data-sdk-space-mark);position:absolute;left:0;top:0;color:#8a9ab0;pointer-events:none}[data-office-editor][data-doffi-show-marks] [data-word-tab]::after{content:\"→\";color:#8a9ab0;position:absolute;left:0;pointer-events:none}[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all;position:relative}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}"; frame.head.append(viewStyle);
     }
     if (!root.querySelector(blockSelector)) {
       const first = wordMetadata().sections[0]!.rootNodeId;
@@ -540,6 +572,6 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     notifyFormat();
   }, dispose: () => {
     if (disposed) return; disposed = true; geometryObserver.disconnect(); rulers.dispose(); unsubscribe(); controls.abort(); viewControls.abort(); preview.dispose();
-    pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
+    clearMarks();listControls.dispose();pageControls.dispose(); tableControls.dispose(); wordPanel?.remove(); wordPanel = undefined; root = undefined; frame = undefined; proofs = []; pending = undefined; savedSelection = undefined; element.remove();
   } };
 }
