@@ -1411,7 +1411,7 @@ class Importer {
         "tblHeader",
         "tblCellSpacing",
         "jc",
-        "hidden","trPrChange",
+        "hidden","trPrChange","ins","del",
       ]);
       if (
         child(rowProperties, "gridBefore") ||
@@ -1430,6 +1430,7 @@ class Importer {
           ? { "data-word-repeat-header": "true" }
           : {}),
       });
+      for(const[kind,name]of [['rowInsert','ins'],['rowDelete','del']]as const){const marker=child(rowProperties,name);if(marker){check(marker,[]);const id=attr(marker,'id');if(id===undefined)fail(marker,'A row revision requires an identity.');this.word.revisions.push({nodeId:this.id(htmlRow),sourceId:id,revisionId:this.id(htmlRow)+'-'+kind,kind,...(attr(marker,'author')!==undefined?{author:attr(marker,'author')!}:{}),...(attr(marker,'date')!==undefined?{date:attr(marker,'date')!}:{})});}}
       readWordFormatRevision(this.word,rowProperties,htmlRow,'row',this.styles);
       this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);

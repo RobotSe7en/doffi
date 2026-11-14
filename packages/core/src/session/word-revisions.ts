@@ -1,3 +1,5 @@
+import{removeWordRows}from'./word-row-revisions.js';
+import type{DocumentReadLimits}from'../runtime.js';
 import{expandWordRevisionGroups}from'../word-revision-groups.js';
 import{reconcileTrackedWord}from'./word-tracked-structure.js';
 import type { WordMetadata } from '../contracts/word.js';
@@ -81,7 +83,7 @@ function nativeReview(word: WordMetadata, revision: WordRevision, decision: 'acc
         return [fragment];
     });
 }
-export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordRevisionOperation): void {
+export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordRevisionOperation,limits:DocumentReadLimits): void {
     if (operation.op === 'setWordReview') {
         if (parse().peekNode(operation.nodeId)!.parentNodeId !== null)
             fail('Review settings require the document root.');
@@ -106,6 +108,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
         selected = word.revisions.filter(item => item === revision || revision.groupId && item.groupId === revision.groupId || revision.moveId && item.moveId === revision.moveId);
     }
     selected=[...expandWordRevisionGroups(word.revisions,selected.map(wordRevisionId))];
+    const rowRemovals=new Set(selected.filter(revision=>operation.decision==='accept'?revision.kind==='rowDelete':revision.kind==='rowInsert').map(revision=>revision.nodeId));if(rowRemovals.size)removeWordRows(word,edit,parse,rowRemovals,limits);
     const removals = new Set<string>();
     for (const revision of selected) {
         nativeReview(word, revision, operation.decision);

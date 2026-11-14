@@ -6,6 +6,7 @@ export interface WordRulers { refresh(): void; setVisible(visible: boolean): voi
 export interface WordRulerEditing {
  read():{left:number;right:number;first:number;tabs:readonly number[]}|undefined;
  commit(kind:'left'|'right'|'first'|'tab',value:number,previous?:number):void;
+ commitMargin?(side:'left'|'right'|'top'|'bottom',value:number,sectionId?:string):void;
  onError(error:unknown):void;
 }
 /** Build chrome before inserting an iframe: moving a live iframe resets its document. */
@@ -32,12 +33,24 @@ export function mountWordRulers(stage: HTMLElement, frame: HTMLIFrameElement, ro
     ruler.style.cssText = 'position:absolute;z-index:4;pointer-events:none;overflow:hidden;background:#f5f5f5;color:#525965'; ruler.style.display = 'none'; (axis === 'horizontal' ? across : down).append(ruler);
   }
   let visible = false, disposed = false, queued: number | undefined, painted = '';
-  const controls=new AbortController();let handleControls=new AbortController(),handleKey='',dragging=false;let horizontalGeometry:{start:number;end:number;width:number;zoom:number}|undefined;
+  const controls=new AbortController();let handleControls=new AbortController(),handleKey='',dragging=false;let horizontalGeometry:{start:number;end:number;width:number;zoom:number}|undefined,verticalGeometry:typeof horizontalGeometry,activeSectionId:string|undefined;
   function handles():void{
     if(dragging)return;
-    const nextKey=JSON.stringify([editing?.read(),horizontalGeometry]);if(nextKey===handleKey&&horizontal.querySelector('[data-ruler-handle]'))return;handleKey=nextKey;handleControls.abort();handleControls=new AbortController();
-    horizontal.querySelectorAll('[data-ruler-handle]').forEach(node=>node.remove());
-    const state=editing?.read(),geometry=horizontalGeometry;if(!state||!geometry)return;
+    const nextKey=JSON.stringify([editing?.read(),horizontalGeometry,verticalGeometry,activeSectionId]);if(nextKey===handleKey&&horizontal.querySelector('[data-ruler-handle],[data-ruler-margin]'))return;handleKey=nextKey;handleControls.abort();handleControls=new AbortController();
+    for(const ruler of [horizontal,vertical])ruler.querySelectorAll('[data-ruler-handle],[data-ruler-margin]').forEach(node=>node.remove());
+    const state=editing?.read(),geometry=horizontalGeometry;if(!geometry)return;
+    if(editing?.commitMargin){
+      const addMargin=(side:'left'|'right'|'top'|'bottom',label:string):void=>{
+        const isVertical=side==='top'||side==='bottom',ruler=isVertical?vertical:horizontal,box=isVertical?verticalGeometry:geometry;if(!box)return;const end=side==='right'||side==='bottom',value=end?box.end:box.start,maximum=box.width-(end?box.start:box.end)-1,scale=px*box.zoom,sectionId=activeSectionId;
+        const handle=document.createElementNS(svgNS,'path');handle.dataset.rulerMargin=side;handle.setAttribute('d',isVertical?'M8 -4H20V4H8Z':'M-4 8H4V12H-4Z');handle.setAttribute('fill','#9a7755');handle.style.cssText='pointer-events:all;outline:none;cursor:'+(isVertical?'ns':'ew')+'-resize';handle.setAttribute('role','slider');handle.setAttribute('tabindex','0');handle.setAttribute('aria-label',label);handle.setAttribute('aria-orientation',isVertical?'vertical':'horizontal');handle.setAttribute('aria-valuenow',String(value));handle.setAttribute('aria-valuemin','0');handle.setAttribute('aria-valuemax',String(maximum));
+        const place=(next:number):void=>{const at=(end?box.width-next:next)*scale;handle.setAttribute('transform',isVertical?'translate(0 '+at+')':'translate('+at+' 0)');handle.setAttribute('aria-valuenow',String(next));};place(value);
+        const clamp=(value:number):number=>Math.round(Math.max(0,Math.min(maximum,value))*2)/2;
+        const finish=(next:number):void=>{const focus=(handle.getRootNode()as Document|ShadowRoot).activeElement===handle;try{editing!.commitMargin!(side,next,sectionId);}catch(error){editing!.onError(error);}refresh();if(focus)queueMicrotask(()=>ruler.querySelector<SVGElement>('[data-ruler-margin='+side+']')?.focus());};
+        handle.addEventListener('keydown',event=>{const decrease=isVertical?'ArrowUp':'ArrowLeft',increase=isVertical?'ArrowDown':'ArrowRight';if(![decrease,increase,'Home','End'].includes(event.key))return;event.preventDefault();finish(event.key==='Home'?0:event.key==='End'?maximum:clamp(value+(event.key===increase?1:-1)*(end?-1:1)*(event.shiftKey?10:1)));},{signal:handleControls.signal});
+        handle.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();dragging=true;handle.setPointerCapture(event.pointerId);const start=isVertical?event.clientY:event.clientX;let next=value;const move=(event:PointerEvent):void=>{next=clamp(value+((isVertical?event.clientY:event.clientX)-start)/scale*(end?-1:1));place(next);};const cleanup=():void=>{dragging=false;handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',cancel);};const up=():void=>{cleanup();finish(next);};const cancel=():void=>{cleanup();refresh();};handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',cancel);},{signal:handleControls.signal});ruler.append(handle);
+      };addMargin('left','页面左边距');addMargin('right','页面右边距');addMargin('top','页面上边距');addMargin('bottom','页面下边距');
+    }
+    if(!state)return;
     const scale=px*geometry.zoom,origin=geometry.start*scale,available=geometry.width-geometry.start-geometry.end;
     const add=(kind:'left'|'right'|'first'|'tab',value:number,label:string):void=>{
       const handle=document.createElementNS(svgNS,'path');handle.dataset.rulerHandle=kind;handle.setAttribute('d',kind==='first'?'M-5 0H5L0 7Z':kind==='tab'?'M-3 11V18H4':'M-5 19H5L0 12Z');handle.setAttribute('fill',kind==='tab'?'#2271cf':'#657b96');
@@ -87,7 +100,7 @@ export function mountWordRulers(stage: HTMLElement, frame: HTMLIFrameElement, ro
     if (!page) { horizontal.style.display = vertical.style.display = 'none'; return; }
     const setup: Readonly<PageSetup> = page.setup, left = frameBox.left - stageBox.left + (sourceBox.left + page.rect.x * px) * zoom, y = frameBox.top - stageBox.top + (sourceBox.top + page.rect.y * px) * zoom;
     horizontal.style.left = left + 'px'; horizontal.style.top = '2px'; vertical.style.left = '1px'; vertical.style.top = y + 'px';
-    horizontalGeometry={start:setup.margins.left,end:setup.margins.right,width:setup.width,zoom};
+    horizontalGeometry={start:setup.margins.left,end:setup.margins.right,width:setup.width,zoom};verticalGeometry={start:setup.margins.top,end:setup.margins.bottom,width:setup.height,zoom};activeSectionId='sectionId'in page?page.sectionId:undefined;
     const key = JSON.stringify([setup, zoom]); if (key === painted) {handles();return;} painted = key;
     paint(horizontal, setup.width * px, setup.margins.left * px, setup.margins.right * px, zoom, false);
     paint(vertical, setup.height * px, setup.margins.top * px, setup.margins.bottom * px, zoom, true);

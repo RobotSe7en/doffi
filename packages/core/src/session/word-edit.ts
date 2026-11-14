@@ -1,3 +1,4 @@
+import{trackWordRowDeletion,wordTableRows}from'./word-row-revisions.js';
 import{recordWordFormat}from'./word-format-revisions.js';
 import {editWordStyle} from './word-styles.js';
 import {applyWordRevision,isWordRevisionOperation}from'./word-revisions.js';
@@ -28,7 +29,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
-  if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation);return;}
+  if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation,limits);return;}
   if(isWordCommentOperation(operation)){applyWordComment(metadata,annotations,edit,parse,operation);return;}
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}
   if(isWordReferenceOperation(operation)){applyWordReference(word,edit,parse,operation);return;}
@@ -106,11 +107,13 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       info={nodeId:operation.nodeId,grid:Array.from({length:columns},()=>width/columns)};word.tables.push(info);
     }
     if(operation.op==='editWordTable') {
+      if(word.trackChanges&&operation.change.kind==='deleteRows'){trackWordRowDeletion(word,edit,parse,operation.nodeId,operation.change.at,operation.change.count,limits);return;}
       const firstCell=rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds).map(id=>source.peekNode(id)!).find(cell=>['td','th'].includes(cell.tagName));
       const escape=(value:string):string=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
       const cellAttributes=firstCell?['class','style'].filter(key=>firstCell.attributes[key]).map(key=>' '+key+'="'+escape(firstCell.attributes[key]!)+'"').join(''):'';
       const previousWidth=info.grid.reduce((a,b)=>a+b,0);
       const result=editSourceTable({edit,parse,limits,newCellHtml:'<td'+cellAttributes+'><p></p></td>'},operation.nodeId,info.grid,{width:previousWidth,height:Math.max(1,rowIds.length)*20},operation.change);
+      if(word.trackChanges&&operation.change.kind==='insertRows'){const added=wordTableRows(parse(),operation.nodeId).filter(id=>!rowIds.includes(id)),groupId=added[0]+'-row-insert';for(const id of added)word.revisions.push({nodeId:id,sourceId:id+'-row-insert',revisionId:id+'-row-insert',groupId,kind:'rowInsert',author:word.trackingAuthor??'',date:new Date().toISOString()});}
       const preserveWidth=operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns';
       info.grid=preserveWidth?result.grid.map(width=>width*previousWidth/result.width):result.grid;
       if(operation.change.kind==='resize'&&operation.change.grid)edit.sourceStyle(operation.nodeId,'width',result.width+'pt');

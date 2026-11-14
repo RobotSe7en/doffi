@@ -46,14 +46,14 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     ensure(targetPage); spacer(element.parentNode!, element, start(targetPage) + inset);
   }
   function headerRows(table: HTMLTableElement): HTMLTableRowElement[] {
-    const rows = [...table.rows].filter((row) => viewNodeRole(row) !== "remove"), result: HTMLTableRowElement[] = [];
+    const rows = [...table.rows].filter((row) => viewNodeRole(row) !== "remove"&&view.getComputedStyle(row).display!=="none"&&view.getComputedStyle(row).visibility!=="collapse"), result: HTMLTableRowElement[] = [];
     for (const row of rows) { if (row.dataset.wordRepeatHeader !== "true" && row.parentElement?.localName !== "thead") break; result.push(row); }
     return result;
   }
   const headerHeight = (table: HTMLTableElement): number => headerRows(table).reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
   function rowGap(table: HTMLTableElement, row: HTMLTableRowElement, targetPage: number, inset: number): void {
     ensure(targetPage);
-    const rows = [...table.rows].filter((item) => viewNodeRole(item) !== "remove"), ordinal = rows.indexOf(row);
+    const rows = [...table.rows].filter((item) => viewNodeRole(item) !== "remove"&&view.getComputedStyle(item).display!=="none"&&view.getComputedStyle(item).visibility!=="collapse"), ordinal = rows.indexOf(row);
     for (const [index, previous] of rows.entries()) for (const cell of previous.cells) {
       const span = canonicalSpans.get(cell) ?? cell.rowSpan;
       canonicalSpans.set(cell, span);
@@ -172,7 +172,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
   function table(element: HTMLTableElement): void {
     const header = headerRows(element), height = headerHeight(element);
     if (height >= area) throw new DocumentError("UnsupportedFeature", "A repeating table header exceeds the printable page height.");
-    const rows = [...element.rows].filter((row) => viewNodeRole(row) !== "remove");
+    const rows = [...element.rows].filter((row) => viewNodeRole(row) !== "remove"&&view.getComputedStyle(row).display!=="none"&&view.getComputedStyle(row).visibility!=="collapse");
     for (const row of rows) {
       let box = row.getBoundingClientRect(), current = page(box.top);
       if (!header.includes(row) && box.height <= available(current) - height && (box.bottom > start(current) + available(current) + 0.5 || box.top < start(current) + (current > topPage(element) ? height : 0) - 0.5)) {
@@ -192,6 +192,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
   function walk(element: HTMLElement): void {
     if (viewNodeRole(element) === "remove") return;
     const style = view.getComputedStyle(element), rect = element.getBoundingClientRect();
+    if(style.display==="none"||style.visibility==="collapse")return;
     const force = ["page", "always", "left", "right"].includes(style.breakBefore) || style.pageBreakBefore === "always";
     if (force && (rect.top > start(page(rect.top)) + 0.5 || page(rect.top)%pageStride)) before(element, nextPhysical(page(rect.top)));
     if (style.breakAfter.startsWith("avoid") || style.pageBreakAfter === "avoid") {
