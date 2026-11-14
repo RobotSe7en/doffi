@@ -137,7 +137,13 @@ export class DocxNativeImport {
       for(const child of node.content)if(typeof child!=='string')capture(child);
     };for(const root of this.roots.values())capture(root);
     const writtenSettings=new Set(['bordersDoNotSurroundHeader','bordersDoNotSurroundFooter','mirrorMargins','evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','trackRevisions','footnotePr','endnotePr']);
-    for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content)if(typeof item!=='string'&&!(item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??''))))this.pending.push({owner:root,original:item,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
+    for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content){
+      if(typeof item==='string'||item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??'')))continue;
+      const original=item.uri===W&&item.name==='compat'?{...item,content:item.content.filter(child=>typeof child==='string'||child.uri!==W||child.name!=='noColumnBalance')}:item;
+      if(item.name==='compat'&&!original.attrs.size&&!original.content.some(child=>typeof child!=='string'||child.trim()))continue;
+      this.pending.push({owner:root,original,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
+    }
+
     const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
     const encoder = new (globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } }).TextEncoder(), parts = new Set<string>();
     const add = (bytes: Uint8Array, mime: string): string => {

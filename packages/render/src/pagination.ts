@@ -1,3 +1,4 @@
+import {sectionFlow} from './section-flow.js';
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, ContentDocumentMetadata, DocumentSection, PageSetup } from "@doffi/core";
 import type { LayoutDiagnostic, RenderedPage, RenderLimits } from "./contracts.js";
@@ -80,6 +81,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     root.append(...wrappers.map((section) => section.element));
     mainSections.splice(0, mainSections.length, ...wrappers);
   }
+  const variableSections=new Set<SectionView>();
+  for(let start=0;start<mainSections.length;){let end=start+1;const setup=JSON.stringify(wordPageSetup(mainSections[start]!.definition,metadata.pageSetup));while(end<mainSections.length&&JSON.stringify(wordPageSetup(mainSections[end]!.definition,metadata.pageSetup))===setup)end++;const run=mainSections.slice(start,end);if(run.length>1&&run.some(section=>(section.definition.columns?.count??1)>1||section.definition.columns?.widths))for(const section of run)variableSections.add(section);start=end;}
   const maximumWidth = Math.max(...mainSections.map((item) => (item.definition.pageSetup ?? metadata.pageSetup).width));
   root.style.width = maximumWidth + "pt"; root.style.padding = "0"; root.style.margin = "0 auto"; root.style.background = "transparent"; root.style.position = "relative";
   const article = root.closest<HTMLElement>('[data-office-kind="document"]')!;
@@ -93,7 +96,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     if (width - margins.left - margins.right <= 0 || height - margins.top - margins.bottom <= 0 || width > 20_000 || height > 20_000)
       throw new DocumentError("UnsupportedFeature", "Page dimensions must provide a positive printable area within the render size limit.");
     let group = groups.at(-1);
-    const columns=JSON.stringify(section.definition.columns??{count:1,gap:0});
+    const columns=variableSections.has(section)?'sections':JSON.stringify(section.definition.columns??{count:1,gap:0});
     if (!group || JSON.stringify(group.setup) !== JSON.stringify(setup) || group.columns!==columns) {
       if (group && section.definition.breakType === "continuous") diagnostics.push({ code: "SectionGeometryChange", nodeId: section.definition.rootNodeId, message: "A continuous section with different page geometry starts on a new page." });
       const box = markViewNode(document.createElement("div"), "unwrap"), flow = markViewNode(document.createElement("div"), "unwrap");
@@ -103,7 +106,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       box.append(flow);
       const definition=section.definition.columns;
       const constraints=notes?{reserved:(index:number)=>notes.reserved(group!.startIndex+index),minimumPage:(node:Node)=>{const minimum=notes.minimumPage(node);return minimum===undefined?undefined:Math.max(0,minimum-group!.startIndex);}}:undefined;
-      group = { startIndex:0,setup, columns, box, flow, sections: [], paginator: definition&&(definition.count>1||definition.widths)||metadata.word?.mirrorMargins ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition?.count??1,px(definition?.gap??0),definition?.separator??false,limits,source,constraints,metadata.word?.mirrorMargins?(index=>(group!.startIndex+index)%2===1?px(setup.margins.right-setup.margins.left):0):undefined,definition?.widths?.map(px),definition?.spaces?.map(px)) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits,1,constraints) }; groups.push(group);
+      const balanceEnd=(section:SectionView)=>!metadata.word?.noColumnBalance&&mainSections.indexOf(section)<mainSections.length-1;
+      group = { startIndex:0,setup, columns, box, flow, sections: [], paginator: columns==='sections'?sectionFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),limits,source,()=>group!.sections,balanceEnd,constraints,metadata.word?.mirrorMargins?(index=>(group!.startIndex+index)%2===1?px(setup.margins.right-setup.margins.left):0):undefined):definition&&(definition.count>1||definition.widths)||metadata.word?.mirrorMargins ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition?.count??1,px(definition?.gap??0),definition?.separator??false,limits,source,constraints,metadata.word?.mirrorMargins?(index=>(group!.startIndex+index)%2===1?px(setup.margins.right-setup.margins.left):0):undefined,definition?.widths?.map(px),definition?.spaces?.map(px),(definition?.count??1)>1?{balanceEnd:()=>balanceEnd(group!.sections.at(-1)!)}:undefined) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits,1,constraints) }; groups.push(group);
       if (section.element === root) { flow.append(...root.childNodes); root.append(box); }
       else root.insertBefore(box, section.element);
     }

@@ -11,9 +11,10 @@ export interface PageFlow {
   readonly blanks: ReadonlySet<number>;
   pageAt(element: HTMLElement): number;
   headerHeight(table: HTMLTableElement): number;
+  bottom(index:number):number;
   project?():void;
 }
-export interface PageFlowConstraints{reserved(index:number):number;minimumPage(node:Node):number|undefined}
+export interface PageFlowConstraints{firstPageInset?:number;reserved(index:number):number;minimumPage(node:Node):number|undefined}
 /** Portable single-DOM fragmentation. Empty, owned spacers carry page margins;
  * source paragraphs and cells keep their identity even when a text node splits. */
 export function pageFlow(document: Document, flow: HTMLElement, area: number, pitch: number, limits: Readonly<RenderLimits>, pageStride=1,constraints?:PageFlowConstraints): PageFlow {
@@ -24,12 +25,13 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     return false;
   };
   const canonicalSpans = new Map<HTMLTableCellElement, number>();
-  let last = 0, operations = 0;
+  let last = 0, operations = 0;const bottoms=new Map<number,number>();
   const origin = (): number => flow.getBoundingClientRect().top;
   const page = (y: number): number => Math.max(0, Math.floor((y - origin() + 0.25) / pitch));
   const start = (index: number): number => origin() + index * pitch;
   const available=(index:number):number=>Math.max(Math.min(24,area),area-(constraints?.reserved(index)??0));
-  const ensure = (index: number): void => {
+  const ensure = (index: number,bottom?:number): void => {
+    if(bottom!==undefined)bottoms.set(index,Math.max(bottoms.get(index)??0,bottom-start(index)));
     if (index >= limits.maxPages) throw new DocumentError("ResourceLimitExceeded", "Document exceeds the render page budget.");
     last = Math.max(last, index);
     if (++operations > limits.maxNodes + limits.maxPages * 32) throw new DocumentError("ResourceLimitExceeded", "Pagination exceeds the measurement budget.");
@@ -117,7 +119,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
         const current = page(rect.top + rect.height / 2), end = start(current) + available(current),minimum=constraints?.minimumPage(node);if(minimum!==undefined&&current<minimum)return{node:node as HTMLElement,rect,targetPage:minimum};
         // Glyph rectangles can extend beyond a line box by sub-pixel rounding.
         const height = Math.max(rect.height, parseFloat(view.getComputedStyle(owner).lineHeight) || rect.height);
-        if (rect.top >= start(current) + inset - 5 && rect.bottom + Math.max(0, height - rect.height) / 2 <= end + 0.5) { ensure(current); continue; }
+        if (rect.top >= start(current) + inset - 5 && rect.bottom + Math.max(0, height - rect.height) / 2 <= end + 0.5) { ensure(current,rect.bottom+Math.max(0,height-rect.height)/2); continue; }
         if (height > area - inset + 0.5) throw new DocumentError("UnsupportedFeature", "A line or inline object exceeds the printable page height.");
         if (node.nodeType !== 3) return { node: node as HTMLElement, rect };
         const text = node as Text;
@@ -137,9 +139,9 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
   }
   function paragraph(element: HTMLElement, inset: number): void {
     const style = view.getComputedStyle(element), box = element.getBoundingClientRect(), current = page(box.top);
-    const capacity = available(current) - inset;
-    if ((style.breakInside.startsWith("avoid") || style.pageBreakInside === "avoid") && box.height <= capacity && box.bottom > start(current) + available(current) + 0.5)
-      before(element, current + 1, inset);
+    if ((style.breakInside.startsWith("avoid") || style.pageBreakInside === "avoid") && box.height <= area-inset && box.bottom > start(current) + available(current) + 0.5){
+      let target=current+1;while(target<limits.maxPages&&box.height>available(target)-inset)target++;before(element,target,inset);
+    }
     for (let line = overflow(element, inset); line; line = overflow(element, inset)) {
       if (line.targetPage===undefined&&!(line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]"))) {
         const lines = visualLines(element), ordinal = lines.findIndex((item) => Math.abs(item.rect.top - line!.rect.top) < 0.5);
@@ -171,7 +173,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
         if (gap.getBoundingClientRect().height < 0.1) throw new DocumentError("UnsupportedFeature", "This inline structure cannot be fragmented safely.");
       }
     }
-    const after = element.getBoundingClientRect(); ensure(page(Math.max(after.top, after.bottom - 0.5)));
+    const after = element.getBoundingClientRect(); ensure(page(Math.max(after.top, after.bottom - 0.5)),after.bottom+Math.max(0,parseFloat(style.marginBottom)||0));
   }
   function table(element: HTMLTableElement): void {
     const header = headerRows(element), height = headerHeight(element);
@@ -183,6 +185,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
         const next = box.top < start(current) + height - 0.5 ? current : current + 1;
         rowGap(element, row, next, height); box = row.getBoundingClientRect(); current = page(box.top);
       }
+      if(box.height<=area-height&&box.height>available(current)-height){let target=current+1;while(target<limits.maxPages&&box.height>available(target)-height)target++;rowGap(element,row,target,height);box=row.getBoundingClientRect();current=page(box.top);}
       if (box.height > available(current) - height) {
         for (const cell of row.cells) {
           if (view.getComputedStyle(cell).verticalAlign !== "top") throw new DocumentError("UnsupportedFeature", "Splitting a non-top-aligned table cell across pages is not supported.");
@@ -190,7 +193,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
           for (const block of blocks.length ? blocks : [cell]) paragraph(block, height);
         }
       }
-      ensure(page(Math.max(box.top, row.getBoundingClientRect().bottom - 0.5)));
+      ensure(page(Math.max(box.top, row.getBoundingClientRect().bottom - 0.5)),row.getBoundingClientRect().bottom);
     }
   }
   function walk(element: HTMLElement): void {
@@ -198,7 +201,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     const style = view.getComputedStyle(element), rect = element.getBoundingClientRect();
     if(style.display==="none"||style.visibility==="collapse")return;
     const force = ["page", "always", "left", "right"].includes(style.breakBefore) || style.pageBreakBefore === "always";
-    if (force && (rect.top > start(page(rect.top)) + 0.5 || page(rect.top)%pageStride)) before(element, nextPhysical(page(rect.top)));
+    if (force && (rect.top > start(page(rect.top)) + 0.5 || page(rect.top)%pageStride||page(rect.top)<pageStride&&(constraints?.firstPageInset??0)>0)) before(element, nextPhysical(page(rect.top)));
     if (style.breakAfter.startsWith("avoid") || style.pageBreakAfter === "avoid") {
       let height = element.getBoundingClientRect().height, next = element.nextElementSibling as HTMLElement | null;
       while (next && viewNodeRole(next) === "remove") next = next.nextElementSibling as HTMLElement | null;
@@ -220,6 +223,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     else if (element.localName === "img") {
       const box = element.getBoundingClientRect(); if (box.height > area) throw new DocumentError("UnsupportedFeature", "An object exceeds the printable page height.");
       if (box.bottom > start(page(box.top)) + area) before(element, page(box.top) + 1);
+      const after=element.getBoundingClientRect();ensure(page(Math.max(after.top,after.bottom-.5)),after.bottom);
     } else {
       let inline: Node[] = [];
       const flush = (): void => {
@@ -250,7 +254,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       for (const gap of gaps.splice(0)) gap.remove();
       for (const [cell, span] of canonicalSpans) cell.rowSpan = span;
       for (const breaker of flow.querySelectorAll<HTMLElement>('br[data-word-break]')) breaker.style.removeProperty("display");
-      flow.style.minHeight = "0"; last = 0; operations = 0; blanks.clear();
+      flow.style.minHeight = "0"; last = 0; operations = 0; blanks.clear();bottoms.clear();
     },
     layout(element, forcePage = false, parity) {
       let index = topPage(element);
@@ -259,6 +263,6 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       if (element === flow) for (const child of [...flow.children]) walk(child as HTMLElement); else walk(element);
       flow.style.minHeight = last * pitch + area + "px";
     },
-    get count() { return last + 1; }, get blanks() { return blanks; }, pageAt: topPage, headerHeight,
+    get count() { return last + 1; }, get blanks() { return blanks; }, pageAt: topPage, headerHeight,bottom:index=>bottoms.get(index)??0,
   };
 }

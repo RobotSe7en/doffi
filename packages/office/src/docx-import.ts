@@ -185,6 +185,7 @@ class Importer {
       ) / 20;
     this.word.trackChanges=on(child(this.settings,"trackRevisions"));this.word.mirrorMargins=on(child(this.settings,"mirrorMargins"));
     this.word.bordersDoNotSurroundHeader=on(child(this.settings,'bordersDoNotSurroundHeader'));this.word.bordersDoNotSurroundFooter=on(child(this.settings,'bordersDoNotSurroundFooter'));
+    const noColumnBalance=child(child(this.settings,'compat'),'noColumnBalance');if(noColumnBalance)this.word.noColumnBalance=on(noColumnBalance);
     this.word.automaticHyphenation = on(
       child(this.settings, "autoHyphenation"),
     );

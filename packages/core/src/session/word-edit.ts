@@ -48,6 +48,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     if(node.parentNodeId!==null)fail('Shared Word settings require the document root.');
     if(operation.mirrorMargins!==undefined){word.mirrorMargins=operation.mirrorMargins;if(word.nativeContent)word.nativeContent.fragments=word.nativeContent.fragments.filter(fragment=>!(fragment.ownerName==='settings'&&fragment.propertyName==='http://schemas.openxmlformats.org/wordprocessingml/2006/main mirrorMargins'));}
     if(operation.evenAndOddHeaders!==undefined)word.evenAndOddHeaders=operation.evenAndOddHeaders;
+    if(operation.noColumnBalance!==undefined)word.noColumnBalance=operation.noColumnBalance;
     if(operation.automaticHyphenation!==undefined)word.automaticHyphenation=operation.automaticHyphenation;
     for(const key of ['bordersDoNotSurroundHeader','bordersDoNotSurroundFooter']as const)if(operation[key]!==undefined)word[key]=operation[key];
     return;

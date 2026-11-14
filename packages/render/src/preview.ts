@@ -1,4 +1,5 @@
 import{composeWordLanguages}from'./word-languages.js';
+import{retainFlowSelection}from'./flow-selection.js';
 import{composeWordTableLayout}from'./word-table-layout.js';
 import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
@@ -448,6 +449,7 @@ export function mountPreview(
     // IME owns temporary DOM until compositionend; splitting its text node would
     // invalidate the operating system's composition target.
     if (composing) return;
+    const restoreSelection=retainFlowSelection(source.root,projection?.ignored);
     let pages: DocumentRenderReport["pages"] = [], nodePages: DocumentRenderReport["nodePages"] = {}, results: DocumentRenderReport["fields"] = [], stable = !pagination;
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
       pages = pagination.measure();pages=notes?.measure(pages)??pages;nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
@@ -458,6 +460,7 @@ export function mountPreview(
     if (!stable) throw new DocumentError("ResourceLimitExceeded", "Layout fields did not converge within the render pass budget.");
     fields?.repeat(pages);
     drawings?.measure(pages,source.root);
+    restoreSelection();
     source.setPages(pages);
     report = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
       layout: options.layout ?? "pages", pages, nodePages, fields: results, diagnostics: Object.freeze([...(pagination?.diagnostics ?? []), ...(fields?.diagnostics ?? []),...(drawings?.diagnostics??[])]), fonts: fontReport });

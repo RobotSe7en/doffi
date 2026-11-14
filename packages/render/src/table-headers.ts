@@ -14,7 +14,7 @@ export function repeatTableHeaders(document: Document, root: HTMLElement, source
     clear(); let nodes = root.querySelectorAll("*").length;
     const surface = root.getBoundingClientRect(), px = (value: number): number => value * 96 / 72;
     for (const table of tables) {
-      if(Number(table.closest<HTMLElement>('.sdk-page-flow')?.dataset.sdkColumnCount??1)>1)continue;
+      if(table.closest<HTMLElement>('.sdk-page-flow')?.hasAttribute('data-sdk-column-count'))continue;
       const rows: HTMLTableRowElement[] = [];
       for (const row of table.rows) {
         if (viewNodeRole(row) === "remove") continue;
