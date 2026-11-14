@@ -5,7 +5,7 @@ export const TableChangeSchema=z.discriminatedUnion('kind',[
  z.strictObject({kind:z.enum(['insertRows','deleteRows','insertColumns','deleteColumns']),at:index,count}),
  z.strictObject({kind:z.literal('mergeCells'),row:index,column:index,rows:count,columns:count}),
  z.strictObject({kind:z.literal('splitCell'),row:index,column:index,rows:count.optional(),columns:count.optional()}),
- z.strictObject({kind:z.literal('resize'),grid:z.array(z.number().positive()).min(1).optional(),rowHeights:z.array(z.number().positive()).min(1).optional()}),
+ z.strictObject({kind:z.literal('resize'),grid:z.array(z.number().positive()).min(1).optional(),rowHeights:z.array(z.number().positive()).min(1).optional(),rowIndex:index.optional(),rowHeight:z.number().positive().optional()}),
  z.strictObject({kind:z.literal('setCells'),row:index,column:index,values:z.array(z.array(z.string()).min(1)).min(1)}),
 ]);
 export type TableChange=z.infer<typeof TableChangeSchema>;

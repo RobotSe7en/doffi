@@ -43,6 +43,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
     };
     const newCell = (row: number, column: number): Cell => ({ id: edit.insertSource(rows[row]!, ctx.newCellHtml ?? "<td><p></p></td>").rootNodeIds[0]!, row, column, rows: 1, columns: 1 });
     if (change.kind === "resize") {
+        if((change.rowIndex===undefined)!==(change.rowHeight===undefined)||change.rowIndex!==undefined&&change.rowHeights)invalid('A single-row resize requires one row and height.');
         if (change.grid) {
             if (change.grid.length !== grid.length)
                 invalid("Column resizing must preserve the table grid.");
@@ -57,6 +58,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
             for (const [index, id] of rows.entries())
                 edit.sourceStyle(id, "height", heights[index] + "pt");
         }
+        if(change.rowIndex!==undefined){if(change.rowIndex>=rows.length)invalid('The resized row exceeds the table.');heights[change.rowIndex]=change.rowHeight!;nextHeight=heights.reduce((a,b)=>a+b,0);edit.sourceStyle(rows[change.rowIndex]!,'height',change.rowHeight+'pt');}
     }
     else if (change.kind === "setCells") {
         const width = change.values[0]!.length;
