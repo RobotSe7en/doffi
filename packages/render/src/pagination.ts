@@ -216,9 +216,10 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
   }
   return { measure, diagnostics,contentBottom(index){const group=groups.find(group=>index>=group.startIndex&&index<group.startIndex+group.paginator.count);return group?group.setup.margins.top+group.paginator.bottom(index-group.startIndex)*.75:pages[index]?.setup.margins.top??0;}, nodePages(current) {
     const surface = root.getBoundingClientRect(), result: Record<string, readonly string[]> = Object.create(null) as Record<string, readonly string[]>;
+    const drawings=new Set(metadata.word?.drawings?.map(drawing=>drawing.nodeId));
     for (const [id] of sourceElements) {
       const rectangles = source.elementRectangles(id);
-      result[id] = Object.freeze(current.filter((page) => !page.blank && rectangles.some((rect) => rect.bottom > surface.top + px(page.rect.y + page.setup.margins.top) + 0.1 && rect.top < surface.top + px(page.rect.y + page.rect.height - page.setup.margins.bottom) - 0.1)).map((page) => page.pageId));
+      result[id] = Object.freeze(current.filter((page) => !page.blank && rectangles.some((rect) => rect.bottom > surface.top + px(page.rect.y + (drawings.has(id)?0:page.setup.margins.top)) + 0.1 && rect.top < surface.top + px(page.rect.y + page.rect.height - (drawings.has(id)?0:page.setup.margins.bottom)) - 0.1)).map((page) => page.pageId));
     }
     return Object.freeze(result);
   }, dispose() { disposed = true;for(const grid of grids)grid.dispose(); repeated.dispose(); layer.remove();front.remove(); layoutStyle.remove(); } };

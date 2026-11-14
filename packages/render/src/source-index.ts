@@ -49,7 +49,7 @@ export class PreviewSource {
   elementRectangles(id: string): DOMRect[] {
     const entry = this.elements.get(id), copies = [...this.instances.get(id) ?? []].flatMap((node) => [...node.getClientRects()].flatMap(rect=>this.instanceClip(node,rect)));
     if (!entry) return copies;
-    if(entry.element.hasAttribute('data-word-drawing'))return[...(entry.element.closest<HTMLElement>('[data-sdk-word-object]')??entry.element).getClientRects(),...copies];
+    if(entry.element.hasAttribute('data-word-drawing')){const frame=entry.element.closest<HTMLElement>('[data-sdk-word-object]')??entry.element;if(copies.length||this.document.defaultView!.getComputedStyle(frame).visibility==='hidden')return copies;return[...frame.getClientRects()];}
     if (!entry.element.matches(blocks + ",span,a,strong,em,ins,del")) return [...entry.element.getClientRects(), ...copies];
     let lo = 0, hi = this.tokens.length;
     while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (this.tokens[mid]!.to <= entry.from) lo = mid + 1; else hi = mid; }
@@ -122,10 +122,11 @@ export class PreviewSource {
   }
   private visible(token: Token): boolean {
     const element = this.fieldViews.get(token.node) ?? (token.node.nodeType === 1 ? token.node as HTMLElement : token.node.parentElement!);
+    if(element.hasAttribute('data-word-drawing')&&element.dataset.nodeId&&this.instances.has(element.dataset.nodeId))return token.node.isConnected&&this.elementRectangles(element.dataset.nodeId).length>0;
     const style = this.document.defaultView!.getComputedStyle(element);
     return token.node.isConnected && style.visibility === "visible" && this.tokenRectangles(token).length > 0;
   }
-  private tokenRectangles(token:Token,from=0,to=token.text.length):DOMRect[]{const owner=token.node.nodeType===1?token.node as Element:token.node.parentElement!;return[...this.tokenRange(token,from,to).getClientRects()].flatMap(rect=>{const visible=wordRowVisibleRect(owner,rect);return visible?[visible]:[];});}
+  private tokenRectangles(token:Token,from=0,to=token.text.length):DOMRect[]{const owner=token.node.nodeType===1?token.node as HTMLElement:token.node.parentElement!;if(owner.hasAttribute('data-word-drawing')&&owner.dataset.nodeId)return this.elementRectangles(owner.dataset.nodeId);return[...this.tokenRange(token,from,to).getClientRects()].flatMap(rect=>{const visible=wordRowVisibleRect(owner,rect);return visible?[visible]:[];});}
   private instanceClip(node:Element,rect:DOMRect):DOMRect[]{
     if(this.document.defaultView!.getComputedStyle(node).visibility!=='visible')return[];
     let left=rect.left,right=rect.right,top=rect.top,bottom=rect.bottom;

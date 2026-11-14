@@ -1,3 +1,6 @@
+import {wordFloatingLayer} from './word-floating-layer.js';
+import {wordDrawingPosition} from './word-drawing-position.js';
+import type {PreviewSource} from './source-index.js';
 import { renderWordChart } from './word-chart.js';
 import { DocumentError,evaluatePresentationPreset } from '@doffi/core';
 import type { ContentDocumentModel,DeepReadonly,WordDrawing } from '@doffi/core';
@@ -9,8 +12,8 @@ import { numeric,property,resolvedColor } from './presentation/appearance.js';
 const style=(node:HTMLElement,values:Readonly<Record<string,string>>):void=>{ownViewStyle(node,...Object.keys(values));for(const[key,value]of Object.entries(values))node.style.setProperty(key,value);};
 /** Shared Word composition for preview and managed PDF/PNG. Source object
  * characters and text stories stay intact; paint and instances are derived. */
-export function composeWordDrawings(document:Document,model:ContentDocumentModel,limits:Readonly<RenderLimits>): {readonly diagnostics:readonly LayoutDiagnostic[];measure(pages:readonly RenderedPage[],root:HTMLElement):void}{
- const word=model.snapshot().metadata.word,view=document.defaultView!,definitions=new Map((word?.drawings??[]).map(item=>[item.nodeId,item])),byId=new Map([...document.querySelectorAll<HTMLElement>('[data-node-id]')].map(node=>[node.dataset.nodeId!,node])),floating:{definition:DeepReadonly<WordDrawing>;frame:HTMLElement;paragraph:HTMLElement}[]=[];
+export function composeWordDrawings(document:Document,model:ContentDocumentModel,limits:Readonly<RenderLimits>,source:PreviewSource): {readonly diagnostics:readonly LayoutDiagnostic[];measure(pages:readonly RenderedPage[],root:HTMLElement):void}{
+ const metadata=model.snapshot().metadata,sections=new Map(metadata.sections?.map(section=>[section.sectionId,section])),word=metadata.word,view=document.defaultView!,definitions=new Map((word?.drawings??[]).map(item=>[item.nodeId,item])),byId=new Map([...document.querySelectorAll<HTMLElement>('[data-node-id]')].map(node=>[node.dataset.nodeId!,node])),floating:{definition:DeepReadonly<WordDrawing>;frame:HTMLElement;paragraph:HTMLElement;anchor:HTMLElement}[]=[],layer=wordFloatingLayer(document,model,source,limits);
  let serial=0,count=document.querySelectorAll('*').length;const composed=new Set<string>();
  const account=(node:Element):void=>{count+=1+node.querySelectorAll('*').length;if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Word drawings exceed the render node budget.');};
  const compose=(item:DeepReadonly<WordDrawing>,group=false):void=>{
@@ -43,15 +46,20 @@ export function composeWordDrawings(document:Document,model:ContentDocumentModel
   if(!group&&item.layout.mode==='floating'){
    const paragraph=node.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');if(paragraph){const layout=item.layout,wrap=layout.wrap??'square',d=layout.distances??{left:0,right:0,top:0,bottom:0},relative=wrap!=='none'&&!layout.behindText;
     if(relative){const side=layout.wrapSide==='left'||layout.alignH==='right'?'right':'left';style(frame,{float:side,'margin-left':(d.left+(side==='left'?Math.max(0,g.x):0))+'pt','margin-right':d.right+'pt','margin-top':(d.top+Math.max(0,g.y))+'pt','margin-bottom':d.bottom+'pt',...(wrap==='topAndBottom'?{clear:'both','shape-outside':'inset(0 -20000pt 0 -20000pt)'}:{'shape-outside':(wrap==='tight'||wrap==='through')&&layout.wrapPolygon?'polygon('+layout.wrapPolygon.map(p=>`${p.x/216}% ${p.y/216}%`).join(',')+')':'margin-box'})});
-    }else{style(paragraph,{position:'relative',isolation:'isolate'});style(frame,{position:'absolute',left:g.x+'pt',top:g.y+'pt','z-index':String(layout.behindText?-1:Math.min(2147483647,layout.zOrder??1))});floating.push({definition:item,frame,paragraph});}
+    }else{const anchor=markViewNode(document.createElement('span'));anchor.dataset.sdkWordAnchor=item.nodeId;anchor.contentEditable='false';anchor.style.cssText='display:inline-block;width:0;height:1em;vertical-align:text-top;pointer-events:none;user-select:none';frame.before(anchor);account(anchor);style(paragraph,{position:'relative',isolation:'isolate'});style(frame,{position:'absolute',left:g.x+'pt',top:g.y+'pt','z-index':String(Math.min(2147483647,layout.zOrder??1))});
+     if(paragraph.closest('[data-office-story]')?.getAttribute('data-office-story')==='main')layer.add(item,frame);else floating.push({definition:item,frame,paragraph,anchor});}
    }
   }
  };
  for(const item of definitions.values()){let parent=byId.get(item.nodeId)?.parentElement,child=false;while(parent){if(definitions.has(parent.dataset.nodeId??'')){child=true;break;}parent=parent.parentElement;}if(!child)compose(item);}
- return{diagnostics:Object.freeze([...definitions.values()].flatMap(item=>item.kind==='chart'?(item.chart.native?.previewWarnings??[]).map(message=>Object.freeze({code:'NativeFormatting' as const,nodeId:item.nodeId,message})):[])),measure(pages,root){const origin=root.getBoundingClientRect(),headerInstances=new Map<string,HTMLElement[]>();for(const instance of document.querySelectorAll<HTMLElement>('.sdk-paper [data-sdk-word-object][data-sdk-word-story-anchor]')){const id=instance.dataset.sdkWordObject!,instances=headerInstances.get(id)??[];instances.push(instance);headerInstances.set(id,instances);}for(const entry of floating){const item=entry.definition,instances=[{frame:entry.frame,paragraph:entry.paragraph,paper:undefined as HTMLElement|undefined},...(headerInstances.get(item.nodeId)??[]).flatMap(frame=>{const paper=frame.closest<HTMLElement>('.sdk-paper')!,paragraph=paper.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(frame.dataset.sdkWordStoryAnchor!)+'"]');return paragraph?[{frame,paragraph,paper}]:[];})];for(const{frame,paragraph,paper}of instances){const p=paragraph.getBoundingClientRect(),g=item.geometry,l=item.layout,page=paper?pages.find(page=>page.pageId===paper.dataset.pageId):pages.find(page=>(p.top-origin.top)*.75>=page.rect.y&&(p.top-origin.top)*.75<page.rect.y+page.rect.height);if(!page)continue;const horizontal=l.horizontal??'column',vertical=l.vertical??'paragraph',left=origin.left+page.rect.x/.75,top=origin.top+page.rect.y/.75,setup=page.setup,m=setup.margins;
-  const hStart=horizontal==='page'?left:horizontal==='margin'?left+m.left/.75:p.left,hWidth=horizontal==='page'?setup.width:horizontal==='margin'?setup.width-m.left-m.right:p.width*.75;
-  const vStart=vertical==='page'?top:vertical==='margin'?top+m.top/.75:p.top,vHeight=vertical==='page'?setup.height:vertical==='margin'?setup.height-m.top-m.bottom:p.height*.75;
-  const aligned=(kind:string|undefined,size:number,object:number,offset:number):number=>kind==='center'?(size-object)/2:kind==='right'||kind==='bottom'||kind==='outside'?size-object:kind==='left'||kind==='top'||kind==='inside'?0:offset;
-  const containing=paper?.getBoundingClientRect()??p;frame.style.left=(hStart-containing.left+aligned(l.alignH,hWidth,g.width,g.x)/.75)+'px';frame.style.top=(vStart-containing.top+aligned(l.alignV,vHeight,g.height,g.y)/.75)+'px';
- }}}};
+ return{diagnostics:Object.freeze([...definitions.values()].flatMap(item=>item.kind==='chart'?(item.chart.native?.previewWarnings??[]).map(message=>Object.freeze({code:'NativeFormatting' as const,nodeId:item.nodeId,message})):[])),measure(pages,root){
+  const origin=root.getBoundingClientRect(),headerInstances=new Map<string,HTMLElement[]>();
+  for(const instance of document.querySelectorAll<HTMLElement>('.sdk-paper [data-sdk-word-object][data-sdk-word-story-anchor]')){const id=instance.dataset.sdkWordObject!,instances=headerInstances.get(id)??[];instances.push(instance);headerInstances.set(id,instances);}
+  for(const entry of floating){const item=entry.definition,instances=[{frame:entry.frame,paragraph:entry.paragraph,anchor:entry.anchor,paper:undefined as HTMLElement|undefined},...(headerInstances.get(item.nodeId)??[]).flatMap(frame=>{const paper=frame.closest<HTMLElement>('.sdk-paper')!,paragraph=paper.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(frame.dataset.sdkWordStoryAnchor!)+'"]'),anchor=paragraph?.querySelector<HTMLElement>('[data-sdk-word-anchor="'+CSS.escape(item.nodeId)+'"]');return paragraph&&anchor?[{frame,paragraph,anchor,paper}]:[];})];
+   for(const{frame,paragraph,anchor,paper}of instances){const a=anchor.getBoundingClientRect(),page=paper?pages.find(page=>page.pageId===paper.dataset.pageId):pages.find(page=>(a.top-origin.top)*.75>=page.rect.y&&(a.top-origin.top)*.75<page.rect.y+page.rect.height);if(!page)continue;
+    const position=wordDrawingPosition(item,page,origin,paragraph,anchor,sections.get(page.sectionId)),containing=paper?.getBoundingClientRect()??paragraph.getBoundingClientRect();frame.style.left=position.left-containing.left+'px';frame.style.top=position.top-containing.top+'px';
+   }
+  }
+  layer.measure(pages,root);
+ }};
 }

@@ -452,14 +452,13 @@ export function mountPreview(
     const restoreSelection=retainFlowSelection(source.root,projection?.ignored);
     let pages: DocumentRenderReport["pages"] = [], nodePages: DocumentRenderReport["nodePages"] = {}, results: DocumentRenderReport["fields"] = [], stable = !pagination;
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
-      pages = pagination.measure();pages=notes?.measure(pages)??pages;nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
+      pages = pagination.measure();pages=notes?.measure(pages)??pages;drawings?.measure(pages,source.root);nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
       if (!fields?.changed&&!notes?.changed) { stable = true; break; }
       const derivedFonts = resolvePreviewFonts(iframe.contentDocument!, ".sdk-field-display [data-word-script]");
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
     if (!stable) throw new DocumentError("ResourceLimitExceeded", "Layout fields did not converge within the render pass budget.");
     fields?.repeat(pages);
-    drawings?.measure(pages,source.root);
     restoreSelection();
     source.setPages(pages);
     report = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
@@ -485,7 +484,7 @@ export function mountPreview(
     composeWordNative(frame,model,prepared.nativeUrls,limits);
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);
-    drawings=composeWordDrawings(frame,model,limits);
+    drawings=composeWordDrawings(frame,model,limits,source);
     notes=composeWordNotes(frame,model,source,limits,index=>pagination?.contentBottom(index));
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);
