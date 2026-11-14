@@ -12,7 +12,7 @@ function mainText(model: ReturnType<typeof openDocument>): string {
   if(model.kind!=='document')throw new Error('Expected Word');const main=model.snapshot().metadata.word!.stories.find(s=>s.kind==='main')!;return model.getNode(main.rootNodeId)!.text;
 }
 test('preserves unknown inline content while surrounding text remains editable across two native saves',()=>{
-  const bytes=fixture('<w:p><w:r><w:t>before</w:t></w:r><m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x+1</m:t></m:r></m:oMath><w:r><w:t>after</w:t></w:r></w:p>');
+  const bytes=fixture('<w:p><w:r><w:t>before</w:t></w:r><m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:rPr><m:brk m:alnAt="1"/></m:rPr><m:t>x+1</m:t></m:r></m:oMath><w:r><w:t>after</w:t></w:r></w:p>');
   const {files,report}=importDocxWithReport(bytes,{documentId:'native'});
   expect(report.preserved).toHaveLength(1);expect(report.preserved[0]!.kind).toBe('inline');
   const model=openDocument(files,{kind:'document'}),session=createDocumentSession(model);
@@ -75,7 +75,7 @@ test('keeps recovered style properties inside the owning style',()=>{
   expect(()=>importDocx(exportDocx(model).bytes,{documentId:'style-again'})).not.toThrow();
 });
 test('rejects partial native object edits atomically but permits whole object deletion and undo',()=>{
-  const model=openDocument(importDocx(fixture('<w:p><m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x</m:t></m:r></m:oMath></w:p>'),{documentId:'atomic'}),{kind:'document'}),session=createDocumentSession(model);
+  const model=openDocument(importDocx(fixture('<w:p><m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:rPr><m:brk m:alnAt="1"/></m:rPr><m:t>x</m:t></m:r></m:oMath></w:p>'),{documentId:'atomic'}),{kind:'document'}),session=createDocumentSession(model);
   const object=model.snapshot().metadata.word!.nativeContent!.fragments.find(f=>f.kind==='inline')!;
   expect(()=>session.prepare({protocolVersion:1,documentId:'atomic',baseRevision:0,operations:[{op:'replaceText',nodeId:object.nodeId!,from:0,to:1,expectedText:'\ufffc',text:'broken'}]})).toThrow();
   expect(session.snapshot()).toEqual(model.snapshot());

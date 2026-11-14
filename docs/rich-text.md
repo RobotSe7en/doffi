@@ -85,3 +85,7 @@ R1-12 输入、预览和批注共用[自研页面画布](pagination-rendering.md
 ## 脚注、尾注和引用
 
 Word 命令 `insertFootnote`、`insertEndnote` 和 `referenceSettings` 打开注释表单或已有注释列表。正文使用同一会话的辅助故事输入；可以设置编号，转换注释类型，或删除引用和其附属正文。`bookmarks`、`insertLink`、`crossReference` 和 `caption` 提供书签、链接及引用字段入口。字段的自动显示不改源；显式更新缓存才进入一次撤销历史。
+
+## 公式
+
+`insertEquation` 和 `equationSettings` 打开第一方公式编辑表单；双击公式也可进入。线性输入支持 `\frac{a}{b}`、`\sqrt[n]{x}`、`x_1^2`、`\matrix{a&b\\c&d}`、`\sum_{i=1}^{n}{i}` 等模板和常用 Unicode 字符。更新文字组件保留其他结构与格式；“按线性输入重建公式”明确替换整棵公式树。底层可直接使用 `WordMathTree` 和 `insertWordEquation`／`setWordEquation`／`removeWordEquation`；结构必须为一棵有界、无循环、无共享子节点的树。

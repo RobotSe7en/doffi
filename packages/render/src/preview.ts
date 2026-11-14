@@ -12,6 +12,7 @@ import { markViewNode } from "./view-nodes.js";
 import { layoutFields } from "./fields.js";
 import { composeWordDrawings } from './word-drawings.js';
 import { composeWordNotes } from './word-notes.js';
+import { composeWordMath } from './word-math.js';
 import type { LayoutFields } from "./fields.js";
 import { SourceProjection } from "./projection.js";
 import { copyPreviewSelection } from "./clipboard.js";
@@ -478,13 +479,14 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
+    composeWordMath(frame,model,limits);
     drawings=composeWordDrawings(frame,model,limits);
     notes=composeWordNotes(frame,model,source,limits);
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);
       pagination = paginate(frame, source, snapshot.metadata, limits,notes);
     }
-    baseFonts = Object.freeze([...sourceFonts, ...resolvePreviewFonts(frame, ".sdk-number-marker")]); fontReport = baseFonts;
+    baseFonts = Object.freeze([...sourceFonts, ...resolvePreviewFonts(frame, ".sdk-number-marker,.sdk-word-equation-view,.sdk-word-equation-view *")]); fontReport = baseFonts;
     report = Object.freeze({ documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision,
       layout: options.layout ?? "pages", pages: [], nodePages: {}, fields: [], diagnostics: [], fonts: fontReport });
     measure();

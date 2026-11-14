@@ -1,4 +1,5 @@
 import { readNoteOptions } from './docx-note-options.js';
+import { M,readWordMath } from './docx-math.js';
 import { importWordDrawing,WPS,WPG } from "./docx-drawing-import.js";
 import {
   createAssetDescriptor,
@@ -567,6 +568,7 @@ class Importer {
   ): Html[] {
     const result: Html[] = [];
     for (const item of items) {
+      if(item.uri===M&&(item.name==='oMath'||item.name==='oMathPara')){const paragraph=this.make('p',{'data-word-math-paragraph':'true'});if(item.name==='oMathPara'){this.mathParagraph(item,paragraph);}else this.math(item,paragraph,'block');result.push(paragraph);continue;}
       if (item.uri !== W) unsupported(item);
       if (item.name === "p") result.push(this.paragraph(item, inherited));
       else if (item.name === "tbl") result.push(this.table(item));
@@ -736,6 +738,8 @@ class Importer {
     if(this.native?.isPlaceholder(source)){
       const object=this.make('span',{});this.native.bind(source,object.attrs);const offset=this.offset(parent,'\ufffc');object.children.push('\ufffc');parent.children.push(object);this.fieldResult(object);this.record(parent,offset,'\ufffc');return;
     }
+    if(source.uri===M&&source.name==='oMath'){this.math(source,parent,'inline');return;}
+    if(source.uri===M&&source.name==='oMathPara'){this.mathParagraph(source,parent);return;}
     if (source.uri !== W) unsupported(source);
     switch (source.name) {
       case "r": {
@@ -1256,6 +1260,8 @@ class Importer {
       this.paragraphRunClasses = paragraphRunClasses;
     }
   }
+  private mathParagraph(source:XmlNode,parent:Html):void{try{check(source,['oMathParaPr','oMath'],M);const properties=child(source,'oMathParaPr',M);check(properties,['jc'],M);const align=attr(child(properties,'jc',M),'val',M)??attr(child(child(this.settings,'mathPr',M),'defJc',M),'val',M)??'centerGroup',maths=elements(source,'oMath',M);if(maths.length!==1||!['left','right','center','centerGroup'].includes(align))unsupported(source,'This math paragraph is preserved natively.');this.math(maths[0]!,parent,'block',align as 'left'|'right'|'center'|'centerGroup');}catch(error){if(error instanceof DocumentError&&error.code==='UnsupportedFeature')unsupported(source,'This math paragraph is preserved natively.');throw error;}}
+  private math(source:XmlNode,parent:Html,display:'inline'|'block',alignment?:'left'|'right'|'center'|'centerGroup'):void{const defaults=child(this.settings,'mathPr',M),math=readWordMath(source,{display,...(attr(child(defaults,'intLim',M),'val',M)?{integralLimits:attr(child(defaults,'intLim',M),'val',M)!}:{}),...(attr(child(defaults,'naryLim',M),'val',M)?{naryLimits:attr(child(defaults,'naryLim',M),'val',M)!}:{})}),marker=this.make('span',{'data-word-equation':'true'}),offset=this.offset(parent,'\ufffc');marker.children.push('\ufffc');parent.children.push(marker);(this.word.equations??=[]).push({nodeId:this.id(marker),display,...math,...(alignment?{alignment}:{}),...(attr(child(defaults,'mathFont',M),'val',M)?{fontFamily:attr(child(defaults,'mathFont',M),'val',M)!}:{})});this.native?.bind(source,marker.attrs);this.fieldResult(marker);this.record(parent,offset,'\ufffc');}
   private readNotes():void{
     for(const kind of ['footnote','endnote']as const){const part=this.opc.related(this.main,kind+'s');if(!part)continue;const root=this.opc.read(part);if(root.uri!==W||root.name!==kind+'s')fail(root,'A note part has an invalid root.');check(root,[kind]);for(const source of elements(root,kind)){const id=attr(source,'id');if(id===undefined||!Number.isSafeInteger(Number(id))||this.nativeNotes.has(kind+'\n'+id))fail(source,'A native note identity is invalid or repeated.');const type=attr(source,'type')??'normal';if(!['normal','separator','continuationSeparator','continuationNotice'].includes(type))fail(source,'A native note type is invalid.');const storyId=kind+'-'+id,story=this.story(kind,storyId);story.attrs.class='word-main';this.nativeNotes.set(kind+'\n'+id,storyId);(this.word.notes??=[]).push({noteId:storyId,storyId,kind,type:type as 'normal'|'separator'|'continuationSeparator'|'continuationNotice'});this.native?.bind(source,story.attrs);story.children.push(...this.readStoryContent(part,storyId,source));this.auxiliary.push(story);}}
   }

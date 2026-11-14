@@ -45,6 +45,7 @@ function updateWordMetadata(metadata: ContentDocumentMetadata, before: DocumentS
   word.revisions = word.revisions.filter((item) => after.hasNode(item.nodeId));
   word.tables = word.tables.filter((item) => after.hasNode(item.nodeId));
   if(word.drawings)word.drawings=word.drawings.filter(item=>after.hasNode(item.nodeId));
+  if(word.equations)word.equations=word.equations.filter(item=>after.hasNode(item.nodeId));
   word.tabs = word.tabs.filter((item) => after.hasNode(item.paragraphNodeId));
   word.bookmarks = word.bookmarks.filter((item) => after.hasNode(item.startNodeId) || after.hasNode(item.endNodeId));
   word.fields = word.fields.filter((item) => [item.nodeId, ...(item.endNodeId ? [item.endNodeId] : []), ...(item.resultNodeIds ?? [])]
@@ -173,7 +174,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
       for (let id: string | null = surfaceId; id !== null; id = parsed.peekNode(id)?.parentNodeId ?? null) if (slideSurfaces.has(id)) return affectedSurfaces.has(id);
       // Old generic regions outside slide surfaces retain the conservative layout rule.
       return base.snapshot.html !== parsed.html || impacted!.size > 0;
-    } : undefined;
+    } : ()=>base.snapshot.html!==parsed.html||JSON.stringify(base.snapshot.metadata)!==JSON.stringify(metadata)||JSON.stringify(base.snapshot.styles)!==JSON.stringify(styles.snapshot());
     const workflows=new Map(annotations.map(annotation=>[annotation.annotationId,annotation.status]));
     mapAnnotations(annotations, base.html, parsed, edit, explicit, regionChanged);
     updatePresentationRecovery(metadata, base, annotations,workflows);

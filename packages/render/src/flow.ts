@@ -74,7 +74,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       if(owner.closest('[data-word-drawing]')&&(!owner.hasAttribute('data-word-drawing')||node.nodeType===3))continue;
       if(owner.hasAttribute('data-word-drawing')&&view.getComputedStyle(owner.closest<HTMLElement>('[data-sdk-word-object]')??owner).position==='absolute')continue;
       if (excluded(owner) || view.getComputedStyle(owner).visibility === "hidden") continue;
-      if (node.nodeType !== 3 && !owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference]")) continue;
+      if (node.nodeType !== 3 && !owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference],[data-word-equation]")) continue;
       const range = document.createRange(); range.selectNodeContents(node);
       for (const rect of node.nodeType === 3 ? range.getClientRects() : owner.getClientRects()) {
         if (rect.width < 0.01 || rect.height < 0.1) continue;
@@ -104,7 +104,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
           if (owner.style.display === "none") continue;
           return { node: owner, rect: owner.getBoundingClientRect() };
         }
-        if (!owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference]")) continue;
+        if (!owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference],[data-word-equation]")) continue;
       }
       const range = document.createRange(); range.selectNodeContents(node);
       const rectangles = node.nodeType === 3 ? [...range.getClientRects()] : [...(node as Element).getClientRects()];

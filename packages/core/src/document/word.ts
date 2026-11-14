@@ -3,6 +3,7 @@ import type { Annotation } from "../contracts/annotations.js";
 import type { ParsedHtml } from "./html.js";
 import { invalid } from "./validation.js";
 import { wordDrawingTransforms } from '../word-drawing.js';
+import { validateWordMath } from '../word-math.js';
 
 /** Validate native semantic references against the same HTML source, never an XML copy. */
 export function validateWord(
@@ -89,6 +90,7 @@ export function validateWord(
       }
     }
     const drawings=unique(word.drawings??[],item=>item.nodeId),textOwners=new Set<string>();
+    const equations=unique(word.equations??[],equation=>equation.nodeId);for(const equation of equations.values()){if(node(equation.nodeId).attributes['data-word-equation']!=='true'||html.getNode(equation.nodeId)!.text!=='\ufffc')invalid('An equation requires its typed atomic source.');validateWordMath(equation);}for(const id of html.nodeIds())if(node(id).attributes['data-word-equation']&&!equations.has(id))invalid('An equation marker requires its math definition.');
     const notes=unique(word.notes??[],item=>item.noteId),references=unique(word.noteReferences??[],item=>item.nodeId),noteOwners=new Set<string>();
     if(word.footnoteOptions?.position&&!['pageBottom','beneathText'].includes(word.footnoteOptions.position)||word.endnoteOptions?.position&&!['sectEnd','docEnd'].includes(word.endnoteOptions.position))invalid('The note position must match its note kind.');
     unique(word.notes??[],note=>note.storyId);unique((word.notes??[]).filter(note=>(note.type??'normal')!=='normal'),note=>note.kind+' '+note.type);
