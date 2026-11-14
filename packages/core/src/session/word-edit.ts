@@ -5,6 +5,8 @@ import { applyWordDrawing,isWordDrawingOperation } from './word-drawing-edit.js'
 import { applyWordReference,isWordReferenceOperation } from './word-reference-edit.js';
 import { applyWordMath,isWordMathOperation } from './word-math-edit.js';
 import { applyWordControl,isWordControlOperation } from './word-control-edit.js';
+import { applyWordComment,isWordCommentOperation } from './word-comments.js';
+import type { Annotation } from '../contracts/annotations.js';
 import { checkLimit } from "../document/validation.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import { DocumentError } from '../errors.js';
@@ -14,8 +16,8 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
-export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits):void{
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits,annotations:Annotation[]=[]):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
     metadata.word={stories:[{storyId:'main',kind:'main',rootNodeId:rootId}],styles:[],numbering:[],hyperlinks:[],bookmarks:[],fields:[],tabs:[],revisions:[],tables:[]};
@@ -23,6 +25,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
+  if(isWordCommentOperation(operation)){applyWordComment(metadata,annotations,edit,parse,operation);return;}
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}
   if(isWordReferenceOperation(operation)){applyWordReference(word,edit,parse,operation);return;}
   if(isWordMathOperation(operation)){applyWordMath(word,edit,parse,operation);return;}

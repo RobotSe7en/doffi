@@ -112,3 +112,11 @@ D6 仍需收口复杂环绕／所有原生锚点参照、完整布局尺寸与�
 散点图的 Office 序列覆盖语义见 [MS-OI29500](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/790a49d0-6829-4626-8e0f-4f6681a9586b)；组内图表结构见 [CT_GraphicFrame](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-odrawxml/fbe733bf-85e2-46f9-b548-9292b44670ce)。同时修复通用 XML 序列化的重复命名空间增长，保留含默认绑定和前缀遮蔽的 QName 值。
 
 当前源的必要验证：6 个相关核心／DOCX／原生保留／公式／控件／XML 文件共 29 项通过；两个 Chromium 用例验证图表面板、组合与主次轴、撤销、字体替代报告及源投影；八类图表和主文档通过仓库固定的官方 Transitional XSD。库构建、工具类型、架构边界和 diff 检查通过。接下来继续 D8 现代批注和修订，并完成上文 D1～D7 尚未收口的项目。
+
+## 现代批注与工作台检查点
+
+现代批注的主消息／回复现在进入同一批注模型，回复正文为普通 comment 故事。主消息与回复可修改，回复可增删，工作台可打开富文本正文；作者、时间、解决状态、持久标识、嵌套回复关系和人物身份随源保存。原生读写覆盖 comments、commentsExtended、commentsIds、commentsExtensible 和 people；UTC 日期与最后段落标识按 [MS-DOCX CommentEx](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/9660dacc-2ceb-4352-87d2-42ba1184f522)、[CommentId](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/9c360cd7-653f-4d82-82be-7bda2488c0c1) 和 [CommentExtensible](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/a7b57225-42e5-43e7-8d98-d90eabf3ca25) 处理。未建模的扩展属性附着到各自原生元素，循环父关系明确拒绝。删除消息会清理所属故事，撤销恢复正文和线程。
+
+Word 请求补充选中对象的文字故事、注释正文、回复、完整字段和绑定连接线依赖。上下文只提供对应的当前公式／图表／控件等语义和可见图片；原生残余集合、嵌入工作簿及无关对象的正文不随局部请求暴露。隔离候选准备后重新检查语义影响和资源范围，复制对象也检查附属故事。元数据变化纳入变更列表；图表数值变化能在提案差异中直接看到，应用和撤销保留单步历史。
+
+必要验证：现代批注与原生保留的首轮三个文件 17 项通过；随后原有导出／请求回归及新线程检查共 62 项通过，新上下文文件的两个用例修正示例缺少必填图表属性后通过。两个 Chromium 用例实际验证回复增删改／撤销、图表数据差异和提案应用／撤销，以及回复富文本输入。库构建与工具类型通过。这里只记录 D8 的批注与协议进展；修订追踪／完整接受拒绝，以及其他阶段列出的缺口仍需继续完成。

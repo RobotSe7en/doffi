@@ -2,6 +2,7 @@ import type { ChangeMapping, DocumentNodeChange, TextOffsetMapping } from "../ru
 import type { DocumentState } from "../document/state.js";
 import { freeze } from "../document/validation.js";
 import { affectedPresentationSlides } from "./presentation.js";
+import { wordSemanticChanges } from './word-impact.js';
 
 /** ReadonlyMap is a runtime boundary too: Object.freeze(new Map()) still exposes set(). */
 export function readonlyMap<Key, Value>(input: Map<Key, Value>): ReadonlyMap<Key, Value> {
@@ -25,10 +26,12 @@ export function compareStates(before: DocumentState, after: DocumentState, textE
   const nodes = new Map<string, string | null>();
   const affected = new Set<string>();
   const ids = new Set([...before.html.nodeIds(), ...after.html.nodeIds()]);
+  const root=after.html.nodeIds().find(id=>after.html.peekNode(id)!.parentNodeId===null)!;
+  const semantic=before.snapshot.metadata.presentation?new Set<string>():wordSemanticChanges(before.snapshot.metadata,after.snapshot.metadata,root);
   for (const nodeId of ids) {
     const previous = before.html.signature(nodeId);
     const next = after.html.signature(nodeId);
-    if (previous === next) continue;
+    if (previous === next&&!semantic.has(nodeId)) continue;
     changes.push({ nodeId, kind: previous === undefined ? "added" : next === undefined ? "removed" : "modified" });
     if (previous !== undefined) nodes.set(nodeId, next === undefined ? null : nodeId);
     for (const state of [before, after]) {

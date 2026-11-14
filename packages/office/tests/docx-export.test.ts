@@ -76,7 +76,7 @@ test("exports the current edited Chinese font roles and complete IVS sequence", 
 test.each([
   ["invalid boolean", (xml: string) => xml.replace('w15:done="0"', 'w15:done="2"'), "InvalidDocument"],
   ["unknown paragraph", (xml: string) => xml.replace('w15:paraId="00000001"', 'w15:paraId="0000FFFF"'), "InvalidDocument"],
-  ["reply parent", (xml: string) => xml.replace('<w15:commentEx ', '<w15:commentEx w15:paraIdParent="00000001" '), "UnsupportedFeature"],
+  ["self reply parent", (xml: string) => xml.replace('<w15:commentEx ', '<w15:commentEx w15:paraIdParent="00000001" '), "InvalidDocument"],
   ["unknown extension", (xml: string) => xml.replace('<w15:commentEx ', '<w15:commentEx w15:future="1" '), "UnsupportedFeature"],
 ] as const)("resolved-comment reader rejects ambiguous or unsupported extension: %s", (_name, mutate, code) => {
   const exported = exportDocx(model("08-comments-revisions.docx")), parts = unzipSync(exported.bytes);

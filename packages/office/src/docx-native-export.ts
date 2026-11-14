@@ -31,22 +31,22 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     if (!entries) { entries = new Map(); for (const item of root.content) if(typeof item!=='string' && item.uri==='urn:doffi:word:native-fragments' && item.name==='item') { const key=item.attrs.get(' id'),child=item.content.find((node):node is XmlNode=>typeof node!=='string'); if(!key||!child||entries.has(key))throw new DocumentError('InvalidDocument','The native fragment collection is invalid.');entries.set(key,child); } fragmentEntries.set(fragment.assetPath,entries); }
     const node=entries.get(fragment.fragmentKey);if(!node)throw new DocumentError('InvalidDocument','A native fragment collection entry is missing.');return node;
   };
-  const nodeParts = new Map<string, string>();
+  const nodeParts = new Map<string, {path:string;name:string}[]>();
   for (const [path, bytes] of files) if (path.endsWith('.xml') && path !== '[Content_Types].xml') {
     const root = read(bytes, path); parsed.set(path, root);
     const scan = (node: XmlNode): void => {
-      const id = node.attrs.get(NATIVE_MARKER + ' node'); if (id) nodeParts.set(id, path);
-      const container=node.attrs.get(NATIVE_MARKER+' container');if(container)nodeParts.set(container,path);
+      for(const id of [node.attrs.get(NATIVE_MARKER+' node'),node.attrs.get(NATIVE_MARKER+' container')])if(id){const locations=nodeParts.get(id)??[];locations.push({path,name:node.name});nodeParts.set(id,locations);}
       for (const item of node.content) if (typeof item !== 'string') scan(item);
     };
     scan(root);
   }
   const partMap = new Map<string, string>([[native.mainPart, 'word/document.xml']]);
   for (const fragment of native.fragments) {
-    const mapped = fragment.nodeId ? nodeParts.get(fragment.nodeId) : undefined;
+    const locations=fragment.nodeId?nodeParts.get(fragment.nodeId):undefined;
+    const mapped = locations?.find(location=>location.name===fragment.ownerName)?.path??locations?.[0]?.path;
     if (mapped) partMap.set(fragment.sourcePart, mapped);
     else if (fragment.kind === 'property' && !fragment.nodeId) {
-      const rootNames: Record<string,string> = { settings: 'settings', style: 'styles', styles: 'styles', numbering: 'numbering', fonts: 'fonts', commentsEx: 'commentsEx', commentsExtensible: 'commentsExtensible', commentsIds: 'commentsIds' };
+      const rootNames: Record<string,string> = { settings: 'settings', style: 'styles', styles: 'styles', numbering: 'numbering', fonts: 'fonts', commentsEx: 'commentsEx', commentsExtensible: 'commentsExtensible', commentsIds: 'commentsIds',people:'people' };
       const rootName = rootNames[fragment.ownerName];
       const entry = rootName ? [...parsed].find(([,root]) => root.name === rootName) : undefined;
       if (entry) partMap.set(fragment.sourcePart, entry[0]);
@@ -109,7 +109,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     if(object){const fragment=native.fragments.find(f=>f.nativeId===object&&f.kind!=='property');if(!fragment)throw new DocumentError('InvalidDocument','A native object descriptor is missing.');restored.add(fragment.nativeId);if(!fragment.runChild)return fragmentXml(fragment);const container=root.attrs.get(NATIVE_MARKER+' container');for(const key of ['node','object','container'])(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' '+key);root.content.push(fragmentXml(fragment));for(const residual of container?byNode.get(container)??[]:[])if(residual.kind==='property')applyProperty(root,residual);return root;}
     const container=root.attrs.get(NATIVE_MARKER+' container');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' node');(root.attrs as Map<string,string>).delete(NATIVE_MARKER+' container');
     for(let index=0;index<root.content.length;index++){const child=root.content[index]!;if(typeof child!=='string')root.content[index]=apply(child);}
-    for(const fragment of [...(id?byNode.get(id)??[]:[]),...(container?byNode.get(container)??[]:[])])if(fragment.kind==='property')applyProperty(root,fragment);
+    for(const fragment of [...(id?byNode.get(id)??[]:[]),...(container?byNode.get(container)??[]:[])])if(fragment.kind==='property'&&fragment.ownerName===root.name)applyProperty(root,fragment);
     return root;
   };
   for(const [path,root]of parsed){

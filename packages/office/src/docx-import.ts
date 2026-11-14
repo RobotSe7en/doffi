@@ -1,3 +1,5 @@
+import { readWordCommentExtensions,wordCommentAnnotations } from './docx-comments.js';
+import type { WordCommentState as CommentState } from './docx-comments.js';
 import { readWordControl } from './docx-control.js';
 import { readNoteOptions } from './docx-note-options.js';
 import { M,readWordMath } from './docx-math.js';
@@ -8,13 +10,11 @@ import {
   openDocument,
 } from "@doffi/core";
 import type {
-  Annotation,
   ContentDocumentManifest,
   ContentDocumentMetadata,
   DocumentPackage,
   DocumentSection,
   PageSetup,
-  TextRange,
   WordMetadata,
 } from "@doffi/core";
 import type { DocumentZipOptions } from "./document-zip.js";
@@ -64,13 +64,7 @@ interface FieldState {
   definition: WordMetadata["fields"][number];
   result: boolean;
 }
-interface CommentState {
-  source: XmlNode;
-  bodyNodeId: string;
-  ranges: TextRange[];
-  point?: string;
-  resolved?: boolean;
-}
+
 /** Serialized HTML size without allocating an escaped string or UTF-8 buffer. */
 function htmlBytes(value: string): number {
   let bytes = 0;
@@ -421,14 +415,6 @@ class Importer {
     }
     const mainStory = this.story("main", "main");
     this.currentStory = "main";
-    for (const type of [
-      "commentsExtensible",
-      "commentsIds",
-      "people",
-    ]) {
-      if (this.opc.related(this.main, type))
-        unsupported(source, "Modern comment threads are not supported.");
-    }
     this.readComments();
     this.readNotes();
     const body = child(source, "body");
@@ -469,37 +455,7 @@ class Importer {
       fail(source, "A field, comment range or bookmark is not closed.");
     this.resolveDrawingConnections();
     this.root.children.push(mainStory, ...this.auxiliary);
-    const annotations: Annotation[] = [];
-    for (const [id, comment] of this.comments) {
-      if (!comment.ranges.length && !comment.point)
-        fail(comment.source, "An imported comment has no anchor.");
-      const author = attr(comment.source, "author");
-      const initials = attr(comment.source, "initials");
-      const date = attr(comment.source, "date");
-      annotations.push({
-        annotationId: "comment-" + id,
-        documentId: this.documentId,
-        baseRevision: 0,
-        status: comment.resolved ? "resolved" : "open",
-        bodyNodeId: comment.bodyNodeId,
-        sourceId: id,
-        ...(author !== undefined
-          ? {
-              author: {
-                name: author,
-                ...(initials !== undefined ? { initials } : {}),
-              },
-            }
-          : {}),
-        ...(date !== undefined ? { date } : {}),
-        anchor:
-          comment.ranges.length === 1
-            ? { kind: "text", ...comment.ranges[0]! }
-            : comment.ranges.length
-              ? { kind: "text-set", ranges: comment.ranges }
-              : { kind: "node", nodeId: comment.point! },
-      });
-    }
+    const annotations=wordCommentAnnotations(this.comments,this.word,this.documentId);
     const metadata: ContentDocumentMetadata = {
       ...(this.styles.language ? { locale: this.styles.language } : {}),
       pageSetup: this.sections[0]!.pageSetup!,
@@ -1272,6 +1228,7 @@ class Importer {
     const part = this.opc.related(this.main, "comments");
     if (!part) {
       if (this.opc.related(this.main, "commentsExtended")) fail(this.opc.read(this.main), "Comment status requires a classic comments part.");
+      readWordCommentExtensions(this.opc,this.main,this.comments,this.word,this.id(this.root),this.native);
       return;
     }
     const root = this.opc.read(part);
@@ -1287,38 +1244,11 @@ class Importer {
       story.children.push(...this.readStoryContent(part, "comment-" + id, source));
       this.auxiliary.push(story);
       this.comments.set(id, { source, bodyNodeId: this.id(story), ranges: [] });
+      this.native?.bind(source,story.attrs);
     }
-    const extended = this.opc.related(this.main, "commentsExtended");
-    if (extended) {
-      const ns = "http://schemas.microsoft.com/office/word/2012/wordml";
-      const w14 = "http://schemas.microsoft.com/office/word/2010/wordml";
-      const extension = this.opc.read(extended);
-      if (extension.uri !== ns || extension.name !== "commentsEx") fail(extension, "The comment status extension has an invalid root.");
-      check(extension, ["commentEx"], ns);
-      const byParagraph = new Map<string, CommentState>();
-      const paragraphs = (source: XmlNode): XmlNode[] => source.content.flatMap((item) => typeof item === "string" ? [] : [...(item.uri === W && item.name === "p" ? [item] : []), ...paragraphs(item)]);
-      for (const comment of this.comments.values()) {
-        const id = attr(paragraphs(comment.source).at(-1), "paraId", w14)?.toUpperCase();
-        if (!id) continue;
-        if (!/^[0-9A-F]{8}$/.test(id) || byParagraph.has(id)) fail(comment.source, "A comment paragraph identity is invalid or repeated.");
-        byParagraph.set(id, comment);
-      }
-      const seen = new Set<string>();
-      for (const status of elements(extension, "commentEx", ns)) {
-        check(status, [], ns);
-        if (attr(status, "paraIdParent", ns) !== undefined) unsupported(status, "Comment replies are not supported.");
-        for (const key of status.attrs.keys()) if (![ns + " paraId", ns + " done"].includes(key)) unsupported(status, "An unknown comment status extension attribute is not supported.", key);
-        const id = attr(status, "paraId", ns)?.toUpperCase();
-        const comment = id ? byParagraph.get(id) : undefined;
-        if (!id || !comment || seen.has(id)) fail(status, "A comment status refers to an unknown or repeated comment paragraph.");
-        this.native?.bind(status, { "data-node-id": comment.bodyNodeId });
-        seen.add(id);
-        const done = attr(status, "done", ns) ?? "0";
-        if (!["0", "1", "true", "false", "on", "off"].includes(done)) fail(status, "A comment resolved state is invalid.");
-        comment.resolved = ["1", "true", "on"].includes(done);
-      }
-    }
+    readWordCommentExtensions(this.opc,this.main,this.comments,this.word,this.id(this.root),this.native);
   }
+
   private readonly drawingNativeIds=new Map<string,string>();
   private readonly drawingAliases=new Map<string,string|null>();
   private readonly drawingConnections:{source:XmlNode;nodeId:string;part:string;start?:string;end?:string;local:ReadonlyMap<string,string>}[]=[];
@@ -1643,7 +1573,6 @@ export function importDocx(
   try {
     if (options.unsupportedContent === "reject") return new Importer(opc, main, options.documentId).import();
     const native = new DocxNativeImport(opc, main), view = native.initialize();
-    native.suppressModernParts();
     for (;;) {
       native.beginAttempt();
       try { return new Importer(view, main, options.documentId, native).import(); }

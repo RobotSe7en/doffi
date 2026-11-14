@@ -8,6 +8,7 @@ import { createOpaqueId } from "../identifiers.js";
 import { parseContract } from "../schema-registry.js";
 import type { InteractionRequestInput } from "../runtime.js";
 import { annotationNodes } from "./anchors.js";
+import { expandWordContextRoots,wordInteractionContext } from './word-interaction.js';
 
 export const DEFAULT_INTERACTION_LIMITS = Object.freeze({ maxBytes: 4 * 1024 * 1024, maxNodes: 10_000, maxAssets: 256 });
 
@@ -37,13 +38,14 @@ export function buildInteractionRequest(state: DocumentState, input: Interaction
   for (const annotation of annotations) {
     const anchor = annotation.anchor;
     const ids = anchor.kind === "region" && anchor.nodeIds.length ? anchor.nodeIds : annotationNodes(annotation);
-    for (const id of [...ids, ...(annotation.bodyNodeId ? [annotation.bodyNodeId] : [])]) {
+    for (const id of [...ids, ...[annotation,...annotation.replies??[]].flatMap(message=>message.bodyNodeId?[message.bodyNodeId]:[])]) {
       let node = state.html.peekNode(id);
       if (!node) throw new DocumentError("AnchorNotFound", "An annotation context node is missing.");
       while (inline.has(node.tagName) && node.parentNodeId) node = state.html.peekNode(node.parentNodeId)!;
       roots.add(node.nodeId);
     }
   }
+  const contextNodes=expandWordContextRoots(state,roots,limits.maxNodes);
   const ids = state.html.nodeIds();
   const selected = ids.filter((id) => {
     if (!roots.has(id)) return false;
@@ -59,7 +61,9 @@ export function buildInteractionRequest(state: DocumentState, input: Interaction
       stack.push(...state.html.peekNode(stack.pop()!)!.childNodeIds);
     }
   }
-  checkLimit(state.snapshot.manifest.assets.length, limits.maxAssets);
+  const projected=wordInteractionContext(state,contextNodes,annotations);
+  checkLimit(projected.assets.length, limits.maxAssets);
+  const word=projected.metadata.word;let semanticNodes=contextNodes.size;for(const equation of word?.equations??[])semanticNodes+=equation.nodes.length;for(const drawing of word?.drawings??[])if(drawing.kind==='chart')semanticNodes+=drawing.chart.categories.length+drawing.chart.series.reduce((count,series)=>count+1+series.values.length+(series.xValues?.length??0),0);checkLimit(semanticNodes,limits.maxNodes);
   const supportedOperations = input.supportedOperations ?? ContentOperationNameSchema.options;
   if (!Array.isArray(supportedOperations) || !unique(supportedOperations)
     || supportedOperations.some((name) => !ContentOperationNameSchema.safeParse(name).success))
@@ -68,7 +72,7 @@ export function buildInteractionRequest(state: DocumentState, input: Interaction
     protocolVersion: 1, requestId: createOpaqueId(), documentId: state.snapshot.manifest.documentId,
     baseRevision: state.snapshot.manifest.revision, annotations,
     context: { formatVersion: 1, kind: "document", blocks: selected.map((nodeId) => ({ nodeId, html: state.html.getNode(nodeId)!.html })),
-      styles: state.snapshot.styles, metadata: state.snapshot.metadata, assets: state.snapshot.manifest.assets },
+      styles: state.snapshot.styles, ...projected },
     supportedOperations,
   });
   checkLimit(encode(JSON.stringify(request)).byteLength, limits.maxBytes);
@@ -91,8 +95,6 @@ export function validateProposal(state: DocumentState, request: DocumentInteract
       invalid("The request contains an annotation that differs from the current snapshot.");
   }
   if (proposal.annotationIds.some((id) => !annotationIds.has(id))) invalid("The proposal claims annotations outside its request.");
-  if (!equal(request.context.metadata, state.snapshot.metadata) || !equal(request.context.styles, state.snapshot.styles)
-    || !equal(request.context.assets, state.snapshot.manifest.assets)) invalid("Request context differs from the current document source.");
   const scope = new Set<string>();
   const blockIds = request.context.blocks.map((block) => block.nodeId);
   if (!unique(blockIds)) invalid("Request context contains duplicate blocks.");
@@ -109,15 +111,23 @@ export function validateProposal(state: DocumentState, request: DocumentInteract
       stack.push(...state.html.peekNode(id)!.childNodeIds);
     }
   }
+  const closure=expandWordContextRoots(state,new Set(blockIds),state.html.nodeIds().length);
+  if([...closure].some(id=>!scope.has(id)))invalid('Request context omits an owned Word story or semantic dependency.');
+  const projected=wordInteractionContext(state,scope,request.annotations);
+  if (!equal(request.context.metadata, projected.metadata) || !equal(request.context.styles, state.snapshot.styles)
+    || !equal(request.context.assets, projected.assets)) invalid("Request context differs from the current document source.");
   for (const annotation of request.annotations) {
     const anchor = annotation.anchor;
     const targets = anchor.kind === "region" && anchor.nodeIds.length ? anchor.nodeIds : annotationNodes(annotation);
-    if ([...targets, ...(annotation.bodyNodeId ? [annotation.bodyNodeId] : [])].some((id) => !scope.has(id)))
+    if ([...targets, ...[annotation,...annotation.replies??[]].flatMap(message=>message.bodyNodeId?[message.bodyNodeId]:[])].some((id) => !scope.has(id)))
       invalid("Request context does not cover every selected annotation.");
   }
   for (const operation of proposal.operations) {
     if (!request.supportedOperations.includes(operation.op)) invalid("The proposal uses an operation not declared by the request.");
     if (!scope.has(operation.nodeId)) invalid("A proposal operation targets a node outside the request context.");
+    if('annotationId'in operation&&!annotationIds.has(operation.annotationId))invalid('A Word proposal cannot edit a comment outside its selected threads.');
+    if(operation.op==='reconcileFragment'&&operation.textEdits.some(edit=>!scope.has(edit.nodeId)))invalid('Reconciled text edits must belong to the request context.');
+    if(operation.op==='setWordSection'&&[...Object.values(operation.changes.headers??{}),...Object.values(operation.changes.footers??{})].some(id=>{const story=state.snapshot.metadata.word?.stories.find(story=>story.storyId===id);return!story||!scope.has(story.rootNodeId);}))invalid('Linked Word stories must belong to the request context.');
     if(operation.op==='splitWordSection'){
       const parent=state.html.peekNode(operation.nodeId)!.parentNodeId;
       if(!parent||!scope.has(parent))invalid('A section split requires its complete section in the request context.');

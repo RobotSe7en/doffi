@@ -1,4 +1,5 @@
 import { createWordViewport, mountWordRulers } from "./word-ruler.js";
+import { createWordCommentControls } from './word-comment-controls.js';
 import { bindWordLineSelection } from "./line-selection.js";
 import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
@@ -20,6 +21,7 @@ export interface DocumentInteractionOptions extends DocumentPreviewOptions {
   readonly annotationTrigger?: "selection" | "command";
   readonly onSelectionChange?: (selection: DocumentSelection | undefined) => void;
   readonly onError?: (error: Error) => void;
+  readonly onEditAnnotationBody?:(annotationId:string,replyId?:string)=>void;
 }
 export interface DocumentInteractionView {
   readonly element: HTMLElement;
@@ -144,6 +146,7 @@ export function mountDocumentInteraction(
   const modeButtons = new Map<DocumentInteractionMode, HTMLButtonElement>();
   let popover: AnnotationPopover | undefined;
   let newComment: HTMLButtonElement | undefined;
+  const commentControls=createWordCommentControls(shadow,session,report,options.onEditAnnotationBody);
 
   function showComposer(): void { if (options.annotationTrigger !== "command" && selection && !nativeDragging && !regionDragging) popover?.open(); }
 
@@ -318,6 +321,7 @@ export function mountDocumentInteraction(
       }, actions);
       cardButton("删除批注", () => commit([{ op: "removeAnnotation", annotationId: annotation.annotationId }]), actions);
       card.append(actions);
+      commentControls.append(card,annotation,cardControls.signal);
       list.append(card);
     }
   }
@@ -603,6 +607,7 @@ export function mountDocumentInteraction(
       selection = undefined;
       source = undefined;
       editDrafts.clear();
+      commentControls.dispose();
       list.replaceChildren();
       draft.value = "";
       element.remove();

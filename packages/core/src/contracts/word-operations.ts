@@ -7,9 +7,11 @@ import { WordDrawingOperationSchema } from './word-drawing.js';
 import { WordReferenceOperationSchema } from './word-reference.js';
 import { WordMathOperationSchema } from './word-math.js';
 import { WordControlOperationSchema } from './word-control.js';
+import { WordCommentOperationSchema } from './word-comment.js';
 const properties=z.record(z.string().min(1),z.string().min(1));
 /** Format operations always name an existing source target for proposal scoping. */
 export const WordOperationSchema=z.discriminatedUnion('op',[
+  ...WordCommentOperationSchema.options,
   ...WordDrawingOperationSchema.options,
   ...WordReferenceOperationSchema.options,
   ...WordMathOperationSchema.options,

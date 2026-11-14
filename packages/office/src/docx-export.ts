@@ -1,3 +1,4 @@
+import { W15,CID,CEX } from './docx-comments.js';
 import { WordChartWriter } from './docx-chart-export.js';
 import { writeWordControlProperties } from './docx-control.js';
 import { writeNoteOptions } from './docx-note-options.js';
@@ -8,7 +9,7 @@ import type { DocumentZipOptions } from "./document-zip.js";
 import { writeOpcZip } from "./document-zip.js";
 import { xml } from "./ooxml/xml.js";
 import { ExportAnnotations } from "./export/annotations.js";
-import type { UnexportedAnnotation } from "./export/annotations.js";
+import type { ExportComment,UnexportedAnnotation } from "./export/annotations.js";
 import { ExportCss } from "./export/css.js";
 import type { Css } from "./export/css.js";
 import { contentType, OutputOpc } from "./export/opc.js";
@@ -106,7 +107,7 @@ class Exporter {
     for (const parent of this.tree.elements) if (paragraphTags.has(parent.tag) || ["article", "section", "div", "li", "td", "th"].includes(parent.tag)) {
       for (const node of this.flow(parent.children, parent)) if (!element(node) || this.flowStyles.has(node) || !blockTags.has(node.tag)) mark(node);
     }
-    this.annotations = new ExportAnnotations(this.tree, this.snapshot.annotations, stories, limits.maxNodes * 128, (node) => this.emittedText.has(node));
+    this.annotations = new ExportAnnotations(this.tree, this.snapshot.annotations, stories, limits.maxNodes * 128, (node) => this.emittedText.has(node),word);
   }
   private add(value: string): void { this.output.add(value); }
   private assertFormatting(node: SourceElement, css: Css): void {
@@ -493,25 +494,30 @@ class Exporter {
     for(const kind of ['footnote','endnote']as const){const notes=this.snapshot.metadata.word?.notes?.filter(note=>note.kind===kind)??[];if(!notes.length)continue;const path='word/'+kind+'s.xml';this.withStory(path,()=>{this.output=this.opc.part(path,'application/vnd.openxmlformats-officedocument.wordprocessingml.'+kind+'s+xml');this.add(declaration+'<w:'+kind+'s'+namespaces+'>');for(const[type,id,tag]of [['separator',-1,'separator'],['continuationSeparator',0,'continuationSeparator']]as const)if(!notes.some(note=>note.type===type))this.add('<w:'+kind+attributes({'w:id':id,'w:type':type})+'><w:p><w:r>'+empty('w:'+tag)+'</w:r></w:p></w:'+kind+'>');for(const note of notes){const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===note.storyId)!;this.add('<w:'+kind+this.nativeMark(story.rootNodeId)+attributes({'w:id':this.noteIds.get(note.noteId),'w:type':note.type&&note.type!=='normal'?note.type:undefined})+'>');this.blocks(this.tree.byId.get(story.rootNodeId)!.children);this.add('</w:'+kind+'>');}this.add('</w:'+kind+'s>');this.output.finish();});this.opc.relate('word/document.xml',kind+'s',kind+'s.xml');}
   }
   private writeComments(): void {
-    if (!this.annotations.comments.length) return;
-    const path = "word/comments.xml";
-    this.withStory(path, () => {
-      this.output = this.opc.part(path, contentType("comments")); this.add(declaration + "<w:comments" + namespaces + ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">');
-      for (const comment of this.annotations.comments) {
-        const annotation = comment.annotation;
-        this.add("<w:comment" + attributes({ "w:id": comment.id, "w:author": annotation.author?.name ?? "", "w:initials": annotation.author?.initials, "w:date": date(annotation.date) }) + ">");
-        if (annotation.bodyNodeId) this.blocks(this.tree.byId.get(annotation.bodyNodeId)!.children, undefined, comment.paragraphId);
-        else this.add('<w:p w14:paraId="' + comment.paragraphId + '"><w:r><w:t xml:space="preserve">' + escapeXml(annotation.instruction!) + "</w:t></w:r></w:p>");
-        this.add("</w:comment>");
-      }
-      this.add("</w:comments>"); this.output.finish();
+    if (!this.annotations.comments.length&&!this.snapshot.metadata.word?.nativeContent?.fragments.some(fragment=>!fragment.nodeId&&['commentsEx','commentsIds','commentsExtensible'].includes(fragment.ownerName))){this.writePeople([]);return;}
+    const messages=this.annotations.messages,path="word/comments.xml";
+    this.withStory(path,()=>{
+      this.output=this.opc.part(path,contentType("comments"));this.add(declaration+'<w:comments'+namespaces+' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">');
+      for(const message of messages){const body=message.reply??message.annotation;this.add('<w:comment'+this.nativeMark(body.bodyNodeId)+attributes({'w:id':message.id,'w:author':body.author?.name??'','w:initials':body.author?.initials,'w:date':date(body.date)})+'>');if(body.bodyNodeId)this.blocks(this.tree.byId.get(body.bodyNodeId)!.children,undefined,message.paragraphId);else this.add('<w:p w14:paraId="'+message.paragraphId+'"><w:r><w:t xml:space="preserve">'+escapeXml(body.instruction!)+'</w:t></w:r></w:p>');this.add('</w:comment>');}
+      this.add('</w:comments>');this.output.finish();
     });
-    this.opc.relate("word/document.xml", "comments", "comments.xml");
-    const extended = this.opc.part("word/commentsExtended.xml", "application/vnd.ms-word.commentsExtended+xml");
-    extended.add(declaration + '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">');
-    for (const comment of this.annotations.comments) extended.add("<w15:commentEx" + this.nativeMark(comment.annotation.bodyNodeId) + attributes( { "w15:paraId": comment.paragraphId, "w15:done": comment.annotation.status === "resolved" ? 1 : 0 }) + "/>");
-    extended.add("</w15:commentsEx>"); extended.finish(); this.opc.relate("word/document.xml", "http://schemas.microsoft.com/office/2011/relationships/commentsExtended", "commentsExtended.xml");
+    this.opc.relate('word/document.xml','comments','comments.xml');
+    const extension=(file:string,type:string,ns:string,prefix:string,root:string,items:string):void=>{const part=this.opc.part('word/'+file,type);part.add(declaration+'<'+prefix+':'+root+' xmlns:'+prefix+'="'+ns+'">'+items+'</'+prefix+':'+root+'>');part.finish();};
+    extension('commentsExtended.xml','application/vnd.ms-word.commentsExtended+xml',W15,'w15','commentsEx',messages.map(message=>{const body=message.reply??message.annotation;return '<w15:commentEx'+this.nativeMark(body.bodyNodeId)+attributes({'w15:paraId':message.paragraphId,'w15:paraIdParent':message.parentParagraphId,'w15:done':['resolved','closed'].includes(body.status??'open')?1:0})+'/>';}).join(''));
+    this.opc.relate('word/document.xml','http://schemas.microsoft.com/office/2011/relationships/commentsExtended','commentsExtended.xml');
+    extension('commentsIds.xml','application/vnd.ms-word.commentsIds+xml',CID,'w16cid','commentsIds',messages.map(message=>'<w16cid:commentId'+this.nativeMark((message.reply??message.annotation).bodyNodeId)+attributes({'w16cid:paraId':message.paragraphId,'w16cid:durableId':message.durableId})+'/>').join(''));
+    this.opc.relate('word/document.xml','http://schemas.microsoft.com/office/2016/09/relationships/commentsIds','commentsIds.xml');
+    extension('commentsExtensible.xml','application/vnd.ms-word.commentsExtensible+xml',CEX,'w16cex','commentsExtensible',messages.map(message=>'<w16cex:commentExtensible'+this.nativeMark((message.reply??message.annotation).bodyNodeId)+attributes({'w16cex:durableId':message.durableId,'w16cex:dateUtc':(message.reply??message.annotation).date?new Date(date((message.reply??message.annotation).date)!).toISOString():undefined,'w16cex:intelligentPlaceholder':message.followUp===undefined?undefined:message.followUp?1:0})+'/>').join(''));
+    this.opc.relate('word/document.xml','http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible','commentsExtensible.xml');
+    this.writePeople(messages);
   }
+  private writePeople(messages:readonly ExportComment[]):void{
+    const people=new Map(this.snapshot.metadata.word?.people?.map(person=>[person.author,person])??[]);for(const message of messages){const name=(message.reply??message.annotation).author?.name??'';if(!people.has(name))people.set(name,{author:name});}
+    const items=[...people.values()].map(person=>{const body=messages.find(message=>(message.reply??message.annotation).author?.name===person.author),nodeId=body?(body.reply??body.annotation).bodyNodeId:this.tree.root.attrs['data-node-id'];return '<w15:person'+this.nativeMark(nodeId)+attributes({'w15:author':person.author})+'>'+(person.presence?empty('w15:presenceInfo',{'w15:providerId':person.presence.providerId,'w15:userId':person.presence.userId}):'')+'</w15:person>';}).join('');
+    if(!items)return;const out=this.opc.part('word/people.xml','application/vnd.ms-word.people+xml');out.add(declaration+'<w15:people xmlns:w15="'+W15+'">'+items+'</w15:people>');out.finish();
+    this.opc.relate('word/document.xml','http://schemas.microsoft.com/office/2011/relationships/people','people.xml');
+  }
+
   private noteSettings(kind:'footnote'|'endnote'):string{const word=this.snapshot.metadata.word,notes=word?.notes?.filter(note=>note.kind===kind)??[],options=kind==='footnote'?word?.footnoteOptions:word?.endnoteOptions;return writeNoteOptions(kind,notes.length?{format:kind==='footnote'?'decimal':'lowerRoman',...options}:options,notes.length?[-1,0,...notes.filter(note=>note.type==='continuationNotice').map(note=>this.noteIds.get(note.noteId)!)]:[]);}
   private writeSettings(): void {
     const out = this.opc.part("word/settings.xml", contentType("settings")), tabs = this.snapshot.metadata.word?.tabs ?? [], intervals = new Set(tabs.map((tab) => tab.defaultInterval));

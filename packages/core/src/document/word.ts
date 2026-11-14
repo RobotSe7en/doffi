@@ -12,8 +12,6 @@ export function validateWord(
   html: ParsedHtml,
   assets: readonly AssetDescriptor[] = [],
 ): void {
-  if (annotations.some((annotation) => annotation.replies !== undefined)) invalid("Word comment replies are not implemented.");
-  if (annotations.some((annotation) => annotation.status === "closed")) invalid("Closed native comment state is supported only for presentation threads.");
   const word = metadata.word;
   const node = (id: string) => {
     const result = html.peekNode(id);
@@ -33,6 +31,18 @@ export function validateWord(
     return map;
   };
   if (word) {
+    unique(word.people??[],person=>person.author);
+    const annotationById=new Map(annotations.map(annotation=>[annotation.annotationId,annotation]));
+    const durable=new Set<string>();
+    for(const binding of unique(word.comments??[],item=>item.annotationId).values()){
+      const annotation=annotationById.get(binding.annotationId);if(!annotation)invalid('A Word comment binding requires its annotation.');
+      const replies=unique(binding.replies,item=>item.replyId),actual=new Set(annotation.replies?.map(reply=>reply.replyId));
+      for(const item of [binding,...binding.replies]){if(item.durableId){const id=item.durableId.toUpperCase();if(durable.has(id))invalid('Word comment durable identities must be unique.');durable.add(id);}}
+      for(const reply of replies.values()){
+        if(!actual.has(reply.replyId))invalid('A Word reply binding requires its message.');
+      }
+      const done=new Set<string>();for(const reply of replies.values()){const path=new Set<string>();let current:typeof reply|undefined=reply;while(current&&!done.has(current.replyId)){if(path.has(current.replyId))invalid('Word reply parents cannot be cyclic.');path.add(current.replyId);if(current.parentReplyId&&!replies.has(current.parentReplyId))invalid('A Word reply parent must belong to the thread.');current=current.parentReplyId?replies.get(current.parentReplyId):undefined;}for(const id of path)done.add(id);}
+    }
     if (word.nativeContent) {
       const native = word.nativeContent, paths = new Set(assets.map(asset => asset.path));
       const ids = new Set<string>(), parts = new Set<string>();
@@ -306,13 +316,16 @@ export function validateWord(
         invalid("Native revision containers require Word metadata.");
     }
   }
+  const bodyIds=new Set<string>(),replyIds=new Set<string>();
   for (const annotation of annotations) {
-    if (annotation.bodyNodeId !== undefined) {
+    for(const reply of annotation.replies??[]){if(replyIds.has(reply.replyId))invalid('Word reply identities must be unique.');replyIds.add(reply.replyId);}
+    for(const message of [annotation,...annotation.replies??[]])if (message.bodyNodeId !== undefined) {
+      if(bodyIds.has(message.bodyNodeId))invalid('A Word comment body has one owning message.');bodyIds.add(message.bodyNodeId);
       if (
         !word?.stories.some(
           (story) =>
             story.kind === "comment" &&
-            story.rootNodeId === annotation.bodyNodeId,
+            story.rootNodeId === message.bodyNodeId,
         )
       )
         invalid("A rich annotation requires its comment story.");

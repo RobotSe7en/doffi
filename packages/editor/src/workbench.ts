@@ -10,6 +10,7 @@ import type { DocumentInteractionOptions, DocumentInteractionView } from "./inte
 import { mountDocumentPreview } from "./preview.js";
 import type { DocumentPreview } from "./preview.js";
 import { mountDocumentTextEditor } from "./rich-text.js";
+import { wordDiffDetails } from './word-diff.js';
 import type { DocumentTextCommand, DocumentTextEditor } from "./rich-text.js";
 import { mountPresentationWorkbench } from "./presentation-workbench.js";
 import type { PresentationWorkbenchOptions,PresentationWorkbenchView } from "./presentation-workbench.js";
@@ -141,6 +142,7 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
     ...(options.appearance ? { appearance: options.appearance } : {}),
     onSelectionChange: (selection) => { options.onSelectionChange?.(selection); notify({ type: "selectionChanged", selection }); },
     onError: report,
+    ...(options.editable===false?{}:{onEditAnnotationBody:(annotationId:string,replyId?:string)=>{void setEditing(true).then(()=>{const annotation=session.getAnnotations().find(item=>item.annotationId===annotationId),message=replyId?annotation?.replies?.find(item=>item.replyId===replyId):annotation,story=session.snapshot().metadata.word?.stories.find(story=>story.rootNodeId===message?.bodyNodeId);if(!story)throw new DocumentError('InvalidOperation','批注正文已变化，请重新打开。');textEditor!.editStory(story.storyId);}).catch(report);}}),
   });
   let edit: HTMLButtonElement | undefined, zoom = 1, rulerVisible = false;
   function setRulers(visible: boolean): void { ensureActive(); rulerVisible = visible; interaction.setRulers(visible); textEditor?.setRulers(visible); }
@@ -250,11 +252,12 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
       const text = document.createElement("p"); text.textContent = change.kind === "added" ? "新增内容" : change.kind === "removed" ? "删除内容" : "修改内容";
       const previous = document.createElement("pre"), following = document.createElement("pre");
       previous.setAttribute("aria-label", "修改前"); following.setAttribute("aria-label", "修改后");
-      previous.textContent = before?.text ?? "（无）"; following.textContent = after?.text ?? "（无）";
+      const semanticOnly=before?.html===after?.html;previous.textContent = semanticOnly?wordDiffDetails(session,change.nodeId)||before?.text||"（无）":before?.text??"（无）";following.textContent=semanticOnly?wordDiffDetails(model,change.nodeId)||after?.text||"（无）":after?.text??"（无）";
       const details = document.createElement("details"), explanation = document.createElement("summary"); explanation.textContent = "查看结构与样式变化";
-      const source = document.createElement("pre"); source.textContent = (before?.html ?? "（无）") + "\n→\n" + (after?.html ?? "（无）");
+      const source = document.createElement("pre"); source.textContent = (before?.html ?? "（无）") + "\n"+wordDiffDetails(session,change.nodeId)+"\n→\n" + (after?.html ?? "（无）")+"\n"+wordDiffDetails(model,change.nodeId);
       details.append(explanation, source); item.append(text, previous, following, details); list.append(item);
     }
+    for(const id of next.changedAnnotationIds){const before=session.getAnnotations().find(annotation=>annotation.annotationId===id),after=model.snapshot().annotations.find(annotation=>annotation.annotationId===id);const item=document.createElement('li'),label=document.createElement('p'),details=document.createElement('pre');label.textContent='批注线程变化';details.textContent=JSON.stringify(before,null,2)+'\n→\n'+JSON.stringify(after,null,2);item.append(label,details);list.append(item);}
     const annotationSummary = document.createElement("p");
     annotationSummary.textContent = "批注结果：" + next.preview.annotations.filter((a) => proposal.annotationIds.includes(a.annotationId))
       .map((a) => a.status === "resolved" ? "已处理" : a.status === "needs_reanchor" ? "需要重新定位" : "待处理").join("、");
@@ -263,7 +266,7 @@ function mountContentWorkbench(container: HTMLElement, session: DocumentSession,
     candidatePreview = mountDocumentPreview(previewContainer, model, { title: "提案候选预览" });
     candidateReady = candidatePreview.ready;
     void candidateReady.catch(report);
-    status.textContent = next.changes.length ? "提案已准备，查看差异后可整批应用。" : "提案没有净内容变化，批注将保持原状态。";
+    status.textContent = next.changes.length||next.changedAnnotationIds.length ? "提案已准备，查看差异后可整批应用。" : "提案没有净内容变化，批注将保持原状态。";
     updateButtons();
     notify({ type: "proposalReady", proposal: immutable(parseContract("edit-proposal", proposal)), candidate: next });
     return next;

@@ -4,6 +4,7 @@ import { WordDrawingSchema } from './word-drawing.js';
 import { WordNoteSchema,WordNoteReferenceSchema,WordNoteOptionsSchema } from './word-reference.js';
 import { WordEquationSchema } from './word-math.js';
 import { WordControlSchema } from './word-control.js';
+import { WordCommentSchema,WordPersonSchema } from './word-comment.js';
 
 /** Residual OOXML owns only content that has no editable HTML representation. */
 export const WordNativeContentSchema = z.strictObject({
@@ -87,6 +88,7 @@ export const WordNumberLevelSchema = z.strictObject({
   cssClass: IdentifierSchema,
 });
 export const WordMetadataSchema = z.strictObject({
+  comments:z.array(WordCommentSchema).optional(),people:z.array(WordPersonSchema).optional(),
   controls:z.array(WordControlSchema).optional(),
   equations:z.array(WordEquationSchema).optional(),
   notes:z.array(WordNoteSchema).optional(),noteReferences:z.array(WordNoteReferenceSchema).optional(),

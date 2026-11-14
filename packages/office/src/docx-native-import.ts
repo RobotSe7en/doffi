@@ -7,9 +7,9 @@ import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
 interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
-const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
-const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
-const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'chart', 'hyperlink']);
+const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
+const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
+const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended','commentsIds','commentsExtensible','people', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'chart', 'hyperlink']);
 export class DocxNativeImport {
   private readonly pending: Pending[] = [];
   private readonly bindings = new Map<XmlNode, string>();
@@ -42,9 +42,6 @@ export class DocxNativeImport {
   }
   beginAttempt(): void { this.bindings.clear(); }
   isPlaceholder(node:XmlNode):boolean{return this.placeholders.has(node);}
-  suppressModernParts(): void {
-    for (const type of ['commentsExtensible', 'commentsIds', 'people']) this.suppressed.add(this.main + '\n' + type);
-  }
   recover(error: unknown): boolean {
     const info = unsupportedSource(error);
     if (!info) return false;
@@ -57,16 +54,16 @@ export class DocxNativeImport {
     for (let parent = this.parents.get(target); parent; parent = this.parents.get(parent)) chain.push(parent);
     const mergeContinuation = error instanceof Error && /vertical merge continuation/i.test(error.message);
     const root = chain.at(-1)!;
-    if (root.uri !== W && !['commentsEx','commentsExtensible','commentsIds'].includes(root.name)) {
+    if (root.uri !== W && !['commentsEx','commentsExtensible','commentsIds','people'].includes(root.name)) {
       const relation = [...this.original.relationships(this.main).values()].find(rel => !rel.external && rel.target === root.part);
       if (relation) { const key=this.main+'\n'+relation.type.slice(relation.type.lastIndexOf('/')+1); if(!this.suppressed.has(key)){this.suppressed.add(key);return true;} }
     }
-    const propertyIndex = mergeContinuation ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds'].includes(n.name));
+    const propertyIndex = mergeContinuation ? -1 : chain.findIndex((n,index) => n.uri === W && (propertyRoots.has(n.name) || index === 1 && n.name === 'document') || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name));
     // A drawing is indivisible until it has an editable geometry implementation.
     const atomicIndex = chain.findIndex(n => n.uri === W && ['drawing','pict','object','sdt'].includes(n.name) || n.uri==='http://schemas.openxmlformats.org/officeDocument/2006/math'&&['oMath','oMathPara'].includes(n.name));
     const drawing=atomicIndex<0?undefined:chain[atomicIndex];
     if (propertyIndex >= 0 && (!drawing || drawing.name==='sdt'&&propertyIndex<atomicIndex)) {
-      const owner = chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
+      const owner = chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
       const path: string[] = [];
       for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) path.unshift(current.uri + ' ' + current.name);
       if (info.attribute) {
@@ -124,7 +121,7 @@ export class DocxNativeImport {
       }
     };
     const part = (sourcePart: string): void => {
-      const root=this.roots.get(sourcePart),generated=root?.uri===W&&['document','styles','settings','numbering','comments','hdr','ftr','footnotes','endnotes'].includes(root.name)||root?.name==='commentsEx';
+      const root=this.roots.get(sourcePart),generated=root?.uri===W&&['document','styles','settings','numbering','comments','hdr','ftr','footnotes','endnotes'].includes(root.name)||['commentsEx','commentsExtensible','commentsIds','people'].includes(root?.name??'');
       if (parts.has(sourcePart) || sourcePart === this.main || generated) return;
       parts.add(sourcePart);
       const bytes = this.original.files.get(sourcePart);

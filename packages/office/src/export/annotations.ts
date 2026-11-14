@@ -1,20 +1,23 @@
 import { DocumentError } from "@doffi/core";
-import type { Annotation, DeepReadonly } from "@doffi/core";
+import type { Annotation,AnnotationReply,WordMetadata, DeepReadonly } from "@doffi/core";
 import type { SourceElement, SourceNode, SourceText, SourceTree } from "./source.js";
 import { element } from "./source.js";
 import { empty } from "./xml.js";
 
 export interface UnexportedAnnotation { readonly annotationId: string; readonly reason: "region" | "needs_reanchor" | "disjoint" | "cross_story" | "unrepresentable" }
-export interface ExportComment { readonly id: string; readonly annotation: DeepReadonly<Annotation>; readonly paragraphId: string }
+export interface ExportComment { readonly id: string; readonly annotation: DeepReadonly<Annotation>; readonly paragraphId: string; readonly durableId:string; readonly reply?:DeepReadonly<AnnotationReply>; parentParagraphId?:string; readonly followUp?:boolean }
 interface Endpoint { node: SourceNode; offset: number }
 interface Range { start: Endpoint; end: Endpoint; story: SourceElement; first: number; last: number }
 /** Ranges bind to concrete source leaves. Equal paragraph-end/start offsets do
  * not accidentally move a comment onto the neighbouring paragraph. */
 export class ExportAnnotations {
   readonly comments: ExportComment[] = [];
+  readonly messages:ExportComment[]=[];
   readonly omitted: UnexportedAnnotation[] = [];
   private readonly events = new WeakMap<SourceNode, Map<number, { starts: string[]; ends: string[] }>>();
-  constructor(tree: SourceTree, annotations: readonly DeepReadonly<Annotation>[], stories: readonly SourceElement[], maximumWork: number, emitted: (node: SourceText) => boolean) {
+  constructor(tree: SourceTree, annotations: readonly DeepReadonly<Annotation>[], stories: readonly SourceElement[], maximumWork: number, emitted: (node: SourceText) => boolean,word?:DeepReadonly<WordMetadata>) {
+    const durableIds=new Set((word?.comments??[]).flatMap(binding=>[binding,...binding.replies]).flatMap(item=>item.durableId?[item.durableId.toUpperCase()]:[]));let nextDurable=1;
+    const durable=(original?:string):string=>{if(original)return original.toUpperCase();while(durableIds.has(nextDurable.toString(16).padStart(8,'0').toUpperCase()))nextDurable++;const id=(nextDurable++).toString(16).padStart(8,'0').toUpperCase();durableIds.add(id);return id;};
     const leaves: SourceNode[] = [];
     let work = 0;
     const step = (): void => { if (++work > maximumWork) throw new DocumentError("ResourceLimitExceeded", "DOCX annotation mapping exceeds its work budget."); };
@@ -61,8 +64,11 @@ export class ExportAnnotations {
         last = Math.max(last, item.last);
       }
       if (reason) { this.omitted.push({ annotationId: annotation.annotationId, reason }); continue; }
-      const id = String(this.comments.length), paragraphId = (this.comments.length + 1).toString(16).padStart(8, "0").toUpperCase();
-      this.comments.push({ id, annotation, paragraphId });
+      const id = String(this.messages.length), paragraphId = (this.messages.length + 1).toString(16).padStart(8, "0").toUpperCase(),binding=word?.comments?.find(binding=>binding.annotationId===annotation.annotationId);
+      const root:ExportComment={ id, annotation, paragraphId,durableId:durable(binding?.durableId),...(binding?.followUp!==undefined?{followUp:binding.followUp}:{}) };this.comments.push(root);this.messages.push(root);
+      const replies=new Map<string,ExportComment>();
+      for(const reply of annotation.replies??[]){const message:ExportComment={id:String(this.messages.length),paragraphId:(this.messages.length+1).toString(16).padStart(8,'0').toUpperCase(),annotation,reply,durableId:durable(binding?.replies.find(item=>item.replyId===reply.replyId)?.durableId)};this.messages.push(message);replies.set(reply.replyId,message);}
+      for(const[replyId,message]of replies){const parent=binding?.replies.find(reply=>reply.replyId===replyId)?.parentReplyId;message.parentParagraphId=parent?replies.get(parent)!.paragraphId:paragraphId;}
       const first = sorted[0]!, end = sorted.reduce((left, right) => left.last >= right.last ? left : right).end;
       this.add(first.start, id, "starts"); this.add(end, id, "ends");
     }

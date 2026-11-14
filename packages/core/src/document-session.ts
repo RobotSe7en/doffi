@@ -26,6 +26,8 @@ import { affectedPresentationSlides, guardPresentationContent, removeDeletedComm
 import { updatePresentationConnectors } from "./session/presentation-geometry.js";
 import { applyPresentationOperation, isPresentationOperation, validatePresentationTargets } from "./session/presentation-edit.js";
 import { applyWordOperation, isWordOperation } from "./session/word-edit.js";
+import { pruneWordComments } from './session/word-comments.js';
+import { validateWordCandidate } from './session/word-interaction.js';
 import { updateWordDrawingConnectors } from './word-drawing.js';
 import { PresentationStyleEdit } from "./session/presentation-styles.js";
 export { DEFAULT_INTERACTION_LIMITS } from "./session/interaction.js";
@@ -138,7 +140,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
       }
       else if (isWordOperation(operation)) {
         if (metadata.presentation) invalid("Word operations require a Word document.");
-        applyWordOperation(metadata, edit, parseEdited, styles, operation, limits);
+        applyWordOperation(metadata, edit, parseEdited, styles, operation, limits,annotations);
       }
       else if ("nodeId" in operation) { guardPresentationContent(base, operation); edit.apply(operation); }
       else applyAnnotation(operation, annotations, explicit);
@@ -151,6 +153,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
         && annotationNodes(annotation).some((id) => !base.html.hasNode(id))) invalid("Annotation targets must belong to the base snapshot.");
     }
     removeDeletedCommentBodies(base, annotations, edit,metadata);
+    if(metadata.word)pruneWordComments(metadata.word,annotations,edit,parseEdited);
     let parsed = parseEdited();
     for(const control of base.snapshot.metadata.word?.controls??[]){
       const current=metadata.word?.controls?.find(item=>item.nodeId===control.nodeId),unlocked=transaction.operations.some(operation=>operation.op==='setWordControl'&&operation.nodeId===control.nodeId&&operation.changes.lock==='unlocked');
@@ -197,7 +200,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
     updateWordMetadata(metadata, base, parsed);
     if (resolvedIds) {
       const resolved = new Set(resolvedIds);
-      const contentChanged = parsed.html !== base.snapshot.html || JSON.stringify(metadata) !== JSON.stringify(base.snapshot.metadata);
+      const contentChanged = parsed.html !== base.snapshot.html || JSON.stringify(metadata) !== JSON.stringify(base.snapshot.metadata)||JSON.stringify(annotations)!==JSON.stringify(base.snapshot.annotations);
       if (!contentChanged) annotations = parseContract("annotations", base.snapshot.annotations);
       else for (const annotation of annotations) {
         if (resolved.has(annotation.annotationId) && annotation.status === "open") annotation.status = "resolved";
@@ -235,7 +238,8 @@ export function createDocumentSession(document: DocumentModel, options: Document
       }
       if(options!==undefined)invalid("PPT proposal resource options require a presentation session.");
       const request=parseContract("interaction-request",requestInput),proposal=parseContract("edit-proposal",proposalInput);validateProposal(state(),request,proposal);
-      return prepareTransaction({protocolVersion:1,documentId:proposal.documentId,baseRevision:proposal.baseRevision,operations:proposal.operations},proposal.annotationIds);
+      const candidate=prepareTransaction({protocolVersion:1,documentId:proposal.documentId,baseRevision:proposal.baseRevision,operations:proposal.operations},proposal.annotationIds);
+      try{validateWordCandidate(state(),request,candidate.model);}catch(error){boundary.lifecycle.discard(candidate);throw error;}return candidate;
     });
   }
 

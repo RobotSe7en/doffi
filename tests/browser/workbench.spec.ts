@@ -1,3 +1,4 @@
+import {createDocumentSession,createWordDocument,openDocument as openWordDocument}from'@doffi/core';
 import { openSdkHost } from './sdk-host.js';
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -191,4 +192,10 @@ test("React Playground submits two annotations, loads a fixed proposal and downl
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   await expect(page.frameLocator('iframe[title="文档只读预览"]').locator('[data-node-id="n-summary"]')).toContainText("第四季度");
   await expect(page.frameLocator('iframe[title="文档只读预览"]').locator('[data-node-id="n-title"]')).toHaveCSS("color", "rgb(31, 75, 153)");
+});
+
+
+test('Word metadata proposals show actual chart data and rich replies remain editable in the shared story session',async({page})=>{
+ const session=createDocumentSession(openWordDocument(createWordDocument({documentId:'word-workbench'}),{kind:'document'}));session.commit(session.prepare({protocolVersion:1,documentId:'word-workbench',baseRevision:0,operations:[{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'正文'},{op:'insertWordDrawing',nodeId:'paragraph-1',offset:0,geometry:{x:0,y:0,width:300,height:180,rotation:0,flipH:false,flipV:false},layout:{mode:'inline'},object:{kind:'chart',chart:{kind:'column',legend:'none',showLabels:false,categories:['甲'],series:[{seriesId:'s',name:'收入',values:[1]}]}}},{op:'addAnnotation',annotation:{annotationId:'a',documentId:'word-workbench',baseRevision:0,status:'open',anchor:{kind:'node',nodeId:'paragraph-1'},instruction:'修改图表'}}]}));session.commit(session.prepare({protocolVersion:1,documentId:'word-workbench',baseRevision:1,operations:[{op:'addWordCommentReply',nodeId:'paragraph-1',annotationId:'a',html:'<p>回复正文</p>'}]}));await openSdkHost(page);await page.addScriptTag({type:'module',content:hostCode});await page.waitForFunction(()=>!!window.workbenchHost);await page.evaluate(files=>window.workbenchHost.mount(files),[...session.serialize()].map(([path,bytes])=>[path,[...bytes]]as[string,number[]]));
+ const request=await generated(page),chart=request.context.metadata.word!.drawings!.find(drawing=>drawing.kind==='chart')!;await importProposal(page,{protocolVersion:1,requestId:request.requestId,proposalId:'chart',documentId:'word-workbench',baseRevision:request.baseRevision,annotationIds:['a'],summary:'更新收入',operations:[{op:'setWordChart',nodeId:chart.nodeId,changes:{series:[{seriesId:'s',name:'收入',values:[8]}]}}]});await expect(page.getByLabel('修改后').filter({hasText:'"values": [\n        8'})).toHaveCount(1);await page.getByRole('button',{name:'整批应用提案',exact:true}).click();await page.getByRole('button',{name:'撤销',exact:true}).click();await page.getByRole('button',{name:'编辑回复富文本',exact:true}).click();const frame=page.frameLocator('iframe[title="正文编辑"]');await expect(frame.locator('p')).toContainText('回复正文');await frame.locator('p').click();await page.keyboard.press('End');await page.keyboard.insertText('编辑');await expect(frame.locator('p')).toContainText('回复正文编辑');expect(await page.evaluate(()=>window.workbenchHost.errors)).toEqual([]);
 });
