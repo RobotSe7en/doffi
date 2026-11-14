@@ -20,7 +20,7 @@ export interface SourceTextStyleRepresentation {
 }
 /** Format existing text leaves, retaining all paragraph/run/link identities.
  * New wrappers are core-owned source nodes; no rendered DOM enters the tree. */
-export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>,force=false): void {
+export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>,force=false,nativeRun=false): void {
   properties = textFormattingProperties(properties);
   const fail: (message: string) => never = message => { throw new DocumentError("InvalidOperation", message); };
   for (const property of Object.keys(properties)) if (!/^(?:color|background-color|font-(?:family|size|weight|style|variant)|text-transform|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)
@@ -54,17 +54,22 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
     for (const key of [...Object.keys(computed), ...Object.keys(own)]) if (key !== TEXT_DECORATION_RESET && /^--office-(?:font-|text-|major-|minor-|underline$|strike$)/.test(key)) names.add(key);
     for (const name of roleFonts) names.add(name);
     for (const name of scalarForeground) names.add(name);
-    const key = JSON.stringify([...names].sort()); let style = neutralStyles.get(key);
+    const inlineParent=['span','a','strong','b','em','i','u','s','sub','sup','ins','del','code'].includes(parent.tag);
+    const key = JSON.stringify([[...names].sort(),nativeRun&&inlineParent]); let style = neutralStyles.get(key);
     if (style !== undefined) return style;
     style = ""; for (const name of names) style = setInlineStyle(style, name, "inherit!important", limits);
     if (familyVariable?.fallback) for (const role of ["ascii", "h-ansi", "east-asia", "complex-script"]) {
       if (familyVariable.name === "--office-font-" + role) for (const prefix of ["major", "minor"]) style = setInlineStyle(style, "--office-" + prefix + "-" + role, "initial!important", limits);
     }
-    for (const [name, value] of Object.entries({ "vertical-align": "baseline", "background-color": "transparent", margin: "0", padding: "0", border: "none" })) style = setInlineStyle(style, name, value + "!important", limits);
+    for (const [name, value] of Object.entries({ "vertical-align": nativeRun ? "inherit" : "baseline", "background-color": nativeRun && inlineParent ? "inherit" : "transparent", margin: "0", padding: "0", border: "none" })) style = setInlineStyle(style, name, value + "!important", limits);
     // A wrapper contributes no additional decoration. Authored ancestor paint
     // still propagates unless the requested native edit explicitly resets it.
-    style = setInlineStyle(style, "text-decoration-line", "none!important", limits);
-    style = setInlineStyle(style, TEXT_DECORATION_RESET, "none!important", limits);
+    style = setInlineStyle(style, "text-decoration-line", nativeRun ? "inherit!important" : "none!important", limits);
+    if(nativeRun)for(const name of ['text-decoration-style','text-decoration-color'])style=setInlineStyle(style,name,'inherit!important',limits);
+    // Native direct formatting changes one effective run. Repaint its single
+    // inherited decoration with the current text color instead of retaining a
+    // second CSS ancestor paint, which could conflict with that new color.
+    style = setInlineStyle(style, TEXT_DECORATION_RESET, nativeRun ? "all!important" : "none!important", limits);
     for (const node of requestedDeclarations) style = setInlineStyle(style, ident.decode(node.property), generate(node.value) + "!important", limits);
     neutralStyles.set(key, style); return style;
   }
@@ -102,6 +107,7 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
       let next = source??'';
       for (const node of requestedDeclarations) next = setInlineStyle(next, ident.decode(node.property), generate(node.value) + "!important", limits);
       if (representation) representation.write(parent, next); else if(attribute)attribute.value=next;else parent.attrs.push({name:'style',value:next});
+      if(nativeRun&&!parent.attrs.some(attribute=>attribute.name==='data-word-run-overlay'))parent.attrs.push({name:'data-word-run-overlay',value:'true'});
       updated.add(parent);
     }
     return true;
@@ -120,7 +126,7 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
     if(tracked&&updateCompleteSpan(tracked))continue;
     if (updateCompleteSpan(parent)) continue;
     count(); const nodeId = allocate(), style = neutral(owner, nodeId), span = representation ? representation.create(nodeId, style)
-      : adapter.createElement("span", namespaces.NS.HTML, [{ name: "data-node-id", value: nodeId }, { name: "style", value: style }]);
+      : adapter.createElement("span", namespaces.NS.HTML, [{ name: "data-node-id", value: nodeId }, { name: "style", value: style },...(nativeRun?[{name:'data-word-run-overlay',value:'true'}]:[])]);
     onChange?.({nodeId,previousStyle:undefined,from:Math.max(range.from,leaf.from),to:Math.min(range.to,leaf.to)});
     if (!("value" in leaf.node)) { adapter.insertBefore(parent, span, leaf.node); adapter.detachNode(leaf.node); adapter.appendChild(span, leaf.node); continue; }
     const from = Math.max(0, range.from - leaf.from), to = Math.min(leaf.value.length, range.to - leaf.from);

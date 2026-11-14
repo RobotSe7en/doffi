@@ -292,6 +292,14 @@ export class SourceStyleResolver {
     const result: Record<string, string> = { ...this.initial }, custom = new Map<string, Entry>(), winners = new Map<string, Entry>();
     for (const [name, value] of Object.entries(parent)) if (name.startsWith("--") || inherited.has(name)) result[name] = value;
     if (node?.parent && inline.has(node.parent.tag)) result["background-color"] = parent["background-color"]?.toLowerCase() === "currentcolor" ? parent.color! : parent["background-color"] ?? this.initial["background-color"]!;
+    // A Word edit overlays an existing native run, rather than creating an
+    // additional CSS inline box. Keep unspecified run properties inherited,
+    // including when rejecting the edit removes the overlay's declarations.
+    const runOverlay=node?.attrs['data-word-run-overlay']==='true';
+    if(runOverlay){
+      if(node?.parent&&inline.has(node.parent.tag))result['vertical-align']=parent['vertical-align']!;
+      for(const key of ['text-decoration-line','text-decoration-style','text-decoration-color'])result[key]=parent[key]??this.initial[key]!;
+    }
     if (node) {
       if (node.tag === "ul") result["list-style-type"] = "disc";
       if (node.tag === "ol") result["list-style-type"] = ({ "1": "decimal", a: "lower-alpha", A: "upper-alpha", i: "lower-roman", I: "upper-roman" } as Record<string, string>)[node.attrs.type ?? "1"] ?? "decimal";
@@ -368,7 +376,7 @@ export class SourceStyleResolver {
     // Decorations propagate through descendant inline boxes, including from a
     // block ancestor. `none` on a descendant does not erase an ancestor's paint.
     const ownLines = result["text-decoration-line"]!;
-    let parentLines = node?.parent ? parent["text-decoration-line"] ?? "none" : "none";
+    let parentLines = node?.parent && !runOverlay ? parent["text-decoration-line"] ?? "none" : "none";
     // The override applies only where declared. Its custom-property value may
     // be inherited as data, but must not erase marks added by later children.
     if (custom.has(TEXT_DECORATION_RESET) && result[TEXT_DECORATION_RESET] !== undefined) parentLines = resetParentDecorations(parentLines, result[TEXT_DECORATION_RESET]!);

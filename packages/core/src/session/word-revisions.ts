@@ -40,7 +40,7 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
         if (revision.kind === 'insert' && revision.author === author && start >= begin && end <= finish) {
             edit.replaceSourceText(revision.nodeId, { ...operation, from: start - begin, to: end - begin });
             if (operation.properties && text)
-                edit.formatSourceText(operation.nodeId, { from, to: from + text.length, expectedText: text }, operation.properties);
+                edit.formatSourceText(operation.nodeId, { from, to: from + text.length, expectedText: text }, operation.properties,undefined,undefined,false,true);
             return;
         }
         if (['delete', 'moveFrom'].includes(revision.kind) && start < finish && end > begin)

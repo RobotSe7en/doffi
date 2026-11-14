@@ -1,4 +1,4 @@
-import {composeWordTextResets} from './word-reset-text.js';
+import {composeWordTextRuns} from './word-text-runs.js';
 import{composeWordLanguages}from'./word-languages.js';
 import{retainFlowSelection}from'./flow-selection.js';
 import{composeWordTableLayout}from'./word-table-layout.js';
@@ -472,7 +472,7 @@ export function mountPreview(
     const frame = iframe.contentDocument!;
     notes?.dispose();notes=undefined;pagination?.dispose(); pagination = undefined; fields = undefined; source = undefined;
     const snapshot = model.snapshot();
-    composeWordTextResets(frame,model,limits);
+    composeWordTextRuns(frame,model,limits);
     composeWordLanguages(frame,model,limits);
     const sourceFonts = resolvePreviewFonts(frame,"[data-node-id],[data-sdk-word-script-view]");
     source = new PreviewSource(frame, model);

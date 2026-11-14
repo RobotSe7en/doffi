@@ -106,6 +106,7 @@ export function validateWord(
     }
     for(const id of html.nodeIds()){const reset=node(id).attributes['data-word-reset-text'];if(reset!==undefined&&(reset!=='true'||node(id).tagName!=='span'))invalid('A Word text reset requires its inline source span.');}
     for(const id of html.nodeIds()){const current=node(id).attributes['data-word-current-format'];if(current!==undefined&&(current!=='true'||node(id).tagName!=='span'))invalid('A current Word run format requires its inline source span.');}
+    for(const id of html.nodeIds()){const overlay=node(id).attributes['data-word-run-overlay'];if(overlay!==undefined&&(overlay!=='true'||node(id).tagName!=='span'))invalid('A Word run overlay requires its inline source span.');}
     const drawings=unique(word.drawings??[],item=>item.nodeId),textOwners=new Set<string>();
     for(const drawing of drawings.values())if(drawing.kind==='chart'){
       const chart=drawing.chart;if(new Set(chart.series.map(series=>series.seriesId)).size!==chart.series.length)invalid('Chart series require distinct identities.');

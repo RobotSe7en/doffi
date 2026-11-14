@@ -5,11 +5,11 @@ import { createSourceStyleResolver } from './source-style-probe.js';
 import { markViewNode, ownViewStyle } from './view-nodes.js';
 
 /** Native runs have one font box. HTML ancestors would otherwise retain their
- * old large strut, highlight, decoration or superscript after an inner reset.
+ * old large strut, highlight, decoration or superscript after an inner edit.
  * Project only affected paragraphs; source wrappers and identities stay put. */
-export function composeWordTextResets(document: Document, model: ContentDocumentModel, limits: Readonly<RenderLimits>): void {
+export function composeWordTextRuns(document: Document, model: ContentDocumentModel, limits: Readonly<RenderLimits>): void {
     if (!model.snapshot().metadata.word) return;
-    const paragraphs = new Set([...document.querySelectorAll<HTMLElement>('[data-word-reset-text="true"]')].flatMap(node => {
+    const paragraphs = new Set([...document.querySelectorAll<HTMLElement>('[data-word-reset-text="true"],[data-word-current-format="true"],[data-word-run-overlay="true"]')].flatMap(node => {
         const paragraph = node.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6'); return paragraph ? [paragraph] : [];
     }));
     if (!paragraphs.size) return;
@@ -35,12 +35,13 @@ export function composeWordTextResets(document: Document, model: ContentDocument
         }
     }
     // Resolve every source style before adding any view styles or wrappers.
+    for(const paragraph of paragraphs){ownViewStyle(paragraph,'text-decoration-line');paragraph.style.textDecorationLine='none';}
     for (const container of containers) {
         ownViewStyle(container, 'display', 'background-color', 'text-decoration-line', 'vertical-align');
         container.style.display = 'contents'; container.style.backgroundColor = 'transparent'; container.style.textDecorationLine = 'none'; container.style.verticalAlign = 'baseline';
     }
     for (const { text, values } of paint) {
-        if (++count > limits.maxNodes) throw new DocumentError('ResourceLimitExceeded', 'Word text reset projection exceeds the render node budget.');
+        if (++count > limits.maxNodes) throw new DocumentError('ResourceLimitExceeded', 'Word text run projection exceeds the render node budget.');
         const wrapper = markViewNode(document.createElement('span'), 'unwrap'); wrapper.className = 'sdk-word-text-run';
         for (const [name, value] of Object.entries(values)) wrapper.style.setProperty(name, value);
         text.before(wrapper); wrapper.append(text);
