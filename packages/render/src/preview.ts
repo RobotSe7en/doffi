@@ -1,4 +1,5 @@
 import{composeWordLanguages}from'./word-languages.js';
+import{composeWordTableLayout}from'./word-table-layout.js';
 import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
 import { DocumentError, openDocument } from "@doffi/core";
@@ -477,6 +478,7 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
+    composeWordTableLayout(frame,limits);
     composeWordNative(frame,model,prepared.nativeUrls,limits);
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);

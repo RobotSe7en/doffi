@@ -1,6 +1,7 @@
 import { DocumentError } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
 import { isMeasuredViewContent, markViewNode, ownViewAttribute, ownViewStyle, viewNodeRole } from "./view-nodes.js";
+import{wordRowVisibleRect}from'./word-table-layout.js';
 
 export interface PageFlow {
   reset(): void;
@@ -77,6 +78,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       if (node.nodeType !== 3 && !owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference],[data-word-equation]")) continue;
       const range = document.createRange(); range.selectNodeContents(node);
       for (const rect of node.nodeType === 3 ? range.getClientRects() : owner.getClientRects()) {
+        if(!wordRowVisibleRect(owner,rect))continue;
         if (rect.width < 0.01 || rect.height < 0.1) continue;
         const previous = result.at(-1);
         if (previous && Math.min(previous.rect.bottom, rect.bottom) - Math.max(previous.rect.top, rect.top) > Math.min(previous.rect.height, rect.height) / 2) continue;
@@ -109,6 +111,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       const range = document.createRange(); range.selectNodeContents(node);
       const rectangles = node.nodeType === 3 ? [...range.getClientRects()] : [...(node as Element).getClientRects()];
       for (const rect of rectangles) {
+        if(!wordRowVisibleRect(owner,rect))continue;
         if (rect.height < 0.1 || rect.width < 0.01) continue;
         const current = page(rect.top + rect.height / 2), end = start(current) + available(current),minimum=constraints?.minimumPage(node);if(minimum!==undefined&&current<minimum)return{node:node as HTMLElement,rect,targetPage:minimum};
         // Glyph rectangles can extend beyond a line box by sub-pixel rounding.

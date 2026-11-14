@@ -2,6 +2,7 @@ import { DocumentError } from "@doffi/core";
 import type { Anchor, DeepReadonly, ContentDocumentModel, Rectangle, TextRange } from "@doffi/core";
 import type { RenderedPage } from "./contracts.js";
 import { viewNodeRole } from "./view-nodes.js";
+import{wordRowVisibleRect}from'./word-table-layout.js';
 
 interface SourceElement {
   readonly element: HTMLElement;
@@ -54,9 +55,9 @@ export class PreviewSource {
     while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (this.tokens[mid]!.to <= entry.from) lo = mid + 1; else hi = mid; }
     const rectangles: DOMRect[] = [];
     for (let index = lo; index < this.tokens.length && this.tokens[index]!.from < entry.to; index++) {
-      const token = this.tokens[index]!; if (this.visible(token)) rectangles.push(...this.tokenRange(token).getClientRects());
+      const token = this.tokens[index]!; if (this.visible(token)) rectangles.push(...this.tokenRectangles(token));
     }
-    return [...(rectangles.length ? rectangles : entry.element.getClientRects()), ...copies];
+    return [...(rectangles.length ? rectangles : [...entry.element.getClientRects()].flatMap(rect=>{const visible=wordRowVisibleRect(entry.element,rect);return visible?[visible]:[];})), ...copies];
   }
   setPages(pages: readonly RenderedPage[]): void { this.pages = pages; }
   setFieldView(nodeId: string, display: HTMLElement): void {
@@ -122,8 +123,9 @@ export class PreviewSource {
   private visible(token: Token): boolean {
     const element = this.fieldViews.get(token.node) ?? (token.node.nodeType === 1 ? token.node as HTMLElement : token.node.parentElement!);
     const style = this.document.defaultView!.getComputedStyle(element);
-    return token.node.isConnected && style.visibility === "visible" && this.tokenRange(token).getClientRects().length > 0;
+    return token.node.isConnected && style.visibility === "visible" && this.tokenRectangles(token).length > 0;
   }
+  private tokenRectangles(token:Token,from=0,to=token.text.length):DOMRect[]{const owner=token.node.nodeType===1?token.node as Element:token.node.parentElement!;return[...this.tokenRange(token,from,to).getClientRects()].flatMap(rect=>{const visible=wordRowVisibleRect(owner,rect);return visible?[visible]:[];});}
 
   textAnchor(range: Range, model: ContentDocumentModel): Anchor | undefined {
     if (range.collapsed) return undefined;
@@ -212,7 +214,7 @@ export class PreviewSource {
       const start = source.from + range.from, end = source.from + range.to;
       return this.tokens.flatMap((token) => {
         if (token.to <= start || token.from >= end || !this.visible(token)) return [];
-        return [...this.tokenRange(token, Math.max(0, start - token.from), Math.min(token.text.length, end - token.from)).getClientRects()];
+        return this.tokenRectangles(token, Math.max(0, start - token.from), Math.min(token.text.length, end - token.from));
       });
     });
   }

@@ -8,7 +8,7 @@ import type { ExportCss } from './export/css.js';
 import type { ExportStyles } from './export/styles.js';
 import type { Css } from './ooxml/styles.js';
 import { attributes, empty, value, orderedProperties } from './export/xml.js';
-import { paragraphProperties, paragraphKeys, runProperties, runKeys, tableProperties, cellProperties, difference } from './export/properties.js';
+import { rowHeightProperties,paragraphProperties, paragraphKeys, runProperties, runKeys, tableProperties, cellProperties, difference } from './export/properties.js';
 import { nativeInteger } from './export/values.js';
 export class ExportWordRevisions {
     private next = 0;
@@ -126,8 +126,7 @@ export class ExportWordRevisions {
             return '';
         const old = this.old(node, entry.revision, {});
         let props = old.css['break-inside'] === 'avoid' ? '<w:cantSplit/>' : '';
-        if (old.css.height)
-            props += empty('w:trHeight', { 'w:val': nativeInteger(Number.parseFloat(old.css.height)) });
+        props+=rowHeightProperties(old.css);
         if (old.node.attrs['data-word-repeat-header'])
             props += '<w:tblHeader/>';
         return this.change(entry.revision, 'trPr', props, entry.owner);

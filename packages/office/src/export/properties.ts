@@ -9,6 +9,7 @@ export const pick = (css: Css, keys: readonly string[]): Css => Object.fromEntri
 export const difference = (css: Css, expected: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key, val]) => keys.includes(key) && val !== expected[key]));
 export function unsupported(message: string): never { throw new DocumentError("UnsupportedFeature", message); }
 export function points(raw: string, css: Css = {}, width = 468): number { return length(raw, { font: parseFloat(css["font-size"] ?? "12pt"), percent: width }); }
+export function rowHeightProperties(css:Css):string{const rule=css['--word-row-height-rule']??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported('The native table row height rule is invalid.');if((!css.height||css.height==='auto')&&rule!=='auto')return'';return empty('w:trHeight',{'w:val':nativeInteger(css.height&&css.height!=='auto'?points(css.height,css):0,20,0),'w:hRule':rule});}
 const toggle = (name: string, enabled: boolean): string => value(name, enabled ? "1" : "0");
 const shade = (css: Css): string => css["background-color"] === undefined ? "" : empty("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": color(css["background-color"], css.color) ?? "auto" });
 const bold = (value: string | undefined): boolean => value === "bold" || Number(value) >= 600;

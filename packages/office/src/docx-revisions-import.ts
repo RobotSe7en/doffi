@@ -67,7 +67,7 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
             css['break-inside'] = 'avoid';
         const height = child(previous, 'trHeight');
         if (height)
-            css.height = pt(number(attr(height, 'val'), height) / 20);
+            {const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(change,'This previous row height rule remains native.');css.height = pt(number(attr(height, 'val'), height,0) / 20);css['--word-row-height-rule']=rule;}
         attributes['data-word-repeat-header'] = on(child(previous, 'tblHeader')) ? 'true' : null;
     }
     attributes.style = declarations(css) || null;

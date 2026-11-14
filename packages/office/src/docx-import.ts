@@ -1423,7 +1423,7 @@ class Importer {
       if (on(child(rowProperties, "cantSplit")))
         rowCss["break-inside"] = "avoid";
       const height = child(rowProperties, "trHeight");
-      if (height) rowCss.height = pt(number(attr(height, "val"), height) / 20);
+      if (height){const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(height,'This row height rule is preserved natively.');rowCss.height=pt(number(attr(height,'val'),height,0)/20);rowCss['--word-row-height-rule']=rule;}
       const htmlRow = this.make("tr", {
         style: declarations(rowCss),
         ...(on(child(rowProperties, "tblHeader"))

@@ -15,7 +15,7 @@ import type { ExportComment,UnexportedAnnotation } from "./export/annotations.js
 import { ExportCss } from "./export/css.js";
 import type { Css } from "./export/css.js";
 import { contentType, OutputOpc } from "./export/opc.js";
-import { cellProperties, difference, paragraphKeys, paragraphProperties, pick, points, runKeys, runProperties, tableProperties, unsupported } from "./export/properties.js";
+import { rowHeightProperties,cellProperties, difference, paragraphKeys, paragraphProperties, pick, points, runKeys, runProperties, tableProperties, unsupported } from "./export/properties.js";
 import { children, contains, element, parseSource } from "./export/source.js";
 import type { SourceElement, SourceNode, SourceTree } from "./export/source.js";
 import type { HtmlNumbering } from "./export/styles.js";
@@ -420,7 +420,7 @@ class Exporter {
     for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add(this.review.grid(node)+"</w:tblGrid>");
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = this.css.get(row);
-      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + (rowCss.height && rowCss.height !== "auto" ? empty("w:trHeight", { "w:val": nativeInteger(points(rowCss.height, rowCss), 20, 0), "w:hRule": "atLeast" }) : "") + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + (rowCss["break-inside"] === "avoid" ? value("cantSplit", 1) : "") + rowHeightProperties(rowCss) + (row.attrs["data-word-repeat-header"] === "true" || row.parent?.tag === "thead" ? value("tblHeader", 1) : "") + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
       for (const cell of cells) {
         const cellCss = this.css.get(cell.node);
         this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(cellCss) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+this.review.cell(cell.node)) + "</w:tcPr>");

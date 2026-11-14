@@ -4,6 +4,7 @@ import { pageFlow } from './flow.js';
 import type { PageFlow,PageFlowConstraints } from './flow.js';
 import { markViewNode, ownViewStyle, viewNodeRole } from './view-nodes.js';
 import type { PreviewSource } from './source-index.js';
+import{wordRowVisibleRect}from'./word-table-layout.js';
 
 /** Measure one narrow, reversible source flow, then project logical columns onto
  * physical pages. Text and source elements retain identity, order and UTF-16 offsets. */
@@ -25,7 +26,7 @@ export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:
    if(++measured>limits.maxNodes*4)throw new DocumentError('ResourceLimitExceeded','Column projection exceeds the render node budget.');
    if(node.nodeType!==1&&node.nodeType!==3)return;
    if(node.nodeType===1&&viewNodeRole(node)==='remove'&&((node as Element).classList.contains('sdk-page-gap')||(node as Element).classList.contains('sdk-column-exclusion')))return;
-   let rect:DOMRect,textLines:DOMRect[]|undefined;if(node.nodeType===3){const range=document.createRange();range.selectNodeContents(node);rect=range.getBoundingClientRect();textLines=[...range.getClientRects()].filter(rect=>rect.width>.01&&rect.height>.1);}else rect=(node as Element).getBoundingClientRect();
+   let rect:DOMRect,textLines:DOMRect[]|undefined;if(node.nodeType===3){const range=document.createRange();range.selectNodeContents(node);rect=range.getBoundingClientRect();textLines=[...range.getClientRects()].flatMap(rect=>{const visible=wordRowVisibleRect(node.parentElement!,rect);return visible?[visible]:[];});}else rect=(node as Element).getBoundingClientRect();const clipped=wordRowVisibleRect(node.nodeType===1?node as Element:node.parentElement!,rect);if(!clipped)return;rect=clipped;
    if(rect.height<.1&&rect.width<.01)return;
    let from=textLines?.length?textLines.reduce((first,rect)=>Math.min(first,columnAt(rect.top+rect.height/2)),Infinity):columnAt(rect.top),to=textLines?.length?textLines.reduce((last,rect)=>Math.max(last,columnAt(rect.top+rect.height/2)),0):columnAt(Math.max(rect.top,rect.bottom-.5));
    if(node.nodeType===3&&from!==to){const parts:Text[]=[node as Text];let current=node as Text;for(let column=from+1;column<=to;column++){let low=0,high=current.length;while(low<high){const middle=Math.floor((low+high)/2),probe=document.createRange();probe.setStart(current,middle);probe.setEnd(current,Math.min(current.length,middle+1));const rect=probe.getBoundingClientRect();if(columnAt(rect.top+rect.height/2)<column)low=middle+1;else high=middle;}while(low<current.length&&!isDocumentTextBoundary(current.data,low))low++;if(low>0&&low<current.length){reserve();current=current.splitText(low);parts.push(current);}}if(parts.length===1)throw new DocumentError('UnsupportedFeature','A text fragment has no safe column boundary.');for(const part of parts)measure(part);return{from,to};}
