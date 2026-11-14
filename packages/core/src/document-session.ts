@@ -1,4 +1,5 @@
 import {trackWordText}from'./session/word-revisions.js';
+import{pruneWordNativeResources}from'./session/word-native-resources.js';
 import type { Anchor,Annotation } from "./contracts/annotations.js";
 import { isPresentationCommentPoint } from "./document/presentation.js";
 import type { ContentDocumentMetadata } from "./contracts/document.js";
@@ -200,6 +201,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
     mapAnnotations(annotations, base.html, parsed, edit, explicit, regionChanged);
     updatePresentationRecovery(metadata, base, annotations,workflows);
     updateWordMetadata(metadata, base, parsed);
+    if(metadata.word)pruneWordNativeResources(metadata.word,base.snapshot.metadata.word?.nativeContent,files,parsed,base.snapshot.manifest.entrypoint,limits);
     if (resolvedIds) {
       const resolved = new Set(resolvedIds);
       const contentChanged = parsed.html !== base.snapshot.html || JSON.stringify(metadata) !== JSON.stringify(base.snapshot.metadata)||JSON.stringify(annotations)!==JSON.stringify(base.snapshot.annotations);

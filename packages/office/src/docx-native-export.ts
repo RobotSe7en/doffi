@@ -1,6 +1,6 @@
 import{NativeDrawingIdentities}from'./docx-native-identities.js';
 import {sortWordSettings}from'./ooxml/word-settings-order.js';
-import { DocumentError } from '@doffi/core';
+import { DocumentError,WordNativeFragmentCollectionSchema } from '@doffi/core';
 import type { ContentDocumentModel, DocumentReadLimits, DeepReadonly, WordMetadata } from '@doffi/core';
 import { W, R, MC, PKG, xml } from './ooxml/xml.js';
 import type { XmlNode } from './ooxml/xml.js';
@@ -9,7 +9,7 @@ import { declaration, escapeXml } from './export/xml.js';
 export const NATIVE_MARKER = 'urn:doffi:transient:native';
 export const nativeMarker = (nodeId: string | undefined): string => nodeId ? ' xmlns:dn="' + NATIVE_MARKER + '" dn:node="' + escapeXml(nodeId) + '"' : '';
 const CT = 'http://schemas.openxmlformats.org/package/2006/content-types';
-const codecs = globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } };
+const codecs = globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array };TextDecoder:new(label:string,options:{fatal:boolean})=>{decode(bytes:Uint8Array):string} };
 function relPath(part: string): string { const slash = part.lastIndexOf('/'); return part ? part.slice(0, slash + 1) + '_rels/' + part.slice(slash + 1) + '.rels' : '_rels/.rels'; }
 function name(node: XmlNode): string { return node.uri + ' ' + node.name; }
 function merge(target: XmlNode, source: XmlNode): void {
@@ -26,7 +26,9 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   const read = (bytes: Uint8Array, path: string): XmlNode => xml(bytes, path, limits, budget);
   const fragmentAssets = new Map<string, XmlNode>();
   const fragmentEntries = new Map<string, Map<string, XmlNode>>();
+  const jsonFragments=new Map<string,Record<string,string>>();
   const readFragment = (fragment: typeof native.fragments[number]): XmlNode => {
+    if(fragment.fragmentFormat==='json'){let entries=jsonFragments.get(fragment.assetPath);if(!entries){const bytes=sourceFiles.get(fragment.assetPath);if(!bytes)throw new DocumentError('AssetUnavailable','A native fragment collection is missing.');let value:unknown;try{value=JSON.parse(new codecs.TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw new DocumentError('InvalidDocument','The native fragment collection is malformed.');}const collection=WordNativeFragmentCollectionSchema.safeParse(value);if(!collection.success||Object.keys(collection.data.fragments).length>limits.maxNodes)throw new DocumentError('InvalidDocument','The native fragment collection is invalid.');entries=collection.data.fragments;jsonFragments.set(fragment.assetPath,entries);}const source=fragment.fragmentKey&&Object.hasOwn(entries,fragment.fragmentKey)?entries[fragment.fragmentKey]:undefined;if(source===undefined)throw new DocumentError('InvalidDocument','The native fragment collection entry is missing.');const key=fragment.assetPath+'\n'+fragment.fragmentKey;let root=fragmentAssets.get(key);if(!root){root=read(encoder.encode(source),fragment.assetPath);fragmentAssets.set(key,root);}return root;}
     let root = fragmentAssets.get(fragment.assetPath);
     if (!root) { const bytes=sourceFiles.get(fragment.assetPath);if(!bytes)throw new DocumentError('AssetUnavailable','A native fragment is missing.');root=read(bytes,fragment.assetPath);fragmentAssets.set(fragment.assetPath,root); }
     if (!fragment.fragmentKey) return root;

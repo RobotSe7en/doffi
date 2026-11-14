@@ -45,11 +45,13 @@ export function validateWord(
     }
     if (word.nativeContent) {
       const native = word.nativeContent, paths = new Set(assets.map(asset => asset.path));
-      const ids = new Set<string>(), parts = new Set<string>();
+      const ids = new Set<string>(), parts = new Set<string>(),relationshipKeys=new Set(native.relationships.map(relation=>relation.sourcePart+'\n'+relation.id));
       for(const identity of native.identities??[])node(identity.nodeId);
       for (const fragment of native.fragments) {
         if (ids.has(fragment.nativeId) || !paths.has(fragment.assetPath)) invalid("Native fragments require unique identities and declared resources.");
         ids.add(fragment.nativeId);
+        if(fragment.fragmentFormat==='json'&&(!fragment.fragmentKey||!assets.some(asset=>asset.path===fragment.assetPath&&asset.mimeType==='application/json')))invalid('A native JSON fragment requires a keyed JSON collection.');
+        if(fragment.relationshipIds&&(new Set(fragment.relationshipIds).size!==fragment.relationshipIds.length||fragment.relationshipIds.some(id=>!relationshipKeys.has(fragment.sourcePart+'\n'+id))))invalid('A native fragment dependency must refer to its source-part relationship.');
         if(fragment.preview&&(fragment.kind==="property"||!assets.some(asset=>asset.path===fragment.preview!.assetPath&&["image/png","image/jpeg","image/webp"].includes(asset.mimeType))))invalid("A native preview requires a declared raster image.");
         if (fragment.nodeId) {
           const owner = node(fragment.nodeId);

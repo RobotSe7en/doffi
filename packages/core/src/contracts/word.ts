@@ -20,6 +20,7 @@ export const WordNativeContentSchema = z.strictObject({
     sourcePart: PackagePathSchema,
     assetPath: PackagePathSchema,
     fragmentKey: IdentifierSchema.optional(),
+    fragmentFormat:z.enum(['xml','json']).optional(),relationshipIds:z.array(z.string().min(1)).optional(),
     propertyPath: z.array(z.string().min(1)),
     propertyIndices:z.array(z.number().int().nonnegative()).optional(),propertyIndex:z.number().int().nonnegative().optional(),
     ownerName: z.string().min(1),
@@ -33,6 +34,7 @@ export const WordNativeContentSchema = z.strictObject({
   })),
 });
 export type WordNativeContent = z.infer<typeof WordNativeContentSchema>;
+export const WordNativeFragmentCollectionSchema=z.strictObject({format:z.literal('doffi-word-native-fragments'),version:z.literal(1),fragments:z.record(IdentifierSchema,z.string())});
 
 export const WordStorySchema = z.strictObject({
   storyId: IdentifierSchema,

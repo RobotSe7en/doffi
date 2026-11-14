@@ -166,19 +166,21 @@ export class DocxNativeImport {
       for(const node of nodes){const id=node.attrs.get(R+' embed')??(node.name==='imagedata'?node.attrs.get(R+' id'):undefined);if(!id)continue;const relation=this.original.relationships(node.part).get(id);if(!relation||relation.external)continue;const mime=this.original.contentType(relation.target),bytes=this.original.files.get(relation.target);if(!mime||!bytes||!['image/png','image/jpeg','image/webp'].includes(mime))continue;let assetPath=previews.get(relation.target);if(!assetPath){assetPath=add(bytes,mime);previews.set(relation.target,assetPath);}const extent=nodes.find(item=>item.uri===WP&&item.name==='extent'),width=Number(extent?.attrs.get(' cx'))/12700,height=Number(extent?.attrs.get(' cy'))/12700;return{assetPath,...(Number.isFinite(width)&&width>0?{width}:{}),...(Number.isFinite(height)&&height>0?{height}:{})};}
       return undefined;
     };
-    const fragmentXml: string[] = [];
-    const fragmentAssetPath = 'assets/native-fragments.xml';
+    const fragmentXml: [string,string][] = [];
+    const fragmentAssetPath = 'assets/native-fragments.json';
     for (const item of this.pending) {
       const nodeId = item.owner ? this.bindings.get(item.owner) : undefined;
       if (!nodeId && item.kind !== 'property') throw new DocumentError('InvalidDocument', 'A native content placeholder is not bound to the document.');
       const assetPath = fragmentAssetPath,cached=item.kind!=='property'?preview(item.original):undefined;
-      fragmentXml.push('<native:item id="' + item.id + '">' + serializeXml(item.original) + '</native:item>');
+      fragmentXml.push([item.id,serializeXml(item.original)]);
       native.fragments.push({ nativeId: item.id,...(cached?{preview:cached}:{}), ...(nodeId ? { nodeId } : {}), kind: item.kind, ...(item.runChild?{runChild:true}:{}), sourcePart: item.original.part, assetPath, fragmentKey: item.id, propertyPath: item.path,...(item.indices?{propertyIndices:item.indices,propertyIndex:item.propertyIndex}:{}), ownerName: item.owner?.name ?? "document", ...(item.owner?.name === "style" && item.owner.attrs.get(W + " styleId") ? { styleId: item.owner.attrs.get(W + " styleId")! } : {}), label: item.label,propertyName:item.original.uri+' '+item.original.name,...(item.revisionSourceId?{revisionSourceId:item.revisionSourceId,revisionPrevious:item.revisionPrevious}: {}) });
+      const binding=native.fragments[native.fragments.length-1]!;binding.fragmentFormat='json';binding.relationshipIds=[];
       // Relationships are package-local data; preserving never follows external links.
       const visit = (node: XmlNode): void => {
         for (const [key, id] of node.attrs) if (key.startsWith(R + ' ')) {
           const rel = this.original.relationships(node.part).get(id);
           if (!rel) throw new DocumentError('InvalidDocument', 'A native fragment refers to a missing relationship.');
+          if(!binding.relationshipIds!.includes(id))binding.relationshipIds!.push(id);
           if (!native.relationships.some(r => r.sourcePart === node.part && r.id === rel.id)) native.relationships.push({ sourcePart: node.part, ...rel });
           if (!rel.external) part(rel.target);
         }
@@ -187,8 +189,8 @@ export class DocxNativeImport {
       visit(item.original);
     }
     if (fragmentXml.length) {
-      const bytes = encoder.encode('<native:fragments xmlns:native="urn:doffi:word:native-fragments">' + fragmentXml.join('') + '</native:fragments>');
-      files.set(fragmentAssetPath, bytes); manifest.assets.push(createAssetDescriptor(fragmentAssetPath, 'application/xml', bytes));
+      const bytes = encoder.encode(JSON.stringify({format:'doffi-word-native-fragments',version:1,fragments:Object.fromEntries(fragmentXml)}));
+      files.set(fragmentAssetPath, bytes); manifest.assets.push(createAssetDescriptor(fragmentAssetPath, 'application/json', bytes));
     }
     for (const rel of this.original.relationships(this.main).values()) {
       const short = rel.type.slice(rel.type.lastIndexOf('/') + 1);
@@ -197,6 +199,6 @@ export class DocxNativeImport {
         if (!rel.external) part(rel.target);
       }
     }
-    if (native.fragments.length || native.parts.length){native.identities=[...this.identities.values()];word.nativeContent = native;}
+    if (native.fragments.length || native.parts.length||native.relationships.length){native.identities=[...this.identities.values()];word.nativeContent = native;}
   }
 }

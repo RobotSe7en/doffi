@@ -86,6 +86,7 @@ export { evaluatePresentationPreset } from "./presentation-geometry.js";
 export type { PresentationPathCommand, PresentationPresetGeometry } from "./presentation-geometry.js";
 export { createDocumentSession, DEFAULT_DOCUMENT_SESSION_LIMITS, DEFAULT_INTERACTION_LIMITS } from "./document-session.js";
 export { collectDocumentAssets, createAssetDescriptor } from "./assets.js";
+export{WordNativeFragmentCollectionSchema}from'./contracts/word.js';
 export type {
   AnnotationSubmissionHandler, AssetProvider, CandidateChange, ChangeMapping, DeepReadonly,
   DocumentEventListener, DocumentPackage, DocumentSelection, DocumentSession,
