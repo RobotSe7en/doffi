@@ -1,11 +1,12 @@
 import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from '../ooxml/word-passive-run-properties.js';
+import {passiveWordParagraphBooleans,passiveWordParagraphValues,passiveWordParagraphCss} from '../ooxml/word-passive-paragraph-properties.js';
 import { DocumentError } from "@doffi/core";
 import type { Css } from "./css.js";
 import { color, fontName, length, nativeInteger } from "./values.js";
 import { empty, orderedProperties, value } from "./xml.js";
 
 export const runKeys: readonly string[] = [...passiveWordRunBooleans.map(passiveWordRunCss),...passiveWordRunValues.map(passiveWordRunCss),"font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "color", "letter-spacing", "vertical-align", "background-color", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-shading", "--word-run-snap-to-grid",...["val","eastAsia","bidi"].map(role=>"--word-language-"+role)];
-export const paragraphKeys: readonly string[] = ["margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", "--word-distributed", "--word-line-rule", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
+export const paragraphKeys: readonly string[] = [...passiveWordParagraphBooleans.map(passiveWordParagraphCss),...passiveWordParagraphValues.map(passiveWordParagraphCss),"margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent", "text-align", "line-height", "break-before", "break-after", "break-inside", "widows", "orphans", "background-color", "--word-suppress-auto-hyphens", "--word-overflow-punctuation", "--word-paragraph-snap-to-grid", "--word-distributed", "--word-line-rule", ...["top", "right", "bottom", "left"].flatMap((side) => ["width", "style", "color"].map((part) => "border-" + side + "-" + part))];
 export const pick = (css: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key]) => keys.includes(key)));
 export const difference = (css: Css, expected: Css, keys: readonly string[]): Css => Object.fromEntries(Object.entries(css).filter(([key, val]) => keys.includes(key) && val !== expected[key]));
 export function unsupported(message: string): never { throw new DocumentError("UnsupportedFeature", message); }
@@ -88,6 +89,9 @@ export function borders(css: Css, container: string, inside = false): string {
 }
 export function paragraphProperties(css: Css, width = 468): string {
   let out = "";
+  for(const name of passiveWordParagraphBooleans){const raw=css[passiveWordParagraphCss(name)];if(raw!==undefined){if(raw!=='0'&&raw!=='1'||name==='bidi'&&raw!=='0')unsupported('An active or invalid native paragraph direction requires compatibility preservation.');out+=toggle(name,raw==='1');}}
+  const direction=css[passiveWordParagraphCss('textDirection')];if(direction!==undefined){if(direction!=='lrTb')unsupported('An alternate native paragraph text direction requires compatibility preservation.');out+=value('textDirection',direction);}
+  const div=css[passiveWordParagraphCss('divId')];if(div!==undefined){if(!/^\d+$/.test(div)||!Number.isSafeInteger(Number(div)))unsupported('A native paragraph div identity must be a nonnegative integer.');out+=value('divId',div);}
   for (const [prop, name, active] of [["break-after", "keepNext", "avoid"], ["break-inside", "keepLines", "avoid"], ["break-before", "pageBreakBefore", "page"]]) {
     if (css[prop!] !== undefined) {
       if (!["auto", active, "avoid-page"].includes(css[prop!]!)) unsupported("This paragraph break setting has no supported DOCX representation.");

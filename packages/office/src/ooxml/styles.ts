@@ -1,4 +1,5 @@
 import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from './word-passive-run-properties.js';
+import {passiveWordParagraphBooleans,passiveWordParagraphCss} from './word-passive-paragraph-properties.js';
 import {wordColorLuminance} from '@doffi/core';
 import { DocumentError } from "@doffi/core";
 import type { WordMetadata, WordNumberLevel } from "@doffi/core";
@@ -862,16 +863,10 @@ export class DocxStyles {
       css.widows = count;
       css.orphans = count;
     }
-    if (
-      child(properties, "framePr") ||
-      on(child(properties, "bidi")) ||
-      (val(child(properties, "textDirection")) &&
-        val(child(properties, "textDirection")) !== "lrTb")
-    )
-      unsupported(
-        properties,
-        "A paragraph frame or writing direction is not supported.",
-      );
+    for(const name of ['framePr','bidi','textDirection']){const item=child(properties,name);if(item&&(name==='framePr'||name==='bidi'&&on(item)||name==='textDirection'&&val(item)!=='lrTb'))unsupported(item,'A paragraph frame or writing direction is not supported.');}
+    for(const name of passiveWordParagraphBooleans){const item=child(properties,name);if(item)css[passiveWordParagraphCss(name)]=on(item)?'1':'0';}
+    if(child(properties,'textDirection'))css[passiveWordParagraphCss('textDirection')]='lrTb';
+    const div=child(properties,'divId');if(div){const id=number(val(div),div);if(!Number.isSafeInteger(id)||id<0)fail(div,'A paragraph div identity must be a nonnegative integer.');css[passiveWordParagraphCss('divId')]=String(id);}
     Object.assign(css, this.borders(child(properties, "pBdr")));
     const shade = child(properties, "shd");
     if (shade && attr(shade, "fill") !== "auto")

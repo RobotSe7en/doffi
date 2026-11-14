@@ -1,0 +1,15 @@
+import { W } from './xml.js';
+import type { XmlNode } from './xml.js';
+
+/** ECMA-376 Transitional CT_PPrBase followed by CT_PPr's own children. */
+export const wordParagraphPropertyOrder = ['pStyle','keepNext','keepLines','pageBreakBefore','framePr','widowControl','numPr','suppressLineNumbers','pBdr','shd','tabs','suppressAutoHyphens','kinsoku','wordWrap','overflowPunct','topLinePunct','autoSpaceDE','autoSpaceDN','bidi','adjustRightInd','snapToGrid','spacing','ind','contextualSpacing','mirrorIndents','suppressOverlap','jc','textDirection','textAlignment','textboxTightWrap','outlineLvl','divId','cnfStyle','rPr','sectPr','pPrChange'] as const;
+const positions=new Map<string,number>(wordParagraphPropertyOrder.map((name,index)=>[name,index]));
+/** Native preservation may add a property absent from the compiled output.
+ * Reorder standard children in their existing slots; extension nodes stay put. */
+export function sortWordParagraphProperties(root:XmlNode):void {
+    if(root.uri===W&&root.name==='pPr'){
+        const known=root.content.filter((node):node is XmlNode=>typeof node!=='string'&&node.uri===W&&positions.has(node.name)).sort((a,b)=>positions.get(a.name)!-positions.get(b.name)!);
+        let index=0;for(let slot=0;slot<root.content.length;slot++){const node=root.content[slot]!;if(typeof node!=='string'&&node.uri===W&&positions.has(node.name))root.content[slot]=known[index++]!;}
+    }
+    for(const child of root.content)if(typeof child!=='string')sortWordParagraphProperties(child);
+}
