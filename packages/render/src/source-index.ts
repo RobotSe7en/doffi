@@ -88,7 +88,7 @@ export class PreviewSource {
       if (viewNodeRole(node) === "remove") return;
       const from = offset;
       const element = node.nodeType === 1 ? node as HTMLElement : undefined;
-      const atomic = element?.matches('br,img,[data-word-tab],[data-word-drawing]:not([data-word-drawing="group"])');
+      const atomic = element?.matches('br,img,[data-word-tab],[data-word-drawing]:not([data-word-drawing="group"]),[data-word-note-reference]');
       const text = node.nodeType === 3 ? node.nodeValue ?? ""
         : atomic ? element!.tagName === "IMG" ? "\ufffc" : element!.tagName === "BR" ? "\n" : this.model.getNode(element!.dataset.nodeId!)?.text ?? "\t" : undefined;
       if (text !== undefined) {

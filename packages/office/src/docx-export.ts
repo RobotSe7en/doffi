@@ -1,3 +1,4 @@
+import { writeNoteOptions } from './docx-note-options.js';
 import { DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, openDocument } from "@doffi/core";
 import type { DeepReadonly, ContentDocumentModel, DocumentPackage, DocumentReadLimits, DocumentSection, ContentDocumentSnapshot, PageSetup, WordMetadata, WordDocumentMetadata,WordDrawing } from "@doffi/core";
 import type { DocumentZipOptions } from "./document-zip.js";
@@ -50,6 +51,7 @@ class Exporter {
   private readonly fields: ReadonlyMap<string, Field>;
   private readonly fieldEnds: ReadonlyMap<string, Field>;
   private readonly links: ReadonlyMap<string, DeepReadonly<WordMetadata["hyperlinks"][number]>>;
+  private readonly linkEnds:ReadonlySet<string>;
   private readonly revisions: ReadonlyMap<string, DeepReadonly<WordMetadata["revisions"][number]>>;
   private readonly bookmarkStarts: ReadonlyMap<string, { id: number; name: string }>;
   private readonly bookmarkEnds: ReadonlyMap<string, number>;
@@ -61,6 +63,7 @@ class Exporter {
   private fieldStack: FieldState[] = [];
   private deleted = false;
   private width = 468;
+  private readonly noteIds=new Map<string,number>();
   private drawingId = 0;
   private readonly drawingIds=new Map<string,number>();
   private readonly drawings:ReadonlyMap<string,DeepReadonly<WordDrawing>>;
@@ -85,6 +88,7 @@ class Exporter {
     this.fields = new Map(word?.fields.map((field) => [field.nodeId, field]) ?? []);
     this.fieldEnds = new Map(word?.fields.filter((field) => field.endNodeId).map((field) => [field.endNodeId!, field]) ?? []);
     this.links = new Map(word?.hyperlinks.map((link) => [link.nodeId, link]) ?? []);
+    this.linkEnds=new Set(word?.hyperlinks.flatMap(link=>link.endNodeId?[link.endNodeId]:[])??[]);
     this.revisions = new Map(word?.revisions.map((revision) => [revision.nodeId, revision]) ?? []);
     this.bookmarkStarts = new Map(word?.bookmarks.map((bookmark, index) => [bookmark.startNodeId, { id: index, name: bookmark.name }]) ?? []);
     this.bookmarkEnds = new Map(word?.bookmarks.map((bookmark, index) => [bookmark.endNodeId, index]) ?? []);
@@ -209,6 +213,9 @@ class Exporter {
     if(this.drawings.has(node.attrs["data-node-id"]??"")){this.add(this.annotations.at(node,0));this.add(writeWordDrawing({word:this.snapshot.metadata.word!,tree:this.tree,css:node=>this.css.get(node),raw:node=>this.css.specified(node),id:id=>this.drawingIds.get(id)??unsupported("A drawing identity is missing."),image:node=>this.imageRelation(node),text:(id,width)=>this.captureStory(id,width),marker:node=>{let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;return this.nativeMark(node.attrs['data-node-id']!)+(this.snapshot.metadata.word?.nativeContent&&container?' dn:container="'+escapeXml(container.attrs['data-node-id']!)+'"':'');}},this.drawings.get(node.attrs["data-node-id"]!)!));this.add(this.annotations.at(node,node.to-node.from));return;}
     if (node.attrs["data-word-native-object"]) {this.add(this.annotations.at(node,0));let container=node.parent;while(container&&!container.attrs['data-word-run'])container=container.parent;this.add(nativeObjectMarker(node.attrs["data-word-native-object"], false, node.attrs["data-node-id"],container?.attrs['data-node-id']));this.add(this.annotations.at(node,node.to-node.from)); return; }
     const id = node.attrs["data-node-id"] ?? "", css = this.css.get(node);
+    if(node.attrs['data-word-note-reference']){const reference=this.snapshot.metadata.word?.noteReferences?.find(reference=>reference.nodeId===id),note=this.snapshot.metadata.word?.notes?.find(note=>note.noteId===reference?.noteId);if(!reference||!note)unsupported('A note reference is missing its source definition.');this.add(this.annotations.at(node,0));this.add('<w:r'+this.nativeMark(id)+'>'+this.nativeRun(css,this.styles.runContext(paragraphStyle,character),character,role,language)+empty('w:'+note.kind+'Reference',{'w:id':this.noteIds.get(note.noteId),'w:customMarkFollows':reference.customMark?1:undefined})+(reference.customMark?'<w:t>'+escapeXml(reference.customMark)+'</w:t>':'')+'</w:r>');this.add(this.annotations.at(node,node.to-node.from));return;}
+    if(node.attrs['data-word-note-number']){const note=this.snapshot.metadata.word?.notes?.find(note=>{const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===note.storyId);return!!story&&contains(this.tree.byId.get(story.rootNodeId)!,node);});if(!note)unsupported('A note number requires its note story.');this.add('<w:r>'+this.nativeRun(css,this.styles.runContext(paragraphStyle,character),character,role,language)+empty('w:'+note.kind+'Ref')+'</w:r>');return;}
+    if(node.attrs['data-word-note-separator']){this.add('<w:r>'+empty('w:'+node.attrs['data-word-note-separator'])+'</w:r>');return;}
     const requestedStyle = node.attrs["data-word-style"] ?? node.attrs["data-word-ignored-character-style"];
     if (requestedStyle) character = requestedStyle;
     role = node.attrs["data-word-script"] === "eastAsia" ? "eastAsia" : node.attrs["data-word-script"] === "cs" ? "cs" : node.attrs["data-word-script"] === "hAnsi" ? "hAnsi" : node.attrs["data-word-script"] === "ascii" ? "ascii" : role;
@@ -238,6 +245,7 @@ class Exporter {
       this.instruction(state, field.instructionFields?.[0]?.offset ?? field.instruction.length); return;
     }
     const link = this.links.get(id), revision = this.revisions.get(id);
+    if(this.linkEnds.has(id)){this.add('</w:hyperlink>');return;}
     if (link) this.add("<w:hyperlink" + attributes({ "w:anchor": link.bookmark, "r:id": link.target ? this.opc.relate(this.part, "hyperlink", link.target, true) : undefined }) + ">");
     const previousDeleted = this.deleted;
     if (revision) { this.add("<w:" + (revision.kind === "insert" ? "ins" : "del") + attributes({ "w:id": this.snapshot.metadata.word!.revisions.indexOf(revision), "w:author": revision.author ?? "", "w:date": date(revision.date) }) + ">"); this.deleted = revision.kind === "delete"; }
@@ -248,7 +256,7 @@ class Exporter {
     else if (node.attrs["data-word-tab"]) this.emitText(node, "\t", css, this.styles.runContext(paragraphStyle, character), character, role, language);
     else for (const child of node.children) this.inline(child, paragraphStyle, character, role, language);
     if (revision) { this.add("</w:" + (revision.kind === "insert" ? "ins" : "del") + ">"); this.deleted = previousDeleted; }
-    if (link) this.add("</w:hyperlink>");
+    if (link&&!link.endNodeId) this.add("</w:hyperlink>");
   }
   private imageRelation(node:SourceElement):string{
     const parts = this.snapshot.manifest.entrypoint.split("/").slice(0, -1);
@@ -439,6 +447,7 @@ class Exporter {
     finally { this.part = previous.part; this.output = previous.output; this.fieldStack = previous.fields; this.deleted = previous.deleted; this.width = previous.width; }
   }
   write(): { files: ReadonlyMap<string, Uint8Array>; report: DocxExportReport } {
+    for(const kind of ['footnote','endnote']as const){let next=1;for(const note of this.snapshot.metadata.word?.notes??[])if(note.kind===kind)this.noteIds.set(note.noteId,(note.type??'normal')==='normal'?next++:note.type==='separator'?-1:note.type==='continuationSeparator'?0:next++);}
     const sections = this.snapshot.metadata.sections.map((section) => ({ section, root: this.tree.byId.get(section.rootNodeId)!, nodes: [] as SourceNode[] })).sort((left, right) => left.root.from - right.root.from || this.tree.elements.indexOf(left.root) - this.tree.elements.indexOf(right.root));
     if (sections.some((left) => sections.some((right) => left !== right && contains(left.root, right.root)))) unsupported("Nested native section roots cannot be exported.");
     let current = sections[0]!;
@@ -459,12 +468,15 @@ class Exporter {
       const info = this.auxiliary.get(story.storyId); if (!info) continue;
       this.withStory(info.path, () => { this.output = this.opc.part(info.path, contentType(info.kind)); const tag = info.kind === "header" ? "hdr" : "ftr"; this.add(declaration + "<w:" + tag + namespaces + ">"); this.blocks(this.tree.byId.get(story.rootNodeId)!.children); this.add("</w:" + tag + ">"); this.output.finish(); });
     }
-    this.writeComments(); this.styles.write(this.opc); this.styles.writeNumbering(this.opc, this.htmlLists); this.writeSettings();
+    this.writeNotes();this.writeComments(); this.styles.write(this.opc); this.styles.writeNumbering(this.opc, this.htmlLists); this.writeSettings();
     const core = this.opc.part("docProps/core.xml", "application/vnd.openxmlformats-package.core-properties+xml");
     core.add(declaration + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' + escapeXml(this.snapshot.metadata.title ?? "") + "</dc:title></cp:coreProperties>"); core.finish();
     this.opc.relate("", "officeDocument", "word/document.xml"); this.opc.relate("", "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties", "docProps/core.xml"); this.opc.finish();
     const budget = { nodes: 0 }; for (const [path, bytes] of this.opc.parts.files) if (path.endsWith(".xml") || path.endsWith(".rels")) xml(bytes, path, this.limits, budget);
     return { files: this.opc.parts.files, report: Object.freeze({ documentId: this.snapshot.manifest.documentId, revision: this.snapshot.manifest.revision, exportedAnnotationIds: Object.freeze(this.annotations.comments.map((comment) => comment.annotation.annotationId)), unexportedAnnotations: Object.freeze(this.annotations.omitted.map((item) => Object.freeze({ ...item }))) }) };
+  }
+  private writeNotes():void{
+    for(const kind of ['footnote','endnote']as const){const notes=this.snapshot.metadata.word?.notes?.filter(note=>note.kind===kind)??[];if(!notes.length)continue;const path='word/'+kind+'s.xml';this.withStory(path,()=>{this.output=this.opc.part(path,'application/vnd.openxmlformats-officedocument.wordprocessingml.'+kind+'s+xml');this.add(declaration+'<w:'+kind+'s'+namespaces+'>');for(const[type,id,tag]of [['separator',-1,'separator'],['continuationSeparator',0,'continuationSeparator']]as const)if(!notes.some(note=>note.type===type))this.add('<w:'+kind+attributes({'w:id':id,'w:type':type})+'><w:p><w:r>'+empty('w:'+tag)+'</w:r></w:p></w:'+kind+'>');for(const note of notes){const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===note.storyId)!;this.add('<w:'+kind+this.nativeMark(story.rootNodeId)+attributes({'w:id':this.noteIds.get(note.noteId),'w:type':note.type&&note.type!=='normal'?note.type:undefined})+'>');this.blocks(this.tree.byId.get(story.rootNodeId)!.children);this.add('</w:'+kind+'>');}this.add('</w:'+kind+'s>');this.output.finish();});this.opc.relate('word/document.xml',kind+'s',kind+'s.xml');}
   }
   private writeComments(): void {
     if (!this.annotations.comments.length) return;
@@ -486,12 +498,13 @@ class Exporter {
     for (const comment of this.annotations.comments) extended.add("<w15:commentEx" + this.nativeMark(comment.annotation.bodyNodeId) + attributes( { "w15:paraId": comment.paragraphId, "w15:done": comment.annotation.status === "resolved" ? 1 : 0 }) + "/>");
     extended.add("</w15:commentsEx>"); extended.finish(); this.opc.relate("word/document.xml", "http://schemas.microsoft.com/office/2011/relationships/commentsExtended", "commentsExtended.xml");
   }
+  private noteSettings(kind:'footnote'|'endnote'):string{const word=this.snapshot.metadata.word,notes=word?.notes?.filter(note=>note.kind===kind)??[],options=kind==='footnote'?word?.footnoteOptions:word?.endnoteOptions;return writeNoteOptions(kind,notes.length?{format:kind==='footnote'?'decimal':'lowerRoman',...options}:options,notes.length?[-1,0,...notes.filter(note=>note.type==='continuationNotice').map(note=>this.noteIds.get(note.noteId)!)]:[]);}
   private writeSettings(): void {
     const out = this.opc.part("word/settings.xml", contentType("settings")), tabs = this.snapshot.metadata.word?.tabs ?? [], intervals = new Set(tabs.map((tab) => tab.defaultInterval));
     if (intervals.size > 1) unsupported("DOCX has one document-wide default tab interval.");
     const sections=this.snapshot.metadata.sections;
     if(sections.some(section=>section.gutterPosition === "top" && section.gutter) && sections.some(section=>section.gutterPosition !== "top" && section.gutter)) unsupported("DOCX gutterAtTop is document-wide; nonzero top and side gutters cannot be mixed.");
-    out.add(declaration + "<w:settings" + namespaces + ">" + value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
+    out.add(declaration + "<w:settings" + namespaces + ">" + value("evenAndOddHeaders", this.snapshot.metadata.word?.evenAndOddHeaders ? 1 : 0) + value("defaultTabStop", nativeInteger(tabs[0]?.defaultInterval ?? 36, 20, 1)) + value("autoHyphenation", this.snapshot.metadata.word?.automaticHyphenation ? 1 : 0) + value("gutterAtTop", sections.some(section=>section.gutterPosition === "top" && section.gutter) ? 1 : 0) + value("updateFields", 0) + this.noteSettings('footnote')+this.noteSettings('endnote') + "</w:settings>"); out.finish(); this.opc.relate("word/document.xml", "settings", "settings.xml");
   }
 }
 /** Generate a native, editable DOCX exclusively from the current validated HTML

@@ -8,7 +8,7 @@ import { checkLimit } from '../document/validation.js';
 import { copyWordStorySemantics } from './word-story-copy.js';
 import { local,multiply,point } from './presentation-geometry.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-const escape=(text:string):string=>text.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const escape=(text:string):string=>text.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;').replace(/\r\n?/g,'\n').replaceAll('\n','<br>');
 export const isWordDrawingOperation:(operation:{readonly op:string})=>operation is WordDrawingOperation=(operation):operation is WordDrawingOperation=>['insertWordDrawing','setWordDrawingGeometry','setWordDrawingLayout','setWordDrawingAppearance','setWordDrawingCrop','setWordDrawingPreset','setWordDrawingText','setWordDrawingConnector','removeWordDrawing','copyWordDrawing','groupWordDrawings','ungroupWordDrawing'].includes(operation.op);
 export function applyWordDrawing(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,operation:WordDrawingOperation,limits:DocumentReadLimits):void{
  const word=metadata.word!,drawings=word.drawings??=[],source=parse(),target=source.peekNode(operation.nodeId);if(!target)fail('The drawing target is missing.');word.drawings=drawings;

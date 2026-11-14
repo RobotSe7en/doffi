@@ -11,9 +11,10 @@ export interface PageFlow {
   headerHeight(table: HTMLTableElement): number;
   project?():void;
 }
+export interface PageFlowConstraints{reserved(index:number):number;minimumPage(node:Node):number|undefined}
 /** Portable single-DOM fragmentation. Empty, owned spacers carry page margins;
  * source paragraphs and cells keep their identity even when a text node splits. */
-export function pageFlow(document: Document, flow: HTMLElement, area: number, pitch: number, limits: Readonly<RenderLimits>, pageStride=1): PageFlow {
+export function pageFlow(document: Document, flow: HTMLElement, area: number, pitch: number, limits: Readonly<RenderLimits>, pageStride=1,constraints?:PageFlowConstraints): PageFlow {
   const view = document.defaultView!, gaps: HTMLElement[] = [], blanks = new Set<number>();
   const excluded = (node: Node): boolean => {
     for (let item: Node | null = node; item && item !== flow; item = item.parentNode)
@@ -25,6 +26,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
   const origin = (): number => flow.getBoundingClientRect().top;
   const page = (y: number): number => Math.max(0, Math.floor((y - origin() + 0.25) / pitch));
   const start = (index: number): number => origin() + index * pitch;
+  const available=(index:number):number=>Math.max(Math.min(24,area),area-(constraints?.reserved(index)??0));
   const ensure = (index: number): void => {
     if (index >= limits.maxPages) throw new DocumentError("ResourceLimitExceeded", "Document exceeds the render page budget.");
     last = Math.max(last, index);
@@ -64,7 +66,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     const height = Math.max(0, start(targetPage) + inset - gap.getBoundingClientRect().top);
     gap.style.height = height + "px"; cell.style.height = height + "px";
   }
-  interface Line { readonly node: Text | HTMLElement; readonly rect: DOMRect; readonly offset?: number }
+  interface Line { readonly node: Text | HTMLElement; readonly rect: DOMRect; readonly offset?: number;readonly targetPage?:number }
   function visualLines(element: HTMLElement): Line[] {
     const result: Line[] = [], walker = document.createTreeWalker(element, 5);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -72,7 +74,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       if(owner.closest('[data-word-drawing]')&&(!owner.hasAttribute('data-word-drawing')||node.nodeType===3))continue;
       if(owner.hasAttribute('data-word-drawing')&&view.getComputedStyle(owner.closest<HTMLElement>('[data-sdk-word-object]')??owner).position==='absolute')continue;
       if (excluded(owner) || view.getComputedStyle(owner).visibility === "hidden") continue;
-      if (node.nodeType !== 3 && !owner.matches("img,[data-word-tab],[data-word-drawing]")) continue;
+      if (node.nodeType !== 3 && !owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference]")) continue;
       const range = document.createRange(); range.selectNodeContents(node);
       for (const rect of node.nodeType === 3 ? range.getClientRects() : owner.getClientRects()) {
         if (rect.width < 0.01 || rect.height < 0.1) continue;
@@ -102,13 +104,13 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
           if (owner.style.display === "none") continue;
           return { node: owner, rect: owner.getBoundingClientRect() };
         }
-        if (!owner.matches("img,[data-word-tab],[data-word-drawing]")) continue;
+        if (!owner.matches("img,[data-word-tab],[data-word-drawing],[data-word-note-reference]")) continue;
       }
       const range = document.createRange(); range.selectNodeContents(node);
       const rectangles = node.nodeType === 3 ? [...range.getClientRects()] : [...(node as Element).getClientRects()];
       for (const rect of rectangles) {
         if (rect.height < 0.1 || rect.width < 0.01) continue;
-        const current = page(rect.top + rect.height / 2), end = start(current) + area;
+        const current = page(rect.top + rect.height / 2), end = start(current) + available(current),minimum=constraints?.minimumPage(node);if(minimum!==undefined&&current<minimum)return{node:node as HTMLElement,rect,targetPage:minimum};
         // Glyph rectangles can extend beyond a line box by sub-pixel rounding.
         const height = Math.max(rect.height, parseFloat(view.getComputedStyle(owner).lineHeight) || rect.height);
         if (rect.top >= start(current) + inset - 5 && rect.bottom + Math.max(0, height - rect.height) / 2 <= end + 0.5) { ensure(current); continue; }
@@ -131,11 +133,11 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
   }
   function paragraph(element: HTMLElement, inset: number): void {
     const style = view.getComputedStyle(element), box = element.getBoundingClientRect(), current = page(box.top);
-    const capacity = area - inset;
-    if ((style.breakInside.startsWith("avoid") || style.pageBreakInside === "avoid") && box.height <= capacity && box.bottom > start(current) + area + 0.5)
+    const capacity = available(current) - inset;
+    if ((style.breakInside.startsWith("avoid") || style.pageBreakInside === "avoid") && box.height <= capacity && box.bottom > start(current) + available(current) + 0.5)
       before(element, current + 1, inset);
     for (let line = overflow(element, inset); line; line = overflow(element, inset)) {
-      if (!(line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]"))) {
+      if (line.targetPage===undefined&&!(line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]"))) {
         const lines = visualLines(element), ordinal = lines.findIndex((item) => Math.abs(item.rect.top - line!.rect.top) < 0.5);
         if (ordinal >= 0) {
           const fragmentPage = page(line.rect.top + line.rect.height / 2), fragmentStart = lines.findIndex((item) => page(item.rect.top + item.rect.height / 2) === fragmentPage);
@@ -150,7 +152,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
       }
       const currentPage = page(line.rect.top + line.rect.height / 2);
       const hard = line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]");
-      const next = hard && (line.node as HTMLElement).dataset.wordBreak==='page' ? nextPhysical(currentPage) : line.rect.top < start(currentPage) + inset - 5 ? currentPage : currentPage + 1;
+      const next = line.targetPage??(hard && (line.node as HTMLElement).dataset.wordBreak==='page' ? nextPhysical(currentPage) : line.rect.top < start(currentPage) + inset - 5 ? currentPage : currentPage + 1);
       ensure(next);
       if (hard) {
         const breaker = line.node as HTMLElement;
@@ -173,11 +175,11 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     const rows = [...element.rows].filter((row) => viewNodeRole(row) !== "remove");
     for (const row of rows) {
       let box = row.getBoundingClientRect(), current = page(box.top);
-      if (!header.includes(row) && box.height <= area - height && (box.bottom > start(current) + area + 0.5 || box.top < start(current) + (current > topPage(element) ? height : 0) - 0.5)) {
+      if (!header.includes(row) && box.height <= available(current) - height && (box.bottom > start(current) + available(current) + 0.5 || box.top < start(current) + (current > topPage(element) ? height : 0) - 0.5)) {
         const next = box.top < start(current) + height - 0.5 ? current : current + 1;
         rowGap(element, row, next, height); box = row.getBoundingClientRect(); current = page(box.top);
       }
-      if (box.height > area - height) {
+      if (box.height > available(current) - height) {
         for (const cell of row.cells) {
           if (view.getComputedStyle(cell).verticalAlign !== "top") throw new DocumentError("UnsupportedFeature", "Splitting a non-top-aligned table cell across pages is not supported.");
           const blocks = [...cell.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")].filter((node) => !node.querySelector("p,h1,h2,h3,h4,h5,h6,li"));
@@ -206,7 +208,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
         while (next && viewNodeRole(next) === "remove") next = next.nextElementSibling as HTMLElement | null;
       }
       const box = element.getBoundingClientRect(), current = page(box.top);
-      if (height <= area && box.top > start(current) + 0.5 && box.top + height > start(current) + area + 0.5) before(element, current + 1);
+      if (height <= available(current) && box.top > start(current) + 0.5 && box.top + height > start(current) + available(current) + 0.5) before(element, current + 1);
     }
     if (element.localName === "table") table(element as HTMLTableElement);
     else if (!element.querySelector("p,h1,h2,h3,h4,h5,h6,li,table,div,section") && (element.matches("p,h1,h2,h3,h4,h5,h6,li") || element.textContent?.trim() || element.querySelector("br,img"))) paragraph(element, 0);

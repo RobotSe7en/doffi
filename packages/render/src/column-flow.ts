@@ -1,18 +1,18 @@
 import { DocumentError } from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
 import { pageFlow } from './flow.js';
-import type { PageFlow } from './flow.js';
+import type { PageFlow,PageFlowConstraints } from './flow.js';
 import { markViewNode, ownViewStyle, viewNodeRole } from './view-nodes.js';
 import type { PreviewSource } from './source-index.js';
 
 /** Measure one narrow, reversible source flow, then project logical columns onto
  * physical pages. Text and source elements retain identity, order and UTF-16 offsets. */
-export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:number,width:number,count:number,gap:number,separator:boolean,limits:Readonly<RenderLimits>,source:PreviewSource):PageFlow{
- if(count===1)return pageFlow(document,flow,area,pitch,limits);
+export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:number,width:number,count:number,gap:number,separator:boolean,limits:Readonly<RenderLimits>,source:PreviewSource,constraints?:PageFlowConstraints):PageFlow{
+ if(count===1)return pageFlow(document,flow,area,pitch,limits,1,constraints);
  if(count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Column count exceeds the rendering budget.');
  const columnWidth=(width-gap*(count-1))/count;if(columnWidth<=0)throw new DocumentError('InvalidDocument','Column gaps leave no printable width.');
  flow.style.width=columnWidth+'px';
- const paginator=pageFlow(document,flow,area,area,{...limits,maxPages:limits.maxPages*count},count),wrappers:HTMLElement[]=[],positions=new Map<HTMLElement,string>(),backgrounds:HTMLElement[]=[],starts=new Map<HTMLElement,number>();
+ const paginator=pageFlow(document,flow,area,area,{...limits,maxPages:limits.maxPages*count},count,constraints?{reserved:index=>constraints.reserved(Math.floor(index/count)),minimumPage:node=>{const minimum=constraints.minimumPage(node);return minimum===undefined?undefined:minimum*count;}}:undefined),wrappers:HTMLElement[]=[],positions=new Map<HTMLElement,string>(),backgrounds:HTMLElement[]=[],starts=new Map<HTMLElement,number>();
  const view=document.defaultView!,origin=()=>flow.getBoundingClientRect(),columnAt=(y:number)=>Math.max(0,Math.floor((y-origin().top+.25)/area));
  let projected=false;
  const offset=(column:number):{x:number;y:number}=>({x:(column%count)*(columnWidth+gap),y:Math.floor(column/count)*pitch-column*area});

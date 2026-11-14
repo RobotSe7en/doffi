@@ -24,7 +24,7 @@ export class ExportAnnotations {
     };
     const visit = (node: SourceNode): void => {
       if (!element(node)) { if (emitted(node)) leaves.push(node); }
-      else if (["img", "br"].includes(node.tag)||node.attrs["data-word-drawing"]||node.attrs["data-word-native-object"]) leaves.push(node); else node.children.forEach(visit);
+      else if (["img", "br"].includes(node.tag)||node.attrs["data-word-drawing"]||node.attrs["data-word-native-object"]||node.attrs['data-word-note-reference']) leaves.push(node); else node.children.forEach(visit);
     };
     stories.forEach(visit);
     const range = (id: string, from?: number, to?: number): Range | undefined => {

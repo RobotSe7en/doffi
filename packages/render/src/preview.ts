@@ -11,6 +11,7 @@ import { createPrintDocument } from "./print.js";
 import { markViewNode } from "./view-nodes.js";
 import { layoutFields } from "./fields.js";
 import { composeWordDrawings } from './word-drawings.js';
+import { composeWordNotes } from './word-notes.js';
 import type { LayoutFields } from "./fields.js";
 import { SourceProjection } from "./projection.js";
 import { copyPreviewSelection } from "./clipboard.js";
@@ -201,7 +202,7 @@ export function decorate(
           ? "页眉"
           : story.kind === "footer"
             ? "页脚"
-            : "批注";
+            : story.kind==='footnote'?'脚注':story.kind==='endnote'?'尾注':story.kind==='textBox'?'对象文字':"批注";
       root.before(heading);
       root.classList.add("sdk-auxiliary");
     }
@@ -434,6 +435,7 @@ export function mountPreview(
   let baseFonts: readonly FontResolution[] = [], fields: LayoutFields | undefined;
   let projection: SourceProjection | undefined;
   let drawings:ReturnType<typeof composeWordDrawings>|undefined;
+  let notes:ReturnType<typeof composeWordNotes>|undefined;
   let disposed = false, loaded = false, generation = 0, scheduled: number | undefined, observer: ResizeObserver | undefined;
   let report: DocumentRenderReport = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
     layout: options.layout ?? "pages", pages: [], nodePages: {}, fields: [], diagnostics: [], fonts: [] });
@@ -449,8 +451,8 @@ export function mountPreview(
     if (composing) return;
     let pages: DocumentRenderReport["pages"] = [], nodePages: DocumentRenderReport["nodePages"] = {}, results: DocumentRenderReport["fields"] = [], stable = !pagination;
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
-      pages = pagination.measure(); nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
-      if (!fields?.changed) { stable = true; break; }
+      pages = pagination.measure();pages=notes?.measure(pages)??pages;nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
+      if (!fields?.changed&&!notes?.changed) { stable = true; break; }
       const derivedFonts = resolvePreviewFonts(iframe.contentDocument!, ".sdk-field-display [data-word-script]");
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
@@ -466,7 +468,7 @@ export function mountPreview(
   }
   function render(): void {
     const frame = iframe.contentDocument!;
-    pagination?.dispose(); pagination = undefined; fields = undefined; source = undefined;
+    notes?.dispose();notes=undefined;pagination?.dispose(); pagination = undefined; fields = undefined; source = undefined;
     const snapshot = model.snapshot();
     const sourceFonts = resolvePreviewFonts(frame);
     source = new PreviewSource(frame, model);
@@ -477,9 +479,10 @@ export function mountPreview(
     }
     decorate(frame, snapshot.metadata.word);
     drawings=composeWordDrawings(frame,model,limits);
+    notes=composeWordNotes(frame,model,source,limits);
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);
-      pagination = paginate(frame, source, snapshot.metadata, limits);
+      pagination = paginate(frame, source, snapshot.metadata, limits,notes);
     }
     baseFonts = Object.freeze([...sourceFonts, ...resolvePreviewFonts(frame, ".sdk-number-marker")]); fontReport = baseFonts;
     report = Object.freeze({ documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision,
@@ -523,7 +526,7 @@ export function mountPreview(
       if (!loaded || !iframe.contentDocument) throw new DocumentError("InvalidOperation", "Wait for renderer.ready before updating the view.");
       const incoming = prepareDocument(next), previous = prepared;
       generation++;
-      observer?.disconnect(); pagination?.dispose(); pagination = undefined;
+      observer?.disconnect();notes?.dispose();notes=undefined; pagination?.dispose(); pagination = undefined;
       prepared = incoming; model = incoming.model;
       const frame = iframe.contentDocument;
       frame.head.replaceWith(frame.importNode(incoming.document.head, true)); frame.body.replaceWith(frame.importNode(incoming.document.body, true));
@@ -545,7 +548,7 @@ export function mountPreview(
       measure(); return createPrintDocument(iframe.contentDocument!, source.root, report.pages, limits);
     },
     dispose() {
-      if (disposed) return; disposed = true; generation++; observer?.disconnect(); pagination?.dispose(); source = undefined; projection = undefined;
+      if (disposed) return; disposed = true; generation++; observer?.disconnect();notes?.dispose();notes=undefined; pagination?.dispose(); source = undefined; projection = undefined;
       if (scheduled !== undefined) hostDocument.defaultView!.cancelAnimationFrame(scheduled);
       iframe.removeEventListener("load", load); iframe.remove(); iframe.srcdoc = "";
       for (const url of prepared.urls) URL.revokeObjectURL(url); resolveReady();

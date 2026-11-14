@@ -7,7 +7,7 @@ import type { PreviewSource } from "./source-index.js";
 
 interface FieldView {
   readonly id: string;
-  readonly kind: "PAGE" | "NUMPAGES" | "TOC";
+  readonly kind: LayoutFieldResult['kind'];
   readonly instruction: string;
   readonly results: readonly string[];
   readonly display: HTMLElement;
@@ -49,7 +49,7 @@ export function layoutFields(document: Document, source: PreviewSource, word: De
     if (field.locked) {
       diagnostics.push({ code: "UnsupportedField", nodeId: field.nodeId, message: "Locked field result remains cached." }); continue;
     }
-    if (!["PAGE", "NUMPAGES", "TOC"].includes(kind) || instructionOnly.has(field.nodeId)) {
+    if (!["PAGE", "NUMPAGES", "TOC",'REF','PAGEREF','NOTEREF','SEQ'].includes(kind) || instructionOnly.has(field.nodeId)) {
       if (!instructionOnly.has(field.nodeId)) diagnostics.push({ code: "UnsupportedField", nodeId: field.nodeId, message: "Field result remains cached: " + kind });
       continue;
     }
@@ -58,6 +58,7 @@ export function layoutFields(document: Document, source: PreviewSource, word: De
     if (kind === "TOC" && /\\(?:f|a|b|c|s|t)\b/i.test(field.instruction)) {
       diagnostics.push({ code: "UnsupportedField", nodeId: field.nodeId, message: "This TOC switch combination remains cached." }); continue;
     }
+    if((kind==='REF'&&/\\(?:n|r|w|p|d|f)\b/i.test(field.instruction)||kind==='PAGEREF'&&/\\p\b/i.test(field.instruction)||kind==='NOTEREF'&&/\\p\b/i.test(field.instruction))){diagnostics.push({code:'UnsupportedField',nodeId:field.nodeId,message:'This reference switch combination remains cached.'});continue;}
     const display = markViewNode(document.createElement("span"));
     measureViewContent(display);
     display.className = "sdk-field-display"; display.dataset.sdkFieldNodeId = field.nodeId; display.style.whiteSpace = "pre-wrap";
@@ -74,6 +75,15 @@ export function layoutFields(document: Document, source: PreviewSource, word: De
     views.push({ id: field.nodeId, kind: kind as FieldView["kind"], instruction: field.instruction, results, display });
   }
   function value(view: FieldView, pages: readonly RenderedPage[], nodePages: Readonly<Record<string, readonly string[]>>, page?: RenderedPage): string {
+    if(['REF','PAGEREF','NOTEREF'].includes(view.kind)){
+      const match=/^\s*(?:REF|PAGEREF|NOTEREF)\s+(?:"([^"]+)"|([^\s\\]+))/i.exec(view.instruction),bookmark=word?.bookmarks.find(bookmark=>bookmark.name===(match?.[1]??match?.[2])),start=bookmark?source.elements.get(bookmark.startNodeId):undefined,end=bookmark?source.elements.get(bookmark.endNodeId):undefined;if(!start||!end)return'错误！未找到引用源。';
+      if(view.kind==='PAGEREF')return pages.find(page=>nodePages[bookmark!.startNodeId]?.includes(page.pageId))?.label??'1';
+      if(view.kind==='NOTEREF'){const reference=word?.noteReferences?.find(reference=>{const node=source.elements.get(reference.nodeId);return node&&node.from>=start.from&&node.to<=end.from;});if(!reference)return'错误！未找到注释。';const marker=source.elements.get(reference.nodeId)?.element;return marker?.lastElementChild?.textContent??reference.customMark??'1';}
+      return source.tokens.filter(token=>token.to>start.from&&token.from<end.from).map(token=>token.text.slice(Math.max(0,start.from-token.from),Math.min(token.text.length,end.from-token.from))).join('');
+    }
+    if(view.kind==='SEQ'){
+      const match=/^\s*SEQ\s+(?:"([^"]+)"|([^\s\\]+))/i.exec(view.instruction),name=match?.[1]??match?.[2],fields=views.filter(field=>field.kind==='SEQ').sort((a,b)=>(source.elements.get(a.id)?.from??0)-(source.elements.get(b.id)?.from??0));let number=0;for(const field of fields){const key=/^\s*SEQ\s+(?:"([^"]+)"|([^\s\\]+))/i.exec(field.instruction);if((key?.[1]??key?.[2])!==name)continue;const restart=/\\r\s+(\d+)/i.exec(field.instruction);number=restart?Number(restart[1]):/\\c\b/i.test(field.instruction)?number:number+1;if(field===view)break;}return String(number);
+    }
     if (view.kind === "NUMPAGES") return String(pages.length);
     if (view.kind === "PAGE") {
       const current = page ?? pages.find((item) => nodePages[view.id]?.includes(item.pageId)) ?? pages[0];

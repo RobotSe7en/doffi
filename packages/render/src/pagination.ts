@@ -9,6 +9,7 @@ import type { PageFlow } from "./flow.js";
 import { ownViewStyle } from "./view-nodes.js";
 import type { PreviewSource } from "./source-index.js";
 import { applyWordGrid, wordPageSetup } from './word-grid.js';
+import type { WordNoteLayout } from './word-notes.js';
 
 const px = (value: number): number => value * 96 / 72;
 const pt = (value: number): number => value * 72 / 96;
@@ -30,6 +31,7 @@ export function pageLabel(value: number, format = "decimal"): string {
 }
 interface SectionView { readonly definition: DeepReadonly<DocumentSection>; readonly element: HTMLElement }
 interface Group {
+  startIndex:number;
   readonly columns:string;
   readonly setup: DeepReadonly<PageSetup>;
   readonly box: HTMLElement;
@@ -45,7 +47,7 @@ export interface Pagination {
 }
 
 /** Browser-independent measured pages over a single, reversible source DOM. */
-export function paginate(document: Document, source: PreviewSource, metadata: DeepReadonly<ContentDocumentMetadata>, limits: Readonly<RenderLimits>): Pagination {
+export function paginate(document: Document, source: PreviewSource, metadata: DeepReadonly<ContentDocumentMetadata>, limits: Readonly<RenderLimits>,notes?:WordNoteLayout): Pagination {
   if (metadata.presentation !== undefined) throw new DocumentError("UnsupportedFeature", "Presentation surfaces do not use Word pagination.");
   const root = source.root;
   const diagnostics: LayoutDiagnostic[] = [], groups: Group[] = [];
@@ -99,7 +101,8 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       flow.style.cssText = `width:${width - margins.left - margins.right}pt;margin-left:${margins.left}pt`;
       box.append(flow);
       const definition=section.definition.columns;
-      group = { setup, columns, box, flow, sections: [], paginator: definition&&definition.count>1 ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition.count,px(definition.gap),definition.separator??false,limits,source) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits) }; groups.push(group);
+      const constraints=notes?{reserved:(index:number)=>notes.reserved(group!.startIndex+index),minimumPage:(node:Node)=>{const minimum=notes.minimumPage(node);return minimum===undefined?undefined:Math.max(0,minimum-group!.startIndex);}}:undefined;
+      group = { startIndex:0,setup, columns, box, flow, sections: [], paginator: definition&&definition.count>1 ? columnFlow(document,flow,px(height-margins.top-margins.bottom),px(height+gutter),px(width-margins.left-margins.right),definition.count,px(definition.gap),definition.separator??false,limits,source,constraints) : pageFlow(document, flow, px(height - margins.top - margins.bottom), px(height + gutter), limits,1,constraints) }; groups.push(group);
       if (section.element === root) { flow.append(...root.childNodes); root.append(box); }
       else root.insertBefore(box, section.element);
     }
@@ -122,6 +125,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     for (const group of groups) group.paginator.reset();
     let physical = 0;
     for (const group of groups) {
+      group.startIndex=physical;
       for (const section of group.sections) {
         const kind = section.definition.breakType, first = section === mainSections[0];
         const parity = !first && (kind === "oddPage" || kind === "evenPage") ? ((kind === "oddPage" ? 0 : 1) + physical) % 2 : undefined;
@@ -186,7 +190,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     // cannot bleed into margins or the inter-page gutter. Stories are siblings.
     for (const group of groups) {
       const contours = Array.from({ length: group.paginator.count }, (_, index) => group.paginator.blanks.has(index) ? "" :
-        `M ${-px(group.setup.margins.left)} ${px(index * (group.setup.height + gutter))} h ${px(group.setup.width)} v ${px(group.setup.height - group.setup.margins.top - group.setup.margins.bottom)} h ${-px(group.setup.width)} Z`).join(" ");
+        `M ${-px(group.setup.margins.left)} ${px(index * (group.setup.height + gutter))} h ${px(group.setup.width)} v ${px(group.setup.height - group.setup.margins.top - group.setup.margins.bottom)-(notes?.reserved(group.startIndex+index)??0)} h ${-px(group.setup.width)} Z`).join(" ");
       ownViewStyle(group.flow, "clip-path"); group.flow.style.clipPath = `path("${contours}")`;
     }
     return pages;

@@ -4,14 +4,16 @@ import { DocumentSectionSchema } from "./document.js";
 import { TableChangeSchema } from "./table-operations.js";
 import { WordStyleSchema,WordNumberLevelSchema,WordMetadataSchema } from './word.js';
 import { WordDrawingOperationSchema } from './word-drawing.js';
+import { WordReferenceOperationSchema } from './word-reference.js';
 const properties=z.record(z.string().min(1),z.string().min(1));
 /** Format operations always name an existing source target for proposal scoping. */
 export const WordOperationSchema=z.discriminatedUnion('op',[
   ...WordDrawingOperationSchema.options,
+  ...WordReferenceOperationSchema.options,
   z.strictObject({op:z.literal('resetWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),resetParagraph:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordOptions'),nodeId:IdentifierSchema,evenAndOddHeaders:z.boolean().optional(),automaticHyphenation:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordTabs'),nodeId:IdentifierSchema,defaultInterval:z.number().positive(),stops:WordMetadataSchema.shape.tabs.element.shape.stops}),
-  z.strictObject({op:z.literal('insertWordField'),nodeId:IdentifierSchema,instruction:z.string().min(1),cachedText:z.string().optional()}),
+  z.strictObject({op:z.literal('insertWordField'),nodeId:IdentifierSchema,instruction:z.string().min(1),cachedText:z.string().optional(),offset:RevisionSchema.optional()}),
   z.strictObject({op:z.literal('setWordSection'),nodeId:IdentifierSchema,changes:DocumentSectionSchema.omit({sectionId:true,rootNodeId:true}).partial()}),
   z.strictObject({op:z.literal('splitWordSection'),nodeId:IdentifierSchema,breakType:z.enum(['continuous','nextPage','evenPage','oddPage'])}),
   z.strictObject({op:z.literal('insertWordStory'),nodeId:IdentifierSchema,kind:z.enum(['header','footer']),variant:z.enum(['default','first','even']),html:z.string()}),

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { IdentifierSchema, PackagePathSchema } from "./primitives.js";
 import { WordDrawingSchema } from './word-drawing.js';
+import { WordNoteSchema,WordNoteReferenceSchema,WordNoteOptionsSchema } from './word-reference.js';
 
 /** Residual OOXML owns only content that has no editable HTML representation. */
 export const WordNativeContentSchema = z.strictObject({
@@ -27,7 +28,7 @@ export type WordNativeContent = z.infer<typeof WordNativeContentSchema>;
 
 export const WordStorySchema = z.strictObject({
   storyId: IdentifierSchema,
-  kind: z.enum(["main", "header", "footer", "comment", "textBox"]),
+  kind: z.enum(["main", "header", "footer", "comment", "textBox",'footnote','endnote']),
   rootNodeId: IdentifierSchema,
 });
 export const WordStyleSchema = z.strictObject({
@@ -84,6 +85,8 @@ export const WordNumberLevelSchema = z.strictObject({
   cssClass: IdentifierSchema,
 });
 export const WordMetadataSchema = z.strictObject({
+  notes:z.array(WordNoteSchema).optional(),noteReferences:z.array(WordNoteReferenceSchema).optional(),
+  footnoteOptions:WordNoteOptionsSchema.optional(),endnoteOptions:WordNoteOptionsSchema.optional(),
   drawings:z.array(WordDrawingSchema).optional(),
   nativeContent: WordNativeContentSchema.optional(),
   stories: z.array(WordStorySchema).min(1),
@@ -100,6 +103,7 @@ export const WordMetadataSchema = z.strictObject({
   hyperlinks: z.array(
     z.strictObject({
       nodeId: IdentifierSchema,
+      endNodeId:IdentifierSchema.optional(),
       target: z.string().min(1).optional(),
       bookmark: IdentifierSchema.optional(),
     }),

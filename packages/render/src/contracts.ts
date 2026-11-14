@@ -45,7 +45,7 @@ export interface LayoutFieldResult {
   readonly fieldNodeId: string;
   readonly resultNodeIds: readonly string[];
   readonly value: string;
-  readonly kind: "PAGE" | "NUMPAGES" | "TOC";
+  readonly kind: "PAGE" | "NUMPAGES" | "TOC" | 'REF' | 'PAGEREF' | 'NOTEREF' | 'SEQ';
 }
 /** Derived geometry is bound to one immutable document revision. All values use points. */
 interface RenderReport {

@@ -81,3 +81,7 @@ R1-12 输入、预览和批注共用[自研页面画布](pagination-rendering.md
 ## 图片与绘图
 
 `execute({type: "word", action: "insertImage"})`、`insertShape`、`insertTextBox`、`insertConnector` 和 `drawingSettings` 打开第一方操作面板。单击对象后可拖动、在右下角缩放或用方向键移动；Shift 单击多选，Alt 单击选择组内对象。文本框的“编辑对象文字”打开同一会话中的辅助故事，`mainStory` 返回正文。选择本地图片、粘贴图片或拖入图片只使用本次用户提供的字节；资源与插入共同提交为一个历史步骤。底层可使用类型化 `insertWordDrawing`／`setWordDrawing*`／`groupWordDrawings` 等事务命令。
+
+## 脚注、尾注和引用
+
+Word 命令 `insertFootnote`、`insertEndnote` 和 `referenceSettings` 打开注释表单或已有注释列表。正文使用同一会话的辅助故事输入；可以设置编号，转换注释类型，或删除引用和其附属正文。`bookmarks`、`insertLink`、`crossReference` 和 `caption` 提供书签、链接及引用字段入口。字段的自动显示不改源；显式更新缓存才进入一次撤销历史。

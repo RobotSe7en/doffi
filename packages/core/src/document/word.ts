@@ -89,6 +89,13 @@ export function validateWord(
       }
     }
     const drawings=unique(word.drawings??[],item=>item.nodeId),textOwners=new Set<string>();
+    const notes=unique(word.notes??[],item=>item.noteId),references=unique(word.noteReferences??[],item=>item.nodeId),noteOwners=new Set<string>();
+    if(word.footnoteOptions?.position&&!['pageBottom','beneathText'].includes(word.footnoteOptions.position)||word.endnoteOptions?.position&&!['sectEnd','docEnd'].includes(word.endnoteOptions.position))invalid('The note position must match its note kind.');
+    unique(word.notes??[],note=>note.storyId);unique((word.notes??[]).filter(note=>(note.type??'normal')!=='normal'),note=>note.kind+' '+note.type);
+    for(const note of notes.values())if(stories.get(note.storyId)?.kind!==note.kind)invalid('A note requires its own matching Word story.');
+    for(const reference of references.values()){const note=notes.get(reference.noteId),source=node(reference.nodeId);if(!note||(note.type??'normal')!=='normal'||noteOwners.has(note.noteId)||source.attributes['data-word-note-reference']!==note.kind||html.getNode(reference.nodeId)!.text!=='\ufffc')invalid('A note reference requires one matching atomic marker and independently owned note.');noteOwners.add(note.noteId);const main=word.stories.find(story=>story.kind==='main')!;if(storyOf(reference.nodeId)!==main.rootNodeId)invalid('A note reference must belong to the main story.');}
+    for(const id of html.nodeIds())if(node(id).attributes['data-word-note-reference']&&!references.has(id))invalid('A note marker requires typed reference metadata.');
+    for(const id of html.nodeIds()){const marker=node(id).attributes['data-word-note-separator'];if(marker&&!['separator','continuationSeparator'].includes(marker))invalid('The note separator marker is invalid.');}
     const transforms=wordDrawingTransforms(word,{getNode:id=>html.getNode(id)});
     const parentDrawing=(id:string):string|undefined=>{for(let parent=node(id).parentNodeId;parent;parent=node(parent).parentNodeId)if(drawings.has(parent))return parent;return;};
     for(const drawing of drawings.values()){
@@ -151,6 +158,8 @@ export function validateWord(
     for (const definition of word.numbering)
       unique(definition.levels, (level) => String(level.level));
     const links = unique(word.hyperlinks, (item) => item.nodeId);
+    const linkEnds=new Map(word.hyperlinks.filter(link=>link.endNodeId).map(link=>[link.endNodeId!,link]));
+    unique(word.hyperlinks.filter(link=>link.endNodeId),link=>link.endNodeId!);
     const fields = unique(word.fields, (item) => item.nodeId);
     const revisions = unique(word.revisions, (item) => item.nodeId);
     const tabs = unique(word.tabs, (item) => item.paragraphNodeId);
@@ -170,6 +179,7 @@ export function validateWord(
     }
     for (const link of links.values()) {
       node(link.nodeId);
+      if(link.endNodeId){node(link.endNodeId);if(storyOf(link.nodeId)!==storyOf(link.endNodeId)||order.get(link.nodeId)!>=order.get(link.endNodeId)!||node(link.nodeId).attributes['data-word-link']!=='start'||node(link.endNodeId).attributes['data-word-link']!=='end')invalid('A hyperlink range requires ordered markers in one story.');}
       if (!link.target && !link.bookmark)
         invalid("A hyperlink requires a target.");
       if (
@@ -181,6 +191,7 @@ export function validateWord(
       if (!link.target && link.bookmark && !names.has(link.bookmark))
         invalid("A hyperlink refers to a missing bookmark.");
     }
+    const lastChild=(id:string):number=>{const children=node(id).childNodeIds;return children.length?lastChild(children.at(-1)!):order.get(id)!;};const linkRanges=word.hyperlinks.map(link=>({from:order.get(link.nodeId)!,to:link.endNodeId?order.get(link.endNodeId)!:lastChild(link.nodeId)})).sort((a,b)=>a.from-b.from);for(let i=1;i<linkRanges.length;i++)if(linkRanges[i]!.from<=linkRanges[i-1]!.to)invalid('Hyperlink ranges cannot overlap or nest.');
     for (const field of fields.values()) {
       if (node(field.nodeId).attributes["data-word-field"] === undefined)
         invalid("A field requires its source marker or container.");
@@ -270,7 +281,7 @@ export function validateWord(
       }
       if (attrs["data-word-field"] !== undefined && !fields.has(id))
         invalid("A field has no semantic definition.");
-      if (attrs["data-word-link"] !== undefined && !links.has(id))
+      if (attrs["data-word-link"] !== undefined && !links.has(id)&&!linkEnds.has(id))
         invalid("A link has no semantic definition.");
       if (["ins", "del"].includes(current.tagName) && !revisions.has(id))
         invalid("A revision has no semantic definition.");

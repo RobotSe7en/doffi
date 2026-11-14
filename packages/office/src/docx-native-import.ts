@@ -7,9 +7,9 @@ import { serializeXml } from './ooxml/serialize.js';
 
 type Native = NonNullable<WordMetadata['nativeContent']>;
 interface Pending { owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
-const owners = new Set(['p', 'r', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds']);
-const propertyRoots = new Set(['pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds']);
-const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'image', 'hyperlink']);
+const owners = new Set(['p', 'r', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
+const propertyRoots = new Set(['pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','footnotes','endnotes','footnote','endnote']);
+const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'hyperlink']);
 export class DocxNativeImport {
   private readonly pending: Pending[] = [];
   private readonly bindings = new Map<XmlNode, string>();

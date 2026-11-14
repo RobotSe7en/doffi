@@ -1,3 +1,4 @@
+import { readNoteOptions } from './docx-note-options.js';
 import { importWordDrawing,WPS,WPG } from "./docx-drawing-import.js";
 import {
   createAssetDescriptor,
@@ -143,6 +144,8 @@ class Importer {
   private readonly defaultTab: number;
   private currentPart: string;
   private currentStory = "";
+  private pendingNoteCustomMark:string|undefined;
+  private readonly nativeNotes=new Map<string,string>();
   constructor(
     private readonly opc: OpcPackage,
     private readonly main: string,
@@ -170,6 +173,7 @@ class Importer {
       (this.settings.uri !== W || this.settings.name !== "settings")
     )
       fail(this.settings, "The settings part has an invalid root.");
+    const footnoteOptions=readNoteOptions(child(this.settings,'footnotePr')),endnoteOptions=readNoteOptions(child(this.settings,'endnotePr'));if(footnoteOptions)this.word.footnoteOptions=footnoteOptions;if(endnoteOptions)this.word.endnoteOptions=endnoteOptions;
     this.defaultTab =
       number(
         attr(child(this.settings, "defaultTabStop"), "val"),
@@ -357,7 +361,7 @@ class Importer {
     }
   }
   private story(
-    kind: "main" | "header" | "footer" | "comment" | "textBox",
+    kind: "main" | "header" | "footer" | "comment" | "textBox" | 'footnote' | 'endnote',
     storyId: string,
   ): Html {
     const root = this.make("div", { "data-office-story": kind });
@@ -424,6 +428,7 @@ class Importer {
         unsupported(source, "Modern comment threads are not supported.");
     }
     this.readComments();
+    this.readNotes();
     const body = child(source, "body");
     if (!body) fail(source, "A Word body is missing.");
     let section = this.make("section");
@@ -800,6 +805,7 @@ class Importer {
           "commentReference",
           "lastRenderedPageBreak",
           "annotationRef",
+          'footnoteReference','endnoteReference','footnoteRef','endnoteRef','separator','continuationSeparator',
         ];
         for (const item of this.compat(source)) {
           if (item.uri === W && item.name === "rPr") continue;
@@ -815,6 +821,7 @@ class Importer {
       }
       case "t":
       case "delText": {
+        if(this.pendingNoteCustomMark){const reference=this.word.noteReferences!.find(item=>item.nodeId===this.pendingNoteCustomMark)!;reference.customMark=text(source);this.pendingNoteCustomMark=undefined;break;}
         if (source.content.some((item) => typeof item !== "string"))
           fail(source, "A text node contains XML elements.");
         const active = this.fieldStack[this.fieldStack.length - 1];
@@ -887,6 +894,14 @@ class Importer {
           this.inline(item, link, paragraphStyle);
         break;
       }
+      case 'footnoteReference':
+      case 'endnoteReference': {
+        const kind=source.name==='footnoteReference'?'footnote':'endnote',nativeId=attr(source,'id'),noteId=this.nativeNotes.get(kind+'\n'+nativeId);if(!noteId)fail(source,'A note reference targets a missing native note.');const offset=this.offset(parent,'\ufffc'),marker=this.make('span',{'data-word-note-reference':kind});marker.children.push('\ufffc');parent.children.push(marker);(this.word.noteReferences??=[]).push({nodeId:this.id(marker),noteId});this.native?.bind(source,marker.attrs);this.fieldResult(marker);this.record(parent,offset,'\ufffc');if(['1','true','on'].includes(attr(source,'customMarkFollows')??'0'))this.pendingNoteCustomMark=this.id(marker);break;
+      }
+      case 'footnoteRef':
+      case 'endnoteRef': {const offset=this.offset(parent,'\ufffc'),marker=this.make('span',{'data-word-note-number':'true'});marker.children.push('\ufffc');parent.children.push(marker);this.fieldResult(marker);this.record(parent,offset,'\ufffc');break;}
+      case 'separator':
+      case 'continuationSeparator': {parent.children.push(this.make('span',{'data-word-note-separator':source.name}));break;}
       case "bookmarkStart": {
         const id = attr(source, "id");
         const name = attr(source, "name");
@@ -1240,6 +1255,9 @@ class Importer {
       this.currentRun = currentRun;
       this.paragraphRunClasses = paragraphRunClasses;
     }
+  }
+  private readNotes():void{
+    for(const kind of ['footnote','endnote']as const){const part=this.opc.related(this.main,kind+'s');if(!part)continue;const root=this.opc.read(part);if(root.uri!==W||root.name!==kind+'s')fail(root,'A note part has an invalid root.');check(root,[kind]);for(const source of elements(root,kind)){const id=attr(source,'id');if(id===undefined||!Number.isSafeInteger(Number(id))||this.nativeNotes.has(kind+'\n'+id))fail(source,'A native note identity is invalid or repeated.');const type=attr(source,'type')??'normal';if(!['normal','separator','continuationSeparator','continuationNotice'].includes(type))fail(source,'A native note type is invalid.');const storyId=kind+'-'+id,story=this.story(kind,storyId);story.attrs.class='word-main';this.nativeNotes.set(kind+'\n'+id,storyId);(this.word.notes??=[]).push({noteId:storyId,storyId,kind,type:type as 'normal'|'separator'|'continuationSeparator'|'continuationNotice'});this.native?.bind(source,story.attrs);story.children.push(...this.readStoryContent(part,storyId,source));this.auxiliary.push(story);}}
   }
   private readComments(): void {
     const part = this.opc.related(this.main, "comments");

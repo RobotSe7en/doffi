@@ -151,6 +151,9 @@ export function createDocumentSession(document: DocumentModel, options: Document
     removeDeletedCommentBodies(base, annotations, edit,metadata);
     let parsed = parseEdited();
     if(metadata.word){
+      if(metadata.word.noteReferences)metadata.word.noteReferences=metadata.word.noteReferences.filter(reference=>parsed.hasNode(reference.nodeId));
+      const referencedNotes=new Set((metadata.word.noteReferences??[]).map(reference=>reference.noteId));for(const note of metadata.word.notes??[])if((note.type??'normal')==='normal'&&!referencedNotes.has(note.noteId)&&base.snapshot.metadata.word?.noteReferences?.some(reference=>reference.noteId===note.noteId)){const story=metadata.word.stories.find(story=>story.storyId===note.storyId);if(story&&parsed.hasNode(story.rootNodeId))edit.removeSource(story.rootNodeId);}parsed=parseEdited();
+      if(metadata.word.notes)metadata.word.notes=metadata.word.notes.filter(note=>{const story=metadata.word!.stories.find(story=>story.storyId===note.storyId);return!!story&&parsed.hasNode(story.rootNodeId);});
       // Text stories belong to their objects. Remove the complete ownership
       // closure even when a generic paragraph deletion removed the object.
       let changed=true;while(changed){changed=false;const owners=new Set((metadata.word.drawings??[]).filter(item=>parsed.hasNode(item.nodeId)).flatMap(item=>'textStoryId'in item&&item.textStoryId?[item.textStoryId]:[]));for(const story of metadata.word.stories)if(story.kind==='textBox'&&!owners.has(story.storyId)&&parsed.hasNode(story.rootNodeId)){edit.removeSource(story.rootNodeId);changed=true;}if(changed)parsed=parseEdited();}

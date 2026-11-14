@@ -2,6 +2,7 @@ import { editSourceTable } from "./table-edit.js";
 import { copyWordStorySemantics } from './word-story-copy.js';
 import { wordTextDefaults,clearCoveredWordRuns } from '../document/word-format.js';
 import { applyWordDrawing,isWordDrawingOperation } from './word-drawing-edit.js';
+import { applyWordReference,isWordReferenceOperation } from './word-reference-edit.js';
 import { checkLimit } from "../document/validation.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import { DocumentError } from '../errors.js';
@@ -11,7 +12,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordDrawingOperation(operation)||['resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||['resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','setWordParagraph','setWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
 export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -21,6 +22,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   const word=metadata.word;
   const node=parse().peekNode(operation.nodeId);if(!node)fail('The Word source target is missing.');
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}
+  if(isWordReferenceOperation(operation)){applyWordReference(word,edit,parse,operation);return;}
   if(operation.op==='resetWordText'){
     if(!/^p$|^h[1-6]$/.test(node.tagName))fail('Resetting text formatting requires a paragraph range.');
     if(operation.resetParagraph){if(operation.from!==0||operation.to!==parse().getNode(operation.nodeId)!.text.length)fail('Paragraph formatting can only be reset for a complete paragraph.');const normal=word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal');applyWordOperation(metadata,edit,parse,styles,{op:'setWordParagraph',nodeId:operation.nodeId,clearDirectFormatting:true,...(normal?{styleId:normal.styleId}:{})},limits);}
@@ -40,8 +42,8 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='insertWordField'){
     if(!/^p$|^h[1-6]$/.test(node.tagName))fail('A field insertion requires a paragraph.');
     const cached=operation.cachedText??'1',escape=(value:string):string=>value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-    const id=edit.insertSource(operation.nodeId,'<span data-word-field="simple">'+escape(cached)+'</span>').rootNodeIds[0]!;
-    word.fields.push({nodeId:id,instruction:operation.instruction,resultState:'cached'});return;
+    const source='<span data-word-field="simple">'+escape(cached)+'</span>',id=(operation.offset===undefined?edit.insertSource(operation.nodeId,source):edit.insertSourceAt(operation.nodeId,operation.offset,source)).rootNodeIds[0]!;
+    word.fields.push({nodeId:id,instruction:operation.instruction,resultState:'cached',resultNodeIds:[id]});return;
   }
   if(operation.op==='setWordSection') {
     const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId);if(!section)fail('Page changes require a section root.');

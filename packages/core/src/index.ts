@@ -3,6 +3,7 @@ export type { DocumentKind, Rectangle } from "./contracts/primitives.js";
 export * from "./contracts/document.js";
 export * from "./contracts/word.js";
 export * from './contracts/word-drawing.js';
+export * from './contracts/word-reference.js';
 export { DrawingGeometrySchema,DrawingPresetSchema,DrawingTextPropertiesSchema } from './contracts/drawing.js';
 export * from "./contracts/presentation.js";
 export type { DrawingTextProperties } from "./contracts/drawing.js";
