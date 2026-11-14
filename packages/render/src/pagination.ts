@@ -93,7 +93,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
   for (const section of mainSections) {
     const previousSection=mainSections[mainSections.indexOf(section)-1];
     if(section.definition.breakType==='nextColumn'&&previousSection&&(previousSection.definition.columns?.count??1)>1&&JSON.stringify(previousSection.definition.columns)!==JSON.stringify(section.definition.columns))diagnostics.push({code:'SectionGeometryChange',nodeId:section.definition.rootNodeId,message:'A next-column section with a different column geometry starts on a new page.'});
-    applyWordGrid(document,section.element,section.definition,limits);
+    applyWordGrid(document,section.element,section.definition,limits,metadata.word);
     const setup = wordPageSetup(section.definition,metadata.pageSetup), { width, height, margins } = setup;
     if (width - margins.left - margins.right <= 0 || height - margins.top - margins.bottom <= 0 || width > 20_000 || height > 20_000)
       throw new DocumentError("UnsupportedFeature", "Page dimensions must provide a positive printable area within the render size limit.");

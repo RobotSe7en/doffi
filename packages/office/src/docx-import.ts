@@ -1,3 +1,4 @@
+import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import {bindWordConditionalFormat,readWordConditionalFormat} from './docx-conditional-format.js';
 import {resolveWordTableStyle,wordTableRegions,wordTableRowRegions,wordTableRowCellProperties} from '@doffi/core';
 import {WordMoveReader}from'./docx-moves.js';
@@ -185,7 +186,7 @@ class Importer {
       ) / 20;
     this.word.trackChanges=on(child(this.settings,"trackRevisions"));this.word.mirrorMargins=on(child(this.settings,"mirrorMargins"));
     this.word.bordersDoNotSurroundHeader=on(child(this.settings,'bordersDoNotSurroundHeader'));this.word.bordersDoNotSurroundFooter=on(child(this.settings,'bordersDoNotSurroundFooter'));
-    const noColumnBalance=child(child(this.settings,'compat'),'noColumnBalance');if(noColumnBalance)this.word.noColumnBalance=on(noColumnBalance);
+    for(const name of wordCompatibilityNames){const flag=child(child(this.settings,'compat'),name);if(flag)this.word[name]=on(flag);}
     this.word.automaticHyphenation = on(
       child(this.settings, "autoHyphenation"),
     );

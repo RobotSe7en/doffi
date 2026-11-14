@@ -1,3 +1,4 @@
+import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import { createAssetDescriptor, DocumentError } from '@doffi/core';
 import type { ContentDocumentManifest, WordMetadata } from '@doffi/core';
 import type { OpcPackage } from './ooxml/package.js';
@@ -139,7 +140,7 @@ export class DocxNativeImport {
     const writtenSettings=new Set(['bordersDoNotSurroundHeader','bordersDoNotSurroundFooter','mirrorMargins','evenAndOddHeaders','defaultTabStop','autoHyphenation','gutterAtTop','trackRevisions','footnotePr','endnotePr']);
     for(const root of this.roots.values())if(root.uri===W&&root.name==='settings')for(const item of root.content){
       if(typeof item==='string'||item.uri===W&&(writtenSettings.has(item.name)||item.name==='updateFields'&&['0','false','off'].includes(item.attrs.get(W+' val')??'')))continue;
-      const original=item.uri===W&&item.name==='compat'?{...item,content:item.content.filter(child=>typeof child==='string'||child.uri!==W||child.name!=='noColumnBalance')}:item;
+      const original=item.uri===W&&item.name==='compat'?{...item,content:item.content.filter(child=>typeof child==='string'||child.uri!==W||!wordCompatibilityNames.some(name=>name===child.name))}:item;
       if(item.name==='compat'&&!original.attrs.size&&!original.content.some(child=>typeof child!=='string'||child.trim()))continue;
       this.pending.push({owner:root,original,kind:'property',path:[],label:'原生设置 '+item.name,id:'native-'+(++this.serial)});
     }

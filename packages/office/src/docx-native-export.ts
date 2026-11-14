@@ -1,3 +1,4 @@
+import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import{NativeDrawingIdentities}from'./docx-native-identities.js';
 import {sortWordSettings}from'./ooxml/word-settings-order.js';
 import { DocumentError,WordNativeFragmentCollectionSchema } from '@doffi/core';
@@ -19,7 +20,7 @@ function merge(target: XmlNode, source: XmlNode): void {
 }
 /** Reattach residual native data to the just-compiled current source. */
 export function restoreDocxNative(model: ContentDocumentModel, generated: ReadonlyMap<string, Uint8Array>, limits: DocumentReadLimits): ReadonlyMap<string, Uint8Array> {
-  const native = model.snapshot().metadata.word?.nativeContent,noColumnBalance=model.snapshot().metadata.word?.noColumnBalance;
+  const native = model.snapshot().metadata.word?.nativeContent,mappedCompatibility=new Set<string>(wordCompatibilityNames.filter(name=>model.snapshot().metadata.word?.[name]!==undefined));
   if (!native) return generated;
   const files = new Map(generated), sourceFiles = model.serialize(), encoder = new codecs.TextEncoder();
   const budget = { nodes: 0 }, parsed = new Map<string, XmlNode>();
@@ -103,14 +104,14 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   const byNode=new Map<string,typeof native.fragments[number][]>();
   for(const fragment of native.fragments)if(fragment.nodeId){const list=byNode.get(fragment.nodeId)??[];list.push(fragment);byNode.set(fragment.nodeId,list);}
   const mergeProperty=(target:XmlNode,original:XmlNode):void=>{
-    if(target.uri===W&&target.name==='compat'&&noColumnBalance!==undefined)original.content.splice(0,original.content.length,...target.content.filter(child=>typeof child!=='string'&&child.uri===W&&child.name==='noColumnBalance'),...original.content.filter(child=>typeof child==='string'||child.uri!==W||child.name!=='noColumnBalance'));
+    if(target.uri===W&&target.name==='compat'&&mappedCompatibility.size)original.content.splice(0,original.content.length,...target.content.filter(child=>typeof child!=='string'&&child.uri===W&&mappedCompatibility.has(child.name)),...original.content.filter(child=>typeof child==='string'||child.uri!==W||!mappedCompatibility.has(child.name)));
     merge(target,original);
   };
   const applyProperty=(root:XmlNode,fragment:typeof native.fragments[number]):void=>{
     restored.add(fragment.nativeId);
     let target=root;
     for(const[index,path]of fragment.propertyPath.entries()){let next=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===path&&(path===W+' tblStylePr'&&fragment.styleRegion?n.attrs.get(W+' type')===fragment.styleRegion:true))[path===W+' tblStylePr'&&fragment.styleRegion?0:fragment.propertyIndices?.[index]??0];if(!next){const split=path.lastIndexOf(' ');next={uri:path.slice(0,split),name:path.slice(split+1),attrs:new Map(),namespaces:{},content:[],part:root.part};if(path===W+' tblStylePr'&&fragment.styleRegion)(next.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);target.content.unshift(next);}target=next;}
-    const original=fragmentXml(fragment);if(noColumnBalance!==undefined&&original.uri===W){if(original.name==='compat')original.content.splice(0,original.content.length,...original.content.filter(child=>typeof child==='string'||child.uri!==W||child.name!=='noColumnBalance'));else if(original.name==='noColumnBalance'&&fragment.propertyPath.some(path=>path===W+' compat'))return;}if(original.name==='tblStylePr'&&fragment.styleRegion&&!original.attrs.has(W+' type'))(original.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);
+    const original=fragmentXml(fragment);if(mappedCompatibility.size&&original.uri===W){if(original.name==='compat')original.content.splice(0,original.content.length,...original.content.filter(child=>typeof child==='string'||child.uri!==W||!mappedCompatibility.has(child.name)));else if(mappedCompatibility.has(original.name)&&fragment.propertyPath.some(path=>path===W+' compat'))return;}if(original.name==='tblStylePr'&&fragment.styleRegion&&!original.attrs.has(W+' type'))(original.attrs as Map<string,string>).set(W+' type',fragment.styleRegion);
     if(name(original)===name(target))mergeProperty(target,original);
     else{const current=target.content.filter((n):n is XmlNode=>typeof n!=='string'&&name(n)===name(original)&&(original.name==='tblStylePr'&&fragment.styleRegion?n.attrs.get(W+' type')===fragment.styleRegion:true))[original.name==='tblStylePr'&&fragment.styleRegion?0:fragment.propertyIndex??0];if(current)mergeProperty(current,original);else target.content.push(original);}
   };

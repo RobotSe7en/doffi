@@ -118,7 +118,8 @@ export const WordMetadataSchema = z.strictObject({
   mirrorMargins:z.boolean().optional(),
   evenAndOddHeaders: z.boolean().optional(),
   automaticHyphenation: z.boolean().optional(),
-  noColumnBalance:z.boolean().optional(),
+    noColumnBalance:z.boolean().optional(),
+    adjustLineHeightInTable:z.boolean().optional(),
   defaultRunCssClass: IdentifierSchema.optional(),
   styles: z.array(WordStyleSchema),
   numbering: z.array(

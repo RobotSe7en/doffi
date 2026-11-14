@@ -1,4 +1,4 @@
-import type { DeepReadonly, DocumentSection, PageSetup } from '@doffi/core';
+import type { DeepReadonly, DocumentSection, PageSetup,WordMetadata } from '@doffi/core';
 import { DocumentError } from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
 import { markViewNode, ownViewStyle, viewNodeRole } from './view-nodes.js';
@@ -13,13 +13,12 @@ export function wordPageSetup(section:DeepReadonly<DocumentSection>,fallback:Dee
 /** Facing-page parity is physical and independent of printed page labels. */
 export function facingWordPageSetup(setup:DeepReadonly<PageSetup>,index:number,mirror:boolean):DeepReadonly<PageSetup>{return mirror&&index%2===1?{...setup,margins:{...setup.margins,left:setup.margins.right,right:setup.margins.left}}:setup;}
 /** A grid changes measured text, never authored paragraph/run formatting. */
-export function applyWordGrid(document:Document,root:HTMLElement,section:DeepReadonly<DocumentSection>,limits:Readonly<RenderLimits>):void{
+export function applyWordGrid(document:Document,root:HTMLElement,section:DeepReadonly<DocumentSection>,limits:Readonly<RenderLimits>,word?:DeepReadonly<WordMetadata>):void{
  const grid=section.grid;if(!grid||grid.type==='default')return;
  const view=document.defaultView!;let nodes=document.getElementsByTagName('*').length;
  for(const paragraph of root.querySelectorAll<HTMLElement>('p,h1,h2,h3,h4,h5,h6,li')){
   const computed=view.getComputedStyle(paragraph);
-  if(computed.getPropertyValue('--word-paragraph-snap-to-grid').trim()==='0')continue;
-  if(grid.linePitch&&grid.type!=='snapToChars'&&paragraph.dataset.wordLineRule!=='exact'){
+  if(grid.linePitch&&computed.getPropertyValue('--word-paragraph-snap-to-grid').trim()!=='0'&&(word?.adjustLineHeightInTable||!paragraph.closest('td,th'))&&(paragraph.dataset.wordLineRule??computed.getPropertyValue('--word-line-rule').trim())!=='exact'){
    const pitch=grid.linePitch*4/3,line=parseFloat(computed.lineHeight)||parseFloat(computed.fontSize)*1.2;
    ownViewStyle(paragraph,'line-height');paragraph.style.lineHeight=(Math.max(1,Math.ceil((line-.01)/pitch))*pitch)+'px';
   }
