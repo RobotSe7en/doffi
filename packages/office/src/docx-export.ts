@@ -291,6 +291,10 @@ class Exporter {
       this.add(this.annotations.at(node, 1));
     } else if (node.tag === "img") { this.image(node, css, paragraphStyle, character, role, language); this.add(this.annotations.at(node, 1)); }
     else if (node.attrs["data-word-tab"]) this.emitText(node, "\t", css, this.styleContext(node,this.styles.runContext(paragraphStyle,character)), character, role, language);
+    else if(node.attrs['data-word-run']==='true'&&!node.children.length){
+      const expected=this.styleContext(node,this.styles.runContext(paragraphStyle,character));
+      this.add('<w:r'+this.nativeMark(this.nativeRunOwner(node))+this.nativeRunReset(node)+'>'+this.nativeRun(css,expected,character,role,language,this.review.run(node,expected))+'</w:r>');
+    }
     else for (const child of node.children) this.inline(child, paragraphStyle, character, role, language);
     if (revision) { this.add("</w:" + revisionTag + ">"); this.deleted = previousDeleted; }
     if (link&&!link.endNodeId) this.add("</w:hyperlink>");

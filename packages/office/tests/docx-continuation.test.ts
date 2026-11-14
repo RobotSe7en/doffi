@@ -42,3 +42,10 @@ test('deleting named styles migrates empty continuation associations and undo re
     const paragraph = session.snapshot().metadata.word!.tables[0]!.continuationFormats![0]!.emptyParagraphs![0]!; expect(paragraph.styleId).toBe('Normal'); expect(paragraph.runs[0]!.styleId).toBe('Other');
     expect(() => importDocx(exportDocx(session).bytes, { documentId: 'styles-reopened', unsupportedContent: 'reject' })).not.toThrow(); session.undo(); expect(session.snapshot().metadata.word!.tables[0]!.continuationFormats![0]!.emptyParagraphs![0]!.styleId).toBe('Empty');
 });
+test('merging another region retains independent continuation formats outside that region',()=>{
+    const{session,apply}=current(),table=session.snapshot().metadata.word!.tables[0]!,before=session.snapshot(),entry=table.continuationFormats![0]!;
+    apply([{op:'editWordTable',nodeId:table.nodeId,change:{kind:'mergeCells',row:entry.row-1,column:entry.column+1,rows:2,columns:2}}]);
+    expect(session.snapshot().metadata.word!.tables[0]!.continuationFormats).toEqual(table.continuationFormats);
+    let bytes=exportDocx(session).bytes;for(let pass=0;pass<2;pass++){const model=openDocument(importDocx(bytes,{documentId:'local-merge',unsupportedContent:'reject'}),{kind:'document'}),retained=model.snapshot().metadata.word!.tables[0]!.continuationFormats!.find(item=>item.row===entry.row&&item.column===entry.column)!;expect(retained.emptyParagraphs![0]!.styleId).toBe('Empty');expect(strFromU8(unzipSync(bytes)['word/document.xml']!)).toContain('w:color="224466"');bytes=exportDocx(model).bytes;}
+    session.undo();expect(session.snapshot().metadata.word).toEqual(before.metadata.word);expect(session.snapshot().html).toBe(before.html);
+});

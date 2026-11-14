@@ -1,7 +1,7 @@
 import type {WordMetadata} from '../contracts/word.js';
 import type {TableChange} from '../contracts/table-operations.js';
-/** Optimization coordinates follow ordinary grid edits; merge/split rebuild
- * their native continuation structure, so old continuation caches are retired. */
+/** Continuation formats follow their physical grid slots. A local merge must
+ * not retire independent continuation content elsewhere in the table. */
 export function moveWordContinuationFormats(table:WordMetadata['tables'][number],change:TableChange):void {
  if(!table.continuationFormats)return;
  if(change.kind==='insertRows'){
@@ -12,5 +12,7 @@ export function moveWordContinuationFormats(table:WordMetadata['tables'][number]
   table.continuationFormats=table.continuationFormats.filter(entry=>entry.row<change.at||entry.row>=change.at+change.count).map(entry=>({...entry,row:entry.row>=change.at+change.count?entry.row-change.count:entry.row}));
  }else if(change.kind==='deleteColumns'){
   table.continuationFormats=table.continuationFormats.filter(entry=>entry.column<change.at||entry.column>=change.at+change.count).map(entry=>({...entry,column:entry.column>=change.at+change.count?entry.column-change.count:entry.column}));
- }else if(change.kind==='mergeCells'||change.kind==='splitCell')delete table.continuationFormats;
+ }else if(change.kind==='mergeCells'){
+  table.continuationFormats=table.continuationFormats.filter(entry=>entry.row<change.row||entry.row>=change.row+change.rows||entry.column<change.column||entry.column>=change.column+change.columns);
+ }else if(change.kind==='splitCell')delete table.continuationFormats;
 }
