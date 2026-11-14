@@ -79,13 +79,13 @@ export class ExportWordRevisions {
                 }
             }
         }
-        return '<w:' + name + 'Change' + (beforeSource ? ' xmlns:dn="' + NATIVE_MARKER + '"' + attributes({ 'dn:before-source': beforeSource, 'dn:before-property': name }) : '') + attributes({ 'w:id': this.next++, ...(name==='tblGrid'?{}:{'w:author': revision.author ?? '', 'w:date': revision.date}) }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>';
+        return '<w:' + name + 'Change' + (beforeSource ? ' xmlns:dn="' + NATIVE_MARKER + '"' + attributes({ 'dn:before-source': beforeSource, 'dn:before-property': name,...(name==='rPr'&&(owner?.attrs['data-word-reset-text']==='true'||owner?.attrs['data-word-current-format']==='true')?{'dn:before-reset':1}:{}) }) : '') + attributes({ 'w:id': this.next++, ...(name==='tblGrid'?{}:{'w:author': revision.author ?? '', 'w:date': revision.date}) }) + '><w:' + name + '>' + previous + '</w:' + name + '></w:' + name + 'Change>';
     }
     run(node: SourceNode, expected: Css): string {
         const entry = this.revision(node, 'run');
         if (!entry)
             return '';
-        const old = this.old(entry.owner, entry.revision, expected), style = old.node.attrs['data-word-style'], context = this.styles.runContext(this.paragraphStyle(entry.owner), style), props = (style ? value('rStyle', this.styles.ids.get(style) ?? style) : '') + runProperties(difference(old.css, { ...expected, ...context }, [...runKeys, ...Object.keys(old.css).filter(key => key.startsWith('--'))]), { ...expected, ...context });
+        const old = this.old(entry.owner, entry.revision, expected), style = entry.revision.before?.characterStyleId!==undefined?entry.revision.before.characterStyleId??undefined:old.node.attrs['data-word-style'], context = this.styles.runContext(this.paragraphStyle(entry.owner), style), props = (style ? value('rStyle', this.styles.ids.get(style) ?? style) : '') + runProperties(difference(old.css, { ...expected, ...context }, [...runKeys, ...Object.keys(old.css).filter(key => key.startsWith('--'))]), { ...expected, ...context });
         return this.change(entry.revision, 'rPr', props, entry.owner);
     }
     paragraph(node: SourceElement, width: number): string {

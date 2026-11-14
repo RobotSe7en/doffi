@@ -205,10 +205,10 @@ export class DocumentEdit {
     const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");
     setAttribute(target, "style", setDrawingInlineStyle(attr(target, "style") ?? "", property, value, this.limits));
   }
-  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>): void {
+  formatSourceText(nodeId: string, range: SourceTextRange, properties: Readonly<Record<string, string>>,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>,force=false): void {
     const target = this.index().get(nodeId); if (!target) fail("The text format target is unavailable.");
     const styles = this.state.snapshot.manifest.styles.map(path => decodeText(this.state.files.get(path)!));
-    styleSourceText(target, range, properties, this.limits, this.allocate, styles,undefined,onChange,preferred);
+    styleSourceText(target, range, properties, this.limits, this.allocate, styles,undefined,onChange,preferred,force);
   }
   /** Split an inline property owner without changing text or moving atomic
    * content out of its owner. Only the split ancestor path receives new IDs. */

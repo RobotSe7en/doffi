@@ -1,3 +1,4 @@
+import {refreshWordResetStyles} from './session/word-reset-text.js';
 import {refreshWordTableStyles,wordTableStyleTargets} from './session/word-table-styles.js';
 import {trackWordText}from'./session/word-revisions.js';
 import{pruneWordNativeResources,pruneRemovedWordImages}from'./session/word-native-resources.js';
@@ -157,6 +158,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
       else applyAnnotation(operation, annotations, explicit);
     }
     if(metadata.word)refreshWordTableStyles(metadata.word,edit,parseEdited,styles,wordTableStyleTargets(metadata.word,parseEdited(),base.html,transaction.operations));
+    if(metadata.word)refreshWordResetStyles(metadata.word,edit,parseEdited,styles,limits);
     for (const annotation of annotations) {
       if (annotation.status !== "needs_reanchor" && unresolved.has(annotation.annotationId) && !explicit.has(annotation.annotationId)) {
         invalid("Reactivating an unresolved annotation requires an explicit anchor.");

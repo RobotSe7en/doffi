@@ -104,6 +104,8 @@ export function validateWord(
         if (storyRoots.has(parent)) invalid("Word stories cannot be nested.");
       }
     }
+    for(const id of html.nodeIds()){const reset=node(id).attributes['data-word-reset-text'];if(reset!==undefined&&(reset!=='true'||node(id).tagName!=='span'))invalid('A Word text reset requires its inline source span.');}
+    for(const id of html.nodeIds()){const current=node(id).attributes['data-word-current-format'];if(current!==undefined&&(current!=='true'||node(id).tagName!=='span'))invalid('A current Word run format requires its inline source span.');}
     const drawings=unique(word.drawings??[],item=>item.nodeId),textOwners=new Set<string>();
     for(const drawing of drawings.values())if(drawing.kind==='chart'){
       const chart=drawing.chart;if(new Set(chart.series.map(series=>series.seriesId)).size!==chart.series.length)invalid('Chart series require distinct identities.');
@@ -290,6 +292,7 @@ export function validateWord(
       if(revision.property==='tableGrid'&&(tag!=='table'||!revision.before?.grid?.length))invalid('A grid history requires its table and previous columns.');
       for(const[kind,references]of [['header',revision.before?.section?.headers],['footer',revision.before?.section?.footers]]as const)for(const id of Object.values(references??{}))if(id&&stories.get(id)?.kind!==kind)invalid('A previous section refers to a missing or wrong-kind story.');
       if(revision.kind.startsWith('paragraph')&&!/^p$|^h[1-6]$/.test(tag)||revision.kind.startsWith('row')&&tag!=='tr'||revision.kind.startsWith('cell')&&!['td','th'].includes(tag))invalid('A structural revision requires its matching Word source.');
+      if(revision.before?.characterStyleId&&styles.get(revision.before.characterStyleId)?.kind!=='character')invalid('A previous run character style is missing.');
       const style=revision.before?.attributes?.['data-word-style'];if(style&&!styles.has(style))invalid('A previous revision style is missing.');
     }
     for (const tab of tabs.values()) {

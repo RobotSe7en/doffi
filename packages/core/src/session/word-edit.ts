@@ -1,3 +1,4 @@
+import {wordResetTextProperties,wordRunCharacterStyle,wordRunCharacterStyleAt} from './word-reset-text.js';
 import {ensureWordMainStoryContainer,relocateWordSectionRoot} from './word-story-container.js';
 import {moveWordContinuationFormats} from './word-conditional-format.js';
 import{wordContainerWidth}from'../document/word-container.js';
@@ -46,7 +47,20 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='resetWordText'){
     if(!/^p$|^h[1-6]$/.test(node.tagName))fail('Resetting text formatting requires a paragraph range.');
     if(operation.resetParagraph){if(operation.from!==0||operation.to!==parse().getNode(operation.nodeId)!.text.length)fail('Paragraph formatting can only be reset for a complete paragraph.');const normal=word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal');applyWordOperation(metadata,edit,parse,styles,{op:'setWordParagraph',nodeId:operation.nodeId,clearDirectFormatting:true,...(normal?{styleId:normal.styleId}:{})},limits);}
-    const source=parse(),defaults=wordTextDefaults(word,source,operation.nodeId,styles.resolver(),limits.maxNodes*8);edit.formatSourceText(operation.nodeId,operation,defaults);clearCoveredWordRuns(word,parse(),edit,operation.nodeId,operation.from,operation.to);return;
+    const range=word.trackChanges?prepareWordRunFormat(word,edit,parse,styles,operation):{...operation,preferred:new Set<string>()},source=parse(),defaults=wordTextDefaults(word,source,operation.nodeId,styles.resolver(),limits.maxNodes*8),changed:string[]=[];let groupId:string|undefined;
+    edit.formatSourceText(range.nodeId,range,wordResetTextProperties(defaults),change=>{
+      changed.push(change.nodeId);if(!word.trackChanges)return;
+      const previous=word.revisions.find(item=>item.nodeId===change.nodeId&&item.kind==='format'&&item.property==='run'),id=previous?.revisionId??change.nodeId+'-format';groupId??=id;
+      if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();previous.groupId=groupId;const before=previous.before!,attributes=before.attributes??={};if(attributes['data-word-reset-text']===undefined)attributes['data-word-reset-text']=source.peekNode(change.nodeId)?.attributes['data-word-reset-text']??null;if(before.characterStyleId===undefined)before.characterStyleId=wordRunCharacterStyle(word,source,change.nodeId,attributes)??null;}
+      else{const current=source.peekNode(change.nodeId),character=current?wordRunCharacterStyle(word,source,change.nodeId):wordRunCharacterStyleAt(word,source,range.nodeId,change.from);word.revisions.push({nodeId:change.nodeId,sourceId:id,revisionId:id,groupId,kind:'format',property:'run',author:word.trackingAuthor??'',date:new Date().toISOString(),before:{inheritNativeProperties:true,characterStyleId:character??null,attributes:{style:change.previousStyle??null,'data-word-reset-text':current?.attributes['data-word-reset-text']??null}}});}
+    },range.preferred,true);
+    for(const id of changed){const current=parse().peekNode(id)!,character=word.styles.find(style=>style.styleId===current.attributes['data-word-style']&&style.kind==='character');
+      if(character){const revision=word.revisions.find(item=>item.nodeId===id&&item.property==='run'&&item.kind==='format');if(word.trackChanges&&revision){const attributes=revision.before!.attributes??={};for(const key of ['data-word-style','class']as const)if(attributes[key]===undefined)attributes[key]=source.peekNode(id)?.attributes[key]??null;}
+        edit.attributes(id,{'data-word-style':undefined,class:(current.attributes.class??'').split(/\s+/).filter(name=>name&&name!==character.cssClass&&name!==character.runCssClass).join(' ')});
+      }
+      edit.attributes(id,{'data-word-reset-text':'true','data-word-current-format':'true'});
+    }
+    if(!word.trackChanges)clearCoveredWordRuns(word,parse(),edit,operation.nodeId,operation.from,operation.to);return;
   }
   if(operation.op==='setWordOptions'){
     if(node.parentNodeId!==null)fail('Shared Word settings require the document root.');
@@ -161,9 +175,10 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   }
   if(operation.op==='formatWordText'){
     const properties={...operation.properties};if(properties['font-weight']!==undefined&&properties['--word-bold-cs']===undefined)properties['--word-bold-cs']=properties['font-weight']==='bold'||Number(properties['font-weight'])>=600?'1':'0';if(properties['font-style']!==undefined&&properties['--word-italic-cs']===undefined)properties['--word-italic-cs']=properties['font-style']==='italic'?'1':'0';
-    if(!word.trackChanges){edit.formatSourceText(operation.nodeId,operation,properties);return;}
-    const range=prepareWordRunFormat(word,edit,parse,styles,operation);let groupId:string|undefined;
-    edit.formatSourceText(range.nodeId,range,properties,change=>{const previous=word.revisions.find(item=>item.nodeId===change.nodeId&&item.kind==='format'&&item.property==='run'),id=previous?.revisionId??change.nodeId+'-format';groupId??=id;if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();previous.groupId=groupId;}else word.revisions.push({nodeId:change.nodeId,sourceId:id,revisionId:id,groupId,kind:'format',property:'run',author:word.trackingAuthor??'',date:new Date().toISOString(),before:{inheritNativeProperties:true,attributes:{style:change.previousStyle??null}}});},range.preferred);return;
+    const changed:string[]=[],force=word.nativeContent?.fragments.some(fragment=>fragment.kind==='property'&&fragment.propertyName==='http://schemas.openxmlformats.org/wordprocessingml/2006/main rPr')??false;
+    if(!word.trackChanges){edit.formatSourceText(operation.nodeId,operation,properties,change=>changed.push(change.nodeId),undefined,force);for(const id of changed)edit.attributes(id,{'data-word-current-format':'true'});return;}
+    const range=prepareWordRunFormat(word,edit,parse,styles,operation),source=parse();let groupId:string|undefined;
+    edit.formatSourceText(range.nodeId,range,properties,change=>{changed.push(change.nodeId);const character=source.hasNode(change.nodeId)?wordRunCharacterStyle(word,source,change.nodeId):wordRunCharacterStyleAt(word,source,range.nodeId,change.from),previous=word.revisions.find(item=>item.nodeId===change.nodeId&&item.kind==='format'&&item.property==='run'),id=previous?.revisionId??change.nodeId+'-format';groupId??=id;if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();previous.groupId=groupId;}else word.revisions.push({nodeId:change.nodeId,sourceId:id,revisionId:id,groupId,kind:'format',property:'run',author:word.trackingAuthor??'',date:new Date().toISOString(),before:{inheritNativeProperties:true,...(character?{characterStyleId:character}:{}),attributes:{style:change.previousStyle??null}}});},range.preferred,force);for(const id of changed)edit.attributes(id,{'data-word-current-format':'true'});return;
   }
   if(operation.op==='setWordNumbering'){
     if(node.tagName!=='article'||node.parentNodeId!==null)fail('Shared Word definitions require the complete document root.');

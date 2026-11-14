@@ -16,6 +16,7 @@ export function wordTextDefaults(word:DeepReadonly<Pick<WordMetadata,'stories'|'
  const properties:Record<string,string>={'font-family':css['font-family']??'serif','font-size':css['font-size']??'12pt','font-weight':css['font-weight']??'400','font-style':css['font-style']??'normal','font-variant':css['font-variant']??'normal','text-transform':css['text-transform']??'none',color:css.color??'#000000','letter-spacing':css['letter-spacing']??'normal','vertical-align':'baseline','background-color':raw['background-color']??'transparent','text-decoration':css['text-decoration-line']??'none'};
  for(const name of ['text-decoration-style','text-decoration-color'])if(css[name]!==undefined)properties[name]=css[name]!;
  for(const role of ['ascii','hAnsi','eastAsia','cs'])properties['--word-font-'+role]=css['--word-font-'+role]??properties['font-family']!;
+ for(const[key,value]of Object.entries({'--word-run-snap-to-grid':'1','--word-run-shading':'transparent'}))properties[key]=css[key]??value;
  properties['--word-font-size-cs']=css['--word-font-size-cs']??properties['font-size']!;properties['--word-bold-cs']=css['--word-bold-cs']??(css['font-weight']==='bold'||Number(css['font-weight'])>=600?'1':'0');properties['--word-italic-cs']=css['--word-italic-cs']??(css['font-style']==='italic'?'1':'0');properties['--word-kerning-threshold']=css['--word-kerning-threshold']??'0pt';
  for(const role of ['val','eastAsia','bidi'])if(css['--word-language-'+role]!==undefined)properties['--word-language-'+role]=css['--word-language-'+role]!;
  return properties;

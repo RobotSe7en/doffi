@@ -20,11 +20,11 @@ export interface SourceTextStyleRepresentation {
 }
 /** Format existing text leaves, retaining all paragraph/run/link identities.
  * New wrappers are core-owned source nodes; no rendered DOM enters the tree. */
-export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>): void {
+export function styleSourceText(target: Tree.Element, range: SourceTextRange, properties: Readonly<Record<string, string>>, limits: DocumentReadLimits, allocate: () => string, styles: readonly string[] = [], representation?: SourceTextStyleRepresentation,onChange?:(change:SourceTextStyleChange)=>void,preferred?:ReadonlySet<string>,force=false): void {
   properties = textFormattingProperties(properties);
   const fail: (message: string) => never = message => { throw new DocumentError("InvalidOperation", message); };
   for (const property of Object.keys(properties)) if (!/^(?:color|background-color|font-(?:family|size|weight|style|variant)|text-transform|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(property)
-    && !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs)|bold-cs|italic-cs|kerning-threshold|language-(?:val|eastAsia|bidi))$/.test(property) && !(representation && /^(?:font-variant|word-spacing|--office-cell-foreground-(?:color|tint|native-alpha))$/.test(property))) fail("Text range appearance accepts only font and text properties.");
+    && !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs)|bold-cs|italic-cs|kerning-threshold|run-(?:snap-to-grid|shading)|language-(?:val|eastAsia|bidi))$/.test(property) && !(representation && /^(?:font-variant|word-spacing|--office-cell-foreground-(?:color|tint|native-alpha))$/.test(property))) fail("Text range appearance accepts only font and text properties.");
   const patch = (source: string): string => {
     for (const [property, value] of Object.entries(properties)) source = setDrawingInlineStyle(source, property, value, limits); return source;
   };
@@ -115,7 +115,7 @@ export function styleSourceText(target: Tree.Element, range: SourceTextRange, pr
     const parent = leaf.node.parentNode;
     if (!parent || !("tagName" in parent)) fail("The source text parent is unavailable.");
     const owner = projection(parent);
-    if (resolver.hasSpecified(owner, requested)) continue;
+    if (!force&&resolver.hasSpecified(owner, requested)) continue;
     let tracked:Tree.Element|undefined=parent;for(;tracked;tracked=tracked!==target&&tracked.parentNode&&'tagName'in tracked.parentNode?tracked.parentNode:undefined)if(preferred?.has(tracked.attrs.find(attribute=>attribute.name==='data-node-id')?.value??''))break;
     if(tracked&&updateCompleteSpan(tracked))continue;
     if (updateCompleteSpan(parent)) continue;

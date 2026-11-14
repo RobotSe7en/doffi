@@ -206,6 +206,11 @@ class Exporter {
     }
     return undefined;
   }
+  private nativeRunReset(node: SourceNode): string {
+    if(!this.snapshot.metadata.word?.nativeContent)return '';
+    for(let current:SourceNode|undefined=node;current;current=current.parent)if(element(current)&&(current.attrs['data-word-reset-text']==='true'||current.attrs['data-word-current-format']==='true'))return ' dn:reset-run="1"';
+    return '';
+  }
   private emitText(node: SourceNode, text: string, css: Css, expected: Css, character?: string, role?: string, language?: string): void {
     const boundaries = [...new Set([0, text.length, ...this.annotations.offsets(node)])].sort((a, b) => a - b);
     for (let index = 0; index < boundaries.length; index++) {
@@ -213,14 +218,14 @@ class Exporter {
       const end = boundaries[index + 1]; if (end === undefined || end <= start) continue;
       const textName = this.deleted ? "delText" : "t", raw = text.slice(start, end);
       const pieces = raw.split(/([\t\n])/);
-      this.add("<w:r" + this.nativeMark(this.nativeRunOwner(node)) + ">" + this.nativeRun(css, expected, character, role ?? (/^[\u0000-\u007f]*$/.test(raw) ? "ascii" : undefined), language,this.review.run(node,expected)));
+      this.add("<w:r" + this.nativeMark(this.nativeRunOwner(node)) + this.nativeRunReset(node) + ">" + this.nativeRun(css, expected, character, role ?? (/^[\u0000-\u007f]*$/.test(raw) ? "ascii" : undefined), language,this.review.run(node,expected)));
       for (const piece of pieces) if (piece) this.add(piece === "\t" ? "<w:tab/>" : piece === "\n" ? "<w:br/>" : "<w:" + textName + ' xml:space="preserve">' + escapeXml(piece) + "</w:" + textName + ">");
       this.add("</w:r>");
     }
   }
   private fieldControl(type: "begin" | "separate" | "end", field?: Field): void {
     const source=field?this.tree.byId.get(field.nodeId):undefined;
-    this.add("<w:r"+this.nativeMark(source?this.nativeRunOwner(source):undefined)+">" + empty("w:fldChar", { "w:fldCharType": type, ...(field ? { "w:fldLock": field.locked === undefined ? undefined : field.locked ? 1 : 0, "w:dirty": field.dirty === undefined ? undefined : field.dirty ? 1 : 0 } : {}) }) + "</w:r>");
+    this.add("<w:r"+this.nativeMark(source?this.nativeRunOwner(source):undefined)+(source?this.nativeRunReset(source):'')+">" + empty("w:fldChar", { "w:fldCharType": type, ...(field ? { "w:fldLock": field.locked === undefined ? undefined : field.locked ? 1 : 0, "w:dirty": field.dirty === undefined ? undefined : field.dirty ? 1 : 0 } : {}) }) + "</w:r>");
   }
   private instruction(state: FieldState, until: number): void {
     if (until < state.offset || until > state.definition.instruction.length) unsupported("A nested field instruction offset cannot be exported.");
@@ -245,6 +250,7 @@ class Exporter {
     if(node.attrs['data-word-note-reference']){const reference=this.snapshot.metadata.word?.noteReferences?.find(reference=>reference.nodeId===id),note=this.snapshot.metadata.word?.notes?.find(note=>note.noteId===reference?.noteId);if(!reference||!note)unsupported('A note reference is missing its source definition.');this.add(this.annotations.at(node,0));this.add('<w:r'+this.nativeMark(id)+'>'+this.nativeRun(css,this.styleContext(node,this.styles.runContext(paragraphStyle,character)),character,role,language)+empty('w:'+note.kind+'Reference',{'w:id':this.noteIds.get(note.noteId),'w:customMarkFollows':reference.customMark?1:undefined})+(reference.customMark?'<w:t>'+escapeXml(reference.customMark)+'</w:t>':'')+'</w:r>');this.add(this.annotations.at(node,node.to-node.from));return;}
     if(node.attrs['data-word-note-number']){const note=this.snapshot.metadata.word?.notes?.find(note=>{const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===note.storyId);return!!story&&contains(this.tree.byId.get(story.rootNodeId)!,node);});if(!note)unsupported('A note number requires its note story.');this.add('<w:r>'+this.nativeRun(css,this.styleContext(node,this.styles.runContext(paragraphStyle,character)),character,role,language)+empty('w:'+note.kind+'Ref')+'</w:r>');return;}
     if(node.attrs['data-word-note-separator']){this.add('<w:r>'+empty('w:'+node.attrs['data-word-note-separator'])+'</w:r>');return;}
+    if(node.attrs['data-word-reset-text']==='true')character=undefined;
     const requestedStyle = node.attrs["data-word-style"] ?? node.attrs["data-word-ignored-character-style"];
     if (requestedStyle) character = requestedStyle;
     role = node.attrs["data-word-script"] === "eastAsia" ? "eastAsia" : node.attrs["data-word-script"] === "cs" ? "cs" : node.attrs["data-word-script"] === "hAnsi" ? "hAnsi" : node.attrs["data-word-script"] === "ascii" ? "ascii" : role;
@@ -280,7 +286,7 @@ class Exporter {
     const revisionTag=revision?({insert:"ins",delete:"del",moveFrom:"moveFrom",moveTo:"moveTo"}as Record<string,string>)[revision.kind]:undefined;
     if (revision) { this.add("<w:" + revisionTag + attributes({ "w:id": this.revisionIds.get(revision)!, "w:author": revision.author ?? "", "w:date": date(revision.date) }) + ">"); this.deleted = ["delete","moveFrom"].includes(revision.kind); }
     if (node.tag === "br") {
-      this.add("<w:r>" + this.nativeRun(css, this.styleContext(node,this.styles.runContext(paragraphStyle,character)), character, role, language) + empty("w:br", ["page","column"].includes(node.attrs["data-word-break"]??"") ? { "w:type": node.attrs["data-word-break"] } : {}) + "</w:r>");
+      this.add("<w:r"+this.nativeMark(this.nativeRunOwner(node))+this.nativeRunReset(node)+">" + this.nativeRun(css, this.styleContext(node,this.styles.runContext(paragraphStyle,character)), character, role, language) + empty("w:br", ["page","column"].includes(node.attrs["data-word-break"]??"") ? { "w:type": node.attrs["data-word-break"] } : {}) + "</w:r>");
       this.add(this.annotations.at(node, 1));
     } else if (node.tag === "img") { this.image(node, css, paragraphStyle, character, role, language); this.add(this.annotations.at(node, 1)); }
     else if (node.attrs["data-word-tab"]) this.emitText(node, "\t", css, this.styleContext(node,this.styles.runContext(paragraphStyle,character)), character, role, language);
@@ -324,7 +330,7 @@ class Exporter {
   }
   private styleContext(node:SourceNode,fallback:Css,kind?:'table'|'row'|'cell'|'paragraph'):Css{
     const contexts:{name:string;node:SourceElement}[]=[];
-    for(let current:SourceNode|undefined=node;current;current=current.parent){if(!element(current))continue;const context=this.tableContexts.get(current.attrs['data-node-id']??'');if(context&&(!kind&&['run','paragraph'].includes(context.kind)||context.kind===kind))contexts.unshift({name:context.cssClass,node:current});if(kind||current.tag==='table')break;}
+    let reset=false;for(let current:SourceNode|undefined=node;current;current=current.parent){if(!element(current))continue;const context=this.tableContexts.get(current.attrs['data-node-id']??'');if(context&&(!reset||context.kind!=='run')&&(!kind&&['run','paragraph'].includes(context.kind)||context.kind===kind))contexts.unshift({name:context.cssClass,node:current});if(current.attrs['data-word-reset-text']==='true')reset=true;if(kind||current.tag==='table')break;}
     let result=fallback;for(const context of contexts){const parent=context.node.parent?this.css.get(context.node.parent):{},variables=Object.fromEntries(Object.entries(parent).filter(([key])=>key.startsWith('--word-border-inside-')));result=this.css.classStyle(context.name,{...result,...variables});}return result;
   }
   private paragraph(node: SourceElement, section?: string, paragraphId?: string, list?: { id: string; level: number }): void {

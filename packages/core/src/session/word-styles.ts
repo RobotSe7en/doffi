@@ -62,7 +62,7 @@ export function editWordStyle(word: WordMetadata, edit: DocumentEdit, parse: () 
         const removed = old.get(operation.styleId) ?? fail('The deleted style is missing.'), replacement = old.get(operation.replacementStyleId) ?? fail('The replacement style is missing.');
         if (removed === replacement || removed.kind !== replacement.kind)
             fail('A replacement must be a different style of the same kind.');
-        if (word.revisions.some(revision => revision.before?.attributes?.['data-word-style'] === removed.styleId))
+        if (word.revisions.some(revision => revision.before?.attributes?.['data-word-style'] === removed.styleId || revision.before?.characterStyleId === removed.styleId))
             fail('Review previous-format references before deleting their style.');
         for (let current: Style | undefined = replacement; current; current = current.basedOn ? old.get(current.basedOn) : undefined)
             if (current === removed)

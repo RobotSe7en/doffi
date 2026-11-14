@@ -62,6 +62,13 @@ export function layoutFields(document: Document, source: PreviewSource, word: De
     const display = markViewNode(document.createElement("span"));
     measureViewContent(display);
     display.className = "sdk-field-display"; display.dataset.sdkFieldNodeId = field.nodeId; display.style.whiteSpace = "pre-wrap";
+    // The cache can contain a cleared/formatted run below its result scope.
+    // Preserve that first run's appearance when replacing only the displayed
+    // value; the source cache and its formatting remain independently editable.
+    if(first.matches('[data-word-reset-text]')||first.closest('[data-word-reset-text]')||first.querySelector('[data-word-reset-text]')){
+      const walker=document.createTreeWalker(first,4),text=walker.nextNode(),owner=text?.parentElement;
+      if(owner){const css=document.defaultView!.getComputedStyle(owner);for(const name of ['font-family','font-size','font-weight','font-style','font-variant','text-transform','color','background-color','vertical-align','letter-spacing','line-height','text-decoration-line','text-decoration-style','text-decoration-color',...[...css].filter(name=>/^--word-(?:font-|bold-|italic-|language-|kerning-)/.test(name))])display.style.setProperty(name,css.getPropertyValue(name));}
+    }
     if (kind === "TOC") display.style.display = "block";
     for (const id of results) {
       const result = source.elements.get(id)?.element; if (!result) continue;

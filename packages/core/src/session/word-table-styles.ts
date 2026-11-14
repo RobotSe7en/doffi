@@ -61,7 +61,7 @@ export function refreshWordTableStyles(word: WordMetadata, edit: DocumentEdit, p
                 if (base.table['--word-border-inside-v'] && column > 0)
                     inner['border-left'] = 'var(--word-border-inside-v)';
                 assign(cellId, 'cell', { 'padding-left': '5.4pt', 'padding-right': '5.4pt', ...value.cell,...rowCell, ...inner });
-                const visit = (id: string, pRun: Record<string, string>) => {
+                const visit = (id: string, pRun: Record<string, string>, paragraphRun=pRun) => {
                     const node = source.peekNode(id)!;
                     if (node.tagName === 'table')
                         return;
@@ -86,13 +86,15 @@ export function refreshWordTableStyles(word: WordMetadata, edit: DocumentEdit, p
                         current = resolveWordStyleRun(word, read, style?.styleId, { ...defaults, ...value.r });
                         assign(id, 'paragraph', { ...p, ...Object.fromEntries(Object.entries(current).filter(([key]) => key !== 'background-color' && !key.startsWith('text-decoration'))) });
                     }
+                    if(/^p$|^h[1-6]$/.test(node.tagName))paragraphRun=current;
+                    if(node.attributes['data-word-reset-text']==='true')current=paragraphRun;
                     const character = word.styles.find(style => style.styleId === node.attributes['data-word-style'] && style.kind === 'character');
-                    if (node.attributes['data-word-run'] || character) {
+                    if (node.attributes['data-word-run'] || character || node.attributes['data-word-reset-text']==='true') {
                         current = resolveWordStyleRun(word, read, character?.styleId, current);
                         assign(id, 'run', Object.fromEntries(Object.entries(current).filter(([key, value]) => value !== pRun[key] || key === 'background-color' || key.startsWith('text-decoration'))));
                     }
                     for (const child of node.childNodeIds)
-                        visit(child, current);
+                        visit(child, current,paragraphRun);
                 };
                 for (const id of cell.childNodeIds)
                     visit(id, { ...defaults, ...value.r });
