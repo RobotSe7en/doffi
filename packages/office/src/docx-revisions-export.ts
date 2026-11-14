@@ -115,7 +115,7 @@ export class ExportWordRevisions {
         if (!entry)
             return '';
         const old = this.old(node, entry.revision, {}), style = old.node.attrs['data-word-style'];
-        return this.change(entry.revision, 'tblPr', orderedProperties('tblPr',(style ? value('tblStyle', this.styles.ids.get(style) ?? style) : '') + tableProperties(this.directTableProperties(old.node))+(entry.revision.before?.tableStyleOptions?.lookMask!==undefined?empty('w:tblLook',{'w:val':entry.revision.before.tableStyleOptions.lookMask.toString(16).padStart(4,'0')}):'')+(['rowBandSize','columnBandSize']as const).map(key=>entry.revision.before?.tableStyleOptions?.[key]!==undefined?value(key==='rowBandSize'?'tblStyleRowBandSize':'tblStyleColBandSize',entry.revision.before.tableStyleOptions[key]):'').join('')), entry.owner);
+        return this.change(entry.revision, 'tblPr', orderedProperties('tblPr',value('tblStyle',this.styles.tableStyleId(style)) + tableProperties(this.directTableProperties(old.node))+(entry.revision.before?.tableStyleOptions?.lookMask!==undefined?empty('w:tblLook',{'w:val':entry.revision.before.tableStyleOptions.lookMask.toString(16).padStart(4,'0')}):'')+(['rowBandSize','columnBandSize']as const).map(key=>entry.revision.before?.tableStyleOptions?.[key]!==undefined?value(key==='rowBandSize'?'tblStyleRowBandSize':'tblStyleColBandSize',entry.revision.before.tableStyleOptions[key]):'').join('')), entry.owner);
     }
     cell(node: SourceElement): string {
         const entry = this.revision(node, 'cell');

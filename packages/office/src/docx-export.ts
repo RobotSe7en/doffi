@@ -430,7 +430,7 @@ class Exporter {
     const tableWidth = css.width && css.width !== "auto" ? points(css.width, css, this.width) : this.width;
     const grid = info?.grid ?? Array.from({ length: columns }, () => tableWidth / columns);
     if (grid.length !== columns) unsupported("The current table structure no longer matches its native column grid.");
-    this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + (style ? value("tblStyle", this.styles.ids.get(style) ?? style) : "") + (info?.rowBandSize !== undefined ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize !== undefined ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(this.tablePropertyDifference(node,css,'table')) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + this.review.table(node)+"</w:tblPr><w:tblGrid>");
+    this.add("<w:tbl" + this.nativeMark(node.attrs["data-node-id"]) + "><w:tblPr>" + value("tblStyle", this.styles.tableStyleId(style)) + (info?.rowBandSize !== undefined ? value("tblStyleRowBandSize", info.rowBandSize) : "") + (info?.columnBandSize !== undefined ? value("tblStyleColBandSize", info.columnBandSize) : "") + tableProperties(this.tablePropertyDifference(node,css,'table')) + (info?.lookMask !== undefined ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") }) : "") + this.review.table(node)+"</w:tblPr><w:tblGrid>");
     for (const width of grid) this.add(empty("w:gridCol", { "w:w": nativeInteger(width, 20, 1) })); this.add(this.review.grid(node)+"</w:tblGrid>");
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = {...this.tablePropertyDifference(row,this.css.get(row),'row')};

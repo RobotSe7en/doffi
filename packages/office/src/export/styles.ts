@@ -15,7 +15,7 @@ export interface HtmlNumbering { readonly id: string; readonly start: number; re
 export class ExportStyles {
   readonly defaults: Css;
   readonly paragraphDefaults: Css;
-  readonly ids: ReadonlyMap<string, string>;
+  readonly ids: Map<string, string>;
   readonly numberingIds: Map<string, string> = new Map<string, string>();
   private readonly definitions: Map<string, Style>;
   private readonly native = new Map<string, { p: Css; r: Css }>();
@@ -37,6 +37,16 @@ export class ExportStyles {
     this.reader = new DocxStyles({ files: new Map(), limits, xmlBudget: { nodes: 0 }, related: () => undefined, relationships: () => new Map(), contentType: () => undefined,
       read: () => { throw new DocumentError("ExportFailed", "Native style baseline cannot read an external part."); } }, "word/document.xml");
     word?.numbering.forEach((definition, index) => this.numberingIds.set(definition.numberingId, String(index + 1)));
+  }
+  private neutralTableId:string|undefined;
+  /** An absent tblStyle would reapply the document's default table style. */
+  tableStyleId(id:string|undefined):string{
+    if(id)return this.ids.get(id)??id;
+    if(this.neutralTableId)return this.neutralTableId;
+    let value='DoffiTablePlain',suffix=1;while(this.definitions.has(value))value='DoffiTablePlain'+suffix++;
+    const cssClass='doffi-export-plain-table';
+    this.definitions.set(value,{styleId:value,kind:'table',name:'Plain Table',cssClass,paragraphProperties:[],runProperties:[],components:{p:cssClass+'-p',r:cssClass+'-r',table:cssClass+'-table',cell:cssClass+'-cell',row:cssClass+'-row'}});
+    this.ids.set(value,value);this.neutralTableId=value;return value;
   }
   style(id: string | undefined): Style | undefined { return id ? this.definitions.get(id) : undefined; }
   private paragraphStyle(id: string | undefined): Style | undefined { return this.style(id) ?? (!id ? [...this.definitions.values()].find((style) => style.default??(style.kind === "paragraph" && style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind===style.kind&&item.default))) : undefined); }
@@ -94,6 +104,7 @@ export class ExportStyles {
     out.add(declaration + "<w:styles" + namespaces + ">");
     out.add("<w:docDefaults><w:rPrDefault><w:rPr>" + runProperties({...pick(this.defaults, runKeys.filter((key) => key !== "vertical-align" || this.defaults[key] !== "baseline")),...(this.defaults["--word-language-val"]===undefined&&this.locale?{"--word-language-val":JSON.stringify(this.locale)}:{})}) + "</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr>" + paragraphProperties(this.paragraphDefaults) + "</w:pPr></w:pPrDefault></w:docDefaults>");
     for (const style of this.definitions.values()) {
+      if(style.styleId===this.neutralTableId){out.add('<w:style w:type="table" w:styleId="'+escapeXml(style.styleId)+'">'+value('name','Plain Table')+'<w:pPr/><w:rPr/><w:tblPr/><w:trPr/><w:tcPr/></w:style>');continue;}
       const css = this.values(style), parent = style.basedOn ? this.values(this.definitions.get(style.basedOn)!) : this.defaults;
       out.add("<w:style" + attributes({ "w:type": style.kind, "w:styleId": this.ids.get(style.styleId)!,"w:customStyle":style.customStyle===undefined?undefined:Number(style.customStyle), ...(style.default??(style.kind === "paragraph" && style.styleId === "Normal"&&!this.word?.styles.some(item=>item.kind===style.kind&&item.default)) ? { "w:default": 1 } : {}) }) + ">" + value("name", style.name??style.styleId)+(style.aliases!==undefined?value("aliases",style.aliases):""));
       for (const [key, name] of [["basedOn", "basedOn"], ["nextStyleId", "next"], ["linkedStyleId", "link"]] as const) if (style[key]) out.add(value(name, this.ids.get(style[key])));
