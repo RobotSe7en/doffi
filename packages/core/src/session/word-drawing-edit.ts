@@ -1,3 +1,4 @@
+import {ensureWordMainStoryContainer} from './word-story-container.js';
 import { DocumentError } from '../errors.js';
 import type { WordDocumentMetadata } from '../contracts/document.js';
 import type { WordDrawing,WordDrawingOperation } from '../contracts/word-drawing.js';
@@ -13,7 +14,7 @@ export const isWordDrawingOperation:(operation:{readonly op:string})=>operation 
 export function applyWordDrawing(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,operation:WordDrawingOperation,limits:DocumentReadLimits):void{
  const word=metadata.word!,drawings=word.drawings??=[],source=parse(),target=source.peekNode(operation.nodeId);if(!target)fail('The drawing target is missing.');word.drawings=drawings;
  const article=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
- const story=(text:string):string=>{const id=edit.insertSource(article,'<div data-office-story="textBox"><p>'+escape(text)+'</p></div>').rootNodeIds[0]!;word.stories.push({storyId:id,kind:'textBox',rootNodeId:id});const normal=word.styles.find(style=>style.styleId==='Normal');if(normal){const paragraph=parse().peekNode(id)!.childNodeIds[0]!;edit.attributes(paragraph,{'data-word-style':normal.styleId,class:normal.cssClass});}return id;};
+ const story=(text:string):string=>{ensureWordMainStoryContainer(metadata,edit,parse);const id=edit.insertSource(article,'<div data-office-story="textBox"><p>'+escape(text)+'</p></div>').rootNodeIds[0]!;word.stories.push({storyId:id,kind:'textBox',rootNodeId:id});const normal=word.styles.find(style=>style.styleId==='Normal');if(normal){const paragraph=parse().peekNode(id)!.childNodeIds[0]!;edit.attributes(paragraph,{'data-word-style':normal.styleId,class:normal.cssClass});}return id;};
  if(operation.op==='insertWordDrawing'){
   if(!/^p$|^h[1-6]$/.test(target.tagName))fail('Insert a drawing in a source paragraph.');checkLimit(drawings.length+1,limits.maxNodes);
   const object=operation.object,html=object.kind==='image'?'<img data-word-drawing="image" src="'+escape(edit.resourceReference(object.assetPath))+'" alt="'+escape(object.alt)+'">':'<span data-word-drawing="'+object.kind+'">\ufffc</span>';

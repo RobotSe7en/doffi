@@ -145,7 +145,13 @@ export function createDocumentSession(document: DocumentModel, options: Document
       }
       else if (isWordOperation(operation)) {
         if (metadata.presentation) invalid("Word operations require a Word document.");
-        applyWordOperation(metadata, edit, parseEdited, styles, operation, limits,annotations);
+        // A legacy article can be both the main story and its section. Earlier
+        // operations may have split these containers; targets still name the
+        // base section, whose semantic identity survives that normalization.
+        const sectionOperation = ['setWordSection', 'insertWordStory', 'cloneWordStory', 'setWordWatermark'].includes(operation.op);
+        const original = sectionOperation ? base.snapshot.metadata.sections?.find(section => section.rootNodeId === operation.nodeId) : undefined;
+        const current = original ? metadata.sections.find(section => section.sectionId === original.sectionId) : undefined;
+        applyWordOperation(metadata, edit, parseEdited, styles, current && current.rootNodeId !== operation.nodeId ? { ...operation, nodeId: current.rootNodeId } : operation, limits,annotations);
       }
       else if ("nodeId" in operation) { guardPresentationContent(base, operation);if(operation.op==="replaceText"&&metadata.word?.trackChanges)trackWordText(metadata.word,edit,parseEdited,operation);else edit.apply(operation); }
       else applyAnnotation(operation, annotations, explicit);

@@ -1,3 +1,4 @@
+import {ensureWordMainStoryContainer} from './word-story-container.js';
 import type { Annotation } from '../contracts/annotations.js';
 import type { WordMetadata } from '../contracts/word.js';
 import type { WordDocumentMetadata } from '../contracts/document.js';
@@ -17,16 +18,7 @@ export function applyWordComment(metadata: WordDocumentMetadata, annotations: An
     if (target.bodyNodeId ? target.bodyNodeId !== operation.nodeId : !anchorNodes(annotation.anchor).includes(operation.nodeId))
         invalid('A Word comment operation must target its own body or anchor.');
     const body = (html: string): string => {
-        const source = parse(), root = source.nodeIds().find(id => source.peekNode(id)!.parentNodeId === null)!, main = word.stories.find(story => story.kind === 'main')!;
-        if (main.rootNodeId === root) {
-            const children = [...source.peekNode(root)!.childNodeIds], wrapper = edit.insertSource(root, '<div data-office-story="main"></div>').rootNodeIds[0]!;
-            edit.moveSource(children, wrapper);
-            edit.attributes(root, { 'data-office-story': undefined });
-            main.rootNodeId = wrapper;
-            for (const section of metadata.sections)
-                if (section.rootNodeId === root)
-                    section.rootNodeId = wrapper;
-        }
+        const root = ensureWordMainStoryContainer(metadata, edit, parse);
         const rootNodeId = edit.insertSource(root, '<div data-office-story="comment">' + html + '</div>').rootNodeIds[0]!;
         word.stories.push({ storyId: rootNodeId, kind: 'comment', rootNodeId });
         return rootNodeId;

@@ -1,3 +1,4 @@
+import {ensureWordMainStoryContainer,relocateWordSectionRoot} from './word-story-container.js';
 import {moveWordContinuationFormats} from './word-conditional-format.js';
 import{wordContainerWidth}from'../document/word-container.js';
 import{length}from'../document/css-values.js';
@@ -38,7 +39,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(isWordRevisionOperation(operation)){applyWordRevision(word,edit,parse,operation,limits,metadata.sections);return;}
   if(isWordCommentOperation(operation)){applyWordComment(metadata,annotations,edit,parse,operation);return;}
   if(isWordDrawingOperation(operation)){applyWordDrawing(metadata,edit,parse,operation,limits);return;}
-  if(isWordReferenceOperation(operation)){if(operation.op==='setWordNoteOptions'&&node.parentNodeId===null&&Object.keys(operation.options).length){const key=operation.kind==='footnote'?'footnoteOptions':'endnoteOptions';for(const section of metadata.sections){const options={...section[key],...operation.options};if(JSON.stringify(options)!==JSON.stringify(section[key]??{}))applyWordOperation(metadata,edit,parse,styles,{op:'setWordSection',nodeId:section.rootNodeId,changes:{[key]:options}},limits,annotations);}}applyWordReference(word,edit,parse,operation);return;}
+  if(isWordReferenceOperation(operation)){if(operation.op==='setWordNoteOptions'&&node.parentNodeId===null&&Object.keys(operation.options).length){const key=operation.kind==='footnote'?'footnoteOptions':'endnoteOptions';for(const section of metadata.sections){const options={...section[key],...operation.options};if(JSON.stringify(options)!==JSON.stringify(section[key]??{}))applyWordOperation(metadata,edit,parse,styles,{op:'setWordSection',nodeId:section.rootNodeId,changes:{[key]:options}},limits,annotations);}}applyWordReference(metadata,edit,parse,operation);return;}
   if(isWordMathOperation(operation)){applyWordMath(word,edit,parse,operation);return;}
   if(isWordControlOperation(operation)){applyWordControl(word,edit,parse,operation);return;}
   if(operation.op==='setWordStyle'||operation.op==='deleteWordStyle'){editWordStyle(word,edit,parse,styles,operation,limits);return;}
@@ -77,15 +78,17 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='splitWordSection') {
     if(!/^p$|^h[1-6]$/.test(node.tagName))fail('A section break requires a paragraph.');
     const index=metadata.sections.findIndex(section=>section.rootNodeId===node.parentNodeId),section=metadata.sections[index];if(!section)fail('A section break requires a paragraph directly in its section.');
-    const main=word.stories.find(story=>story.kind==='main')!,html=parse(),siblings=html.peekNode(main.rootNodeId)!.childNodeIds,ordinal=siblings.indexOf(section.rootNodeId);
+    ensureWordMainStoryContainer(metadata,edit,parse);
+    const main=word.stories.find(story=>story.kind==='main')!;
+    if(section.rootNodeId===main.rootNodeId){const children=[...parse().peekNode(main.rootNodeId)!.childNodeIds],wrapper=edit.insertSource(main.rootNodeId,'<section></section>').rootNodeIds[0]!;edit.moveSource(children,wrapper);relocateWordSectionRoot(metadata,section.rootNodeId,wrapper);}
+    const html=parse(),siblings=html.peekNode(main.rootNodeId)!.childNodeIds,ordinal=siblings.indexOf(section.rootNodeId);
     const rootId=edit.insertSource(main.rootNodeId,'<section></section>',siblings[ordinal+1]).rootNodeIds[0]!;
     const children=html.peekNode(section.rootNodeId)!.childNodeIds,tail=children.slice(children.indexOf(operation.nodeId)+1);if(tail.length)edit.moveSource(tail,rootId);else edit.insertSource(rootId,'<p></p>');
     const next={...section,sectionId:rootId,rootNodeId:rootId,breakType:operation.breakType};delete next.pageNumberStart;metadata.sections.splice(index+1,0,next);return;
   }
   if(operation.op==='insertWordStory') {
     const section=metadata.sections.find(section=>section.rootNodeId===operation.nodeId);if(!section)fail('Header/footer creation requires a section.');
-    const main=word.stories.find(story=>story.kind==='main')!,html=parse(),rootId=html.nodeIds().find(id=>html.peekNode(id)!.parentNodeId===null)!;
-    if(main.rootNodeId===rootId){const children=[...html.peekNode(rootId)!.childNodeIds],wrapper=edit.insertSource(rootId,'<div data-office-story="main"></div>').rootNodeIds[0]!;edit.moveSource(children,wrapper);edit.attributes(rootId,{'data-office-story':undefined});main.rootNodeId=wrapper;for(const item of metadata.sections)if(item.rootNodeId===rootId)item.rootNodeId=wrapper;}
+    const rootId=ensureWordMainStoryContainer(metadata,edit,parse);
     const storyRoot=edit.insertSource(rootId,'<div data-office-story="'+operation.kind+'">'+operation.html+'</div>').rootNodeIds[0]!;
     word.stories.push({storyId:storyRoot,kind:operation.kind,rootNodeId:storyRoot});const normal=word.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal');if(normal){const tree=parse(),visit=(id:string):void=>{const paragraph=tree.peekNode(id)!;if(paragraph.tagName==='p'&&!paragraph.attributes['data-word-style'])edit.attributes(id,{'data-word-style':normal.styleId,class:[paragraph.attributes.class,normal.cssClass].filter(Boolean).join(' ')});for(const child of paragraph.childNodeIds)visit(child);};visit(storyRoot);}const key=operation.kind==='header'?'headers':'footers';section[key]={...section[key],[operation.variant]:storyRoot};if(operation.variant==='first')section.differentFirstPage=true;if(operation.variant==='even')word.evenAndOddHeaders=true;return;
   }
