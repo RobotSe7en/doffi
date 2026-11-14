@@ -20,6 +20,7 @@ export function validateWordMath(math: DeepReadonly<WordMathTree>): void {
         if (node.kind === 'text' && /[\ud800-\udfff\u0000]/u.test(node.text))
             fail('Math text must preserve well-formed Unicode.');
         if(node.kind==='matrixRow'&&(parent?.kind!=='matrix'||node.style))fail('A matrix row requires its matrix and cannot carry independent formatting.');
+        if(node.kind==='equationGroup'&&(parent||node.children.some(id=>nodes.get(id)?.kind!=='row')))fail('A math paragraph group must be the root with independently owned math rows.');
         if(node.kind==='row'&&node.argumentSize!==undefined&&(!parent||parent.kind==='row'))fail('Relative math sizes require a structural math argument.');
         for(const value of node.kind==='fence'?[node.open,node.close,node.separator]:node.kind==='nary'?[node.operator]:node.kind==='accent'?[node.symbol]:[])if(value!==undefined&&(Array.from(value).length>1||/[\ud800-\udfff\u0000]/u.test(value)))fail('A math delimiter or operator must be a single Unicode character.');
         if (node.kind === 'script' && node.children.length !== (['sub', 'sup'].includes(node.mode) ? 2 : 3))

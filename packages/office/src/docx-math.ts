@@ -186,9 +186,10 @@ export function readWordMath(source: XmlNode, options: {
         }
     };
     try {
-        if (source.name !== 'oMath' || source.uri !== M)
+        if (!['oMath','oMathPara'].includes(source.name) || source.uri !== M)
             unsupported(source);
-        const rootMathId = row(source), math = { rootMathId, nodes };
+        const groups=source.name==='oMathPara'?elements(source,'oMath',M):[source];if(!groups.length)unsupported(source,'An empty native math paragraph remains preserved.');
+        const roots=groups.map(row),rootMathId=roots.length===1?roots[0]!:add({kind:'equationGroup',children:roots}), math = { rootMathId, nodes };
         try{validateWordMath(math);}catch(error){if(error instanceof DocumentError)unsupported(source,'This equation is outside the editable math tree.');throw error;}
         return math;
     }
@@ -203,6 +204,7 @@ export function writeWordMath(equation: DeepReadonly<NonNullable<WordMetadata['e
     const write = (id: string, inherited: DeepReadonly<Style> = {}): string => {
         const node = nodes.get(id)!, children = 'children' in node ? node.children : [], style = { ...inherited, ...node.style, ...(inherited.fonts || node.style?.fonts ? { fonts: { ...inherited.fonts, ...node.style?.fonts } } : {}) }, arg = (name: string, id: string): string => {const argument=nodes.get(id)!;return '<m:' + name + '>'+(argument.kind==='row'&&argument.argumentSize!==undefined?'<m:argPr>'+empty('m:argSz',{'m:val':argument.argumentSize})+'</m:argPr>':'') + write(id, style) + '</m:' + name + '>';}, property = (name: string, content = ''): string => content || Object.keys(style).length ? '<m:' + name + 'Pr>' + content + (Object.keys(style).length ? '<m:ctrlPr>' + writeStyle(style) + '</m:ctrlPr>' : '') + '</m:' + name + 'Pr>' : '', val = (name: string, value: string | number): string => empty('m:' + name, { 'm:val': value });
         switch (node.kind) {
+            case 'equationGroup':return children.map(id=>write(id,style)).join('');
             case 'row': return children.map(id => write(id, style)).join('');
             case 'text': {
                 const scripts: Record<string, string> = { doubleStruck: 'double-struck', script: 'script', fraktur: 'fraktur', sansSerif: 'sans-serif', monospace: 'monospace' }, variantXml = node.variant && scripts[node.variant] ? val('scr', scripts[node.variant]!) : val('sty', node.variant === 'normal' ? 'p' : node.variant === 'bold' ? 'b' : node.variant === 'boldItalic' ? 'bi' : 'i');
@@ -229,6 +231,7 @@ export function writeWordMath(equation: DeepReadonly<NonNullable<WordMetadata['e
             case 'box': return '<m:box>' + property('box') + arg('e', children[0]!) + '</m:box>';
         }
     };
-    const math = '<m:oMath xmlns:m="' + M + '" xmlns:w="' + W + '">' + write(equation.rootMathId,equation.fontFamily?{fonts:{ascii:equation.fontFamily,hAnsi:equation.fontFamily}}:{}) + '</m:oMath>';
+    const root=nodes.get(equation.rootMathId)!,base={...(equation.fontFamily?{fonts:{ascii:equation.fontFamily,hAnsi:equation.fontFamily}}:{}),...root.style},roots=root.kind==='equationGroup'?root.children:[equation.rootMathId];
+    const math = roots.map(id=>'<m:oMath xmlns:m="' + M + '" xmlns:w="' + W + '">' + write(id,base) + '</m:oMath>').join('');
     return equation.display === 'block' ? '<m:oMathPara xmlns:m="' + M + '"><m:oMathParaPr><m:jc m:val="' + (equation.alignment ?? 'centerGroup') + '"/></m:oMathParaPr>' + math + '</m:oMathPara>' : math;
 }

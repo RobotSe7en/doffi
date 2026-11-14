@@ -1,4 +1,6 @@
 import{wordTableRepeatHeader}from'./word-table-layout.js';
+import{continuationHeader}from'./repeated-header.js';
+import{cloneViewTree}from'./view-clone.js';
 import { DocumentError } from "@doffi/core";
 import type { RenderedPage, RenderLimits } from "./contracts.js";
 import { markViewNode, viewNodeRole } from "./view-nodes.js";
@@ -31,7 +33,7 @@ export function repeatTableHeaders(document: Document, root: HTMLElement, source
         const columns = table.querySelector(":scope > colgroup"); if (columns) header.append(columns.cloneNode(true));
         const body = document.createElement("tbody");
         for (const row of rows) {
-          const clone = row.cloneNode(true) as HTMLTableRowElement;
+          const clone = cloneViewTree(continuationHeader(row),limits.maxNodes);
           for (const [index, cell] of [...clone.cells].entries()) cell.style.width = row.cells[index]!.getBoundingClientRect().width + "px";
           body.append(clone);
         }

@@ -1,4 +1,6 @@
 import{wordTableRepeatHeader}from'./word-table-layout.js';
+import{continuationHeader}from'./repeated-header.js';
+import{cloneViewTree}from'./view-clone.js';
 import { DocumentError,isDocumentTextBoundary } from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
 import { pageFlow } from './flow.js';
@@ -46,7 +48,7 @@ export function columnFlow(document:Document,flow:HTMLElement,area:number,pitch:
    for(let column=bounds.from+1;column<=bounds.to;column++){
     reserve(header.reduce((total,row)=>total+row.querySelectorAll('*').length+1,0)+(table.querySelector(':scope > colgroup')?.querySelectorAll('*').length??0)+3);
     const clone=markViewNode(table.cloneNode(false) as HTMLTableElement),delta=offset(column);clone.contentEditable='false';clone.classList.add('sdk-repeat-header');clone.setAttribute('aria-hidden','true');clone.style.cssText+=`;position:absolute;left:${bounds.rect.left-base.left+delta.x}px;top:${Math.floor(column/count)*pitch-(column>=count?firstInset():0)}px;width:${bounds.rect.width}px;margin:0;pointer-events:none;user-select:none;z-index:2`;
-    const columns=table.querySelector(':scope > colgroup');if(columns)clone.append(columns.cloneNode(true));const body=document.createElement('tbody');for(const row of header)body.append(row.cloneNode(true));clone.append(body);measured+=clone.querySelectorAll('*').length+1;if(measured>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Repeated column headers exceed the rendering budget.');flow.append(clone);backgrounds.push(clone);source.registerInstances(clone);
+    const columns=table.querySelector(':scope > colgroup');if(columns)clone.append(columns.cloneNode(true));const body=document.createElement('tbody');for(const row of header)body.append(cloneViewTree(continuationHeader(row),limits.maxNodes));clone.append(body);measured+=clone.querySelectorAll('*').length+1;if(measured>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Repeated column headers exceed the rendering budget.');flow.append(clone);backgrounds.push(clone);source.registerInstances(clone);
    }
   }
   const paint=(element:HTMLElement,rect:DOMRect,from:number,to:number):void=>{

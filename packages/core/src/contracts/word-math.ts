@@ -6,6 +6,7 @@ const base = { mathId: IdentifierSchema, style: WordMathStyleSchema.optional() }
 /** Flat typed math trees keep JSON Schema nonrecursive. Children are local IDs,
  * validated as one bounded tree; no XML, executable guides or second text cache. */
 export const WordMathNodeSchema = z.discriminatedUnion('kind', [
+    z.strictObject({ ...base, kind:z.literal('equationGroup'),children:children.min(1) }),
     z.strictObject({ ...base, kind: z.literal('row'), children,argumentSize:z.number().int().min(-2).max(2).optional() }),
     z.strictObject({ ...base, kind: z.literal('text'), text: z.string(), variant: z.enum(['italic', 'normal', 'bold', 'boldItalic', 'doubleStruck', 'script', 'fraktur', 'sansSerif', 'monospace']).optional() }),
     z.strictObject({ ...base, kind: z.literal('fraction'), children: two, mode: z.enum(['bar', 'noBar', 'skewed', 'linear']).optional() }),

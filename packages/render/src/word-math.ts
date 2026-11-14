@@ -1,5 +1,5 @@
 import { officeFontSegments } from './font-scripts.js';
-import type { ContentDocumentModel, DeepReadonly, WordMathNode } from '@doffi/core';
+import type { ContentDocumentModel, DeepReadonly,WordTextStyle } from '@doffi/core';
 import { DocumentError } from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
 import { markViewNode, ownViewAttribute, ownViewStyle } from './view-nodes.js';
@@ -22,16 +22,17 @@ export function composeWordMath(document: Document, model: ContentDocumentModel,
         if (!source)
             continue;
         const nodes = new Map(equation.nodes.map(node => [node.mathId, node])), original = document.defaultView!.getComputedStyle(source), size = original.fontSize;
-        const render = (id: string): Element => {
-            const node = nodes.get(id)!, children = 'children' in node ? node.children : [], child = (index: number): Element => render(children[index]!), operator = (value: string): Element => {
+        const render = (id: string,inherited:DeepReadonly<WordTextStyle>={}): Element => {
+            const node = nodes.get(id)!,style={...inherited,...node.style,...(inherited.fonts||node.style?.fonts?{fonts:{...inherited.fonts,...node.style?.fonts}}:{})}, children = 'children' in node ? node.children : [],childRender=(id:string):Element=>render(id,style), child = (index: number): Element => childRender(children[index]!), operator = (value: string): Element => {
                 const element = make('mo');
                 element.textContent = value;
                 return element;
             };
             let result: Element;
             switch (node.kind) {
+                case 'equationGroup':result=make('mtable',children.map(id=>make('mtr',[make('mtd',[childRender(id)])])),{columnalign:equation.alignment==='left'?'left':equation.alignment==='right'?'right':'center',rowspacing:'.5em'});break;
                 case 'row':
-                    result = make('mrow', children.map(render));if(node.argumentSize!==undefined)result=make('mstyle',[result],{scriptlevel:String(-node.argumentSize)});
+                    result = make('mrow', children.map(childRender));if(node.argumentSize!==undefined)result=make('mstyle',[result],{scriptlevel:String(-node.argumentSize)});
                     break;
                 case 'text': {
                     const tag = /^\s|\s$/u.test(node.text) || node.variant === 'normal' && node.text.length > 1 ? 'mtext' : /^\p{N}+$/u.test(node.text) ? 'mn' : /^[\p{L}\p{M}\p{N}\u200d]+$/u.test(node.text) ? 'mi' : 'mo', variants: Readonly<Record<string, string>> = { normal: 'normal', italic: 'italic', bold: 'bold', boldItalic: 'bold-italic', doubleStruck: 'double-struck', script: 'script', fraktur: 'fraktur', sansSerif: 'sans-serif', monospace: 'monospace' };
@@ -40,7 +41,7 @@ export function composeWordMath(document: Document, model: ContentDocumentModel,
                         const token = make(tag, [], { mathvariant: variants[node.variant ?? 'italic']! }), role = part.role === 'east-asia' ? 'eastAsia' : part.role === 'h-ansi' ? 'hAnsi' : part.role === 'complex-script' ? 'cs' : 'ascii';
                         token.textContent = part.text;
                         token.setAttribute('data-word-script', role);
-                        const family = node.style?.fonts?.[role];
+                        const family = style.fonts?.[role];
                         if (family)
                             token.setAttribute('style', 'font-family:' + JSON.stringify(family));
                         return token;
@@ -52,17 +53,17 @@ export function composeWordMath(document: Document, model: ContentDocumentModel,
                     result = node.mode === 'linear' ? make('mrow', [child(0), operator('/'), child(1)]) : make('mfrac', [child(0), child(1)], { ...(node.mode === 'noBar' ? { linethickness: '0' } : {}), ...(node.mode === 'skewed' ? { bevelled: 'true' } : {}) });
                     break;
                 case 'radical':
-                    result = make(children.length === 1 || node.hideDegree ? 'msqrt' : 'mroot', children.length === 1 || node.hideDegree ? [child(0)] : children.map(render));
+                    result = make(children.length === 1 || node.hideDegree ? 'msqrt' : 'mroot', children.length === 1 || node.hideDegree ? [child(0)] : children.map(childRender));
                     break;
                 case 'script':
-                    result = node.mode === 'pre' ? make('mmultiscripts', [child(0), make('mprescripts'), child(1), child(2)]) : make(node.mode === 'sub' ? 'msub' : node.mode === 'sup' ? 'msup' : 'msubsup', children.map(render));
+                    result = node.mode === 'pre' ? make('mmultiscripts', [child(0), make('mprescripts'), child(1), child(2)]) : make(node.mode === 'sub' ? 'msub' : node.mode === 'sup' ? 'msup' : 'msubsup', children.map(childRender));
                     break;
                 case 'fence': {
                     const body: Element[] = [operator(node.open ?? '(')];
                     for (const [index, id] of children.entries()) {
                         if (index)
                             body.push(operator(node.separator ?? '|'));
-                        body.push(render(id));
+                        body.push(childRender(id));
                     }
                     body.push(operator(node.close ?? ')'));
                     for (const item of body)
@@ -72,10 +73,10 @@ export function composeWordMath(document: Document, model: ContentDocumentModel,
                     break;
                 }
                 case 'matrix':
-                    result = make('mtable', children.map(render), { ...(node.columnAlignments ? { columnalign: node.columnAlignments.join(' ') } : {}), ...(node.verticalAlignment ? { align: node.verticalAlignment } : {}) });
+                    result = make('mtable', children.map(childRender), { ...(node.columnAlignments ? { columnalign: node.columnAlignments.join(' ') } : {}), ...(node.verticalAlignment ? { align: node.verticalAlignment } : {}) });
                     break;
                 case 'matrixRow':
-                    result = make('mtr', children.map(id => make('mtd', [render(id)])));
+                    result = make('mtr', children.map(id => make('mtd', [childRender(id)])));
                     break;
                 case 'nary': {
                     const sign = operator(node.operator);
@@ -94,16 +95,16 @@ export function composeWordMath(document: Document, model: ContentDocumentModel,
                     result = make(node.position === 'bottom' ? 'munder' : 'mover', [child(0), operator('¯')], node.position === 'bottom' ? { accentunder: 'true' } : { accent: 'true' });
                     break;
                 case 'limit':
-                    result = make(node.position === 'lower' ? 'munder' : 'mover', children.map(render));
+                    result = make(node.position === 'lower' ? 'munder' : 'mover', children.map(childRender));
                     break;
                 case 'equationArray':
-                    result = make('mtable', children.map(id => make('mtr', [make('mtd', [render(id)])])));
+                    result = make('mtable', children.map(id => make('mtr', [make('mtd', [childRender(id)])])));
                     break;
                 case 'box':
-                    result = make('mrow', children.map(render));
+                    result = make('mrow', children.map(childRender));
                     break;
             }
-            applyStyle(result, node);
+            applyStyle(result,node.style,inherited.fontSize??parseFloat(size)*.75);
             return result;
         };
         const rendered=render(equation.rootMathId);if(equation.nodes.every(node=>node.kind==='row'||node.kind==='text'&&!node.text)){const placeholder=make('mtext');placeholder.textContent='□';rendered.append(placeholder);}const math = markViewNode(make('math', [rendered], { display: equation.display === 'block' ? 'block' : 'inline' }));
@@ -124,15 +125,14 @@ export function composeWordMath(document: Document, model: ContentDocumentModel,
         source.contentEditable = 'false';
     }
 }
-function applyStyle(element: Element, node: DeepReadonly<WordMathNode>): void {
-    const style = node.style;
+function applyStyle(element: Element, style: DeepReadonly<WordTextStyle>|undefined, inheritedSize:number): void {
     if (!style)
         return;
     const values: string[] = [];
     if (style.fonts && !element.hasAttribute('data-word-script'))
         values.push('font-family:' + Object.values(style.fonts).map(value => JSON.stringify(value)).join(','));
     if (style.fontSize)
-        values.push('font-size:' + style.fontSize + 'pt');
+        values.push('font-size:' + style.fontSize/inheritedSize + 'em');
     if (style.color && style.color !== 'auto')
         values.push('color:' + style.color);
     if (style.bold !== undefined)

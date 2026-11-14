@@ -1,4 +1,5 @@
 import{wordTableRepeatHeader}from'./word-table-layout.js';
+import{continuationHeader}from'./repeated-header.js';
 import { DocumentError } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
 import { isMeasuredViewContent, markViewNode, ownViewAttribute, ownViewStyle, viewNodeRole } from "./view-nodes.js";
@@ -55,7 +56,7 @@ export function pageFlow(document: Document, flow: HTMLElement, area: number, pi
     for (const row of rows) { if (!wordTableRepeatHeader(row)) break; result.push(row); }
     return result;
   }
-  const headerHeight = (table: HTMLTableElement): number => headerRows(table).reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
+  const headerHeight = (table: HTMLTableElement): number => headerRows(table).reduce((sum, row) => sum + continuationHeader(row).getBoundingClientRect().height, 0);
   function rowGap(table: HTMLTableElement, row: HTMLTableRowElement, targetPage: number, inset: number): void {
     ensure(targetPage);
     const rows = [...table.rows].filter((item) => viewNodeRole(item) !== "remove"&&view.getComputedStyle(item).display!=="none"&&view.getComputedStyle(item).visibility!=="collapse"), ordinal = rows.indexOf(row);

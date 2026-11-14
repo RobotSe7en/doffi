@@ -12,6 +12,7 @@ export function isWordMathOperation(operation: {
 export function applyWordMath(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordMathOperation): void {
     if (operation.op !== 'removeWordEquation')
         validateWordMath(operation.math);
+    if(operation.op!=='removeWordEquation'&&operation.math.nodes.find(node=>node.mathId===operation.math.rootMathId)?.kind==='equationGroup'&&(operation.display??(operation.op==='setWordEquation'?word.equations?.find(item=>item.nodeId===operation.nodeId)?.display:'inline'))!=='block')throw new DocumentError('InvalidOperation','A group of equations requires a display math paragraph.');
     const node = parse().peekNode(operation.nodeId);
     if (!node)
         throw new DocumentError('InvalidOperation', 'The equation source is missing.');

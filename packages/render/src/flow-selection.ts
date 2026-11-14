@@ -4,6 +4,10 @@ import { viewNodeRole } from './view-nodes.js';
  * live ranges do not keep their character offset across those operations in all
  * engines. Retain offsets in the surviving source element for one measurement. */
 export function retainFlowSelection(root:HTMLElement,ignored:(node:Node)=>boolean=node=>viewNodeRole(node)==='remove'):()=>void{
+ // Inactive iframe selections survive while the host edits a settings field.
+ // Restoring one in Firefox would refocus the editor and redirect host input.
+ const focused=():boolean=>{const document=root.ownerDocument,frame=document.defaultView?.frameElement;return document.hasFocus()&&(!frame||(frame.getRootNode()as Document|ShadowRoot).activeElement===frame);};
+ if(!focused())return()=>{};
  const selection=root.ownerDocument.getSelection();
  const length=(node:Node):number=>ignored(node)?0:node.nodeType===3?node.textContent!.length:node.nodeType===1&&(node as Element).matches('br,img,[data-word-tab]')?1:[...node.childNodes].reduce((sum,child)=>sum+length(child),0);
  const capture=(node:Node|null,offset:number):{owner:HTMLElement;offset:number;forward:boolean}|undefined=>{
@@ -16,7 +20,7 @@ export function retainFlowSelection(root:HTMLElement,ignored:(node:Node)=>boolea
  };
  const anchor=capture(selection?.anchorNode??null,selection?.anchorOffset??0),focus=capture(selection?.focusNode??null,selection?.focusOffset??0);
  return()=>{
-  if(!anchor||!focus||!anchor.owner.isConnected||!focus.owner.isConnected)return;
+  if(!focused()||!anchor||!focus||!anchor.owner.isConnected||!focus.owner.isConnected)return;
   const point=(entry:typeof anchor):[Node,number]=>{
    let left=entry.offset,fallback:[Node,number]|undefined;
    const visit=(node:Node):[Node,number]|undefined=>{if(ignored(node))return;
