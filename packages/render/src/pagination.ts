@@ -83,6 +83,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     root.append(...wrappers.map((section) => section.element));
     mainSections.splice(0, mainSections.length, ...wrappers);
   }
+  const grids:NonNullable<ReturnType<typeof applyWordGrid>>[]=[];
   const variableSections=new Set<SectionView>();
   notes?.attachSections(mainSections);
   for(let start=0;start<mainSections.length;){let end=start+1;const setup=JSON.stringify(wordPageSetup(mainSections[start]!.definition,metadata.pageSetup));while(end<mainSections.length&&JSON.stringify(wordPageSetup(mainSections[end]!.definition,metadata.pageSetup))===setup)end++;const run=mainSections.slice(start,end);if(run.length>1&&run.some(section=>(section.definition.columns?.count??1)>1||section.definition.columns?.widths))for(const section of run)variableSections.add(section);start=end;}
@@ -96,7 +97,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
   for (const section of mainSections) {
     const previousSection=mainSections[mainSections.indexOf(section)-1];
     if(section.definition.breakType==='nextColumn'&&previousSection&&(previousSection.definition.columns?.count??1)>1&&JSON.stringify(previousSection.definition.columns)!==JSON.stringify(section.definition.columns))diagnostics.push({code:'SectionGeometryChange',nodeId:section.definition.rootNodeId,message:'A next-column section with a different column geometry starts on a new page.'});
-    applyWordGrid(document,section.element,section.definition,limits,metadata.word);
+    const grid=applyWordGrid(document,section.element,section.definition,limits,metadata.word,message=>{if(!diagnostics.some(item=>item.nodeId===section.definition.rootNodeId&&item.message===message))diagnostics.push({code:'NativeFormatting',nodeId:section.definition.rootNodeId,message});});if(grid)grids.push(grid);
     const setup = wordPageSetup(section.definition,metadata.pageSetup), { width, height, margins } = setup;
     if (width - margins.left - margins.right <= 0 || height - margins.top - margins.bottom <= 0 || width > 20_000 || height > 20_000)
       throw new DocumentError("UnsupportedFeature", "Page dimensions must provide a positive printable area within the render size limit.");
@@ -135,6 +136,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
     source.clearInstances();
     repeated.clear();
     for (const group of groups) group.paginator.reset();
+    for(const grid of grids)grid.measure();
     let physical = 0;
     for (const group of groups) {
       group.startIndex=physical;
@@ -219,5 +221,5 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
       result[id] = Object.freeze(current.filter((page) => !page.blank && rectangles.some((rect) => rect.bottom > surface.top + px(page.rect.y + page.setup.margins.top) + 0.1 && rect.top < surface.top + px(page.rect.y + page.rect.height - page.setup.margins.bottom) - 0.1)).map((page) => page.pageId));
     }
     return Object.freeze(result);
-  }, dispose() { disposed = true; repeated.dispose(); layer.remove();front.remove(); layoutStyle.remove(); } };
+  }, dispose() { disposed = true;for(const grid of grids)grid.dispose(); repeated.dispose(); layer.remove();front.remove(); layoutStyle.remove(); } };
 }

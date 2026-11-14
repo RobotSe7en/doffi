@@ -1,7 +1,7 @@
 import type { DeepReadonly, DocumentSection, PageSetup,WordMetadata } from '@doffi/core';
-import { DocumentError } from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
-import { markViewNode, ownViewStyle, viewNodeRole } from './view-nodes.js';
+import { ownViewStyle,viewNodeRole,isMeasuredViewContent } from './view-nodes.js';
+import{wordCharacterGrid}from'./word-character-grid.js';
 
 /** Native margins exclude the binding gutter. Keep the effective box derived. */
 export function wordPageSetup(section:DeepReadonly<DocumentSection>,fallback:DeepReadonly<PageSetup>):DeepReadonly<PageSetup>{
@@ -13,26 +13,17 @@ export function wordPageSetup(section:DeepReadonly<DocumentSection>,fallback:Dee
 /** Facing-page parity is physical and independent of printed page labels. */
 export function facingWordPageSetup(setup:DeepReadonly<PageSetup>,index:number,mirror:boolean):DeepReadonly<PageSetup>{return mirror&&index%2===1?{...setup,margins:{...setup.margins,left:setup.margins.right,right:setup.margins.left}}:setup;}
 /** A grid changes measured text, never authored paragraph/run formatting. */
-export function applyWordGrid(document:Document,root:HTMLElement,section:DeepReadonly<DocumentSection>,limits:Readonly<RenderLimits>,word?:DeepReadonly<WordMetadata>):void{
+export function applyWordGrid(document:Document,root:HTMLElement,section:DeepReadonly<DocumentSection>,limits:Readonly<RenderLimits>,word?:DeepReadonly<WordMetadata>,diagnostic:(message:string)=>void=()=>{}):{measure():void;dispose():void}|undefined{
  const grid=section.grid;if(!grid||grid.type==='default')return;
- const view=document.defaultView!;let nodes=document.getElementsByTagName('*').length;
- for(const paragraph of root.querySelectorAll<HTMLElement>('p,h1,h2,h3,h4,h5,h6,li')){
-  if(paragraph.closest('[data-sdk-word-endnotes]'))continue;
-  const computed=view.getComputedStyle(paragraph);
-  if(grid.linePitch&&computed.getPropertyValue('--word-paragraph-snap-to-grid').trim()!=='0'&&(word?.adjustLineHeightInTable||!paragraph.closest('td,th'))&&(paragraph.dataset.wordLineRule??computed.getPropertyValue('--word-line-rule').trim())!=='exact'){
-   const pitch=grid.linePitch*4/3,line=parseFloat(computed.lineHeight)||parseFloat(computed.fontSize)*1.2;
-   ownViewStyle(paragraph,'line-height');paragraph.style.lineHeight=(Math.max(1,Math.ceil((line-.01)/pitch))*pitch)+'px';
-  }
-  if(!['linesAndChars','snapToChars'].includes(grid.type)||grid.characterSpacing===undefined)continue;
-  // charSpace is the signed increment over Normal's character pitch in 1/4096 pt.
-  const spacing=grid.characterSpacing/4096;
-  const walker=document.createTreeWalker(paragraph,4),texts:Text[]=[];for(let node=walker.nextNode();node;node=walker.nextNode())texts.push(node as Text);
-  for(const text of texts){
-   let excluded=false;for(let parent:Node|null=text.parentElement;parent&&parent!==paragraph;parent=parent.parentNode)if(viewNodeRole(parent)==='remove'){excluded=true;break;}if(excluded)continue;
-   const style=view.getComputedStyle(text.parentElement!);if(style.getPropertyValue('--word-run-snap-to-grid').trim()==='0')continue;
-   const tracking=(parseFloat(style.letterSpacing)||0)+spacing*4/3,parts:{text:string;snap:boolean}[]=[];let previous=false;
-   for(const character of text.data){const snap:boolean=grid.type==='linesAndChars'||(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303f\uff01-\uff60]/u.test(character)||/[\p{Mark}\u200d\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/u.test(character)&&previous);const last=parts.at(-1);if(last&&last.snap===snap)last.text+=character;else parts.push({text:character,snap});previous=snap;}
-   const fragment=document.createDocumentFragment();for(const part of parts){if(!part.snap){fragment.append(document.createTextNode(part.text));continue;}if(++nodes>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Document grid projection exceeds the rendering node budget.');const span=markViewNode(document.createElement('span'),'unwrap');span.style.letterSpacing=tracking+'px';span.textContent=part.text;fragment.append(span);}text.replaceWith(fragment);
-  }
+ const view=document.defaultView!,lines=new Map<HTMLElement,number>(),paragraphs=[...root.querySelectorAll<HTMLElement>('p,h1,h2,h3,h4,h5,h6,li')].filter(paragraph=>!paragraph.closest('[data-sdk-word-endnotes]'));
+ const natural=(element:HTMLElement):number=>{const css=view.getComputedStyle(element),font=parseFloat(css.fontSize)||0;return Math.max(font,parseFloat(css.lineHeight)||font*1.2);};
+ // Capture all run metrics before changing the paragraph strut. A large run
+ // reserves a multiple of the pitch on its own line, leaving other lines small.
+ for(const paragraph of paragraphs){const css=view.getComputedStyle(paragraph);if(!grid.linePitch||css.getPropertyValue('--word-paragraph-snap-to-grid').trim()==='0'||!word?.adjustLineHeightInTable&&paragraph.closest('td,th')||(paragraph.dataset.wordLineRule??css.getPropertyValue('--word-line-rule').trim())==='exact')continue;for(const node of [paragraph,...paragraph.querySelectorAll<HTMLElement>('span,strong,em,u,s,sub,sup,ins,del')]){if(node.closest('[data-word-drawing],[data-word-native-object],[data-word-equation]')||viewNodeRole(node)==='remove'&&!isMeasuredViewContent(node)||parseFloat(view.getComputedStyle(node).fontSize)<.01)continue;lines.set(node,natural(node));}}
+ let characters:ReturnType<typeof wordCharacterGrid>|undefined;
+ if(grid.type==='snapToChars'||grid.type==='linesAndChars'){
+  const probe=document.createElement('span'),normal=word?.styles.find(style=>style.kind==='paragraph'&&style.styleId==='Normal')??word?.styles.find(style=>style.kind==='paragraph'&&style.default),chain:DeepReadonly<WordMetadata>['styles'][number][]=[];let style=normal;const seen=new Set<string>();while(style&&!seen.has(style.styleId)){seen.add(style.styleId);chain.unshift(style);style=word?.styles.find(item=>item.styleId===style!.basedOn);}probe.className=[word?.defaultRunCssClass,...chain.flatMap(style=>[style.cssClass,style.runCssClass])].filter(Boolean).join(' ');probe.style.cssText='position:absolute;visibility:hidden;pointer-events:none';document.body.append(probe);const spacing=(grid.characterSpacing??0)/4096*4/3,pitch=parseFloat(view.getComputedStyle(probe).fontSize)+spacing;probe.remove();
+  if(grid.type==='linesAndChars'||pitch>0)characters=wordCharacterGrid(document,root,pitch,grid.type,spacing,limits,diagnostic);else diagnostic('A nonpositive character pitch is preserved and displayed without fixed character snapping.');
  }
+ return{measure(){if(grid.linePitch)for(const[node,line]of lines)if(node.isConnected){ownViewStyle(node,'line-height');node.style.lineHeight=Math.max(1,Math.ceil((line-.01)/(grid.linePitch*4/3)))*(grid.linePitch*4/3)+'px';}characters?.measure();},dispose(){characters?.dispose();}};
 }
