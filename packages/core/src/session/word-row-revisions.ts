@@ -17,6 +17,7 @@ export function removeWordRows(word: WordMetadata, edit: DocumentEdit, parse: ()
             tables.add(node.nodeId);
     }
     for (const table of tables) {
+        if(!parse().hasNode(table))continue;
         const source = parse(), rows = wordTableRows(source, table), remove = rows.map((id, index) => nodeIds.has(id) ? index : -1).filter(index => index >= 0);
         if (!remove.length)
             continue;

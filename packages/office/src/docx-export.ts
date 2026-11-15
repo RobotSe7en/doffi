@@ -408,9 +408,9 @@ class Exporter {
     const result = element(node) ? ["img", "br"].includes(node.tag) || node.children.some((child) => this.visible(child)) : /[^\t\n\r\f ]/.test(node.text) || node.text.length > 0 && this.css.get(node.parent)["white-space"] !== "normal";
     this.visibility.set(node, result); return result;
   }
-  private blocks(nodes: readonly SourceNode[], finalSection?: string, paragraphId?: string): void {
+  private blocks(nodes: readonly SourceNode[], finalSection?: string, paragraphId?: string,hasFollowing=false): void {
     const significant = this.flow(nodes);
-    if (!significant.length) { this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>"); return; }
+    if (!significant.length) {if(hasFollowing&&!finalSection&&!paragraphId)return;this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>"); return; }
     for (let index = 0; index < significant.length; index++) {
       const node = significant[index]!, last = index === significant.length - 1;
       if (element(node) && node.attrs["data-word-native-object"]) {
@@ -428,13 +428,13 @@ class Exporter {
       else if (element(node) && paragraphTags.has(node.tag)) this.paragraph(node, last ? finalSection : undefined, last ? paragraphId : undefined);
       else if (element(node) && node.tag === "table") {
         this.table(node);
-        if (last) this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>");
+        if (last&&(!hasFollowing||finalSection||paragraphId)) this.add("<w:p" + attributes({ "w14:paraId": paragraphId }) + "><w:pPr>" + (finalSection ?? "") + "</w:pPr></w:p>");
       } else if (element(node) && ["div", "section", "article", "li", "ul", "ol"].includes(node.tag)) {
         if (node.tag === "ul" || node.tag === "ol") this.list(node, last ? finalSection : undefined, last ? paragraphId : undefined);
         else {
           const toc = node.attrs["data-word-content-control"] === "toc";
           if (toc) this.add("<w:sdt"+this.nativeMark(node.attrs["data-node-id"])+"><w:sdtPr>" + ["id", "alias", "tag"].map((key) => value(key, node.attrs["data-word-control-" + key])).join("") + '<w:docPartObj>' + value("docPartGallery", "Table of Contents") + "<w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>");
-          this.blocks(node.children, last ? finalSection : undefined, last ? paragraphId : undefined);
+          this.blocks(node.children, last ? finalSection : undefined, last ? paragraphId : undefined,!last||hasFollowing);
           if (toc) this.add("</w:sdtContent></w:sdt>");
         }
       } else {

@@ -25,7 +25,7 @@ interface Compound { tag?: string; classes: string[]; attrs: { name: string; val
 type Specificity = readonly [number, number, number];
 interface Rule { compounds: Compound[]; declarations: Declaration[]; specificity: Specificity; order: number; key: string; revisionDisplay: boolean }
 interface Entry { value: string; important: boolean; specificity: Specificity; order: number }
-interface DeclarationEntry extends Entry { fallback: boolean; property: string; sourceValue: string }
+interface DeclarationEntry extends Entry { fallback: boolean; property: string; sourceValue: string; rule:CascadeRule }
 type CascadeRule = Pick<Rule,"declarations"|"specificity"|"order"> & {fallback?:boolean};
 const inherited = new Set(["color", "font-family", "font-size", "font-weight", "font-style", "font-variant", "text-transform", "text-align", "text-indent", "line-height", "letter-spacing", "word-spacing", "white-space", "widows", "orphans", "tab-size", "overflow-wrap", "list-style-type", "list-style-position"]);
 const inline = new Set(["span", "a", "strong", "b", "em", "i", "u", "s", "sub", "sup", "ins", "del", "code"]);
@@ -229,7 +229,7 @@ export class SourceStyleResolver {
       const keys = property.startsWith("--") ? [[property, raw]] : /\bvar\(/i.test(raw) && expandSourceCssProperty(property, "initial").some(([key]) => key !== property)
         ? expandSourceCssProperty(property, "initial").map(([key]) => [key, raw]) : expandSourceCssProperty(property, raw);
       for (const [name, value] of keys) {
-        const entry = { value: value!, property, sourceValue: raw, important: Boolean(declaration.important), specificity: rule.specificity, order: serial++, fallback: Boolean(rule.fallback) };
+        const entry = { value: value!, property, sourceValue: raw, important: Boolean(declaration.important), specificity: rule.specificity, order: serial++, fallback: Boolean(rule.fallback),rule };
         if (higher(entry, winners.get(name!))) winners.set(name!, entry);
       }
     }
@@ -243,6 +243,13 @@ export class SourceStyleResolver {
     let result = this.specifiedCache.get(node);
     if (!result) { const entries = this.declarations(this.entries(node)); this.declarationCache.set(node, entries); result = Object.freeze(Object.fromEntries([...entries].filter(([, entry]) => !entry.fallback).map(([name, entry]) => [name, entry.value]))); this.specifiedCache.set(node, result); }
     return result;
+  }
+  /** Keep only winning declarations not owned by the supplied style classes.
+   * Removing a class first would expose lower-priority resets and turn them
+   * into direct overrides when serializing a copied source fragment. */
+  specifiedOutsideClasses(node:SourceStyleNode,classes:ReadonlySet<string>):Css{
+    const entries=this.declarations(this.entries(node));
+    return Object.freeze(Object.fromEntries([...entries].filter(([,entry])=>!entry.fallback&&!(('compounds'in entry.rule)&&(entry.rule as Rule).compounds.some(compound=>compound.classes.some(name=>classes.has(name))))).map(([name,entry])=>[name,entry.value])));
   }
   /** Compare source declarations without resolving away variable provenance.
    * A later longhand prevents an opaque shorthand from being treated as equal. */

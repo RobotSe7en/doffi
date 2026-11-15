@@ -121,5 +121,5 @@ export * from './contracts/word-text-style.js';
 
 export{expandWordRevisionGroups}from'./word-revision-groups.js';
 
-export{WordInlineContentSemanticsSchema}from'./contracts/word-content.js';
-export type{WordInlineContentSemantics}from'./contracts/word-content.js';
+export{WordInlineContentSemanticsSchema,WordContentSemanticsSchema}from'./contracts/word-content.js';
+export type{WordInlineContentSemantics,WordContentSemantics}from'./contracts/word-content.js';
