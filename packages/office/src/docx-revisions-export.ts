@@ -1,3 +1,4 @@
+import {writeWordRowGapWidths} from './docx-row-gaps.js';
 import{writeWordConditionalFormat}from'./docx-conditional-format.js';
 import { NATIVE_MARKER } from './docx-native-export.js';
 import { W } from './ooxml/xml.js';
@@ -135,7 +136,8 @@ export class ExportWordRevisions {
             return '';
         const old = this.old(node, entry.revision, {});
         const css={...this.directTableProperties(old.node)},header=old.node.attrs['data-word-repeat-header'];if(header!==undefined)css['--word-row-repeat-header']=header==='true'?'1':'0';
-        const props=rowProperties(css);
+        const omissions=entry.revision.before?.rowOmissions;
+        const props=(omissions?.before?value('gridBefore',omissions.before):'')+(omissions?.after?value('gridAfter',omissions.after):'')+writeWordRowGapWidths(old.node.attrs)+rowProperties(css);
         return this.change(entry.revision, 'trPr', writeWordConditionalFormat(entry.revision.before?.conditionalFormat??undefined)+props, entry.owner);
     }
     grid(node:SourceElement):string{const entry=this.revision(node,'tableGrid');if(!entry)return'';return this.change(entry.revision,'tblGrid',(entry.revision.before?.grid??[]).map(width=>empty('w:gridCol',{'w:w':nativeInteger(width)})).join(''),entry.owner);}

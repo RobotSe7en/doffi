@@ -465,7 +465,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if (event.key === "Enter") { event.preventDefault(); mutate(range, () => event.shiftKey ? lineBreak(range) : paragraphBreak(range), !event.shiftKey); }
     if (event.key === "Tab") {
       const parent = range.startContainer.nodeType === 1 ? range.startContainer as Element : range.startContainer.parentElement;
-      const cell = parent?.closest("td,th"), cells = [...root.querySelectorAll("td,th")].filter((node) => !projection.ignored(node));
+      const cell = parent?.closest("td,th"), cells = [...root.querySelectorAll("td,th")].filter((node) => !projection.ignored(node)&&!node.hasAttribute('data-word-grid-gap'));
       if (cell && cells.includes(cell)) { event.preventDefault(); const next = cells[cells.indexOf(cell) + (event.shiftKey ? -1 : 1)]; if (next) select(...caretAt(next, 0, projection.ignored)); }
       else if(parent?.closest('[data-word-numbering]')){event.preventDefault();try{changeListLevel(event.shiftKey?-1:1);}catch(error){report(error);}}
     }

@@ -12,7 +12,7 @@ interface Cell {
 }
 const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r\n?/g, "\n").replace(/\n/g, "<br>");
 /** Table occupancy is transient; persistent cells and grid remain HTML and metadata. */
-export interface SourceTableEditContext { readonly edit: DocumentEdit; readonly parse: () => ParsedHtml; readonly limits: DocumentReadLimits; readonly newCellHtml?: string }
+export interface SourceTableEditContext { readonly edit: DocumentEdit; readonly parse: () => ParsedHtml; readonly limits: DocumentReadLimits; readonly newCellHtml?: string; readonly wordOmissions?:boolean }
 export function editSourceTable(ctx: SourceTableEditContext, tableId: string, initialGrid: readonly number[], geometry: { width: number; height: number }, change: TableChange): { grid: number[]; width: number; height: number; cells: Cell[] } {
     const { edit } = ctx, object = { grid: [...initialGrid] }, html = ctx.parse(), table = html.peekNode(tableId)!;
     if (!table || table.tagName !== "table") invalid("Table operations require an HTML table source.");
@@ -35,6 +35,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
                     { if (occupied[y]![x]) invalid("Merged table cells overlap."); occupied[y]![x] = cell; }
         }
     const removed = new Set<string>();
+    const gapKinds=new Map(ctx.wordOmissions?cells.flatMap(cell=>{const kind=html.peekNode(cell.id)!.attributes['data-word-grid-gap'];return kind?[[cell.id,kind]as const]:[];}):[]);
     let nextWidth = geometry.width, nextHeight = geometry.height;
     const area = (row: number, column: number, rowCount = 1, columnCount = 1): Cell[] => {
         if (row + rowCount > rows.length || column + columnCount > grid.length)
@@ -64,7 +65,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
         const width = change.values[0]!.length;
         if (change.values.some(row => row.length !== width))
             invalid("Pasted table values must be rectangular.");
-        area(change.row, change.column, change.values.length, width);
+        if(area(change.row, change.column, change.values.length, width).some(cell=>gapKinds.has(cell.id)))invalid('Pasting into an omitted table region requires inserting cells first.');
         for (const [r, values] of change.values.entries())
             for (const [c, value] of values.entries()) {
                 const cell = occupied[change.row + r]![change.column + c]!;
@@ -78,6 +79,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
     }
     else if (change.kind === "mergeCells") {
         const selected = area(change.row, change.column, change.rows, change.columns);
+        if(selected.some(cell=>gapKinds.has(cell.id)))invalid('A merge cannot include an omitted table region.');
         if (selected.some(cell => html.directText(cell.id)?.trim()))
             invalid("Merge cells requires paragraph-structured text; normalize direct cell text before merging.");
         if (selected.some(cell => cell.row < change.row || cell.column < change.column || cell.row + cell.rows > change.row + change.rows || cell.column + cell.columns > change.column + change.columns))
@@ -95,6 +97,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
     }
     else if (change.kind === "splitCell") {
         const cell = area(change.row, change.column)[0]!;
+        if(gapKinds.has(cell.id))invalid('An omitted table region is not a splittable cell.');
         if (cell.row !== change.row || cell.column !== change.column)
             invalid("Split must identify the starting cell of a merged area.");
         if(change.rows===undefined&&change.columns===undefined){
@@ -131,6 +134,7 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
         const result = size + (insert ? change.count : -change.count);
         checkLimit(result * (rowChange ? grid.length : rows.length), ctx.limits.maxNodes);
         for (const cell of cells) {
+            if(insert&&!rowChange&&(gapKinds.get(cell.id)==='before'&&change.at===0&&cell.column===0||gapKinds.get(cell.id)==='after'&&change.at===size)){cell.columns+=change.count;continue;}
             const start = rowChange ? cell.row : cell.column, span = rowChange ? cell.rows : cell.columns;
             let next = start, length = span;
             if (insert) {
@@ -162,6 +166,9 @@ export function editSourceTable(ctx: SourceTableEditContext, tableId: string, in
                 const reference = rows[change.at], parent = edit.sourceParent(reference ?? rows.at(-1)!), height = heights[Math.min(change.at, heights.length - 1)]!, newRows = Array.from({ length: change.count }, () => edit.insertSource(parent, '<tr style="height:' + height + 'pt"></tr>', reference).rootNodeIds[0]!);
                 rows.splice(change.at, 0, ...newRows);
                 heights.splice(change.at, 0, ...newRows.map(() => height));
+                const template=occupied[Math.min(change.at,originalRows.length-1)]!,gaps=[...new Set(template)].filter(cell=>cell&&gapKinds.has(cell.id));
+                const widths=Object.fromEntries(Object.entries(html.peekNode(originalRows[Math.min(change.at,originalRows.length-1)]!)!.attributes).filter(([name])=>/^data-word-(?:before|after)-width-/.test(name)));
+                for(const[index,rowId]of newRows.entries()){edit.attributes(rowId,widths);const row=change.at+index;for(const gap of gaps){if(cells.some(cell=>!removed.has(cell.id)&&cell.row<=row&&cell.row+cell.rows>row&&cell.column<gap.column+gap.columns&&cell.column+cell.columns>gap.column))continue;const id=edit.cloneSource(gap.id,rowId).rootNodeIds[0]!;cells.push({id,row,column:gap.column,rows:1,columns:gap.columns});gapKinds.set(id,gapKinds.get(gap.id)!);}}
                 nextHeight += height * change.count;
             }
             else {

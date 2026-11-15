@@ -987,7 +987,7 @@ export class DocxStyles {
   row(properties:XmlNode|undefined):Css{
     if(!properties)return{};const shared=properties.part===this.stylePart;
     check(properties,['cnfStyle','divId','gridBefore','gridAfter','wBefore','wAfter','cantSplit','trHeight','tblHeader','tblCellSpacing','jc','hidden','trPrChange','ins','del']);
-    for(const name of ['gridBefore','gridAfter','hidden','jc',...(shared?['trHeight','cnfStyle','divId','wBefore','wAfter','trPrChange','ins','del']:[])] as const){const value=child(properties,name);if(value)unsupported(value,'This row property remains native.');}
+    for(const name of ['hidden','jc',...(shared?['gridBefore','gridAfter','trHeight','cnfStyle','divId','wBefore','wAfter','trPrChange','ins','del']:[])] as const){const value=child(properties,name);if(value)unsupported(value,'This row property remains native.');}
     this.cellSpacing(properties);const result:Css={};
     const split=child(properties,'cantSplit');if(split)result['break-inside']=on(split)?'avoid':'auto';
     const header=child(properties,'tblHeader');if(header)result['--word-row-repeat-header']=on(header)?'1':'0';

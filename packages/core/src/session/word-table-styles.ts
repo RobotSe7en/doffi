@@ -55,6 +55,7 @@ export function refreshWordTableStyles(word: WordMetadata, edit: DocumentEdit, p
                 const span = Number(cell.attributes.colspan ?? 1), height = Number(cell.attributes.rowspan ?? 1) || rows.length - rowIndex;
                 for (let c = column; c < column + span; c++)
                     occupied[c] = rowIndex + height;
+                if(cell.attributes['data-word-grid-gap']){column+=span;continue;}
                 const regions = wordTableRegions(rowIndex, column, rows.length, info.grid.length, span, mask, info.rowBandSize ?? setting('rowBandSize') ?? 0, info.columnBandSize ?? setting('columnBandSize') ?? 0), value = resolveWordTableStyle(word, read, styleId, regions), inner: Record<string, string> = {};
                 if (base.table['--word-border-inside-h'] && rowIndex > 0)
                     inner['border-top'] = 'var(--word-border-inside-h)';

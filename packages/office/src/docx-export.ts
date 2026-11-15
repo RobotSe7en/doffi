@@ -1,4 +1,5 @@
 import { writeWordEmptyContinuation } from './docx-table-continuation.js';
+import {writeWordRowGapWidths} from './docx-row-gaps.js';
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import{writeWordConditionalFormat}from'./docx-conditional-format.js';
 import{ExportWordRevisions}from'./docx-revisions-export.js';
@@ -454,8 +455,11 @@ class Exporter {
     matrix.forEach((cells, index) => {
       const row = rows[index]!, rowCss = {...this.tablePropertyDifference(row,this.css.get(row),'row')};
       const directHeader=row.attrs['data-word-repeat-header'];if(directHeader!==undefined)rowCss['--word-row-repeat-header']=directHeader==='true'?'1':'0';else if(row.parent?.tag==='thead')rowCss['--word-row-repeat-header']='1';
-      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + this.conditionalFormat(row)+rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
+      const before=cells[0]?.node.attrs['data-word-grid-gap']==='before'?cells[0]!.span:0,after=cells.at(-1)?.node.attrs['data-word-grid-gap']==='after'?cells.at(-1)!.span:0;
+      for(const cell of cells)if(cell.node.attrs['data-word-grid-gap']&&(cell.node.attrs['data-word-grid-gap']==='before'?cell.column!==0:cell.column+cell.span!==grid.length))unsupported('A native row omission must occupy its leading or trailing grid edge.');
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + this.conditionalFormat(row)+(before?value('gridBefore',before):'')+(after?value('gridAfter',after):'')+writeWordRowGapWidths(row.attrs)+rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
       for (const cell of cells) {
+        if(cell.node.attrs['data-word-grid-gap'])continue;
         const continuation=cell.continuation?info?.continuationFormats?.find(item=>item.row===index&&item.column===cell.column):undefined;
         const cellCss = this.css.get(cell.node);
         this.add("<w:tc" + this.nativeMark(cell.node.attrs["data-node-id"]) + "><w:tcPr>" + orderedProperties("tcPr", (cell.continuation?writeWordConditionalFormat(continuation?.format):this.conditionalFormat(cell.node))+(cell.span > 1 ? value("gridSpan", cell.span) : "") + (cell.continuation || cell.rows > 1 ? value("vMerge", cell.continuation ? "continue" : "restart") : "") + cellProperties(this.tablePropertyDifference(cell.node,cellCss,'cell')) + value("textDirection", cell.node.attrs["data-word-text-direction"] ?? cellCss["--word-cell-text-direction"])+(cell.continuation?'':this.review.cell(cell.node))) + "</w:tcPr>");

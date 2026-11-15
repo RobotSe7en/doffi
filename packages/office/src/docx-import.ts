@@ -1,4 +1,5 @@
 import { readWordEmptyContinuation } from './docx-table-continuation.js';
+import {readWordRowGapCount,readWordRowGapWidths} from './docx-row-gaps.js';
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import {bindWordConditionalFormat,readWordConditionalFormat} from './docx-conditional-format.js';
 import {resolveWordTableStyle,wordTableRegions,wordTableRowRegions,wordTableRowCellProperties} from '@doffi/core';
@@ -1365,6 +1366,7 @@ class Importer {
       const rowProperties = child(row, "trPr");
       const rowCss=this.styles.row(rowProperties);
       const htmlRow = this.make("tr", {
+        ...readWordRowGapWidths(rowProperties),
         style: declarations(rowCss),
         ...(child(rowProperties,'tblHeader')?{'data-word-repeat-header':on(child(rowProperties,'tblHeader'))?'true':'false'}:{}),
       });
@@ -1376,7 +1378,11 @@ class Importer {
       readWordFormatRevision(this.word,rowProperties,htmlRow,'row',this.styles);
       this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);
-      let column = 0;
+      const requestedBefore=readWordRowGapCount(rowProperties,'before'),before=requestedBefore>grid.length?0:requestedBefore;
+      readWordRowGapCount(rowProperties,'after');
+      const gap=(side:'before'|'after',start:number,count:number):Html=>this.make('td',{'data-word-grid-gap':side,...(count>1?{colspan:String(count)}:{}),style:'width:'+grid.slice(start,start+count).reduce((a,b)=>a+b,0)+'pt'});
+      if(before)htmlRow.children.push(gap('before',0,before));
+      let column = before;
       const next = new Map<number, { cell: Html; span: number;css:Css }>();
       for (const cell of elements(row, "tc")) {
         const props = child(cell, "tcPr");
@@ -1442,8 +1448,7 @@ class Importer {
         }
         column += span;
       }
-      if (column !== grid.length)
-        fail(row, "A table row does not cover its grid.");
+      if(column<grid.length)htmlRow.children.push(gap('after',column,grid.length-column));
       previous = next;
       rowIndex++;
     }

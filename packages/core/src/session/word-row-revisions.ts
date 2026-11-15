@@ -41,7 +41,7 @@ export function removeWordRows(word: WordMetadata, edit: DocumentEdit, parse: ()
         for (const group of groups.reverse()) {
             const current = wordTableRows(parse(), table);
             moveWordContinuationFormats(info,{kind:'deleteRows',...group});
-            editSourceTable({ edit, parse, limits }, table, info.grid, { width: info.grid.reduce((a, b) => a + b, 0), height: current.length * 20 }, { kind: 'deleteRows', ...group });
+            editSourceTable({ edit, parse, limits, wordOmissions:true }, table, info.grid, { width: info.grid.reduce((a, b) => a + b, 0), height: current.length * 20 }, { kind: 'deleteRows', ...group });
         }
     }
 }

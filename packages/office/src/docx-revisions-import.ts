@@ -1,3 +1,5 @@
+import {readWordRowGapWidths,readWordRowGapCount} from './docx-row-gaps.js';
+import {WORD_ROW_GAP_WIDTH_ATTRIBUTES} from '@doffi/core';
 import{readWordConditionalFormat}from'./docx-conditional-format.js';
 import type { WordMetadata, WordRevision } from '@doffi/core';
 import { attr, child, check, fail, on, number, unsupported } from './ooxml/xml.js';
@@ -65,8 +67,10 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
     }
     else {
         check(previous, ['cnfStyle', 'divId', 'gridBefore', 'gridAfter', 'wBefore', 'wAfter', 'cantSplit', 'trHeight', 'tblHeader', 'tblCellSpacing', 'jc', 'hidden']);
-        if (on(child(previous, 'hidden')) || child(previous, 'gridBefore') || child(previous, 'gridAfter'))
+        if (on(child(previous, 'hidden')) || readWordRowGapCount(previous,'before')!==readWordRowGapCount(properties,'before') || readWordRowGapCount(previous,'after')!==readWordRowGapCount(properties,'after'))
             unsupported(change, 'This row format revision remains native.');
+        css=styles.row(previous);
+        before.rowOmissions={before:readWordRowGapCount(previous,'before'),after:readWordRowGapCount(previous,'after')};const widths=readWordRowGapWidths(previous);for(const key of WORD_ROW_GAP_WIDTH_ATTRIBUTES)attributes[key]=widths[key]??null;
         if (child(previous,'cantSplit'))css['break-inside']=on(child(previous,'cantSplit'))?'avoid':'auto';
         const height = child(previous, 'trHeight');
         if (height)

@@ -1,5 +1,5 @@
 import {wordSettingsOrder}from'../ooxml/word-settings-order.js';
-import {wordParagraphPropertyOrder}from'../ooxml/word-paragraph-order.js';
+import {wordParagraphPropertyOrder}from'../ooxml/word-property-order.js';
 import { DocumentError } from "@doffi/core";
 import type { DocumentReadLimits } from "@doffi/core";
 

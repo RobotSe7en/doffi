@@ -1,5 +1,5 @@
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
-import {sortWordParagraphProperties} from './ooxml/word-paragraph-order.js';
+import {sortWordProperties} from './ooxml/word-property-order.js';
 import{sortWordNoteProperties}from'./ooxml/word-note-order.js';
 import{NativeDrawingIdentities}from'./docx-native-identities.js';
 import {sortWordSettings}from'./ooxml/word-settings-order.js';
@@ -162,7 +162,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
     apply(root);
     for(const fragment of native.fragments)if(fragment.kind==='property'&&!fragment.nodeId&&partMap.get(fragment.sourcePart)===path){const target=fragment.styleId?root.content.find((n):n is XmlNode=>typeof n!=='string'&&n.name==='style'&&n.attrs.get(W+' styleId')===fragment.styleId):root;if(!target)throw new DocumentError('ExportFailed','A preserved native style owner is missing.');applyProperty(target,fragment);}
     sortWordSettings(root);
-    sortWordParagraphProperties(root);
+    sortWordProperties(root);
     sortWordNoteProperties(root);
   }
   drawingIdentities.rewrite(parsed.values());

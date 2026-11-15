@@ -139,20 +139,22 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       info={nodeId:operation.nodeId,grid:Array.from({length:columns},()=>width/columns)};word.tables.push(info);
     }
     if(operation.op==='editWordTable') {
-      if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.grid){const previous=word.revisions.find(item=>item.nodeId===operation.nodeId&&item.kind==='format'&&item.property==='tableGrid');if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();}else{const id=operation.nodeId+'-format-grid';word.revisions.push({nodeId:operation.nodeId,sourceId:id,revisionId:id,kind:'format',property:'tableGrid',before:{grid:[...info.grid],inheritNativeProperties:true},author:word.trackingAuthor??'',date:new Date().toISOString()});}recordWordFormat(word,source,operation.nodeId,'table');for(const id of rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds))if(['td','th'].includes(source.peekNode(id)!.tagName))recordWordFormat(word,source,id,'cell');}
+      if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.grid){const previous=word.revisions.find(item=>item.nodeId===operation.nodeId&&item.kind==='format'&&item.property==='tableGrid');if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();}else{const id=operation.nodeId+'-format-grid';word.revisions.push({nodeId:operation.nodeId,sourceId:id,revisionId:id,kind:'format',property:'tableGrid',before:{grid:[...info.grid],inheritNativeProperties:true},author:word.trackingAuthor??'',date:new Date().toISOString()});}recordWordFormat(word,source,operation.nodeId,'table');for(const id of rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds))if(['td','th'].includes(source.peekNode(id)!.tagName)&&!source.peekNode(id)!.attributes['data-word-grid-gap'])recordWordFormat(word,source,id,'cell');}
+      if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.grid)for(const id of rowIds)recordWordFormat(word,source,id,'row');
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.rowHeights)for(const id of rowIds)recordWordFormat(word,source,id,'row');
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.rowIndex!==undefined){const id=rowIds[operation.change.rowIndex];if(!id)fail('The resized row exceeds the table.');recordWordFormat(word,source,id,'row');}
       if(word.trackChanges&&operation.change.kind==='deleteRows'){trackWordRowDeletion(word,edit,parse,operation.nodeId,operation.change.at,operation.change.count,limits);return;}
-      const firstCell=rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds).map(id=>source.peekNode(id)!).find(cell=>['td','th'].includes(cell.tagName));
+      const firstCell=rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds).map(id=>source.peekNode(id)!).find(cell=>['td','th'].includes(cell.tagName)&&!cell.attributes['data-word-grid-gap']);
       const escape=(value:string):string=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
       const cellAttributes=firstCell?['class','style'].filter(key=>firstCell.attributes[key]).map(key=>' '+key+'="'+escape(firstCell.attributes[key]!)+'"').join(''):'';
       const splitContinuations=operation.change.kind==='splitCell'?info.continuationFormats:undefined,previousGrid=[...info.grid];
       moveWordContinuationFormats(info,operation.change);
       const previousWidth=info.grid.reduce((a,b)=>a+b,0);
-      const result=editSourceTable({edit,parse,limits,newCellHtml:'<td'+cellAttributes+'><p></p></td>'},operation.nodeId,info.grid,{width:previousWidth,height:Math.max(1,rowIds.length)*20},operation.change);
+      const result=editSourceTable({edit,parse,limits,wordOmissions:true,newCellHtml:'<td'+cellAttributes+'><p></p></td>'},operation.nodeId,info.grid,{width:previousWidth,height:Math.max(1,rowIds.length)*20},operation.change);
       if(word.trackChanges&&operation.change.kind==='insertRows'){const added=wordTableRows(parse(),operation.nodeId).filter(id=>!rowIds.includes(id)),groupId=added[0]+'-row-insert';for(const id of added)word.revisions.push({nodeId:id,sourceId:id+'-row-insert',revisionId:id+'-row-insert',groupId,kind:'rowInsert',author:word.trackingAuthor??'',date:new Date().toISOString()});}
       const preserveWidth=operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns';
       info.grid=preserveWidth?result.grid.map(width=>width*previousWidth/result.width):result.grid;
+      if(operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns'||operation.change.kind==='resize'&&operation.change.grid||operation.change.kind==='splitCell'&&info.grid.length!==previousGrid.length){const current=parse(),rows=wordTableRows(current,operation.nodeId);for(const cell of result.cells){const side=current.peekNode(cell.id)!.attributes['data-word-grid-gap'];if(side!=='before'&&side!=='after')continue;const value=String(Math.round(info.grid.slice(cell.column,cell.column+cell.columns).reduce((a,b)=>a+b,0)*20)),prefix='data-word-'+side+'-width-';for(let row=cell.row;row<cell.row+cell.rows;row++)edit.attributes(rows[row]!,{[prefix+'present']:'true',[prefix+'type']:'dxa',[prefix+'value']:value});}}
       if(splitContinuations)restoreWordSplitContinuations(word,info,source,rowIds,previousGrid,splitContinuations,result.cells,edit,parse(),limits);
       if(operation.change.kind==='resize'&&operation.change.grid)edit.sourceStyle(operation.nodeId,'width',result.width+'pt');
       if(preserveWidth||operation.change.kind==='resize'&&operation.change.grid||operation.change.kind==='splitCell')for(const cell of result.cells)edit.sourceStyle(cell.id,'width',info.grid.slice(cell.column,cell.column+cell.columns).reduce((a,b)=>a+b,0)+'pt');
@@ -166,6 +168,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     if(operation.allowRowSplit!==undefined)for(const id of rowIds)edit.sourceStyle(id,'break-inside',operation.allowRowSplit?'auto':'avoid');if(operation.rowHeightRule!==undefined)for(const id of rowIds)edit.sourceStyle(id,'--word-row-height-rule',operation.rowHeightRule);return;
   }
   if(operation.op==='formatWordCell') {
+    if(node.attributes['data-word-grid-gap'])fail('An omitted table region has no cell appearance to format.');
     recordWordFormat(word,parse(),operation.nodeId,'cell');
     if(!['td','th'].includes(node.tagName))fail('Cell formatting requires a table cell.');
     for(const[property,value]of Object.entries(operation.properties))edit.sourceStyle(operation.nodeId,property,value);

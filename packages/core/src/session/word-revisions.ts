@@ -1,4 +1,4 @@
-import{removeWordRows}from'./word-row-revisions.js';
+import{removeWordRows,wordTableRows}from'./word-row-revisions.js';
 import type{DocumentReadLimits}from'../runtime.js';
 import{expandWordRevisionGroups}from'../word-revision-groups.js';
 import{reconcileTrackedWord}from'./word-tracked-structure.js';
@@ -137,8 +137,10 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
                 if(before.tableStyleOptions){const table=word.tables.find(table=>table.nodeId===revision.nodeId);if(table)for(const key of ['lookMask','rowBandSize','columnBandSize']as const){delete table[key];const value=before.tableStyleOptions[key];if(value!==undefined)table[key]=value;}}
                 if (before.grid) {
                     const table = word.tables.find(table => table.nodeId === revision.nodeId);
-                    if (table)
+                    if (table){
                         table.grid = [...before.grid];
+                        const current=parse();for(const row of wordTableRows(current,table.nodeId))for(const id of current.peekNode(row)!.childNodeIds){const cell=current.peekNode(id)!,side=cell.attributes['data-word-grid-gap'];if(side!=='before'&&side!=='after')continue;const count=Number(cell.attributes.colspan??1),width=(side==='before'?table.grid.slice(0,count):table.grid.slice(-count)).reduce((a,b)=>a+b,0);edit.sourceStyle(id,'width',width+'pt');}
+                    }
                 }
             }
             continue;

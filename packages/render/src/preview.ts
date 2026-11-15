@@ -482,7 +482,7 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
-    composeWordTableLayout(frame,limits);
+    composeWordTableLayout(frame,limits,snapshot.metadata.word);
     composeWordNative(frame,model,prepared.nativeUrls,limits);
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);

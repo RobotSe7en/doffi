@@ -1,10 +1,17 @@
 import { DocumentError } from '@doffi/core';
+import type {DeepReadonly,WordMetadata} from '@doffi/core';
 import type { RenderLimits } from './contracts.js';
-import { markViewNode, ownViewStyle, viewNodeRole } from './view-nodes.js';
+import { markViewNode, ownViewStyle, ownViewAttribute, viewNodeRole } from './view-nodes.js';
 /** Exact row heights clip the view; all hidden cell content remains in source. */
-export function composeWordTableLayout(document: Document, limits: Readonly<RenderLimits>): void {
+export function composeWordTableLayout(document: Document, limits: Readonly<RenderLimits>,word?:DeepReadonly<WordMetadata>): void {
     const view=document.defaultView!;
+    const tables=new Map(word?.tables.map(table=>[table.nodeId,table]as const));
     let count=document.querySelectorAll('*').length;
+    for(const gap of document.querySelectorAll<HTMLElement>('[data-word-grid-gap]')){
+        const info=tables.get(gap.closest<HTMLTableElement>('table')?.dataset.nodeId??''),span=Number(gap.getAttribute('colspan')??1);if(info){const columns=gap.dataset.wordGridGap==='before'?info.grid.slice(0,span):info.grid.slice(-span);ownViewStyle(gap,'width');gap.style.width=columns.reduce((a,b)=>a+b,0)+'pt';}
+        ownViewAttribute(gap,'contenteditable');ownViewAttribute(gap,'aria-hidden');gap.contentEditable='false';gap.setAttribute('aria-hidden','true');
+        for(const[name,value]of Object.entries({visibility:'hidden','pointer-events':'none',padding:'0',border:'0','background-color':'transparent'})){ownViewStyle(gap,name);gap.style.setProperty(name,value,'important');}
+    }
     for(const table of document.querySelectorAll<HTMLTableElement>('table')){
         const rows=[...table.rows],heights=rows.map(row=>{
             const css=view.getComputedStyle(row),rule=css.getPropertyValue('--word-row-height-rule').trim();
