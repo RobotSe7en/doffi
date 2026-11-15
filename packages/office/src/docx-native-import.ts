@@ -46,6 +46,7 @@ export class DocxNativeImport {
   }
   identity(source:XmlNode,nodeId:string,sourceId:string):void{const kind=source.uri===WP?'frame':'object';this.identities.set(nodeId+'\n'+kind,{nodeId,sourcePart:source.part,sourceId,kind});}
   beginAttempt(): void { this.bindings.clear();this.identities.clear(); }
+  originalPlaceholder(node:XmlNode):XmlNode|undefined{return this.placeholders.get(node)?.original;}
   isPlaceholder(node:XmlNode):boolean{return this.placeholders.has(node);}
   recover(error: unknown): boolean {
     const info = unsupportedSource(error);

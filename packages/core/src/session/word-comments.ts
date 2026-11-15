@@ -75,5 +75,5 @@ export function pruneWordComments(word: WordMetadata, annotations: readonly Anno
     const byId = new Map(annotations.map(annotation => [annotation.annotationId, annotation]));
     if (word.comments)
         word.comments = word.comments.filter(binding => { const annotation = byId.get(binding.annotationId); if (!annotation)
-            return false; const replies = new Set(annotation.replies?.map(reply => reply.replyId)); binding.replies = binding.replies.filter(reply => replies.has(reply.replyId)); return true; });
+            return false; if(binding.referenceNodeId&&!source.hasNode(binding.referenceNodeId))delete binding.referenceNodeId; const replies = new Set(annotation.replies?.map(reply => reply.replyId)); binding.replies = binding.replies.filter(reply => replies.has(reply.replyId)); return true; });
 }

@@ -184,7 +184,7 @@ export function wordCommentAnnotations(comments: Map<string, WordCommentState>, 
         const annotation: Annotation = { annotationId: 'comment-' + id, documentId, baseRevision: 0, status: comment.resolved ? 'resolved' : 'open', bodyNodeId: comment.bodyNodeId, sourceId: id, ...identity(comment), anchor: comment.ranges.length === 1 ? { kind: 'text', ...comment.ranges[0]! } : comment.ranges.length ? { kind: 'text-set', ranges: comment.ranges } : { kind: 'node', nodeId: comment.point! } };
         annotations.push(annotation);
         byId.set(id, annotation);
-        word.comments.push({ annotationId: annotation.annotationId, ...(comment.durableId ? { durableId: comment.durableId } : {}), ...(comment.followUp !== undefined ? { followUp: comment.followUp } : {}), replies: [] });
+        word.comments.push({ annotationId: annotation.annotationId, ...(comment.point?{referenceNodeId:comment.point}:{}), ...(comment.durableId ? { durableId: comment.durableId } : {}), ...(comment.followUp !== undefined ? { followUp: comment.followUp } : {}), replies: [] });
     }
     for (const [id, comment] of comments) {
         const root = roots.get(id)!;

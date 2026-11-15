@@ -3,6 +3,7 @@ import type { Annotation,AnnotationReply,WordMetadata, DeepReadonly } from "@dof
 import type { SourceElement, SourceNode, SourceText, SourceTree } from "./source.js";
 import { element } from "./source.js";
 import { empty } from "./xml.js";
+import type { NativeCommentBinding } from '../docx-native-comments.js';
 
 export interface UnexportedAnnotation { readonly annotationId: string; readonly reason: "region" | "needs_reanchor" | "disjoint" | "cross_story" | "unrepresentable" }
 export interface ExportComment { readonly id: string; readonly annotation: DeepReadonly<Annotation>; readonly paragraphId: string; readonly durableId:string; readonly reply?:DeepReadonly<AnnotationReply>; parentParagraphId?:string; readonly followUp?:boolean }
@@ -14,8 +15,11 @@ export class ExportAnnotations {
   readonly comments: ExportComment[] = [];
   readonly messages:ExportComment[]=[];
   readonly omitted: UnexportedAnnotation[] = [];
-  private readonly events = new WeakMap<SourceNode, Map<number, { starts: string[]; ends: string[] }>>();
+  readonly nativeBindings: NativeCommentBinding[] = [];
+  private readonly events = new WeakMap<SourceNode, Map<number, { starts: string[]; ends: string[]; references:string[] }>>();
+  private readonly native:boolean;
   constructor(tree: SourceTree, annotations: readonly DeepReadonly<Annotation>[], stories: readonly SourceElement[], maximumWork: number, emitted: (node: SourceText) => boolean,word?:DeepReadonly<WordMetadata>) {
+    this.native=!!word?.nativeContent;
     const durableIds=new Set((word?.comments??[]).flatMap(binding=>[binding,...binding.replies]).flatMap(item=>item.durableId?[item.durableId.toUpperCase()]:[]));let nextDurable=1;
     const durable=(original?:string):string=>{if(original)return original.toUpperCase();while(durableIds.has(nextDurable.toString(16).padStart(8,'0').toUpperCase()))nextDurable++;const id=(nextDurable++).toString(16).padStart(8,'0').toUpperCase();durableIds.add(id);return id;};
     const leaves: SourceNode[] = [];
@@ -70,18 +74,21 @@ export class ExportAnnotations {
       for(const reply of annotation.replies??[]){const message:ExportComment={id:String(this.messages.length),paragraphId:(this.messages.length+1).toString(16).padStart(8,'0').toUpperCase(),annotation,reply,durableId:durable(binding?.replies.find(item=>item.replyId===reply.replyId)?.durableId)};this.messages.push(message);replies.set(reply.replyId,message);}
       for(const[replyId,message]of replies){const parent=binding?.replies.find(reply=>reply.replyId===replyId)?.parentReplyId;message.parentParagraphId=parent?replies.get(parent)!.paragraphId:paragraphId;}
       const first = sorted[0]!, end = sorted.reduce((left, right) => left.last >= right.last ? left : right).end;
-      this.add(first.start, id, "starts"); this.add(end, id, "ends");
+      const reference=binding?.referenceNodeId?range(binding.referenceNodeId,0,0):undefined,point=reference?.story===first.story?reference.start:end;
+      this.add(first.start, id, "starts"); this.add(end, id, "ends");this.add(point,id,'references');
+      if(annotation.sourceId!==undefined)this.nativeBindings.push({sourceId:annotation.sourceId,id,...(element(first.start.node)&&first.start.node.attrs['data-word-native-object']?{startNodeId:first.start.node.attrs['data-node-id']}:{}),...(element(end.node)&&end.node.attrs['data-word-native-object']?{endNodeId:end.node.attrs['data-node-id']}:{}),...(element(point.node)&&point.node.attrs['data-word-native-object']?{referenceNodeId:point.node.attrs['data-node-id']}:{} )});
     }
   }
-  private add(endpoint: Endpoint, id: string, kind: "starts" | "ends"): void {
+  private add(endpoint: Endpoint, id: string, kind: "starts" | "ends"|'references'): void {
     let offsets = this.events.get(endpoint.node); if (!offsets) { offsets = new Map(); this.events.set(endpoint.node, offsets); }
-    let event = offsets.get(endpoint.offset); if (!event) { event = { starts: [], ends: [] }; offsets.set(endpoint.offset, event); }
+    let event = offsets.get(endpoint.offset); if (!event) { event = { starts: [], ends: [], references:[] }; offsets.set(endpoint.offset, event); }
     event[kind].push(id);
   }
   offsets(node: SourceNode): number[] { return [...this.events.get(node)?.keys() ?? []].sort((a, b) => a - b); }
-  at(node: SourceNode, offset: number): string {
+  at(node: SourceNode, offset: number, block=false): string {
     const event = this.events.get(node)?.get(offset); if (!event) return "";
     this.events.get(node)!.delete(offset);
-    return event.starts.map((id) => empty("w:commentRangeStart", { "w:id": id })).join("") + event.ends.map((id) => empty("w:commentRangeEnd", { "w:id": id }) + '<w:r>' + empty("w:commentReference", { "w:id": id }) + '</w:r>').join("");
+    const marker=this.native?' xmlns:dn="urn:doffi:transient:native" dn:comment-reference="1"':'',references=event.references.map(id=>'<w:r'+marker+'>'+empty('w:commentReference',{'w:id':id})+'</w:r>').join('');
+    return event.starts.map((id) => empty("w:commentRangeStart", { "w:id": id })).join("") + event.ends.map((id) => empty("w:commentRangeEnd", { "w:id": id })).join('')+(block&&references?'<w:p'+marker+'>'+references+'</w:p>':references);
   }
 }

@@ -3,7 +3,7 @@ import { IdentifierSchema } from './primitives.js';
 const durableId = z.string().regex(/^[0-7][0-9A-Fa-f]{7}$/).refine(value => parseInt(value, 16) > 0 && parseInt(value, 16) < 0x7fffffff);
 /** Native identities are bindings to the shared annotation thread, not bodies. */
 export const WordCommentSchema = z.strictObject({
-    annotationId: IdentifierSchema, durableId: durableId.optional(), followUp: z.boolean().optional(),
+    annotationId: IdentifierSchema, referenceNodeId: IdentifierSchema.optional(), durableId: durableId.optional(), followUp: z.boolean().optional(),
     replies: z.array(z.strictObject({ replyId: IdentifierSchema, durableId: durableId.optional(), parentReplyId: IdentifierSchema.optional() })),
 });
 export const WordPersonSchema = z.strictObject({ author: z.string(), presence: z.strictObject({ providerId: z.string(), userId: z.string() }).optional() });

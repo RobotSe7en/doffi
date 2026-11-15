@@ -1,3 +1,4 @@
+import{commentControl,wordScope}from'./docx-native-comments.js';
 import { readWordEmptyContinuation } from './docx-table-continuation.js';
 import {bindWordGridInsertion} from './docx-grid-revision.js';
 import {readWordRowGapCount,readWordRowGapWidths} from './docx-row-gaps.js';
@@ -536,7 +537,8 @@ class Importer {
     for (const item of items) {
       if(item.uri===M&&(item.name==='oMath'||item.name==='oMathPara')){const paragraph=this.make('p',{'data-word-math-paragraph':'true'});if(item.name==='oMathPara'){this.mathParagraph(item,paragraph);}else this.math(item,paragraph,'block');result.push(paragraph);continue;}
       if (item.uri !== W) unsupportedType(item);
-      if (item.name === "p") result.push(this.paragraph(item, inherited));
+      if(this.native?.isPlaceholder(item))result.push(this.nativeObject(item,'p'));
+      else if (item.name === "p") result.push(this.paragraph(item, inherited));
       else if (item.name === "tbl") result.push(this.table(item));
       else if (item.name === "sdt") {
         const properties = child(item, "sdtPr"), object = child(properties, "docPartObj");
@@ -697,13 +699,28 @@ class Importer {
     }
     return result;
   }
+  private nativeObject(source:XmlNode,tag:'p'|'span'):Html {
+    const object=this.make(tag,{});this.native!.bind(source,object.attrs);object.children.push('\ufffc');
+    const active=new Set(this.activeComments),covered=new Set(active),original=this.native!.originalPlaceholder(source)!;
+    const visit=(node:XmlNode,parent=true):void=>{
+      const scope=wordScope(node,parent),kind=scope?commentControl(node):undefined;
+      if(kind){const id=attr(node,'id'),comment=id===undefined?undefined:this.comments.get(id);if(!comment)fail(node,'A native comment control targets a missing comment.');
+        if(kind==='commentRangeStart'){if(active.has(id!))fail(node,'A native comment range start is repeated.');active.add(id!);covered.add(id!);}
+        else if(kind==='commentRangeEnd'){if(!active.delete(id!))fail(node,'A native comment range end has no start.');}
+        else comment.point=this.id(object);
+      }
+      const children=node.uri===MC&&node.name==='AlternateContent'?[elements(node,'Choice',MC)[0]??child(node,'Fallback',MC)].filter((item):item is XmlNode=>!!item):node.content.filter((item):item is XmlNode=>typeof item!=='string');
+      for(const item of children)visit(item,scope);
+    };
+    visit(original);this.activeComments=covered;this.record(object,0,'\ufffc');this.activeComments=active;return object;
+  }
   private inline(
     source: XmlNode,
     parent: Html,
     paragraphStyle: Css = {},
   ): void {
     if(this.native?.isPlaceholder(source)){
-      const object=this.make('span',{});this.native.bind(source,object.attrs);const offset=this.offset(parent,'\ufffc');object.children.push('\ufffc');parent.children.push(object);this.fieldResult(object);this.record(parent,offset,'\ufffc');return;
+      this.offset(parent,'\ufffc');const object=this.nativeObject(source,'span');parent.children.push(object);this.fieldResult(object);return;
     }
     if(source.uri===M&&source.name==='oMath'){this.math(source,parent,'inline');return;}
     if(source.uri===M&&source.name==='oMathPara'){this.mathParagraph(source,parent);return;}

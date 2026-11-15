@@ -159,7 +159,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
         applyWordOperation(metadata, edit, parseEdited, styles, current && current.rootNodeId !== operation.nodeId ? { ...operation, nodeId: current.rootNodeId } : operation, limits,annotations);
       }
       else if ("nodeId" in operation) { guardPresentationContent(base, operation);if(operation.op==="replaceText"&&metadata.word?.trackChanges)trackWordText(metadata.word,edit,parseEdited,operation,styles);else if(operation.op==='removeNode'&&!metadata.presentation&&metadata.word?.trackChanges&&parseEdited().peekNode(operation.nodeId)?.tagName==='table')applyWordOperation(metadata,edit,parseEdited,styles,{op:'deleteWordTable',nodeId:operation.nodeId},limits,annotations);else edit.apply(operation); }
-      else applyAnnotation(operation, annotations, explicit);
+      else {applyAnnotation(operation, annotations, explicit);if(operation.op==='updateAnnotation'&&operation.changes.anchor){const binding=metadata.word?.comments?.find(binding=>binding.annotationId===operation.annotationId);if(binding)delete binding.referenceNodeId;}}
       if(markBase&&metadata.word){if(operation.op==='reconcileFragment'||operation.op==='reconcileWordTracked')inheritWordSplitParagraphMarks(metadata.word,markBase,edit,parseEdited,styles);inheritWordEmptyParagraphText(metadata.word,markBase,edit,parseEdited,styles);}
     }
     if(metadata.word)refreshWordTableStyles(metadata.word,edit,parseEdited,styles,wordTableStyleTargets(metadata.word,parseEdited(),base.html,transaction.operations));

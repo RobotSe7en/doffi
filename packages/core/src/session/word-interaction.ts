@@ -98,6 +98,7 @@ export function wordInteractionContext(state: DocumentState, nodes: ReadonlySet<
     word.notes = word.notes?.filter(item => notes.has(item.noteId));
     const selectedAnnotations = new Set(annotations.map(item => item.annotationId)), bodies = new Set(annotations.flatMap(annotation => [annotation, ...annotation.replies ?? []]).flatMap(message => message.bodyNodeId ? [message.bodyNodeId] : []));
     word.comments = word.comments?.filter(item => selectedAnnotations.has(item.annotationId));
+    for(const binding of word.comments??[])if(binding.referenceNodeId&&!nodes.has(binding.referenceNodeId))delete binding.referenceNodeId;
     const authors = new Set([...annotations.flatMap(annotation => [annotation, ...annotation.replies ?? []]).flatMap(message => message.author ? [message.author.name] : []), ...word.revisions.flatMap(revision => revision.author ? [revision.author] : [])]);
     word.people = word.people?.filter(person => authors.has(person.author));
     word.stories = word.stories.filter(story => story.kind === 'main' || nodes.has(story.rootNodeId) || bodies.has(story.rootNodeId));

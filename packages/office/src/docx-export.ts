@@ -1,3 +1,4 @@
+import type{NativeCommentBinding}from'./docx-native-comments.js';
 import { writeWordEmptyContinuation } from './docx-table-continuation.js';
 import {writeWordRowGapWidths} from './docx-row-gaps.js';
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
@@ -396,7 +397,7 @@ class Exporter {
     for (let index = 0; index < significant.length; index++) {
       const node = significant[index]!, last = index === significant.length - 1;
       if (element(node) && node.attrs["data-word-native-object"]) {
-        this.add(nativeObjectMarker(node.attrs["data-word-native-object"], true, node.attrs["data-node-id"]));
+        this.add(this.annotations.at(node,0,true));this.add(nativeObjectMarker(node.attrs["data-word-native-object"], true, node.attrs["data-node-id"]));this.add(this.annotations.at(node,node.to-node.from,true));
         if (last && finalSection) this.add("<w:p><w:pPr>" + finalSection + "</w:pPr></w:p>");
       }
       else if (element(node) && node.from === node.to && (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") || this.bookmarkEnds.has(node.attrs["data-node-id"] ?? "")||this.moveStarts.has(node.attrs["data-node-id"]??"")||this.moveEnds.has(node.attrs["data-node-id"]??""))) {
@@ -515,7 +516,7 @@ class Exporter {
     try { body(); if (this.fieldStack.length) unsupported("A story has an unclosed field."); }
     finally { this.part = previous.part; this.output = previous.output; this.fieldStack = previous.fields; this.deleted = previous.deleted; this.width = previous.width; }
   }
-  write(): { files: ReadonlyMap<string, Uint8Array>; report: DocxExportReport } {
+  write(): { files: ReadonlyMap<string, Uint8Array>; report: DocxExportReport;nativeComments:readonly NativeCommentBinding[] } {
     for(const kind of ['footnote','endnote']as const){let next=1;for(const note of this.snapshot.metadata.word?.notes??[])if(note.kind===kind)this.noteIds.set(note.noteId,(note.type??'normal')==='normal'?next++:note.type==='separator'?-1:note.type==='continuationSeparator'?0:next++);}
     const sections = this.snapshot.metadata.sections.map((section) => ({ section, root: this.tree.byId.get(section.rootNodeId)!, nodes: [] as SourceNode[] })).sort((left, right) => left.root.from - right.root.from || this.tree.elements.indexOf(left.root) - this.tree.elements.indexOf(right.root));
     if (sections.some((left) => sections.some((right) => left !== right && contains(left.root, right.root)))) unsupported("Nested native section roots cannot be exported.");
@@ -542,7 +543,7 @@ class Exporter {
     core.add(declaration + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' + escapeXml(this.snapshot.metadata.title ?? "") + "</dc:title></cp:coreProperties>"); core.finish();
     this.opc.relate("", "officeDocument", "word/document.xml"); this.opc.relate("", "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties", "docProps/core.xml"); this.opc.finish();
     const budget = { nodes: 0 }; for (const [path, bytes] of this.opc.parts.files) if (path.endsWith(".xml") || path.endsWith(".rels")) xml(bytes, path, this.limits, budget);
-    return { files: this.opc.parts.files, report: Object.freeze({ documentId: this.snapshot.manifest.documentId, revision: this.snapshot.manifest.revision, exportedAnnotationIds: Object.freeze(this.annotations.comments.map((comment) => comment.annotation.annotationId)), unexportedAnnotations: Object.freeze(this.annotations.omitted.map((item) => Object.freeze({ ...item }))) }) };
+    return { nativeComments:this.annotations.nativeBindings,files: this.opc.parts.files, report: Object.freeze({ documentId: this.snapshot.manifest.documentId, revision: this.snapshot.manifest.revision, exportedAnnotationIds: Object.freeze(this.annotations.comments.map((comment) => comment.annotation.annotationId)), unexportedAnnotations: Object.freeze(this.annotations.omitted.map((item) => Object.freeze({ ...item }))) }) };
   }
   private writeNotes():void{
     for(const kind of ['footnote','endnote']as const){const notes=this.snapshot.metadata.word?.notes?.filter(note=>note.kind===kind)??[];if(!notes.length)continue;const path='word/'+kind+'s.xml';this.withStory(path,()=>{this.output=this.opc.part(path,'application/vnd.openxmlformats-officedocument.wordprocessingml.'+kind+'s+xml');this.add(declaration+'<w:'+kind+'s'+namespaces+'>');for(const[type,id,tag]of [['separator',-1,'separator'],['continuationSeparator',0,'continuationSeparator']]as const)if(!notes.some(note=>note.type===type))this.add('<w:'+kind+attributes({'w:id':id,'w:type':type})+'><w:p><w:r>'+empty('w:'+tag)+'</w:r></w:p></w:'+kind+'>');for(const note of notes){const story=this.snapshot.metadata.word!.stories.find(story=>story.storyId===note.storyId)!;this.add('<w:'+kind+this.nativeMark(story.rootNodeId)+attributes({'w:id':this.noteIds.get(note.noteId),'w:type':note.type&&note.type!=='normal'?note.type:undefined})+'>');this.blocks(this.tree.byId.get(story.rootNodeId)!.children);this.add('</w:'+kind+'>');}this.add('</w:'+kind+'s>');this.output.finish();});this.opc.relate('word/document.xml',kind+'s',kind+'s.xml');}
@@ -587,5 +588,5 @@ export function exportDocx(document: ContentDocumentModel, options: DocxExportOp
   const model = openDocument(document.serialize(), { ...options, kind: "document" }), limits = { ...DEFAULT_DOCUMENT_READ_LIMITS, ...options.limits };
   if (model.snapshot().manifest.kind !== "document") throw new DocumentError("UnsupportedFormat", "DOCX export requires a Word document package.");
   const output = new Exporter(model, limits).write();
-  return Object.freeze({ bytes: writeOpcZip(restoreDocxNative(model, output.files, limits), options), report: Object.freeze({ ...output.report, preservedNativeIds: Object.freeze(model.snapshot().metadata.word?.nativeContent?.fragments.map(fragment => fragment.nativeId) ?? []) }) });
+  return Object.freeze({ bytes: writeOpcZip(restoreDocxNative(model, output.files, limits,output.nativeComments), options), report: Object.freeze({ ...output.report, preservedNativeIds: Object.freeze(model.snapshot().metadata.word?.nativeContent?.fragments.map(fragment => fragment.nativeId) ?? []) }) });
 }

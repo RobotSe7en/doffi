@@ -36,6 +36,7 @@ export function validateWord(
     const durable=new Set<string>();
     for(const binding of unique(word.comments??[],item=>item.annotationId).values()){
       const annotation=annotationById.get(binding.annotationId);if(!annotation)invalid('A Word comment binding requires its annotation.');
+      if(binding.referenceNodeId)node(binding.referenceNodeId);
       const replies=unique(binding.replies,item=>item.replyId),actual=new Set(annotation.replies?.map(reply=>reply.replyId));
       for(const item of [binding,...binding.replies]){if(item.durableId){const id=item.durableId.toUpperCase();if(durable.has(id))invalid('Word comment durable identities must be unique.');durable.add(id);}}
       for(const reply of replies.values()){
