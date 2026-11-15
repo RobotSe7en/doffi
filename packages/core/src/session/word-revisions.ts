@@ -31,6 +31,8 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
         fail('The tracked text range or Unicode content is invalid.');
     if (expectedText === text)
         return;
+    const properties={...operation.properties};if(properties['font-weight']!==undefined&&properties['--word-bold-cs']===undefined)properties['--word-bold-cs']=properties['font-weight']==='bold'||Number(properties['font-weight'])>=600?'1':'0';if(properties['font-style']!==undefined&&properties['--word-italic-cs']===undefined)properties['--word-italic-cs']=properties['font-style']==='italic'?'1':'0';
+    const formatInserted=(id:string,from:number):void=>{if(text&&Object.keys(properties).length){const changed:string[]=[];edit.formatSourceText(id,{from,to:from+text.length,expectedText:text},properties,change=>changed.push(change.nodeId),undefined,false,true);for(const nodeId of changed)edit.attributes(nodeId,{'data-word-current-format':'true'});}};
     const author = operation.author ?? word.trackingAuthor ?? '', date = operation.date ?? new Date().toISOString(), start = source.textOffset(operation.nodeId)! + from, end = source.textOffset(operation.nodeId)! + to;
     for (const revision of word.revisions) {
         const owner = source.getNode(revision.nodeId);
@@ -40,20 +42,18 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
         const inside=(id:string,parent:string):boolean=>{for(let current:string|null=id;current;current=source.peekNode(current)!.parentNodeId)if(current===parent)return true;return false;};if(!inside(owner.nodeId,operation.nodeId)&&!inside(operation.nodeId,owner.nodeId))continue;
         if (revision.kind === 'insert' && revision.author === author && start >= begin && end <= finish) {
             edit.replaceSourceText(revision.nodeId, { ...operation, from: start - begin, to: end - begin });
-            if (operation.properties && text)
-                edit.formatSourceText(operation.nodeId, { from, to: from + text.length, expectedText: text }, operation.properties,undefined,undefined,false,true);
+            if(!parse().getNode(revision.nodeId)!.text){edit.removeSource(revision.nodeId);word.revisions=word.revisions.filter(item=>item!==revision);}
+            else formatInserted(revision.nodeId,start-begin);
             return;
         }
         if (['delete', 'moveFrom'].includes(revision.kind) && start < finish && end > begin)
             fail('Deleted revision content must be reviewed before editing it.');
     }
     const deleted = edit.wrapSourceText(operation.nodeId, from, to, 'del');
+    for(const id of deleted)edit.attributes(id,{'data-word-run-overlay':'true'});
     const escape = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const inserted = text ? edit.insertSourceAt(operation.nodeId, to, '<ins>' + escape(text).split('\n').join('<br>') + '</ins>').rootNodeIds : [], groupId = deleted[0] ?? inserted[0]!;
-    if (operation.properties)
-        for (const id of inserted)
-            for (const [key, value] of Object.entries(operation.properties))
-                edit.sourceStyle(id, key, value);
+    const inserted = text ? edit.insertSourceAt(operation.nodeId, to, '<ins data-word-run-overlay="true">' + escape(text).split('\n').join('<br>') + '</ins>').rootNodeIds : [], groupId = deleted[0] ?? inserted[0]!;
+    for(const id of inserted)formatInserted(id,0);
     for (const [kind, ids] of [['delete', deleted], ['insert', inserted]] as const)
         for (const id of ids)
             word.revisions.push({ nodeId: id, revisionId: id, sourceId: id, groupId, kind, author, date });

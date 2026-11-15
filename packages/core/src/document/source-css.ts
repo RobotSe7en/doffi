@@ -295,7 +295,7 @@ export class SourceStyleResolver {
     // A Word edit overlays an existing native run, rather than creating an
     // additional CSS inline box. Keep unspecified run properties inherited,
     // including when rejecting the edit removes the overlay's declarations.
-    const runOverlay=node?.attrs['data-word-run-overlay']==='true';
+    const runOverlay=node?.attrs['data-word-run-overlay']==='true'||!!node&&['ins','del'].includes(node.tag)&&this.revisionIds.has(node.attrs['data-node-id']??'');
     if(runOverlay){
       if(node?.parent&&inline.has(node.parent.tag))result['vertical-align']=parent['vertical-align']!;
       for(const key of ['text-decoration-line','text-decoration-style','text-decoration-color'])result[key]=parent[key]??this.initial[key]!;
@@ -305,8 +305,8 @@ export class SourceStyleResolver {
       if (node.tag === "ol") result["list-style-type"] = ({ "1": "decimal", a: "lower-alpha", A: "upper-alpha", i: "lower-roman", I: "upper-roman" } as Record<string, string>)[node.attrs.type ?? "1"] ?? "decimal";
       if (["b", "strong"].includes(node.tag)) result["font-weight"] = "bold";
       if (["em", "i"].includes(node.tag)) result["font-style"] = "italic";
-      if (node.tag === "u" || node.tag === "ins" && !this.revisionIds.has(node.attrs["data-node-id"] ?? "")) result["text-decoration-line"] = "underline";
-      if (node.tag === "s" || node.tag === "del" && !this.revisionIds.has(node.attrs["data-node-id"] ?? "")) result["text-decoration-line"] = "line-through";
+      if (node.tag === "u" || node.tag === "ins" && !runOverlay) result["text-decoration-line"] = "underline";
+      if (node.tag === "s" || node.tag === "del" && !runOverlay) result["text-decoration-line"] = "line-through";
       if (/^h[1-6]$/.test(node.tag)) result["font-size"] = [2, 1.5, 1.17, 1, .83, .67][Number(node.tag[1]) - 1] + "em";
       if (["sub", "sup"].includes(node.tag)) result["vertical-align"] = node.tag === "sup" ? "super" : "sub";
       if (["td", "th"].includes(node.tag)) result["vertical-align"] = "top";

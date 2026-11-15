@@ -1014,7 +1014,7 @@ class Importer {
       case "del":case "moveFrom":case "moveTo": {
         const sourceId = attr(source, "id");
         if (sourceId === undefined) fail(source, "A revision has no identity.");
-        const revision = this.make(["ins","moveTo"].includes(source.name)?"ins":"del");
+        const revision = this.make(["ins","moveTo"].includes(source.name)?"ins":"del",{'data-word-run-overlay':'true'});
         parent.children.push(revision);
         const author = attr(source, "author");
         const date = attr(source, "date");

@@ -16,7 +16,7 @@ function fixture() {
     return { session, paragraph, root, apply };
 }
 function runs(model: ContentDocumentModel): { text: string; css: Readonly<Record<string, string>> }[] {
-    const resolver = new SourceStyleResolver(model.snapshot().styles.map(sheet => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS), result: { text: string; css: Readonly<Record<string, string>> }[] = [];
+    const resolver = new SourceStyleResolver(model.snapshot().styles.map(sheet => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS,new Set(model.snapshot().metadata.word!.revisions.filter(revision=>['insert','delete','moveFrom','moveTo'].includes(revision.kind)).map(revision=>revision.nodeId))), result: { text: string; css: Readonly<Record<string, string>> }[] = [];
     const visit = (id: string, parent?: SourceStyleNode): void => { const node = model.getNode(id)!, projected = { tag: node.tagName, attrs: node.attributes, parent }; if (node.text) result.push({ text: node.text, css: resolver.get(projected) }); for (const child of node.childNodeIds) visit(child, projected); };
     visit(model.snapshot().metadata.word!.stories[0]!.rootNodeId); return result;
 }
@@ -53,3 +53,10 @@ test('applying an additive character style retains native vertical alignment and
     const { session, paragraph, apply } = fixture(); apply([{ op: 'applyWordCharacterStyle', nodeId: paragraph, from: 1, to: 2, expectedText: 'B', styleId: 'Italic' }]);
     const verify = (model: ContentDocumentModel) => expect(selected(model)).toMatchObject({ 'font-style': 'italic', 'vertical-align': 'super', 'background-color': '#ffff00', 'text-decoration-line': 'underline' }); verify(session); reopenTwice(session, verify);
 });
+
+ test('tracked replacement and continued insertion retain effective native alignment, highlight and source decoration',()=>{
+ const{session,paragraph,root,apply}=fixture();apply([{op:'setWordReview',nodeId:root,trackChanges:true,author:'A'},{op:'trackWordText',nodeId:paragraph,from:1,to:2,expectedText:'B',text:'X',properties:{'font-size':'12pt',color:'#0000aa'}}]);
+ const verify=(model:ContentDocumentModel)=>{expect(runs(model).filter(run=>run.text==='X').at(-1)!.css).toMatchObject({'vertical-align':'super','background-color':'#ffff00','text-decoration-line':'underline',color:'#0000aa'});expect(runs(model).filter(run=>run.text==='B').at(-1)!.css).toMatchObject({'vertical-align':'super','font-size':'32pt','background-color':'#ffff00'});};verify(session);reopenTwice(session,verify);
+ apply([{op:'trackWordText',nodeId:paragraph,from:3,to:3,expectedText:'',text:'Y',properties:{'font-size':'8pt'}}]);expect(session.getNode(paragraph)!.text).toBe('ABXYC');expect(runs(session).filter(run=>run.text==='Y').at(-1)!.css['vertical-align']).toBe('super');reopenTwice(session,model=>expect(model.getNode(model.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text).toBe('ABXYC'));session.undo();verify(session);apply([{op:'reviewWordRevisions',nodeId:root,decision:'reject'}]);expect(session.getNode(paragraph)!.text).toBe('ABC');reopenTwice(session,model=>expect(runs(model).filter(run=>run.text==='B'||run.text==='ABC').at(-1)!.css['vertical-align']).toBe('super'));
+ });
+ test('removing the last text of a current author pending insertion cancels its empty revision and is undoable',()=>{const{session,paragraph,root,apply}=fixture();apply([{op:'setWordReview',nodeId:root,trackChanges:true,author:'A'},{op:'trackWordText',nodeId:paragraph,from:1,to:1,expectedText:'',text:'X'}]);const before=session.snapshot();apply([{op:'trackWordText',nodeId:paragraph,from:1,to:2,expectedText:'X',text:''}]);expect(session.getNode(paragraph)!.text).toBe('ABC');expect(session.snapshot().metadata.word!.revisions).toEqual([]);reopenTwice(session,model=>expect(model.snapshot().metadata.word!.revisions).toEqual([]));session.undo();expect(session.snapshot().html).toBe(before.html);});

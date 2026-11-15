@@ -231,6 +231,7 @@ export class DocumentEdit {
     const target=this.index().get(nodeId);if(!target)fail('The revision source is missing.');
     const positions=textPositions(this.tree),bounds=positions.get(target)!,leaves=textLeaves(target),value=leaves.map(leaf=>leaf.value).join('');
     if(from>to||!isTextBoundary(value,from)||!isTextBoundary(value,to))fail('A revision range requires exact UTF-16 boundaries.');
+    if(from===to)return[];
     const ids:string[]=[],wrapped=new Set<Node>();
     for(const leaf of leaves){if(leaf.end<=from||leaf.start>=to)continue;let node:Tree.ChildNode=leaf.node as Tree.ChildNode;
       for(let parent:Node|null=node;parent&&parent!==target;parent='parentNode'in parent?parent.parentNode:null)if(isElement(parent)&&(attr(parent,'data-word-native-object')||attr(parent,'data-word-drawing')||attr(parent,'data-word-equation')||attr(parent,'data-word-note-reference')||attr(parent,'data-word-field')||attr(parent,'data-word-content-control')))node=parent;

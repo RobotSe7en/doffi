@@ -2,7 +2,7 @@ import { DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, SourceStyleResolver } from
 import type { SourceStyleNode } from "@doffi/core";
 
 const decorationKeys = ["text-decoration", "text-decoration-line", "text-decoration-style", "text-decoration-color", "--office-font-decoration-reset"] as const;
-export function createSourceStyleResolver(document: Document): SourceStyleResolver {
+export function createSourceStyleResolver(document: Document,revisionIds:ReadonlySet<string>=new Set()): SourceStyleResolver {
   const sheets = [...document.head.querySelectorAll<HTMLStyleElement>("style[data-office-source-styles],style[data-sdk-source-styles]")], css = sheets.map(sheet => sheet.textContent ?? "");
   if (!sheets.length) throw new DocumentError("InvalidOperation", "Text styles require their owning source styles.");
   // These styles have already passed their package/surface admission budgets.
@@ -12,7 +12,7 @@ export function createSourceStyleResolver(document: Document): SourceStyleResolv
     ...DEFAULT_DOCUMENT_READ_LIMITS, maxFiles: Math.max(DEFAULT_DOCUMENT_READ_LIMITS.maxFiles, sheets.length),
     maxCssNodes: Math.max(DEFAULT_DOCUMENT_READ_LIMITS.maxCssNodes, units * 2), maxDepth: Math.max(DEFAULT_DOCUMENT_READ_LIMITS.maxDepth, units),
     maxFileBytes: Math.max(DEFAULT_DOCUMENT_READ_LIMITS.maxFileBytes, units * 4), maxPackageBytes: Math.max(DEFAULT_DOCUMENT_READ_LIMITS.maxPackageBytes, units * 4),
-  });
+  },revisionIds);
   return resolver;
 }
 export function sourceStyleProjection(element: HTMLElement, includeFontValues = false): SourceStyleNode {
