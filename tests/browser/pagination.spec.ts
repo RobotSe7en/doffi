@@ -8,7 +8,7 @@ import { rowSpacingFixture } from "../../packages/office/tests/row-spacing-fixtu
 import { tableSpacingFixture } from "../../packages/office/tests/table-spacing-fixture.js";
 import { tableBidiFixture } from "../../packages/office/tests/table-bidi-fixture.js";
 import { continuationCellFixture } from "../../packages/office/tests/continuation-cell-fixture.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
   tableStylesFixture,
   rowStylesFixture,
@@ -852,17 +852,15 @@ test("native omitted grid edges share columns, skip keyboard navigation and surv
     216,
     0,
   );
-  const cells = await table
-    .locator("tr")
-    .evaluateAll((rows) =>
-      rows.map((row) =>
-        [...row.querySelectorAll("td")].map((cell) => ({
-          x: cell.getBoundingClientRect().x,
-          gap: cell.getAttribute("data-word-grid-gap"),
-          visibility: getComputedStyle(cell).visibility,
-        })),
-      ),
-    );
+  const cells = await table.locator("tr").evaluateAll((rows) =>
+    rows.map((row) =>
+      [...row.querySelectorAll("td")].map((cell) => ({
+        x: cell.getBoundingClientRect().x,
+        gap: cell.getAttribute("data-word-grid-gap"),
+        visibility: getComputedStyle(cell).visibility,
+      })),
+    ),
+  );
   expect(cells[1]![1]!.x).toBeCloseTo(cells[0]![1]!.x, 0);
   expect(cells[1]![0]!.visibility).toBe("hidden");
   expect(cells[1]![2]!.visibility).toBe("hidden");
@@ -2712,18 +2710,16 @@ test("equation controls create multiple groups and apply whole or component font
     "font-family",
     /serif/,
   );
-  const sizes = await frame
-    .locator("math")
-    .evaluate((root) => ({
-      base: parseFloat(
-        getComputedStyle([...root.querySelectorAll("mi")].find((node) => node.textContent === "x")!)
-          .fontSize,
-      ),
-      script: parseFloat(
-        getComputedStyle([...root.querySelectorAll("mn")].find((node) => node.textContent === "1")!)
-          .fontSize,
-      ),
-    }));
+  const sizes = await frame.locator("math").evaluate((root) => ({
+    base: parseFloat(
+      getComputedStyle([...root.querySelectorAll("mi")].find((node) => node.textContent === "x")!)
+        .fontSize,
+    ),
+    script: parseFloat(
+      getComputedStyle([...root.querySelectorAll("mn")].find((node) => node.textContent === "1")!)
+        .fontSize,
+    ),
+  }));
   expect(sizes.base).toBeCloseTo(24, 0);
   expect(sizes.script).toBeLessThan(sizes.base * 0.9);
   await page.getByLabel("公式字符格式目标", { exact: true }).selectOption({ label: "漢" });
@@ -8077,23 +8073,30 @@ test("contextual paragraph spacing follows identical styles and cell boundaries 
   expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
 
-for (const fixture of ["style", "continuation"] as const)
+for (const fixture of ["style", "continuation", "nested"] as const)
   test(
     "whole-table semantic clipboard preserves isolated styles, merge formats and editing " +
       fixture,
-    async ({ page }) => {
+    async ({ page }, testInfo) => {
       const { tableStylesFixture } = await import(
           "../../packages/office/tests/table-style-fixture.js"
         ),
         { continuationCellFixture } = await import(
           "../../packages/office/tests/continuation-cell-fixture.js"
+        ),
+        { nestedTableContentFixture } = await import(
+          "../../packages/office/tests/word-table-content-fixture.js"
         );
       await mount(
         page,
-        importDocx(fixture === "style" ? tableStylesFixture() : continuationCellFixture(), {
-          documentId: "table-copy-ui-source",
-          unsupportedContent: "reject",
-        }),
+        importDocx(
+          fixture === "style"
+            ? tableStylesFixture()
+            : fixture === "nested"
+              ? nestedTableContentFixture()
+              : continuationCellFixture(),
+          { documentId: "table-copy-ui-source", unsupportedContent: "reject" },
+        ),
         fixture === "style" ? "preview" : "edit",
       );
       const sourceTable = page.frameLocator("iframe").locator("table").first(),
@@ -8106,6 +8109,18 @@ for (const fixture of ["style", "continuation"] as const)
               color: style.color,
               font: style.fontFamily,
               weight: style.fontWeight,
+            };
+          }),
+        );
+      const segments = await sourceTable
+        .locator(".sdk-word-continuation-segment")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const css = getComputedStyle(node);
+            return {
+              background: css.backgroundColor,
+              border: css.borderBottomStyle,
+              color: css.borderLeftColor,
             };
           }),
         );
@@ -8127,7 +8142,7 @@ for (const fixture of ["style", "continuation"] as const)
             "base64",
           ).toString("utf8"),
         );
-      expect(payload.semantics.tables).toHaveLength(1);
+      expect(payload.semantics.tables).toHaveLength(fixture === "nested" ? 2 : 1);
       if (fixture === "continuation") expect(payload.semantics.extraClasses).toBeTruthy();
       const target = createDocumentSession(
         openWordDocument(createWordDocument({ documentId: "table-copy-ui-target" }), {
@@ -8157,7 +8172,7 @@ for (const fixture of ["style", "continuation"] as const)
             {
               op: "setWordReview",
               nodeId: "document-root",
-              trackChanges: fixture === "continuation",
+              trackChanges: fixture !== "style",
               author: "Receiver",
             },
           ],
@@ -8189,7 +8204,7 @@ for (const fixture of ["style", "continuation"] as const)
             () => window.paginationHost.session!.snapshot().metadata.word!.tables.length,
           ),
         )
-        .toBe(1);
+        .toBe(fixture === "nested" ? 2 : 1);
       await page.evaluate(() => window.paginationHost.view!.settled());
       const table = page.frameLocator("iframe").locator("table").first();
       expect(
@@ -8205,24 +8220,9 @@ for (const fixture of ["style", "continuation"] as const)
             };
           }),
         ),
-        JSON.stringify({
-          styles: payload.styles.map(
-            (item: { style: { styleId: string }; r: unknown; conditions?: unknown }) => ({
-              id: item.style.styleId,
-              r: item.r,
-              conditions: item.conditions,
-            }),
-          ),
-          nodes: payload.nodes,
-          actual: await table
-            .locator("p")
-            .evaluateAll((nodes) =>
-              nodes.map((node) => ({ class: node.className, style: node.getAttribute("style") })),
-            ),
-        }),
       ).toEqual(appearance);
       if (fixture === "style") expect(await table.getAttribute("data-word-style")).not.toBe("Red");
-      else
+      else if (fixture === "continuation")
         expect(
           (
             await page.evaluate(
@@ -8230,15 +8230,76 @@ for (const fixture of ["style", "continuation"] as const)
                 window.paginationHost.session!.snapshot().metadata.word!.tables[0]!
                   .continuationFormats,
             )
-          )[0]!.textDirection,
+          )?.[0]?.textDirection,
         ).toBe("tbRl");
-      const last = table.locator("p").last();
+      expect(
+        await table.locator(".sdk-word-continuation-segment").evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const css = getComputedStyle(node);
+            return {
+              background: css.backgroundColor,
+              border: css.borderBottomStyle,
+              color: css.borderLeftColor,
+            };
+          }),
+        ),
+      ).toEqual(segments);
+      const last =
+        fixture === "nested"
+          ? table.locator("table p").filter({ hasText: "INNER-B" })
+          : table.locator("p").last();
       await last.click();
       await page.keyboard.press("End");
       await page.keyboard.insertText("EDIT");
       await expect(last).toContainText("EDIT");
       expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+      const entries = await page.evaluate(() =>
+        [...window.paginationHost.session!.serialize()].map(
+          ([path, bytes]) => [path, [...bytes]] as [string, number[]],
+        ),
+      );
+      let native = exportDocx(
+        openWordDocument(new Map(entries.map(([path, bytes]) => [path, new Uint8Array(bytes)])), {
+          kind: "document",
+        }),
+      ).bytes;
+      const nativePath = testInfo.outputPath("pasted-table.docx");
+      writeFileSync(nativePath, native);
+      await testInfo.attach("pasted-table.docx", {
+        path: nativePath,
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      for (let pass = 0; pass < 2; pass++) {
+        const reopened = openWordDocument(
+          importDocx(native, { documentId: "table-copy-ui-native", unsupportedContent: "reject" }),
+          { kind: "document" },
+        );
+        expect(reopened.snapshot().metadata.word!.tables).toHaveLength(
+          fixture === "nested" ? 2 : 1,
+        );
+        expect(
+          reopened.getNode(reopened.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text,
+        ).toContain("EDIT");
+        native = exportDocx(reopened).bytes;
+      }
       await page.evaluate(() => window.paginationHost.session!.undo());
+      if (fixture !== "style") {
+        await page.evaluate(() =>
+          (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+            type: "word",
+            action: "review",
+          }),
+        );
+        await page.getByRole("button", { name: "拒绝全部显示的修订", exact: true }).click();
+        await expect(page.frameLocator("iframe").locator("table")).toHaveCount(0);
+        expect(
+          await page.evaluate(() => window.paginationHost.session!.getNode("main-story")!.text),
+        ).toBe("AB");
+        await page.evaluate(() => window.paginationHost.session!.undo());
+        await expect(page.frameLocator("iframe").locator("table")).toHaveCount(
+          fixture === "nested" ? 2 : 1,
+        );
+      }
       await page.evaluate(() => window.paginationHost.session!.undo());
       expect(
         await page.evaluate(() => window.paginationHost.session!.getNode("main-story")!.text),

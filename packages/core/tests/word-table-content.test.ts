@@ -123,3 +123,65 @@ test("missing or injected continuation CSS references reject before changing sou
   ).toThrow();
   expect(session.snapshot()).toEqual(before);
 });
+
+test("a missing nested grid and a stale table paste candidate leave the receiving source unchanged", () => {
+  const documentId = "nested-table-atomic";
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId }), { kind: "document" }),
+  );
+  const nestedHtml =
+    '<table data-node-id="outer"><tr><td><p>OUTER</p><table data-node-id="inner"><tr><td><p>INNER</p></td></tr></table><p></p></td></tr></table>';
+  const paste: DocumentOperation = {
+    op: "pasteWordBlockContent",
+    nodeId: "paragraph-1",
+    from: 0,
+    to: 0,
+    expectedText: "",
+    html: nestedHtml,
+    semantics: { tables: [{ nodeId: "outer", grid: [144] }] },
+  };
+  const before = session.snapshot();
+  expect(() =>
+    session.prepare({ protocolVersion: 1, documentId, baseRevision: 0, operations: [paste] }),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  const candidate = session.prepare({
+    protocolVersion: 1,
+    documentId,
+    baseRevision: 0,
+    operations: [
+      {
+        ...paste,
+        semantics: {
+          tables: [
+            { nodeId: "outer", grid: [144] },
+            { nodeId: "inner", grid: [72] },
+          ],
+        },
+      },
+    ],
+  });
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId,
+      baseRevision: 0,
+      operations: [
+        {
+          op: "replaceText",
+          nodeId: "paragraph-1",
+          from: 0,
+          to: 0,
+          expectedText: "",
+          text: "CURRENT",
+        },
+      ],
+    }),
+  );
+  const current = session.snapshot();
+  expect(() => session.commit(candidate)).toThrowError(
+    expect.objectContaining({ code: "RevisionConflict" }),
+  );
+  expect(session.snapshot()).toEqual(current);
+  session.dispose();
+});
