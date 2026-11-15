@@ -208,6 +208,7 @@ export type {
   WorkbookReadLimits,
   OpenDocumentOptions,
   TextOffsetMapping,
+  TextRangeTransfer,
   TransactionReceipt,
   DocumentEditingSession,
   DocumentNodeChange,

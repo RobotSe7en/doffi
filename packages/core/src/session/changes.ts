@@ -1,4 +1,9 @@
-import type { ChangeMapping, DocumentNodeChange, TextOffsetMapping } from "../runtime.js";
+import type {
+  ChangeMapping,
+  DocumentNodeChange,
+  TextOffsetMapping,
+  TextRangeTransfer,
+} from "../runtime.js";
 import type { DocumentState } from "../document/state.js";
 import { freeze } from "../document/validation.js";
 import { affectedPresentationSlides } from "./presentation.js";
@@ -30,6 +35,7 @@ export function compareStates(
   before: DocumentState,
   after: DocumentState,
   textEdits: readonly TextOffsetMapping[] = [],
+  textTransfers: readonly TextRangeTransfer[] = [],
 ) {
   const changes: DocumentNodeChange[] = [];
   const nodes = new Map<string, string | null>();
@@ -69,6 +75,9 @@ export function compareStates(
   const mapping: ChangeMapping = Object.freeze({
     nodes: readonlyMap(nodes),
     textEdits: freeze(textEdits.map((edit) => ({ ...edit }))),
+    ...(textTransfers.length
+      ? { textTransfers: freeze(textTransfers.map((item) => ({ ...item }))) }
+      : {}),
   });
   const affectedSlideIds = before.snapshot.metadata.presentation
     ? affectedPresentationSlides(before, after)

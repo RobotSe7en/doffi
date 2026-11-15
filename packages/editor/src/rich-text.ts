@@ -1700,29 +1700,31 @@ export function mountDocumentTextEditor(
         )?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6");
       if (
         format.semantics ||
+        (session.snapshot().metadata.word && start && end && start !== end) ||
         (block &&
           start &&
-          start === end &&
+          end &&
           session.snapshot().metadata.word &&
           !template.content.querySelector("table,section,article"))
       ) {
-        if (!start || start !== end)
-          throw new DocumentError("UnsupportedFeature", "此语义粘贴需要限定在同一段落。");
+        if (!start || !end) throw new DocumentError("InvalidOperation", "粘贴需要准确的段落选区。");
         const from = offsetAt(start, range.startContainer, range.startOffset, projection.ignored),
-          to = offsetAt(start, range.endContainer, range.endOffset, projection.ignored),
+          to = offsetAt(end, range.endContainer, range.endOffset, projection.ignored),
           nodeId = start.dataset.nodeId!,
           snapshot = session.snapshot(),
           word = snapshot.metadata.word!,
           author = word.trackingAuthor ?? "",
-          fold = word.revisions.some((revision) => {
-            if (revision.kind !== "insert" || revision.author !== author) return false;
-            const node = start.querySelector<HTMLElement>(
-              '[data-node-id="' + CSS.escape(revision.nodeId) + '"]',
-            );
-            if (!node) return false;
-            const begin = offsetAt(start, node, 0, projection.ignored);
-            return from >= begin && to <= begin + session.getNode(revision.nodeId)!.text.length;
-          }),
+          fold =
+            start === end &&
+            word.revisions.some((revision) => {
+              if (revision.kind !== "insert" || revision.author !== author) return false;
+              const node = start.querySelector<HTMLElement>(
+                '[data-node-id="' + CSS.escape(revision.nodeId) + '"]',
+              );
+              if (!node) return false;
+              const begin = offsetAt(start, node, 0, projection.ignored);
+              return from >= begin && to <= begin + session.getNode(revision.nodeId)!.text.length;
+            }),
           caret =
             (word.trackChanges && !fold ? to : from) +
             sourceText(template.content, () => false).length;
@@ -1736,9 +1738,23 @@ export function mountDocumentTextEditor(
               {
                 op: block ? "pasteWordBlockContent" : "pasteWordInlineContent",
                 nodeId,
+                ...(start !== end ? { endNodeId: end.dataset.nodeId! } : {}),
                 from,
                 to,
-                expectedText: session.getNode(nodeId)!.text.slice(from, to),
+                expectedText:
+                  start === end
+                    ? session.getNode(nodeId)!.text.slice(from, to)
+                    : session
+                        .getNode(root.dataset.nodeId!)!
+                        .text.slice(
+                          offsetAt(
+                            root,
+                            range.startContainer,
+                            range.startOffset,
+                            projection.ignored,
+                          ),
+                          offsetAt(root, range.endContainer, range.endOffset, projection.ignored),
+                        ),
                 html: template.innerHTML,
                 semantics: format.semantics,
               },
@@ -1767,6 +1783,38 @@ export function mountDocumentTextEditor(
                 path: [],
               };
           }
+          const baseIds = new Set(
+            [...session.snapshot().html.matchAll(/data-node-id="([^"]+)"/g)].map(
+              (match) => match[1]!,
+            ),
+          );
+          const tails = new Set(candidate.mapping.textTransfers?.map((move) => move.targetNodeId));
+          const walkInserted = (id: string): string[] => {
+            const node = candidate.model.getNode(id)!;
+            return /^p$|^h[1-6]$/.test(node.tagName)
+              ? !baseIds.has(id) && !tails.has(id)
+                ? [id]
+                : []
+              : node.childNodeIds.flatMap(walkInserted);
+          };
+          const last = walkInserted(root.dataset.nodeId!).at(-1);
+          if (last)
+            landing = {
+              nodeId: last,
+              offset: candidate.model.getNode(last)!.text.length,
+              path: [],
+            };
+        } else if (start !== end) {
+          const retained =
+            candidate.model.getNode(nodeId) ?? candidate.model.getNode(end.dataset.nodeId!)!;
+          landing = {
+            nodeId: retained.nodeId,
+            offset:
+              retained.nodeId === nodeId
+                ? retained.text.length
+                : from + sourceText(template.content, () => false).length,
+            path: [],
+          };
         }
         committing = true;
         try {

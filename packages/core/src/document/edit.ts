@@ -1,7 +1,7 @@
 import { defaultTreeAdapter as adapter } from "parse5";
 import type { DefaultTreeAdapterTypes as Tree } from "parse5";
 import type { DocumentContentOperation } from "../contracts/operations.js";
-import type { DocumentReadLimits, TextOffsetMapping } from "../runtime.js";
+import type { DocumentReadLimits, TextOffsetMapping, TextRangeTransfer } from "../runtime.js";
 import { DocumentError } from "../errors.js";
 import { normalizeCss, setInlineStyle, removeInlineStyle } from "./css.js";
 import { setDrawingInlineStyle } from "./drawing-css.js";
@@ -147,6 +147,7 @@ export class DocumentEdit {
   private readonly baseIds: ReadonlySet<string>;
   private createdNodes = 0;
   readonly textEdits: TextOffsetMapping[] = [];
+  readonly textTransfers: TextRangeTransfer[] = [];
   readonly replacedTextNodes = new Set<string>();
   readonly structuralTextNodes = new Set<string>();
 
@@ -712,7 +713,19 @@ export class DocumentEdit {
       sibling = parent.childNodes[parent.childNodes.indexOf(target) + 1];
     if (sibling) adapter.insertBefore(parent, right, sibling);
     else adapter.appendChild(parent, right);
-    if (paragraph)
+    if (paragraph) {
+      for (const [original, targetNodeId] of identities) {
+        const originalNode = this.index().get(original)!;
+        const range = positions.get(originalNode)!;
+        this.textTransfers.push({
+          nodeId: original,
+          from: Math.max(0, boundary - range.from),
+          to: range.to - range.from,
+          targetNodeId,
+          targetOffset: 0,
+          at: this.textEdits.length,
+        });
+      }
       for (const id of identities.keys()) {
         const element = this.index().get(id)!,
           range = positions.get(element)!;
@@ -726,8 +739,10 @@ export class DocumentEdit {
           this.structuralTextNodes.add(id);
         }
       }
+    }
     return identities;
   }
+
   /** Revision containers retain source leaves and object ownership; wrapping
    * changes no UTF-16 text offsets. A wrapper is allocated for each text leaf. */
   wrapSourceText(nodeId: string, from: number, to: number, tag: "ins" | "del" | "span"): string[] {
@@ -983,6 +998,43 @@ export class DocumentEdit {
       break;
     }
     if (!next) return;
+    const positions = textPositions(this.tree),
+      leading = positions.get(node)!,
+      trailing = positions.get(next)!;
+    const commonOwners = new Set(ancestors(node));
+    for (const owner of ancestors(next)) {
+      if (commonOwners.has(owner)) continue;
+      const id = attr(owner, "data-node-id"),
+        range = positions.get(owner)!;
+      if (id && this.baseIds.has(id))
+        this.textEdits.push({
+          nodeId: id,
+          from: trailing.from - range.from,
+          to: trailing.from - range.from,
+          insertedLength: leading.to - leading.from,
+        });
+    }
+    this.textTransfers.push({
+      nodeId,
+      from: 0,
+      to: leading.to - leading.from,
+      targetNodeId: attr(next, "data-node-id")!,
+      targetOffset: 0,
+      at: this.textEdits.length,
+    });
+    const trailingOwners = new Set(ancestors(next));
+    for (const owner of ancestors(node).slice(1)) {
+      if (trailingOwners.has(owner)) continue;
+      const id = attr(owner, "data-node-id"),
+        range = positions.get(owner)!;
+      if (id && this.baseIds.has(id))
+        this.textEdits.push({
+          nodeId: id,
+          from: leading.from - range.from,
+          to: leading.to - range.from,
+          insertedLength: 0,
+        });
+    }
     const before = next.childNodes[0],
       append = (child: Tree.ChildNode): void => {
         adapter.detachNode(child);

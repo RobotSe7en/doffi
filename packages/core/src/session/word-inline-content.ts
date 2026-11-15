@@ -1,22 +1,52 @@
 import { DocumentError } from "../errors.js";
-import type { WordMetadata } from "../contracts/word.js";
 import type { WordOperation } from "../contracts/word-operations.js";
 import type { DocumentEdit } from "../document/edit.js";
 import type { ParsedHtml } from "../document/html.js";
 import { isTextBoundary } from "../document/text.js";
 import { trackWordInlineContent } from "./word-revisions.js";
 import { attachWordContent } from "./word-content.js";
+import type { WordDocumentMetadata } from "../contracts/document.js";
+import { createOpaqueId } from "../identifiers.js";
+import { deleteWordContentRange, wordContentScope } from "./word-content-range.js";
 const invalid = (message: string): never => {
   throw new DocumentError("InvalidOperation", message);
 };
 /** Attach a clipboard graph only to newly allocated source nodes. Transport
  * identifiers never resolve against existing document nodes or resource paths. */
 export function pasteWordInlineContent(
-  word: WordMetadata,
+  metadata: WordDocumentMetadata,
   edit: DocumentEdit,
   parse: () => ParsedHtml,
   operation: Extract<WordOperation, { op: "pasteWordInlineContent" }>,
 ): void {
+  const word = metadata.word!;
+  if (operation.endNodeId && operation.endNodeId !== operation.nodeId) {
+    const group = {
+      groupId: "word-paste-" + createOpaqueId(),
+      author: word.trackingAuthor ?? "",
+      date: new Date().toISOString(),
+    };
+    const source = parse(),
+      sameScope =
+        wordContentScope(metadata, source, operation.nodeId) ===
+        wordContentScope(metadata, source, operation.endNodeId);
+    deleteWordContentRange(metadata, edit, parse, operation, group);
+    const offset = word.trackChanges
+      ? parse().getNode(operation.nodeId)!.text.length
+      : operation.from;
+    const old = new Set(word.revisions.map((item) => item.revisionId ?? item.nodeId));
+    pasteWordInlineContent(metadata, edit, parse, {
+      ...operation,
+      endNodeId: undefined,
+      from: offset,
+      to: offset,
+      expectedText: "",
+    });
+    for (const revision of word.revisions)
+      if (!old.has(revision.revisionId ?? revision.nodeId)) revision.groupId = group.groupId;
+    if (!word.trackChanges && sameScope) edit.mergeSourceParagraphMark(operation.nodeId);
+    return;
+  }
   const source = parse(),
     target = source.getNode(operation.nodeId),
     { from, to, expectedText } = operation;

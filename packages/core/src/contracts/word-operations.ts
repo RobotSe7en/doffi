@@ -51,6 +51,7 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({
     op: z.literal("pasteWordBlockContent"),
     nodeId: IdentifierSchema,
+    endNodeId: IdentifierSchema.optional(),
     from: RevisionSchema,
     to: RevisionSchema,
     expectedText: z.string(),
@@ -60,6 +61,7 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({
     op: z.literal("pasteWordInlineContent"),
     nodeId: IdentifierSchema,
+    endNodeId: IdentifierSchema.optional(),
     from: RevisionSchema,
     to: RevisionSchema,
     expectedText: z.string(),

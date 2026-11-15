@@ -233,8 +233,19 @@ export interface TextOffsetMapping {
 export interface ChangeMapping {
   readonly nodes: ReadonlyMap<string, string | null>;
   readonly textEdits: readonly TextOffsetMapping[];
+  /** Exact source fragments moved after `at` preceding text splices. */
+  readonly textTransfers?: readonly TextRangeTransfer[];
   /** Ordered structural steps; each step maps the preceding source state. */
   readonly workbook?: readonly WorkbookStructureMapping[];
+}
+
+export interface TextRangeTransfer {
+  readonly nodeId: string;
+  readonly from: number;
+  readonly to: number;
+  readonly targetNodeId: string;
+  readonly targetOffset: number;
+  readonly at: number;
 }
 
 export interface WorkbookRangeChange {

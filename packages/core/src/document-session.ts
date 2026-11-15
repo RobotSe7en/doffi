@@ -174,7 +174,8 @@ export function createDocumentSession(
       model,
       prepare: prepareContent,
       rebase: (source, revision) => rebase(source, revision, limits),
-      compare: (before, after, mapping) => compareStates(before, after, mapping?.textEdits),
+      compare: (before, after, mapping) =>
+        compareStates(before, after, mapping?.textEdits, mapping?.textTransfers),
       same: (before, after) => JSON.stringify(before.snapshot) === JSON.stringify(after.snapshot),
       retained: retainedBytes,
       identities: (source) => source.html.nodeIds(),
@@ -589,7 +590,10 @@ export function createDocumentSession(
     files.set(base.snapshot.manifest.metadata, encode(JSON.stringify(metadata)));
     files.set(base.snapshot.manifest.annotations, encode(JSON.stringify(annotations)));
     const next = buildDocumentState(files, limits);
-    return { state: next, mapping: compareStates(base, next, edit.textEdits).mapping };
+    return {
+      state: next,
+      mapping: compareStates(base, next, edit.textEdits, edit.textTransfers).mapping,
+    };
   }
 
   function buildRequest(input: PresentationInteractionRequestInput): PresentationInteractionRequest;

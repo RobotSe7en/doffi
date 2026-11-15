@@ -1,6 +1,5 @@
 import { createOpaqueId } from "../identifiers.js";
 import { DocumentError } from "../errors.js";
-import type { WordMetadata } from "../contracts/word.js";
 import type { WordOperation } from "../contracts/word-operations.js";
 import type { DocumentEdit } from "../document/edit.js";
 import type { ParsedHtml } from "../document/html.js";
@@ -10,15 +9,54 @@ import { attachWordContent } from "./word-content.js";
 import { copyWordSplitRun } from "./word-format-revisions.js";
 import { inheritWordSplitParagraphMarks } from "./word-paragraph-mark.js";
 import { normalizeWordListContent } from "./word-list-content.js";
+import type { WordDocumentMetadata } from "../contracts/document.js";
+import { deleteWordContentRange, wordContentScope } from "./word-content-range.js";
 /** Split the receiving paragraph without cloning its existing objects. The
  * imported source graph is allocated independently inside the same candidate. */
 export function pasteWordBlockContent(
-  word: WordMetadata,
+  metadata: WordDocumentMetadata,
   edit: DocumentEdit,
   parse: () => ParsedHtml,
   styles: SourceStyleEdit,
   operation: Extract<WordOperation, { op: "pasteWordBlockContent" }>,
-): void {
+  context?: { groupId: string; author: string; date: string },
+): { tailNodeId: string } {
+  const word = metadata.word!;
+  if (operation.endNodeId && operation.endNodeId !== operation.nodeId) {
+    const group = context ?? {
+      groupId: "word-paste-" + createOpaqueId(),
+      author: word.trackingAuthor ?? "",
+      date: new Date().toISOString(),
+    };
+    const source = parse(),
+      sameScope =
+        wordContentScope(metadata, source, operation.nodeId) ===
+        wordContentScope(metadata, source, operation.endNodeId);
+    deleteWordContentRange(metadata, edit, parse, operation, group);
+    const offset = word.trackChanges
+      ? parse().getNode(operation.nodeId)!.text.length
+      : operation.from;
+    const result = pasteWordBlockContent(
+      metadata,
+      edit,
+      parse,
+      styles,
+      { ...operation, endNodeId: undefined, from: offset, to: offset, expectedText: "" },
+      group,
+    );
+    if (!word.trackChanges && sameScope) {
+      edit.textTransfers.push({
+        nodeId: result.tailNodeId,
+        from: 0,
+        to: 0,
+        targetNodeId: operation.endNodeId,
+        targetOffset: 0,
+        at: edit.textEdits.length,
+      });
+      edit.removeSource(result.tailNodeId);
+    }
+    return result;
+  }
   const before = parse(),
     node = before.getNode(operation.nodeId),
     { from, to, expectedText } = operation;
@@ -63,9 +101,9 @@ export function pasteWordBlockContent(
       "UnsupportedFeature",
       "Block content over an existing text revision requires structural review.",
     );
-  const author = word.trackingAuthor ?? "",
-    date = new Date().toISOString(),
-    groupId = "word-paste-" + createOpaqueId(),
+  const author = context?.author ?? word.trackingAuthor ?? "",
+    date = context?.date ?? new Date().toISOString(),
+    groupId = context?.groupId ?? "word-paste-" + createOpaqueId(),
     removed = edit.wrapSourceText(operation.nodeId, from, to, word.trackChanges ? "del" : "span");
   if (word.trackChanges)
     for (const id of removed) {
@@ -216,4 +254,5 @@ export function pasteWordBlockContent(
       });
     }
   }
+  return { tailNodeId: tail };
 }

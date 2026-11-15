@@ -499,11 +499,11 @@ export function applyWordOperation(
     return;
   }
   if (operation.op === "pasteWordBlockContent") {
-    pasteWordBlockContent(word, edit, parse, styles, operation);
+    pasteWordBlockContent(metadata, edit, parse, styles, operation);
     return;
   }
   if (operation.op === "pasteWordInlineContent") {
-    pasteWordInlineContent(word, edit, parse, operation);
+    pasteWordInlineContent(metadata, edit, parse, operation);
     return;
   }
   if (operation.op === "deleteWordTable") {
