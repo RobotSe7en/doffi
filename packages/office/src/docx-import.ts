@@ -1359,11 +1359,8 @@ class Importer {
     for (const row of rows) {
       check(row, ["tblPrEx", "trPr", "tc"]);
       const exceptions = child(row, "tblPrEx");
-      if (exceptions && elements(exceptions).length)
-        unsupported(
-          exceptions,
-          "Row-level table property exceptions are not yet supported.",
-        );
+      check(exceptions,['tblCellSpacing']);
+      const exceptionCss=Object.fromEntries(Object.entries(this.styles.cellSpacing(exceptions,true)).filter(([key])=>key.startsWith('--word-table-cell-spacing')).map(([key,value])=>[key.replace('--word-table-cell-spacing','--word-row-exception-cell-spacing'),value]));
       const rowProperties = child(row, "trPr");
       const rowCss=this.styles.row(rowProperties);
       const htmlRow = this.make("tr", {
@@ -1371,6 +1368,7 @@ class Importer {
         style: declarations(rowCss),
         ...(child(rowProperties,'tblHeader')?{'data-word-repeat-header':on(child(rowProperties,'tblHeader'))?'true':'false'}:{}),
       });
+      if(Object.keys(exceptionCss).length){const name='word-row-exception-'+this.styles.css.length;this.styles.css.push('.'+name+'{'+declarations(exceptionCss)+'}');htmlRow.attrs.class=name;}
       const rowRegions=wordTableRowRegions(rowIndex,rows.length,grid.length,mask,rowBand,columnBand);
       const rowStyle=resolveWordTableStyle(this.word,this.styles.readComponent,styleId,rowRegions),rowCell=wordTableRowCellProperties(rowStyle.cell);
       bindWordConditionalFormat(this.word,rowProperties,this.id(htmlRow));

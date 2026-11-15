@@ -139,7 +139,8 @@ export function tableProperties(css: Css): string {
   if (css["table-layout"] !== undefined) out += empty("w:tblLayout", { "w:type": css["table-layout"] === "fixed" ? "fixed" : "autofit" });
   return orderedProperties("tblPr", out);
 }
-function wordCellSpacing(css:Css,kind:'table'|'row'):string{
+export function rowExceptionProperties(css:Css):string{return wordCellSpacing(css,'row-exception');}
+function wordCellSpacing(css:Css,kind:'table'|'row'|'row-exception'):string{
   let out='';const prefix='--word-'+kind+'-cell-spacing';
   const spacing=css[prefix]??(kind==='table'&&css['border-collapse']==='separate'?css['border-spacing']:undefined);if(spacing!==undefined){
     const values=spacing.trim().split(/\s+/);if(values.length>2||values.length===2&&values[0]!==values[1])unsupported('Native Word table cell spacing must be uniform.');

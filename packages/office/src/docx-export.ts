@@ -19,7 +19,7 @@ import type { ExportComment,UnexportedAnnotation } from "./export/annotations.js
 import { ExportCss } from "./export/css.js";
 import type { Css } from "./export/css.js";
 import { contentType, OutputOpc } from "./export/opc.js";
-import { rowProperties,cellProperties, difference, paragraphKeys, paragraphProperties, pick, points, runKeys, runProperties, tableProperties, unsupported } from "./export/properties.js";
+import { rowExceptionProperties,rowProperties,cellProperties, difference, paragraphKeys, paragraphProperties, pick, points, runKeys, runProperties, tableProperties, unsupported } from "./export/properties.js";
 import { children, contains, element, parseSource } from "./export/source.js";
 import type { SourceElement, SourceNode, SourceTree } from "./export/source.js";
 import type { HtmlNumbering } from "./export/styles.js";
@@ -457,7 +457,8 @@ class Exporter {
       const directHeader=row.attrs['data-word-repeat-header'];if(directHeader!==undefined)rowCss['--word-row-repeat-header']=directHeader==='true'?'1':'0';else if(row.parent?.tag==='thead')rowCss['--word-row-repeat-header']='1';
       const before=cells[0]?.node.attrs['data-word-grid-gap']==='before'?cells[0]!.span:0,after=cells.at(-1)?.node.attrs['data-word-grid-gap']==='after'?cells.at(-1)!.span:0;
       for(const cell of cells)if(cell.node.attrs['data-word-grid-gap']&&(cell.node.attrs['data-word-grid-gap']==='before'?cell.column!==0:cell.column+cell.span!==grid.length))unsupported('A native row omission must occupy its leading or trailing grid edge.');
-      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + "><w:trPr>" + this.conditionalFormat(row)+(before?value('gridBefore',before):'')+(after?value('gridAfter',after):'')+writeWordRowGapWidths(row.attrs)+rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
+      const exception=rowExceptionProperties(rowCss);
+      this.add("<w:tr" + this.nativeMark(row.attrs["data-node-id"]) + ">"+(exception?'<w:tblPrEx>'+exception+'</w:tblPrEx>':'')+"<w:trPr>" + this.conditionalFormat(row)+(before?value('gridBefore',before):'')+(after?value('gridAfter',after):'')+writeWordRowGapWidths(row.attrs)+rowProperties(rowCss) + this.review.rowMark(row)+this.review.row(row)+"</w:trPr>");
       for (const cell of cells) {
         if(cell.node.attrs['data-word-grid-gap'])continue;
         const continuation=cell.continuation?info?.continuationFormats?.find(item=>item.row===index&&item.column===cell.column):undefined;

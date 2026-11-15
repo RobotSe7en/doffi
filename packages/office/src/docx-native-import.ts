@@ -9,7 +9,7 @@ import { serializeXml } from './ooxml/serialize.js';
 type Native = NonNullable<WordMetadata['nativeContent']>;
 interface Pending { styleRegion?:string; indices?:number[]; propertyIndex?:number; revisionSourceId?:string;revisionPrevious?:boolean; owner?: XmlNode; original: XmlNode; kind: 'inline' | 'block' | 'property'; runChild?:boolean; path: string[]; label: string; id: string }
 const owners = new Set(['p', 'r', 'sdt', 'tbl', 'tr', 'tc', 'sectPr', 'style', 'settings', 'numbering', 'fonts', 'document', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
-const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
+const propertyRoots = new Set(['sdtPr','sdtEndPr','fldChar','pPr', 'rPr', 'tblPr', 'tblPrEx', 'trPr', 'tcPr', 'sectPr', 'settings', 'style', 'numbering', 'fonts', 'commentEx', 'commentsEx', 'commentsExtensible', 'commentsIds','commentId','commentExtensible','people','person','footnotes','endnotes','footnote','endnote']);
 const generatedRelationships = new Set(['styles', 'numbering', 'settings', 'comments', 'commentsExtended','commentsIds','commentsExtensible','people', 'header', 'footer', 'footnotes', 'endnotes', 'image', 'chart', 'hyperlink']);
 export class DocxNativeImport {
   private readonly pending: Pending[] = [];
