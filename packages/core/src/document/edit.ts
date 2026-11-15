@@ -243,6 +243,18 @@ export class DocumentEdit {
     }
     return ids;
   }
+  /** New text in an empty Word paragraph inherits its mark's source run.
+   * Existing inline overrides remain inside this default scope. */
+  wrapWordParagraphText(nodeId:string,attributes:Readonly<Record<string,string>>):string[]{
+    const target=this.index().get(nodeId);if(!target||!/^p$|^h[1-6]$/.test(target.tagName))fail('Run defaults require a paragraph.');
+    const result:string[]=[];let wrapper:Element|undefined;
+    for(const child of [...target.childNodes]){
+      if(isElement(child)&&(attr(child,'data-word-paragraph-mark')==='true'||!textLeaves(child).some(leaf=>leaf.value))){wrapper=undefined;continue;}
+      if(!wrapper){wrapper=this.make('span',Object.entries({...attributes,'data-word-run':'true','data-word-run-overlay':'true'}).map(([name,value])=>({name,value})));adapter.insertBefore(target,wrapper,child);result.push(attr(wrapper,'data-node-id')!);}
+      adapter.detachNode(child);adapter.appendChild(wrapper,child);visit(child,node=>{if(isElement(node)&&node.tagName==='span'&&!this.baseIds.has(attr(node,'data-node-id')??'')&&!attr(node,'data-word-run-overlay'))setAttribute(node,'data-word-run-overlay','true');});
+    }
+    return result;
+  }
   previewReconciliation(operation:Extract<DocumentContentOperation,{op:'reconcileFragment'}>):ParsedHtml{
     const html=this.html(),parsed=parseHtml(html,this.state.snapshot.manifest,this.state.files,this.limits,{nodes:0}),preview=new DocumentEdit({...this.state,html:parsed,snapshot:{...this.state.snapshot,html}},this.limits,this.allocate);preview.apply(operation);return parseHtml(preview.html(),this.state.snapshot.manifest,this.state.files,this.limits,{nodes:0});
   }

@@ -85,7 +85,8 @@ export class DocxNativeImport {
     const atomicIndex = chain.findIndex(n => n.uri === W && ['drawing','pict','object','sdt'].includes(n.name) || n.uri==='http://schemas.openxmlformats.org/officeDocument/2006/math'&&['oMath','oMathPara'].includes(n.name));
     const drawing=atomicIndex<0?undefined:chain[atomicIndex];
     if (propertyIndex >= 0 && (!alternate||propertyIndex>chain.indexOf(alternate)) && (!drawing || drawing.name==='sdt'&&propertyIndex<atomicIndex)) {
-      const owner = chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
+      const paragraphMark=chain.find((node,index)=>index>=propertyIndex&&node.uri===W&&node.name==='rPr'&&this.parents.get(node)?.uri===W&&this.parents.get(node)?.name==='pPr');
+      const owner = paragraphMark??chain.slice(propertyIndex).find(n => (n.uri === W || ['commentEx','commentsEx','commentsExtensible','commentsIds','commentId','commentExtensible','people','person'].includes(n.name)) && owners.has(n.name)) ?? chain.at(-1)!;
       const styleRegion=chain.find(node=>node.uri===W&&node.name==='tblStylePr')?.attrs.get(W+' type');
       const path: string[] = [],indices:number[]=[];
       for (let current = target === owner ? undefined : this.parents.get(target); current && current !== owner; current = this.parents.get(current)) {path.unshift(current.uri + ' ' + current.name);indices.unshift(this.ordinals.get(current)??0);}

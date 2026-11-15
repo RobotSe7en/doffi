@@ -657,14 +657,17 @@ class Importer {
       this.inline(item, paragraph, paragraphRun);
     }
     const mark = child(properties, "rPr");
-    if(child(mark,"rPrChange"))unsupported(child(mark,"rPrChange")!,"Paragraph-mark formatting revisions are preserved natively.");
-    if (mark)
-      paragraph.children.push(
-        this.make("span", {
+    if (mark){
+      const character=attr(child(mark,'rStyle'),'val'),known=character&&this.styles.hasStyle(character,'character')?character:undefined;
+      const inheritedMark=this.styles.runStyle(known??this.styles.defaultCharacter,paragraphRun),markCss=this.styles.run(mark,inheritedMark,false,true,true);
+      if(known){const standalone=this.styles.get(known).r;for(const name of ['font-weight','font-style','font-variant','text-transform'])if(standalone[name]!==undefined&&inheritedMark[name]!==standalone[name]&&markCss[name]===undefined)markCss[name]=inheritedMark[name]!;}
+      const marker=this.make("span", {
           "data-word-paragraph-mark": "true",
-          style: declarations(this.styles.run(mark, paragraphRun,false,true)),
-        }),
-      );
+          ...(known?{'data-word-style':known,class:this.styles.styleClass(known)}:{}),
+          style: declarations(markCss),
+        });
+      paragraph.children.push(marker);readWordFormatRevision(this.word,mark,marker,'run',this.styles,{inheritedRun:paragraphRun});this.native?.bind(mark,marker.attrs);
+    }
     readWordFormatRevision(this.word,properties,paragraph,'paragraph',this.styles,{defaultTab:this.defaultTab});
     this.paragraphRunClasses = oldRunClasses;
     this.native?.bind(source, paragraph.attrs);

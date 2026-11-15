@@ -46,7 +46,7 @@ export const WordNativeContentSchema = z.strictObject({
     styleId: IdentifierSchema.optional(),
     styleRegion:z.string().min(1).optional(),
     label: z.string(),
-    propertyName:z.string().min(1).optional(),revisionSourceId:IdentifierSchema.optional(),revisionPrevious:z.boolean().optional(),
+    propertyName:z.string().min(1).optional(),revisionSourceId:IdentifierSchema.optional(),revisionPrevious:z.boolean().optional(),currentRunPropertiesOnly:z.boolean().optional(),
   })),
   parts: z.array(z.strictObject({ sourcePart: PackagePathSchema, assetPath: PackagePathSchema, contentType: z.string().min(1) })),
   relationships: z.array(z.strictObject({

@@ -2,6 +2,7 @@ import {composeWordTextRuns} from './word-text-runs.js';
 import{composeWordLanguages}from'./word-languages.js';
 import{retainFlowSelection}from'./flow-selection.js';
 import{composeWordTableLayout}from'./word-table-layout.js';
+import{composeWordParagraphMarks}from'./word-paragraph-marks.js';
 import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
 import { DocumentError, openDocument } from "@doffi/core";
@@ -473,6 +474,7 @@ export function mountPreview(
     notes?.dispose();notes=undefined;pagination?.dispose(); pagination = undefined; fields = undefined; source = undefined;
     const snapshot = model.snapshot();
     composeWordTextRuns(frame,model,limits);
+    composeWordParagraphMarks(frame,model);
     composeWordLanguages(frame,model,limits);
     const sourceFonts = resolvePreviewFonts(frame,"[data-node-id],[data-sdk-word-script-view]");
     source = new PreviewSource(frame, model);

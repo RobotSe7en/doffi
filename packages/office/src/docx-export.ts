@@ -353,9 +353,9 @@ class Exporter {
     if (tabs?.stops.length) props += '<w:tabs>' + tabs.stops.map((tab) => empty("w:tab", { "w:val": tab.alignment, "w:leader": tab.leader, "w:pos": nativeInteger(tab.position) })).join("") + "</w:tabs>";
     if(node.attrs["data-word-outline-level"]!==undefined)props+=value("outlineLvl",node.attrs["data-word-outline-level"]);else if (/^h[1-6]$/.test(node.tag)) props += value("outlineLvl", Number(node.tag[1]) - 1);
     const mark = children(node).find((child) => child.attrs["data-word-paragraph-mark"]);
-    const markContext=this.styleContext(node,this.styles.runContext(style),'paragraph');
+    const markStyle=mark?.attrs['data-word-style'],markContext=this.styleContext(node,this.styles.runContext(style,markStyle),'paragraph');
     const markProperties = mark ? this.runDifference(this.css.get(mark), markContext) : pick(this.runDifference(css,markContext), runKeys.filter((key) => key !== "background-color" && !key.startsWith("text-decoration") && !["vertical-align", "letter-spacing", "--word-run-shading", "--word-kerning-threshold"].includes(key)));
-    const markRevisions=this.paragraphRevision(id);if (Object.keys(markProperties).length||markRevisions) props += "<w:rPr>" + markRevisions+runProperties(markProperties,markContext) + "</w:rPr>";
+    const markRevisions=this.paragraphRevision(id),markHistory=mark?this.review.run(mark,markContext):'';if (mark||Object.keys(markProperties).length||markRevisions||markHistory) props += "<w:rPr"+(mark?this.nativeMark(mark.attrs['data-node-id'])+this.nativeRunReset(mark):'')+">" + markRevisions+(markStyle?value('rStyle',this.styles.ids.get(markStyle)??markStyle):'')+runProperties(markProperties,markContext)+markHistory + "</w:rPr>";
     props += section ?? "";props+=this.review.paragraph(node,this.width); this.add("<w:pPr>" + orderedProperties("pPr", props) + "</w:pPr>");
     this.add(this.annotations.at(node, 0));
     for (const child of node.children) this.inline(child, style);

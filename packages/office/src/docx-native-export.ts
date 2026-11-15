@@ -101,6 +101,7 @@ export function restoreDocxNative(model: ContentDocumentModel, generated: Readon
   const fragmentXml = (fragment: DeepReadonly<NonNullable<WordMetadata['nativeContent']>['fragments'][number]>): XmlNode => {
     const copy=(node:XmlNode):XmlNode=>({...node,attrs:new Map(node.attrs),content:node.content.map(item=>typeof item==='string'?item:copy(item))});
     const root=copy(readFragment(fragment)), mapping=relationMaps.get(fragment.sourcePart);drawingIdentities.mark(root,fragment.sourcePart,fragment.nativeId);
+    if(fragment.currentRunPropertiesOnly&&root.uri===W&&root.name==='rPr')root.content.splice(0,root.content.length,...root.content.filter(child=>typeof child==='string'||child.uri!==W||!['ins','del','moveFrom','moveTo','rPrChange'].includes(child.name)));
     const rewrite=(node:XmlNode):void=>{for(const [key,value]of node.attrs)if(key.startsWith(R+' ')&&mapping?.has(value))(node.attrs as Map<string,string>).set(key,mapping.get(value)!);for(const item of node.content)if(typeof item!=='string')rewrite(item);};rewrite(root);return root;
   };
   const restored=new Set<string>();

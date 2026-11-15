@@ -1,7 +1,7 @@
 import type { TextFormatState } from './text-format-state.js';
 /** Font roles and language are authored values; installed preview substitutes
  * are never used to rewrite the source faces. */
-export function createWordFontControls(parent: ShadowRoot, before: HTMLElement, read: () => TextFormatState, apply: (properties: ReadonlyMap<string, string>) => void, onError: (error: unknown) => void): {
+export function createWordFontControls(parent: ShadowRoot, before: HTMLElement, read: (paragraphMark?:boolean) => TextFormatState, apply: (properties: ReadonlyMap<string, string>,paragraphMark?:boolean) => void, onError: (error: unknown) => void): {
     open(): void;
     dispose(): void;
 } {
@@ -38,6 +38,7 @@ export function createWordFontControls(parent: ShadowRoot, before: HTMLElement, 
         const hint = document.createElement('span');
         hint.textContent = '留空保留原设置；未选中文字时用于后续输入。';
         panel.append(hint);
+        const mark=field('仅设置段落标记','checkbox');mark.style.width='auto';
         const family = field('统一字体'), size = field('字符字号（磅）', 'number'), roles = (['ascii', 'hAnsi', 'eastAsia', 'cs'] as const).map((role, index) => ({ role, input: field(['ASCII 字体', '高位 ANSI 字体', '东亚字体', '复杂文字字体'][index]!) }));
         size.min = '.5';
         size.max = '1638';
@@ -47,6 +48,7 @@ export function createWordFontControls(parent: ShadowRoot, before: HTMLElement, 
         kern.min = '0';
         const languages = (['val', 'eastAsia', 'bidi'] as const).map((role, index) => ({ role, input: field(['西文语言', '东亚语言', '复杂文字语言'][index]!) }));
         button('应用字符格式', () => {
+            const basis=mark.checked?read(true):state;
             const properties = new Map<string, string>();
             if (family.value.trim()) {
                 const font = JSON.stringify(family.value.trim());
@@ -72,7 +74,7 @@ export function createWordFontControls(parent: ShadowRoot, before: HTMLElement, 
             if (background.value.trim())
                 properties.set('background-color', background.value.trim());
             if (underline.value || strike.value) {
-                const lines = [...(underline.value ? underline.value === 'none' ? [] : ['underline'] : state.underline ? ['underline'] : []), ...(strike.value ? strike.value === 'none' ? [] : ['line-through'] : state.strikethrough ? ['line-through'] : [])];
+                const lines = [...(underline.value ? underline.value === 'none' ? [] : ['underline'] : basis.underline ? ['underline'] : []), ...(strike.value ? strike.value === 'none' ? [] : ['line-through'] : basis.strikethrough ? ['line-through'] : [])];
                 properties.set('text-decoration-line', lines.join(' ') || 'none');
                 if (underline.value && underline.value !== 'none')
                     properties.set('text-decoration-style', underline.value);
@@ -93,7 +95,7 @@ export function createWordFontControls(parent: ShadowRoot, before: HTMLElement, 
                 if (input.value.trim())
                     properties.set('--word-language-' + role, JSON.stringify(input.value.trim()));
             if (properties.size)
-                apply(properties);
+                apply(properties,mark.checked);
         });
     }
     return { open, dispose: close };

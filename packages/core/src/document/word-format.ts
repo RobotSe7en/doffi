@@ -23,7 +23,7 @@ export function wordTextDefaults(word:DeepReadonly<Pick<WordMetadata,'stories'|'
 }
 export function clearCoveredWordRuns(word:WordMetadata,html:ParsedHtml,edit:DocumentEdit,nodeId:string,from:number,to:number):void{
  const base=html.textOffset(nodeId)!;
- const visit=(id:string):void=>{const node=html.peekNode(id)!,start=html.textOffset(id)!-base,end=start+html.getNode(id)!.text.length;for(const child of node.childNodeIds)visit(child);if(id===nodeId||start<from||end>to)return;
+ const visit=(id:string):void=>{const node=html.peekNode(id)!,start=html.textOffset(id)!-base,end=start+html.getNode(id)!.text.length;for(const child of node.childNodeIds)visit(child);if(id===nodeId||node.attributes['data-word-paragraph-mark']==='true'||start<from||end>to)return;
   const style=word.styles.find(style=>style.styleId===node.attributes['data-word-style']&&style.kind==='character');if(style)edit.attributes(id,{'data-word-style':undefined,class:(node.attributes.class??'').split(/\s+/).filter(name=>name!==style.cssClass&&name!==style.runCssClass).join(' ')});
   if(['strong','em','u','s','sub','sup'].includes(node.tagName))edit.renameSource(id,'span');
  };visit(nodeId);
