@@ -1017,7 +1017,7 @@ export class DocxStyles {
       "textDirection",
       "tcFitText",
       "vAlign",
-      "hideMark", "tcPrChange",
+      "hideMark", "tcPrChange", "cellIns", "cellDel",
     ]);
     if (child(properties, "hMerge") || on(child(properties, "tcFitText")))
       unsupported(properties);

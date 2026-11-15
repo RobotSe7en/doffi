@@ -15,6 +15,7 @@ import { nativeInteger } from './export/values.js';
 export class ExportWordRevisions {
     private next = 0;
     private readonly rowMarks = new Map<string, DeepReadonly<WordRevision>[]>();
+    private readonly cellMarks = new Map<string, DeepReadonly<WordRevision>[]>();
     private readonly formats = new Map<string, DeepReadonly<WordRevision>[]>();
     constructor(private readonly word: DeepReadonly<WordMetadata> | undefined, private readonly css: ExportCss, private readonly styles: ExportStyles) {
         this.next = (word?.revisions.length ?? 0) + (word?.moves?.length ?? 0);
@@ -29,6 +30,7 @@ export class ExportWordRevisions {
                 entries.push(revision);
                 this.formats.set(revision.nodeId, entries);
             }
+            if(['cellInsert','cellDelete'].includes(revision.kind)){const entries=this.cellMarks.get(revision.nodeId)??[];entries.push(revision);this.cellMarks.set(revision.nodeId,entries);}
         }
     }
     private revision(node: SourceNode, property: WordRevision['property']): {
@@ -130,6 +132,7 @@ export class ExportWordRevisions {
         return this.change(entry.revision,'tcPr',orderedProperties('tcPr',writeWordConditionalFormat(entry.revision.before?.conditionalFormat??undefined)+(span>1?value('gridSpan',span):'')+(rows>1?value('vMerge','restart'):'')+cellProperties(this.directTableProperties(old.node))+value('textDirection',old.node.attrs['data-word-text-direction']??old.css['--word-cell-text-direction'])),entry.owner);
     }
     rowMark(node: SourceElement): string { return (this.rowMarks.get(node.attrs['data-node-id'] ?? '') ?? []).sort((a, b) => a.kind === 'rowInsert' ? -1 : b.kind === 'rowInsert' ? 1 : 0).map(revision => empty('w:' + (revision.kind === 'rowInsert' ? 'ins' : 'del'), { 'w:id': this.next++, 'w:author': revision.author ?? '', 'w:date': this.revisionDate(revision) })).join(''); }
+    cellMark(node:SourceElement):string{return(this.cellMarks.get(node.attrs['data-node-id']??'')??[]).map(revision=>empty('w:'+(revision.kind==='cellInsert'?'cellIns':'cellDel'),{'w:id':this.next++,'w:author':revision.author??'','w:date':this.revisionDate(revision)})).join('');}
     row(node: SourceElement): string {
         const entry = this.revision(node, 'row');
         if (!entry)

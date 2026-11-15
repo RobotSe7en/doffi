@@ -1387,11 +1387,13 @@ class Importer {
       const next = new Map<number, { cell: Html; span: number;css:Css }>();
       for (const cell of elements(row, "tc")) {
         const props = child(cell, "tcPr");
+        if(child(props,'cellIns')&&child(props,'cellDel'))fail(props!,'A native cell can carry only one insertion, deletion or merge mark.');
         const span = number(attr(child(props, "gridSpan"), "val"), cell, 1);
         if(column+span>grid.length)unsupported(source,'A dynamically expanded native table grid is preserved with its layout.');
         if (span < 1)
           fail(cell, "A table cell exceeds its grid.");
         const merge = child(props, "vMerge");
+        if(merge&&(child(props,'cellIns')||child(props,'cellDel')))unsupported(source,'A cell revision in a vertical merge is preserved with its physical native cells.');
         const value = attr(merge, "val") ?? "continue";
         const continuation = merge && value === "continue";
         if (merge && !["continue", "restart"].includes(value))
@@ -1444,6 +1446,7 @@ class Importer {
           this.activeTable=previousTable;
           if (textDirection) htmlCell.attrs["data-word-text-direction"] = textDirection;
           readWordFormatRevision(this.word,props,htmlCell,'cell',this.styles);
+          for(const[kind,name]of [['cellInsert','cellIns'],['cellDelete','cellDel']]as const){const marker=child(props,name);if(marker){check(marker,[]);const id=attr(marker,'id');if(id===undefined)fail(marker,'A cell revision requires an identity.');this.word.revisions.push({nodeId:this.id(htmlCell),sourceId:id,revisionId:this.id(htmlCell)+'-'+kind,kind,...(attr(marker,'author')!==undefined?{author:attr(marker,'author')!}:{}),...(attr(marker,'date')!==undefined?{date:attr(marker,'date')!}:{})});}}
           this.native?.bind(cell, htmlCell.attrs);
           htmlRow.children.push(htmlCell);
           if (merge) next.set(column, { cell: htmlCell, span,css:cellCss });

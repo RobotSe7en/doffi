@@ -1,4 +1,5 @@
 import{removeWordRows,wordTableRows}from'./word-row-revisions.js';
+import{removeWordCells}from'./word-cell-revisions.js';
 import type{DocumentReadLimits}from'../runtime.js';
 import{expandWordRevisionGroups}from'../word-revision-groups.js';
 import{reconcileTrackedWord}from'./word-tracked-structure.js';
@@ -110,6 +111,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
     }
     selected=[...expandWordRevisionGroups(word.revisions,selected.map(wordRevisionId))];
     const rowRemovals=new Set(selected.filter(revision=>operation.decision==='accept'?revision.kind==='rowDelete':revision.kind==='rowInsert').map(revision=>revision.nodeId));if(rowRemovals.size)removeWordRows(word,edit,parse,rowRemovals,limits);
+    const cellRemovals=new Set(selected.filter(revision=>operation.decision==='accept'?revision.kind==='cellDelete':revision.kind==='cellInsert').map(revision=>revision.nodeId));if(cellRemovals.size)removeWordCells(word,edit,parse,cellRemovals,limits);
     const removals = new Set<string>();
     for (const revision of selected) {
         nativeReview(word, revision, operation.decision);

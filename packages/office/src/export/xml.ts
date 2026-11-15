@@ -22,7 +22,7 @@ const propertyOrder: Readonly<Record<string, readonly string[]>> = {
   rPr: ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "outline", "shadow", "emboss", "imprint", "noProof", "snapToGrid", "vanish", "webHidden", "color", "spacing", "w", "kern", "position", "sz", "szCs", "highlight", "u", "effect", "shd", "vertAlign", "rtl", "cs", "em", "lang", "specVanish", "rPrChange"],
   pPr: wordParagraphPropertyOrder,
   tblPr: ["tblStyle", "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblPrChange"],
-  tcPr: ["cnfStyle", "tcW", "gridSpan", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "vAlign", "tcPrChange"],
+  tcPr: ["cnfStyle", "tcW", "gridSpan", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "vAlign", "cellIns", "cellDel", "tcPrChange"],
 };
 /** Put generated property children in the schema sequence. Values have already
  * been escaped; this tokenizer sees only our generated markup, never raw HTML. */
