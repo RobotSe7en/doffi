@@ -1,6 +1,6 @@
 import {restoreWordSplitContinuations} from './word-split-continuation.js';
 import {formatWordParagraphMark} from './word-paragraph-mark.js';
-import {trackWordColumnDeletion,prepareWordColumnInsertion} from './word-cell-revisions.js';
+import {trackWordColumnDeletion,prepareWordColumnInsertion,wordTableCells} from './word-cell-revisions.js';
 import {wordResetTextProperties,wordRunCharacterStyle,wordRunCharacterStyleAt} from './word-reset-text.js';
 import {ensureWordMainStoryContainer,relocateWordSectionRoot} from './word-story-container.js';
 import {moveWordContinuationFormats} from './word-conditional-format.js';
@@ -147,6 +147,11 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       info={nodeId:operation.nodeId,grid:Array.from({length:columns},()=>width/columns)};word.tables.push(info);
     }
     if(operation.op==='editWordTable') {
+      if(operation.change.kind==='mergeCells'||operation.change.kind==='splitCell'){
+        const change=operation.change,projection=wordTableCells(source,operation.nodeId,info.grid.length,limits),refine=change.kind==='splitCell'&&(change.rows!==undefined||change.columns!==undefined),selected=projection.cells.filter(cell=>change.kind==='mergeCells'?cell.row<change.row+change.rows&&cell.row+cell.rows>change.row&&cell.column<change.column+change.columns&&cell.column+cell.columns>change.column:cell.row<=change.row&&cell.row+cell.rows>change.row&&cell.column<=change.column&&cell.column+cell.columns>change.column),cells=new Set((refine?projection.cells:selected).map(cell=>cell.id)),rows=new Set(refine?projection.rows:[]);if(!refine)for(const cell of selected)for(let row=cell.row;row<cell.row+cell.rows;row++)rows.add(projection.rows[row]!);
+        const inserted=new Map(word.revisions.filter(revision=>revision.kind==='rowInsert').map(revision=>[revision.nodeId,revision])),group=inserted.get(projection.rows[0]!)?.groupId,newTable=!!group&&projection.rows.every(id=>inserted.get(id)?.groupId===group&&inserted.get(id)?.author===(word.trackingAuthor??''));
+        if(word.revisions.some(revision=>revision.nodeId===operation.nodeId&&revision.property==='tableGrid'||cells.has(revision.nodeId)&&(revision.kind.startsWith('cell')||revision.property==='cell')||rows.has(revision.nodeId)&&revision.kind.startsWith('row')&&!(newTable&&revision.kind==='rowInsert')))fail('Review the existing table grid, cell formatting or structural revisions before merging or splitting these cells.');
+      }
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.grid){const previous=word.revisions.find(item=>item.nodeId===operation.nodeId&&item.kind==='format'&&item.property==='tableGrid');if(previous){previous.author=word.trackingAuthor??'';previous.date=new Date().toISOString();}else{const id=operation.nodeId+'-format-grid';word.revisions.push({nodeId:operation.nodeId,sourceId:id,revisionId:id,kind:'format',property:'tableGrid',before:{grid:[...info.grid],inheritNativeProperties:true},author:word.trackingAuthor??'',date:new Date().toISOString()});}recordWordFormat(word,source,operation.nodeId,'table');for(const id of rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds))if(['td','th'].includes(source.peekNode(id)!.tagName)&&!source.peekNode(id)!.attributes['data-word-grid-gap'])recordWordFormat(word,source,id,'cell');}
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.grid)for(const id of rowIds)recordWordFormat(word,source,id,'row');
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.rowHeights)for(const id of rowIds)recordWordFormat(word,source,id,'row');

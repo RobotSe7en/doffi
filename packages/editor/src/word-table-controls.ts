@@ -22,6 +22,7 @@ export function createWordTableControls(parent:ShadowRoot,before:HTMLElement,ses
   const active=cells.find(cell=>cell.id===selected.cellId)??cells[0]!;
   const row=field('起始行',active.row+1),column=field('起始列',active.column+1),rows=field('选区行数',active.rows),columns=field('选区列数',active.columns);row.min=column.min=rows.min=columns.min='1';
   const change=(value:Extract<DocumentOperation,{op:'editWordTable'}>['change']):void=>{apply([{op:'editWordTable',nodeId:tableId,change:value}]);};
+  const mergeNotice=document.createElement('p');mergeNotice.textContent='记录修订时，合并或拆分单元格不会记录为修订；可通过撤销恢复。若已有相关修订导致冲突，请先接受或拒绝。';mergeNotice.style.cssText='width:100%;margin:0;color:#715100';panel.append(mergeNotice);
   button('在上方插入行',()=>change({kind:'insertRows',at:Number(row.value)-1,count:Number(rows.value)}));button('在下方插入行',()=>change({kind:'insertRows',at:Number(row.value),count:Number(rows.value)}));button('删除表格行',()=>change({kind:'deleteRows',at:Number(row.value)-1,count:Number(rows.value)}));
   button('在左侧插入列',()=>change({kind:'insertColumns',at:Number(column.value)-1,count:Number(columns.value)}));button('在右侧插入列',()=>change({kind:'insertColumns',at:Number(column.value),count:Number(columns.value)}));button('删除表格列',()=>change({kind:'deleteColumns',at:Number(column.value)-1,count:Number(columns.value)}));
   button('合并单元格',()=>change({kind:'mergeCells',row:Number(row.value)-1,column:Number(column.value)-1,rows:Number(rows.value),columns:Number(columns.value)}));button('拆分单元格',()=>change({kind:'splitCell',row:Number(row.value)-1,column:Number(column.value)-1}));
