@@ -1,3 +1,4 @@
+import{pasteWordBlockContent}from'./word-block-content.js';
 import{pasteWordInlineContent}from'./word-inline-content.js';
 import {restoreWordSplitContinuations} from './word-split-continuation.js';
 import {formatWordParagraphMark} from './word-paragraph-mark.js';
@@ -31,7 +32,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordRevisionOperation(operation)||isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['pasteWordInlineContent','setWordWatermark','resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','deleteWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','formatWordParagraphMark','applyWordCharacterStyle','setWordParagraph','setWordStyle','deleteWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordRevisionOperation(operation)||isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['pasteWordBlockContent','pasteWordInlineContent','setWordWatermark','resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','deleteWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','formatWordParagraphMark','applyWordCharacterStyle','setWordParagraph','setWordStyle','deleteWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
 export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits,annotations:Annotation[]=[]):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -119,6 +120,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='setWordStoryContent'){
     if(!word.stories.some(story=>story.rootNodeId===operation.nodeId&&story.kind!=='main'))fail('Auxiliary story editing requires an existing header, footer or comment story.');edit.replaceSourceContent(operation.nodeId,operation.html);return;
   }
+  if(operation.op==='pasteWordBlockContent'){pasteWordBlockContent(word,edit,parse,styles,operation);return;}
   if(operation.op==='pasteWordInlineContent'){pasteWordInlineContent(word,edit,parse,operation);return;}
   if(operation.op==='deleteWordTable'){
     if(node.tagName!=='table')fail('Table deletion requires a table.');const rows=wordTableRows(parse(),operation.nodeId);

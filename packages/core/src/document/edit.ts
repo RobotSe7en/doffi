@@ -249,17 +249,25 @@ export class DocumentEdit {
   /** Split an inline property owner without changing text or moving atomic
    * content out of its owner. Only the split ancestor path receives new IDs. */
   splitSourceInline(nodeId:string,offset:number):ReadonlyMap<string,string>{
+    return this.splitSourceOwner(nodeId,offset,false);
+  }
+  splitSourceParagraph(nodeId:string,offset:number):ReadonlyMap<string,string>{
+    return this.splitSourceOwner(nodeId,offset,true);
+  }
+  private splitSourceOwner(nodeId:string,offset:number,paragraph:boolean):ReadonlyMap<string,string>{
     const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode))fail('The inline split target is unavailable.');
     const positions=textPositions(this.tree),area=positions.get(target)!,text=textLeaves(target).map(leaf=>leaf.value).join('');
-    if(offset<=0||offset>=text.length||!isTextBoundary(text,offset))fail('An inline split requires an interior UTF-16 boundary.');
+    if(paragraph&&!/^p$|^h[1-6]$/.test(target.tagName)||!Number.isSafeInteger(offset)||offset<0||offset>text.length||!paragraph&&(offset===0||offset===text.length)||!isTextBoundary(text,offset))fail('The source split requires an exact UTF-16 boundary.');
     const boundary=area.from+offset,identities=new Map<string,string>();
     const split=(node:Element):Element=>{
-      if(!['span','a','strong','b','em','i','u','s','sub','sup','code'].includes(node.tagName)||node.attrs.some(attribute=>['data-word-field','data-word-content-control','data-word-native-object','data-word-drawing','data-word-equation','data-word-note-reference'].includes(attribute.name)))fail('A formatting boundary cannot split an atomic Word object.');
+      if(!(paragraph&&node===target)&&(!['span','a','strong','b','em','i','u','s','sub','sup','code'].includes(node.tagName)||node.attrs.some(attribute=>['data-word-field','data-word-content-control','data-word-native-object','data-word-drawing','data-word-equation','data-word-note-reference'].includes(attribute.name))))fail('A formatting boundary cannot split an atomic Word object.');
       const right=adapter.createElement(node.tagName,node.namespaceURI,node.attrs.map(attribute=>({...attribute}))),old=attr(node,'data-node-id'),id=this.allocate();setAttribute(right,'data-node-id',id);if(old)identities.set(old,id);
       for(const child of [...node.childNodes]){const span=positions.get(child);if(!span)continue;if(span.from>=boundary){adapter.detachNode(child);adapter.appendChild(right,child);}else if(span.to>boundary){if(child.nodeName==='#text'&&'value'in child){const at=boundary-span.from;adapter.appendChild(right,this.text(child.value.slice(at)));child.value=child.value.slice(0,at);}else if(isElement(child))adapter.appendChild(right,split(child));}}
       return right;
     };
-    const right=split(target),parent=target.parentNode,sibling=parent.childNodes[parent.childNodes.indexOf(target)+1];if(sibling)adapter.insertBefore(parent,right,sibling);else adapter.appendChild(parent,right);return identities;
+    const right=split(target),parent=target.parentNode,sibling=parent.childNodes[parent.childNodes.indexOf(target)+1];if(sibling)adapter.insertBefore(parent,right,sibling);else adapter.appendChild(parent,right);
+    if(paragraph)for(const id of identities.keys()){const element=this.index().get(id)!,range=positions.get(element)!;if(this.baseIds.has(id)&&boundary<range.to){this.textEdits.push({nodeId:id,from:Math.max(0,boundary-range.from),to:range.to-range.from,insertedLength:0});this.structuralTextNodes.add(id);}}
+    return identities;
   }
   /** Revision containers retain source leaves and object ownership; wrapping
    * changes no UTF-16 text offsets. A wrapper is allocated for each text leaf. */
@@ -291,6 +299,11 @@ export class DocumentEdit {
     }
     return result;
   }
+  wrapSourceParagraphContent(nodeId:string,tag:'ins'|'del'):string|undefined{
+    const target=this.index().get(nodeId);if(!target||!/^p$|^h[1-6]$/.test(target.tagName))fail('Revision content requires a paragraph.');
+    const children=target.childNodes.filter(child=>!isElement(child)||attr(child,'data-word-paragraph-mark')!=='true');if(!children.length)return;
+    const wrapper=this.make(tag,[{name:'data-word-run-overlay',value:'true'}]);adapter.insertBefore(target,wrapper,children[0]!);for(const child of children){adapter.detachNode(child);adapter.appendChild(wrapper,child);}return attr(wrapper,'data-node-id')!;
+  }
   previewReconciliation(operation:Extract<DocumentContentOperation,{op:'reconcileFragment'}>):ParsedHtml{
     const html=this.html(),parsed=parseHtml(html,this.state.snapshot.manifest,this.state.files,this.limits,{nodes:0}),preview=new DocumentEdit({...this.state,html:parsed,snapshot:{...this.state.snapshot,html}},this.limits,this.allocate);preview.apply(operation);return parseHtml(preview.html(),this.state.snapshot.manifest,this.state.files,this.limits,{nodes:0});
   }
@@ -308,9 +321,18 @@ export class DocumentEdit {
   unwrapSource(nodeId:string):void{const target=this.index().get(nodeId);if(!target||!target.parentNode||!isElement(target.parentNode)||target.parentNode.tagName==='body')fail('The document root cannot be unwrapped.');const parent=target.parentNode;for(const child of [...target.childNodes]){adapter.detachNode(child);adapter.insertBefore(parent,child,target);}adapter.detachNode(target);}
   mergeSourceParagraphMark(nodeId:string):void{
     const node=this.index().get(nodeId);if(!node||!/^p$|^h[1-6]$/.test(node.tagName)||!node.parentNode||!isElement(node.parentNode))fail('A paragraph mark requires its paragraph.');
-    const parent=node.parentNode,siblings=parent.childNodes,markers:Element[]=[];let next:Element|undefined;
-    for(let index=siblings.indexOf(node)+1;index<siblings.length;index++){const candidate=siblings[index]!;if(candidate.nodeName==='#text'&&'value'in candidate&&!candidate.value.trim())continue;if(isElement(candidate)&&['div','span'].includes(candidate.tagName)&&textLeaves(candidate).every(leaf=>!leaf.value)){let marker=false;visit(candidate,item=>{if(isElement(item)&&(attr(item,'data-word-move-range')||attr(item,'data-word-bookmark')))marker=true;});if(marker){markers.push(candidate);continue;}}if(isElement(candidate)&&/^p$|^h[1-6]$/.test(candidate.tagName))next=candidate;break;}
+    const parent=node.parentNode,markers:Element[]=[];let next:Element|undefined;
+    const transparent=(element:Element):boolean=>element.tagName==='div'&&!attr(element,'data-office-story')&&!attr(element,'data-word-native-object')&&!attr(element,'data-word-content-control');
+    const following=(child:Tree.ChildNode):Tree.ChildNode|undefined=>{let current=child;for(;;){const owner=current.parentNode;if(!owner||!isElement(owner))return;const sibling=owner.childNodes[owner.childNodes.indexOf(current)+1];if(sibling)return sibling;if(!transparent(owner))return;current=owner;}};
+    for(let candidate=following(node);candidate;){
+      if(candidate.nodeName==='#text'&&'value'in candidate&&!candidate.value.trim()){candidate=following(candidate);continue;}
+      if(isElement(candidate)&&['div','span'].includes(candidate.tagName)&&textLeaves(candidate).every(leaf=>!leaf.value)){let marker=false;visit(candidate,item=>{if(isElement(item)&&(attr(item,'data-word-move-range')||attr(item,'data-word-bookmark')))marker=true;});if(marker){markers.push(candidate);candidate=following(candidate);continue;}}
+      if(isElement(candidate)&&transparent(candidate)){candidate=candidate.childNodes[0]??following(candidate);continue;}
+      if(isElement(candidate)&&/^p$|^h[1-6]$/.test(candidate.tagName))next=candidate;break;
+    }
     if(!next)return;const before=next.childNodes[0],append=(child:Tree.ChildNode):void=>{adapter.detachNode(child);if(before)adapter.insertBefore(next!,child,before);else adapter.appendChild(next!,child);};for(const child of [...node.childNodes]){if(isElement(child)&&attr(child,'data-word-paragraph-mark')){adapter.detachNode(child);continue;}append(child);}for(const marker of markers){if(marker.tagName==='span')append(marker);else{for(const child of [...marker.childNodes])append(child);adapter.detachNode(marker);}}adapter.detachNode(node);
+    for(let wrapper:Element|undefined=parent;wrapper&&transparent(wrapper)&&!wrapper.childNodes.length;){const owner:Tree.ParentNode|null=wrapper.parentNode;adapter.detachNode(wrapper);wrapper=owner&&isElement(owner)?owner:undefined;}
+
     for(const ancestor of ancestors(next)){const id=attr(ancestor,'data-node-id');if(id)this.structuralTextNodes.add(id);}
   }
 
