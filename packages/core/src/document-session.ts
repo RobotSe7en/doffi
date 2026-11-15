@@ -158,7 +158,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
         const current = original ? metadata.sections.find(section => section.sectionId === original.sectionId) : undefined;
         applyWordOperation(metadata, edit, parseEdited, styles, current && current.rootNodeId !== operation.nodeId ? { ...operation, nodeId: current.rootNodeId } : operation, limits,annotations);
       }
-      else if ("nodeId" in operation) { guardPresentationContent(base, operation);if(operation.op==="replaceText"&&metadata.word?.trackChanges)trackWordText(metadata.word,edit,parseEdited,operation);else if(operation.op==='removeNode'&&!metadata.presentation&&metadata.word?.trackChanges&&parseEdited().peekNode(operation.nodeId)?.tagName==='table')applyWordOperation(metadata,edit,parseEdited,styles,{op:'deleteWordTable',nodeId:operation.nodeId},limits,annotations);else edit.apply(operation); }
+      else if ("nodeId" in operation) { guardPresentationContent(base, operation);if(operation.op==="replaceText"&&metadata.word?.trackChanges)trackWordText(metadata.word,edit,parseEdited,operation,styles);else if(operation.op==='removeNode'&&!metadata.presentation&&metadata.word?.trackChanges&&parseEdited().peekNode(operation.nodeId)?.tagName==='table')applyWordOperation(metadata,edit,parseEdited,styles,{op:'deleteWordTable',nodeId:operation.nodeId},limits,annotations);else edit.apply(operation); }
       else applyAnnotation(operation, annotations, explicit);
       if(markBase&&metadata.word){if(operation.op==='reconcileFragment'||operation.op==='reconcileWordTracked')inheritWordSplitParagraphMarks(metadata.word,markBase,edit,parseEdited,styles);inheritWordEmptyParagraphText(metadata.word,markBase,edit,parseEdited,styles);}
     }

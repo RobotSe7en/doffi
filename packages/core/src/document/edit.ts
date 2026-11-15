@@ -188,6 +188,23 @@ export class DocumentEdit {
     return { rootNodeIds, identities };
   }
   insertSourceAt(nodeId:string,offset:number,source:string,insertionContextNodeId?:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,false,offset,insertionContextNodeId);}
+  /** Insert at a paragraph-owned boundary, partitioning its inline owner so
+   * an unrelated neighbouring run cannot become the new source's ancestor. */
+  insertSourceInContainer(nodeId:string,offset:number,source:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>;splitIdentities:ReadonlyMap<string,string>}{
+    const target=this.index().get(nodeId);if(!target)fail('The inline insertion container is missing.');
+    const positions=textPositions(this.tree),bounds=positions.get(target)!,point=bounds.from+offset,value=textLeaves(target).map(leaf=>leaf.value).join('');
+    if(!Number.isSafeInteger(offset)||offset<0||offset>value.length||!isTextBoundary(value,offset))fail('The inline insertion boundary is invalid.');
+    let beforeId:string|undefined,splitIdentities:ReadonlyMap<string,string>=new Map();
+    for(const child of [...target.childNodes]){const area=positions.get(child)!;
+      if(area.from>=point&&isElement(child)){beforeId=attr(child,'data-node-id')!;break;}
+      if(area.from<=point&&area.to>point){
+        if(isElement(child)){splitIdentities=this.splitSourceInline(attr(child,'data-node-id')!,point-area.from);beforeId=splitIdentities.get(attr(child,'data-node-id')!)!;}
+        else if(child.nodeName==='#text'&&'value'in child){const at=point-area.from,right=this.make('span');adapter.appendChild(right,this.text(child.value.slice(at)));child.value=child.value.slice(0,at);adapter.insertBefore(target,right,child);adapter.detachNode(child);if(child.value)adapter.insertBefore(target,child,right);beforeId=attr(right,'data-node-id')!;}
+        break;
+      }
+    }
+    return{...this.insertSource(nodeId,source,beforeId,true),splitIdentities};
+  }
   assertInlineSource(nodeId:string,source:string):void{
     const parent=this.index().get(nodeId);if(!parent)fail('The inline content target is missing.');
     const fragment=parseHtmlFragment(source,parent,this.limits,bodyTags);

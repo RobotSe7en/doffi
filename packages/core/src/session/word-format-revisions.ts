@@ -30,6 +30,14 @@ export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId:
     const id = nodeId + '-format-' + property;
     const revision:WordRevision={ nodeId, sourceId: id, revisionId: id, kind: 'format', property, before, author: word.trackingAuthor ?? '', date: new Date().toISOString() };word.revisions.push(revision);index?.set(nodeId+'\n'+property,revision);
 }
+/** A formatting-owner split partitions existing histories, rather than
+ * treating the surviving right-hand text as newly inserted content. */
+export function copyWordSplitRun(word:WordMetadata,identities:ReadonlyMap<string,string>,styles:SourceStyleEdit):void{
+    styles.aliasNodeIds(identities);
+    const copies=word.revisions.filter(item=>identities.has(item.nodeId)).map(item=>{const nodeId=identities.get(item.nodeId)!,id=nodeId+'-format';return{...JSON.parse(JSON.stringify(item))as WordRevision,nodeId,revisionId:id,sourceId:id};});
+    if(word.nativeContent){const native=word.nativeContent,oldRevisions=new Map(word.revisions.filter(item=>identities.has(item.nodeId)).map(item=>[item.nodeId+'\n'+item.sourceId,item]));native.fragments.push(...native.fragments.filter(item=>item.nodeId&&identities.has(item.nodeId)&&item.kind==='property').map((item,index)=>{const nodeId=identities.get(item.nodeId!)!,previous=item.revisionSourceId?oldRevisions.get(item.nodeId+'\n'+item.revisionSourceId):undefined;return{...JSON.parse(JSON.stringify(item))as typeof item,nodeId,nativeId:nodeId+'-native-'+index,...(previous?{revisionSourceId:copies.find(copy=>copy.nodeId===nodeId&&copy.property===previous.property)!.sourceId}:{})};}));}
+    word.hyperlinks.push(...word.hyperlinks.filter(item=>identities.has(item.nodeId)).map(item=>({...item,nodeId:identities.get(item.nodeId)!})));word.revisions.push(...copies);
+}
 /** Partition pending run histories at the new selection, so a partial edit
  * changes neither the author nor the review group of adjacent text. */
 export function prepareWordRunFormat(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, styles: SourceStyleEdit, range: {
@@ -66,14 +74,7 @@ export function prepareWordRunFormat(word: WordMetadata, edit: DocumentEdit, par
             if (boundary <= begin || boundary >= begin + node.text.length)
                 continue;
             const identities = edit.splitSourceInline(node.nodeId, boundary - begin);
-            styles.aliasNodeIds(identities);
-            const copies = word.revisions.filter(item => identities.has(item.nodeId)).map(item => { const nodeId = identities.get(item.nodeId)!, id = nodeId + '-format'; return { ...JSON.parse(JSON.stringify(item)) as WordRevision, nodeId, revisionId: id, sourceId: id }; });
-            if (word.nativeContent) {
-                const native = word.nativeContent, oldRevisions = new Map(word.revisions.filter(item => identities.has(item.nodeId)).map(item => [item.nodeId + '\n' + item.sourceId, item]));
-                native.fragments.push(...native.fragments.filter(item => item.nodeId && identities.has(item.nodeId) && item.kind === 'property').map((item, index) => { const nodeId = identities.get(item.nodeId!)!, previous = item.revisionSourceId ? oldRevisions.get(item.nodeId + '\n' + item.revisionSourceId) : undefined; return { ...JSON.parse(JSON.stringify(item)) as typeof item, nodeId, nativeId: nodeId + '-native-' + index, ...(previous ? { revisionSourceId: copies.find(copy => copy.nodeId === nodeId && copy.property === previous.property)!.sourceId } : {}) }; }));
-            }
-            word.hyperlinks.push(...word.hyperlinks.filter(item => identities.has(item.nodeId)).map(item => ({ ...item, nodeId: identities.get(item.nodeId)! })));
-            word.revisions.push(...copies);
+            copyWordSplitRun(word,identities,styles);
         }
     const source = parse(), offset = source.textOffset(target.nodeId)!, preferred = new Set(word.revisions.filter(item => { if (item.kind !== 'format' || item.property !== 'run')
         return false; const begin = source.textOffset(item.nodeId), node = source.getNode(item.nodeId); return begin !== undefined && node && begin >= start && begin + node.text.length <= end; }).map(item => item.nodeId));

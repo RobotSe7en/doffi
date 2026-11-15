@@ -10,6 +10,8 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import { DocumentError } from '../errors.js';
 import { isTextBoundary } from '../document/text.js';
+import type {SourceStyleEdit} from './source-styles.js';
+import {insertWordReplacement} from './word-replacement-context.js';
 const fail = (message: string): never => { throw new DocumentError('InvalidOperation', message); };
 export const wordRevisionId = (revision: Pick<WordRevision, 'nodeId' | 'revisionId'>): string => revision.revisionId ?? revision.nodeId;
 export function isWordRevisionOperation(operation: {
@@ -48,7 +50,7 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
     properties?: Record<string, string> | undefined;
     author?: string | undefined;
     date?: string | undefined;
-}): void {
+},styles:SourceStyleEdit): void {
     const source = parse(), node = source.getNode(operation.nodeId) ?? fail('The tracked text source is missing.');
     const { from, to, expectedText, text } = operation;
     if (from > to || node.text.slice(from, to) !== expectedText || !isTextBoundary(node.text, from) || !isTextBoundary(node.text, to) || /[\u0000\r\ud800-\udfff]/u.test(text))
@@ -81,7 +83,8 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
     }
     const deleted = edit.wrapSourceText(operation.nodeId, from, to, 'del');
     for(const id of deleted)edit.attributes(id,{'data-word-run-overlay':'true'});
-    const inserted = text ? edit.insertSourceAt(operation.nodeId, to, '<ins data-word-run-overlay="true">' + escape(text).split('\n').join('<br>') + '</ins>',context).rootNodeIds : [], groupId = deleted[0] ?? inserted[0]!;
+    const content=escape(text).split('\n').join('<br>');
+    const inserted = text ? from!==to?insertWordReplacement(word,edit,source,styles,operation.nodeId,from,to,content):edit.insertSourceAt(operation.nodeId, to, '<ins data-word-run-overlay="true">' + content + '</ins>',context).rootNodeIds : [], groupId = deleted[0] ?? inserted[0]!;
     for(const id of inserted)formatInserted(id,0);
     for (const [kind, ids] of [['delete', deleted], ['insert', inserted]] as const)
         for (const id of ids)
@@ -114,7 +117,7 @@ function nativeReview(word: WordMetadata, revision: WordRevision, decision: 'acc
         return [fragment];
     });
 }
-export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordRevisionOperation,limits:DocumentReadLimits,sections:DocumentSection[]): void {
+export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: WordRevisionOperation,limits:DocumentReadLimits,sections:DocumentSection[],styles:SourceStyleEdit): void {
     if (operation.op === 'setWordReview') {
         if (parse().peekNode(operation.nodeId)!.parentNodeId !== null)
             fail('Review settings require the document root.');
@@ -126,7 +129,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
     if(operation.op==='reconcileWordTracked'){reconcileTrackedWord(word,edit,parse,operation);return;}
     if(operation.op==='trackWordInlineContent'){trackWordInlineContent(word,edit,parse,operation);return;}
     if (operation.op === 'trackWordText') {
-        trackWordText(word, edit, parse, operation);
+        trackWordText(word, edit, parse, operation,styles);
         return;
     }
     let selected: WordRevision[];
