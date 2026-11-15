@@ -2,6 +2,7 @@ import { DocumentError } from '@doffi/core';
 import type { DeepReadonly, WordMetadata } from '@doffi/core';
 import { WP, A, PIC } from './ooxml/xml.js';
 import type { XmlNode } from './ooxml/xml.js';
+import{NativeWordIdentities}from'./docx-native-word-identities.js';
 const VML = 'urn:schemas-microsoft-com:vml', O = 'urn:schemas-microsoft-com:office:office';
 const MARKER = 'urn:doffi:transient:native', WPS = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape', WPG = 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup';
 type Native = DeepReadonly<NonNullable<WordMetadata['nativeContent']>>;
@@ -14,6 +15,7 @@ const kind = (node: XmlNode): 'frame' | 'object' | undefined => node.uri === WP 
  * Shapes inside an opaque group use that group's object scope; Word frames and
  * cross-object endpoints use the original part's frame identity. */
 export class NativeDrawingIdentities {
+    private readonly word:NativeWordIdentities;
     private readonly origins = new WeakMap<XmlNode, Origin>();
     private readonly generated = new Map<string, string>();
     private readonly frames = new Map<string, string>();
@@ -24,6 +26,7 @@ export class NativeDrawingIdentities {
     private readonly usedVml = new Set<string>();
     private nextVml = 1;
     constructor(native: Native, roots: Iterable<XmlNode>) {
+        const documents=[...roots];this.word=new NativeWordIdentities(documents,node=>this.origins.get(node));
         const scan = (node: XmlNode): void => {
             const type = kind(node), id = node.attrs.get(' id'), owner = node.attrs.get(MARKER + ' identity');
             if (node.uri === VML && node.attrs.has(' id'))
@@ -37,7 +40,7 @@ export class NativeDrawingIdentities {
                 if (typeof child !== 'string')
                     scan(child);
         };
-        for (const root of roots)
+        for (const root of documents)
             scan(root);
         for (const identity of native.identities ?? []) {
             const value = this.generated.get(identity.nodeId + '\n' + identity.kind);
@@ -128,5 +131,6 @@ export class NativeDrawingIdentities {
         };
         for (const root of documents)
             references(root);
+        this.word.rewrite(documents);
     }
 }
