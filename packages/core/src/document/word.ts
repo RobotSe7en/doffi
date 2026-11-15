@@ -291,6 +291,7 @@ export function validateWord(
       if(revision.kind==='format'&&(!revision.property||!revision.before))invalid('A formatting revision requires its previous properties.');
       if(revision.property==='section'&&(!revision.before?.section||!metadata.sections.some(section=>section.rootNodeId===revision.nodeId)))invalid('A section history requires its section and previous properties.');
       if(revision.property==='tableGrid'&&(tag!=='table'||!revision.before?.grid?.length))invalid('A grid history requires its table and previous columns.');
+      const span=revision.before?.attributes?.colspan;if(span!==undefined&&(revision.property!=='cell'||span!==null&&(!/^[1-9]\d*$/.test(span)||!Number.isSafeInteger(Number(span)))))invalid('A previous column span requires a cell and a positive safe integer.');
       for(const[kind,references]of [['header',revision.before?.section?.headers],['footer',revision.before?.section?.footers]]as const)for(const id of Object.values(references??{}))if(id&&stories.get(id)?.kind!==kind)invalid('A previous section refers to a missing or wrong-kind story.');
       if(revision.kind.startsWith('paragraph')&&!/^p$|^h[1-6]$/.test(tag)||revision.kind.startsWith('row')&&tag!=='tr'||revision.kind.startsWith('cell')&&!['td','th'].includes(tag))invalid('A structural revision requires its matching Word source.');
       if(revision.before?.characterStyleId&&styles.get(revision.before.characterStyleId)?.kind!=='character')invalid('A previous run character style is missing.');

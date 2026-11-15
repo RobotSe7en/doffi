@@ -7,6 +7,7 @@ import {checkLimit} from '../document/validation.js';
 import {editSourceTable} from './table-edit.js';
 import {moveWordContinuationFormats} from './word-conditional-format.js';
 import {wordTableRows} from './word-row-revisions.js';
+import {recordWordFormat} from './word-format-revisions.js';
 
 interface Cell {id:string;row:number;column:number;rows:number;columns:number;gap:boolean}
 /** A bounded, transient projection of the authoritative HTML cells. */
@@ -29,8 +30,12 @@ export function removeWordCells(word:WordMetadata,edit:DocumentEdit,parse:()=>Pa
     const tables=new Set<string>();for(const id of nodeIds){let node=parse().peekNode(id);while(node&&node.tagName!=='table')node=node.parentNodeId?parse().peekNode(node.parentNodeId):undefined;if(node)tables.add(node.nodeId);}
     for(const tableId of tables){
         const info=word.tables.find(table=>table.nodeId===tableId);if(!info)throw new DocumentError('InvalidOperation','A cell review requires its native grid.');
-        const old=wordTableCells(parse(),tableId,info.grid.length,limits),columns:number[]=[];
-        for(let column=0;column<info.grid.length;column++)if(old.occupied.every(row=>row[column]&&(row[column]!.gap||nodeIds.has(row[column]!.id)))&&old.occupied.some(row=>nodeIds.has(row[column]!.id)))columns.push(column);
+        const old=wordTableCells(parse(),tableId,info.grid.length,limits),columns:number[]=[],candidates=new Set<number>();
+        for(const cell of old.cells)if(nodeIds.has(cell.id))for(let column=cell.column;column<cell.column+cell.columns;column++)candidates.add(column);
+        const spanHistory=new Map(word.revisions.filter(revision=>revision.kind==='format'&&revision.property==='cell'&&revision.before?.attributes&&'colspan'in revision.before.attributes).map(revision=>[revision.nodeId,Number(revision.before!.attributes!.colspan??1)]));
+        const counts=[0];for(let column=0;column<info.grid.length;column++)counts.push(counts.at(-1)!+(candidates.has(column)?1:0));
+        const expanded=new Set(old.cells.filter(cell=>spanHistory.has(cell.id)&&cell.columns - spanHistory.get(cell.id)! === counts[cell.column+cell.columns]!-counts[cell.column]!&&cell.columns>spanHistory.get(cell.id)!).map(cell=>cell.id));
+        for(let column=0;column<info.grid.length;column++)if(candidates.has(column)&&old.occupied.every(row=>row[column]&&(row[column]!.gap||nodeIds.has(row[column]!.id)||expanded.has(row[column]!.id))))columns.push(column);
         if(columns.length===info.grid.length){edit.removeSource(tableId);continue;}
         const groups:{at:number;count:number}[]=[];for(const column of columns){const last=groups.at(-1);if(last&&last.at+last.count===column)last.count++;else groups.push({at:column,count:1});}
         const width=info.grid.reduce((a,b)=>a+b,0);
@@ -66,4 +71,19 @@ export function trackWordColumnDeletion(word:WordMetadata,edit:DocumentEdit,pars
         if(!word.revisions.some(revision=>revision.nodeId===cell.id&&revision.kind==='cellDelete'))word.revisions.push({nodeId:cell.id,sourceId:cell.id+'-cell-delete',revisionId:cell.id+'-cell-delete',groupId,kind:'cellDelete',author,date});
     }
     if(cancel.size)removeWordCells(word,edit,parse,cancel,limits);
+}
+
+/** Grid/property history and cell marks form one structural insertion. The
+ * original grid is retained once, even after successive column insertions. */
+export function prepareWordColumnInsertion(word:WordMetadata,source:ParsedHtml,tableId:string,limits:DocumentReadLimits):{cells:Cell[];groupId:string}{
+    const info=word.tables.find(table=>table.nodeId===tableId)!,grid=wordTableCells(source,tableId,info.grid.length,limits);
+    let revision=word.revisions.find(revision=>revision.nodeId===tableId&&revision.property==='tableGrid');
+    const id=tableId+'-format-grid',groupId=revision?.groupId??id+'-insertion';
+    if(!revision){revision={nodeId:tableId,sourceId:id,revisionId:id,kind:'format',property:'tableGrid',before:{grid:[...info.grid],inheritNativeProperties:true}};word.revisions.push(revision);}
+    revision.groupId=groupId;revision.author=word.trackingAuthor??'';revision.date=new Date().toISOString();
+    const formats=new Map(word.revisions.filter(revision=>revision.kind==='format').map(revision=>[revision.nodeId+'\n'+revision.property,revision]));
+    for(const cell of grid.cells)if(!cell.gap){recordWordFormat(word,source,cell.id,'cell',formats);formats.get(cell.id+'\ncell')!.groupId=groupId;}
+    for(const row of grid.rows)if(source.peekNode(row)!.childNodeIds.some(id=>source.peekNode(id)!.attributes['data-word-grid-gap'])){recordWordFormat(word,source,row,'row',formats);formats.get(row+'\nrow')!.groupId=groupId;}
+    const ids=new Set(grid.cells.map(cell=>cell.id));for(const revision of word.revisions)if(revision.kind==='cellInsert'&&ids.has(revision.nodeId))revision.groupId=groupId;
+    return{cells:grid.cells,groupId};
 }

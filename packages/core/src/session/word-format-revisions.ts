@@ -6,10 +6,10 @@ import type { ParsedHtml } from '../document/html.js';
 import type { DocumentEdit } from '../document/edit.js';
 import type { SourceStyleEdit } from './source-styles.js';
 /** Native property histories retain the first value and the latest author. */
-export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId: string, property: 'paragraph' | 'table' | 'row' | 'cell'): void {
+export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId: string, property: 'paragraph' | 'table' | 'row' | 'cell', index?:Map<string,WordRevision>): void {
     if (!word.trackChanges)
         return;
-    const previous = word.revisions.find(revision => revision.nodeId === nodeId && revision.kind === 'format' && revision.property === property);
+    const previous = index?index.get(nodeId+'\n'+property):word.revisions.find(revision => revision.nodeId === nodeId && revision.kind === 'format' && revision.property === property);
     if (previous) {
         previous.author = word.trackingAuthor ?? '';
         previous.date = new Date().toISOString();
@@ -19,6 +19,7 @@ export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId:
     for (const name of ['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-numbering-off', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header'])
         attributes[name] = node.attributes[name] ?? null;
     const before: NonNullable<WordRevision['before']> = { attributes, tagName: node.tagName as NonNullable<WordRevision['before']>['tagName'], inheritNativeProperties: true };
+    if(property==='cell')attributes.colspan=node.attributes.colspan??null;
     if(property==='row'){before.rowOmissions=wordRowOmissions(source,nodeId);for(const key of WORD_ROW_GAP_WIDTH_ATTRIBUTES)attributes[key]=node.attributes[key]??null;}
     if(['paragraph','row','cell'].includes(property))before.conditionalFormat=word.conditionalFormats?.find(item=>item.nodeId===nodeId)?.format??null;
     if(property==='table'){const table=word.tables.find(table=>table.nodeId===nodeId);before.tableStyleOptions=Object.fromEntries(['lookMask','rowBandSize','columnBandSize'].flatMap(key=>table&&Reflect.get(table,key)!==undefined?[[key,Reflect.get(table,key)]]:[]));}
@@ -27,7 +28,7 @@ export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId:
         before.tabs = tabs ? { defaultInterval: tabs.defaultInterval, stops: tabs.stops.map(stop => ({ ...stop })) } : { defaultInterval: word.tabs[0]?.defaultInterval ?? 36, stops: [] };
     }
     const id = nodeId + '-format-' + property;
-    word.revisions.push({ nodeId, sourceId: id, revisionId: id, kind: 'format', property, before, author: word.trackingAuthor ?? '', date: new Date().toISOString() });
+    const revision:WordRevision={ nodeId, sourceId: id, revisionId: id, kind: 'format', property, before, author: word.trackingAuthor ?? '', date: new Date().toISOString() };word.revisions.push(revision);index?.set(nodeId+'\n'+property,revision);
 }
 /** Partition pending run histories at the new selection, so a partial edit
  * changes neither the author nor the review group of adjacent text. */

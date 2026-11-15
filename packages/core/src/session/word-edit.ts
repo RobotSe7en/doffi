@@ -1,5 +1,5 @@
 import {restoreWordSplitContinuations} from './word-split-continuation.js';
-import {trackWordColumnDeletion,wordTableCells} from './word-cell-revisions.js';
+import {trackWordColumnDeletion,prepareWordColumnInsertion} from './word-cell-revisions.js';
 import {wordResetTextProperties,wordRunCharacterStyle,wordRunCharacterStyleAt} from './word-reset-text.js';
 import {ensureWordMainStoryContainer,relocateWordSectionRoot} from './word-story-container.js';
 import {moveWordContinuationFormats} from './word-conditional-format.js';
@@ -145,9 +145,9 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.rowHeights)for(const id of rowIds)recordWordFormat(word,source,id,'row');
       if(word.trackChanges&&operation.change.kind==='resize'&&operation.change.rowIndex!==undefined){const id=rowIds[operation.change.rowIndex];if(!id)fail('The resized row exceeds the table.');recordWordFormat(word,source,id,'row');}
       if(word.trackChanges&&operation.change.kind==='deleteRows'){trackWordRowDeletion(word,edit,parse,operation.nodeId,operation.change.at,operation.change.count,limits);return;}
-      if(word.trackChanges&&operation.change.kind==='deleteColumns'){trackWordColumnDeletion(word,edit,parse,operation.nodeId,operation.change.at,operation.change.count,limits);return;}
-      const previousCells=word.trackChanges&&operation.change.kind==='insertColumns'?wordTableCells(source,operation.nodeId,info.grid.length,limits).cells:undefined;
-      if(previousCells&&operation.change.kind==='insertColumns'){const at=operation.change.at;if(previousCells.some(cell=>!cell.gap&&cell.column<at&&cell.column+cell.columns>at))throw new DocumentError('UnsupportedFeature','A tracked column insertion cannot yet split a spanning cell.');}
+      if(word.trackChanges&&operation.change.kind==='deleteColumns'){trackWordColumnDeletion(word,edit,parse,operation.nodeId,operation.change.at,operation.change.count,limits);const grid=word.revisions.find(revision=>revision.nodeId===operation.nodeId&&revision.property==='tableGrid');if(grid?.groupId&&grid.before?.grid?.length===info.grid.length&&!word.revisions.some(revision=>revision.groupId===grid.groupId&&revision.kind==='cellInsert'&&parse().hasNode(revision.nodeId)))applyWordRevision(word,edit,parse,{op:'reviewWordRevision',nodeId:grid.nodeId,revisionId:grid.revisionId??grid.nodeId,decision:'reject'},limits,metadata.sections);return;}
+      const insertion=word.trackChanges&&operation.change.kind==='insertColumns'?prepareWordColumnInsertion(word,source,operation.nodeId,limits):undefined;
+      const previousCells=insertion?.cells;
       const firstCell=rowIds.flatMap(id=>source.peekNode(id)!.childNodeIds).map(id=>source.peekNode(id)!).find(cell=>['td','th'].includes(cell.tagName)&&!cell.attributes['data-word-grid-gap']);
       const escape=(value:string):string=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
       const cellAttributes=firstCell?['class','style'].filter(key=>firstCell.attributes[key]).map(key=>' '+key+'="'+escape(firstCell.attributes[key]!)+'"').join(''):'';
@@ -155,7 +155,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       moveWordContinuationFormats(info,operation.change);
       const previousWidth=info.grid.reduce((a,b)=>a+b,0);
       const result=editSourceTable({edit,parse,limits,wordOmissions:true,newCellHtml:'<td'+cellAttributes+'><p></p></td>'},operation.nodeId,info.grid,{width:previousWidth,height:Math.max(1,rowIds.length)*20},operation.change);
-      if(previousCells){const old=new Set(previousCells.map(cell=>cell.id)),added=result.cells.filter(cell=>!old.has(cell.id)),author=word.trackingAuthor??'',date=new Date().toISOString(),groupId=added[0]?.id+'-column-insert';if(!added.length)throw new DocumentError('UnsupportedFeature','An insertion wholly inside omitted regions requires native grid revision support.');for(const cell of added)word.revisions.push({nodeId:cell.id,sourceId:cell.id+'-cell-insert',revisionId:cell.id+'-cell-insert',groupId,kind:'cellInsert',author,date});}
+      if(previousCells){const old=new Set(previousCells.map(cell=>cell.id)),added=result.cells.filter(cell=>!old.has(cell.id)),author=word.trackingAuthor??'',date=new Date().toISOString(),groupId=insertion!.groupId;if(!added.length)throw new DocumentError('UnsupportedFeature','An insertion wholly inside merged or omitted regions requires explicit native column boundaries.');for(const cell of added)word.revisions.push({nodeId:cell.id,sourceId:cell.id+'-cell-insert',revisionId:cell.id+'-cell-insert',groupId,kind:'cellInsert',author,date});}
       if(word.trackChanges&&operation.change.kind==='insertRows'){const added=wordTableRows(parse(),operation.nodeId).filter(id=>!rowIds.includes(id)),groupId=added[0]+'-row-insert';for(const id of added)word.revisions.push({nodeId:id,sourceId:id+'-row-insert',revisionId:id+'-row-insert',groupId,kind:'rowInsert',author:word.trackingAuthor??'',date:new Date().toISOString()});}
       const preserveWidth=operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns';
       info.grid=preserveWidth?result.grid.map(width=>width*previousWidth/result.width):result.grid;

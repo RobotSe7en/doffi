@@ -1,4 +1,4 @@
-import { hiddenFromViewSelection, ownViewAttribute, ownedViewAttribute, ownedViewStyle, viewNodeRole, viewStyleSource } from "./view-nodes.js";
+import { hiddenFromViewSelection, ownViewAttribute, ownViewStyle, ownedViewAttribute, ownedViewStyle, viewNodeRole, viewStyleSource } from "./view-nodes.js";
 /** Reversible projection: layout, font fallback, assets and labels never become source. */
 export class SourceProjection {
   private readonly originals = new WeakMap<Element, Element>();
@@ -33,6 +33,7 @@ export class SourceProjection {
   markDerived(node: Node): void { this.derived.add(node); }
   markWrapper(node:Node):void{this.wrappers.add(node);}
   setViewAttribute(element:Element,name:string,value:string|null):void{ownViewAttribute(element,name);if(value===null)element.removeAttribute(name);else element.setAttribute(name,value);}
+  setViewStyles(element:HTMLElement,properties:Readonly<Record<string,string>>):void{for(const[name,value]of Object.entries(properties)){ownViewStyle(element,name);element.style.setProperty(name,value);}}
   /** An editor may bind one live notes/comment instance to its exact source root.
    * Ownership is local to this projection; the global read-only view remains derived. */
   captureInstance(root:HTMLElement,source:HTMLElement):void {

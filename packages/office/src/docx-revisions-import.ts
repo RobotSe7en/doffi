@@ -60,14 +60,15 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
         before.tableStyleOptions={};const mask=tableLookMask(child(previous,'tblLook'));if(mask!==undefined)before.tableStyleOptions.lookMask=mask;for(const[name,key]of [['tblStyleRowBandSize','rowBandSize'],['tblStyleColBandSize','columnBandSize']]as const){const item=child(previous,name);if(item)before.tableStyleOptions[key]=number(attr(item,'val'),item);}
     }
     else if (property === 'cell') {
-        if (attr(child(previous, 'gridSpan'), 'val') !== attr(child(properties, 'gridSpan'), 'val') || attr(child(previous, 'vMerge'), 'val') !== attr(child(properties, 'vMerge'), 'val'))
+        if (attr(child(previous, 'vMerge'), 'val') !== attr(child(properties, 'vMerge'), 'val'))
             unsupported(change, 'A cell merge revision is preserved with its native grid.');
         css = styles.cell(previous);
+        const span=child(previous,'gridSpan');if(span&&number(attr(span,'val'),span)<1)fail(span,'A previous cell span must be positive.');attributes.colspan=span?attr(span,'val')!:null;
         attributes['data-word-text-direction'] = attr(child(previous, 'textDirection'), 'val') ?? null;
     }
     else {
         check(previous, ['cnfStyle', 'divId', 'gridBefore', 'gridAfter', 'wBefore', 'wAfter', 'cantSplit', 'trHeight', 'tblHeader', 'tblCellSpacing', 'jc', 'hidden']);
-        if (on(child(previous, 'hidden')) || readWordRowGapCount(previous,'before')!==readWordRowGapCount(properties,'before') || readWordRowGapCount(previous,'after')!==readWordRowGapCount(properties,'after'))
+        if (on(child(previous, 'hidden')))
             unsupported(change, 'This row format revision remains native.');
         css=styles.row(previous);
         before.rowOmissions={before:readWordRowGapCount(previous,'before'),after:readWordRowGapCount(previous,'after')};const widths=readWordRowGapWidths(previous);for(const key of WORD_ROW_GAP_WIDTH_ATTRIBUTES)attributes[key]=widths[key]??null;

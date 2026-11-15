@@ -26,6 +26,7 @@ import { findWordText,wordTextReplacementOperations, getWordOutline, getWordText
 import type { ContentDocumentModel, DocumentEditingSession, DocumentSelection, ReconciledTextEdit } from "@doffi/core";
 import { mountDocumentPreview } from "./preview.js";
 import{wordReviewPreview}from'./word-review-preview.js';
+import{projectWordColumnReview}from'./word-column-review.js';
 import{bindWordTableResize}from'./word-table-resize.js';
 import{createWordWatermarkControls}from'./word-watermark-controls.js';
 import { PreviewSource, sourceSelectionText, stripClipboardIdentities,DEFAULT_RENDER_LIMITS } from "@doffi/render";
@@ -501,6 +502,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
   function activate(source: HTMLElement): void {
     if (!root || !frame) return;
     const reviewStyle=frame.createElement('style');reviewStyle.textContent='[data-sdk-word-revision="insert"]{background:#dff7e5;text-decoration:underline}[data-sdk-word-revision="delete"]{background:#ffe3e3;text-decoration:line-through}[data-sdk-word-revision="format"]{outline:1px dotted #827600}'+(revisionDisplay==='final'?'[data-sdk-word-deleted]{display:none}[data-sdk-word-revision="insert"]{background:transparent;text-decoration:none}':revisionDisplay==='original'?'[data-sdk-word-inserted]{display:none}[data-sdk-word-revision="delete"]{background:transparent;text-decoration:none}':'');frame.head.append(reviewStyle);viewControls.signal.addEventListener('abort',()=>reviewStyle.remove(),{once:true});for(const item of session.snapshot().metadata.word?.revisions??[]){const node=root.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(item.nodeId)+'"]');if(node){projection.setViewAttribute(node,'data-sdk-word-revision',['moveTo','insert','rowInsert','cellInsert'].includes(item.kind)?'insert':['moveFrom','delete','rowDelete','cellDelete'].includes(item.kind)?'delete':item.kind);if(['moveTo','insert','rowInsert','cellInsert'].includes(item.kind))projection.setViewAttribute(node,'data-sdk-word-inserted','true');if(['delete','moveFrom','rowDelete','cellDelete'].includes(item.kind)){projection.setViewAttribute(node,'data-sdk-word-deleted','true');projection.setViewAttribute(node,'contenteditable','false');}}}
+    projectWordColumnReview(root,session.snapshot().metadata.word,revisionDisplay,projection,options.limits?.maxNodes??DEFAULT_RENDER_LIMITS.maxNodes);
     drawingControls.bind(root,projection,viewControls.signal);
     bindWordTableResize(root,session,report,viewControls.signal);
     chartControls.bind(root,viewControls.signal);

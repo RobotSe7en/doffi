@@ -17,7 +17,7 @@ export function createWordReviewControls(parent: ShadowRoot, before: HTMLElement
         panel.setAttribute('aria-label', 'Word 修订审阅');
         panel.style.cssText = 'padding:12px;background:white;border:1px solid #dbe3ef;max-height:340px;overflow:auto';
         parent.insertBefore(panel, before);
-        const apply = (operations: DocumentOperation[]): void => { session.commit(session.prepare({ protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: snapshot.manifest.revision, operations })); open(); };
+        const apply = (operations: DocumentOperation[]): void => { const current=session.snapshot();session.commit(session.prepare({ protocolVersion: 1, documentId: current.manifest.documentId, baseRevision: current.manifest.revision, operations })); open(); };
         const button = (name: string, run: () => void, container: HTMLElement = panel!): void => { const node = document.createElement('button'); node.type = 'button'; node.textContent = name; node.addEventListener('click', () => { try {
             run();
         }
