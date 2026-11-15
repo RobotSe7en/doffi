@@ -6,6 +6,7 @@ import { readManifest } from "./document/manifest.js";
 import { DocumentError } from "./errors.js";
 import { openWorkbookModel } from "./workbook/model.js";
 import { takeSerializedWorkbook } from "./workbook/source.js";
+import {copyContentAsset} from './document/assets.js';
 
 export { DEFAULT_DOCUMENT_READ_LIMITS } from "./document/validation.js";
 
@@ -23,6 +24,7 @@ export function openDocument(input: DocumentPackage, options: OpenDocumentOption
     kind: state.snapshot.manifest.kind,
     snapshot: () => state.snapshot,
     getNode: (nodeId: string) => state.html.getNode(nodeId),
+    getAsset:(path:string,maxBytes=limits.maxFileBytes)=>copyContentAsset(state.files,state.snapshot.manifest.assets,path,maxBytes),
     serialize: () => new Map([...state.files].map(([path, bytes]) => [path, new Uint8Array(bytes)])),
   });
 }

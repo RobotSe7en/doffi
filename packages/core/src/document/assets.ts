@@ -3,7 +3,13 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { AssetDescriptor } from "../contracts/document.js";
 import { DocumentError } from "../errors.js";
 import type { DeepReadonly, DocumentPackage } from "../runtime.js";
-import { invalid, unsupported } from "./validation.js";
+import { invalid, unsupported, checkLimit } from "./validation.js";
+
+export function copyContentAsset(files:DocumentPackage,assets:DeepReadonly<readonly AssetDescriptor[]>,path:string,maxBytes:number):Uint8Array|undefined{
+  if(!Number.isSafeInteger(maxBytes)||maxBytes<1)invalid('Asset byte limits must be positive safe integers.');
+  if(!assets.some(asset=>asset.path===path))return undefined;
+  const bytes=files.get(path);if(!bytes)return undefined;checkLimit(bytes.byteLength,maxBytes);return new Uint8Array(bytes);
+}
 
 function signature(bytes: Uint8Array, offset: number, expected: readonly number[]): boolean {
   return expected.every((byte, index) => bytes[offset + index] === byte);

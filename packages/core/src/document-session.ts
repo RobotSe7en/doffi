@@ -34,6 +34,7 @@ import { applyWordOperation, isWordOperation } from "./session/word-edit.js";
 import { pruneWordComments } from './session/word-comments.js';
 import { validateWordCandidate } from './session/word-interaction.js';
 import { updateWordDrawingConnectors } from './word-drawing.js';
+import{copyContentAsset}from'./document/assets.js';
 import { PresentationStyleEdit } from "./session/presentation-styles.js";
 export { DEFAULT_INTERACTION_LIMITS } from "./session/interaction.js";
 
@@ -86,6 +87,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
   const initial = buildDocumentState(copyPackage(document.serialize(), limits), limits);
   const model = (source: DocumentState): ContentDocumentModel => Object.freeze<ContentDocumentModel>({
     kind: source.snapshot.manifest.kind, snapshot: () => source.snapshot, getNode: id => source.html.getNode(id),
+    getAsset:(path,maxBytes=limits.maxFileBytes)=>copyContentAsset(source.files,source.snapshot.manifest.assets,path,maxBytes),
     serialize: () => new Map([...source.files].map(([path, bytes]) => [path, new Uint8Array(bytes)])),
   });
   const boundary = createSessionLifecycle(initial, {
@@ -266,6 +268,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
     kind: initial.snapshot.manifest.kind,
     snapshot: () => state().snapshot,
     getNode: (id: string) => state().html.getNode(id),
+    getAsset:(path:string,maxBytes=limits.maxFileBytes)=>copyContentAsset(state().files,state().snapshot.manifest.assets,path,maxBytes),
     serialize: () => model(state()).serialize(),
     ...boundary.lifecycle,
     buildInteractionRequest: buildRequest,

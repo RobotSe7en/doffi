@@ -20,10 +20,11 @@ import { showWordWhitespace } from './word-marks.js';
 import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
+import{copyClipboardImages,pasteClipboardImages,WORD_CLIPBOARD_BYTES}from'./rich-text/clipboard-images.js';
 import { readTextFormat } from "./text-format-state.js";
 import type { TextFormatState } from "./text-format-state.js";
 import { findWordText,wordTextReplacementOperations, getWordOutline, getWordTextStatistics, getWordTextDefaults, createOpaqueId, WordStyleSchema, DocumentError } from "@doffi/core";
-import type { ContentDocumentModel, DocumentEditingSession, DocumentSelection, ReconciledTextEdit } from "@doffi/core";
+import type { ContentDocumentModel, DocumentEditingSession, DocumentSelection, ReconciledTextEdit,TransactionPrepareOptions } from "@doffi/core";
 import { mountDocumentPreview } from "./preview.js";
 import{wordReviewPreview}from'./word-review-preview.js';
 import{projectWordColumnReview}from'./word-column-review.js';
@@ -206,7 +207,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }
     return value;
   }
-  function flush(): void {
+  function flush(resources?:TransactionPrepareOptions): void {
     if (!root || disposed || composing) return;
     let selection = bookmark(root, projection.ignored);
     try {
@@ -223,7 +224,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       }).map(([id]) => id));
       const tracked=trackedWordInput(session,rootElement(sourceDocument()),normalized,typingStyles,proofs.filter((edit)=>!changedByNormalization.has(edit.nodeId)));
       const candidate = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision,
-        operations: tracked??[{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: normalized.innerHTML, textEdits: proofs.filter((edit) => !changedByNormalization.has(edit.nodeId)) }] });
+        operations: tracked??[{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: normalized.innerHTML, textEdits: proofs.filter((edit) => !changedByNormalization.has(edit.nodeId)) }] },resources);
       if(tracked)selection=trackedSelection(selection,session,candidate.model);
       committing = true;
       try { session.commit(candidate); } catch (reason) { session.discard(candidate); throw reason; }
@@ -231,7 +232,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       error.hidden = true; compositionRevision = undefined; refresh(selection);
     } catch (reason) { compositionRevision = undefined; proofs = []; refresh(selection); report(reason); }
   }
-  function mutate(range: Range, action: () => void, split = false): void {
+  function mutate(range: Range, action: () => void, split = false,resources?:TransactionPrepareOptions): void {
     if (!root || composing || disposed) return;
     const step = inputStep(root, range, projection.ignored);
     wholeStoryReplacement = step.from === 0 && step.to > 0 && step.to === sourceText(root, projection.ignored).length;
@@ -242,7 +243,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     try {
       action();
       const actual = inputProofs(root, step, projection.ignored), known = new Set(actual.map((edit) => edit.nodeId));
-      proofs.push(...actual, ...(moved ? inputProofs(root, moved, projection.ignored).filter((edit) => !known.has(edit.nodeId)) : [])); flush();
+      proofs.push(...actual, ...(moved ? inputProofs(root, moved, projection.ignored).filter((edit) => !known.has(edit.nodeId)) : [])); flush(resources);
     }
     catch (reason) { refresh(); report(reason); }
   }
@@ -390,17 +391,18 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
 
   function paste(event: ClipboardEvent): void {
     event.preventDefault(); if (!event.clipboardData || composing || !root) return;
-    const image=Array.from(event.clipboardData?.files??[]).find(file=>/^image\/(?:png|jpeg|webp)$/.test(file.type));if(image){event.preventDefault();void drawingControls.insertImage(image).catch(report);return;}
+    const raw=event.clipboardData.getData('text/html'),image=Array.from(event.clipboardData?.files??[]).find(file=>/^image\/(?:png|jpeg|webp)$/.test(file.type));if(image&&!raw){event.preventDefault();void drawingControls.insertImage(image).catch(report);return;}
     try {
-      const raw = event.clipboardData.getData("text/html"), text = event.clipboardData.getData("text/plain");
-      if (raw.length > 1024 * 1024 || text.length > 1024 * 1024) throw new DocumentError("ResourceLimitExceeded", "粘贴内容超过大小限制。");
+      const text = event.clipboardData.getData("text/plain");
+      if (raw.length > WORD_CLIPBOARD_BYTES || text.length > WORD_CLIPBOARD_BYTES) throw new DocumentError("ResourceLimitExceeded", "粘贴内容超过 64 MiB。");
       const template = document.createElement("template");
       if (raw) template.innerHTML = raw;
       else text.replace(/\r\n?/g, "\n").split("\n").forEach((line, index) => { if (index) template.content.append(document.createElement("br")); template.content.append(document.createTextNode(line)); });
+      const resources=pasteClipboardImages(template.content,session);
       for (const node of template.content.querySelectorAll("[data-node-id],[id]")) { node.removeAttribute("data-node-id"); node.removeAttribute("id"); }
       const block = [...template.content.children].some((node) => /^(?:p|h[1-6]|div|section|article|table|ul|ol)$/.test(node.localName));
       const validation = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: revision,
-        operations: [{ op: "insertFragment", nodeId: root.dataset.nodeId!, position: "end", html: block ? template.innerHTML : "<p>" + template.innerHTML + "</p>" }] });
+        operations: [{ op: "insertFragment", nodeId: root.dataset.nodeId!, position: "end", html: block ? template.innerHTML : "<p>" + template.innerHTML + "</p>" }] },resources);
       session.discard(validation);
       const range = selectedRange(); if (!range) return;
       mutate(range, () => {
@@ -414,7 +416,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
           const last = template.content.lastChild; deleteRange(range); range.insertNode(template.content);
           if (last) select(last.parentNode!, [...last.parentNode!.childNodes].indexOf(last as ChildNode) + 1);
         }
-      });
+      },false,resources);
     } catch (reason) { report(reason); }
   }
   function copy(event: ClipboardEvent, cut: boolean): void {
@@ -434,6 +436,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }
     holder.append(fragment);
     const source = holder;
+    try{copyClipboardImages(source,session);if(source.innerHTML.length>WORD_CLIPBOARD_BYTES)throw new DocumentError('ResourceLimitExceeded','复制内容超过 64 MiB。');}catch(reason){report(reason);return;}
     stripClipboardIdentities(source);
     event.clipboardData.setData("text/html", source.innerHTML);
     event.clipboardData.setData("text/plain", sourceSelectionText(source));

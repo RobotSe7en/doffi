@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { collectDocumentAssets, createAssetDescriptor, DocumentError, openDocument, parseContract } from "@doffi/core";
+import { collectDocumentAssets, createAssetDescriptor, DocumentError, openDocument, parseContract, createDocumentSession } from "@doffi/core";
 import type { AssetDescriptor, AssetProvider, DocumentErrorCode, DocumentPackage } from "@doffi/core";
 
 const encoder = new TextEncoder();
@@ -150,4 +150,11 @@ describe("host-authorized resource collection", () => {
     await expect(second).rejects.toSatisfy(error("AssetUnavailable"));
     expect(openDocument(await first).getNode("png")).toBeDefined();
   });
+});
+
+
+test("content models, candidates and sessions copy only declared assets within the requested byte budget",()=>{
+ const document=openDocument(files(),{kind:'document'}),session=createDocumentSession(document),candidate=session.prepare({protocolVersion:1,documentId:session.snapshot().manifest.documentId,baseRevision:session.snapshot().manifest.revision,operations:[{op:'setStyle',nodeId:'paragraph',property:'color',value:'#123456'}]});
+ for(const model of [document,session,candidate.model]){const bytes=model.getAsset!('assets/sample.png')!,original=bytes[0];bytes[0]=0;expect(model.getAsset!('assets/sample.png')![0]).toBe(original);expect(model.getAsset!('content.html')).toBeUndefined();expect(model.getAsset!('missing.png')).toBeUndefined();expect(()=>model.getAsset!('assets/sample.png',1)).toThrowError(expect.objectContaining({code:'ResourceLimitExceeded'}));expect(()=>model.getAsset!('assets/sample.png',0)).toThrowError(expect.objectContaining({code:'InvalidDocument'}));}
+ session.discard(candidate);
 });

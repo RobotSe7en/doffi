@@ -85,6 +85,9 @@ export interface ContentDocumentModel {
   readonly kind: "document" | "presentation";
   snapshot(): ContentDocumentSnapshot;
   getNode(nodeId: string): DocumentNode | undefined;
+  /** Copy a declared asset without serializing the complete package.
+   * Optional for compatibility with host-owned model implementations. */
+  getAsset?(path:string,maxBytes?:number):Uint8Array|undefined;
   serialize(): DocumentPackage;
 }
 export interface WorkbookModel {
