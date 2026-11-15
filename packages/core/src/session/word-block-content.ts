@@ -1,3 +1,4 @@
+import { deleteWordTrackedContent } from "./word-content-revisions.js";
 import { createOpaqueId } from "../identifiers.js";
 import { DocumentError } from "../errors.js";
 import type { WordOperation } from "../contracts/word-operations.js";
@@ -73,54 +74,19 @@ export function pasteWordBlockContent(
       "InvalidOperation",
       "Block Word content requires an exact paragraph range.",
     );
-  const under = (source: ParsedHtml, id: string, root: string): boolean => {
-    for (
-      let current: string | null = id;
-      current;
-      current = source.peekNode(current)?.parentNodeId ?? null
-    )
-      if (current === root) return true;
-    return false;
-  };
-  const origin = before.textOffset(operation.nodeId)!,
-    start = origin + from,
-    end = origin + to;
-  if (
-    word.revisions.some((revision) => {
-      if (
-        !["insert", "delete", "moveFrom", "moveTo"].includes(revision.kind) ||
-        !under(before, revision.nodeId, operation.nodeId)
-      )
-        return false;
-      const begin = before.textOffset(revision.nodeId)!,
-        finish = begin + before.textLength(revision.nodeId)!;
-      return from === to ? begin < start && start < finish : start < finish && end > begin;
-    })
-  )
-    throw new DocumentError(
-      "UnsupportedFeature",
-      "Block content over an existing text revision requires structural review.",
-    );
   const author = context?.author ?? word.trackingAuthor ?? "",
     date = context?.date ?? new Date().toISOString(),
-    groupId = context?.groupId ?? "word-paste-" + createOpaqueId(),
-    removed = edit.wrapSourceText(operation.nodeId, from, to, word.trackChanges ? "del" : "span");
-  if (word.trackChanges)
-    for (const id of removed) {
-      edit.attributes(id, { "data-word-run-overlay": "true" });
-      word.revisions.push({
-        nodeId: id,
-        revisionId: id,
-        sourceId: id,
-        kind: "delete",
+    groupId = context?.groupId ?? "word-paste-" + createOpaqueId();
+  const splitAt = word.trackChanges
+    ? deleteWordTrackedContent(word, edit, parse, operation.nodeId, from, to, {
+        groupId,
         author,
         date,
-        groupId,
-      });
-    }
-  else for (const id of removed) edit.removeSource(id);
+      })
+    : from;
+  if (!word.trackChanges)
+    for (const id of edit.wrapSourceText(operation.nodeId, from, to, "span")) edit.removeSource(id);
   const splitBefore = parse(),
-    splitAt = word.trackChanges ? to : from,
     identities = edit.splitSourceParagraph(operation.nodeId, splitAt),
     tail = identities.get(operation.nodeId)!;
   const inline = new Map([...identities].filter(([id]) => id !== operation.nodeId));

@@ -1,5 +1,6 @@
 import { registerWordListClipboardTests } from "./word-list-clipboard-cases.js";
 import { registerWordCrossClipboardTests } from "./word-cross-clipboard-cases.js";
+import { registerWordMoveClipboardTests } from "./word-move-clipboard-cases.js";
 import {
   floatingTableFixture,
   floatingHeaderFixture,
@@ -8741,3 +8742,4 @@ for (const trackChanges of [false, true])
 
 registerWordListClipboardTests(mount);
 registerWordCrossClipboardTests(mount);
+registerWordMoveClipboardTests(mount);

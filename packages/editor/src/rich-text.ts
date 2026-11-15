@@ -244,6 +244,7 @@ export function mountDocumentTextEditor(
   let savedSelection: SelectionBookmark | undefined;
   let compositionInsertion: { from: number; to: number } | undefined;
   let wholeStoryReplacement = false;
+  let pendingCut: { token: string; cutId: string; revision: number; html: string } | undefined;
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
   let activeStoryId = options.storyId;
@@ -1630,6 +1631,46 @@ export function mountDocumentTextEditor(
     session.redo();
   });
 
+  function clipboardRange(range: Range): {
+    start: HTMLElement;
+    end: HTMLElement;
+    from: number;
+    to: number;
+    expectedText: string;
+  } {
+    if (!root) throw new DocumentError("InvalidOperation", "剪贴板选区缺少源故事。");
+    const selector = "p,h1,h2,h3,h4,h5,h6";
+    const owner = (node: Node) =>
+      (node.nodeType === 1 ? (node as Element) : node.parentElement)?.closest<HTMLElement>(
+        selector,
+      );
+    const paragraphs = [...root.querySelectorAll<HTMLElement>(selector)].filter((p) =>
+      range.intersectsNode(p),
+    );
+    const start = owner(range.startContainer) ?? paragraphs[0],
+      end = owner(range.endContainer) ?? paragraphs.at(-1);
+    if (!start || !end)
+      throw new DocumentError("InvalidOperation", "剪贴板操作需要准确的段落选区。");
+    const from = start.contains(range.startContainer)
+        ? offsetAt(start, range.startContainer, range.startOffset, projection.ignored)
+        : 0,
+      to = end.contains(range.endContainer)
+        ? offsetAt(end, range.endContainer, range.endOffset, projection.ignored)
+        : sourceText(end, projection.ignored).length;
+    return {
+      start,
+      end,
+      from,
+      to,
+      expectedText: session
+        .getNode(root.dataset.nodeId!)!
+        .text.slice(
+          offsetAt(root, start, 0, projection.ignored) + from,
+          offsetAt(root, end, 0, projection.ignored) + to,
+        ),
+    };
+  }
+
   function paste(event: ClipboardEvent): void {
     event.preventDefault();
     if (!event.clipboardData || composing || !root) return;
@@ -1659,6 +1700,17 @@ export function mountDocumentTextEditor(
       const format = pasteClipboardFormat(template.content, session),
         prefix = format.operations,
         resources = pasteClipboardImages(template.content, session);
+      const cutId =
+        pendingCut &&
+        pendingCut.revision === session.snapshot().manifest.revision &&
+        pendingCut.html === raw &&
+        template.content
+          .querySelector("[data-doffi-word-cut]")
+          ?.getAttribute("data-doffi-word-cut") === pendingCut.token
+          ? pendingCut.cutId
+          : undefined;
+      for (const node of template.content.querySelectorAll("[data-doffi-word-cut]"))
+        node.removeAttribute("data-doffi-word-cut");
       for (const node of template.content.querySelectorAll("[data-node-id],[id]")) {
         if (!format.semantics) node.removeAttribute("data-node-id");
         node.removeAttribute("id");
@@ -1688,18 +1740,12 @@ export function mountDocumentTextEditor(
       }
       const range = selectedRange();
       if (!range) return;
-      const start = (
-          range.startContainer.nodeType === 1
-            ? (range.startContainer as Element)
-            : range.startContainer.parentElement
-        )?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6"),
-        end = (
-          range.endContainer.nodeType === 1
-            ? (range.endContainer as Element)
-            : range.endContainer.parentElement
-        )?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6");
+      const receiving = session.snapshot().metadata.word ? clipboardRange(range) : undefined;
+      const start = receiving?.start,
+        end = receiving?.end;
       if (
         format.semantics ||
+        cutId ||
         (session.snapshot().metadata.word && start && end && start !== end) ||
         (block &&
           start &&
@@ -1708,8 +1754,8 @@ export function mountDocumentTextEditor(
           !template.content.querySelector("table,section,article"))
       ) {
         if (!start || !end) throw new DocumentError("InvalidOperation", "粘贴需要准确的段落选区。");
-        const from = offsetAt(start, range.startContainer, range.startOffset, projection.ignored),
-          to = offsetAt(end, range.endContainer, range.endOffset, projection.ignored),
+        const from = receiving!.from,
+          to = receiving!.to,
           nodeId = start.dataset.nodeId!,
           snapshot = session.snapshot(),
           word = snapshot.metadata.word!,
@@ -1741,22 +1787,10 @@ export function mountDocumentTextEditor(
                 ...(start !== end ? { endNodeId: end.dataset.nodeId! } : {}),
                 from,
                 to,
-                expectedText:
-                  start === end
-                    ? session.getNode(nodeId)!.text.slice(from, to)
-                    : session
-                        .getNode(root.dataset.nodeId!)!
-                        .text.slice(
-                          offsetAt(
-                            root,
-                            range.startContainer,
-                            range.startOffset,
-                            projection.ignored,
-                          ),
-                          offsetAt(root, range.endContainer, range.endOffset, projection.ignored),
-                        ),
+                expectedText: receiving!.expectedText,
                 html: template.innerHTML,
                 semantics: format.semantics,
+                ...(cutId ? { cutId } : {}),
               },
             ],
           },
@@ -1819,6 +1853,7 @@ export function mountDocumentTextEditor(
         committing = true;
         try {
           session.commit(candidate);
+          pendingCut = undefined;
         } catch (error) {
           session.discard(candidate);
           throw error;
@@ -1968,13 +2003,66 @@ export function mountDocumentTextEditor(
       return;
     }
     stripClipboardIdentities(source);
-    event.clipboardData.setData("text/html", source.innerHTML);
-    event.clipboardData.setData("text/plain", sourceSelectionText(source));
-    if (cut)
+    pendingCut = undefined;
+    if (cut && session.snapshot().metadata.word) {
+      try {
+        const { start, end, from, to, expectedText } = clipboardRange(range);
+        const nodeId = start.dataset.nodeId!,
+          endNodeId = end.dataset.nodeId!,
+          snapshot = session.snapshot(),
+          cutId = "word-cut-" + createOpaqueId(),
+          token = createOpaqueId();
+        const candidate = session.prepare({
+          protocolVersion: 1,
+          documentId: snapshot.manifest.documentId,
+          baseRevision: snapshot.manifest.revision,
+          operations: [
+            {
+              op: "cutWordContent",
+              nodeId,
+              ...(nodeId !== endNodeId ? { endNodeId } : {}),
+              from,
+              to,
+              expectedText,
+              cutId,
+            },
+          ],
+        });
+        const retained = candidate.model.getNode(nodeId) ?? candidate.model.getNode(endNodeId)!;
+        const landing = {
+          nodeId: retained.nodeId,
+          offset: Math.min(from, retained.text.length),
+          path: [] as number[],
+        };
+        committing = true;
+        try {
+          session.commit(candidate);
+        } catch (reason) {
+          session.discard(candidate);
+          throw reason;
+        } finally {
+          committing = false;
+        }
+        const marker = source.firstElementChild ?? source.appendChild(frame.createElement("span"));
+        marker.setAttribute("data-doffi-word-cut", token);
+        pendingCut = {
+          token,
+          cutId,
+          revision: session.snapshot().manifest.revision,
+          html: source.innerHTML,
+        };
+        refresh({ anchor: landing, focus: landing });
+      } catch (reason) {
+        report(reason);
+        return;
+      }
+    } else if (cut)
       mutate(range, () => {
         deleteRange(range);
         select(range.startContainer, range.startOffset);
       });
+    event.clipboardData.setData("text/html", source.innerHTML);
+    event.clipboardData.setData("text/plain", sourceSelectionText(source));
   }
   function changeListLevel(direction: -1 | 1): void {
     const snapshot = session.snapshot(),

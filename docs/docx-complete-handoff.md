@@ -121,3 +121,7 @@ PLAYWRIGHT_BROWSERS_PATH=/home/danny/work/doffi/.playwright pnpm exec playwright
 ## R03 补充交接（2026-11-15）
 
 跨段接收选区已收口，固定清单更新至 R04～R19。`word-content-range.ts` 负责准确同故事范围、跨表格边界删除及成组标记；两个粘贴操作使用可选 `endNodeId`。`TextRangeTransfer` 按文字编辑序号提供准确迁移，锚点与历史共用。必要检查：105 项事务／锚点／DOCX、12 项三引擎浏览器、12 DOCX／36 XML 固定 XSD、构建及类型／边界通过。用户当前授权继续完成 R04～R06；按项本地提交，不推送、不建 PR、不安排独立审查。
+
+## R04 补充交接（2026-11-15）
+
+`word-content-revisions.ts` 分段删除既有修订；`word-content-move.ts` 提供准确剪切、成对移动范围和锚点迁移。编辑器以实例私有令牌／HTML／修订绑定系统剪切，已有待定插入被取消时保持普通粘贴。原生行修订继承显式移动范围，空表也可成组审阅。9 文件 127 项、三引擎 24 项、16 DOCX／48 XML 固定 XSD 及类型／边界通过。继续 R05、R06，不推送。

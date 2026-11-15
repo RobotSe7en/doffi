@@ -166,6 +166,15 @@ export function copyWordClipboardFormat(
     ),
   );
   const semantic = copyWordClipboardSemantics(holder, model, completeNodes, css);
+  // The clipboard carries the selected content and its formatting. Receiver
+  // revision ownership is created by the receiving transaction.
+  for (const revision of holder.querySelectorAll("ins,del")) {
+    const span = holder.ownerDocument.createElement("span");
+    for (const attribute of revision.attributes) span.setAttribute(attribute.name, attribute.value);
+    span.append(...revision.childNodes);
+    revision.replaceWith(span);
+  }
+  for (const marker of holder.querySelectorAll("[data-word-move-range]")) marker.remove();
   if (!block)
     for (const mark of holder.querySelectorAll("[data-word-paragraph-mark]")) mark.remove();
   const cache = new Map<string, SourceStyleNode>();

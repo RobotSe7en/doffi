@@ -1,5 +1,6 @@
 import { pasteWordBlockContent } from "./word-block-content.js";
 import { pasteWordInlineContent } from "./word-inline-content.js";
+import { cutWordContent, linkWordContentMove } from "./word-content-move.js";
 import { restoreWordSplitContinuations } from "./word-split-continuation.js";
 import { formatWordParagraphMark } from "./word-paragraph-mark.js";
 import {
@@ -53,6 +54,7 @@ export function isWordOperation(operation: { readonly op: string }): operation i
     [
       "pasteWordBlockContent",
       "pasteWordInlineContent",
+      "cutWordContent",
       "setWordWatermark",
       "resetWordText",
       "cloneWordStory",
@@ -498,12 +500,16 @@ export function applyWordOperation(
     edit.replaceSourceContent(operation.nodeId, operation.html);
     return;
   }
-  if (operation.op === "pasteWordBlockContent") {
-    pasteWordBlockContent(metadata, edit, parse, styles, operation);
+  if (operation.op === "cutWordContent") {
+    cutWordContent(metadata, edit, parse, operation);
     return;
   }
-  if (operation.op === "pasteWordInlineContent") {
-    pasteWordInlineContent(metadata, edit, parse, operation);
+  if (operation.op === "pasteWordBlockContent" || operation.op === "pasteWordInlineContent") {
+    const before = new Set(word.revisions.map((r) => r.revisionId ?? r.nodeId));
+    if (operation.op === "pasteWordBlockContent")
+      pasteWordBlockContent(metadata, edit, parse, styles, operation);
+    else pasteWordInlineContent(metadata, edit, parse, styles, operation);
+    linkWordContentMove(word, edit, parse, operation.cutId, before);
     return;
   }
   if (operation.op === "deleteWordTable") {

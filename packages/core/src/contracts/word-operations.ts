@@ -49,6 +49,15 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
   ...WordMathOperationSchema.options,
   ...WordControlOperationSchema.options,
   z.strictObject({
+    op: z.literal("cutWordContent"),
+    nodeId: IdentifierSchema,
+    endNodeId: IdentifierSchema.optional(),
+    from: RevisionSchema,
+    to: RevisionSchema,
+    expectedText: z.string(),
+    cutId: IdentifierSchema,
+  }),
+  z.strictObject({
     op: z.literal("pasteWordBlockContent"),
     nodeId: IdentifierSchema,
     endNodeId: IdentifierSchema.optional(),
@@ -57,6 +66,7 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
     expectedText: z.string(),
     html: z.string().min(1),
     semantics: WordContentSemanticsSchema.optional(),
+    cutId: IdentifierSchema.optional(),
   }),
   z.strictObject({
     op: z.literal("pasteWordInlineContent"),
@@ -67,6 +77,7 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
     expectedText: z.string(),
     html: z.string().min(1),
     semantics: WordInlineContentSemanticsSchema.optional(),
+    cutId: IdentifierSchema.optional(),
   }),
   z.strictObject({
     op: z.literal("resetWordText"),

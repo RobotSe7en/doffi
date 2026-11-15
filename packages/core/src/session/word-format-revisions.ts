@@ -94,9 +94,9 @@ export function copyWordSplitRun(
   styles.aliasNodeIds(identities);
   const copies = word.revisions
     .filter((item) => identities.has(item.nodeId))
-    .map((item) => {
+    .map((item, index) => {
       const nodeId = identities.get(item.nodeId)!,
-        id = nodeId + "-format";
+        id = nodeId + "-format-" + index;
       return {
         ...(JSON.parse(JSON.stringify(item)) as WordRevision),
         nodeId,
@@ -126,7 +126,10 @@ export function copyWordSplitRun(
             ...(previous
               ? {
                   revisionSourceId: copies.find(
-                    (copy) => copy.nodeId === nodeId && copy.property === previous.property,
+                    (copy) =>
+                      copy.nodeId === nodeId &&
+                      copy.kind === previous.kind &&
+                      copy.property === previous.property,
                   )!.sourceId,
                 }
               : {}),

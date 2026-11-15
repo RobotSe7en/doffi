@@ -1845,6 +1845,9 @@ class Importer {
             sourceId: id,
             revisionId: this.id(htmlRow) + "-" + kind,
             kind,
+            ...(this.moves.current(kind === "rowDelete" ? "from" : "to")
+              ? { moveId: this.moves.current(kind === "rowDelete" ? "from" : "to")! }
+              : {}),
             ...(attr(marker, "author") !== undefined ? { author: attr(marker, "author")! } : {}),
             ...(attr(marker, "date") !== undefined ? { date: attr(marker, "date")! } : {}),
           });

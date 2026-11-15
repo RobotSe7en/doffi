@@ -641,6 +641,9 @@ export class DocumentEdit {
   splitSourceParagraph(nodeId: string, offset: number): ReadonlyMap<string, string> {
     return this.splitSourceOwner(nodeId, offset, true);
   }
+  get readLimits(): DocumentReadLimits {
+    return this.limits;
+  }
   private splitSourceOwner(
     nodeId: string,
     offset: number,
@@ -668,9 +671,21 @@ export class DocumentEdit {
     const split = (node: Element): Element => {
       if (
         !(paragraph && node === target) &&
-        (!["span", "a", "strong", "b", "em", "i", "u", "s", "sub", "sup", "code"].includes(
-          node.tagName,
-        ) ||
+        (![
+          "span",
+          "a",
+          "strong",
+          "b",
+          "em",
+          "i",
+          "u",
+          "s",
+          "sub",
+          "sup",
+          "code",
+          "ins",
+          "del",
+        ].includes(node.tagName) ||
           node.attrs.some((attribute) =>
             [
               "data-word-field",
@@ -713,7 +728,7 @@ export class DocumentEdit {
       sibling = parent.childNodes[parent.childNodes.indexOf(target) + 1];
     if (sibling) adapter.insertBefore(parent, right, sibling);
     else adapter.appendChild(parent, right);
-    if (paragraph) {
+    {
       for (const [original, targetNodeId] of identities) {
         const originalNode = this.index().get(original)!;
         const range = positions.get(originalNode)!;
@@ -976,15 +991,17 @@ export class DocumentEdit {
         ["div", "span"].includes(candidate.tagName) &&
         textLeaves(candidate).every((leaf) => !leaf.value)
       ) {
-        let marker = false;
+        let marker = false,
+          block = false;
         visit(candidate, (item) => {
+          if (isElement(item) && /^p$|^h[1-6]$|^table$/.test(item.tagName)) block = true;
           if (
             isElement(item) &&
             (attr(item, "data-word-move-range") || attr(item, "data-word-bookmark"))
           )
             marker = true;
         });
-        if (marker) {
+        if (marker && !block) {
           markers.push(candidate);
           candidate = following(candidate);
           continue;

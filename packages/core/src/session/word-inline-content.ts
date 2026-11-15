@@ -1,3 +1,6 @@
+import { copyWordSplitRun } from "./word-format-revisions.js";
+import { deleteWordTrackedContent } from "./word-content-revisions.js";
+import type { SourceStyleEdit } from "./source-styles.js";
 import { DocumentError } from "../errors.js";
 import type { WordOperation } from "../contracts/word-operations.js";
 import type { DocumentEdit } from "../document/edit.js";
@@ -17,6 +20,7 @@ export function pasteWordInlineContent(
   metadata: WordDocumentMetadata,
   edit: DocumentEdit,
   parse: () => ParsedHtml,
+  styles: SourceStyleEdit,
   operation: Extract<WordOperation, { op: "pasteWordInlineContent" }>,
 ): void {
   const word = metadata.word!;
@@ -35,7 +39,7 @@ export function pasteWordInlineContent(
       ? parse().getNode(operation.nodeId)!.text.length
       : operation.from;
     const old = new Set(word.revisions.map((item) => item.revisionId ?? item.nodeId));
-    pasteWordInlineContent(metadata, edit, parse, {
+    pasteWordInlineContent(metadata, edit, parse, styles, {
       ...operation,
       endNodeId: undefined,
       from: offset,
@@ -61,54 +65,54 @@ export function pasteWordInlineContent(
   )
     invalid("Inline Word content requires an exact paragraph range.");
   edit.assertInlineSource(operation.nodeId, operation.html);
-  const start = source.textOffset(operation.nodeId)! + from,
-    end = source.textOffset(operation.nodeId)! + to;
-  const contains = (id: string): boolean => {
-    for (
-      let current: string | null = id;
-      current;
-      current = source.peekNode(current)?.parentNodeId ?? null
-    )
-      if (current === operation.nodeId) return true;
-    return false;
-  };
-  const protectedIds = [
-    ...(word.drawings ?? []),
-    ...(word.equations ?? []),
-    ...(word.noteReferences ?? []),
-    ...(word.controls ?? []),
-    ...(word.nativeContent?.fragments.filter((item) => item.kind !== "property") ?? []),
-  ].flatMap((item) => (item.nodeId ? [item.nodeId] : []));
-  if (from !== to)
-    for (const id of protectedIds)
-      if (contains(id)) {
-        const begin = source.textOffset(id)!,
-          finish = begin + source.textLength(id)!;
-        if (start < finish && end > begin)
-          throw new DocumentError(
-            "UnsupportedFeature",
-            "Replacing this object requires its structural Word operation.",
-          );
-      }
   const semantics = operation.semantics ?? {},
     attach = (ids: ReadonlyMap<string, string>): void =>
-      attachWordContent(word, edit, parse, ids, semantics);
+      attachWordContent(word, edit, parse, ids, semantics, styles);
   const keepEmpty = Object.values(semantics).some((items) => (items?.length ?? 0) > 0);
   if (word.trackChanges) {
-    trackWordInlineContent(
-      word,
-      edit,
-      parse,
-      {
-        op: "trackWordInlineContent",
-        nodeId: operation.nodeId,
-        from,
-        to,
-        expectedText,
-        html: operation.html,
-      },
-      { inserted: attach, keepEmpty },
+    const origin = source.textOffset(operation.nodeId)!;
+    const fold = word.revisions.find(
+      (revision) =>
+        revision.kind === "insert" &&
+        revision.author === (word.trackingAuthor ?? "") &&
+        source.hasNode(revision.nodeId) &&
+        origin + from >= source.textOffset(revision.nodeId)! &&
+        origin + to <= source.textOffset(revision.nodeId)! + source.textLength(revision.nodeId)!,
     );
+    if (fold && !operation.cutId) {
+      trackWordInlineContent(
+        word,
+        edit,
+        parse,
+        {
+          op: "trackWordInlineContent",
+          nodeId: operation.nodeId,
+          from,
+          to,
+          expectedText,
+          html: operation.html,
+        },
+        { inserted: attach, keepEmpty },
+      );
+      return;
+    }
+    const group = {
+      groupId: "word-paste-" + createOpaqueId(),
+      author: word.trackingAuthor ?? "",
+      date: new Date().toISOString(),
+    };
+    const offset = deleteWordTrackedContent(word, edit, parse, operation.nodeId, from, to, group);
+    const content = edit.insertSourceInContainer(
+      operation.nodeId,
+      offset,
+      '<ins data-word-run-overlay="true">' + operation.html + "</ins>",
+    );
+    copyWordSplitRun(word, content.splitIdentities, styles);
+    attach(content.identities);
+    const id = content.rootNodeIds[0]!;
+    if (parse().getNode(id)!.text.length || keepEmpty)
+      word.revisions.push({ nodeId: id, revisionId: id, sourceId: id, kind: "insert", ...group });
+    else edit.removeSource(id);
     return;
   }
   for (const id of edit.wrapSourceText(operation.nodeId, from, to, "span")) edit.removeSource(id);

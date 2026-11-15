@@ -4,7 +4,8 @@ import type { WordMetadata } from "../contracts/word.js";
 import type { ParsedHtml } from "../document/html.js";
 import type { DocumentEdit } from "../document/edit.js";
 import { isTextBoundary } from "../document/text.js";
-import { wordTableRows } from "./word-row-revisions.js";
+import { wordTableRows, removeWordRows } from "./word-row-revisions.js";
+import { deleteWordTrackedContent } from "./word-content-revisions.js";
 
 export interface WordContentRange {
   nodeId: string;
@@ -116,9 +117,19 @@ export function deleteWordContentRange(
   for (const table of coveredTables) {
     if (!parse().hasNode(table.nodeId)) continue;
     if (!word.trackChanges) edit.removeSource(table.nodeId);
-    else
+    else {
+      const cancelled = new Set<string>();
       for (const id of wordTableRows(source, table.nodeId)) {
         rows.add(id);
+        if (
+          word.revisions.some(
+            (r) => r.nodeId === id && r.kind === "rowInsert" && r.author === group.author,
+          )
+        ) {
+          cancelled.add(id);
+          continue;
+        }
+        if (word.revisions.some((r) => r.nodeId === id && r.kind === "rowDelete")) continue;
         word.revisions.push({
           nodeId: id,
           revisionId: id + "-range-delete",
@@ -127,6 +138,8 @@ export function deleteWordContentRange(
           ...group,
         });
       }
+      if (cancelled.size) removeWordRows(word, edit, parse, cancelled, edit.readLimits);
+    }
   }
   for (const id of range.paragraphs) {
     if (!parse().hasNode(id) || [...rows].some((row) => contains(row, id))) continue;
@@ -134,16 +147,7 @@ export function deleteWordContentRange(
     const from = id === range.first.nodeId ? operation.from : 0,
       to = id === range.last.nodeId ? operation.to : text.length;
     if (word.trackChanges) {
-      for (const nodeId of edit.wrapSourceText(id, from, to, "del")) {
-        edit.attributes(nodeId, { "data-word-run-overlay": "true" });
-        word.revisions.push({
-          nodeId,
-          revisionId: nodeId,
-          sourceId: nodeId,
-          kind: "delete",
-          ...group,
-        });
-      }
+      deleteWordTrackedContent(word, edit, parse, id, from, to, group);
     } else if (id !== range.first.nodeId && id !== range.last.nodeId) edit.removeSource(id);
     else
       for (const removed of edit.wrapSourceText(id, from, to, "span")) edit.removeSource(removed);
@@ -164,13 +168,18 @@ export function deleteWordContentRange(
             wordContentScope(metadata, source, next) === wordContentScope(metadata, source, id),
         );
       if (next)
-        word.revisions.push({
-          nodeId: id,
-          revisionId: id + "-range-mark",
-          sourceId: id + "-range-mark",
-          kind: "paragraphDelete",
-          ...group,
-        });
+        if (
+          !word.revisions.some(
+            (r) => r.nodeId === id && ["paragraphDelete", "paragraphMoveFrom"].includes(r.kind),
+          )
+        )
+          word.revisions.push({
+            nodeId: id,
+            revisionId: id + "-range-mark",
+            sourceId: id + "-range-mark",
+            kind: "paragraphDelete",
+            ...group,
+          });
     }
   } else {
     const current = parse();
