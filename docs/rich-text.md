@@ -95,3 +95,7 @@ Word 命令 `insertFootnote`、`insertEndnote` 和 `referenceSettings` 打开注
 ## 公式
 
 `insertEquation` 和 `equationSettings` 打开第一方公式编辑表单；双击公式也可进入。线性输入支持 `\frac{a}{b}`、`\sqrt[n]{x}`、`x_1^2`、`\matrix{a&b\\c&d}`、`\sum_{i=1}^{n}{i}` 等模板和常用 Unicode 字符。更新文字组件保留其他结构与格式；“按线性输入重建公式”明确替换整棵公式树。底层可直接使用 `WordMathTree` 和 `insertWordEquation`／`setWordEquation`／`removeWordEquation`；结构必须为一棵有界、无循环、无共享子节点的树。
+
+Word 段落的 `--word-kinsoku`、`--word-word-wrap`、`--word-auto-space-de` 和 `--word-auto-space-dn` 使用 `0`／`1` 保存禁则、整词换行和中西文／数字间距，段落面板可修改，并参与格式修订、撤销和原生读写。`wordWrap=0` 按原生示例允许英文字符级换行；关闭中文禁则不拆开设置为整词换行的英文。未声明的中西文／数字间距默认启用。固定字符网格已有自身的间距投影；其他段落使用跨 run 的可折叠视图间距，不改写正文或 UTF-16 锚点。
+
+预览间距采用 [CSS Text 的 1/8 CJK 字宽](https://www.w3.org/TR/css-text-4/#text-autospace-property)，源中保留原生开关；这不声称已验证 Word 实机逐像素一致。原生换行的适用语言参考 [Microsoft 实现说明](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/5c96914d-820a-4f49-a239-40024839685e)。悬挂标点、行首标点压缩及自定义禁则表仍在后续排版收口范围内。

@@ -18,7 +18,8 @@ export function composeWordLanguages(document: Document, model: ContentDocumentM
     let count = document.querySelectorAll('*').length;
     for (const text of texts) {
         const parent = text.parentElement!, css = document.defaultView!.getComputedStyle(parent);
-        if (!['ascii', 'hAnsi', 'eastAsia', 'cs'].some(role => css.getPropertyValue('--word-font-' + role).trim()) && !['val', 'eastAsia', 'bidi'].some(role => css.getPropertyValue('--word-language-' + role).trim()))
+        const preserveWords = css.getPropertyValue('--word-kinsoku').trim() === '0' && css.getPropertyValue('--word-word-wrap').trim() !== '0';
+        if (!preserveWords && !['ascii', 'hAnsi', 'eastAsia', 'cs'].some(role => css.getPropertyValue('--word-font-' + role).trim()) && !['val', 'eastAsia', 'bidi'].some(role => css.getPropertyValue('--word-language-' + role).trim()))
             continue;
         let role: WordScriptRole | undefined, part = '';
         const fragment = document.createDocumentFragment();
@@ -32,7 +33,7 @@ export function composeWordLanguages(document: Document, model: ContentDocumentM
                 span.style.fontWeight = bold === '1' ? '700' : '400';
             if (italic)
                 span.style.fontStyle = italic === '1' ? 'italic' : 'normal';
-        } span.textContent = part; fragment.append(span); part = ''; };
+        } if(preserveWords && role !== 'eastAsia') span.style.lineBreak='auto'; span.textContent = part; fragment.append(span); part = ''; };
         for (const character of text.data) {
             const next = wordScriptRole(character, role);
             if (next !== role) {

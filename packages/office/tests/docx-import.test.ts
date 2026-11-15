@@ -260,8 +260,8 @@ test("resolves conditional table styles with direct cell overrides", () => {
   expect(
     snapshot.metadata.word!.styles.find((x) => x.styleId === "Banded")!
       .conditions,
-  ).toEqual([{ region: "firstRow", cssClass: expect.any(String) }]);
-  expect(snapshot.html).toContain("background-color:#ddeeff");
+  ).toEqual([{ region: "firstRow", cssClass: expect.any(String), components: {p:expect.any(String),r:expect.any(String),cell:expect.any(String),row:expect.any(String),table:expect.any(String)} }]);
+  expect(snapshot.styles.map(item=>item.css).join('\n')).toContain("background-color:#ddeeff");
   expect(snapshot.metadata.word!.tables[0]!.lookMask).toBe(1568);
   expect(
     snapshot.html + snapshot.styles.map((item) => item.css).join("\n"),

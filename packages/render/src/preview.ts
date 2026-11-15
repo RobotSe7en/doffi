@@ -1,5 +1,6 @@
 import {composeWordTextRuns} from './word-text-runs.js';
 import{composeWordLanguages}from'./word-languages.js';
+import{composeWordTypography}from'./word-typography.js';
 import{retainFlowSelection}from'./flow-selection.js';
 import{composeWordTableLayout}from'./word-table-layout.js';
 import{composeWordParagraphMarks}from'./word-paragraph-marks.js';
@@ -452,6 +453,7 @@ export function mountPreview(
     // invalidate the operating system's composition target.
     if (composing) return;
     const restoreSelection=retainFlowSelection(source.root,projection?.ignored);
+    composeWordTypography(iframe.contentDocument!,model,limits);
     let pages: DocumentRenderReport["pages"] = [], nodePages: DocumentRenderReport["nodePages"] = {}, results: DocumentRenderReport["fields"] = [], stable = !pagination;
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
       pages = pagination.measure();pages=notes?.measure(pages)??pages;drawings?.measure(pages,source.root);nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
@@ -476,6 +478,7 @@ export function mountPreview(
     composeWordTextRuns(frame,model,limits);
     composeWordParagraphMarks(frame,model);
     composeWordLanguages(frame,model,limits);
+    composeWordTypography(frame,model,limits);
     const sourceFonts = resolvePreviewFonts(frame,"[data-node-id],[data-sdk-word-script-view]");
     source = new PreviewSource(frame, model);
     // Empty native runs still need a real line box in preview and editing.
