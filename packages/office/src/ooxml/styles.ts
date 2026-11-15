@@ -953,8 +953,7 @@ export class DocxStyles {
     ]);
     if (child(properties, "tblpPr"))
       unsupported(properties, "This floating table retains its native positioning.");
-    this.cellSpacing(properties);
-    const result: Css = { "border-collapse": "collapse" };
+    const result: Css = { "border-collapse": "collapse",...this.cellSpacing(properties,true) };
     if(child(properties,'bidiVisual'))result['--word-table-bidi']=on(child(properties,'bidiVisual'))?'1':'0';
     Object.assign(result, this.borders(child(properties, "tblBorders")));
     const width = child(properties, "tblW");
@@ -993,10 +992,14 @@ export class DocxStyles {
     const height=child(properties,'trHeight');if(height){const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(height,'This row height rule remains native.');result.height=pt(number(attr(height,'val'),height,0)/20);result['--word-row-height-rule']=rule;}
     return result;
   }
-  cellSpacing(properties: XmlNode | undefined): void {
+  cellSpacing(properties: XmlNode | undefined,table=false): Css {
     const spacing = child(properties, "tblCellSpacing");
-    if (spacing && number(attr(spacing, "w"), spacing, 0) !== 0)
-      unsupported(spacing, "Nonzero table cell spacing is not supported.");
+    if(!spacing)return{};
+    if(!table){if(number(attr(spacing,'w'),spacing,0)!==0)unsupported(spacing,'Row-specific spacing is preserved with its native geometry.');return{};}
+    const type=attr(spacing,'type')??'dxa',raw=attr(spacing,'w');if(!['dxa','nil','auto','pct'].includes(type))fail(spacing,'A table spacing unit is invalid.');
+    if(raw!==undefined){if(raw.endsWith('%')){if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)%$/.test(raw))fail(spacing,'A table spacing percentage is invalid.');}else measurePoints(raw,spacing);}
+    const amount=type==='dxa'?measurePoints(raw,spacing,20,0):0;if(amount<0)fail(spacing,'A table cell spacing cannot be negative.');
+    return{'--word-table-cell-spacing':pt(amount),'--word-table-cell-spacing-type':type,...(raw!==undefined?{'--word-table-cell-spacing-value':raw}:{}),'border-collapse':amount>0?'separate':'collapse','border-spacing':pt(amount)};
   }
   cell(properties: XmlNode | undefined): Css {
     if(properties?.part===this.stylePart&&child(properties,'cnfStyle'))unsupported(child(properties,'cnfStyle')!,'Shared-style conditional cache flags remain native.');

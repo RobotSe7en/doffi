@@ -563,3 +563,9 @@ HTML 复制从当前模型读取已授权 PNG／JPEG／WebP 字节，内联为 D
 bidiVisual 进入表格直接格式、共享样式、面板和格式修订；显式 OFF 覆盖样式中的 ON。按照 [Microsoft 的 bidiVisual 说明](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.bidivisual?view=openxml-3.0.1)，单元格按逻辑源序保存，预览从右向左排列，同时镜像左右边框、边距和缩进。段落保留自身文字方向；嵌套表格不继承外层表格的方向。列宽手柄位于视觉边界，左右键和指针按实际移动方向修改正确的逻辑列；继续输入、方向切换和撤销不写入镜像视图样式。
 
 原生当前／修改前属性和共享样式均按 CT_TblPr 顺序输出，包含方向与条带大小的组合。必要验证：表格方向、表格样式和原生修订三个文件 31 项通过，8 份输出通过固定官方 Transitional XSD。方向／嵌套／镜像／列宽／输入／撤销及既有续接预览在三引擎共六项通过。库构建、工具类型、架构边界及 diff 检查通过；没有声明 Word 实机对照。继续非零表格间距、浮动表格和其他阶段缺口。
+
+## 表格级单元格间距检查点
+
+表格级 tblCellSpacing 映射为可编辑源语义，支持直接格式、共享／条件样式、面板、格式历史和原生重开。保留原始单位／数值；dxa 按实际长度显示，pct／auto 等按 [Microsoft 的 tblCellSpacing 说明](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.tablecellspacing?view=openxml-3.0.1)忽略布局效果而保留声明。只修改语义间距值也会更新预览和原生结果，不沿用旧 CSS 投影。嵌套表格按自身间距布局。
+
+必要验证：五个直接相关文件 77 项通过，包含导入回归中已支持的续接方向／间距映射；17 份当前／修改前与接受拒绝输出通过固定官方 Transitional XSD。三引擎验证面板修改、嵌套隔离、实际输入、SDK 直接修改、DOCX 重开和撤销。Chromium 的原生 border-spacing 会将部分分数像素取整；源与原生重开保留精确值，显示差异限制在一个 CSS 像素内。库构建、工具类型、架构边界和 diff 检查通过。行级间距覆盖（包括非零表格上的显式零）、浮动表格仍继续，D4 未整体关闭。

@@ -5,6 +5,7 @@ import{retainFlowSelection}from'./flow-selection.js';
 import{composeWordTableLayout}from'./word-table-layout.js';
 import{composeWordContinuationCells}from'./word-continuation-cells.js';
 import{composeWordTableBidi}from'./word-table-bidi.js';
+import{composeWordTableSpacing}from'./word-table-spacing.js';
 import{composeWordParagraphMarks}from'./word-paragraph-marks.js';
 import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
@@ -491,6 +492,7 @@ export function mountPreview(
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]")) paragraph.append(markViewNode(frame.createElement("br")));
     }
     decorate(frame, snapshot.metadata.word);
+    composeWordTableSpacing(frame,model);
     composeWordTableBidi(frame,model);
     composeWordTableLayout(frame,limits,snapshot.metadata.word);
     continuationCells=composeWordContinuationCells(frame,model,limits);

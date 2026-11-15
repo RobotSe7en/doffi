@@ -132,6 +132,13 @@ export function cellMargins(css: Css, name: string): string {
 export function tableProperties(css: Css): string {
   let out = nativeWidth("tblW", css.width, css);
   if(css['--word-table-bidi']!==undefined){if(!['0','1'].includes(css['--word-table-bidi']))unsupported('A native table direction must be zero or one.');out+=toggle('bidiVisual',css['--word-table-bidi']==='1');}
+  const spacing=css['--word-table-cell-spacing']??(css['border-collapse']==='separate'?css['border-spacing']:undefined);if(spacing!==undefined){
+    const values=spacing.trim().split(/\s+/);if(values.length>2||values.length===2&&values[0]!==values[1])unsupported('Native Word table cell spacing must be uniform.');
+    const amount=points(values[0]!,css);if(!Number.isFinite(amount)||amount<0)unsupported('Native table cell spacing must be a nonnegative length.');
+    const type=css['--word-table-cell-spacing-type']??'dxa',raw=css['--word-table-cell-spacing-value'];if(!['dxa','nil','auto','pct'].includes(type))unsupported('A native table spacing unit is invalid.');
+    if(amount===0&&type!=='dxa')out+=empty('w:tblCellSpacing',{'w:type':type,'w:w':raw??'0'});
+    else{let retained=false;if(raw!==undefined&&type==='dxa'){const parsed=/^-?\d+$/.test(raw)?Number(raw)/20:points(raw.replace(/pi$/,'pc'),css);retained=Math.abs(parsed-amount)<1e-7;}out+=empty('w:tblCellSpacing',{'w:type':'dxa','w:w':retained?raw:nativeInteger(amount)});}
+  }
   if (css["margin-left"] === "auto") out += value("jc", css["margin-right"] === "auto" ? "center" : "right");
   else out += nativeWidth("tblInd", css["margin-left"], css);
   out += borders(css, "tblBorders", true) + shade(css);

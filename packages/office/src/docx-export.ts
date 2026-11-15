@@ -144,7 +144,7 @@ class Exporter {
       for (const key of ["width", "height"]) if (css[key] && !["auto", "initial"].includes(css[key])) unsupported("Fixed dimensions on this HTML element have no supported native DOCX representation.");
       for (const side of ["top", "right", "bottom", "left"]) if (css["padding-" + side] && points(css["padding-" + side]!, css, this.width) !== 0) unsupported("Padding on this HTML element has no supported native DOCX representation.");
     }
-    if (node.tag === "table" && (css["border-collapse"] !== "collapse" || css["border-spacing"] && !/^(?:0(?:px|pt)?)(?:\s+0(?:px|pt)?)?$/.test(css["border-spacing"]))) unsupported("Native DOCX export requires collapsed tables without cell spacing.");
+    if(node.tag==='table'&&css['border-collapse']==='separate'&&points((css['--word-table-cell-spacing']??css['border-spacing']??'0').trim().split(/\s+/)[0]!,css)===0)unsupported('Separate zero-spacing CSS borders have no native Word equivalent.');
     if (node.tag === "tr" && css["background-color"] !== "transparent") unsupported("Row background color must be applied to cells for native DOCX export.");
     if (css["white-space"] === "normal" && (paragraphTags.has(node.tag) || ["td", "th", "li"].includes(node.tag) && !children(node).some((child) => paragraphTags.has(child.tag) || ["table", "ul", "ol", "div"].includes(child.tag)))) {
       const lines: string[][] = [[]]; let normal = true;
