@@ -986,7 +986,7 @@ export class DocxStyles {
     if(!properties)return{};const shared=properties.part===this.stylePart;
     check(properties,['cnfStyle','divId','gridBefore','gridAfter','wBefore','wAfter','cantSplit','trHeight','tblHeader','tblCellSpacing','jc','hidden','trPrChange','ins','del']);
     for(const name of ['hidden','jc',...(shared?['gridBefore','gridAfter','trHeight','cnfStyle','divId','wBefore','wAfter','trPrChange','ins','del']:[])] as const){const value=child(properties,name);if(value)unsupported(value,'This row property remains native.');}
-    this.cellSpacing(properties);const result:Css={};
+    const result:Css={...this.cellSpacing(properties)};
     const split=child(properties,'cantSplit');if(split)result['break-inside']=on(split)?'avoid':'auto';
     const header=child(properties,'tblHeader');if(header)result['--word-row-repeat-header']=on(header)?'1':'0';
     const height=child(properties,'trHeight');if(height){const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(height,'This row height rule remains native.');result.height=pt(number(attr(height,'val'),height,0)/20);result['--word-row-height-rule']=rule;}
@@ -995,11 +995,11 @@ export class DocxStyles {
   cellSpacing(properties: XmlNode | undefined,table=false): Css {
     const spacing = child(properties, "tblCellSpacing");
     if(!spacing)return{};
-    if(!table){if(number(attr(spacing,'w'),spacing,0)!==0)unsupported(spacing,'Row-specific spacing is preserved with its native geometry.');return{};}
     const type=attr(spacing,'type')??'dxa',raw=attr(spacing,'w');if(!['dxa','nil','auto','pct'].includes(type))fail(spacing,'A table spacing unit is invalid.');
     if(raw!==undefined){if(raw.endsWith('%')){if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)%$/.test(raw))fail(spacing,'A table spacing percentage is invalid.');}else measurePoints(raw,spacing);}
     const amount=type==='dxa'?measurePoints(raw,spacing,20,0):0;if(amount<0)fail(spacing,'A table cell spacing cannot be negative.');
-    return{'--word-table-cell-spacing':pt(amount),'--word-table-cell-spacing-type':type,...(raw!==undefined?{'--word-table-cell-spacing-value':raw}:{}),'border-collapse':amount>0?'separate':'collapse','border-spacing':pt(amount)};
+    const prefix=table?'--word-table-cell-spacing':'--word-row-cell-spacing';
+    return{[prefix]:pt(amount),[prefix+'-type']:type,...(raw!==undefined?{[prefix+'-value']:raw}:{}),...(table?{'border-collapse':amount>0?'separate':'collapse','border-spacing':pt(amount)}:{})};
   }
   cell(properties: XmlNode | undefined): Css {
     if(properties?.part===this.stylePart&&child(properties,'cnfStyle'))unsupported(child(properties,'cnfStyle')!,'Shared-style conditional cache flags remain native.');

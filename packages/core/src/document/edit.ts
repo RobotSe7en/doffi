@@ -3,7 +3,7 @@ import type { DefaultTreeAdapterTypes as Tree } from "parse5";
 import type { DocumentContentOperation } from "../contracts/operations.js";
 import type { DocumentReadLimits, TextOffsetMapping } from "../runtime.js";
 import { DocumentError } from "../errors.js";
-import { normalizeCss, setInlineStyle } from "./css.js";
+import { normalizeCss, setInlineStyle,removeInlineStyle } from "./css.js";
 import { setDrawingInlineStyle } from "./drawing-css.js";
 import { styleSourceText } from "./text-style.js";
 import type { SourceTextRange,SourceTextStyleChange } from "./text-style.js";
@@ -234,8 +234,8 @@ export class DocumentEdit {
     if(!parent||!isElement(parent)||parent.tagName==="body")fail("The source parent is unavailable.");
     let id=attr(parent,"data-node-id");if(!id){id=this.allocate();setAttribute(parent,"data-node-id",id);}return id;
   }
-  sourceStyle(nodeId:string,property:string,value:string):void {
-    const target=this.index().get(nodeId);if(!target)fail("The format style target is unavailable.");setAttribute(target,"style",setInlineStyle(attr(target,"style")??"",property,value,this.limits));
+  sourceStyle(nodeId:string,property:string,value:string|undefined):void {
+    const target=this.index().get(nodeId);if(!target)fail("The format style target is unavailable.");setAttribute(target,"style",value===undefined?removeInlineStyle(attr(target,'style')??'',property,this.limits):setInlineStyle(attr(target,"style")??"",property,value,this.limits));
   }
   sourceDrawingStyle(nodeId: string, property: string, value: string): void {
     const target = this.index().get(nodeId); if (!target) fail("The drawing style target is unavailable.");

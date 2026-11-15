@@ -165,6 +165,11 @@ export function normalizeCss(source: string, context: "stylesheet" | "declaratio
 }
 
 /** Set exactly one declaration, without allowing property/value text to inject siblings. */
+export function removeInlineStyle(source:string,property:string,limits:DocumentReadLimits):string{
+  const ast=parseBoundedCss(source,'declarationList',limits,{nodes:0});if(ast.type!=='DeclarationList')throw new DocumentError('InvalidOperation','The inline style is invalid.');
+  const name=property.startsWith('--')?property:property.toLowerCase();ast.children.forEach((node,item,list)=>{if(node.type==='Declaration'){const key=ident.decode(node.property);if((key.startsWith('--')?key:key.toLowerCase())===name)list.remove(item);}});
+  return normalizeCss(generate(ast),'declarationList',limits,{nodes:0});
+}
 export function setInlineStyle(source: string, property: string, value: string, limits: DocumentReadLimits): string {
   if (!/^(?:--[a-zA-Z0-9_-]+|[a-zA-Z][a-zA-Z-]*)$/.test(property)) {
     throw new DocumentError("InvalidOperation", "A style operation requires one CSS property name.");

@@ -15,7 +15,7 @@ export function rowHeightProperties(css:Css):string{const rule=css['--word-row-h
 const toggle = (name: string, enabled: boolean): string => value(name, enabled ? "1" : "0");
 const shade = (css: Css): string => css["background-color"] === undefined ? "" : empty("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": color(css["background-color"], css.color) ?? "auto" });
 const bold = (value: string | undefined): boolean => value === "bold" || Number(value) >= 600;
-export function rowProperties(css:Css):string{return(css['break-inside']!==undefined?toggle('cantSplit',css['break-inside']==='avoid'||css['break-inside']==='avoid-page'):'')+rowHeightProperties(css)+(css['--word-row-repeat-header']!==undefined?toggle('tblHeader',css['--word-row-repeat-header']==='1'):'');}
+export function rowProperties(css:Css):string{return(css['break-inside']!==undefined?toggle('cantSplit',css['break-inside']==='avoid'||css['break-inside']==='avoid-page'):'')+rowHeightProperties(css)+wordCellSpacing(css,'row')+(css['--word-row-repeat-header']!==undefined?toggle('tblHeader',css['--word-row-repeat-header']==='1'):'');}
 /** Style toggle values are relative to basedOn; direct formatting is absolute. */
 export function runProperties(css: Css, inherited: Css = {}, style = false, role?: string): string {
   let out = ""; const fonts: Record<string, string> = {};
@@ -132,18 +132,23 @@ export function cellMargins(css: Css, name: string): string {
 export function tableProperties(css: Css): string {
   let out = nativeWidth("tblW", css.width, css);
   if(css['--word-table-bidi']!==undefined){if(!['0','1'].includes(css['--word-table-bidi']))unsupported('A native table direction must be zero or one.');out+=toggle('bidiVisual',css['--word-table-bidi']==='1');}
-  const spacing=css['--word-table-cell-spacing']??(css['border-collapse']==='separate'?css['border-spacing']:undefined);if(spacing!==undefined){
-    const values=spacing.trim().split(/\s+/);if(values.length>2||values.length===2&&values[0]!==values[1])unsupported('Native Word table cell spacing must be uniform.');
-    const amount=points(values[0]!,css);if(!Number.isFinite(amount)||amount<0)unsupported('Native table cell spacing must be a nonnegative length.');
-    const type=css['--word-table-cell-spacing-type']??'dxa',raw=css['--word-table-cell-spacing-value'];if(!['dxa','nil','auto','pct'].includes(type))unsupported('A native table spacing unit is invalid.');
-    if(amount===0&&type!=='dxa')out+=empty('w:tblCellSpacing',{'w:type':type,'w:w':raw??'0'});
-    else{let retained=false;if(raw!==undefined&&type==='dxa'){const parsed=/^-?\d+$/.test(raw)?Number(raw)/20:points(raw.replace(/pi$/,'pc'),css);retained=Math.abs(parsed-amount)<1e-7;}out+=empty('w:tblCellSpacing',{'w:type':'dxa','w:w':retained?raw:nativeInteger(amount)});}
-  }
+  out+=wordCellSpacing(css,'table');
   if (css["margin-left"] === "auto") out += value("jc", css["margin-right"] === "auto" ? "center" : "right");
   else out += nativeWidth("tblInd", css["margin-left"], css);
   out += borders(css, "tblBorders", true) + shade(css);
   if (css["table-layout"] !== undefined) out += empty("w:tblLayout", { "w:type": css["table-layout"] === "fixed" ? "fixed" : "autofit" });
   return orderedProperties("tblPr", out);
+}
+function wordCellSpacing(css:Css,kind:'table'|'row'):string{
+  let out='';const prefix='--word-'+kind+'-cell-spacing';
+  const spacing=css[prefix]??(kind==='table'&&css['border-collapse']==='separate'?css['border-spacing']:undefined);if(spacing!==undefined){
+    const values=spacing.trim().split(/\s+/);if(values.length>2||values.length===2&&values[0]!==values[1])unsupported('Native Word table cell spacing must be uniform.');
+    const amount=points(values[0]!,css);if(!Number.isFinite(amount)||amount<0)unsupported('Native table cell spacing must be a nonnegative length.');
+    const type=css[prefix+'-type']??'dxa',raw=css[prefix+'-value'];if(!['dxa','nil','auto','pct'].includes(type))unsupported('A native table spacing unit is invalid.');
+    if(amount===0&&type!=='dxa')out+=empty('w:tblCellSpacing',{'w:type':type,'w:w':raw??'0'});
+    else{let retained=false;if(raw!==undefined&&type==='dxa'){const parsed=/^-?\d+$/.test(raw)?Number(raw)/20:points(raw.replace(/pi$/,'pc'),css);retained=Math.abs(parsed-amount)<1e-7;}out+=empty('w:tblCellSpacing',{'w:type':'dxa','w:w':retained?raw:nativeInteger(amount)});}
+  }
+  return out;
 }
 export function cellProperties(css: Css): string {
   let out = nativeWidth("tcW", css.width, css) + borders(css, "tcBorders") + shade(css);

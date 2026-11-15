@@ -248,7 +248,7 @@ test("fails explicitly when a theme font cannot be resolved despite an explicit 
   expect(() => importDocx(bytes, { documentId: "theme" }))
     .toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
 });
-test.each(["table", "row", "style", "style row", "conditional style"])("maps table spacing and retains strict row-spacing preservation in %s properties", (location) => {
+test.each(["table", "row", "style", "style row", "conditional style"])("maps nonzero table and row spacing in %s properties", (location) => {
   const spacing = '<w:tblCellSpacing w:w="100" w:type="dxa"/>';
   const bytes = mutateDocx("02-table-merges.docx", {
     "word/styles.xml": (source) => location.includes("style") ? source.replace("</w:styles>",
@@ -259,7 +259,7 @@ test.each(["table", "row", "style", "style row", "conditional style"])("maps tab
     "word/document.xml": (source) => location === "table" ? source.replace("<w:tblPr>", "<w:tblPr>" + spacing) :
       location === "row" ? source.replace("<w:tr>", "<w:tr><w:trPr>" + spacing + "</w:trPr>") : source,
   });
-  if(location==='row'||location==='style row')expect(() => importDocx(bytes, { documentId: "spacing" })).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));else expect(()=>importDocx(bytes,{documentId:"spacing"})).not.toThrow();
+  expect(()=>importDocx(bytes,{documentId:"spacing"})).not.toThrow();
 });
 test("accepts explicit zero table and row spacing", () => {
   reopen(mutateDocx("02-table-merges.docx", {
