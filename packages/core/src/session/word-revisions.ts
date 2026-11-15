@@ -14,7 +14,30 @@ const fail = (message: string): never => { throw new DocumentError('InvalidOpera
 export const wordRevisionId = (revision: Pick<WordRevision, 'nodeId' | 'revisionId'>): string => revision.revisionId ?? revision.nodeId;
 export function isWordRevisionOperation(operation: {
     readonly op: string;
-}): operation is WordRevisionOperation { return ['reconcileWordTracked','setWordReview', 'reviewWordRevision', 'reviewWordRevisions', 'trackWordText'].includes(operation.op); }
+}): operation is WordRevisionOperation { return ['reconcileWordTracked','setWordReview', 'reviewWordRevision', 'reviewWordRevisions', 'trackWordText','trackWordInlineContent'].includes(operation.op); }
+
+function trackWordInlineContent(word:WordMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,operation:Extract<WordRevisionOperation,{op:'trackWordInlineContent'}>):void{
+    const source=parse(),node=source.getNode(operation.nodeId),{from,to,expectedText,html}=operation;
+    if(!node||!/^p$|^h[1-6]$/.test(node.tagName)||from>to||to>node.text.length||node.text.slice(from,to)!==expectedText||!isTextBoundary(node.text,from)||!isTextBoundary(node.text,to))fail('Tracked inline content requires an exact paragraph range.');
+    edit.assertInlineSource(operation.nodeId,html);
+    const start=source.textOffset(operation.nodeId)!+from,end=source.textOffset(operation.nodeId)!+to,author=operation.author??word.trackingAuthor??'',date=operation.date??new Date().toISOString();
+    const inside=(id:string,parent:string):boolean=>{for(let current:string|null=id;current;current=source.peekNode(current)!.parentNodeId)if(current===parent)return true;return false;};
+    if(from!==to)for(const id of [...word.drawings??[],...word.controls??[],...word.equations??[],...word.noteReferences??[]].map(item=>item.nodeId)){if(!source.hasNode(id)||!inside(id,operation.nodeId))continue;const begin=source.textOffset(id)!,finish=begin+source.textLength(id)!;if(start<finish&&end>begin)throw new DocumentError('UnsupportedFeature','Review or edit this native object through its own operation before replacing its range.');}
+    for(const revision of word.revisions){if(!source.hasNode(revision.nodeId)||!inside(revision.nodeId,operation.nodeId)&&!inside(operation.nodeId,revision.nodeId))continue;
+        const begin=source.textOffset(revision.nodeId)!,finish=begin+source.textLength(revision.nodeId)!;
+        if(['delete','moveFrom'].includes(revision.kind)&&start<finish&&end>begin)fail('Deleted revision content must be reviewed before editing it.');
+        if(revision.kind==='insert'&&revision.author===author&&start>=begin&&end<=finish){
+            for(const id of edit.wrapSourceText(revision.nodeId,start-begin,end-begin,'span'))edit.removeSource(id);
+            edit.insertSourceAt(revision.nodeId,start-begin,html);
+            if(!parse().getNode(revision.nodeId)!.text){edit.removeSource(revision.nodeId);word.revisions=word.revisions.filter(item=>item!==revision);}return;
+        }
+    }
+    const deleted=edit.wrapSourceText(operation.nodeId,from,to,'del');for(const id of deleted)edit.attributes(id,{'data-word-run-overlay':'true'});
+    const inserted=edit.insertSourceAt(operation.nodeId,to,'<ins data-word-run-overlay="true">'+html+'</ins>').rootNodeIds[0]!,current=parse();
+    const live=current.getNode(inserted)!.text.length>0;if(!live)edit.removeSource(inserted);
+    const groupId=deleted[0]??inserted;
+    for(const[kind,ids]of [['delete',deleted],['insert',live?[inserted]:[]]]as const)for(const id of ids)word.revisions.push({nodeId:id,revisionId:id,sourceId:id,groupId,kind,author,date});
+}
 export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () => ParsedHtml, operation: {
     nodeId: string;
     from: number;
@@ -101,6 +124,7 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
         return;
     }
     if(operation.op==='reconcileWordTracked'){reconcileTrackedWord(word,edit,parse,operation);return;}
+    if(operation.op==='trackWordInlineContent'){trackWordInlineContent(word,edit,parse,operation);return;}
     if (operation.op === 'trackWordText') {
         trackWordText(word, edit, parse, operation);
         return;

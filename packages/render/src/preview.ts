@@ -526,7 +526,7 @@ export function mountPreview(
       loaded = true;
       iframe.contentDocument!.addEventListener("compositionstart", () => { composing = true; }, true);
       iframe.contentDocument!.addEventListener("compositionend", () => { composing = false; }, true);
-      iframe.contentDocument!.addEventListener("copy", (event) => { if (source && projection) copyPreviewSelection(event, source.root, projection); });
+      iframe.contentDocument!.addEventListener("copy", (event) => { if (source && projection) copyPreviewSelection(event, source.root, projection,model); });
       render(); resolveReady();
     } }).catch(rejectReady);
   };

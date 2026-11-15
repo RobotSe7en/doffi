@@ -25,3 +25,8 @@ export { sourceSelectionText, stripClipboardIdentities } from "./clipboard.js";
 export { createLayoutFieldTransaction } from "./fields.js";
 export { DEFAULT_RENDER_LIMITS, renderLimits } from "./contracts.js";
 export type { DocumentRenderReport, WordRenderReport, PresentationRenderReport, RenderedSlide, LayoutDiagnostic, LayoutFieldResult, RenderedPage, RenderLimits } from "./contracts.js";
+
+export{WORD_CLIPBOARD_BYTES,WORD_CLIPBOARD_FORMAT_ATTRIBUTE,WORD_CLIPBOARD_NODE_ATTRIBUTE}from'./word-clipboard-constants.js';
+export{copyWordClipboardFormat,wordClipboardStyleDefinition}from'./word-clipboard-format.js';
+export type{WordClipboardFormat,WordClipboardStyleDefinition}from'./word-clipboard-format.js';
+export{copyWordClipboardImages}from'./word-clipboard-images.js';

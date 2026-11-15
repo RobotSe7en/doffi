@@ -21,10 +21,12 @@ import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
 import{copyClipboardImages,pasteClipboardImages,WORD_CLIPBOARD_BYTES}from'./rich-text/clipboard-images.js';
+import{pasteClipboardFormat}from'./rich-text/clipboard-format.js';
+import{copyWordClipboardFormat as copyClipboardFormat}from'@doffi/render';
 import { readTextFormat } from "./text-format-state.js";
 import type { TextFormatState } from "./text-format-state.js";
 import { findWordText,wordTextReplacementOperations, getWordOutline, getWordTextStatistics, getWordTextDefaults, createOpaqueId, WordStyleSchema, DocumentError } from "@doffi/core";
-import type { ContentDocumentModel, DocumentEditingSession, DocumentSelection, ReconciledTextEdit,TransactionPrepareOptions } from "@doffi/core";
+import type { ContentDocumentModel, DocumentEditingSession, DocumentSelection, ReconciledTextEdit,TransactionPrepareOptions,DocumentOperation } from "@doffi/core";
 import { mountDocumentPreview } from "./preview.js";
 import{wordReviewPreview}from'./word-review-preview.js';
 import{projectWordColumnReview}from'./word-column-review.js';
@@ -207,7 +209,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }
     return value;
   }
-  function flush(resources?:TransactionPrepareOptions): void {
+  function flush(resources?:TransactionPrepareOptions,prefix:readonly DocumentOperation[]=[]): void {
     if (!root || disposed || composing) return;
     let selection = bookmark(root, projection.ignored);
     try {
@@ -224,7 +226,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       }).map(([id]) => id));
       const tracked=trackedWordInput(session,rootElement(sourceDocument()),normalized,typingStyles,proofs.filter((edit)=>!changedByNormalization.has(edit.nodeId)));
       const candidate = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision,
-        operations: tracked??[{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: normalized.innerHTML, textEdits: proofs.filter((edit) => !changedByNormalization.has(edit.nodeId)) }] },resources);
+        operations: [...prefix,...(tracked??[{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: normalized.innerHTML, textEdits: proofs.filter((edit) => !changedByNormalization.has(edit.nodeId)) }])] },resources);
       if(tracked)selection=trackedSelection(selection,session,candidate.model);
       committing = true;
       try { session.commit(candidate); } catch (reason) { session.discard(candidate); throw reason; }
@@ -232,7 +234,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       error.hidden = true; compositionRevision = undefined; refresh(selection);
     } catch (reason) { compositionRevision = undefined; proofs = []; refresh(selection); report(reason); }
   }
-  function mutate(range: Range, action: () => void, split = false,resources?:TransactionPrepareOptions): void {
+  function mutate(range: Range, action: () => void, split = false,resources?:TransactionPrepareOptions,prefix:readonly DocumentOperation[]=[]): void {
     if (!root || composing || disposed) return;
     const step = inputStep(root, range, projection.ignored);
     wholeStoryReplacement = step.from === 0 && step.to > 0 && step.to === sourceText(root, projection.ignored).length;
@@ -243,7 +245,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     try {
       action();
       const actual = inputProofs(root, step, projection.ignored), known = new Set(actual.map((edit) => edit.nodeId));
-      proofs.push(...actual, ...(moved ? inputProofs(root, moved, projection.ignored).filter((edit) => !known.has(edit.nodeId)) : [])); flush(resources);
+      proofs.push(...actual, ...(moved ? inputProofs(root, moved, projection.ignored).filter((edit) => !known.has(edit.nodeId)) : [])); flush(resources,prefix);
     }
     catch (reason) { refresh(); report(reason); }
   }
@@ -398,13 +400,20 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       const template = document.createElement("template");
       if (raw) template.innerHTML = raw;
       else text.replace(/\r\n?/g, "\n").split("\n").forEach((line, index) => { if (index) template.content.append(document.createElement("br")); template.content.append(document.createTextNode(line)); });
-      const resources=pasteClipboardImages(template.content,session);
+      const prefix=pasteClipboardFormat(template.content,session),resources=pasteClipboardImages(template.content,session);
       for (const node of template.content.querySelectorAll("[data-node-id],[id]")) { node.removeAttribute("data-node-id"); node.removeAttribute("id"); }
       const block = [...template.content.children].some((node) => /^(?:p|h[1-6]|div|section|article|table|ul|ol)$/.test(node.localName));
       const validation = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: revision,
-        operations: [{ op: "insertFragment", nodeId: root.dataset.nodeId!, position: "end", html: block ? template.innerHTML : "<p>" + template.innerHTML + "</p>" }] },resources);
+        operations: [...prefix,{ op: "insertFragment", nodeId: root.dataset.nodeId!, position: "end", html: block ? template.innerHTML : "<p>" + template.innerHTML + "</p>" }] },resources);
       session.discard(validation);
       const range = selectedRange(); if (!range) return;
+      if(session.snapshot().metadata.word?.trackChanges&&!block){
+        const start=(range.startContainer.nodeType===1?range.startContainer as Element:range.startContainer.parentElement)?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6'),end=(range.endContainer.nodeType===1?range.endContainer as Element:range.endContainer.parentElement)?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');
+        if(!start||start!==end)throw new DocumentError('UnsupportedFeature','记录修订的行内粘贴需要限定在同一段落。');
+        const from=offsetAt(start,range.startContainer,range.startOffset,projection.ignored),to=offsetAt(start,range.endContainer,range.endOffset,projection.ignored),nodeId=start.dataset.nodeId!,snapshot=session.snapshot(),word=snapshot.metadata.word!,author=word.trackingAuthor??'',fold=word.revisions.some(revision=>{if(revision.kind!=='insert'||revision.author!==author)return false;const node=start.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(revision.nodeId)+'"]');if(!node)return false;const begin=offsetAt(start,node,0,projection.ignored);return from>=begin&&to<=begin+session.getNode(revision.nodeId)!.text.length;}),caret=(fold?from:to)+sourceText(template.content,()=>false).length,selection={anchor:{nodeId,offset:caret,path:[]},focus:{nodeId,offset:caret,path:[]}};
+        const candidate=session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[...prefix,{op:'trackWordInlineContent',nodeId,from,to,expectedText:session.getNode(nodeId)!.text.slice(from,to),html:template.innerHTML}]},resources);
+        committing=true;try{session.commit(candidate);}catch(error){session.discard(candidate);throw error;}finally{committing=false;}refresh(selection);return;
+      }
       mutate(range, () => {
         if (block) {
           paragraphBreak(range);
@@ -416,7 +425,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
           const last = template.content.lastChild; deleteRange(range); range.insertNode(template.content);
           if (last) select(last.parentNode!, [...last.parentNode!.childNodes].indexOf(last as ChildNode) + 1);
         }
-      },false,resources);
+      },false,resources,prefix);
     } catch (reason) { report(reason); }
   }
   function copy(event: ClipboardEvent, cut: boolean): void {
@@ -436,7 +445,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }
     holder.append(fragment);
     const source = holder;
-    try{copyClipboardImages(source,session);if(source.innerHTML.length>WORD_CLIPBOARD_BYTES)throw new DocumentError('ResourceLimitExceeded','复制内容超过 64 MiB。');}catch(reason){report(reason);return;}
+    try{copyClipboardImages(source,session);copyClipboardFormat(source,session,(ancestor as HTMLElement).dataset.nodeId??session.snapshot().metadata.word?.stories[0]?.rootNodeId??root.dataset.nodeId!);if(source.innerHTML.length>WORD_CLIPBOARD_BYTES)throw new DocumentError('ResourceLimitExceeded','复制内容超过 64 MiB。');}catch(reason){report(reason);return;}
     stripClipboardIdentities(source);
     event.clipboardData.setData("text/html", source.innerHTML);
     event.clipboardData.setData("text/plain", sourceSelectionText(source));

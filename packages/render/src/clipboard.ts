@@ -1,4 +1,7 @@
 import { SourceProjection } from "./projection.js";
+import type{ContentDocumentModel}from'@doffi/core';
+import{copyWordClipboardFormat}from'./word-clipboard-format.js';
+import{copyWordClipboardImages}from'./word-clipboard-images.js';
 export function sourceSelectionText(root: Node): string {
   interface Part { text: string; boundary: boolean }
   const visit = (node: Node): Part => {
@@ -25,7 +28,7 @@ export function stripClipboardIdentities(root: ParentNode): void {
 
 /** Copy the authored selection, excluding layout spacers, font substitutions and
  * repeated stories. This never enables input or creates an editing session. */
-export function copyPreviewSelection(event: ClipboardEvent, root: HTMLElement, projection: SourceProjection): void {
+export function copyPreviewSelection(event: ClipboardEvent, root: HTMLElement, projection: SourceProjection,model?:ContentDocumentModel): void {
   if (event.defaultPrevented || !event.clipboardData) return;
   const selection = root.ownerDocument.getSelection();
   if (!selection?.rangeCount) return;
@@ -40,6 +43,7 @@ export function copyPreviewSelection(event: ClipboardEvent, root: HTMLElement, p
     ancestor = ancestor.parentNode!;
   }
   const holder = root.ownerDocument.createElement("div"); holder.append(fragment);
+  event.preventDefault();if(model?.kind==='document'){copyWordClipboardImages(holder,model);copyWordClipboardFormat(holder,model,(ancestor as HTMLElement).dataset.nodeId??root.dataset.nodeId!);}
   stripClipboardIdentities(holder);
   event.preventDefault(); event.clipboardData.setData("text/html", holder.innerHTML);
   event.clipboardData.setData("text/plain", sourceSelectionText(holder));

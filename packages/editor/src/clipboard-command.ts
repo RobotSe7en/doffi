@@ -1,4 +1,5 @@
 import { DocumentError } from "@doffi/core";
+import{WORD_CLIPBOARD_BYTES}from'./rich-text/clipboard-images.js';
 
 /** The native copy/cut/paste listeners still serialize and validate source data. */
 export async function executeClipboard(root: HTMLElement, focus: () => void, action: "copy" | "cut" | "paste", current: () => boolean): Promise<void> {
@@ -15,7 +16,7 @@ export async function executeClipboard(root: HTMLElement, focus: () => void, act
   for (const type of ["text/html", "text/plain"]) {
     const item = items.find(item => item.types.includes(type)); if (!item) continue;
     const blob = await item.getType(type); bytes += blob.size;
-    if (bytes > 1024 * 1024) throw new DocumentError("ResourceLimitExceeded", "剪贴板内容超过 1 MiB。");
+    if (bytes > WORD_CLIPBOARD_BYTES) throw new DocumentError("ResourceLimitExceeded", "剪贴板内容超过 64 MiB。");
     data.setData(type, await blob.text());
   }
   if (!current() || !root.isConnected) throw new DocumentError("RevisionConflict", "读取剪贴板期间文档或选区已变化。");

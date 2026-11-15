@@ -21,5 +21,6 @@ export const WordRevisionOperationSchema = z.discriminatedUnion('op', [
     z.strictObject({ op: z.literal('reviewWordRevision'), nodeId: IdentifierSchema, revisionId: IdentifierSchema, decision: z.enum(['accept', 'reject']) }),
     z.strictObject({ op: z.literal('reviewWordRevisions'), nodeId: IdentifierSchema, decision: z.enum(['accept', 'reject']), author: z.string().optional() }),
     z.strictObject({ op: z.literal('trackWordText'), nodeId: IdentifierSchema, from: RevisionSchema, to: RevisionSchema, expectedText: z.string(), text: z.string(), insertionContextNodeId:IdentifierSchema.optional(), properties: z.record(z.string(), z.string()).optional(), author: z.string().optional(), date: z.string().optional() }),
+    z.strictObject({op:z.literal('trackWordInlineContent'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),html:z.string().min(1),author:z.string().optional(),date:z.string().optional()}),
 ]);
 export type WordRevisionOperation = z.infer<typeof WordRevisionOperationSchema>;

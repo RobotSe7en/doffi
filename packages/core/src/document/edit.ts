@@ -188,6 +188,11 @@ export class DocumentEdit {
     return { rootNodeIds, identities };
   }
   insertSourceAt(nodeId:string,offset:number,source:string,insertionContextNodeId?:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,false,offset,insertionContextNodeId);}
+  assertInlineSource(nodeId:string,source:string):void{
+    const parent=this.index().get(nodeId);if(!parent)fail('The inline content target is missing.');
+    const fragment=parseHtmlFragment(source,parent,this.limits,bodyTags);
+    visit(fragment,node=>{if(isElement(node)&&!['span','strong','b','em','i','u','s','sub','sup','code','a','br','img','ins','del'].includes(node.tagName))throw new DocumentError('UnsupportedFeature','Tracked inline content cannot contain paragraph or table structure.');});
+  }
   resourceReference(assetPath:string):string{
     if(!this.state.snapshot.manifest.assets.some(asset=>asset.path===assetPath)||!this.state.files.has(assetPath))throw new DocumentError('AssetUnavailable','The drawing resource is not authorized in this transaction.');
     const directory=this.state.snapshot.manifest.entrypoint.split('/').slice(0,-1),parts=assetPath.split('/');while(directory.length&&directory[0]===parts[0]){directory.shift();parts.shift();}return[...directory.map(()=>'..'),...parts.map(encodeURIComponent)].join('/');
