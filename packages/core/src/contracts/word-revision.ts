@@ -3,7 +3,7 @@ import{ReconciledTextEditSchema}from'./text-edit.js';
 import { z } from 'zod';
 import { IdentifierSchema, RevisionSchema } from './primitives.js';
 import{DocumentSectionSchema}from'./word-page.js';
-const attributes = z.partialRecord(z.enum(['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header', 'data-word-reset-text', 'data-word-current-format']), z.string().nullable());
+const attributes = z.partialRecord(z.enum(['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-numbering-off', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header', 'data-word-reset-text', 'data-word-current-format']), z.string().nullable());
 export const WordRevisionSchema = z.strictObject({
     nodeId: IdentifierSchema, sourceId: IdentifierSchema, revisionId: IdentifierSchema.optional(), groupId: IdentifierSchema.optional(),
     kind: z.enum(['insert', 'delete', 'moveFrom', 'moveTo', 'format', 'paragraphInsert', 'paragraphDelete','paragraphMoveFrom','paragraphMoveTo', 'rowInsert', 'rowDelete', 'cellInsert', 'cellDelete']),

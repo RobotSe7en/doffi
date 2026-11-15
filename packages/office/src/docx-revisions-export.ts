@@ -96,7 +96,8 @@ export class ExportWordRevisions {
         const old = this.old(node, entry.revision, {}), style = old.node.attrs['data-word-style'];
         let props = (style ? value('pStyle', this.styles.ids.get(style) ?? style) : '') + paragraphProperties({ ...difference(old.css, this.styles.paragraphContext(style), [...paragraphKeys, ...Object.keys(old.css).filter(key => key.startsWith('border-'))]), 'font-size': old.css['font-size']! }, width);
         const num = old.node.attrs['data-word-numbering'];
-        if (num)
+        if(old.node.attrs['data-word-numbering-off']==='true')props+='<w:numPr>'+value('numId',0)+'</w:numPr>';
+        else if (num)
             props += '<w:numPr>' + value('ilvl', old.node.attrs['data-word-level'] ?? 0) + value('numId', this.styles.numberingIds.get(num) ?? num) + '</w:numPr>';
         const tabs = entry.revision.before?.tabs;
         if (tabs?.stops.length)

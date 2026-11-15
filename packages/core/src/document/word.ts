@@ -325,6 +325,7 @@ export function validateWord(
       const current = node(id);
       if(current.attributes['data-word-outline-level']!==undefined&&(!/^p$|^h[1-6]$/.test(current.tagName)||!/^([0-9])$/.test(current.attributes['data-word-outline-level']!)))invalid('A paragraph outline level must be 0 through 9.');
       const attrs = current.attributes;
+      if(attrs['data-word-numbering-off']!==undefined&&(attrs['data-word-numbering-off']!=='true'||!/^p$|^h[1-6]$|^li$/.test(current.tagName)||attrs['data-word-numbering']!==undefined))invalid('Explicit numbering cancellation requires an unnumbered paragraph.');
       if (attrs["data-word-style"] && !styles.has(attrs["data-word-style"]))
         invalid("A node refers to a missing native style.");
       if (attrs["data-word-numbering"]) {

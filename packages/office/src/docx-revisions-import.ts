@@ -47,6 +47,7 @@ export function readWordFormatRevision(word: WordMetadata, properties: XmlNode |
         attributes['data-word-line-rule'] = css['line-height'] && /^\d+(?:\.\d+)?$/.test(css['line-height']) ? 'auto' : null;
         const num = child(previous, 'numPr'), id = attr(child(num, 'numId'), 'val') ?? style.numbering?.id;
         attributes['data-word-numbering'] = id && id !== '0' ? id : null;
+        attributes['data-word-numbering-off'] = id === '0' ? 'true' : null;
         attributes['data-word-level'] = id && id !== '0' ? String(number(attr(child(num, 'ilvl'), 'val'), num ?? previous, style.numbering?.level ?? 0)) : null;
         before.tabs = { defaultInterval: options.defaultTab ?? 36, stops: mergeTabs(style.tabs ?? styles.defaults.tabs, child(previous, 'tabs')) };
     }

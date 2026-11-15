@@ -14,7 +14,7 @@ export function recordWordFormat(word: WordMetadata, source: ParsedHtml, nodeId:
         return;
     }
     const node = source.peekNode(nodeId)!, attributes: Record<string, string | null> = {};
-    for (const name of ['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header'])
+    for (const name of ['style', 'class', 'lang', 'data-word-style', 'data-word-line-rule', 'data-word-numbering', 'data-word-numbering-off', 'data-word-level', 'data-word-outline-level', 'data-word-text-direction', 'data-word-repeat-header'])
         attributes[name] = node.attributes[name] ?? null;
     const before: NonNullable<WordRevision['before']> = { attributes, tagName: node.tagName as NonNullable<WordRevision['before']>['tagName'], inheritNativeProperties: true };
     if(['paragraph','row','cell'].includes(property))before.conditionalFormat=word.conditionalFormats?.find(item=>item.nodeId===nodeId)?.format??null;

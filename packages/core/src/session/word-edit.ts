@@ -191,9 +191,10 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(!/^p$|^h[1-6]$|^li$/.test(node.tagName))fail('Paragraph commands require a paragraph or list item.');
   recordWordFormat(word,parse(),operation.nodeId,'paragraph');
   if(operation.op==='setWordList'){
+    recordWordFormat(word,parse(),operation.nodeId,'paragraph');
     const definition=word.numbering.find(n=>n.numberingId===operation.numberingId);
     if(operation.numberingId!==null&&!definition?.levels.some(l=>l.level===(operation.level??0)))fail('A list requires an existing numbering level.');
-    edit.attributes(operation.nodeId,{'data-word-numbering':operation.numberingId??undefined,'data-word-level':operation.numberingId===null?undefined:String(operation.level??0)});
+    edit.attributes(operation.nodeId,{'data-word-numbering':operation.numberingId??undefined,'data-word-numbering-off':operation.numberingId===null?'true':undefined,'data-word-level':operation.numberingId===null?undefined:String(operation.level??0)});
     edit.sourceStyle(operation.nodeId,'margin-left',operation.numberingId===null?'0pt':((operation.level??0)+1)*24+'pt');edit.sourceStyle(operation.nodeId,'text-indent',operation.numberingId===null?'0pt':'-18pt');return;
   }
   if(operation.clearDirectFormatting)edit.attributes(operation.nodeId,{style:undefined,'data-word-outline-level':undefined});

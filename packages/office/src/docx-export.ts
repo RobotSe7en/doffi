@@ -343,7 +343,8 @@ class Exporter {
     this.add("<w:p" + this.nativeMark(id) + attributes({ "w14:paraId": paragraphId }) + ">");
     let props = this.conditionalFormat(node)+(style ? value("pStyle", this.styles.ids.get(style) ?? style) : "");
     const numId = node.attrs["data-word-numbering"] ? this.styles.numberingIds.get(node.attrs["data-word-numbering"]) : list?.id;
-    if (numId) props += '<w:numPr>' + value("ilvl", node.attrs["data-word-level"] ?? list?.level ?? 0) + value("numId", numId) + "</w:numPr>";
+    if(node.attrs['data-word-numbering-off']==='true')props+='<w:numPr>'+value('numId',0)+'</w:numPr>';
+    else if (numId) props += '<w:numPr>' + value("ilvl", node.attrs["data-word-level"] ?? list?.level ?? 0) + value("numId", numId) + "</w:numPr>";
     const expectedParagraph = this.styleContext(node,this.styles.paragraphContext(style),'paragraph'), paragraphCss = { ...css };
     for (const side of ["top", "right", "bottom", "left"]) if (!paragraphCss["border-" + side + "-style"] && expectedParagraph["border-" + side + "-style"] && expectedParagraph["border-" + side + "-style"] !== "none") { paragraphCss["border-" + side + "-style"] = "none"; paragraphCss["border-" + side + "-width"] = "0pt"; }
     props += paragraphProperties({ ...difference(paragraphCss, expectedParagraph, [...paragraphKeys, ...borderKeys(paragraphCss)]), "font-size": css["font-size"]! }, this.width);

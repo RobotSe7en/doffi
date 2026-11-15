@@ -623,6 +623,7 @@ class Importer {
       });
     const numPr = child(properties, "numPr");
     const id = attr(child(numPr, "numId"), "val") ?? style.numbering?.id;
+    if(id === "0")paragraph.attrs["data-word-numbering-off"]="true";
     if (id && id !== "0") {
       const numberLevel = number(
         attr(child(numPr, "ilvl"), "val"),
