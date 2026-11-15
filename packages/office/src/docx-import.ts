@@ -1296,7 +1296,7 @@ class Importer {
       if(!Object.keys(css).length)return undefined;
       const name='word-empty-continuation-'+this.styles.css.length;
       this.styles.css.push('.'+name+'{'+declarations(css)+'}');return name;
-    });
+    },this.defaultTab);
   }
 
   private table(source: XmlNode): Html {

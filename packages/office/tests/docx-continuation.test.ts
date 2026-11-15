@@ -49,3 +49,22 @@ test('merging another region retains independent continuation formats outside th
     let bytes=exportDocx(session).bytes;for(let pass=0;pass<2;pass++){const model=openDocument(importDocx(bytes,{documentId:'local-merge',unsupportedContent:'reject'}),{kind:'document'}),retained=model.snapshot().metadata.word!.tables[0]!.continuationFormats!.find(item=>item.row===entry.row&&item.column===entry.column)!;expect(retained.emptyParagraphs![0]!.styleId).toBe('Empty');expect(strFromU8(unzipSync(bytes)['word/document.xml']!)).toContain('w:color="224466"');bytes=exportDocx(model).bytes;}
     session.undo();expect(session.snapshot().metadata.word).toEqual(before.metadata.word);expect(session.snapshot().html).toBe(before.html);
 });
+test('unmerging turns continuation paragraphs, mark fonts, empty runs and tab declarations into editable cell source',()=>{
+    const{session,apply}=current(),table=session.snapshot().metadata.word!.tables[0]!,before=session.snapshot(),entry=table.continuationFormats![0]!,text=session.getNode(table.nodeId)!.text;
+    apply([{op:'editWordTable',nodeId:table.nodeId,change:{kind:'splitCell',row:entry.row-1,column:entry.column}}]);
+    expect(session.getNode(table.nodeId)!.text).toBe(text);expect(session.snapshot().html).toContain('data-word-numbering-off="true"');expect(session.snapshot().html).toContain('data-word-style="Empty"');expect(session.snapshot().metadata.word!.tabs.some(item=>item.stops.some(tab=>tab.alignment==='clear'))).toBe(true);
+    let bytes=exportDocx(session).bytes;for(let pass=0;pass<2;pass++){const xml=strFromU8(unzipSync(bytes)['word/document.xml']!);expect(xml).toContain('w:pStyle w:val="Empty"');expect(xml).toContain('w:rStyle w:val="Italic"');expect(xml).toContain('w:sz w:val="28"');expect(xml).toContain('w:noProof w:val="1"');expect(xml).toContain('<w:numId w:val="0"');const model=openDocument(importDocx(bytes,{documentId:'unmerged',unsupportedContent:'reject'}),{kind:'document'});expect(model.getNode(model.snapshot().metadata.word!.tables[0]!.nodeId)!.text).toBe(text);bytes=exportDocx(model).bytes;}
+    session.undo();expect(session.snapshot().html).toBe(before.html);expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
+});
+test('refined splits retain original continuation boundaries while an unrelated split preserves their formats',()=>{
+    const{session,apply}=current(),table=session.snapshot().metadata.word!.tables[0]!,entry=table.continuationFormats![0]!;
+    apply([{op:'editWordTable',nodeId:table.nodeId,change:{kind:'splitCell',row:0,column:0}}]);expect(session.snapshot().metadata.word!.tables[0]!.continuationFormats).toEqual(table.continuationFormats);session.undo();
+    apply([{op:'editWordTable',nodeId:table.nodeId,change:{kind:'splitCell',row:entry.row-1,column:entry.column,rows:3,columns:2}}]);
+    expect(session.snapshot().metadata.word!.tables[0]!.continuationFormats!.filter(item=>item.emptyParagraphs?.[0]?.styleId==='Empty')).toHaveLength(2);
+    let bytes=exportDocx(session).bytes;for(let pass=0;pass<2;pass++){const model=openDocument(importDocx(bytes,{documentId:'refined',unsupportedContent:'reject'}),{kind:'document'});expect(model.snapshot().metadata.word!.tables[0]!.continuationFormats!.filter(item=>item.emptyParagraphs?.[0]?.styleId==='Empty')).toHaveLength(2);bytes=exportDocx(model).bytes;}
+});
+test('splitting many formatted continuation paragraphs respects the source node budget and rolls back atomically',()=>{
+    const bytes=mutateDocx('02-table-merges.docx',{'word/document.xml':source=>source.replace(/(<w:tc><w:tcPr><w:vMerge\/><\/w:tcPr>)[\s\S]*?<\/w:tc>/,'$1'+'<w:p/>'.repeat(40)+'</w:tc>')}),session=createDocumentSession(openDocument(importDocx(bytes,{documentId:'split-budget',unsupportedContent:'reject'}),{kind:'document',limits:{maxNodes:800}}),{limits:{maxNodes:800}}),before=session.snapshot(),table=before.metadata.word!.tables[0]!,entry=table.continuationFormats![0]!;
+    expect(()=>session.prepare({protocolVersion:1,documentId:'split-budget',baseRevision:0,operations:[{op:'editWordTable',nodeId:table.nodeId,change:{kind:'splitCell',row:entry.row-1,column:entry.column,rows:2,columns:100}}]})).toThrowError(expect.objectContaining({code:'ResourceLimitExceeded',message:expect.stringContaining('Split continuation')}));
+    expect(session.snapshot()).toEqual(before);expect(session.history().undoSteps).toBe(0);
+});

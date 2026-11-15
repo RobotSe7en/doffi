@@ -12,7 +12,7 @@ import { nativeInteger } from './export/values.js';
 /** Preserve empty continuation formatting without inventing source text,
  * editable cells or a second native document tree. Nonempty content must still
  * use the normal compatibility recovery path. */
-export function readWordEmptyContinuation(cell: XmlNode, styles: DocxStyles, compat: (node: XmlNode) => XmlNode[], register: (css: Css) => string | undefined): WordTableEmptyParagraph[] {
+export function readWordEmptyContinuation(cell: XmlNode, styles: DocxStyles, compat: (node: XmlNode) => XmlNode[], register: (css: Css) => string | undefined, defaultTabInterval=36): WordTableEmptyParagraph[] {
     const result: WordTableEmptyParagraph[] = [];
     for (const paragraph of compat(cell)) {
         if (paragraph.uri === W && paragraph.name === 'tcPr') continue;
@@ -22,8 +22,8 @@ export function readWordEmptyContinuation(cell: XmlNode, styles: DocxStyles, com
         for (const name of ['pPrChange','sectPr']) if (child(properties, name)) unsupported(child(properties,name)!, 'An empty continuation paragraph has independent structure or history.');
         const css = styles.paragraph(properties), run = styles.run(child(properties,'rPr'));
         for (const marker of elements(child(properties,'rPr'))) if (['ins','del','moveFrom','moveTo','rPrChange'].includes(marker.name)) unsupported(marker,'An empty continuation paragraph has independent mark history.');
-        const definition: WordTableEmptyParagraph = { runs: [] }, styleId = attr(child(properties,'pStyle'),'val');
-        styles.get(styleId ?? styles.defaultParagraph);
+        const definition: WordTableEmptyParagraph = { runs: [], defaultTabInterval }, styleId = attr(child(properties,'pStyle'),'val');
+        const inherited=styles.get(styleId ?? styles.defaultParagraph);
         if (styleId) definition.styleId = styleId;
         const paragraphClass = register(css), runClass = register(run);
         if (paragraphClass) definition.paragraphCssClass = paragraphClass;
@@ -34,6 +34,8 @@ export function readWordEmptyContinuation(cell: XmlNode, styles: DocxStyles, com
             mergeTabs([],tabs); // Validate each native declaration, including CLEAR.
             definition.tabs=elements(tabs,'tab').map(tab=>({position:number(attr(tab,'pos'),tab)/20,alignment:(attr(tab,'val')??'left')as NonNullable<WordTableEmptyParagraph['tabs']>[number]['alignment'],leader:(attr(tab,'leader')??'none')as NonNullable<WordTableEmptyParagraph['tabs']>[number]['leader']}));
         }
+        const resolved=mergeTabs(inherited.tabs??styles.defaults.tabs,tabs);
+        if(resolved.length||tabs){definition.resolvedTabs=resolved;}
         const numPr=child(properties,'numPr'),numId=attr(child(numPr,'numId'),'val');
         if(numId==='0')definition.numberingDisabled=true;
         else if(numId){const level=number(attr(child(numPr,'ilvl'),'val'),numPr!,0);if(!styles.numbering.some(item=>item.numberingId===numId&&item.levels.some(item=>item.level===level)))unsupported(numPr!,'An empty continuation paragraph has missing numbering.');definition.numbering={numberingId:numId,level};}
