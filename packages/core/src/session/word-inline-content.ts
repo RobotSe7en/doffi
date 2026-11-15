@@ -67,8 +67,10 @@ export function pasteWordInlineContent(
   edit.assertInlineSource(operation.nodeId, operation.html);
   const semantics = operation.semantics ?? {},
     attach = (ids: ReadonlyMap<string, string>): void =>
-      attachWordContent(word, edit, parse, ids, semantics, styles);
-  const keepEmpty = Object.values(semantics).some((items) => (items?.length ?? 0) > 0);
+      attachWordContent(metadata, edit, parse, ids, semantics, styles);
+  const keepEmpty = Object.values(semantics).some(
+    (items) => Array.isArray(items) && items.length > 0,
+  );
   if (word.trackChanges) {
     const origin = source.textOffset(operation.nodeId)!;
     const fold = word.revisions.find(
@@ -79,7 +81,7 @@ export function pasteWordInlineContent(
         origin + from >= source.textOffset(revision.nodeId)! &&
         origin + to <= source.textOffset(revision.nodeId)! + source.textLength(revision.nodeId)!,
     );
-    if (fold && !operation.cutId) {
+    if (fold && !operation.cutId && !semantics.drawings?.length) {
       trackWordInlineContent(
         word,
         edit,

@@ -39,6 +39,5 @@ export function copyWordClipboardImages(root: ParentNode, model: ContentDocument
           drawing.geometry.height +
           "pt",
       );
-    image.removeAttribute("data-word-drawing");
   }
 }

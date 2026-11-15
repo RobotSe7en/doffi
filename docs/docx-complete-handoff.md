@@ -125,3 +125,11 @@ PLAYWRIGHT_BROWSERS_PATH=/home/danny/work/doffi/.playwright pnpm exec playwright
 ## R04 补充交接（2026-11-15）
 
 `word-content-revisions.ts` 分段删除既有修订；`word-content-move.ts` 提供准确剪切、成对移动范围和锚点迁移。编辑器以实例私有令牌／HTML／修订绑定系统剪切，已有待定插入被取消时保持普通粘贴。原生行修订继承显式移动范围，空表也可成组审阅。9 文件 127 项、三引擎 24 项、16 DOCX／48 XML 固定 XSD 及类型／边界通过。继续 R05、R06，不推送。
+
+## R05 补充交接（2026-11-16）
+
+固定清单 R01～R05 完成，继续 R06。剪贴板 transport 的 `stories` 仅保存传输片段；`attachWordContent` 把它们分配新身份并写入唯一源树。`word-clipboard-stories.ts` 从所选对象遍历所有权，`clipboard-objects.ts` 处理对象面板选择和坐标容器，`clipboard-resources.ts` 暂存选中图表资源。完整原生对象集合的 `cutWordDrawings` 与 R04 移动审阅相通。
+
+图表剪贴板丢弃原始嵌入书的无关单元格，保存格式模板；`docx-chart-patch.ts` 在重建工作簿时同步公式和 externalData。`pruneRemovedWordChartResources` 回收删除后的模板依赖。浮动图形分页使用布局盒，不把旋转后的绘制边界当作文字行。
+
+71 项相关事务／原生、三引擎 12 项和旧浏览器回归 32 项通过；固定 XSD 加所用 WPS／WPG profile 验证 12 DOCX／54 XML。源与 profile 哈希、验收导出和脚本在忽略目录 `.cache/docx-gap-audit/r05-*`。新增对象 fixture 含无关工作簿单元格标记，验证实际剪贴板不带该内容。构建及类型／边界通过。用户在 R05 实施中请求推送，R03／R04 已推至 `origin/feat/docx-complete@ef4a401`；后续提交按当前推送授权完成交付，不建 PR。

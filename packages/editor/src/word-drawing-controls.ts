@@ -24,6 +24,7 @@ export function createWordDrawingControls(
 ): {
   open(action: WordDrawingAction): void;
   insertImage(file: File): Promise<void>;
+  selectedNodeIds(): readonly string[];
   bind(root: HTMLElement, projection: SourceProjection, signal: AbortSignal): void;
   dispose(): void;
 } {
@@ -820,6 +821,7 @@ export function createWordDrawingControls(
     );
   }
   return {
+    selectedNodeIds: () => selected.filter((id) => drawings().some((d) => d.nodeId === id)),
     open,
     insertImage,
     bind,

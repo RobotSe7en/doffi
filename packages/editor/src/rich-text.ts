@@ -26,6 +26,8 @@ import {
   WORD_CLIPBOARD_BYTES,
 } from "./rich-text/clipboard-images.js";
 import { pasteClipboardFormat } from "./rich-text/clipboard-format.js";
+import { mergeClipboardResources } from "./rich-text/clipboard-resources.js";
+import { copyClipboardObjects } from "./rich-text/clipboard-objects.js";
 import { copyWordClipboardFormat as copyClipboardFormat } from "@doffi/render";
 import { readTextFormat } from "./text-format-state.js";
 import type { TextFormatState } from "./text-format-state.js";
@@ -1699,7 +1701,10 @@ export function mountDocumentTextEditor(
           });
       const format = pasteClipboardFormat(template.content, session),
         prefix = format.operations,
-        resources = pasteClipboardImages(template.content, session);
+        resources = mergeClipboardResources(
+          format.resources,
+          pasteClipboardImages(template.content, session),
+        );
       const cutId =
         pendingCut &&
         pendingCut.revision === session.snapshot().manifest.revision &&
@@ -1966,11 +1971,15 @@ export function mountDocumentTextEditor(
     if (!root || !frame || !event.clipboardData) return;
     event.preventDefault();
     if (composing) return;
-    const range = selectedRange();
-    if (!range || range.collapsed) return;
+    let range = selectedRange();
+    const objects =
+      !range || range.collapsed
+        ? copyClipboardObjects(session, drawingControls.selectedNodeIds(), frame)
+        : undefined;
+    if (!objects && (!range || range.collapsed)) return;
     const holder = frame.createElement("div");
-    let fragment: Node = projection.serializeRange(range),
-      ancestor = range.commonAncestorContainer;
+    let fragment: Node = objects ? objects.holder : projection.serializeRange(range!),
+      ancestor = objects ? root : range!.commonAncestorContainer;
     if (ancestor.nodeType !== 1) ancestor = ancestor.parentNode!;
     while (ancestor !== root && root.contains(ancestor)) {
       // A selection within a paragraph is inline. Only explicitly selected
@@ -1984,17 +1993,19 @@ export function mountDocumentTextEditor(
       if ((ancestor as Element).matches("table")) break;
       ancestor = ancestor.parentNode!;
     }
-    holder.append(fragment);
+    if (objects) holder.append(...objects.holder.childNodes);
+    else holder.append(fragment);
     const source = holder;
     try {
       copyClipboardImages(source, viewModel());
       copyClipboardFormat(
         source,
         viewModel(),
-        (ancestor as HTMLElement).dataset.nodeId ??
+        objects?.contextId ??
+          (ancestor as HTMLElement).dataset.nodeId ??
           session.snapshot().metadata.word?.stories[0]?.rootNodeId ??
           root.dataset.nodeId!,
-        projection.completeClipboardNodes(range),
+        objects?.complete ?? projection.completeClipboardNodes(range!),
       );
       if (source.innerHTML.length > WORD_CLIPBOARD_BYTES)
         throw new DocumentError("ResourceLimitExceeded", "复制内容超过 64 MiB。");
@@ -2006,7 +2017,43 @@ export function mountDocumentTextEditor(
     pendingCut = undefined;
     if (cut && session.snapshot().metadata.word) {
       try {
-        const { start, end, from, to, expectedText } = clipboardRange(range);
+        const objectIds = objects ? drawingControls.selectedNodeIds() : undefined;
+        if (objectIds?.length) {
+          const snapshot = session.snapshot(),
+            cutId = "word-cut-" + createOpaqueId(),
+            token = createOpaqueId();
+          const candidate = session.prepare({
+            protocolVersion: 1,
+            documentId: snapshot.manifest.documentId,
+            baseRevision: snapshot.manifest.revision,
+            operations: [
+              { op: "cutWordDrawings", nodeId: objectIds[0]!, nodeIds: [...objectIds], cutId },
+            ],
+          });
+          committing = true;
+          try {
+            session.commit(candidate);
+          } catch (reason) {
+            session.discard(candidate);
+            throw reason;
+          } finally {
+            committing = false;
+          }
+          const marker =
+            source.firstElementChild ?? source.appendChild(frame.createElement("span"));
+          marker.setAttribute("data-doffi-word-cut", token);
+          pendingCut = {
+            token,
+            cutId,
+            revision: session.snapshot().manifest.revision,
+            html: source.innerHTML,
+          };
+          refresh();
+          event.clipboardData.setData("text/html", source.innerHTML);
+          event.clipboardData.setData("text/plain", sourceSelectionText(source));
+          return;
+        }
+        const { start, end, from, to, expectedText } = clipboardRange(range!);
         const nodeId = start.dataset.nodeId!,
           endNodeId = end.dataset.nodeId!,
           snapshot = session.snapshot(),
@@ -2057,9 +2104,9 @@ export function mountDocumentTextEditor(
         return;
       }
     } else if (cut)
-      mutate(range, () => {
-        deleteRange(range);
-        select(range.startContainer, range.startOffset);
+      mutate(range!, () => {
+        deleteRange(range!);
+        select(range!.startContainer, range!.startOffset);
       });
     event.clipboardData.setData("text/html", source.innerHTML);
     event.clipboardData.setData("text/plain", sourceSelectionText(source));

@@ -49,6 +49,12 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
   ...WordMathOperationSchema.options,
   ...WordControlOperationSchema.options,
   z.strictObject({
+    op: z.literal("cutWordDrawings"),
+    nodeId: IdentifierSchema,
+    nodeIds: z.array(IdentifierSchema).min(1),
+    cutId: IdentifierSchema,
+  }),
+  z.strictObject({
     op: z.literal("cutWordContent"),
     nodeId: IdentifierSchema,
     endNodeId: IdentifierSchema.optional(),

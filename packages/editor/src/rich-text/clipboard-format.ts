@@ -11,7 +11,10 @@ import type {
   DocumentOperation,
   WordMetadata,
   WordContentSemantics,
+  TransactionPrepareOptions,
 } from "@doffi/core";
+import { pasteClipboardImages } from "./clipboard-images.js";
+import { pasteClipboardResources, mergeClipboardResources } from "./clipboard-resources.js";
 import {
   WORD_CLIPBOARD_BYTES,
   WORD_CLIPBOARD_FORMAT_ATTRIBUTE as marker,
@@ -49,7 +52,11 @@ const canonical = (value: unknown): string =>
 export function pasteClipboardFormat(
   root: ParentNode,
   model: ContentDocumentModel,
-): { operations: DocumentOperation[]; semantics?: WordContentSemantics } {
+): {
+  operations: DocumentOperation[];
+  semantics?: WordContentSemantics;
+  resources?: TransactionPrepareOptions;
+} {
   const wrappers = root.querySelectorAll<HTMLElement>("[" + marker + "]");
   if (!wrappers.length) return { operations: [] };
   if (wrappers.length !== 1) throw new DocumentError("InvalidOperation", "剪贴板格式包必须唯一。");
@@ -110,6 +117,11 @@ export function pasteClipboardFormat(
     };
   });
   if (value.version === 2) value.semantics = WordContentSemanticsSchema.parse(value.semantics);
+  const owned = (value.semantics?.stories ?? []).map((story) => ({
+      story,
+      holder: new DOMParser().parseFromString(story.html, "text/html").body,
+    })),
+    roots = [root, ...owned.map((item) => item.holder)];
 
   const rootId =
     model.snapshot().metadata.word?.stories[0]?.rootNodeId ??
@@ -288,7 +300,9 @@ export function pasteClipboardFormat(
           }
       }
 
-  for (const element of root.querySelectorAll<HTMLElement>("[" + identity + "]")) {
+  for (const element of roots.flatMap((root) => [
+    ...root.querySelectorAll<HTMLElement>("[" + identity + "]"),
+  ])) {
     const key = element.getAttribute(identity)!,
       attributes = Object.hasOwn(value.nodes, key) ? value.nodes[key] : undefined;
     if (
@@ -328,6 +342,7 @@ export function pasteClipboardFormat(
             "data-word-numbering",
             "data-word-level",
             "data-word-numbering-off",
+            "data-word-drawing",
           ].includes(key) ||
           typeof value !== "string"
         )
@@ -343,5 +358,14 @@ export function pasteClipboardFormat(
     (!value.semantics || typeof value.semantics !== "object" || Array.isArray(value.semantics))
   )
     throw new DocumentError("InvalidOperation", "剪贴板语义包无效。");
-  return { operations, ...(value.version === 2 ? { semantics: value.semantics! } : {}) };
+  const resources = mergeClipboardResources(
+    pasteClipboardResources(value),
+    ...owned.map((item) => pasteClipboardImages(item.holder, model)),
+  );
+  for (const item of owned) item.story.html = item.holder.innerHTML;
+  return {
+    operations,
+    ...(value.version === 2 ? { semantics: value.semantics! } : {}),
+    ...(resources ? { resources } : {}),
+  };
 }

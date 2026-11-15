@@ -6,6 +6,73 @@ import type { WordOperation } from "../contracts/word-operations.js";
 import type { DocumentEdit } from "../document/edit.js";
 import type { ParsedHtml } from "../document/html.js";
 import { deleteWordContentRange, wordContentScope } from "./word-content-range.js";
+export function cutWordDrawings(
+  metadata: WordDocumentMetadata,
+  edit: DocumentEdit,
+  parse: () => ParsedHtml,
+  operation: Extract<WordOperation, { op: "cutWordDrawings" }>,
+): void {
+  const word = metadata.word!,
+    source = parse(),
+    ids = new Set(operation.nodeIds),
+    drawings = new Set(word.drawings?.map((d) => d.nodeId));
+  if (
+    ids.size !== operation.nodeIds.length ||
+    !ids.has(operation.nodeId) ||
+    word.revisions.some((r) => r.groupId === operation.cutId)
+  )
+    throw new DocumentError(
+      "InvalidOperation",
+      "A drawing cut requires unique selected objects and a fresh cut identity.",
+    );
+  const ranges: {
+    nodeId: string;
+    from: number;
+    to: number;
+    expectedText: string;
+    order: number;
+  }[] = [];
+  for (const id of ids) {
+    if (!drawings.has(id)) throw new DocumentError("InvalidOperation", "A cut drawing is missing.");
+    let parent = source.peekNode(id)!.parentNodeId,
+      paragraph: string | undefined,
+      selectedParent = false,
+      grouped = false;
+    while (parent) {
+      if (ids.has(parent)) selectedParent = true;
+      if (drawings.has(parent)) grouped = true;
+      if (/^p$|^h[1-6]$/.test(source.peekNode(parent)!.tagName)) {
+        paragraph = parent;
+        break;
+      }
+      parent = source.peekNode(parent)!.parentNodeId;
+    }
+    if (selectedParent) continue;
+    if (grouped)
+      throw new DocumentError(
+        "UnsupportedFeature",
+        "Cut a group as one native object before changing its internal structure.",
+      );
+    if (!paragraph)
+      throw new DocumentError("InvalidOperation", "A drawing cut requires its source paragraph.");
+    const from = source.textOffset(id)! - source.textOffset(paragraph)!,
+      to = from + source.textLength(id)!;
+    ranges.push({
+      nodeId: paragraph,
+      from,
+      to,
+      expectedText: source.getNode(id)!.text,
+      order: source.nodeIds().indexOf(id),
+    });
+  }
+  const group = {
+    groupId: operation.cutId,
+    author: word.trackingAuthor ?? "",
+    date: new Date().toISOString(),
+  };
+  for (const range of ranges.sort((a, b) => b.order - a.order))
+    deleteWordContentRange(metadata, edit, parse, range, group);
+}
 
 export function cutWordContent(
   metadata: WordDocumentMetadata,

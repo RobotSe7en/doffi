@@ -13,6 +13,7 @@ export function patchWordChart(
 ): XmlNode {
   const baseline = current.native?.baseline;
   if (!baseline) return compiled;
+  const rebuiltWorkbook = !current.native?.workbookPart;
   if (
     baseline.kind !== current.kind ||
     baseline.series.length !== current.series.length ||
@@ -103,7 +104,7 @@ export function patchWordChart(
       fresh = flatNew[index],
       before = baseline.series[index]!;
     if (!old || !fresh) return;
-    if (series.name !== before.name) replace(old, fresh, ["tx"], seriesOrder);
+    if (rebuiltWorkbook || series.name !== before.name) replace(old, fresh, ["tx"], seriesOrder);
     for (const name of ["cat", "val", "xVal", "yVal"]) {
       const previous = child(old, name, C),
         next = child(fresh, name, C);
@@ -112,7 +113,7 @@ export function patchWordChart(
         afterValue = vector(next);
       // Numeric categories and their source-linked formats remain native when
       // their string labels have not changed in the typed editing source.
-      if (name === "cat") {
+      if (name === "cat" && !rebuiltWorkbook) {
         const categoryCache = elements(previous, undefined, C)[0],
           cache = categoryCache?.name.endsWith("Ref")
             ? elements(categoryCache, undefined, C).find((node) => node.name.endsWith("Cache"))
@@ -128,7 +129,7 @@ export function patchWordChart(
           if (equal(values, current.categories)) continue;
         }
       }
-      if (equal(beforeValue, afterValue)) continue;
+      if (!rebuiltWorkbook && equal(beforeValue, afterValue)) continue;
       if (name === "val" || name === "yVal") {
         const previousRef = elements(previous, undefined, C)[0],
           previousCache = previousRef?.name.endsWith("Ref")
@@ -440,7 +441,10 @@ export function patchWordChart(
         "extLst",
       ],
     );
-  if (!child(original, "externalData", C) && child(compiled, "externalData", C))
+  if (
+    (rebuiltWorkbook || !child(original, "externalData", C)) &&
+    child(compiled, "externalData", C)
+  )
     replace(
       original,
       compiled,

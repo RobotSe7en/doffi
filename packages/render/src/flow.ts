@@ -163,8 +163,12 @@ export function pageFlow(
         continue;
       if (
         owner.hasAttribute("data-word-drawing") &&
-        view.getComputedStyle(owner.closest<HTMLElement>("[data-sdk-word-object]") ?? owner)
-          .position === "absolute"
+        (() => {
+          const css = view.getComputedStyle(
+            owner.closest<HTMLElement>("[data-sdk-word-object]") ?? owner,
+          );
+          return css.position === "absolute" || css.cssFloat !== "none";
+        })()
       )
         continue;
       if (excluded(owner) || view.getComputedStyle(owner).visibility === "hidden") continue;
@@ -239,7 +243,25 @@ export function pageFlow(
       const range = document.createRange();
       range.selectNodeContents(node);
       const rectangles =
-        node.nodeType === 3 ? [...range.getClientRects()] : [...(node as Element).getClientRects()];
+        node.nodeType === 3
+          ? [...range.getClientRects()]
+          : [...(node as Element).getClientRects()].map((rect) => {
+              // A floating frame rotates around its centre. Its paint bounds are
+              // not a text line above the paragraph: paginate its layout box.
+              if (
+                !owner.hasAttribute("data-word-drawing") ||
+                view.getComputedStyle(owner).cssFloat === "none"
+              )
+                return rect;
+              const width = owner.offsetWidth,
+                height = owner.offsetHeight;
+              return new DOMRect(
+                rect.left + (rect.width - width) / 2,
+                rect.top + (rect.height - height) / 2,
+                width,
+                height,
+              );
+            });
       for (const rect of rectangles) {
         if (!wordRowVisibleRect(owner, rect)) continue;
         if (rect.height < 0.1 || rect.width < 0.01) continue;

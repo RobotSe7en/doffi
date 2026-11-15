@@ -1,3 +1,5 @@
+import { copyWordClipboardStories } from "./word-clipboard-stories.js";
+import { copyWordClipboardImages } from "./word-clipboard-images.js";
 import { copyWordClipboardSemantics } from "./word-clipboard-semantics.js";
 import type { WordContentSemantics } from "@doffi/core";
 import {
@@ -40,6 +42,7 @@ export interface WordClipboardFormat {
   version: 1 | 2;
   semantics?: WordContentSemantics;
   styles: WordClipboardStyleDefinition[];
+  resources?: { path: string; mimeType: string; data: string }[];
   nodes: Record<
     string,
     {
@@ -165,16 +168,50 @@ export function copyWordClipboardFormat(
         .map((item) => item.nodeId),
     ),
   );
-  const semantic = copyWordClipboardSemantics(holder, model, completeNodes, css);
+  const graph = copyWordClipboardStories(holder, model, completeNodes);
+  for (const story of graph.stories) {
+    copyWordClipboardImages(story.holder, model);
+    const root = story.holder.firstElementChild!;
+    root.setAttribute(
+      "style",
+      declarations(getWordTextDefaults(model, story.rootNodeId)) +
+        ";" +
+        (root.getAttribute("style") ?? ""),
+    );
+  }
+  const semantic = copyWordClipboardSemantics(holder, model, graph.completeNodes, css, graph.roots);
+  for (const drawing of semantic.semantics?.drawings ?? [])
+    if (drawing.kind === "chart" && drawing.chart.native) {
+      const native = drawing.chart.native,
+        book = native.workbookPart;
+      // The current vectors own the copied data. Rebuild a bounded embedded book
+      // on output instead of carrying unrelated source workbook cells.
+      if (book) {
+        native.parts = native.parts.filter((p) => p.sourcePart !== book);
+        native.relationships = native.relationships.filter(
+          (r) => r.sourcePart !== book && (r.external || r.target !== book),
+        );
+        delete native.workbookPart;
+      }
+      for (const binding of native.bindings) {
+        delete binding.nameFormula;
+        delete binding.categoryFormula;
+        delete binding.valueFormula;
+        delete binding.xFormula;
+      }
+    }
   // The clipboard carries the selected content and its formatting. Receiver
   // revision ownership is created by the receiving transaction.
-  for (const revision of holder.querySelectorAll("ins,del")) {
+  for (const revision of graph.roots.flatMap((root) => [...root.querySelectorAll("ins,del")])) {
     const span = holder.ownerDocument.createElement("span");
     for (const attribute of revision.attributes) span.setAttribute(attribute.name, attribute.value);
     span.append(...revision.childNodes);
     revision.replaceWith(span);
   }
-  for (const marker of holder.querySelectorAll("[data-word-move-range]")) marker.remove();
+  for (const marker of graph.roots.flatMap((root) => [
+    ...root.querySelectorAll("[data-word-move-range]"),
+  ]))
+    marker.remove();
   if (!block)
     for (const mark of holder.querySelectorAll("[data-word-paragraph-mark]")) mark.remove();
   const cache = new Map<string, SourceStyleNode>();
@@ -191,7 +228,9 @@ export function copyWordClipboardFormat(
     }
     return value;
   };
-  const elements = [...holder.querySelectorAll<HTMLElement>("[data-node-id]")],
+  const elements = graph.roots.flatMap((root) => [
+      ...root.querySelectorAll<HTMLElement>("[data-node-id]"),
+    ]),
     classes = new Set(elements.flatMap((element) => [...element.classList])),
     used = new Set<string>(
       elements.flatMap((element) => (element.dataset.wordStyle ? [element.dataset.wordStyle] : [])),
@@ -278,6 +317,8 @@ export function copyWordClipboardFormat(
     if (
       word.defaultRunCssClass &&
       element.classList.contains(word.defaultRunCssClass) &&
+      !element.hasAttribute("data-word-drawing") &&
+      !element.closest('[data-word-drawing="group"]') &&
       !element.hasAttribute("data-word-paragraph-mark")
     ) {
       const parent = holder.ownerDocument.createElement("span");
@@ -313,6 +354,36 @@ export function copyWordClipboardFormat(
     styles: definitions,
     nodes,
   };
+  if (graph.stories.length) {
+    const semantics = (format.semantics ??= {});
+    format.version = 2;
+    semantics.stories = graph.stories.map(({ holder, ...story }) => ({
+      ...story,
+      html: holder.innerHTML,
+    }));
+  }
+  const paths = new Set(
+    (semantic.semantics?.drawings ?? []).flatMap((d) =>
+      d.kind === "chart" ? (d.chart.native?.parts.map((p) => p.assetPath) ?? []) : [],
+    ),
+  );
+  let files: ReturnType<ContentDocumentModel["serialize"]> | undefined,
+    total = 0;
+  for (const path of paths) {
+    const asset = snapshot.manifest.assets.find((a) => a.path === path),
+      bytes = model.getAsset
+        ? model.getAsset(path, WORD_CLIPBOARD_BYTES)
+        : (files ??= model.serialize()).get(path);
+    if (!asset || !bytes)
+      throw new DocumentError("AssetUnavailable", "复制图表需要当前文档已授权的依赖资源。");
+    total += bytes.byteLength;
+    if (total > WORD_CLIPBOARD_BYTES)
+      throw new DocumentError("ResourceLimitExceeded", "图表依赖超过剪贴板限制。");
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 32768)
+      binary += String.fromCharCode(...bytes.subarray(at, at + 32768));
+    (format.resources ??= []).push({ path, mimeType: asset.mimeType, data: btoa(binary) });
+  }
   wrapper.setAttribute(marker, encode(format));
   if (holder.innerHTML.length > WORD_CLIPBOARD_BYTES)
     throw new DocumentError("ResourceLimitExceeded", "复制格式超过剪贴板大小限制。");

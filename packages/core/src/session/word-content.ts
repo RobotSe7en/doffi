@@ -1,23 +1,53 @@
 import { DocumentError } from "../errors.js";
-import type { WordMetadata } from "../contracts/word.js";
+import type { WordDocumentMetadata } from "../contracts/document.js";
 import type { WordContentSemantics } from "../contracts/word-content.js";
 import type { SourceStyleEdit } from "./source-styles.js";
 import type { DocumentEdit } from "../document/edit.js";
 import type { ParsedHtml } from "../document/html.js";
 import { createOpaqueId } from "../identifiers.js";
 import { remapWordFieldBookmarks } from "./word-field-bookmarks.js";
+import { ensureWordMainStoryContainer } from "./word-story-container.js";
 const invalid = (message: string): never => {
   throw new DocumentError("InvalidOperation", message);
 };
 export function attachWordContent(
-  word: WordMetadata,
+  metadata: WordDocumentMetadata,
   edit: DocumentEdit,
   parse: () => ParsedHtml,
-  ids: ReadonlyMap<string, string>,
+  sourceIds: ReadonlyMap<string, string>,
   semantics: WordContentSemantics,
   styles?: SourceStyleEdit,
   insertedRootIds?: readonly string[],
 ): void {
+  const word = metadata.word!,
+    ids = new Map(sourceIds),
+    storyIds = new Map<string, string>(),
+    storyRoots: string[] = [];
+  if (semantics.stories?.length) {
+    const article = ensureWordMainStoryContainer(metadata, edit, parse);
+    for (const story of semantics.stories) {
+      if (storyIds.has(story.storyId)) invalid("Copied story identities must be unique.");
+      const content = edit.insertSource(article, story.html, undefined, true),
+        root =
+          content.identities.get(story.rootNodeId) ??
+          invalid("A copied story is missing its declared root.");
+      if (
+        !root ||
+        content.rootNodeIds.length !== 1 ||
+        content.rootNodeIds[0] !== root ||
+        parse().peekNode(root)!.attributes["data-office-story"] !== story.kind
+      )
+        invalid("A copied story must contain exactly its declared source root.");
+      for (const [before, after] of content.identities) {
+        if (ids.has(before)) invalid("Clipboard source identities must be unique across stories.");
+        ids.set(before, after);
+      }
+      const storyId = "word-content-story-" + createOpaqueId();
+      storyIds.set(story.storyId, storyId);
+      storyRoots.push(root);
+      word.stories.push({ storyId, rootNodeId: root, kind: story.kind });
+    }
+  }
   const map = (id: string): string =>
     ids.get(id) ??
     invalid("A clipboard semantic reference must belong to the supplied inline source.");
@@ -57,7 +87,7 @@ export function attachWordContent(
   };
   const inserted = parse();
   const insertedIds = new Set(ids.values());
-  const pending = [...(insertedRootIds ?? [])];
+  const pending = [...(insertedRootIds ?? []), ...storyRoots];
   while (pending.length) {
     const id = pending.pop()!;
     insertedIds.add(id);
@@ -195,4 +225,65 @@ export function attachWordContent(
         return copy;
       }),
     );
+  if (semantics.drawings?.length) {
+    const selected = new Set(semantics.drawings.map((d) => d.nodeId)),
+      owners = new Set<string>();
+    (word.drawings ??= []).push(
+      ...semantics.drawings.map((drawing) => {
+        const copy = JSON.parse(JSON.stringify(drawing)) as typeof drawing;
+        copy.nodeId = map(copy.nodeId);
+        if ("textStoryId" in copy && copy.textStoryId) {
+          owners.add(copy.textStoryId);
+          copy.textStoryId =
+            storyIds.get(copy.textStoryId) ??
+            invalid("Copied drawing text requires its owned story.");
+        }
+        if (copy.kind === "connector")
+          for (const side of ["start", "end"] as const) {
+            const key = side === "start" ? "startNodeId" : "endNodeId",
+              site = side === "start" ? "startSite" : "endSite",
+              id = copy.connector[key];
+            if (id && selected.has(id)) copy.connector[key] = map(id);
+            else {
+              delete copy.connector[key];
+              delete copy.connector[site];
+            }
+          }
+        if (copy.kind === "chart") {
+          const series = new Map(
+            copy.chart.series.map((s) => [s.seriesId, "word-content-series-" + createOpaqueId()]),
+          );
+          for (const item of copy.chart.series) item.seriesId = series.get(item.seriesId)!;
+          const native = copy.chart.native;
+          if (native) {
+            const prefix = "word/clipboard-" + createOpaqueId() + "/",
+              parts = new Map(native.parts.map((p) => [p.sourcePart, prefix + p.sourcePart]));
+            native.chartPart = parts.get(native.chartPart)!;
+            if (native.workbookPart) native.workbookPart = parts.get(native.workbookPart)!;
+            for (const part of native.parts) part.sourcePart = parts.get(part.sourcePart)!;
+            for (const relation of native.relationships) {
+              relation.sourcePart =
+                parts.get(relation.sourcePart) ??
+                invalid("A copied chart relationship requires its source part.");
+              if (!relation.external)
+                relation.target =
+                  parts.get(relation.target) ??
+                  invalid("A copied chart relationship requires its target part.");
+            }
+            for (const binding of native.bindings)
+              binding.seriesId =
+                series.get(binding.seriesId) ??
+                invalid("A copied chart binding requires its series.");
+            for (const item of native.baseline?.series ?? [])
+              item.seriesId =
+                series.get(item.seriesId) ??
+                invalid("A copied chart baseline requires its series.");
+          }
+        }
+        return copy;
+      }),
+    );
+    if (storyIds.size !== owners.size || [...storyIds.keys()].some((id) => !owners.has(id)))
+      invalid("Clipboard stories must belong to selected objects.");
+  } else if (storyIds.size) invalid("Clipboard stories require selected owners.");
 }

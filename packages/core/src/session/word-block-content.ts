@@ -133,7 +133,7 @@ export function pasteWordBlockContent(
   const content = edit.insertSource(node.parentNodeId!, operation.html, tail, true);
   const inserted = new Set(content.rootNodeIds);
   attachWordContent(
-    word,
+    metadata,
     edit,
     parse,
     content.identities,

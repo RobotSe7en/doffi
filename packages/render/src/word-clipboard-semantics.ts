@@ -1,13 +1,6 @@
 import { WordContentSemanticsSchema } from "@doffi/core";
 import type { ContentDocumentModel, WordContentSemantics, SourceStyleResolver } from "@doffi/core";
-const text = (node: Node): string =>
-  node.nodeType === 3
-    ? (node.textContent ?? "")
-    : node.nodeType === 1 && (node as Element).localName === "img"
-      ? "\ufffc"
-      : node.nodeType === 1 && (node as Element).localName === "br"
-        ? "\n"
-        : [...node.childNodes].map(text).join("");
+import { clipboardNodeText } from "./word-clipboard-stories.js";
 /** Only complete supported structures enter the semantic graph. Partial fields
  * and controls keep their selected text/format without copying outside text. */
 export function copyWordClipboardSemantics(
@@ -15,22 +8,38 @@ export function copyWordClipboardSemantics(
   model: ContentDocumentModel,
   completeNodes: ReadonlySet<string> | undefined,
   css: SourceStyleResolver,
+  roots: readonly HTMLElement[] = [holder],
 ): { semantics?: WordContentSemantics; attributes: ReadonlyMap<string, Record<string, string>> } {
   const word = model.snapshot().metadata.word!,
     nodes = new Map(
-      [...holder.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => [
-        node.dataset.nodeId!,
-        node,
-      ]),
+      roots
+        .flatMap((root) => [...root.querySelectorAll<HTMLElement>("[data-node-id]")])
+        .map((node) => [node.dataset.nodeId!, node]),
     ),
     complete = (id: string): boolean => {
       const node = nodes.get(id),
         source = model.getNode(id);
       return (
-        !!node && !!source && (completeNodes ? completeNodes.has(id) : text(node) === source.text)
+        !!node &&
+        !!source &&
+        (completeNodes ? completeNodes.has(id) : clipboardNodeText(node) === source.text)
       );
     },
     attributes = new Map<string, Record<string, string>>();
+  const drawings = (word.drawings ?? []).filter((d) => d.kind !== "group" && complete(d.nodeId));
+  const groups = (word.drawings ?? []).filter((d) => d.kind === "group" && nodes.has(d.nodeId));
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const group of groups)
+      if (
+        !drawings.includes(group) &&
+        drawings.some((d) => nodes.get(group.nodeId)!.contains(nodes.get(d.nodeId)!))
+      ) {
+        drawings.push(group);
+        changed = true;
+      }
+  }
+  const drawingIds = new Map(drawings.map((d) => [d.nodeId, d.kind]));
   const fields = word.fields
       .filter(
         (field) =>
@@ -82,6 +91,9 @@ export function copyWordClipboardSemantics(
       ]),
     );
   for (const [id, node] of nodes) {
+    const kind = drawingIds.get(id);
+    if (kind) node.setAttribute("data-word-drawing", kind);
+    else node.removeAttribute("data-word-drawing");
     if (node.hasAttribute("data-word-field") && !fieldMarkers.has(id))
       node.removeAttribute("data-word-field");
     for (const key of ["data-word-field-end", "data-word-field-result"])
@@ -109,6 +121,7 @@ export function copyWordClipboardSemantics(
             "data-word-numbering",
             "data-word-level",
             "data-word-numbering-off",
+            "data-word-drawing",
           ].includes(attribute.name),
         )
         .map((attribute) => [attribute.name, attribute.value]),
@@ -151,6 +164,7 @@ export function copyWordClipboardSemantics(
     controls,
     hyperlinks,
     bookmarks,
+    ...(drawings.length ? { drawings } : {}),
     ...(numbering.length ? { numbering } : {}),
     ...(tables.length ? { tables } : {}),
     ...(tabs.length ? { tabs } : {}),

@@ -45,7 +45,6 @@ export function pasteClipboardImages(
     }
     const base = entrypoint.split("/").slice(0, -1);
     image.setAttribute("src", [...base.map(() => ".."), path].join("/"));
-    image.removeAttribute("data-word-drawing");
   }
   return assets.length ? { assets } : undefined;
 }

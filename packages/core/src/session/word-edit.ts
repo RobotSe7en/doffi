@@ -1,6 +1,6 @@
 import { pasteWordBlockContent } from "./word-block-content.js";
 import { pasteWordInlineContent } from "./word-inline-content.js";
-import { cutWordContent, linkWordContentMove } from "./word-content-move.js";
+import { cutWordContent, cutWordDrawings, linkWordContentMove } from "./word-content-move.js";
 import { restoreWordSplitContinuations } from "./word-split-continuation.js";
 import { formatWordParagraphMark } from "./word-paragraph-mark.js";
 import {
@@ -55,6 +55,7 @@ export function isWordOperation(operation: { readonly op: string }): operation i
       "pasteWordBlockContent",
       "pasteWordInlineContent",
       "cutWordContent",
+      "cutWordDrawings",
       "setWordWatermark",
       "resetWordText",
       "cloneWordStory",
@@ -502,6 +503,10 @@ export function applyWordOperation(
   }
   if (operation.op === "cutWordContent") {
     cutWordContent(metadata, edit, parse, operation);
+    return;
+  }
+  if (operation.op === "cutWordDrawings") {
+    cutWordDrawings(metadata, edit, parse, operation);
     return;
   }
   if (operation.op === "pasteWordBlockContent" || operation.op === "pasteWordInlineContent") {

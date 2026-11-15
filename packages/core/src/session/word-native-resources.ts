@@ -6,6 +6,40 @@ import { assetDigest } from "../document/assets.js";
 import { readJson, encode, resolveReference } from "../document/package.js";
 import { parseContract } from "../schema-registry.js";
 import { checkLimit, invalid } from "../document/validation.js";
+/** Chart templates are owned by the selected native chart graph, including
+ * resources arriving through the clipboard. Deletion releases the old closure. */
+export function pruneRemovedWordChartResources(
+  word: WordMetadata,
+  previous: DeepReadonly<WordMetadata> | undefined,
+  files: Map<string, Uint8Array>,
+  source: ParsedHtml,
+  entrypoint: string,
+): void {
+  const owned = new Set(
+    (previous?.drawings ?? []).flatMap((d) =>
+      d.kind === "chart" ? (d.chart.native?.parts.map((p) => p.assetPath) ?? []) : [],
+    ),
+  );
+  if (!owned.size) return;
+  const used = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === "string" && owned.has(value)) used.add(value);
+    else if (Array.isArray(value)) for (const child of value) visit(child);
+    else if (value && typeof value === "object")
+      for (const child of Object.values(value)) visit(child);
+  };
+  visit(word);
+  for (const id of source.nodeIds()) {
+    const node = source.peekNode(id)!;
+    if (node.tagName === "img") used.add(resolveReference(node.attributes.src!, entrypoint));
+  }
+  const removed = new Set([...owned].filter((path) => !used.has(path)));
+  if (!removed.size) return;
+  const manifest = parseContract("document-manifest", readJson(files, "manifest.json"));
+  manifest.assets = manifest.assets.filter((asset) => !removed.has(asset.path));
+  for (const path of removed) files.delete(path);
+  files.set("manifest.json", encode(JSON.stringify(manifest)));
+}
 /** Remove resources formerly owned by source images once neither source nor
  * current Word semantics uses them. Unreferenced host-supplied assets stay put. */
 export function pruneRemovedWordImages(

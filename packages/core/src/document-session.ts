@@ -8,6 +8,7 @@ import { trackWordText } from "./session/word-revisions.js";
 import {
   pruneWordNativeResources,
   pruneRemovedWordImages,
+  pruneRemovedWordChartResources,
 } from "./session/word-native-resources.js";
 import type { Anchor, Annotation } from "./contracts/annotations.js";
 import { isPresentationCommentPoint } from "./document/presentation.js";
@@ -511,7 +512,7 @@ export function createDocumentSession(
       parsed = parseEdited();
     }
     files.set(base.snapshot.manifest.entrypoint, encode(parsed.html));
-    checkResourceUse(resources.added, parsed, base.snapshot.manifest.entrypoint);
+    checkResourceUse(resources.added, parsed, base.snapshot.manifest.entrypoint, metadata);
     const impacted = metadata.presentation
       ? new Set(
           affectedPresentationSlides(
@@ -571,6 +572,14 @@ export function createDocumentSession(
         metadata.word,
         files,
         base.html,
+        parsed,
+        base.snapshot.manifest.entrypoint,
+      );
+    if (metadata.word)
+      pruneRemovedWordChartResources(
+        metadata.word,
+        base.snapshot.metadata.word,
+        files,
         parsed,
         base.snapshot.manifest.entrypoint,
       );
