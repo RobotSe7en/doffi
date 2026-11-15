@@ -81,3 +81,12 @@ export function wordTableRowRegions(row:number,rows:number,columns:number,mask:n
  return regionOrder.filter(region=>selected.has(region));
 }
 export function wordTableRowCellProperties(css:Record<string,string>):Record<string,string>{return Object.fromEntries(Object.entries(css).filter(([key])=>key.startsWith('padding-')||key==='white-space'||key==='vertical-align'));}
+
+/** Physical continuation cells resolve their own row/column conditions even
+ * though the editable HTML represents the merged content with one rowspan. */
+export function wordTableCellProperties(word:Word,read:Read,styleId:string|undefined,info:DeepReadonly<WordMetadata['tables'][number]>,row:number,column:number,rows:number,span:number):Css{
+ const styles=chain(word,styleId),setting=(key:'tableLookMask'|'rowBandSize'|'columnBandSize')=>[...styles].reverse().find(style=>style[key]!==undefined)?.[key]??0;
+ const mask=info.lookMask??setting('tableLookMask'),rowBand=info.rowBandSize??setting('rowBandSize'),columnBand=info.columnBandSize??setting('columnBandSize'),base=resolveWordTableStyle(word,read,styleId,[]),value=resolveWordTableStyle(word,read,styleId,wordTableRegions(row,column,rows,info.grid.length,span,mask,rowBand,columnBand)),rowStyle=resolveWordTableStyle(word,read,styleId,wordTableRowRegions(row,rows,info.grid.length,mask,rowBand,columnBand)),inner:Css={};
+ if(base.table['--word-border-inside-h']&&row>0)inner['border-top']='var(--word-border-inside-h)';if(base.table['--word-border-inside-v']&&column>0)inner['border-left']='var(--word-border-inside-v)';
+ return{'padding-left':'5.4pt','padding-right':'5.4pt',...value.cell,...wordTableRowCellProperties(rowStyle.cell),...inner};
+}

@@ -1,5 +1,5 @@
 export * from './contracts/word-conditional.js';
-export {wordTableRegions,wordTableRowRegions,wordTableRowCellProperties,resolveWordTableStyle,resolveWordStyleRun} from './word-style-context.js';
+export {wordTableRegions,wordTableRowRegions,wordTableRowCellProperties,wordTableCellProperties,resolveWordTableStyle,resolveWordStyleRun} from './word-style-context.js';
 export type { WordTableEmptyParagraph } from './contracts/word-table-continuation.js';
 export{wordScriptRole}from'./word-script.js';
 export type{WordScriptRole}from'./word-script.js';

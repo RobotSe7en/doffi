@@ -5,6 +5,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { DocumentReadLimits } from '../runtime.js';
 import { checkLimit } from '../document/validation.js';
 import { DocumentError } from '../errors.js';
+import type {SourceStyleEdit} from './source-styles.js';
 
 type Cell={id:string;row:number;column:number;rows:number;columns:number};
 type Continuation=NonNullable<WordMetadata['tables'][number]['continuationFormats']>[number];
@@ -12,9 +13,10 @@ const escape=(text:string):string=>text.replaceAll('&','&amp;').replaceAll('"','
 const attributes=(values:Record<string,string|undefined>):string=>Object.entries(values).flatMap(([key,value])=>value===undefined?[]:[' '+key+'="'+escape(value)+'"']).join('');
 const rows=(source:ParsedHtml,id:string):string[]=>source.peekNode(id)!.childNodeIds.flatMap(id=>{const node=source.peekNode(id)!;return node.tagName==='tr'?[id]:node.childNodeIds.filter(id=>source.peekNode(id)!.tagName==='tr');});
 
-function materialize(word:WordMetadata,edit:DocumentEdit,entry:Continuation,cellId:string):void {
+function materialize(word:WordMetadata,edit:DocumentEdit,styles:SourceStyleEdit,entry:Continuation,cellId:string):void {
     const paragraphs=entry.emptyParagraphs??entry.paragraphs?.map(format=>({...(format?{format}:{}),runs:[]}))??[{runs:[]}];
     edit.removeSource(cellId,true);
+    if(entry.cellCssClass)edit.attributes(cellId,{class:entry.cellCssClass,style:Object.entries(styles.resolver().specifiedClass(entry.cellCssClass)).map(([key,value])=>key+':'+value).join(';'),'data-word-text-direction':entry.textDirection});
     if(entry.format){word.conditionalFormats??=[];word.conditionalFormats=word.conditionalFormats.filter(item=>item.nodeId!==cellId);word.conditionalFormats.push({nodeId:cellId,format:JSON.parse(JSON.stringify(entry.format))});}
     for(const paragraph of paragraphs){
         const definition:WordTableEmptyParagraph=paragraph,style=word.styles.find(style=>style.styleId===definition.styleId),level=definition.outlineLevel??style?.outlineLevel,tag=level!==undefined&&level<6?'h'+(level+1):'p';
@@ -30,7 +32,7 @@ function materialize(word:WordMetadata,edit:DocumentEdit,entry:Continuation,cell
 /** Refined row/column boundaries keep old physical continuation slots. Slots
  * that become real cells receive their empty paragraphs; other merged slots
  * retain metadata, including outside the selected split. */
-export function restoreWordSplitContinuations(word:WordMetadata,table:WordMetadata['tables'][number],original:ParsedHtml,originalRows:readonly string[],originalGrid:readonly number[],previous:readonly Continuation[],cells:readonly Cell[],edit:DocumentEdit,source:ParsedHtml,limits:DocumentReadLimits):void {
+export function restoreWordSplitContinuations(word:WordMetadata,table:WordMetadata['tables'][number],original:ParsedHtml,originalRows:readonly string[],originalGrid:readonly number[],previous:readonly Continuation[],cells:readonly Cell[],edit:DocumentEdit,source:ParsedHtml,limits:DocumentReadLimits,styles:SourceStyleEdit):void {
     if(!previous.length)return;
     const currentRows=rows(source,table.nodeId),width=table.grid.length,oldWidth=originalGrid.length;
     checkLimit(originalRows.length*oldWidth,limits.maxNodes);checkLimit(currentRows.length*width,limits.maxNodes);
@@ -50,6 +52,6 @@ export function restoreWordSplitContinuations(word:WordMetadata,table:WordMetada
     // paragraphs into many subdivisions. Candidate failure stays atomic.
     let nodes=source.nodeIds().length;
     for(const[id,entry]of materializations){const pending=[...source.peekNode(id)!.childNodeIds];for(let index=0;index<pending.length;index++)pending.push(...source.peekNode(pending[index]!)!.childNodeIds);nodes-=pending.length;const paragraphs=entry.emptyParagraphs??entry.paragraphs?.map(format=>({...(format?{format}:{}),runs:[]}))??[{runs:[]}];for(const paragraph of paragraphs)nodes+=1+paragraph.runs.length+('runCssClass'in paragraph&&paragraph.runCssClass?1:0);if(nodes>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Split continuation paragraphs exceed the source node budget.');}
-    for(const[id,entry]of materializations)materialize(word,edit,entry,id);
+    for(const[id,entry]of materializations)materialize(word,edit,styles,entry,id);
     table.continuationFormats=retained;
 }

@@ -172,7 +172,7 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
       const preserveWidth=operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns';
       info.grid=preserveWidth?result.grid.map(width=>width*previousWidth/result.width):result.grid;
       if(operation.change.kind==='insertColumns'||operation.change.kind==='deleteColumns'||operation.change.kind==='resize'&&operation.change.grid||operation.change.kind==='splitCell'&&info.grid.length!==previousGrid.length){const current=parse(),rows=wordTableRows(current,operation.nodeId);for(const cell of result.cells){const side=current.peekNode(cell.id)!.attributes['data-word-grid-gap'];if(side!=='before'&&side!=='after')continue;const value=String(Math.round(info.grid.slice(cell.column,cell.column+cell.columns).reduce((a,b)=>a+b,0)*20)),prefix='data-word-'+side+'-width-';for(let row=cell.row;row<cell.row+cell.rows;row++)edit.attributes(rows[row]!,{[prefix+'present']:'true',[prefix+'type']:'dxa',[prefix+'value']:value});}}
-      if(splitContinuations)restoreWordSplitContinuations(word,info,source,rowIds,previousGrid,splitContinuations,result.cells,edit,parse(),limits);
+      if(splitContinuations)restoreWordSplitContinuations(word,info,source,rowIds,previousGrid,splitContinuations,result.cells,edit,parse(),limits,styles);
       if(operation.change.kind==='resize'&&operation.change.grid)edit.sourceStyle(operation.nodeId,'width',result.width+'pt');
       if(preserveWidth||operation.change.kind==='resize'&&operation.change.grid||operation.change.kind==='splitCell')for(const cell of result.cells)edit.sourceStyle(cell.id,'width',info.grid.slice(cell.column,cell.column+cell.columns).reduce((a,b)=>a+b,0)+'pt');
       return;

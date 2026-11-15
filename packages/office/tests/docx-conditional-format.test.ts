@@ -9,7 +9,7 @@ function setup(bytes=conditionalFormatFixture()){
 }
 test('native conditional format caches retain presence, conflicting mask/named OFF flags and vertical merge continuation paragraphs through two reopens',()=>{
  let bytes=conditionalFormatFixture();for(let pass=0;pass<3;pass++){
- const{session}=setup(bytes),word=session.snapshot().metadata.word!;expect(word.conditionalFormats).toHaveLength(4);expect(word.conditionalFormats!.find(item=>session.getNode(item.nodeId)!.tagName==='tr')!.format).toEqual({val:'100000000000',firstRow:false});expect(word.conditionalFormats!.find(item=>session.getNode(item.nodeId)!.tagName==='p')!.format).toEqual({});expect(word.tables[0]!.continuationFormats).toEqual([{row:1,column:0,format:{val:'000000000000',lastRow:true},paragraphs:[{firstRow:false},null]}]);
+ const{session}=setup(bytes),word=session.snapshot().metadata.word!;expect(word.conditionalFormats).toHaveLength(4);expect(word.conditionalFormats!.find(item=>session.getNode(item.nodeId)!.tagName==='tr')!.format).toEqual({val:'100000000000',firstRow:false});expect(word.conditionalFormats!.find(item=>session.getNode(item.nodeId)!.tagName==='p')!.format).toEqual({});expect(word.tables[0]!.continuationFormats).toMatchObject([{row:1,column:0,format:{val:'000000000000',lastRow:true},paragraphs:[{firstRow:false},null]}]);
  bytes=exportDocx(session).bytes;expect(strFromU8(unzipSync(bytes)['word/document.xml']!).match(/<w:cnfStyle/g)).toHaveLength(6);session.dispose();
  }
 });

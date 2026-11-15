@@ -3,6 +3,7 @@ import{composeWordLanguages}from'./word-languages.js';
 import{composeWordTypography}from'./word-typography.js';
 import{retainFlowSelection}from'./flow-selection.js';
 import{composeWordTableLayout}from'./word-table-layout.js';
+import{composeWordContinuationCells}from'./word-continuation-cells.js';
 import{composeWordParagraphMarks}from'./word-paragraph-marks.js';
 import {composeWordNative} from './word-native.js';
 import { composeWordControls } from './word-controls.js';
@@ -438,6 +439,7 @@ export function mountPreview(
   let baseFonts: readonly FontResolution[] = [], fields: LayoutFields | undefined;
   let projection: SourceProjection | undefined;
   let drawings:ReturnType<typeof composeWordDrawings>|undefined;
+  let continuationCells:(()=>void)|undefined;
   let notes:ReturnType<typeof composeWordNotes>|undefined;
   let disposed = false, loaded = false, generation = 0, scheduled: number | undefined, observer: ResizeObserver | undefined;
   let report: DocumentRenderReport = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
@@ -463,6 +465,7 @@ export function mountPreview(
     }
     if (!stable) throw new DocumentError("ResourceLimitExceeded", "Layout fields did not converge within the render pass budget.");
     fields?.repeat(pages);
+    continuationCells?.();
     restoreSelection();
     source.setPages(pages);
     report = Object.freeze({ documentId: model.snapshot().manifest.documentId, revision: model.snapshot().manifest.revision,
@@ -488,6 +491,7 @@ export function mountPreview(
     }
     decorate(frame, snapshot.metadata.word);
     composeWordTableLayout(frame,limits,snapshot.metadata.word);
+    continuationCells=composeWordContinuationCells(frame,model,limits);
     composeWordNative(frame,model,prepared.nativeUrls,limits);
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);
