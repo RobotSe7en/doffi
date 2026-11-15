@@ -12,6 +12,8 @@ export const WordContentSemanticsSchema = WordMetadataSchema.pick({
   controls: true,
   conditionalFormats: true,
   drawings: true,
+  notes: true,
+  noteReferences: true,
   numbering: true,
   tables: true,
   tabs: true,
@@ -23,7 +25,7 @@ export const WordContentSemanticsSchema = WordMetadataSchema.pick({
         z.strictObject({
           storyId: IdentifierSchema,
           rootNodeId: IdentifierSchema,
-          kind: z.literal("textBox"),
+          kind: z.enum(["textBox", "footnote", "endnote"]),
           html: z.string().min(1),
         }),
       )

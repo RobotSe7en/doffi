@@ -455,9 +455,12 @@ export function createDocumentSession(
         if (
           (note.type ?? "normal") === "normal" &&
           !referencedNotes.has(note.noteId) &&
-          base.snapshot.metadata.word?.noteReferences?.some(
+          (base.snapshot.metadata.word?.noteReferences?.some(
             (reference) => reference.noteId === note.noteId,
-          )
+          ) ||
+            !base.snapshot.metadata.word?.notes?.some(
+              (previous) => previous.noteId === note.noteId,
+            ))
         ) {
           const story = metadata.word.stories.find((story) => story.storyId === note.storyId);
           if (story && parsed.hasNode(story.rootNodeId)) edit.removeSource(story.rootNodeId);

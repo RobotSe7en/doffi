@@ -208,7 +208,7 @@ export function pasteWordBlockContent(
       });
     }
     for (const id of [operation.nodeId, ...outerParagraphs]) {
-      const revisionId = id + "-paste-mark";
+      const revisionId = id + "-paste-mark-" + groupId;
       word.revisions.push({
         nodeId: id,
         sourceId: revisionId,

@@ -132,8 +132,8 @@ export function deleteWordContentRange(
         if (word.revisions.some((r) => r.nodeId === id && r.kind === "rowDelete")) continue;
         word.revisions.push({
           nodeId: id,
-          revisionId: id + "-range-delete",
-          sourceId: id + "-range-delete",
+          revisionId: id + "-range-delete-" + group.groupId,
+          sourceId: id + "-range-delete-" + group.groupId,
           kind: "rowDelete",
           ...group,
         });
@@ -175,8 +175,8 @@ export function deleteWordContentRange(
         )
           word.revisions.push({
             nodeId: id,
-            revisionId: id + "-range-mark",
-            sourceId: id + "-range-mark",
+            revisionId: id + "-range-mark-" + group.groupId,
+            sourceId: id + "-range-mark-" + group.groupId,
             kind: "paragraphDelete",
             ...group,
           });

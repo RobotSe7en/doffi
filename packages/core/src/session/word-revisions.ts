@@ -178,6 +178,7 @@ export function trackWordText(
         "data-word-drawing",
         "data-word-native-object",
         "data-word-note-reference",
+        "data-word-note-number",
         "data-word-equation",
       ].some((key) => node.attributes[key] !== undefined) ||
       ["checkBox", "dropDown", "date", "picture"].includes(

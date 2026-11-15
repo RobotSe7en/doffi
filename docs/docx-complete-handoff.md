@@ -133,3 +133,11 @@ PLAYWRIGHT_BROWSERS_PATH=/home/danny/work/doffi/.playwright pnpm exec playwright
 图表剪贴板丢弃原始嵌入书的无关单元格，保存格式模板；`docx-chart-patch.ts` 在重建工作簿时同步公式和 externalData。`pruneRemovedWordChartResources` 回收删除后的模板依赖。浮动图形分页使用布局盒，不把旋转后的绘制边界当作文字行。
 
 71 项相关事务／原生、三引擎 12 项和旧浏览器回归 32 项通过；固定 XSD 加所用 WPS／WPG profile 验证 12 DOCX／54 XML。源与 profile 哈希、验收导出和脚本在忽略目录 `.cache/docx-gap-audit/r05-*`。新增对象 fixture 含无关工作簿单元格标记，验证实际剪贴板不带该内容。构建及类型／边界通过。用户在 R05 实施中请求推送，R03／R04 已推至 `origin/feat/docx-complete@ef4a401`；后续提交按当前推送授权完成交付，不建 PR。
+
+## R06 补充交接（2026-11-16）
+
+用户本次要求的 R03～R06 全部完成；固定清单剩余 R07～R19。`WordContentSemantics` 增加 notes／noteReferences，传输故事种类扩展为 textBox／footnote／endnote。`word-clipboard-stories.ts` 只从选中引用／对象遍历所有权；`attachWordContent` 为全部节点和注释／故事分配新身份，检查每个引用与故事的归属，拒绝未选附属内容兜底。
+
+注释正文包含字段、缓存、链接、表格、编号、制表位、图片及对象文字故事。新注释同候选拒绝的清理不再依赖 base 已有引用；注释编号是输入原子边界，旧源中编号节点内的字段仍可按序原生输出。区块粘贴的段落标记修订加入唯一组标识，修复重复粘贴冲突。
+
+156 项相关测试（R06 为 13 项）、三引擎 12 项、浏览器受影响回归 38 项通过。12 DOCX／66 XML 通过固定 Transitional XSD 与所用 WPS／WPG profile；导出、脚本和日志在 `.cache/docx-gap-audit/r06-*`。构建、应用／工具类型、边界与分支 327 个 TS／TSX 的格式检查通过。按用户当前推送授权交付 `feat/docx-complete` 的本地阶段提交；不创建 PR，不启动远程全量 CI。后续如继续，从固定 R07 开始。

@@ -893,18 +893,52 @@ class Exporter {
         return !!story && contains(this.tree.byId.get(story.rootNodeId)!, node);
       });
       if (!note) unsupported("A note number requires its note story.");
-      this.add(
-        "<w:r>" +
-          this.nativeRun(
-            css,
-            this.styleContext(node, this.styles.runContext(paragraphStyle, character)),
+      const writeNumber = (): void =>
+        this.add(
+          "<w:r>" +
+            this.nativeRun(
+              css,
+              this.styleContext(node, this.styles.runContext(paragraphStyle, character)),
+              character,
+              role,
+              language,
+            ) +
+            empty("w:" + note.kind + "Ref") +
+            "</w:r>",
+        );
+      // Older source writers could place inserted content inside the counter
+      // span. Emit its actual children in order instead of dropping their fields.
+      let written = false;
+      for (const child of node.children) {
+        if (element(child)) {
+          this.inline(child, paragraphStyle, character, role, language);
+          continue;
+        }
+        const at = written ? -1 : child.text.indexOf("\ufffc");
+        if (at < 0) {
+          this.inline(child, paragraphStyle, character, role, language);
+          continue;
+        }
+        if (at)
+          this.inline(
+            { ...child, text: child.text.slice(0, at), to: child.from + at },
+            paragraphStyle,
             character,
             role,
             language,
-          ) +
-          empty("w:" + note.kind + "Ref") +
-          "</w:r>",
-      );
+          );
+        writeNumber();
+        written = true;
+        if (at + 1 < child.text.length)
+          this.inline(
+            { ...child, text: child.text.slice(at + 1), from: child.from + at + 1 },
+            paragraphStyle,
+            character,
+            role,
+            language,
+          );
+      }
+      if (!written) writeNumber();
       return;
     }
     if (node.attrs["data-word-note-separator"]) {

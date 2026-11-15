@@ -2,6 +2,7 @@ import { registerWordListClipboardTests } from "./word-list-clipboard-cases.js";
 import { registerWordCrossClipboardTests } from "./word-cross-clipboard-cases.js";
 import { registerWordMoveClipboardTests } from "./word-move-clipboard-cases.js";
 import { registerWordObjectClipboardTests } from "./word-object-clipboard-cases.js";
+import { registerWordNoteClipboardTests } from "./word-note-clipboard-cases.js";
 import {
   floatingTableFixture,
   floatingHeaderFixture,
@@ -8745,3 +8746,4 @@ registerWordListClipboardTests(mount);
 registerWordCrossClipboardTests(mount);
 registerWordMoveClipboardTests(mount);
 registerWordObjectClipboardTests(mount);
+registerWordNoteClipboardTests(mount);

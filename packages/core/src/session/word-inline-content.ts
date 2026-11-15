@@ -81,7 +81,12 @@ export function pasteWordInlineContent(
         origin + from >= source.textOffset(revision.nodeId)! &&
         origin + to <= source.textOffset(revision.nodeId)! + source.textLength(revision.nodeId)!,
     );
-    if (fold && !operation.cutId && !semantics.drawings?.length) {
+    if (
+      fold &&
+      !operation.cutId &&
+      !semantics.drawings?.length &&
+      !semantics.noteReferences?.length
+    ) {
       trackWordInlineContent(
         word,
         edit,

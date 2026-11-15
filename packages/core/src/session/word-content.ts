@@ -225,9 +225,37 @@ export function attachWordContent(
         return copy;
       }),
     );
+  const owners = new Set<string>(),
+    noteIds = new Map<string, string>(),
+    referenced = new Set<string>();
+  for (const note of semantics.notes ?? []) {
+    if (noteIds.has(note.noteId) || (note.type ?? "normal") !== "normal")
+      invalid("Copied note definitions must be unique normal notes.");
+    const storyId =
+      storyIds.get(note.storyId) ?? invalid("A copied note requires its owned story.");
+    if (semantics.stories?.find((s) => s.storyId === note.storyId)?.kind !== note.kind)
+      invalid("A copied note story must match its reference kind.");
+    const noteId = "word-content-note-" + createOpaqueId();
+    noteIds.set(note.noteId, noteId);
+    owners.add(note.storyId);
+    (word.notes ??= []).push({ ...note, noteId, storyId });
+  }
+  for (const reference of semantics.noteReferences ?? []) {
+    if (referenced.has(reference.noteId))
+      invalid("Each copied note must have one independent reference.");
+    referenced.add(reference.noteId);
+    (word.noteReferences ??= []).push({
+      ...reference,
+      nodeId: map(reference.nodeId),
+      noteId:
+        noteIds.get(reference.noteId) ??
+        invalid("A copied reference requires its selected note definition."),
+    });
+  }
+  if (noteIds.size !== referenced.size || [...noteIds.keys()].some((id) => !referenced.has(id)))
+    invalid("A clipboard note must belong to a selected reference.");
   if (semantics.drawings?.length) {
-    const selected = new Set(semantics.drawings.map((d) => d.nodeId)),
-      owners = new Set<string>();
+    const selected = new Set(semantics.drawings.map((d) => d.nodeId));
     (word.drawings ??= []).push(
       ...semantics.drawings.map((drawing) => {
         const copy = JSON.parse(JSON.stringify(drawing)) as typeof drawing;
@@ -283,7 +311,7 @@ export function attachWordContent(
         return copy;
       }),
     );
-    if (storyIds.size !== owners.size || [...storyIds.keys()].some((id) => !owners.has(id)))
-      invalid("Clipboard stories must belong to selected objects.");
-  } else if (storyIds.size) invalid("Clipboard stories require selected owners.");
+  }
+  if (storyIds.size !== owners.size || [...storyIds.keys()].some((id) => !owners.has(id)))
+    invalid("Clipboard stories must belong to selected objects or note references.");
 }

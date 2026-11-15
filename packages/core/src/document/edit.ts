@@ -371,6 +371,7 @@ export class DocumentEdit {
               attr(node, "data-word-native-object") ||
               attr(node, "data-word-drawing") ||
               attr(node, "data-word-note-reference") ||
+              attr(node, "data-word-note-number") ||
               attr(node, "data-word-equation") ||
               ["checkBox", "dropDown", "date", "picture"].includes(
                 attr(node, "data-word-content-control") ?? "",
@@ -694,6 +695,7 @@ export class DocumentEdit {
               "data-word-drawing",
               "data-word-equation",
               "data-word-note-reference",
+              "data-word-note-number",
             ].includes(attribute.name),
           ))
       )
@@ -786,6 +788,7 @@ export class DocumentEdit {
             attr(parent, "data-word-drawing") ||
             attr(parent, "data-word-equation") ||
             attr(parent, "data-word-note-reference") ||
+            attr(parent, "data-word-note-number") ||
             attr(parent, "data-word-field") ||
             attr(parent, "data-word-content-control"))
         )

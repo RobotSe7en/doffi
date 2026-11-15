@@ -343,6 +343,7 @@ export function pasteClipboardFormat(
             "data-word-level",
             "data-word-numbering-off",
             "data-word-drawing",
+            "data-word-note-reference",
           ].includes(key) ||
           typeof value !== "string"
         )

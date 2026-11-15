@@ -40,6 +40,11 @@ export function copyWordClipboardSemantics(
       }
   }
   const drawingIds = new Map(drawings.map((d) => [d.nodeId, d.kind]));
+  const noteReferences =
+      word.noteReferences?.filter((reference) => complete(reference.nodeId)) ?? [],
+    noteIds = new Set(noteReferences.map((reference) => reference.noteId)),
+    notes = word.notes?.filter((note) => noteIds.has(note.noteId)) ?? [],
+    references = new Set(noteReferences.map((reference) => reference.nodeId));
   const fields = word.fields
       .filter(
         (field) =>
@@ -91,6 +96,7 @@ export function copyWordClipboardSemantics(
       ]),
     );
   for (const [id, node] of nodes) {
+    if (!references.has(id)) node.removeAttribute("data-word-note-reference");
     const kind = drawingIds.get(id);
     if (kind) node.setAttribute("data-word-drawing", kind);
     else node.removeAttribute("data-word-drawing");
@@ -122,6 +128,7 @@ export function copyWordClipboardSemantics(
             "data-word-level",
             "data-word-numbering-off",
             "data-word-drawing",
+            "data-word-note-reference",
           ].includes(attribute.name),
         )
         .map((attribute) => [attribute.name, attribute.value]),
@@ -165,6 +172,7 @@ export function copyWordClipboardSemantics(
     hyperlinks,
     bookmarks,
     ...(drawings.length ? { drawings } : {}),
+    ...(notes.length ? { notes, noteReferences } : {}),
     ...(numbering.length ? { numbering } : {}),
     ...(tables.length ? { tables } : {}),
     ...(tabs.length ? { tabs } : {}),
