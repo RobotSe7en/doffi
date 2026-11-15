@@ -3,7 +3,7 @@ import { WordDrawingSchema } from '@doffi/core';
 import type { WordDrawing,WordDrawingLayout,WordMetadata } from '@doffi/core';
 import type { OpcPackage } from './ooxml/package.js';
 import type { XmlNode } from './ooxml/xml.js';
-import { A,C,PIC,WP,W,R,attr,child,elements,number,text,fail,unsupported,check } from './ooxml/xml.js';
+import { A,C,PIC,WP,W,R,attr,child,elements,number,text,fail,unsupported,unsupportedType,check } from './ooxml/xml.js';
 import { fill,outline,effects,paint,onlyColor } from './drawingml/styles.js';
 import { integer,points } from './drawingml/values.js';
 import { declarations } from './ooxml/styles.js';
@@ -37,6 +37,9 @@ function appearance(source:XmlNode|undefined,style:XmlNode|undefined,context:Wor
 }
 export function importWordDrawing(source:XmlNode,context:WordDrawingReadContext):WordDrawingHtml{
  const inline=child(source,'inline',WP),anchor=child(source,'anchor',WP),frame=inline??anchor;if(!frame||inline&&anchor)fail(source,'A drawing requires one inline or floating frame.');
+ const frameChildren=new Set(['simplePos','positionH','positionV','extent','effectExtent','wrapNone','wrapSquare','wrapTight','wrapThrough','wrapTopAndBottom','docPr','cNvGraphicFramePr']);
+ for(const node of frame.content){if(typeof node==='string')continue;const known=node.uri===WP&&frameChildren.has(node.name)||node.uri===A&&node.name==='graphic';if(!known)unsupportedType(node,'This drawing frame extension is preserved with its complete native drawing.');}
+ for(const position of [child(frame,'positionH',WP),child(frame,'positionV',WP)])if(position)for(const node of position.content)if(typeof node!=='string'&&(node.uri!==WP||!['align','posOffset'].includes(node.name)))unsupportedType(node,'This drawing position extension is preserved with its complete native drawing.');
  const extent=child(frame,'extent',WP);if(!extent)fail(frame,'A drawing extent is missing.');const size={width:points(extent,'cx'),height:points(extent,'cy')};
  const layout:WordDrawingLayout={mode:inline?'inline':'floating',distances:{top:points(frame,'distT',0),right:points(frame,'distR',0),bottom:points(frame,'distB',0),left:points(frame,'distL',0)}};
  let x=0,y=0;if(anchor){const h=child(anchor,'positionH',WP),v=child(anchor,'positionV',WP);if(!h||!v)fail(anchor,'A floating drawing position is missing.');layout.horizontal=(attr(h,'relativeFrom','')??'column')as NonNullable<WordDrawingLayout['horizontal']>;layout.vertical=(attr(v,'relativeFrom','')??'paragraph')as NonNullable<WordDrawingLayout['vertical']>;
