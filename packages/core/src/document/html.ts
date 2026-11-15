@@ -63,6 +63,7 @@ export interface ParsedHtml {
   getNode(nodeId: string): DocumentNode | undefined;
   hasNode(nodeId: string): boolean;
   textOffset(nodeId: string): number | undefined;
+  textLength(nodeId: string): number | undefined;
   textScope(nodeId: string, from: number, to: number): string | undefined;
   isContainer(nodeId: string): boolean;
   signature(nodeId: string): string | undefined;
@@ -233,6 +234,7 @@ export function parseHtml(source: string, manifest: HtmlSourceDescriptor, files:
         const element = index.get(nodeId)?.element;
         return element ? positions.get(element)?.from : undefined;
       },
+      textLength: (nodeId) => {positions ??= textPositions(tree);const element=index.get(nodeId)?.element,bounds=element?positions.get(element):undefined;return bounds?bounds.to-bounds.from:undefined;},
       textScope: (nodeId, from, to) => {
         const element = index.get(nodeId)?.element;
         if (!element) return undefined;

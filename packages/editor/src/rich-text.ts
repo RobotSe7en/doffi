@@ -477,7 +477,12 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     if (!root) return;
     let range = selectedRange();
     const target = event.getTargetRanges?.()[0];
-    if (target) { range = frame!.createRange(); range.setStart(target.startContainer, target.startOffset); range.setEnd(target.endContainer, target.endOffset); }
+    if (target) {
+      const native=frame!.createRange();native.setStart(target.startContainer,target.startOffset);native.setEnd(target.endContainer,target.endOffset);
+      // Browsers can canonicalize a run-start caret onto the preceding run's
+      // end. Equal text positions retain the user's explicit source context.
+      if(!(event.inputType.startsWith('insert')&&range?.collapsed&&native.collapsed&&offsetAt(root,range.startContainer,range.startOffset,projection.ignored)===offsetAt(root,native.startContainer,native.startOffset,projection.ignored)))range=native;
+    }
     if (!range || !root.contains(range.commonAncestorContainer)) { event.preventDefault(); return; }
     if (composing || event.isComposing || event.inputType === "insertCompositionText") {
       pending = inputStep(root, range, projection.ignored);

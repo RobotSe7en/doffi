@@ -2,6 +2,11 @@ import { isDocumentTextBoundary } from '@doffi/core';
 import type { DocumentEditingSession, DocumentOperation, ContentDocumentModel,ReconciledTextEdit } from '@doffi/core';
 import { sourceText, offsetAt } from './dom.js';
 import type { SelectionBookmark, CaretBookmark } from './dom.js';
+function insertionContext(previous:HTMLElement,next:HTMLElement,at:number):string|undefined{
+    let offset=0,found:Node|undefined;const visit=(node:Node):void=>{if(found)return;const element=node.nodeType===1?node as Element:undefined;if(node.nodeType===3||element?.matches('br,img,[data-word-tab]')){const length=sourceText(node,()=>false).length;if(offset+length>at)found=node;offset+=length;return;}for(const child of node.childNodes)visit(child);};visit(next);
+    for(let parent=found?.parentElement;parent;parent=parent.parentElement){const id=parent.dataset.nodeId;if(id&&(id===previous.dataset.nodeId||previous.querySelector('[data-node-id="'+CSS.escape(id)+'"]')))return id;if(parent===next)break;}
+    return undefined;
+}
 /** Text tracking uses the same canonical paragraph positions as native input;
  * composition steps collapse to one exact replacement at commit. */
 export function trackedWordInput(session: DocumentEditingSession, previous: HTMLElement, next: HTMLElement, properties: ReadonlyMap<string, string>,textEdits:ReconciledTextEdit[]): DocumentOperation[] | undefined {
@@ -34,7 +39,9 @@ export function trackedWordInput(session: DocumentEditingSession, previous: HTML
             oldEnd++;
             end++;
         }
-        operations.push({ op: 'trackWordText', nodeId: oldIds[index]!, from, to: oldEnd, expectedText: old.slice(from, oldEnd), text: current.slice(from, end), date: new Date().toISOString(), ...(properties.size ? { properties: Object.fromEntries(properties) } : {}) });
+        let context:string|undefined;
+        if(from===oldEnd&&end>from)context=insertionContext(before[index]!,after[index]!,from);
+        operations.push({ op: 'trackWordText', nodeId: oldIds[index]!, from, to: oldEnd, expectedText: old.slice(from, oldEnd), text: current.slice(from, end), date: new Date().toISOString(), ...(context?{insertionContextNodeId:context}:{}), ...(properties.size ? { properties: Object.fromEntries(properties) } : {}) });
     }
     return operations.length ? operations : undefined;
 }

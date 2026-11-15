@@ -101,3 +101,5 @@ Word 段落的 `--word-kinsoku`、`--word-word-wrap`、`--word-auto-space-de` �
 预览间距采用 [CSS Text 的 1/8 CJK 字宽](https://www.w3.org/TR/css-text-4/#text-autospace-property)，源中保留原生开关；这不声称已验证 Word 实机逐像素一致。原生换行的适用语言参考 [Microsoft 实现说明](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/5c96914d-820a-4f49-a239-40024839685e)。悬挂标点、行首标点压缩及自定义禁则表仍在后续排版收口范围内。
 
 回车或 SDK 协调产生单次段落拆分时，新段落标记继承当前字符格式与原生效果；原标记和已有格式历史保留在末段。两段保留独立制表位声明。拒绝分段修订会合并正文并保留原标记的历史，撤销同时恢复源和元数据。
+
+`trackWordText` 的零长度插入可通过 `insertionContextNodeId` 明确选择当前位置的源 run／空 run，或选择段落的直接上下文。上下文必须在本次目标内并直接包含该插入边界；原子对象、删除文字和段落标记不能承载新正文。省略时优先沿用前一个文字上下文。浏览器按实际光标的源节点传递上下文；浏览器把相同文字位置规范到另一侧时仍保留用户选择。连续输入可合并到同一作者的原插入修订，选择相邻另一个 run 则保持独立审阅。

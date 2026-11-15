@@ -21,6 +21,7 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
     to: number;
     expectedText: string;
     text: string;
+    insertionContextNodeId?:string | undefined;
     properties?: Record<string, string> | undefined;
     author?: string | undefined;
     date?: string | undefined;
@@ -31,7 +32,13 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
         fail('The tracked text range or Unicode content is invalid.');
     if (expectedText === text)
         return;
+    const inside=(id:string,parent:string):boolean=>{for(let current:string|null=id;current;current=source.peekNode(current)!.parentNodeId)if(current===parent)return true;return false;};
+    const atomicContext=(id:string):boolean=>{const node=source.peekNode(id)!;return ['br','img','del'].includes(node.tagName)||['data-word-paragraph-mark','data-word-tab','data-word-break','data-word-drawing','data-word-native-object','data-word-note-reference','data-word-equation'].some(key=>node.attributes[key]!==undefined)||['checkBox','dropDown','date','picture'].includes(node.attributes['data-word-content-control']??'');};
+    let context=operation.insertionContextNodeId;
+    if(context){const owner=source.getNode(context),offset=source.textOffset(operation.nodeId)!+from,begin=owner?source.textOffset(context)!:NaN;if(from!==to||!owner||!inside(context,operation.nodeId)||offset<begin||offset>begin+owner.text.length)fail('The insertion context must own this zero-length source boundary.');for(let current:string|null=context;current;current=source.peekNode(current)!.parentNodeId){if(atomicContext(current))fail('An atomic or deleted source cannot own inserted text.');if(current===operation.nodeId)break;}}
+    else if(from===to&&from>0){const point=source.textOffset(operation.nodeId)!+from;let selectedContext=operation.nodeId;for(;;){const child:string|undefined=source.peekNode(selectedContext)!.childNodeIds.find(id=>{const start=source.textOffset(id)!,length=source.textLength(id)!;return length>0&&start<point&&start+length>=point;});if(!child||atomicContext(child))break;selectedContext=child;}context=selectedContext;}
     const properties={...operation.properties};if(properties['font-weight']!==undefined&&properties['--word-bold-cs']===undefined)properties['--word-bold-cs']=properties['font-weight']==='bold'||Number(properties['font-weight'])>=600?'1':'0';if(properties['font-style']!==undefined&&properties['--word-italic-cs']===undefined)properties['--word-italic-cs']=properties['font-style']==='italic'?'1':'0';
+    const escape = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     const formatInserted=(id:string,from:number):void=>{if(text&&Object.keys(properties).length){const changed:string[]=[];edit.formatSourceText(id,{from,to:from+text.length,expectedText:text},properties,change=>changed.push(change.nodeId),undefined,false,true);for(const nodeId of changed)edit.attributes(nodeId,{'data-word-current-format':'true'});}};
     const author = operation.author ?? word.trackingAuthor ?? '', date = operation.date ?? new Date().toISOString(), start = source.textOffset(operation.nodeId)! + from, end = source.textOffset(operation.nodeId)! + to;
     for (const revision of word.revisions) {
@@ -39,9 +46,9 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
         if (!owner)
             continue;
         const begin = source.textOffset(owner.nodeId)!, finish = begin + owner.text.length;
-        const inside=(id:string,parent:string):boolean=>{for(let current:string|null=id;current;current=source.peekNode(current)!.parentNodeId)if(current===parent)return true;return false;};if(!inside(owner.nodeId,operation.nodeId)&&!inside(operation.nodeId,owner.nodeId))continue;
-        if (revision.kind === 'insert' && revision.author === author && start >= begin && end <= finish) {
-            edit.replaceSourceText(revision.nodeId, { ...operation, from: start - begin, to: end - begin });
+        if(!inside(owner.nodeId,operation.nodeId)&&!inside(operation.nodeId,owner.nodeId))continue;
+        if (revision.kind === 'insert' && revision.author === author && start >= begin && end <= finish && (!context||inside(context,owner.nodeId))) {
+            if(context&&from===to&&text)edit.insertSourceAt(revision.nodeId,start-begin,escape(text).split('\n').join('<br>'),context);else edit.replaceSourceText(revision.nodeId, { ...operation, from: start - begin, to: end - begin });
             if(!parse().getNode(revision.nodeId)!.text){edit.removeSource(revision.nodeId);word.revisions=word.revisions.filter(item=>item!==revision);}
             else formatInserted(revision.nodeId,start-begin);
             return;
@@ -51,8 +58,7 @@ export function trackWordText(word: WordMetadata, edit: DocumentEdit, parse: () 
     }
     const deleted = edit.wrapSourceText(operation.nodeId, from, to, 'del');
     for(const id of deleted)edit.attributes(id,{'data-word-run-overlay':'true'});
-    const escape = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const inserted = text ? edit.insertSourceAt(operation.nodeId, to, '<ins data-word-run-overlay="true">' + escape(text).split('\n').join('<br>') + '</ins>').rootNodeIds : [], groupId = deleted[0] ?? inserted[0]!;
+    const inserted = text ? edit.insertSourceAt(operation.nodeId, to, '<ins data-word-run-overlay="true">' + escape(text).split('\n').join('<br>') + '</ins>',context).rootNodeIds : [], groupId = deleted[0] ?? inserted[0]!;
     for(const id of inserted)formatInserted(id,0);
     for (const [kind, ids] of [['delete', deleted], ['insert', inserted]] as const)
         for (const id of ids)

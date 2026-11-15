@@ -143,7 +143,7 @@ export class DocumentEdit {
   }
 
   /** Core-owned format insertion; caller HTML is still parsed, bounded and validated. */
-  insertSource(parentId: string, source: string, beforeId?: string,copyIdentities=false,insertionOffset?:number): { rootNodeIds: string[]; identities: ReadonlyMap<string, string> } {
+  insertSource(parentId: string, source: string, beforeId?: string,copyIdentities=false,insertionOffset?:number,insertionContextNodeId?:string): { rootNodeIds: string[]; identities: ReadonlyMap<string, string> } {
     const index = this.index(), container = index.get(parentId);let parent=container,before:Tree.ChildNode|undefined=beforeId === undefined ? undefined : index.get(beforeId);
     if (!parent || beforeId !== undefined && (!before || before.parentNode !== parent)) fail("A format insertion requires an existing parent and sibling.");
     const fragment = parseHtmlFragment(source, parent, this.limits, bodyTags), identities = new Map<string, string>();
@@ -165,7 +165,14 @@ export class DocumentEdit {
     if(insertionOffset!==undefined){
       const leaves:Tree.ChildNode[]=[];visit(parent,node=>{if(node.nodeName==='#text'||isElement(node)&&['img','br'].includes(node.tagName))leaves.push(node as Tree.ChildNode);});
       const text=leaves.map(node=>node.nodeName==='#text'&&'value'in node?node.value:isElement(node)&&node.tagName==='img'?'\ufffc':'\n').join('');if(!Number.isSafeInteger(insertionOffset)||insertionOffset<0||insertionOffset>text.length||!isTextBoundary(text,insertionOffset))fail('A format insertion requires an exact UTF-16 source boundary.');
-      from=range.from+insertionOffset;const leaf=leaves.find(node=>positions.get(node)!.to>from)||leaves.at(-1);
+      from=range.from+insertionOffset;
+      let candidates=leaves;
+      if(insertionContextNodeId){
+        const context=index.get(insertionContextNodeId),bounds=context?positions.get(context):undefined;if(!context||!ancestors(context).includes(container!)||!bounds||from<bounds.from||from>bounds.to||attr(context,'data-word-paragraph-mark'))fail('The insertion context does not contain this source boundary.');
+        const child=context.childNodes.find(child=>positions.get(child)!.to>from)??context.childNodes.at(-1);parent=context;candidates=[];
+        if(child){const bounds=positions.get(child)!;if(child.nodeName==='#text')candidates=[child];else if(from===bounds.from)before=child;else if(from===bounds.to)before=context.childNodes[context.childNodes.indexOf(child)+1];else fail('The insertion context must directly own this source boundary.');}
+      }
+      const leaf=candidates.find(node=>positions.get(node)!.to>from)||candidates.at(-1);
       if(leaf){
         let atomic:Element|undefined;for(let node:Tree.Node|null=leaf.parentNode;node&&node!==container;node='parentNode'in node?node.parentNode:null)if(isElement(node)&&(node.tagName==='del'||attr(node,'data-word-native-object')||attr(node,'data-word-drawing')||attr(node,'data-word-note-reference')||attr(node,'data-word-equation')||['checkBox','dropDown','date','picture'].includes(attr(node,'data-word-content-control')??'')))atomic=node;
         if(atomic){const bounds=positions.get(atomic)!;if(from!==bounds.from&&from!==bounds.to)fail('An atomic object cannot contain a partial insertion.');parent=atomic.parentNode as Element;before=from===bounds.from?atomic:parent.childNodes[parent.childNodes.indexOf(atomic)+1];}
@@ -180,7 +187,7 @@ export class DocumentEdit {
     for (const child of [...fragment.childNodes]) { adapter.detachNode(child); if (before) adapter.insertBefore(parent, child, before); else adapter.appendChild(parent, child); }
     return { rootNodeIds, identities };
   }
-  insertSourceAt(nodeId:string,offset:number,source:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,false,offset);}
+  insertSourceAt(nodeId:string,offset:number,source:string,insertionContextNodeId?:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,false,offset,insertionContextNodeId);}
   resourceReference(assetPath:string):string{
     if(!this.state.snapshot.manifest.assets.some(asset=>asset.path===assetPath)||!this.state.files.has(assetPath))throw new DocumentError('AssetUnavailable','The drawing resource is not authorized in this transaction.');
     const directory=this.state.snapshot.manifest.entrypoint.split('/').slice(0,-1),parts=assetPath.split('/');while(directory.length&&directory[0]===parts[0]){directory.shift();parts.shift();}return[...directory.map(()=>'..'),...parts.map(encodeURIComponent)].join('/');
