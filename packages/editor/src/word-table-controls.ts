@@ -41,7 +41,7 @@ export function createWordTableControls(parent:ShadowRoot,before:HTMLElement,ses
   const lookFlags=([['首行样式',32],['末行样式',64],['首列样式',128],['末列样式',256],['行条带',512],['列条带',1024]]as const).map(([name,bit])=>{const input=field(name,'','checkbox');input.checked=bit>=512?!(mask&bit):!!(mask&bit);return{input,bit};});
   const rowBand=field('行条带大小',tableInfo?.rowBandSize??setting('rowBandSize')??0),columnBand=field('列条带大小',tableInfo?.columnBandSize??setting('columnBandSize')??0);rowBand.min=columnBand.min='0';
   button('应用表格样式选项',()=>{let next=mask;for(const{input,bit}of lookFlags){if(bit>=512?!input.checked:input.checked)next|=bit;else next&=~bit;}apply([{op:'formatWordTable',nodeId:tableId,lookMask:next,rowBandSize:Number(rowBand.value),columnBandSize:Number(columnBand.value)}]);});
-  button('删除表格',()=>{apply([{op:'removeNode',nodeId:tableId}]);close();});
+  button('删除表格',()=>{apply([{op:'deleteWordTable',nodeId:tableId}]);close();});
  }
  return{open,dispose:close};
 }

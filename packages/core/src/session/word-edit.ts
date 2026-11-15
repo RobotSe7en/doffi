@@ -29,7 +29,7 @@ import type { DocumentEdit } from '../document/edit.js';
 import type { ParsedHtml } from '../document/html.js';
 import type { SourceStyleEdit } from './source-styles.js';
 function fail(message:string):never{throw new DocumentError('InvalidOperation',message);}
-export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordRevisionOperation(operation)||isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['setWordWatermark','resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','applyWordCharacterStyle','setWordParagraph','setWordStyle','deleteWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
+export function isWordOperation(operation:{readonly op:string}):operation is WordOperation{return isWordRevisionOperation(operation)||isWordCommentOperation(operation)||isWordDrawingOperation(operation)||isWordReferenceOperation(operation)||isWordMathOperation(operation)||isWordControlOperation(operation)||['setWordWatermark','resetWordText','cloneWordStory','setWordOptions','setWordTabs','insertWordField','setWordSection','splitWordSection','insertWordStory','setWordStoryContent','insertWordTable','deleteWordTable','editWordTable','formatWordTable','formatWordCell','formatWordText','applyWordCharacterStyle','setWordParagraph','setWordStyle','deleteWordStyle','setWordNumbering','setWordList'].includes(operation.op);}
 export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit,operation:WordOperation,limits:DocumentReadLimits,annotations:Annotation[]=[]):void{
   if (!metadata.word) {
     const source=parse(),rootId=source.nodeIds().find(id=>source.peekNode(id)!.parentNodeId===null)!;
@@ -116,6 +116,10 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
   if(operation.op==='setWordStoryContent'){
     if(!word.stories.some(story=>story.rootNodeId===operation.nodeId&&story.kind!=='main'))fail('Auxiliary story editing requires an existing header, footer or comment story.');edit.replaceSourceContent(operation.nodeId,operation.html);return;
   }
+  if(operation.op==='deleteWordTable'){
+    if(node.tagName!=='table')fail('Table deletion requires a table.');const rows=wordTableRows(parse(),operation.nodeId);
+    if(word.trackChanges&&rows.length)trackWordRowDeletion(word,edit,parse,operation.nodeId,0,rows.length,limits);else edit.removeSource(operation.nodeId);return;
+  }
   if(operation.op==='insertWordTable') {
     if (!/^p$|^h[1-6]$/.test(node.tagName)) fail('Insert a table beside an existing paragraph.');
     checkLimit(operation.rows * operation.columns * 3, limits.maxNodes);
@@ -127,7 +131,8 @@ export function applyWordOperation(metadata:WordDocumentMetadata,edit:DocumentEd
     const parent=edit.sourceParent(operation.nodeId),siblings=parse().peekNode(parent)!.childNodeIds,index=siblings.indexOf(operation.nodeId);
     const reference=operation.position==='before'?operation.nodeId:siblings[index+1];
     const tableId=edit.insertSource(parent,source,reference).rootNodeIds[0]!;
-    word.tables.push({nodeId:tableId,grid:Array.from({length:operation.columns},()=>width/operation.columns)});return;
+    word.tables.push({nodeId:tableId,grid:Array.from({length:operation.columns},()=>width/operation.columns)});
+    if(word.trackChanges){const author=word.trackingAuthor??'',date=new Date().toISOString(),groupId=tableId+'-table-insert';for(const id of wordTableRows(parse(),tableId))word.revisions.push({nodeId:id,sourceId:id+'-row-insert',revisionId:id+'-row-insert',groupId,kind:'rowInsert',author,date});}return;
   }
   if(operation.op==='editWordTable'||operation.op==='formatWordTable') {
     if(node.tagName!=='table')fail('Word table commands require a table.');

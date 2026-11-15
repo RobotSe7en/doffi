@@ -29,6 +29,7 @@ export const WordOperationSchema=z.discriminatedUnion('op',[
   z.strictObject({op:z.literal('cloneWordStory'),nodeId:IdentifierSchema,storyId:IdentifierSchema,variant:z.enum(['default','first','even'])}),
   z.strictObject({op:z.literal('setWordStoryContent'),nodeId:IdentifierSchema,html:z.string()}),
   z.strictObject({op:z.literal('insertWordTable'),nodeId:IdentifierSchema,position:z.enum(['before','after']),rows:z.number().int().positive().safe(),columns:z.number().int().positive().safe(),width:z.number().positive().optional()}),
+  z.strictObject({op:z.literal('deleteWordTable'),nodeId:IdentifierSchema}),
   z.strictObject({op:z.literal('editWordTable'),nodeId:IdentifierSchema,change:TableChangeSchema}),
   z.strictObject({op:z.literal('formatWordTable'),nodeId:IdentifierSchema,properties:properties.optional(),styleId:IdentifierSchema.nullable().optional(),lookMask:z.number().int().min(0).max(65535).nullable().optional(),rowBandSize:z.number().int().nonnegative().nullable().optional(),columnBandSize:z.number().int().nonnegative().nullable().optional(),repeatHeaderRows:z.number().int().nonnegative().optional(),allowRowSplit:z.boolean().optional(),rowHeightRule:z.enum(['auto','atLeast','exact']).optional()}),
   z.strictObject({op:z.literal('formatWordCell'),nodeId:IdentifierSchema,properties,textDirection:z.enum(['lrTb','tbRl','btLr']).optional()}),
