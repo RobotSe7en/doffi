@@ -1,15 +1,15 @@
 import {createOpaqueId,DEFAULT_DOCUMENT_READ_LIMITS,DocumentError,SourceStyleResolver,WordStyleSchema} from '@doffi/core';
-import type {ContentDocumentModel,DocumentOperation,WordMetadata} from '@doffi/core';
+import type {ContentDocumentModel,DocumentOperation,WordMetadata,WordInlineContentSemantics} from '@doffi/core';
 import{WORD_CLIPBOARD_BYTES,WORD_CLIPBOARD_FORMAT_ATTRIBUTE as marker,WORD_CLIPBOARD_NODE_ATTRIBUTE as identity,wordClipboardStyleDefinition as readDefinition}from'@doffi/render';
 import type{WordClipboardFormat as Format,WordClipboardStyleDefinition as Definition}from'@doffi/render';
 type Style=WordMetadata['styles'][number];
 const canonical=(value:unknown):string=>JSON.stringify(value,(_key,item:unknown)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item);
 /** Import only through existing typed style operations. The complete style and
  * content batch is validated before either reaches the authoritative session. */
-export function pasteClipboardFormat(root:ParentNode,model:ContentDocumentModel):DocumentOperation[]{
-    const wrappers=root.querySelectorAll<HTMLElement>('['+marker+']');if(!wrappers.length)return[];if(wrappers.length!==1)throw new DocumentError('InvalidOperation','剪贴板格式包必须唯一。');
+export function pasteClipboardFormat(root:ParentNode,model:ContentDocumentModel):{operations:DocumentOperation[];semantics?:WordInlineContentSemantics}{
+    const wrappers=root.querySelectorAll<HTMLElement>('['+marker+']');if(!wrappers.length)return{operations:[]};if(wrappers.length!==1)throw new DocumentError('InvalidOperation','剪贴板格式包必须唯一。');
     let value:Format;try{const encoded=wrappers[0]!.getAttribute(marker)!;if(encoded.length>WORD_CLIPBOARD_BYTES)throw new Error();value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(encoded),character=>character.charCodeAt(0))))as Format;}catch{throw new DocumentError('InvalidOperation','剪贴板格式包无效。');}
-    if(value?.format!=='doffi-word-clipboard'||value.version!==1||!Array.isArray(value.styles)||!value.nodes||typeof value.nodes!=='object'||Array.isArray(value.nodes)||value.styles.length>DEFAULT_DOCUMENT_READ_LIMITS.maxNodes)throw new DocumentError('InvalidOperation','剪贴板格式包版本或结构无效。');
+    if(value?.format!=='doffi-word-clipboard'||![1,2].includes(value.version)||!Array.isArray(value.styles)||!value.nodes||typeof value.nodes!=='object'||Array.isArray(value.nodes)||value.styles.length>DEFAULT_DOCUMENT_READ_LIMITS.maxNodes)throw new DocumentError('InvalidOperation','剪贴板格式包版本或结构无效。');
     const seenIds=new Set<string>();value.styles=value.styles.map(item=>{if(!item||typeof item!=='object'||!item.p||!item.r||Array.isArray(item.p)||Array.isArray(item.r)||Object.values(item.p).some(value=>typeof value!=='string')||Object.values(item.r).some(value=>typeof value!=='string'))throw new DocumentError('InvalidOperation','剪贴板样式属性无效。');const style=WordStyleSchema.parse(item.style);if(seenIds.has(style.styleId))throw new DocumentError('InvalidOperation','剪贴板样式身份重复。');seenIds.add(style.styleId);return{style,p:item.p,r:item.r};});
     const rootId=model.snapshot().metadata.word?.stories[0]?.rootNodeId??new DOMParser().parseFromString(model.snapshot().html,'text/html').querySelector<HTMLElement>('[data-office-kind="document"]')!.dataset.nodeId!;
     let documentRoot=model.getNode(rootId)!;while(documentRoot.parentNodeId)documentRoot=model.getNode(documentRoot.parentNodeId)!;
@@ -31,7 +31,8 @@ export function pasteClipboardFormat(root:ParentNode,model:ContentDocumentModel)
         if(attributes.style===null)element.removeAttribute('style');else element.setAttribute('style',attributes.style);
         if(attributes.class===null)element.removeAttribute('class');else element.setAttribute('class',attributes.class.split(/\s+/).map(name=>classes.get(name)??name).join(' '));
         if(attributes.styleId===null)element.removeAttribute('data-word-style');else{const id=ids.get(attributes.styleId);if(!id)throw new DocumentError('InvalidOperation','剪贴板节点样式缺失。');element.setAttribute('data-word-style',id);}
+        if(value.version===2){if(typeof attributes.sourceId!=='string')throw new DocumentError('InvalidOperation','剪贴板语义节点身份无效。');element.setAttribute('data-node-id',attributes.sourceId);for(const[key,value]of Object.entries(attributes.attributes??{})){if(!['data-word-field','data-word-field-end','data-word-field-result'].includes(key)||typeof value!=='string')throw new DocumentError('InvalidOperation','剪贴板语义节点属性无效。');element.setAttribute(key,value);}}
         element.removeAttribute(identity);
     }
-    wrappers[0]!.removeAttribute(marker);return operations;
+    wrappers[0]!.removeAttribute(marker);if(value.version===2&&(!value.semantics||typeof value.semantics!=='object'||Array.isArray(value.semantics)))throw new DocumentError('InvalidOperation','剪贴板语义包无效。');return{operations,...(value.version===2?{semantics:value.semantics!}:{})};
 }

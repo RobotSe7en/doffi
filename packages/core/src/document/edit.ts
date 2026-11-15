@@ -187,7 +187,7 @@ export class DocumentEdit {
     for (const child of [...fragment.childNodes]) { adapter.detachNode(child); if (before) adapter.insertBefore(parent, child, before); else adapter.appendChild(parent, child); }
     return { rootNodeIds, identities };
   }
-  insertSourceAt(nodeId:string,offset:number,source:string,insertionContextNodeId?:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,false,offset,insertionContextNodeId);}
+  insertSourceAt(nodeId:string,offset:number,source:string,insertionContextNodeId?:string,copyIdentities=false):{rootNodeIds:string[];identities:ReadonlyMap<string,string>}{return this.insertSource(nodeId,source,undefined,copyIdentities,offset,insertionContextNodeId);}
   /** Insert at a paragraph-owned boundary, partitioning its inline owner so
    * an unrelated neighbouring run cannot become the new source's ancestor. */
   insertSourceInContainer(nodeId:string,offset:number,source:string):{rootNodeIds:string[];identities:ReadonlyMap<string,string>;splitIdentities:ReadonlyMap<string,string>}{

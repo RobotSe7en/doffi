@@ -142,7 +142,7 @@ export function createDocumentSession(document: DocumentModel, options: Document
     const explicit = new Set<string>();
     const unresolved = new Set(base.snapshot.annotations.filter((item) => item.status === "needs_reanchor").map((item) => item.annotationId));
     for (const operation of transaction.operations) {
-      const markBase=metadata.word&&['replaceText','trackWordText','trackWordInlineContent','reconcileFragment','reconcileWordTracked'].includes(operation.op)?parseEdited():undefined;
+      const markBase=metadata.word&&['replaceText','trackWordText','trackWordInlineContent','pasteWordInlineContent','reconcileFragment','reconcileWordTracked'].includes(operation.op)?parseEdited():undefined;
       if (isWorkbookOperation(operation)) invalid("Workbook operations require a workbook session.");
       else if (isPresentationOperation(operation)) {
         if (!metadata.presentation) invalid("Presentation operations cannot target a Word document.");

@@ -18,7 +18,7 @@ export function isWordRevisionOperation(operation: {
     readonly op: string;
 }): operation is WordRevisionOperation { return ['reconcileWordTracked','setWordReview', 'reviewWordRevision', 'reviewWordRevisions', 'trackWordText','trackWordInlineContent'].includes(operation.op); }
 
-function trackWordInlineContent(word:WordMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,operation:Extract<WordRevisionOperation,{op:'trackWordInlineContent'}>):void{
+export function trackWordInlineContent(word:WordMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,operation:Extract<WordRevisionOperation,{op:'trackWordInlineContent'}>,copy?:{inserted(identities:ReadonlyMap<string,string>):void;keepEmpty:boolean}):void{
     const source=parse(),node=source.getNode(operation.nodeId),{from,to,expectedText,html}=operation;
     if(!node||!/^p$|^h[1-6]$/.test(node.tagName)||from>to||to>node.text.length||node.text.slice(from,to)!==expectedText||!isTextBoundary(node.text,from)||!isTextBoundary(node.text,to))fail('Tracked inline content requires an exact paragraph range.');
     edit.assertInlineSource(operation.nodeId,html);
@@ -30,13 +30,13 @@ function trackWordInlineContent(word:WordMetadata,edit:DocumentEdit,parse:()=>Pa
         if(['delete','moveFrom'].includes(revision.kind)&&start<finish&&end>begin)fail('Deleted revision content must be reviewed before editing it.');
         if(revision.kind==='insert'&&revision.author===author&&start>=begin&&end<=finish){
             for(const id of edit.wrapSourceText(revision.nodeId,start-begin,end-begin,'span'))edit.removeSource(id);
-            edit.insertSourceAt(revision.nodeId,start-begin,html);
-            if(!parse().getNode(revision.nodeId)!.text){edit.removeSource(revision.nodeId);word.revisions=word.revisions.filter(item=>item!==revision);}return;
+            const content=edit.insertSourceAt(revision.nodeId,start-begin,html,undefined,!!copy);copy?.inserted(content.identities);
+            if(!parse().getNode(revision.nodeId)!.text&&!copy?.keepEmpty){edit.removeSource(revision.nodeId);word.revisions=word.revisions.filter(item=>item!==revision);}return;
         }
     }
     const deleted=edit.wrapSourceText(operation.nodeId,from,to,'del');for(const id of deleted)edit.attributes(id,{'data-word-run-overlay':'true'});
-    const inserted=edit.insertSourceAt(operation.nodeId,to,'<ins data-word-run-overlay="true">'+html+'</ins>').rootNodeIds[0]!,current=parse();
-    const live=current.getNode(inserted)!.text.length>0;if(!live)edit.removeSource(inserted);
+    const content=edit.insertSourceAt(operation.nodeId,to,'<ins data-word-run-overlay="true">'+html+'</ins>',undefined,!!copy),inserted=content.rootNodeIds[0]!;copy?.inserted(content.identities);const current=parse();
+    const live=current.getNode(inserted)!.text.length>0||!!copy?.keepEmpty;if(!live)edit.removeSource(inserted);
     const groupId=deleted[0]??inserted;
     for(const[kind,ids]of [['delete',deleted],['insert',live?[inserted]:[]]]as const)for(const id of ids)word.revisions.push({nodeId:id,revisionId:id,sourceId:id,groupId,kind,author,date});
 }
@@ -143,6 +143,8 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
         selected = word.revisions.filter(item => item === revision || revision.groupId && item.groupId === revision.groupId || revision.moveId && item.moveId === revision.moveId);
     }
     selected=[...expandWordRevisionGroups(word.revisions,selected.map(wordRevisionId))];
+    const beforeReview=parse(),linkedText=(source:ParsedHtml,link:WordMetadata['hyperlinks'][number]):number=>source.hasNode(link.nodeId)&&(!link.endNodeId||source.hasNode(link.endNodeId))?(link.endNodeId?source.textOffset(link.endNodeId)!-source.textOffset(link.nodeId)!:source.textLength(link.nodeId)!):0;
+    const nonemptyLinks=new Set(word.hyperlinks.filter(link=>linkedText(beforeReview,link)>0).map(link=>link.nodeId));
     const rowRemovals=new Set(selected.filter(revision=>operation.decision==='accept'?revision.kind==='rowDelete':revision.kind==='rowInsert').map(revision=>revision.nodeId));if(rowRemovals.size)removeWordRows(word,edit,parse,rowRemovals,limits);
     const cellRemovals=new Set(selected.filter(revision=>operation.decision==='accept'?revision.kind==='cellDelete':revision.kind==='cellInsert').map(revision=>revision.nodeId));if(cellRemovals.size)removeWordCells(word,edit,parse,cellRemovals,limits);
     const removals = new Set<string>();
@@ -201,4 +203,11 @@ export function applyWordRevision(word: WordMetadata, edit: DocumentEdit, parse:
     const moves=new Set(selected.flatMap(revision=>revision.moveId?[revision.moveId]:[]));for(const move of word.moves??[])if(moves.has(move.moveId))for(const id of [move.startNodeId,move.endNodeId]){const source=parse(),node=source.peekNode(id);if(!node)continue;const parent=node.parentNodeId?source.peekNode(node.parentNodeId):undefined,wrapper=parent&&parent.tagName==='div'&&parent.childNodeIds.length===1&&Object.keys(parent.attributes).every(name=>name==='data-node-id')&&source.getNode(parent.nodeId)!.text===''&&!word.stories.some(story=>story.rootNodeId===parent.nodeId);edit.removeSource(wrapper?parent!.nodeId:id);}if(word.moves)word.moves=word.moves.filter(move=>!moves.has(move.moveId));
     const reviewed = new Set(selected.map(wordRevisionId));
     word.revisions = word.revisions.filter(revision => !reviewed.has(wordRevisionId(revision)) && !removals.has(revision.nodeId));
+    // Native hyperlinks can surround inserted runs. Rejecting their complete
+    // content must remove the empty link while retaining any range markers
+    // belonging to other semantics inside its wrapper.
+    for(const link of word.hyperlinks)if(nonemptyLinks.has(link.nodeId)&&linkedText(parse(),link)===0&&parse().hasNode(link.nodeId)){
+        if(link.endNodeId){edit.removeSource(link.nodeId);if(parse().hasNode(link.endNodeId))edit.removeSource(link.endNodeId);}
+        else edit.unwrapSource(link.nodeId);
+    }
 }

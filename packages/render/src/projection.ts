@@ -67,6 +67,18 @@ export class SourceProjection {
     return this.project(element, undefined, true) as Element;
   }
   /** Clone from live provenance, rather than guessing the origin of cloneContents nodes. */
+  completeClipboardNodes(range:Range):ReadonlySet<string>{
+    const complete=new Set<string>(),nodes=new Set<Element>();let root=range.commonAncestorContainer;if(root.nodeType!==1)root=root.parentNode!;
+    if(root.nodeType===1){nodes.add(root as Element);for(const child of (root as Element).querySelectorAll('[data-node-id]'))nodes.add(child);}
+    for(let parent=root.parentElement;parent;parent=parent.parentElement)nodes.add(parent);
+    // A drag can end at Text.length while selectNodeContents ends immediately
+    // after that text node. Canonicalize equivalent DOM edges before comparing.
+    const edge=(node:Node,offset:number,end:boolean):[Node,number]=>{for(;;){const length=node.nodeType===3?node.textContent!.length:node.childNodes.length;if(!node.parentNode||offset!==0&&offset!==length)return[node,offset];const parent=node.parentNode,index=[...parent.childNodes].indexOf(node as ChildNode);offset=index+(offset===length&&(length>0||end)?1:0);node=parent;}};
+    const selected=range.cloneRange();selected.setStart(...edge(range.startContainer,range.startOffset,false));selected.setEnd(...edge(range.endContainer,range.endOffset,true));
+    const covers=(node:Node):boolean=>{const contents=node.ownerDocument!.createRange();contents.setStart(...edge(node,0,false));contents.setEnd(...edge(node,node.childNodes.length,true));return selected.compareBoundaryPoints(0,contents)<=0&&selected.compareBoundaryPoints(2,contents)>=0;};
+    for(const node of nodes){if(!this.originals.has(node))continue;const id=node.getAttribute('data-node-id');if(id&&covers(node))complete.add(id);const field=this.fields.get(node);if(field&&covers(field.display)){const owner=(field.display as HTMLElement).dataset.sdkFieldNodeId;if(owner)complete.add(owner);if(id)complete.add(id);}}
+    return complete;
+  }
   serializeRange(range: Range): DocumentFragment {
     let node = range.commonAncestorContainer;
     for (let parent = node.parentElement; parent; parent = parent.parentElement) if (this.fields.has(parent)) { node = parent; break; }

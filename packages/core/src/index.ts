@@ -120,3 +120,6 @@ export * from './contracts/word-revision.js';
 export * from './contracts/word-text-style.js';
 
 export{expandWordRevisionGroups}from'./word-revision-groups.js';
+
+export{WordInlineContentSemanticsSchema}from'./contracts/word-content.js';
+export type{WordInlineContentSemantics}from'./contracts/word-content.js';

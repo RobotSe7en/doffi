@@ -43,7 +43,7 @@ export function copyPreviewSelection(event: ClipboardEvent, root: HTMLElement, p
     ancestor = ancestor.parentNode!;
   }
   const holder = root.ownerDocument.createElement("div"); holder.append(fragment);
-  event.preventDefault();if(model?.kind==='document'){copyWordClipboardImages(holder,model);copyWordClipboardFormat(holder,model,(ancestor as HTMLElement).dataset.nodeId??root.dataset.nodeId!);}
+  event.preventDefault();if(model?.kind==='document'){copyWordClipboardImages(holder,model);copyWordClipboardFormat(holder,model,(ancestor as HTMLElement).dataset.nodeId??root.dataset.nodeId!,projection.completeClipboardNodes(range));}
   stripClipboardIdentities(holder);
   event.preventDefault(); event.clipboardData.setData("text/html", holder.innerHTML);
   event.clipboardData.setData("text/plain", sourceSelectionText(holder));

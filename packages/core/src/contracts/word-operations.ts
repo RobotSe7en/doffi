@@ -1,3 +1,4 @@
+import{WordInlineContentSemanticsSchema}from'./word-content.js';
 import { z } from 'zod';
 import { IdentifierSchema,RevisionSchema,PackagePathSchema } from './primitives.js';
 import { DocumentSectionSchema } from "./document.js";
@@ -19,6 +20,7 @@ export const WordOperationSchema=z.discriminatedUnion('op',[
   ...WordReferenceOperationSchema.options,
   ...WordMathOperationSchema.options,
   ...WordControlOperationSchema.options,
+  z.strictObject({op:z.literal('pasteWordInlineContent'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),html:z.string().min(1),semantics:WordInlineContentSemanticsSchema.optional()}),
   z.strictObject({op:z.literal('resetWordText'),nodeId:IdentifierSchema,from:RevisionSchema,to:RevisionSchema,expectedText:z.string(),resetParagraph:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordOptions'),nodeId:IdentifierSchema,bordersDoNotSurroundHeader:z.boolean().optional(),bordersDoNotSurroundFooter:z.boolean().optional(),mirrorMargins:z.boolean().optional(),evenAndOddHeaders:z.boolean().optional(),automaticHyphenation:z.boolean().optional(),noColumnBalance:z.boolean().optional(),adjustLineHeightInTable:z.boolean().optional()}),
   z.strictObject({op:z.literal('setWordTabs'),nodeId:IdentifierSchema,defaultInterval:z.number().positive(),stops:WordMetadataSchema.shape.tabs.element.shape.stops}),

@@ -400,13 +400,18 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
       const template = document.createElement("template");
       if (raw) template.innerHTML = raw;
       else text.replace(/\r\n?/g, "\n").split("\n").forEach((line, index) => { if (index) template.content.append(document.createElement("br")); template.content.append(document.createTextNode(line)); });
-      const prefix=pasteClipboardFormat(template.content,session),resources=pasteClipboardImages(template.content,session);
-      for (const node of template.content.querySelectorAll("[data-node-id],[id]")) { node.removeAttribute("data-node-id"); node.removeAttribute("id"); }
+      const format=pasteClipboardFormat(template.content,session),prefix=format.operations,resources=pasteClipboardImages(template.content,session);
+      for (const node of template.content.querySelectorAll("[data-node-id],[id]")) { if(!format.semantics)node.removeAttribute("data-node-id"); node.removeAttribute("id"); }
       const block = [...template.content.children].some((node) => /^(?:p|h[1-6]|div|section|article|table|ul|ol)$/.test(node.localName));
-      const validation = session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId, baseRevision: revision,
-        operations: [...prefix,{ op: "insertFragment", nodeId: root.dataset.nodeId!, position: "end", html: block ? template.innerHTML : "<p>" + template.innerHTML + "</p>" }] },resources);
-      session.discard(validation);
+      if(!format.semantics){const validation=session.prepare({protocolVersion:1,documentId:session.snapshot().manifest.documentId,baseRevision:revision,operations:[...prefix,{op:'insertFragment',nodeId:root.dataset.nodeId!,position:'end',html:block?template.innerHTML:'<p>'+template.innerHTML+'</p>'}]},resources);session.discard(validation);}
       const range = selectedRange(); if (!range) return;
+      if(format.semantics){
+        const start=(range.startContainer.nodeType===1?range.startContainer as Element:range.startContainer.parentElement)?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6'),end=(range.endContainer.nodeType===1?range.endContainer as Element:range.endContainer.parentElement)?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');
+        if(block||!start||start!==end)throw new DocumentError('UnsupportedFeature','语义行内粘贴需要限定在同一段落。');
+        const from=offsetAt(start,range.startContainer,range.startOffset,projection.ignored),to=offsetAt(start,range.endContainer,range.endOffset,projection.ignored),nodeId=start.dataset.nodeId!,snapshot=session.snapshot(),word=snapshot.metadata.word!,author=word.trackingAuthor??'',fold=word.revisions.some(revision=>{if(revision.kind!=='insert'||revision.author!==author)return false;const node=start.querySelector<HTMLElement>('[data-node-id="'+CSS.escape(revision.nodeId)+'"]');if(!node)return false;const begin=offsetAt(start,node,0,projection.ignored);return from>=begin&&to<=begin+session.getNode(revision.nodeId)!.text.length;}),caret=(word.trackChanges&&!fold?to:from)+sourceText(template.content,()=>false).length;
+        const candidate=session.prepare({protocolVersion:1,documentId:snapshot.manifest.documentId,baseRevision:snapshot.manifest.revision,operations:[...prefix,{op:'pasteWordInlineContent',nodeId,from,to,expectedText:session.getNode(nodeId)!.text.slice(from,to),html:template.innerHTML,semantics:format.semantics}]},resources);
+        committing=true;try{session.commit(candidate);}catch(error){session.discard(candidate);throw error;}finally{committing=false;}refresh({anchor:{nodeId,offset:caret,path:[]},focus:{nodeId,offset:caret,path:[]}});return;
+      }
       if(session.snapshot().metadata.word?.trackChanges&&!block){
         const start=(range.startContainer.nodeType===1?range.startContainer as Element:range.startContainer.parentElement)?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6'),end=(range.endContainer.nodeType===1?range.endContainer as Element:range.endContainer.parentElement)?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');
         if(!start||start!==end)throw new DocumentError('UnsupportedFeature','记录修订的行内粘贴需要限定在同一段落。');
@@ -445,7 +450,7 @@ export function mountDocumentTextEditor(container: HTMLElement, session: Documen
     }
     holder.append(fragment);
     const source = holder;
-    try{copyClipboardImages(source,session);copyClipboardFormat(source,session,(ancestor as HTMLElement).dataset.nodeId??session.snapshot().metadata.word?.stories[0]?.rootNodeId??root.dataset.nodeId!);if(source.innerHTML.length>WORD_CLIPBOARD_BYTES)throw new DocumentError('ResourceLimitExceeded','复制内容超过 64 MiB。');}catch(reason){report(reason);return;}
+    try{copyClipboardImages(source,viewModel());copyClipboardFormat(source,viewModel(),(ancestor as HTMLElement).dataset.nodeId??session.snapshot().metadata.word?.stories[0]?.rootNodeId??root.dataset.nodeId!,projection.completeClipboardNodes(range));if(source.innerHTML.length>WORD_CLIPBOARD_BYTES)throw new DocumentError('ResourceLimitExceeded','复制内容超过 64 MiB。');}catch(reason){report(reason);return;}
     stripClipboardIdentities(source);
     event.clipboardData.setData("text/html", source.innerHTML);
     event.clipboardData.setData("text/plain", sourceSelectionText(source));

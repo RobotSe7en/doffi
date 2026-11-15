@@ -43,6 +43,7 @@ export interface DocxExportResult { readonly bytes: Uint8Array; readonly report:
 interface Buffer { add(value: string): void; finish(): void }
 type Field = DeepReadonly<WordMetadata["fields"][number]>;
 interface FieldState { definition: Field; offset: number; result: boolean }
+interface InlineRevision {tag:string;revision:DeepReadonly<WordMetadata['revisions'][number]>}
 const paragraphTags = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6"]);
 const blockTags = new Set([...paragraphTags, "table", "div", "section", "article", "ul", "ol", "li"]);
 const tableRows = (table: SourceElement): SourceElement[] => children(table).flatMap((node) => node.tag === "tr" ? [node] : ["thead", "tbody", "tfoot"].includes(node.tag) ? children(node, "tr") : []);
@@ -78,6 +79,8 @@ class Exporter {
   private output: Buffer;
   private fieldStack: FieldState[] = [];
   private deleted = false;
+  private inlineRevisions:InlineRevision[]=[];
+  private splitRevisionId=0;
   private width = 468;
   private readonly moveStarts=new Map<string,{move:DeepReadonly<NonNullable<WordMetadata["moves"]>[number]>;id:number}>();
   private readonly moveEnds=new Map<string,{move:DeepReadonly<NonNullable<WordMetadata["moves"]>[number]>;id:number}>();
@@ -123,6 +126,14 @@ class Exporter {
     this.annotations = new ExportAnnotations(this.tree, this.snapshot.annotations, stories, limits.maxNodes * 128, (node) => this.emittedText.has(node),word);
   }
   private add(value: string): void { this.output.add(value); }
+  private openInlineRevision(frame:InlineRevision,id:number):void{this.add('<w:'+frame.tag+attributes({'w:id':id,'w:author':frame.revision.author??'','w:date':date(frame.revision.date)})+'>');}
+  /** Hyperlinks are paragraph content, not children of CT_RunTrackChange.
+   * Split the current revision around their boundaries with fresh native IDs. */
+  private outsideInlineRevisions(markup:string):void{
+    for(const frame of [...this.inlineRevisions].reverse())this.add('</w:'+frame.tag+'>');
+    this.add(markup);
+    for(const frame of this.inlineRevisions)this.openInlineRevision(frame,this.revisionIds.size+this.moveStarts.size+this.splitRevisionId++);
+  }
   private assertFormatting(node: SourceElement, css: Css): void {
     if(this.drawings.has(node.attrs["data-node-id"]??""))return;
     if (css["word-spacing"] && !["normal", "0", "0pt", "0px"].includes(css["word-spacing"])) unsupported("Native DOCX cannot preserve independent word spacing in this profile.");
@@ -275,6 +286,11 @@ class Exporter {
     }
     if (field) {
       if (!field.endNodeId) {
+        if(this.inlineRevisions.length){
+          this.fieldControl('begin',field);const state:FieldState={definition:field,offset:0,result:true};this.instruction(state,field.instruction.length);this.fieldControl('separate');this.fieldStack.push(state);
+          for(const child of node.children)this.inline(child,paragraphStyle,character,role,language);
+          this.fieldStack.pop();this.fieldControl('end');return;
+        }
         this.add("<w:fldSimple" + attributes({ "w:instr": field.instruction, "w:fldLock": field.locked === undefined ? undefined : field.locked ? 1 : 0, "w:dirty": field.dirty === undefined ? undefined : field.dirty ? 1 : 0 }) + ">");
         for (const child of node.children) this.inline(child, paragraphStyle, character, role, language);
         this.add("</w:fldSimple>"); return;
@@ -283,11 +299,11 @@ class Exporter {
       this.instruction(state, field.instructionFields?.[0]?.offset ?? field.instruction.length); return;
     }
     const link = this.links.get(id), revision = this.revisions.get(id);
-    if(this.linkEnds.has(id)){this.add('</w:hyperlink>');return;}
-    if (link) this.add("<w:hyperlink" + attributes({ "w:anchor": link.bookmark, "r:id": link.target ? this.opc.relate(this.part, "hyperlink", link.target, true) : undefined }) + ">");
+    if(this.linkEnds.has(id)){this.outsideInlineRevisions('</w:hyperlink>');return;}
+    if (link) this.outsideInlineRevisions("<w:hyperlink" + attributes({ "w:anchor": link.bookmark, "r:id": link.target ? this.opc.relate(this.part, "hyperlink", link.target, true) : undefined }) + ">");
     const previousDeleted = this.deleted;
     const revisionTag=revision?({insert:"ins",delete:"del",moveFrom:"moveFrom",moveTo:"moveTo"}as Record<string,string>)[revision.kind]:undefined;
-    if (revision) { this.add("<w:" + revisionTag + attributes({ "w:id": this.revisionIds.get(revision)!, "w:author": revision.author ?? "", "w:date": date(revision.date) }) + ">"); this.deleted = ["delete","moveFrom"].includes(revision.kind); }
+    if (revision) {const frame={tag:revisionTag!,revision};this.openInlineRevision(frame,this.revisionIds.get(revision)!);this.inlineRevisions.push(frame);this.deleted = ["delete","moveFrom"].includes(revision.kind); }
     if (node.tag === "br") {
       this.add("<w:r"+this.nativeMark(this.nativeRunOwner(node))+this.nativeRunReset(node)+">" + this.nativeRun(css, this.styleContext(node,this.styles.runContext(paragraphStyle,character)), character, role, language) + empty("w:br", ["page","column"].includes(node.attrs["data-word-break"]??"") ? { "w:type": node.attrs["data-word-break"] } : {}) + "</w:r>");
       this.add(this.annotations.at(node, 1));
@@ -298,8 +314,8 @@ class Exporter {
       this.add('<w:r'+this.nativeMark(this.nativeRunOwner(node))+this.nativeRunReset(node)+'>'+this.nativeRun(css,expected,character,role,language,this.review.run(node,expected))+'</w:r>');
     }
     else for (const child of node.children) this.inline(child, paragraphStyle, character, role, language);
-    if (revision) { this.add("</w:" + revisionTag + ">"); this.deleted = previousDeleted; }
-    if (link&&!link.endNodeId) this.add("</w:hyperlink>");
+    if (revision) { this.add("</w:" + revisionTag + ">");this.inlineRevisions.pop();this.deleted = previousDeleted; }
+    if (link&&!link.endNodeId) this.outsideInlineRevisions("</w:hyperlink>");
   }
   private imageRelation(node:SourceElement):string{
     const parts = this.snapshot.manifest.entrypoint.split("/").slice(0, -1);
@@ -512,10 +528,10 @@ class Exporter {
   }
   private readonly htmlLists: HtmlNumbering[] = [];
   private withStory(part: string, body: () => void): void {
-    const previous = { part: this.part, output: this.output, fields: this.fieldStack, deleted: this.deleted, width: this.width };
-    this.part = part; this.fieldStack = []; this.deleted = false;
+    const previous = { part: this.part, output: this.output, fields: this.fieldStack, deleted: this.deleted, width: this.width,inlineRevisions:this.inlineRevisions };
+    this.part = part; this.fieldStack = []; this.deleted = false;this.inlineRevisions=[];
     try { body(); if (this.fieldStack.length) unsupported("A story has an unclosed field."); }
-    finally { this.part = previous.part; this.output = previous.output; this.fieldStack = previous.fields; this.deleted = previous.deleted; this.width = previous.width; }
+    finally { this.part = previous.part; this.output = previous.output; this.fieldStack = previous.fields; this.deleted = previous.deleted; this.width = previous.width;this.inlineRevisions=previous.inlineRevisions; }
   }
   write(): { files: ReadonlyMap<string, Uint8Array>; report: DocxExportReport;nativeComments:readonly NativeCommentBinding[] } {
     for(const kind of ['footnote','endnote']as const){let next=1;for(const note of this.snapshot.metadata.word?.notes??[])if(note.kind===kind)this.noteIds.set(note.noteId,(note.type??'normal')==='normal'?next++:note.type==='separator'?-1:note.type==='continuationSeparator'?0:next++);}

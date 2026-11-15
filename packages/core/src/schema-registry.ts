@@ -10,7 +10,26 @@ import { DocumentContentOperationSchema, DocumentOperationSchema, DocumentTransa
 import { FORMAT_VERSION, PROTOCOL_VERSION } from "./contracts/primitives.js";
 import { DocumentError, summarizeIssues } from "./errors.js";
 
-export const contractSchemas = Object.freeze({
+export interface ContractSchemas {
+  readonly "asset-descriptor": typeof AssetDescriptorSchema;
+  readonly "document-manifest": typeof DocumentManifestSchema;
+  readonly "document-metadata": typeof DocumentMetadataSchema;
+  readonly anchor: typeof AnchorSchema;
+  readonly annotation: typeof AnnotationSchema;
+  readonly annotations: typeof AnnotationsSchema;
+  readonly "content-operation": typeof DocumentContentOperationSchema;
+  readonly "document-operation": typeof DocumentOperationSchema;
+  readonly "document-transaction": typeof DocumentTransactionSchema;
+  readonly "interaction-request": typeof DocumentInteractionRequestSchema;
+  readonly "edit-proposal": typeof EditProposalSchema;
+  readonly "presentation-interaction-request": typeof PresentationInteractionRequestSchema;
+  readonly "presentation-edit-proposal": typeof PresentationEditProposalSchema;
+  readonly "workbook-interaction-request": typeof WorkbookInteractionRequestSchema;
+  readonly "workbook-edit-proposal": typeof WorkbookEditProposalSchema;
+  readonly "document-error": typeof DocumentErrorDataSchema;
+  readonly "document-event": typeof DocumentEventSchema;
+}
+export const contractSchemas:Readonly<ContractSchemas> = Object.freeze({
   "asset-descriptor": AssetDescriptorSchema,
   "document-manifest": DocumentManifestSchema,
   "document-metadata": DocumentMetadataSchema,
