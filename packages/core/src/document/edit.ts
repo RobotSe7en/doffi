@@ -186,6 +186,61 @@ export class DocumentEdit {
     node.tagName = tag;
     node.nodeName = tag;
   }
+
+  /** Canonicalize a newly inserted list item's mixed blocks without replacing
+   * its descendants or their transport identities. The first paragraph owns
+   * the item's marker; nested lists keep their own paragraphs. */
+  sourceListItemParagraph(nodeId: string): string {
+    const target = this.index().get(nodeId);
+    if (!target || !["li", "div"].includes(target.tagName))
+      fail("List content requires its existing item container.");
+    const block = (node: Child): node is Element =>
+      isElement(node) && /^(?:p|h[1-6]|div|table|ul|ol)$/.test(node.tagName);
+    target.attrs = target.attrs.filter((item) => item.name !== "value");
+    if (!target.childNodes.some(block)) {
+      target.tagName = target.nodeName = "p";
+      return nodeId;
+    }
+    target.tagName = target.nodeName = "div";
+    let pending: Child[] = [];
+    const paragraph = (before?: Child): Element => {
+      const created = adapter.createElement("p", target.namespaceURI, [
+        { name: "data-node-id", value: this.allocate() },
+      ]);
+      if (before) adapter.insertBefore(target, created, before);
+      else adapter.appendChild(target, created);
+      return created;
+    };
+    const flush = (before?: Child): void => {
+      if (
+        pending.some(
+          (child) =>
+            isElement(child) ||
+            (child.nodeName === "#text" && "value" in child && !!child.value.trim()),
+        )
+      ) {
+        const created = paragraph(before);
+        for (const child of pending) {
+          adapter.detachNode(child);
+          adapter.appendChild(created, child);
+        }
+      }
+      pending = [];
+    };
+    for (const child of [...target.childNodes]) {
+      if (block(child)) flush(child);
+      else pending.push(child);
+    }
+    flush();
+    for (const child of target.childNodes) {
+      if (!isElement(child)) continue;
+      if (/^p$|^h[1-6]$/.test(child.tagName)) return attr(child, "data-node-id")!;
+      if (child.tagName === "div")
+        return this.sourceListItemParagraph(attr(child, "data-node-id")!);
+      if (["ul", "ol", "table"].includes(child.tagName)) break;
+    }
+    return attr(paragraph(target.childNodes[0]), "data-node-id")!;
+  }
   shellAncestors(): readonly { tagName: string; attributes: Readonly<Record<string, string>> }[] {
     const html = this.tree.childNodes.find((node) => isElement(node) && node.tagName === "html");
     if (!html || !isElement(html)) return [];
@@ -444,7 +499,7 @@ export class DocumentEdit {
     visit(fragment, (node) => {
       if (
         isElement(node) &&
-        ![
+        (![
           "span",
           "strong",
           "b",
@@ -460,7 +515,10 @@ export class DocumentEdit {
           "img",
           "ins",
           "del",
-        ].includes(node.tagName)
+        ].includes(node.tagName) ||
+          ["data-word-numbering", "data-word-level", "data-word-numbering-off"].some(
+            (name) => attr(node, name) !== undefined,
+          ))
       )
         throw new DocumentError(
           "UnsupportedFeature",

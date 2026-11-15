@@ -102,9 +102,14 @@ export function copyWordClipboardSemantics(
     const own = Object.fromEntries(
       [...node.attributes]
         .filter((attribute) =>
-          ["data-word-field", "data-word-field-end", "data-word-field-result"].includes(
-            attribute.name,
-          ),
+          [
+            "data-word-field",
+            "data-word-field-end",
+            "data-word-field-result",
+            "data-word-numbering",
+            "data-word-level",
+            "data-word-numbering-off",
+          ].includes(attribute.name),
         )
         .map((attribute) => [attribute.name, attribute.value]),
     );
@@ -121,22 +126,32 @@ export function copyWordClipboardSemantics(
       }),
     tabs = word.tabs.filter((tab) => complete(tab.paragraphNodeId)),
     conditionalFormats = word.conditionalFormats?.filter((item) => complete(item.nodeId)),
-    classes = new Set<string>();
+    classes = new Set<string>(),
+    numberingIds = new Set(
+      [...nodes.values()].flatMap((node) =>
+        node.dataset.wordNumbering ? [node.dataset.wordNumbering] : [],
+      ),
+    );
   for (const table of tables)
     for (const entry of table.continuationFormats ?? []) {
       if (entry.cellCssClass) classes.add(entry.cellCssClass);
       for (const paragraph of entry.emptyParagraphs ?? []) {
+        if (paragraph.numbering) numberingIds.add(paragraph.numbering.numberingId);
         if (paragraph.paragraphCssClass) classes.add(paragraph.paragraphCssClass);
         if (paragraph.runCssClass) classes.add(paragraph.runCssClass);
         for (const run of paragraph.runs) if (run.cssClass) classes.add(run.cssClass);
       }
     }
+  const numbering = word.numbering.filter((definition) => numberingIds.has(definition.numberingId));
+  for (const definition of numbering)
+    for (const level of definition.levels) classes.add(level.cssClass);
   const semantics = WordContentSemanticsSchema.parse({
     fields: selectedFields,
     equations,
     controls,
     hyperlinks,
     bookmarks,
+    ...(numbering.length ? { numbering } : {}),
     ...(tables.length ? { tables } : {}),
     ...(tabs.length ? { tabs } : {}),
     ...(conditionalFormats?.length ? { conditionalFormats } : {}),

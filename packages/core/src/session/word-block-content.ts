@@ -9,6 +9,7 @@ import { isTextBoundary } from "../document/text.js";
 import { attachWordContent } from "./word-content.js";
 import { copyWordSplitRun } from "./word-format-revisions.js";
 import { inheritWordSplitParagraphMarks } from "./word-paragraph-mark.js";
+import { normalizeWordListContent } from "./word-list-content.js";
 /** Split the receiving paragraph without cloning its existing objects. The
  * imported source graph is allocated independently inside the same candidate. */
 export function pasteWordBlockContent(
@@ -125,9 +126,19 @@ export function pasteWordBlockContent(
             : {}),
         })),
     );
-  const content = edit.insertSource(node.parentNodeId!, operation.html, tail, true),
-    after = parse(),
-    inserted = new Set(content.rootNodeIds),
+  const content = edit.insertSource(node.parentNodeId!, operation.html, tail, true);
+  const inserted = new Set(content.rootNodeIds);
+  attachWordContent(
+    word,
+    edit,
+    parse,
+    content.identities,
+    operation.semantics ?? {},
+    styles,
+    content.rootNodeIds,
+  );
+  normalizeWordListContent(word, edit, parse(), inserted, styles);
+  const after = parse(),
     paragraphs: string[] = [];
   const rows: string[] = [],
     outerParagraphs: string[] = [],
@@ -160,7 +171,6 @@ export function pasteWordBlockContent(
   }
   if (!paragraphs.length)
     throw new DocumentError("InvalidOperation", "Word block content requires paragraph structure.");
-  attachWordContent(word, edit, parse, content.identities, operation.semantics ?? {}, styles);
   for (const id of tables)
     if (!word.tables.some((table) => table.nodeId === id))
       throw new DocumentError(

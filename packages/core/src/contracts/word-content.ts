@@ -12,6 +12,7 @@ export const WordInlineContentSemanticsSchema = WordMetadataSchema.pick({
 }).partial();
 export type WordInlineContentSemantics = z.infer<typeof WordInlineContentSemanticsSchema>;
 export const WordContentSemanticsSchema = WordInlineContentSemanticsSchema.extend({
+  numbering: WordMetadataSchema.shape.numbering.optional(),
   tables: WordMetadataSchema.shape.tables.optional(),
   tabs: WordMetadataSchema.shape.tabs.optional(),
   conditionalFormats: WordMetadataSchema.shape.conditionalFormats,

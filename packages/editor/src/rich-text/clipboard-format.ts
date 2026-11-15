@@ -321,7 +321,14 @@ export function pasteClipboardFormat(
       element.setAttribute("data-node-id", attributes.sourceId);
       for (const [key, value] of Object.entries(attributes.attributes ?? {})) {
         if (
-          !["data-word-field", "data-word-field-end", "data-word-field-result"].includes(key) ||
+          ![
+            "data-word-field",
+            "data-word-field-end",
+            "data-word-field-result",
+            "data-word-numbering",
+            "data-word-level",
+            "data-word-numbering-off",
+          ].includes(key) ||
           typeof value !== "string"
         )
           throw new DocumentError("InvalidOperation", "剪贴板语义节点属性无效。");

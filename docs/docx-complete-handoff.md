@@ -1,6 +1,6 @@
 # DOCX 完整功能执行交接
 
-本文件最初记录 2026-11-15 的 session 交接。本轮接手后，用户要求整理整个分支的代码换行，完成 R01，再提交推送；这两项已完成本地实现和必要验证。**先读 [固定清单](docx-complete-progress.md#当前固定未完成清单)：R01 已勾选，剩余 R02～R19 共 18 项。** 不要从历史日志里重新推导待办，也不要把 D1／D4／D5／D6／D8 五个大类当成只有五项小工作。
+本文件最初记录 2026-11-15 的 session 交接。格式整理和 R01 已按用户要求提交推送；随后用户要求实施 R02，现已完成实现及必要验证，并按本地阶段提交交付。**先读 [固定清单](docx-complete-progress.md#当前固定未完成清单)：R01、R02 已勾选，剩余 R03～R19 共 17 项。** 不要从历史日志里重新推导待办，也不要把 D1／D4／D5／D6／D8 五个大类当成只有五项小工作。
 
 ## 分支、服务与工作状态
 
@@ -22,7 +22,7 @@
 - 部分字段／控件／表格选区不自动扩张到选区外；完整选中结构才迁移对应语义。重名书签独立命名并同步复制内容里的引用；未复制目标保持未解析，避免误连目标文档的同名书签，已实施。
 - 本轮不推进 Excel 后续阶段，不重开原有 Excel 接受条件；AGPL、第一方 OOXML、单一 HTML 源和统一事务等约束继续遵守仓库 AGENTS.md。
 
-## R01 已完成；下一步优先 R02／R03
+## R01 已完成
 
 整表迁移已接通列网格、合并续接格式、条件表格样式、附属 CSS、制表位／条件标记以及行插入修订。复制全表的来源样式冲突会隔离；部分表格改为选中文字及外观。嵌套表格的独立网格、内表继续输入、成组审阅与撤销已验证；缺失内表元数据和过期候选均整批拒绝。临时 `payload.styles`／`payload.nodes`／目标段落属性的失败诊断已清理，并修正了浏览器续接格式断言的可选值类型检查。
 
@@ -40,7 +40,16 @@
 1. **粘贴后首行条件粗体变普通。** 原来先移除源样式类，再读取 CSS，使低优先级 `font-weight:inherit` 重置被固化为行内覆盖。新增 `SourceStyleResolver.specifiedOutsideClasses`，按原始胜出声明的所属规则排除被迁移样式，保留真实直接覆盖；格式包改用此方法。本轮普通来源格式、样式复用／冲突与三引擎整表回归均通过。
 2. **原生拒绝整表插入后多一个空段落。** 导出将透明 div 内的末尾表格当作整个内容结束，额外生成无修订的段落。`Exporter.blocks` 新增 `hasFollowing`，透传后续源块状态，避免在仍有后续段落时补空段落。普通与嵌套整表的 DOCX 重开／拒绝、相关导出回归和固定官方 XSD 均已通过。
 
-接下来优先处理 R02 的编号迁移和 R03 的跨段接收选区，不要继续拆出新的交付阶段或只追加日志而不更新清单。
+## R02 已完成；下一步优先 R03
+
+- 编号剪贴板只收集选中段落和所选整表续接空段落需要的已建模编号定义、级别与 CSS。保留原生声明的起始／重启、模板、后缀及中西文字体角色；每次粘贴独立分配编号与类身份，目标文档的同名定义保持原样。
+- `WordContentSemanticsSchema` 新增可选 `numbering`，行内契约仍不接受编号定义。区块迁移重写全部新插入节点及续接段落的编号引用；没有传输节点身份的片段也不能借用目标已有编号。缺失级别／CSS、重复定义和过期候选均整批拒绝。
+- 普通 `ul/ol/li`（含嵌套、起始值、项目重启和后续段落）转换为同一编号段落源，保留内部节点身份。倒序、超过九级和不能表示的标记明确拒绝；未建模原生对象及依赖图迁移仍归 R08。
+- 已修复追踪粘贴后段末回车所复制的空修订壳：保留格式，避免新段落产生没有定义的 `ins/del`。真实内容和零宽原生结构保留原归属。新增浏览器验证继续输入、下一项实际序号、编辑后拒绝全部修订和逐步撤销。
+- 最终源 **12 文件 291 项**核心／契约／JSON Schema／Office 检查通过；Chromium／Firefox／WebKit **17 用例 51 项**通过，其中新增列表、HTML 列表及续接编号在普通／追踪模式共 18 项。**45 份真实 DOCX、180 个 Word XML 部件**经声明的 W14／MCE 预处理后，通过固定官方 Transitional XSD，包含续接单元格拆分、继续编辑、审阅及浏览器当前源输出。构建、应用／工具类型、架构边界和 diff 检查通过。
+- 本轮日志为 `.cache/docx-gap-audit/r02-input-build.log`、`r02-acceptance-tests.log`、`r02-final-browser.log`、`r02-schema.log`、`r02-final-*-types.log` 和 `r02-final-boundaries.log`。只按实际最终通过结果收口，前期失败日志保留供追溯。
+
+接下来优先处理 R03 的跨段接收选区，不要继续拆出新的交付阶段或只追加日志而不更新清单。
 
 ## 当前代码入口
 
@@ -48,6 +57,7 @@
 | --- | --- |
 | 迁移契约 | `packages/core/src/contracts/word-content.ts`、`word-operations.ts`、`packages/core/src/index.ts` |
 | 语义附加与 CSS 身份 | `packages/core/src/session/word-content.ts` |
+| HTML 列表归一化 | `packages/core/src/session/word-list-content.ts`、`packages/core/src/document/edit.ts` |
 | 段落／表格结构粘贴 | `packages/core/src/session/word-block-content.ts`、`word-inline-content.ts` |
 | 源拆分、包装和段落合并 | `packages/core/src/document/edit.ts` |
 | 原始 CSS 声明归属 | `packages/core/src/document/source-css.ts` |
@@ -56,14 +66,15 @@
 | 格式恢复及实际粘贴 | `packages/editor/src/rich-text/clipboard-format.ts`、`packages/editor/src/rich-text.ts` |
 | 原生编译 | `packages/office/src/docx-export.ts` |
 | 当前新增检查 | `packages/core/tests/word-table-content.test.ts`、`packages/office/tests/docx-table-content.test.ts`、`word-table-content-fixture.ts`；浏览器 `tests/browser/pagination.spec.ts` |
+| R02 检查 | `packages/core/tests/word-list-content.test.ts`、`packages/office/tests/docx-list-content.test.ts`、`word-list-content-fixture.ts`、`tests/browser/word-list-clipboard-cases.ts`（由 pagination 注册） |
 
 当前实现边界：
 
-- `pasteWordInlineContent` 用于段内内容；`pasteWordBlockContent` 可在同一接收段落中插入多个段落及整表。接收选区跨段仍被明确拒绝，见 R03。
+- `pasteWordInlineContent` 用于段内内容；`pasteWordBlockContent` 可在同一接收段落中插入多个段落、整表和列表。接收选区跨段仍被明确拒绝，见 R03。
 - 区块覆盖已有插入／删除／移动修订仍有限制；修订边界外插入可独立审阅。完整覆盖处理归 R04。
-- `WordContentSemanticsSchema` 扩展了表格、tabs、conditionalFormats、extraClasses；行内契约不接受整表／故事。传输身份只映射到新插入节点，不能解析到目标已有节点。
+- `WordContentSemanticsSchema` 扩展了编号、表格、tabs、conditionalFormats、extraClasses；行内契约不接受编号定义、整表／故事。传输身份只映射到新插入节点，不能解析到目标已有节点。
 - 附属 CSS 分配独立名称；表格 `styleContexts` 的旧绑定移除后由既有表格样式刷新逻辑重建，续接段落／run 的直接格式单独保存。
-- 编号定义、`ul/ol/li` 等列表区块尚未完整迁移，见 R02。不能复用来源 numberingId 造成误绑定。
+- R02 已完成已建模编号定义与合法 `ul/ol/li` 列表区块迁移；所有编号引用在粘贴候选内隔离，不复用来源 numberingId 误绑到目标定义。
 - 系统剪贴板尚未覆盖绘图／图表／注释引用、批注线程、附属故事、保留原生对象和依赖资源，见 R05～R08。`copyWordClipboardFormat` 仍对 `data-word-native-object` 直接返回。
 
 ## 后续原生迁移必须保持的边界

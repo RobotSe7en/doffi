@@ -16,6 +16,7 @@ export function attachWordContent(
   ids: ReadonlyMap<string, string>,
   semantics: WordContentSemantics,
   styles?: SourceStyleEdit,
+  insertedRootIds?: readonly string[],
 ): void {
   const map = (id: string): string =>
     ids.get(id) ??
@@ -55,7 +56,14 @@ export function attachWordContent(
     return result;
   };
   const inserted = parse();
-  for (const after of ids.values()) {
+  const insertedIds = new Set(ids.values());
+  const pending = [...(insertedRootIds ?? [])];
+  while (pending.length) {
+    const id = pending.pop()!;
+    insertedIds.add(id);
+    pending.push(...inserted.peekNode(id)!.childNodeIds);
+  }
+  for (const after of insertedIds) {
     const node = inserted.peekNode(after)!;
     for (const key of ["data-word-field-end", "data-word-field-result"]) {
       const id = node.attributes[key];
@@ -74,7 +82,7 @@ export function attachWordContent(
         return { name: mapped, properties };
       }),
     );
-    for (const id of ids.values()) {
+    for (const id of insertedIds) {
       const node = inserted.peekNode(id)!,
         names = node.attributes.class?.split(/\s+/);
       if (names?.some((name) => classes.has(name)))
@@ -83,6 +91,23 @@ export function attachWordContent(
   }
   const className = (name: string): string =>
     classes.get(name) ?? invalid("Copied metadata formatting requires its declared class.");
+  const numberingIds = new Map<string, string>();
+  for (const definition of semantics.numbering ?? []) {
+    if (numberingIds.has(definition.numberingId))
+      invalid("Copied numbering identities must be unique.");
+    const numberingId = "word-content-numbering-" + createOpaqueId();
+    numberingIds.set(definition.numberingId, numberingId);
+    word.numbering.push({
+      numberingId,
+      levels: definition.levels.map((level) => ({ ...level, cssClass: className(level.cssClass) })),
+    });
+  }
+  const numberingId = (id: string): string =>
+    numberingIds.get(id) ?? invalid("Copied numbering must belong to the supplied content graph.");
+  for (const id of insertedIds) {
+    const sourceId = inserted.peekNode(id)!.attributes["data-word-numbering"];
+    if (sourceId) edit.attributes(id, { "data-word-numbering": numberingId(sourceId) });
+  }
   word.tabs.push(
     ...(semantics.tabs ?? []).map((tab) => ({
       ...tab,
@@ -115,6 +140,8 @@ export function attachWordContent(
       for (const entry of copy.continuationFormats ?? []) {
         if (entry.cellCssClass) entry.cellCssClass = className(entry.cellCssClass);
         for (const paragraph of entry.emptyParagraphs ?? []) {
+          if (paragraph.numbering)
+            paragraph.numbering.numberingId = numberingId(paragraph.numbering.numberingId);
           if (paragraph.paragraphCssClass)
             paragraph.paragraphCssClass = className(paragraph.paragraphCssClass);
           if (paragraph.runCssClass) paragraph.runCssClass = className(paragraph.runCssClass);

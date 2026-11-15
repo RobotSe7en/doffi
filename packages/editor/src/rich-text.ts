@@ -931,6 +931,30 @@ export function mountDocumentTextEditor(
       if (!["id", "data-node-id"].includes(attribute.name))
         next.setAttribute(attribute.name, attribute.value);
     const content = projection.serializeRange(tail);
+    // A range beginning at the end of inserted text still clones its empty
+    // revision ancestor. Keep its font shell, but never create an unowned
+    // revision in the next paragraph. Real content and zero-width native
+    // structures retain their source ownership and review boundary.
+    const protectedContent =
+      "img,br,[data-word-field],[data-word-field-end],[data-word-content-control],[data-word-native-object],[data-word-drawing],[data-word-equation],[data-word-note-reference],[data-word-bookmark],[data-word-move-range]";
+    for (const revision of content.querySelectorAll<HTMLElement>("ins,del")) {
+      const id = revision.dataset.nodeId;
+      if (
+        !id ||
+        !session.getNode(id)?.text ||
+        sourceText(revision, () => false) ||
+        revision.matches(protectedContent) ||
+        revision.querySelector(protectedContent)
+      )
+        continue;
+      const shell = frame!.createElement("span");
+      for (const attribute of revision.attributes)
+        if (!["data-node-id", "id"].includes(attribute.name))
+          shell.setAttribute(attribute.name, attribute.value);
+      shell.dataset.wordRunOverlay = "true";
+      shell.append(...revision.childNodes);
+      revision.replaceWith(shell);
+    }
     tail.deleteContents();
     next.append(content);
     if (following) {
@@ -1680,7 +1704,7 @@ export function mountDocumentTextEditor(
           start &&
           start === end &&
           session.snapshot().metadata.word &&
-          !template.content.querySelector("table,ul,ol,section,article"))
+          !template.content.querySelector("table,section,article"))
       ) {
         if (!start || start !== end)
           throw new DocumentError("UnsupportedFeature", "此语义粘贴需要限定在同一段落。");

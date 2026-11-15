@@ -1,3 +1,4 @@
+import { registerWordListClipboardTests } from "./word-list-clipboard-cases.js";
 import {
   floatingTableFixture,
   floatingHeaderFixture,
@@ -8736,3 +8737,5 @@ for (const trackChanges of [false, true])
       }
     },
   );
+
+registerWordListClipboardTests(mount);
