@@ -331,9 +331,10 @@ class Exporter {
   private readonly directCss:ExportCss;
   private readonly tableContexts=new Map<string,{cssClass:string;kind:string}>();
   private tablePropertyDifference(node:SourceElement,css:Css,kind:'table'|'row'|'cell'):Css{
-    const result=difference(css,this.styleContext(node,{},kind),Object.keys(css));
-    if(!node.attrs.style)return result;
-    const direct=this.directCss.specified({tag:'span',attrs:{style:node.attrs.style},parent:undefined});return{...result,...pick(css,Object.keys(direct))};
+    const result={...difference(css,this.styleContext(node,{},kind),Object.keys(css))};
+    if(node.attrs.style){const direct=this.directCss.specified({tag:'span',attrs:{style:node.attrs.style},parent:undefined});Object.assign(result,pick(css,Object.keys(direct)));}
+    if(kind==='table'&&Object.keys(result).some(key=>key==='--word-table-floating'||key.startsWith('--word-table-position-')))for(const[key,value]of Object.entries(css))if(key==='--word-table-floating'||key.startsWith('--word-table-position-'))result[key]=value;
+    return result;
   }
   private styleContext(node:SourceNode,fallback:Css,kind?:'table'|'row'|'cell'|'paragraph'):Css{
     const contexts:{name:string;node:SourceElement}[]=[];

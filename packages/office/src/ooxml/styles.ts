@@ -1,3 +1,4 @@
+import{readWordTablePosition}from'./word-table-position.js';
 import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from './word-passive-run-properties.js';
 import {passiveWordParagraphBooleans,passiveWordParagraphCss} from './word-passive-paragraph-properties.js';
 import {measurePoints} from './measure.js';
@@ -951,9 +952,7 @@ export class DocxStyles {
       "tblCaption",
       "tblDescription", "tblPrChange",
     ]);
-    if (child(properties, "tblpPr"))
-      unsupported(properties, "This floating table retains its native positioning.");
-    const result: Css = { "border-collapse": "collapse",...this.cellSpacing(properties,true) };
+    const result: Css = { "border-collapse": "collapse",...this.cellSpacing(properties,true),...readWordTablePosition(properties) };
     if(child(properties,'bidiVisual'))result['--word-table-bidi']=on(child(properties,'bidiVisual'))?'1':'0';
     Object.assign(result, this.borders(child(properties, "tblBorders")));
     const width = child(properties, "tblW");

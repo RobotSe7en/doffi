@@ -301,7 +301,7 @@ export class SourceStyleResolver {
       for(const key of ['text-decoration-line','text-decoration-style','text-decoration-color'])result[key]=parent[key]??this.initial[key]!;
     }
     if (node) {
-      if(node.tag==='table')for(const key of Object.keys(result))if(key==='--word-table-bidi'||key.startsWith('--word-table-cell-spacing')||key.startsWith('--word-row-cell-spacing')||key.startsWith('--word-row-exception-cell-spacing'))delete result[key];
+      if(node.tag==='table')for(const key of Object.keys(result))if(key==='--word-table-floating'||key==='--word-table-overlap'||key.startsWith('--word-table-position-')||key==='--word-table-bidi'||key.startsWith('--word-table-cell-spacing')||key.startsWith('--word-row-cell-spacing')||key.startsWith('--word-row-exception-cell-spacing'))delete result[key];
       if (node.tag === "ul") result["list-style-type"] = "disc";
       if (node.tag === "ol") result["list-style-type"] = ({ "1": "decimal", a: "lower-alpha", A: "upper-alpha", i: "lower-roman", I: "upper-roman" } as Record<string, string>)[node.attrs.type ?? "1"] ?? "decimal";
       if (["b", "strong"].includes(node.tag)) result["font-weight"] = "bold";

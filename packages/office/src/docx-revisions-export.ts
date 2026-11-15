@@ -114,7 +114,8 @@ export class ExportWordRevisions {
     private directTableProperties(node:SourceElement):Css{
       const owned=new Set(this.word?.tables.flatMap(table=>table.styleContexts?.map(context=>context.cssClass)??[])??[]),style=this.word?.styles.find(style=>style.styleId===node.attrs['data-word-style']);if(style)owned.add(style.cssClass);
       const direct={...node,attrs:{...node.attrs,class:(node.attrs.class??'').split(/\s+/).filter(name=>!owned.has(name)).join(' ')}};
-      const values=this.css.get(direct);return Object.fromEntries(Object.keys(this.css.specified(direct)).flatMap(key=>values[key]!==undefined?[[key,values[key]!]]:[]));
+      const values=this.css.get(direct),result=Object.fromEntries(Object.keys(this.css.specified(direct)).flatMap(key=>values[key]!==undefined?[[key,values[key]!]]:[]));
+      if(node.tag==='table'&&Object.keys(result).some(key=>key==='--word-table-floating'||key.startsWith('--word-table-position-')))for(const[key,value]of Object.entries(this.css.get(node)))if(key==='--word-table-floating'||key.startsWith('--word-table-position-'))result[key]=value;return result;
     }
     table(node: SourceElement): string {
         const entry = this.revision(node, 'table');

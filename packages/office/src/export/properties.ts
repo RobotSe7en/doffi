@@ -1,3 +1,4 @@
+import{writeWordTablePosition}from'./table-position.js';
 import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from '../ooxml/word-passive-run-properties.js';
 import {passiveWordParagraphBooleans,passiveWordParagraphValues,passiveWordParagraphCss} from '../ooxml/word-passive-paragraph-properties.js';
 import { DocumentError } from "@doffi/core";
@@ -130,7 +131,7 @@ export function cellMargins(css: Css, name: string): string {
   return out ? "<w:" + name + ">" + out + "</w:" + name + ">" : "";
 }
 export function tableProperties(css: Css): string {
-  let out = nativeWidth("tblW", css.width, css);
+  let out = nativeWidth("tblW", css.width, css)+writeWordTablePosition(css);
   if(css['--word-table-bidi']!==undefined){if(!['0','1'].includes(css['--word-table-bidi']))unsupported('A native table direction must be zero or one.');out+=toggle('bidiVisual',css['--word-table-bidi']==='1');}
   out+=wordCellSpacing(css,'table');
   if (css["margin-left"] === "auto") out += value("jc", css["margin-right"] === "auto" ? "center" : "right");

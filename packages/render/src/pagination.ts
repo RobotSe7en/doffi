@@ -3,7 +3,7 @@ import{cloneViewTree}from'./view-clone.js';
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, ContentDocumentMetadata, DocumentSection, PageSetup } from "@doffi/core";
 import type { LayoutDiagnostic, RenderedPage, RenderLimits } from "./contracts.js";
-import { markViewNode } from "./view-nodes.js";
+import { markViewNode,viewNodeRole } from "./view-nodes.js";
 import { repeatTableHeaders } from "./table-headers.js";
 import { pageFlow } from "./flow.js";
 import { columnFlow } from './column-flow.js';
@@ -197,6 +197,7 @@ export function paginate(document: Document, source: PreviewSource, metadata: De
           paper.append(story);story.style.zIndex='1';
           source.registerInstances(story);
           for(const object of [...story.querySelectorAll<HTMLElement>('[data-sdk-word-object]')]){const definition=metadata.word?.drawings?.find(drawing=>drawing.nodeId===object.dataset.sdkWordObject);if(definition?.layout.mode!=='floating'||!definition.layout.behindText)continue;const paragraph=object.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6');if(!paragraph?.dataset.nodeId)continue;object.dataset.sdkWordStoryAnchor=paragraph.dataset.nodeId;object.style.zIndex='0';paper.append(object);}
+          for(const table of story.querySelectorAll<HTMLElement>('.sdk-word-floating-table'))if(viewNodeRole(table)==='unwrap')paper.append(table);
           if (story.scrollHeight > px(available) + 1 && !diagnostics.some((item) => item.code === "ContentOverflow" && item.nodeId === id))
             diagnostics.push({ code: "ContentOverflow", nodeId: id!, message: "A header or footer exceeds the available margin area and is clipped." });
         }

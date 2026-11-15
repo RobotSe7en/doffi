@@ -1,3 +1,4 @@
+import{composeWordFloatingTables}from'./word-floating-tables.js';
 import {composeWordTextRuns} from './word-text-runs.js';
 import{composeWordLanguages}from'./word-languages.js';
 import{composeWordTypography}from'./word-typography.js';
@@ -442,6 +443,7 @@ export function mountPreview(
   let baseFonts: readonly FontResolution[] = [], fields: LayoutFields | undefined;
   let projection: SourceProjection | undefined;
   let drawings:ReturnType<typeof composeWordDrawings>|undefined;
+  let floatingTables:ReturnType<typeof composeWordFloatingTables>|undefined;
   let continuationCells:(()=>void)|undefined;
   let notes:ReturnType<typeof composeWordNotes>|undefined;
   let disposed = false, loaded = false, generation = 0, scheduled: number | undefined, observer: ResizeObserver | undefined;
@@ -461,8 +463,8 @@ export function mountPreview(
     composeWordTypography(iframe.contentDocument!,model,limits);
     let pages: DocumentRenderReport["pages"] = [], nodePages: DocumentRenderReport["nodePages"] = {}, results: DocumentRenderReport["fields"] = [], stable = !pagination;
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
-      pages = pagination.measure();pages=notes?.measure(pages)??pages;drawings?.measure(pages,source.root);nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
-      if (!fields?.changed&&!notes?.changed) { stable = true; break; }
+      pages = pagination.measure();pages=notes?.measure(pages)??pages;drawings?.measure(pages,source.root);floatingTables?.measure(pages,source.root);nodePages = pagination.nodePages(pages); results = fields?.evaluate(pages, nodePages) ?? [];
+      if (!fields?.changed&&!notes?.changed&&!floatingTables?.changed) { stable = true; break; }
       const derivedFonts = resolvePreviewFonts(iframe.contentDocument!, ".sdk-field-display [data-word-script]");
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
@@ -498,6 +500,7 @@ export function mountPreview(
     composeWordTableBidi(frame,model);
     composeWordTableLayout(frame,limits,snapshot.metadata.word);
     continuationCells=composeWordContinuationCells(frame,model,limits,rowSpacing);
+    floatingTables=composeWordFloatingTables(frame,model,limits);
     composeWordNative(frame,model,prepared.nativeUrls,limits);
     composeWordControls(frame,model);
     composeWordMath(frame,model,limits);
