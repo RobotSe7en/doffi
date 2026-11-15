@@ -38,6 +38,8 @@ function displayText(document: Document, target: HTMLElement, value: string): vo
  * returned as ordinary core operations by createLayoutFieldTransaction below. */
 export function layoutFields(document: Document, source: PreviewSource, word: DeepReadonly<WordMetadata> | undefined): LayoutFields {
   const views: FieldView[] = [], diagnostics: LayoutDiagnostic[] = [];
+  const bookmarkNames=new Set(word?.bookmarks.map(bookmark=>bookmark.name));
+  for(const link of word?.hyperlinks??[])if(link.bookmark&&!link.target&&!bookmarkNames.has(link.bookmark))diagnostics.push({code:'UnresolvedReference',nodeId:link.nodeId,message:'The internal hyperlink target is not present in this document.'});
   let changed = false;
   const all = word?.fields ?? [];
   const instructionOnly = new Set(all.flatMap((field) => field.instructionFields?.map((item) => item.fieldNodeId) ?? []));

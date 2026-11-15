@@ -37,7 +37,7 @@ export interface RenderedPage {
   readonly blank: boolean;
 }
 export interface LayoutDiagnostic {
-  readonly code: "UnsupportedField" | "SectionGeometryChange" | "ContentOverflow" | "NativeFormatting";
+  readonly code: "UnsupportedField" | "UnresolvedReference" | "SectionGeometryChange" | "ContentOverflow" | "NativeFormatting";
   readonly nodeId?: string;
   readonly message: string;
 }

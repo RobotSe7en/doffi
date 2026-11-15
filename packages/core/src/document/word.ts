@@ -203,9 +203,6 @@ export function validateWord(
     const tabs = unique(word.tabs, (item) => item.paragraphNodeId);
     const bookmarks = unique(word.bookmarks, (item) => item.bookmarkId);
     unique(word.bookmarks, (item) => item.name);
-    const names = new Set(
-      [...bookmarks.values()].map((bookmark) => bookmark.name),
-    );
     for (const bookmark of bookmarks.values()) {
       node(bookmark.startNodeId);
       node(bookmark.endNodeId);
@@ -226,8 +223,8 @@ export function validateWord(
           /[\u0000-\u001f\u007f]/.test(link.target))
       )
         invalid("A hyperlink has an unsupported or executable target.");
-      if (!link.target && link.bookmark && !names.has(link.bookmark))
-        invalid("A hyperlink refers to a missing bookmark.");
+      // Word permits unresolved internal anchors. They remain inert until a
+      // bookmark exists; importing one must not bind it to unrelated content.
     }
     const lastChild=(id:string):number=>{const children=node(id).childNodeIds;return children.length?lastChild(children.at(-1)!):order.get(id)!;};const linkRanges=word.hyperlinks.map(link=>({from:order.get(link.nodeId)!,to:link.endNodeId?order.get(link.endNodeId)!:lastChild(link.nodeId)})).sort((a,b)=>a.from-b.from);for(let i=1;i<linkRanges.length;i++)if(linkRanges[i]!.from<=linkRanges[i-1]!.to)invalid('Hyperlink ranges cannot overlap or nest.');
     for (const field of fields.values()) {

@@ -1,0 +1,8 @@
+import{expect,test}from'vitest';
+import{createWordDocument,createDocumentSession,openDocument}from'@doffi/core';
+import{importDocx,exportDocx}from'@doffi/office';
+import{wordBookmarkContentFixture}from'./word-bookmark-content-fixture.js';
+for(const complete of [true,false])test('copied bookmarks and unresolved references preserve their targets through strict native reopens '+complete,()=>{
+ const fragment=wordBookmarkContentFixture(),session=createDocumentSession(openDocument(createWordDocument({documentId:'native-bookmark-copy'}),{kind:'document'}));session.commit(session.prepare({protocolVersion:1,documentId:'native-bookmark-copy',baseRevision:0,operations:[{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'ORIGINAL'},{op:'insertWordBookmark',nodeId:'paragraph-1',from:0,to:8,expectedText:'ORIGINAL',name:'Anchor'},{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'Receiver'},{op:'pasteWordInlineContent',nodeId:'paragraph-1',from:8,to:8,expectedText:'',html:fragment.html,semantics:{...fragment.semantics,...(complete?{}:{bookmarks:[]})}}]}));let bytes=exportDocx(session).bytes;const copiedName=session.snapshot().metadata.word!.hyperlinks[0]!.bookmark!;expect(copiedName).not.toBe('Anchor');
+ for(let pass=0;pass<3;pass++){const model=openDocument(importDocx(bytes,{documentId:'native-bookmark-reopen',unsupportedContent:'reject'}),{kind:'document'}),word=model.snapshot().metadata.word!;expect(word.hyperlinks[0]!.bookmark).toBe(copiedName);expect(word.fields[0]!.instruction).toContain(copiedName);expect(word.bookmarks.map(item=>item.name).includes(copiedName)).toBe(complete);bytes=exportDocx(model).bytes;}
+});
