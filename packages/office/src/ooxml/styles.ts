@@ -1,8 +1,15 @@
-import{readWordTablePosition}from'./word-table-position.js';
-import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from './word-passive-run-properties.js';
-import {passiveWordParagraphBooleans,passiveWordParagraphCss} from './word-passive-paragraph-properties.js';
-import {measurePoints} from './measure.js';
-import {wordColorLuminance} from '@doffi/core';
+import { readWordTablePosition } from "./word-table-position.js";
+import {
+  passiveWordRunBooleans,
+  passiveWordRunValues,
+  passiveWordRunCss,
+} from "./word-passive-run-properties.js";
+import {
+  passiveWordParagraphBooleans,
+  passiveWordParagraphCss,
+} from "./word-passive-paragraph-properties.js";
+import { measurePoints } from "./measure.js";
+import { wordColorLuminance } from "@doffi/core";
 import { DocumentError } from "@doffi/core";
 import type { WordMetadata, WordNumberLevel } from "@doffi/core";
 import type { OpcPackage } from "./package.js";
@@ -24,10 +31,7 @@ import type { XmlNode } from "./xml.js";
 export type Css = Record<string, string>;
 type TabStops = WordMetadata["tabs"][number]["stops"];
 /** Tab declarations amend the inherited set by position, including removals. */
-export function mergeTabs(
-  inherited: TabStops = [],
-  properties?: XmlNode,
-): TabStops {
+export function mergeTabs(inherited: TabStops = [], properties?: XmlNode): TabStops {
   const stops = new Map(inherited.map((stop) => [stop.position, stop]));
   check(properties, ["tab"]);
   for (const stop of elements(properties, "tab")) {
@@ -35,9 +39,7 @@ export function mergeTabs(
     const leader = attr(stop, "leader") ?? "none";
     if (
       !["left", "center", "right", "decimal", "clear"].includes(alignment) ||
-      !["none", "dot", "hyphen", "underscore", "heavy", "middleDot"].includes(
-        leader,
-      )
+      !["none", "dot", "hyphen", "underscore", "heavy", "middleDot"].includes(leader)
     )
       unsupported(stop, "A tab alignment or leader is not supported.");
     const position = number(attr(stop, "pos"), stop) / 20;
@@ -54,16 +56,14 @@ export function mergeTabs(
 export function nonInheritedRun(css: Css): Css {
   return Object.fromEntries(
     Object.entries(css).filter(
-      ([name]) =>
-        name === "background-color" || name.startsWith("text-decoration"),
+      ([name]) => name === "background-color" || name.startsWith("text-decoration"),
     ),
   );
 }
 export function inheritedRun(css: Css): Css {
   return Object.fromEntries(
     Object.entries(css).filter(
-      ([name]) =>
-        name !== "background-color" && !name.startsWith("text-decoration"),
+      ([name]) => name !== "background-color" && !name.startsWith("text-decoration"),
     ),
   );
 }
@@ -83,8 +83,7 @@ export function declarations(css: Css): string {
 export function pt(value: number): string {
   return String(Math.round(value * 10000) / 10000) + "pt";
 }
-const val = (node: XmlNode | undefined): string | undefined =>
-  attr(node, "val");
+const val = (node: XmlNode | undefined): string | undefined => attr(node, "val");
 const quoteFont = (name: string): string =>
   '"' + name.replace(/["\\]/g, "\\$&").replace(/[\u0000-\u001f]/g, "") + '"';
 export interface StyleValues {
@@ -93,7 +92,7 @@ export interface StyleValues {
   r: Css;
   table: Css;
   cell: Css;
-  row?:Css;
+  row?: Css;
   numbering?: { id: string; level: number };
   tabs?: TabStops;
   outline?: number;
@@ -139,9 +138,9 @@ export class DocxStyles {
   private readonly locale: string;
   readonly language: string | undefined;
 
-  private readonly stylePart:string|undefined;
+  private readonly stylePart: string | undefined;
   constructor(opc: OpcPackage, main: string) {
-    this.stylePart=opc.related(main,"styles");
+    this.stylePart = opc.related(main, "styles");
     const stylePath = opc.related(main, "styles");
     const styleRoot = stylePath ? opc.read(stylePath) : undefined;
     const defaultLanguage = child(
@@ -149,28 +148,16 @@ export class DocxStyles {
       "lang",
     );
     this.language = attr(defaultLanguage, "val");
-    this.locale =
-      attr(defaultLanguage, "eastAsia") ??
-      attr(defaultLanguage, "val") ??
-      "en-US";
+    this.locale = attr(defaultLanguage, "eastAsia") ?? attr(defaultLanguage, "val") ?? "en-US";
     const themePath = opc.related(main, "theme");
     if (themePath) {
       const root = opc.read(themePath);
       const theme = child(root, "themeElements", A);
-      for (const color of elements(
-        child(theme, "clrScheme", A),
-        undefined,
-        A,
-      )) {
+      for (const color of elements(child(theme, "clrScheme", A), undefined, A)) {
         const values = elements(color, undefined, A);
         const item = values[0];
-        const value = attr(
-          item,
-          item?.name === "sysClr" ? "lastClr" : "val",
-          "",
-        );
-        if (value && /^[0-9a-f]{6}$/i.test(value))
-          this.themeColors.set(color.name, value);
+        const value = attr(item, item?.name === "sysClr" ? "lastClr" : "val", "");
+        if (value && /^[0-9a-f]{6}$/i.test(value)) this.themeColors.set(color.name, value);
       }
       const fonts = child(theme, "fontScheme", A);
       for (const family of ["major", "minor"]) {
@@ -187,8 +174,7 @@ export class DocxStyles {
         for (const font of elements(group, "font", A)) {
           const script = attr(font, "script", "");
           const face = attr(font, "typeface", "");
-          if (script && face)
-            this.themeFonts.set(family + "EastAsia:" + script, face);
+          if (script && face) this.themeFonts.set(family + "EastAsia:" + script, face);
         }
       }
     }
@@ -198,14 +184,8 @@ export class DocxStyles {
     check(root, ["docDefaults", "latentStyles", "style"]);
     const docDefaults = child(root, "docDefaults");
     this.defaults = empty();
-    Object.assign(
-      this.defaults.r,
-      this.run(child(child(docDefaults, "rPrDefault"), "rPr")),
-    );
-    Object.assign(
-      this.defaults.p,
-      this.paragraph(child(child(docDefaults, "pPrDefault"), "pPr")),
-    );
+    Object.assign(this.defaults.r, this.run(child(child(docDefaults, "rPrDefault"), "rPr")));
+    Object.assign(this.defaults.p, this.paragraph(child(child(docDefaults, "pPrDefault"), "pPr")));
     this.defaults.tabs = mergeTabs(
       [],
       child(child(child(docDefaults, "pPrDefault"), "pPr"), "tabs"),
@@ -249,9 +229,7 @@ export class DocxStyles {
       const basedOn = val(child(style, "basedOn"));
       const linkedStyleId = val(child(style, "link"));
       const nextStyleId = val(child(style, "next"));
-      const conditions: NonNullable<
-        WordMetadata["styles"][number]["conditions"]
-      > = [];
+      const conditions: NonNullable<WordMetadata["styles"][number]["conditions"]> = [];
       const conditional = new Set<string>();
       this.styles.push({
         styleId: id,
@@ -263,11 +241,22 @@ export class DocxStyles {
         conditions,
       });
       const metadata = this.styles[this.styles.length - 1]!;
-      for(const key of ['name','aliases']as const){const value=val(child(style,key));if(value!==undefined)metadata[key]=value;}
-      for(const key of ['default','customStyle']as const){const value=attr(style,key);if(value!==undefined)metadata[key]=['1','true','on'].includes(value);}
-      for(const key of ['hidden','semiHidden','unhideWhenUsed','qFormat','locked']as const){const value=child(style,key);if(value)metadata[key]=on(value);}
-      const priority=child(style,'uiPriority');if(priority)metadata.uiPriority=number(val(priority),priority);
-      const outline=child(child(style,'pPr'),'outlineLvl');if(outline)metadata.outlineLevel=number(val(outline),outline);
+      for (const key of ["name", "aliases"] as const) {
+        const value = val(child(style, key));
+        if (value !== undefined) metadata[key] = value;
+      }
+      for (const key of ["default", "customStyle"] as const) {
+        const value = attr(style, key);
+        if (value !== undefined) metadata[key] = ["1", "true", "on"].includes(value);
+      }
+      for (const key of ["hidden", "semiHidden", "unhideWhenUsed", "qFormat", "locked"] as const) {
+        const value = child(style, key);
+        if (value) metadata[key] = on(value);
+      }
+      const priority = child(style, "uiPriority");
+      if (priority) metadata.uiPriority = number(val(priority), priority);
+      const outline = child(child(style, "pPr"), "outlineLvl");
+      if (outline) metadata.outlineLevel = number(val(outline), outline);
 
       const tblPr = child(style, "tblPr");
       const look = tableLookMask(child(tblPr, "tblLook"));
@@ -305,14 +294,12 @@ export class DocxStyles {
         const row = child(region, "trPr");
         const table = child(region, "tblPr");
         if (type !== "wholeTable" && child(table, "tblInd"))
-          unsupported(
-            table!,
-            "Table indentation cannot vary by conditional cell region.",
-          );
+          unsupported(table!, "Table indentation cannot vary by conditional cell region.");
         const values: StyleValues = {
           p: this.paragraph(child(region, "pPr")),
           r: this.run(child(region, "rPr")),
-          table: this.table(table),row:this.row(row),
+          table: this.table(table),
+          row: this.row(row),
           cell: {
             ...this.margins(child(table, "tblCellMar")),
             ...this.cell(child(region, "tcPr")),
@@ -321,11 +308,14 @@ export class DocxStyles {
         conditional.add(type);
         const cssClass = metadata.cssClass + "-" + type;
         conditions.push({
-          region: type as NonNullable<
-            typeof metadata.conditions
-          >[number]["region"],
+          region: type as NonNullable<typeof metadata.conditions>[number]["region"],
           cssClass,
-          components:Object.fromEntries((['p','r','table','cell','row']as const).map(key=>[key,this.component(cssClass+'-'+key,values[key]??{})])),
+          components: Object.fromEntries(
+            (["p", "r", "table", "cell", "row"] as const).map((key) => [
+              key,
+              this.component(cssClass + "-" + key, values[key] ?? {}),
+            ]),
+          ),
         });
         this.css.push(
           "." +
@@ -349,44 +339,51 @@ export class DocxStyles {
     this.css.unshift(
       ".word-main{" + declarations(inheritedRun(this.defaults.r)) + "}",
       "p,h1,h2,h3,h4,h5,h6{" + declarations(this.defaults.p) + "}",
-      ".word-default-run{" +
-        declarations(nonInheritedRun(this.defaults.r)) +
-        "}",
+      ".word-default-run{" + declarations(nonInheritedRun(this.defaults.r)) + "}",
     );
     for (const style of this.styles) {
       const value = this.resolve(style.styleId);
       const definition = this.definitions.get(style.styleId)!;
       const parent = style.basedOn ? this.resolve(style.basedOn) : empty();
-      style.paragraphProperties = Object.keys(
-        this.paragraph(child(definition, "pPr")),
-      );
+      style.paragraphProperties = Object.keys(this.paragraph(child(definition, "pPr")));
       style.runProperties = Object.keys(
-        this.run(child(definition, "rPr"), parent.r, style.kind!=="table"),
+        this.run(child(definition, "rPr"), parent.r, style.kind !== "table"),
       );
-      if(style.kind==='table'||style.kind==='paragraph'||style.kind==='character')style.components={
-        p:this.component(style.cssClass+'-p',this.paragraph(child(definition,'pPr'))),
-        r:this.component(style.cssClass+'-r',this.run(child(definition,'rPr'),{},style.kind!=='table')),
-        ...(style.kind==='table'?{table:this.component(style.cssClass+'-table',this.table(child(definition,'tblPr'))),row:this.component(style.cssClass+'-row',this.row(child(definition,'trPr'))),cell:this.component(style.cssClass+'-cell',{...this.margins(child(child(definition,'tblPr'),'tblCellMar')),...this.cell(child(definition,'tcPr'))})}:{})
-      };
-      const weight =
-        style.kind === "character" ? 4 : style.kind === "paragraph" ? 3 : 1;
+      if (style.kind === "table" || style.kind === "paragraph" || style.kind === "character")
+        style.components = {
+          p: this.component(style.cssClass + "-p", this.paragraph(child(definition, "pPr"))),
+          r: this.component(
+            style.cssClass + "-r",
+            this.run(child(definition, "rPr"), {}, style.kind !== "table"),
+          ),
+          ...(style.kind === "table"
+            ? {
+                table: this.component(
+                  style.cssClass + "-table",
+                  this.table(child(definition, "tblPr")),
+                ),
+                row: this.component(style.cssClass + "-row", this.row(child(definition, "trPr"))),
+                cell: this.component(style.cssClass + "-cell", {
+                  ...this.margins(child(child(definition, "tblPr"), "tblCellMar")),
+                  ...this.cell(child(definition, "tcPr")),
+                }),
+              }
+            : {}),
+        };
+      const weight = style.kind === "character" ? 4 : style.kind === "paragraph" ? 3 : 1;
       const rules =
         style.kind === "character"
           ? value.r
           : style.kind === "table"
             ? { ...value.table, ...inheritedRun(value.r) }
             : { ...value.p, ...inheritedRun(value.r) };
-      this.css.push(
-        ("." + style.cssClass).repeat(weight) + "{" + declarations(rules) + "}",
-      );
+      this.css.push(("." + style.cssClass).repeat(weight) + "{" + declarations(rules) + "}");
       if (style.kind !== "character") {
         const special = nonInheritedRun(value.r);
         if (Object.keys(special).length) {
           style.runCssClass = style.cssClass + "-run";
           this.css.push(
-            ("." + style.runCssClass).repeat(
-              style.kind === "paragraph" ? 3 : 1,
-            ) +
+            ("." + style.runCssClass).repeat(style.kind === "paragraph" ? 3 : 1) +
               "{" +
               declarations(special) +
               "}",
@@ -397,12 +394,19 @@ export class DocxStyles {
     const numPath = opc.related(main, "numbering");
     if (numPath) this.readNumbering(opc.read(numPath));
   }
-  private readonly componentValues=new Map<string,Css>();
-  component(name:string,values:Css):string{this.componentValues.set(name,values);this.css.push('.'+name+'{'+declarations(values)+'}');return name;}
-  readComponent=(name:string):Css=>this.componentValues.get(name)??{};
-  drawingThemeProperties():Css{
-    const result:Css={};for(const[role,value]of this.themeColors)result['--office-theme-'+role]='#'+value;
-    for(const[role,name]of Object.entries({bg1:'lt1',tx1:'dk1',bg2:'lt2',tx2:'dk2'}))if(result['--office-theme-'+name])result['--office-theme-'+role]=result['--office-theme-'+name]!;
+  private readonly componentValues = new Map<string, Css>();
+  component(name: string, values: Css): string {
+    this.componentValues.set(name, values);
+    this.css.push("." + name + "{" + declarations(values) + "}");
+    return name;
+  }
+  readComponent = (name: string): Css => this.componentValues.get(name) ?? {};
+  drawingThemeProperties(): Css {
+    const result: Css = {};
+    for (const [role, value] of this.themeColors) result["--office-theme-" + role] = "#" + value;
+    for (const [role, name] of Object.entries({ bg1: "lt1", tx1: "dk1", bg2: "lt2", tx2: "dk2" }))
+      if (result["--office-theme-" + name])
+        result["--office-theme-" + role] = result["--office-theme-" + name]!;
     return result;
   }
   color(node: XmlNode, attribute = "val"): string | undefined {
@@ -425,27 +429,15 @@ export class DocxStyles {
       hyperlink: "hlink",
       followedHyperlink: "folHlink",
     };
-    let value = theme
-      ? this.themeColors.get(roles[theme] ?? theme)
-      : attr(node, attribute);
+    let value = theme ? this.themeColors.get(roles[theme] ?? theme) : attr(node, attribute);
     if (value === "auto") return undefined;
     if (!value || !/^[0-9a-f]{6}$/i.test(value))
-      return unsupported(
-        node,
-        "A document color or theme role cannot be resolved.",
-      );
-    const tint = attr(
-      node,
-      attribute === "fill" ? "themeFillTint" : "themeTint",
-    );
-    const shade = attr(
-      node,
-      attribute === "fill" ? "themeFillShade" : "themeShade",
-    );
+      return unsupported(node, "A document color or theme role cannot be resolved.");
+    const tint = attr(node, attribute === "fill" ? "themeFillTint" : "themeTint");
+    const shade = attr(node, attribute === "fill" ? "themeFillShade" : "themeShade");
     const modifier = tint ?? shade;
     if (modifier !== undefined) {
-      if (!/^[0-9a-f]{2}$/i.test(modifier))
-        fail(node, "A theme color modifier is invalid.");
+      if (!/^[0-9a-f]{2}$/i.test(modifier)) fail(node, "A theme color modifier is invalid.");
       value = wordColorLuminance(value, tint, shade);
     }
     return "#" + value.toLowerCase();
@@ -453,10 +445,16 @@ export class DocxStyles {
   run(
     properties: XmlNode | undefined,
     inherited: Css = {},
-    toggle = false,paragraphMark=false,allowRevision=false,
+    toggle = false,
+    paragraphMark = false,
+    allowRevision = false,
   ): Css {
     if (!properties) return {};
-    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
+    if (properties.part === this.stylePart) {
+      const change = elements(properties).find((node) => /PrChange$/.test(node.name));
+      if (change)
+        unsupported(change, "Revision properties in a shared style are preserved natively.");
+    }
     check(properties, [
       "rStyle",
       "rFonts",
@@ -496,11 +494,17 @@ export class DocxStyles {
       "lang",
       "eastAsianLayout",
       "specVanish",
-      "oMath",...(allowRevision?["rPrChange"]:[]),...(paragraphMark?["ins","del","moveFrom","moveTo"]:[]),
+      "oMath",
+      ...(allowRevision ? ["rPrChange"] : []),
+      ...(paragraphMark ? ["ins", "del", "moveFrom", "moveTo"] : []),
     ]);
     const css: Css = {};
-    if(child(properties,"snapToGrid")) css["--word-run-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
-    for(const role of ['val','eastAsia','bidi']){const language=attr(child(properties,'lang'),role);if(language!==undefined)css['--word-language-'+role]=JSON.stringify(language);}
+    if (child(properties, "snapToGrid"))
+      css["--word-run-snap-to-grid"] = on(child(properties, "snapToGrid")) ? "1" : "0";
+    for (const role of ["val", "eastAsia", "bidi"]) {
+      const language = attr(child(properties, "lang"), role);
+      if (language !== undefined) css["--word-language-" + role] = JSON.stringify(language);
+    }
     const fonts = child(properties, "rFonts");
     if (fonts) {
       for (const [name, themeName] of [
@@ -522,18 +526,15 @@ export class DocxStyles {
               ? "Hant"
               : "Hans";
         const face = role
-          ? (this.themeFonts.get(role) ??
-            this.themeFonts.get(role + ":" + script))
+          ? (this.themeFonts.get(role) ?? this.themeFonts.get(role + ":" + script))
           : attr(fonts, name!);
-        if (role && !face)
-          unsupported(fonts, "A theme font cannot be resolved.");
+        if (role && !face) unsupported(fonts, "A theme font cannot be resolved.");
         if (face) {
           css["--word-font-" + name!] = quoteFont(face);
         }
       }
       if (css["--word-font-ascii"] || css["--word-font-hAnsi"])
-        css["font-family"] =
-          "var(--word-font-ascii,var(--word-font-hAnsi,inherit))";
+        css["font-family"] = "var(--word-font-ascii,var(--word-font-hAnsi,inherit))";
     }
     for (const [name, property, active, inactive] of [
       ["b", "font-weight", "bold", "normal"],
@@ -545,14 +546,12 @@ export class DocxStyles {
       if (item) {
         const enabled = on(item);
         if (toggle && !enabled) continue;
-        css[property!] = (
-          toggle && enabled && inherited[property!] === active ? false : enabled
-        )
+        css[property!] = (toggle && enabled && inherited[property!] === active ? false : enabled)
           ? active!
           : inactive!;
       }
     }
-    if(child(properties,"fitText"))unsupportedType(child(properties,"fitText")!);
+    if (child(properties, "fitText")) unsupportedType(child(properties, "fitText")!);
     for (const feature of [
       "outline",
       "shadow",
@@ -563,20 +562,14 @@ export class DocxStyles {
       "oMath",
     ]) {
       const item = child(properties, feature);
-      if (item && (feature === "effect" ? val(item) !== "none" : on(item)))
-        unsupported(item);
+      if (item && (feature === "effect" ? val(item) !== "none" : on(item))) unsupported(item);
     }
     for (const feature of ["vanish", "webHidden", "rtl", "cs", "specVanish"])
-      if (on(child(properties, feature)))
-        unsupported(child(properties, feature)!);
+      if (on(child(properties, feature))) unsupported(child(properties, feature)!);
     const kerning = child(properties, "kern");
-    if (kerning)
-      css["--word-kerning-threshold"] = pt(number(val(kerning), kerning) / 2);
+    if (kerning) css["--word-kerning-threshold"] = pt(number(val(kerning), kerning) / 2);
     const complexSize = child(properties, "szCs");
-    if (complexSize)
-      css["--word-font-size-cs"] = pt(
-        number(val(complexSize), complexSize) / 2,
-      );
+    if (complexSize) css["--word-font-size-cs"] = pt(number(val(complexSize), complexSize) / 2);
     for (const [name, key] of [
       ["bCs", "--word-bold-cs"],
       ["iCs", "--word-italic-cs"],
@@ -601,8 +594,7 @@ export class DocxStyles {
       }
     }
     const highlight = val(child(properties, "highlight"));
-    if (highlight === "none")
-      css["background-color"] = "var(--word-run-shading,transparent)";
+    if (highlight === "none") css["background-color"] = "var(--word-run-shading,transparent)";
     if (highlight && highlight !== "none") {
       const colors: Record<string, string> = {
         yellow: "#ffff00",
@@ -622,8 +614,7 @@ export class DocxStyles {
         black: "#000000",
         white: "#ffffff",
       };
-      if (!colors[highlight])
-        unsupported(properties, "An unknown highlight color is used.");
+      if (!colors[highlight]) unsupported(properties, "An unknown highlight color is used.");
       css["background-color"] = colors[highlight]!;
     }
     const underline = child(properties, "u");
@@ -637,9 +628,7 @@ export class DocxStyles {
       );
       const type = val(underline) ?? "single";
       if (underline) {
-        if (
-          !["none", "single", "double", "dotted", "dash", "wave"].includes(type)
-        )
+        if (!["none", "single", "double", "dotted", "dash", "wave"].includes(type))
           unsupported(underline);
         if (type === "none") lines.delete("underline");
         else lines.add("underline");
@@ -648,24 +637,17 @@ export class DocxStyles {
       if (strikeNode) {
         const enabled = on(strikeNode);
         if (!toggle || enabled) {
-          if (enabled && !(toggle && lines.has("line-through")))
-            lines.add("line-through");
+          if (enabled && !(toggle && lines.has("line-through"))) lines.add("line-through");
           else lines.delete("line-through");
         }
       }
       css["text-decoration-line"] = [...lines].join(" ") || "none";
-      if (
-        doubleStrike &&
-        on(doubleStrike) &&
-        underline &&
-        !["none", "double"].includes(type)
-      )
+      if (doubleStrike && on(doubleStrike) && underline && !["none", "double"].includes(type))
         unsupported(
           properties,
           "Mixed underline and double-strike decoration styles are not supported.",
         );
-      if (doubleStrike && on(doubleStrike))
-        css["text-decoration-style"] = "double";
+      if (doubleStrike && on(doubleStrike)) css["text-decoration-style"] = "double";
       else if (underline)
         css["text-decoration-style"] =
           type === "double"
@@ -677,23 +659,14 @@ export class DocxStyles {
                 : type === "wave"
                   ? "wavy"
                   : "solid";
-      if (
-        underline &&
-        (attr(underline, "color") || attr(underline, "themeColor"))
-      )
-        css["text-decoration-color"] =
-          this.color(underline, "color") ?? "currentColor";
+      if (underline && (attr(underline, "color") || attr(underline, "themeColor")))
+        css["text-decoration-color"] = this.color(underline, "color") ?? "currentColor";
     }
     const align = val(child(properties, "vertAlign"));
     if (align) {
-      if (!["baseline", "superscript", "subscript"].includes(align))
-        unsupported(properties);
+      if (!["baseline", "superscript", "subscript"].includes(align)) unsupported(properties);
       css["vertical-align"] =
-        align === "superscript"
-          ? "super"
-          : align === "subscript"
-            ? "sub"
-            : "baseline";
+        align === "superscript" ? "super" : align === "subscript" ? "sub" : "baseline";
     }
     const spacing = child(properties, "spacing");
     if (spacing) css["letter-spacing"] = pt(number(val(spacing), spacing) / 20);
@@ -707,14 +680,28 @@ export class DocxStyles {
       )
         unsupported(item);
     }
-    for(const name of passiveWordRunBooleans){const item=child(properties,name);if(item)css[passiveWordRunCss(name)]=on(item)?'1':'0';}
-    for(const name of passiveWordRunValues){const item=child(properties,name);if(item)css[passiveWordRunCss(name)]=val(item)!;}
+    for (const name of passiveWordRunBooleans) {
+      const item = child(properties, name);
+      if (item) css[passiveWordRunCss(name)] = on(item) ? "1" : "0";
+    }
+    for (const name of passiveWordRunValues) {
+      const item = child(properties, name);
+      if (item) css[passiveWordRunCss(name)] = val(item)!;
+    }
     return css;
   }
   paragraph(properties: XmlNode | undefined): Css {
-    if(properties?.part===this.stylePart&&child(properties,'cnfStyle'))unsupported(child(properties,'cnfStyle')!,'Shared-style conditional cache flags remain native.');
+    if (properties?.part === this.stylePart && child(properties, "cnfStyle"))
+      unsupported(
+        child(properties, "cnfStyle")!,
+        "Shared-style conditional cache flags remain native.",
+      );
     if (!properties) return {};
-    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
+    if (properties.part === this.stylePart) {
+      const change = elements(properties).find((node) => /PrChange$/.test(node.name));
+      if (change)
+        unsupported(change, "Revision properties in a shared style are preserved natively.");
+    }
     check(properties, [
       "pStyle",
       "keepNext",
@@ -750,7 +737,8 @@ export class DocxStyles {
       "divId",
       "cnfStyle",
       "rPr",
-      "sectPr", "pPrChange",
+      "sectPr",
+      "pPrChange",
     ]);
     for (const name of [
       "topLinePunct",
@@ -761,24 +749,29 @@ export class DocxStyles {
       "textboxTightWrap",
     ]) {
       const item = child(properties, name);
-      if (item)
-        unsupported(item, "This paragraph layout property is not yet mapped.");
+      if (item) unsupported(item, "This paragraph layout property is not yet mapped.");
     }
     const css: Css = {};
-    for(const [name,key] of [['contextualSpacing','--word-contextual-spacing'],['kinsoku','--word-kinsoku'],['wordWrap','--word-word-wrap'],['autoSpaceDE','--word-auto-space-de'],['autoSpaceDN','--word-auto-space-dn']] as const){const item=child(properties,name);if(item)css[key]=on(item)?'1':'0';}
-    if(child(properties,"snapToGrid")) css["--word-paragraph-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
+    for (const [name, key] of [
+      ["contextualSpacing", "--word-contextual-spacing"],
+      ["kinsoku", "--word-kinsoku"],
+      ["wordWrap", "--word-word-wrap"],
+      ["autoSpaceDE", "--word-auto-space-de"],
+      ["autoSpaceDN", "--word-auto-space-dn"],
+    ] as const) {
+      const item = child(properties, name);
+      if (item) css[key] = on(item) ? "1" : "0";
+    }
+    if (child(properties, "snapToGrid"))
+      css["--word-paragraph-snap-to-grid"] = on(child(properties, "snapToGrid")) ? "1" : "0";
     const overflowPunctuation = child(properties, "overflowPunct");
     if (overflowPunctuation) {
       if (on(overflowPunctuation))
-        unsupported(
-          overflowPunctuation,
-          "Hanging punctuation is not yet supported.",
-        );
+        unsupported(overflowPunctuation, "Hanging punctuation is not yet supported.");
       css["--word-overflow-punctuation"] = "0";
     }
     const suppressHyphens = child(properties, "suppressAutoHyphens");
-    if (suppressHyphens)
-      css["--word-suppress-auto-hyphens"] = on(suppressHyphens) ? "1" : "0";
+    if (suppressHyphens) css["--word-suppress-auto-hyphens"] = on(suppressHyphens) ? "1" : "0";
     const align = val(child(properties, "jc"));
     if (align) {
       const values: Record<string, string> = {
@@ -790,9 +783,9 @@ export class DocxStyles {
         both: "justify",
         distribute: "justify",
       };
-      if (!values[align])
-        unsupported(properties, "A paragraph alignment is not supported.");
-      css["text-align"] = values[align]!;css["--word-distributed"]=align==="distribute"?"1":"0";
+      if (!values[align]) unsupported(properties, "A paragraph alignment is not supported.");
+      css["text-align"] = values[align]!;
+      css["--word-distributed"] = align === "distribute" ? "1" : "0";
     }
     const spacing = child(properties, "spacing");
     if (spacing) {
@@ -801,8 +794,7 @@ export class DocxStyles {
         ["after", "margin-bottom"],
       ]) {
         const value = attr(spacing, name!);
-        if (value !== undefined)
-          css[property!] = pt(number(value, spacing) / 20);
+        if (value !== undefined) css[property!] = pt(number(value, spacing) / 20);
       }
       if (
         attr(spacing, "beforeLines") ||
@@ -816,11 +808,9 @@ export class DocxStyles {
         const rule = attr(spacing, "lineRule") ?? "auto";
         if (!["auto", "exact", "atLeast"].includes(rule))
           fail(spacing, "A line spacing rule is invalid.");
-        css["--word-line-rule"]=rule;
+        css["--word-line-rule"] = rule;
         css["line-height"] =
-          rule === "auto"
-            ? String(number(line, spacing) / 240)
-            : pt(number(line, spacing) / 20);
+          rule === "auto" ? String(number(line, spacing) / 240) : pt(number(line, spacing) / 20);
       }
     }
     const indent = child(properties, "ind");
@@ -833,12 +823,10 @@ export class DocxStyles {
         ["firstLine", "text-indent"],
       ]) {
         const value = attr(indent, name!);
-        if (value !== undefined)
-          css[property!] = pt(number(value, indent) / 20);
+        if (value !== undefined) css[property!] = pt(number(value, indent) / 20);
       }
       const hanging = attr(indent, "hanging");
-      if (hanging !== undefined)
-        css["text-indent"] = pt(-number(hanging, indent) / 20);
+      if (hanging !== undefined) css["text-indent"] = pt(-number(hanging, indent) / 20);
       if (
         ["leftChars", "rightChars", "firstLineChars", "hangingChars"].some(
           (name) => attr(indent, name) !== undefined,
@@ -849,22 +837,36 @@ export class DocxStyles {
     if (child(properties, "keepNext"))
       css["break-after"] = on(child(properties, "keepNext")) ? "avoid" : "auto";
     if (child(properties, "keepLines"))
-      css["break-inside"] = on(child(properties, "keepLines"))
-        ? "avoid"
-        : "auto";
+      css["break-inside"] = on(child(properties, "keepLines")) ? "avoid" : "auto";
     if (child(properties, "pageBreakBefore"))
-      css["break-before"] = on(child(properties, "pageBreakBefore"))
-        ? "page"
-        : "auto";
+      css["break-before"] = on(child(properties, "pageBreakBefore")) ? "page" : "auto";
     if (child(properties, "widowControl")) {
       const count = on(child(properties, "widowControl")) ? "2" : "1";
       css.widows = count;
       css.orphans = count;
     }
-    for(const name of ['framePr','bidi','textDirection']){const item=child(properties,name);if(item&&(name==='framePr'||name==='bidi'&&on(item)||name==='textDirection'&&val(item)!=='lrTb'))unsupported(item,'A paragraph frame or writing direction is not supported.');}
-    for(const name of passiveWordParagraphBooleans){const item=child(properties,name);if(item)css[passiveWordParagraphCss(name)]=on(item)?'1':'0';}
-    if(child(properties,'textDirection'))css[passiveWordParagraphCss('textDirection')]='lrTb';
-    const div=child(properties,'divId');if(div){const id=number(val(div),div);if(!Number.isSafeInteger(id)||id<0)fail(div,'A paragraph div identity must be a nonnegative integer.');css[passiveWordParagraphCss('divId')]=String(id);}
+    for (const name of ["framePr", "bidi", "textDirection"]) {
+      const item = child(properties, name);
+      if (
+        item &&
+        (name === "framePr" ||
+          (name === "bidi" && on(item)) ||
+          (name === "textDirection" && val(item) !== "lrTb"))
+      )
+        unsupported(item, "A paragraph frame or writing direction is not supported.");
+    }
+    for (const name of passiveWordParagraphBooleans) {
+      const item = child(properties, name);
+      if (item) css[passiveWordParagraphCss(name)] = on(item) ? "1" : "0";
+    }
+    if (child(properties, "textDirection")) css[passiveWordParagraphCss("textDirection")] = "lrTb";
+    const div = child(properties, "divId");
+    if (div) {
+      const id = number(val(div), div);
+      if (!Number.isSafeInteger(id) || id < 0)
+        fail(div, "A paragraph div identity must be a nonnegative integer.");
+      css[passiveWordParagraphCss("divId")] = String(id);
+    }
     Object.assign(css, this.borders(child(properties, "pBdr")));
     const shade = child(properties, "shd");
     if (shade && attr(shade, "fill") !== "auto")
@@ -884,22 +886,13 @@ export class DocxStyles {
         end: "right",
       };
       if (border.name === "between")
-        return unsupported(
-          border,
-          "Between-paragraph borders are not yet supported.",
-        );
-      if (!sides[border.name] && !["insideH", "insideV"].includes(border.name))
-        unsupported(border);
+        return unsupported(border, "Between-paragraph borders are not yet supported.");
+      if (!sides[border.name] && !["insideH", "insideV"].includes(border.name)) unsupported(border);
       if (
         number(attr(border, "space"), border, 0) !== 0 ||
-        ["shadow", "frame"].some((name) =>
-          ["true", "1", "on"].includes(attr(border, name) ?? ""),
-        )
+        ["shadow", "frame"].some((name) => ["true", "1", "on"].includes(attr(border, name) ?? ""))
       )
-        unsupported(
-          border,
-          "Border spacing and border effects are not supported.",
-        );
+        unsupported(border, "Border spacing and border effects are not supported.");
       const style = val(border) ?? "single";
       const styles: Record<string, string> = {
         nil: "none",
@@ -911,8 +904,7 @@ export class DocxStyles {
         dashSmallGap: "dashed",
         thick: "solid",
       };
-      if (!styles[style])
-        unsupported(border, "A border style is not supported.");
+      if (!styles[style]) unsupported(border, "A border style is not supported.");
       const width = number(attr(border, "sz"), border, 4) / 8;
       result[
         border.name === "insideH"
@@ -920,18 +912,17 @@ export class DocxStyles {
           : border.name === "insideV"
             ? "--word-border-inside-v"
             : "border-" + sides[border.name]
-      ] =
-        pt(width) +
-        " " +
-        styles[style] +
-        " " +
-        (this.color(border, "color") ?? "#000000");
+      ] = pt(width) + " " + styles[style] + " " + (this.color(border, "color") ?? "#000000");
     }
     return result;
   }
   table(properties: XmlNode | undefined): Css {
     if (!properties) return {};
-    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
+    if (properties.part === this.stylePart) {
+      const change = elements(properties).find((node) => /PrChange$/.test(node.name));
+      if (change)
+        unsupported(change, "Revision properties in a shared style are preserved natively.");
+    }
     check(properties, [
       "tblStyle",
       "tblpPr",
@@ -949,19 +940,23 @@ export class DocxStyles {
       "tblCellMar",
       "tblLook",
       "tblCaption",
-      "tblDescription", "tblPrChange",
+      "tblDescription",
+      "tblPrChange",
     ]);
-    const result: Css = { "border-collapse": "collapse",...this.cellSpacing(properties,true),...readWordTablePosition(properties) };
-    if(child(properties,'bidiVisual'))result['--word-table-bidi']=on(child(properties,'bidiVisual'))?'1':'0';
+    const result: Css = {
+      "border-collapse": "collapse",
+      ...this.cellSpacing(properties, true),
+      ...readWordTablePosition(properties),
+    };
+    if (child(properties, "bidiVisual"))
+      result["--word-table-bidi"] = on(child(properties, "bidiVisual")) ? "1" : "0";
     Object.assign(result, this.borders(child(properties, "tblBorders")));
     const width = child(properties, "tblW");
     if (width) Object.assign(result, this.width(width, "width"));
     const layout =
-      val(child(properties, "tblLayout")) ??
-      attr(child(properties, "tblLayout"), "type");
+      val(child(properties, "tblLayout")) ?? attr(child(properties, "tblLayout"), "type");
     if (layout) {
-      if (!["fixed", "autofit"].includes(layout))
-        fail(properties, "Table layout is invalid.");
+      if (!["fixed", "autofit"].includes(layout)) fail(properties, "Table layout is invalid.");
       result["table-layout"] = layout === "fixed" ? "fixed" : "auto";
     }
     const align = val(child(properties, "jc"));
@@ -969,40 +964,107 @@ export class DocxStyles {
       result["margin-left"] = "auto";
       result["margin-right"] = "auto";
     } else if (align === "right") result["margin-left"] = "auto";
-    else if (align && align !== "left" && align !== "start")
-      unsupported(properties);
+    else if (align && align !== "left" && align !== "start") unsupported(properties);
     const indent = child(properties, "tblInd");
-    if (indent)
-      result["margin-left"] =
-        this.width(indent, "margin-left")["margin-left"] ?? "0pt";
+    if (indent) result["margin-left"] = this.width(indent, "margin-left")["margin-left"] ?? "0pt";
     const shade = child(properties, "shd");
     if (shade && attr(shade, "fill") !== "auto")
       result["background-color"] = this.color(shade, "fill") ?? "transparent";
     return result;
   }
-  row(properties:XmlNode|undefined):Css{
-    if(!properties)return{};const shared=properties.part===this.stylePart;
-    check(properties,['cnfStyle','divId','gridBefore','gridAfter','wBefore','wAfter','cantSplit','trHeight','tblHeader','tblCellSpacing','jc','hidden','trPrChange','ins','del']);
-    for(const name of ['hidden','jc',...(shared?['gridBefore','gridAfter','trHeight','cnfStyle','divId','wBefore','wAfter','trPrChange','ins','del']:[])] as const){const value=child(properties,name);if(value)unsupported(value,'This row property remains native.');}
-    const result:Css={...this.cellSpacing(properties)};
-    const split=child(properties,'cantSplit');if(split)result['break-inside']=on(split)?'avoid':'auto';
-    const header=child(properties,'tblHeader');if(header)result['--word-row-repeat-header']=on(header)?'1':'0';
-    const height=child(properties,'trHeight');if(height){const rule=attr(height,'hRule')??'atLeast';if(!['auto','atLeast','exact'].includes(rule))unsupported(height,'This row height rule remains native.');result.height=pt(number(attr(height,'val'),height,0)/20);result['--word-row-height-rule']=rule;}
+  row(properties: XmlNode | undefined): Css {
+    if (!properties) return {};
+    const shared = properties.part === this.stylePart;
+    check(properties, [
+      "cnfStyle",
+      "divId",
+      "gridBefore",
+      "gridAfter",
+      "wBefore",
+      "wAfter",
+      "cantSplit",
+      "trHeight",
+      "tblHeader",
+      "tblCellSpacing",
+      "jc",
+      "hidden",
+      "trPrChange",
+      "ins",
+      "del",
+    ]);
+    for (const name of [
+      "hidden",
+      "jc",
+      ...(shared
+        ? [
+            "gridBefore",
+            "gridAfter",
+            "trHeight",
+            "cnfStyle",
+            "divId",
+            "wBefore",
+            "wAfter",
+            "trPrChange",
+            "ins",
+            "del",
+          ]
+        : []),
+    ] as const) {
+      const value = child(properties, name);
+      if (value) unsupported(value, "This row property remains native.");
+    }
+    const result: Css = { ...this.cellSpacing(properties) };
+    const split = child(properties, "cantSplit");
+    if (split) result["break-inside"] = on(split) ? "avoid" : "auto";
+    const header = child(properties, "tblHeader");
+    if (header) result["--word-row-repeat-header"] = on(header) ? "1" : "0";
+    const height = child(properties, "trHeight");
+    if (height) {
+      const rule = attr(height, "hRule") ?? "atLeast";
+      if (!["auto", "atLeast", "exact"].includes(rule))
+        unsupported(height, "This row height rule remains native.");
+      result.height = pt(number(attr(height, "val"), height, 0) / 20);
+      result["--word-row-height-rule"] = rule;
+    }
     return result;
   }
-  cellSpacing(properties: XmlNode | undefined,table=false): Css {
+  cellSpacing(properties: XmlNode | undefined, table = false): Css {
     const spacing = child(properties, "tblCellSpacing");
-    if(!spacing)return{};
-    const type=attr(spacing,'type')??'dxa',raw=attr(spacing,'w');if(!['dxa','nil','auto','pct'].includes(type))fail(spacing,'A table spacing unit is invalid.');
-    if(raw!==undefined){if(raw.endsWith('%')){if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)%$/.test(raw))fail(spacing,'A table spacing percentage is invalid.');}else measurePoints(raw,spacing);}
-    const amount=type==='dxa'?measurePoints(raw,spacing,20,0):0;if(amount<0)fail(spacing,'A table cell spacing cannot be negative.');
-    const prefix=table?'--word-table-cell-spacing':'--word-row-cell-spacing';
-    return{[prefix]:pt(amount),[prefix+'-type']:type,...(raw!==undefined?{[prefix+'-value']:raw}:{}),...(table?{'border-collapse':amount>0?'separate':'collapse','border-spacing':pt(amount)}:{})};
+    if (!spacing) return {};
+    const type = attr(spacing, "type") ?? "dxa",
+      raw = attr(spacing, "w");
+    if (!["dxa", "nil", "auto", "pct"].includes(type))
+      fail(spacing, "A table spacing unit is invalid.");
+    if (raw !== undefined) {
+      if (raw.endsWith("%")) {
+        if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)%$/.test(raw))
+          fail(spacing, "A table spacing percentage is invalid.");
+      } else measurePoints(raw, spacing);
+    }
+    const amount = type === "dxa" ? measurePoints(raw, spacing, 20, 0) : 0;
+    if (amount < 0) fail(spacing, "A table cell spacing cannot be negative.");
+    const prefix = table ? "--word-table-cell-spacing" : "--word-row-cell-spacing";
+    return {
+      [prefix]: pt(amount),
+      [prefix + "-type"]: type,
+      ...(raw !== undefined ? { [prefix + "-value"]: raw } : {}),
+      ...(table
+        ? { "border-collapse": amount > 0 ? "separate" : "collapse", "border-spacing": pt(amount) }
+        : {}),
+    };
   }
   cell(properties: XmlNode | undefined): Css {
-    if(properties?.part===this.stylePart&&child(properties,'cnfStyle'))unsupported(child(properties,'cnfStyle')!,'Shared-style conditional cache flags remain native.');
+    if (properties?.part === this.stylePart && child(properties, "cnfStyle"))
+      unsupported(
+        child(properties, "cnfStyle")!,
+        "Shared-style conditional cache flags remain native.",
+      );
     if (!properties) return {};
-    if(properties.part===this.stylePart){const change=elements(properties).find(node=>/PrChange$/.test(node.name));if(change)unsupported(change,'Revision properties in a shared style are preserved natively.');}
+    if (properties.part === this.stylePart) {
+      const change = elements(properties).find((node) => /PrChange$/.test(node.name));
+      if (change)
+        unsupported(change, "Revision properties in a shared style are preserved natively.");
+    }
     check(properties, [
       "cnfStyle",
       "tcW",
@@ -1016,10 +1078,12 @@ export class DocxStyles {
       "textDirection",
       "tcFitText",
       "vAlign",
-      "hideMark", "tcPrChange", "cellIns", "cellDel",
+      "hideMark",
+      "tcPrChange",
+      "cellIns",
+      "cellDel",
     ]);
-    if (child(properties, "hMerge") || on(child(properties, "tcFitText")))
-      unsupported(properties);
+    if (child(properties, "hMerge") || on(child(properties, "tcFitText"))) unsupported(properties);
     const result: Css = { ...this.borders(child(properties, "tcBorders")) };
     const width = child(properties, "tcW");
     if (width) Object.assign(result, this.width(width, "width"));
@@ -1032,20 +1096,18 @@ export class DocxStyles {
       result["vertical-align"] = align === "center" ? "middle" : align;
     }
     if (on(child(properties, "noWrap"))) result["white-space"] = "nowrap";
-    const direction=val(child(properties,"textDirection"));
-    if(direction){if(!["lrTb","tbRl","btLr"].includes(direction))unsupported(properties!);result["--word-cell-text-direction"]=direction;}
+    const direction = val(child(properties, "textDirection"));
+    if (direction) {
+      if (!["lrTb", "tbRl", "btLr"].includes(direction)) unsupported(properties!);
+      result["--word-cell-text-direction"] = direction;
+    }
     Object.assign(result, this.margins(child(properties, "tcMar")));
     return result;
   }
   margins(properties: XmlNode | undefined): Css {
     const result: Css = {};
     for (const item of elements(properties)) {
-      const name =
-        item.name === "start"
-          ? "left"
-          : item.name === "end"
-            ? "right"
-            : item.name;
+      const name = item.name === "start" ? "left" : item.name === "end" ? "right" : item.name;
       if (!["top", "bottom", "left", "right"].includes(name)) unsupported(item);
       Object.assign(result, this.width(item, "padding-" + name));
     }
@@ -1055,24 +1117,25 @@ export class DocxStyles {
     const type = attr(node, "type") ?? "dxa";
     const raw = attr(node, "w");
     if (type === "auto" || type === "nil") return {};
-    if (type === "pct"){
-      const literal=raw&&/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))%$/.exec(raw),value=literal?Number(literal[1]):number(raw,node)/50;
-      if(value<0&&property!=='margin-left')unsupported(node,'This negative preferred width remains native.');
+    if (type === "pct") {
+      const literal = raw && /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))%$/.exec(raw),
+        value = literal ? Number(literal[1]) : number(raw, node) / 50;
+      if (value < 0 && property !== "margin-left")
+        unsupported(node, "This negative preferred width remains native.");
       return { [property]: String(value) + "%" };
     }
-    if (type !== "dxa")
-      return unsupported(node, "An OOXML width unit is not supported.");
-    const value=measurePoints(raw,node);if(value<0&&property!=='margin-left')unsupported(node,'This negative preferred width remains native.');return { [property]: pt(value) };
+    if (type !== "dxa") return unsupported(node, "An OOXML width unit is not supported.");
+    const value = measurePoints(raw, node);
+    if (value < 0 && property !== "margin-left")
+      unsupported(node, "This negative preferred width remains native.");
+    return { [property]: pt(value) };
   }
   resolve(id: string, visiting: Set<string> = new Set<string>()): StyleValues {
     const cached = this.resolved.get(id);
     if (cached) return cached;
     const source = this.definitions.get(id);
     if (!source)
-      throw new DocumentError(
-        "InvalidDocument",
-        "A referenced native style is missing.",
-      );
+      throw new DocumentError("InvalidDocument", "A referenced native style is missing.");
     if (visiting.has(id)) return fail(source, "Style inheritance is cyclic.");
     visiting.add(id);
     const parentId = val(child(source, "basedOn"));
@@ -1087,7 +1150,10 @@ export class DocxStyles {
     this.cellSpacing(child(source, "trPr"));
     const result: StyleValues = {
       p: { ...parent.p, ...this.paragraph(pPr) },
-      r: { ...parent.r, ...this.run(child(source, "rPr"), parent.r, attr(source,"type")!=="table") },
+      r: {
+        ...parent.r,
+        ...this.run(child(source, "rPr"), parent.r, attr(source, "type") !== "table"),
+      },
       table: { ...parent.table, ...this.table(tableProperties) },
       cell: {
         ...parent.cell,
@@ -1122,10 +1188,7 @@ export class DocxStyles {
     while (current) {
       const definition = this.definitions.get(current);
       if (!definition)
-        throw new DocumentError(
-          "InvalidDocument",
-          "A referenced native style is missing.",
-        );
+        throw new DocumentError("InvalidDocument", "A referenced native style is missing.");
       if (seen.has(current)) fail(definition, "Style inheritance is cyclic.");
       seen.add(current);
       chain.push(definition);
@@ -1175,8 +1238,7 @@ export class DocxStyles {
     const abstract = new Map<string, XmlNode>();
     for (const definition of elements(root, "abstractNum")) {
       const id = attr(definition, "abstractNumId");
-      if (!id || abstract.has(id))
-        fail(definition, "An abstract numbering identity is invalid.");
+      if (!id || abstract.has(id)) fail(definition, "An abstract numbering identity is invalid.");
       check(definition, [
         "nsid",
         "multiLevelType",
@@ -1224,10 +1286,7 @@ export class DocxStyles {
           (item) => number(attr(item, "ilvl"), item) === level,
         );
         if (child(override, "lvl"))
-          unsupported(
-            override!,
-            "Full numbering-level overrides are not supported.",
-          );
+          unsupported(override!, "Full numbering-level overrides are not supported.");
         const format = val(child(source, "numFmt")) ?? "decimal";
         if (
           ![
@@ -1255,15 +1314,13 @@ export class DocxStyles {
         levels.push({
           level,
           start: number(
-            val(child(override, "startOverride")) ??
-              val(child(source, "start")),
+            val(child(override, "startOverride")) ?? val(child(source, "start")),
             source,
             1,
           ),
           format: format as WordNumberLevel["format"],
           text: val(child(source, "lvlText")) ?? "%" + (level + 1) + ".",
-          suffix: (val(child(source, "suff")) ??
-            "tab") as WordNumberLevel["suffix"],
+          suffix: (val(child(source, "suff")) ?? "tab") as WordNumberLevel["suffix"],
           cssClass,
           ...(restart ? { restart: number(val(restart), restart) } : {}),
         });

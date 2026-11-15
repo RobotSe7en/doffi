@@ -1,19 +1,284 @@
-import { expect, test } from 'vitest';
-import { createDocumentSession, createWordDocument, openDocument } from '@doffi/core';
-import type { DocumentOperation } from '@doffi/core';
-test('overlapping run formats retain first appearance, partition authors and reject only the newly selected portion',()=>{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'overlap'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'overlap',baseRevision:session.snapshot().manifest.revision,operations}));
- apply([{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'ABCDEF'},{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'甲'},{op:'formatWordText',nodeId:'paragraph-1',from:0,to:6,expectedText:'ABCDEF',properties:{'font-weight':'700'}},{op:'setWordParagraph',nodeId:'paragraph-1',properties:{'text-align':'right'}}]);
- apply([{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'乙'},{op:'formatWordText',nodeId:'paragraph-1',from:1,to:4,expectedText:'BCD',properties:{'font-style':'italic'}},{op:'setWordParagraph',nodeId:'paragraph-1',properties:{'margin-top':'10pt'}}]);
- const revisions=session.snapshot().metadata.word!.revisions;expect(revisions.filter(item=>item.property==='run').map(item=>[session.getNode(item.nodeId)!.text,item.author]).sort()).toEqual([['A','甲'],['BCD','乙'],['EF','甲']]);expect(revisions.find(item=>item.property==='paragraph')!.author).toBe('乙');
- const middle=revisions.find(item=>item.property==='run'&&item.author==='乙')!;apply([{op:'reviewWordRevision',nodeId:middle.nodeId,revisionId:middle.revisionId!,decision:'reject'}]);expect(session.getNode(middle.nodeId)!.attributes.style).toBeUndefined();expect(session.snapshot().metadata.word!.revisions.filter(item=>item.property==='run')).toHaveLength(2);session.undo();expect(session.snapshot().metadata.word!.revisions.filter(item=>item.property==='run')).toHaveLength(3);
- apply([{op:'reviewWordRevisions',nodeId:'document-root',decision:'reject'}]);expect(session.getNode('paragraph-1')!.text).toBe('ABCDEF');expect(session.snapshot().html).not.toContain('font-weight:700');expect(session.getNode('paragraph-1')!.attributes.style).toBeUndefined();
+import { expect, test } from "vitest";
+import { createDocumentSession, createWordDocument, openDocument } from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+test("overlapping run formats retain first appearance, partition authors and reject only the newly selected portion", () => {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "overlap" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "overlap",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  apply([
+    { op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "ABCDEF" },
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    {
+      op: "formatWordText",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 6,
+      expectedText: "ABCDEF",
+      properties: { "font-weight": "700" },
+    },
+    { op: "setWordParagraph", nodeId: "paragraph-1", properties: { "text-align": "right" } },
+  ]);
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "乙" },
+    {
+      op: "formatWordText",
+      nodeId: "paragraph-1",
+      from: 1,
+      to: 4,
+      expectedText: "BCD",
+      properties: { "font-style": "italic" },
+    },
+    { op: "setWordParagraph", nodeId: "paragraph-1", properties: { "margin-top": "10pt" } },
+  ]);
+  const revisions = session.snapshot().metadata.word!.revisions;
+  expect(
+    revisions
+      .filter((item) => item.property === "run")
+      .map((item) => [session.getNode(item.nodeId)!.text, item.author])
+      .sort(),
+  ).toEqual([
+    ["A", "甲"],
+    ["BCD", "乙"],
+    ["EF", "甲"],
+  ]);
+  expect(revisions.find((item) => item.property === "paragraph")!.author).toBe("乙");
+  const middle = revisions.find((item) => item.property === "run" && item.author === "乙")!;
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: middle.nodeId,
+      revisionId: middle.revisionId!,
+      decision: "reject",
+    },
+  ]);
+  expect(session.getNode(middle.nodeId)!.attributes.style).toBeUndefined();
+  expect(
+    session.snapshot().metadata.word!.revisions.filter((item) => item.property === "run"),
+  ).toHaveLength(2);
+  session.undo();
+  expect(
+    session.snapshot().metadata.word!.revisions.filter((item) => item.property === "run"),
+  ).toHaveLength(3);
+  apply([{ op: "reviewWordRevisions", nodeId: "document-root", decision: "reject" }]);
+  expect(session.getNode("paragraph-1")!.text).toBe("ABCDEF");
+  expect(session.snapshot().html).not.toContain("font-weight:700");
+  expect(session.getNode("paragraph-1")!.attributes.style).toBeUndefined();
 });
-function setup() { const session = createDocumentSession(openDocument(createWordDocument({ documentId: 'tracked' }), { kind: 'document' })); const apply = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'tracked', baseRevision: session.snapshot().manifest.revision, operations })); apply([{ op: 'replaceText', nodeId: 'paragraph-1', from: 0, to: 0, expectedText: '', text: '前漢\u{e0100}后' }]); return { session, apply }; }
-test('tracked text retains deleted styled source and accepts or rejects a replacement as one undoable group', () => { const { session, apply } = setup(); apply([{ op: 'setWordReview', nodeId: 'document-root', trackChanges: true, author: '甲' }, { op: 'replaceText', nodeId: 'paragraph-1', from: 1, to: 4, expectedText: '漢\u{e0100}', text: '新😀' }]); expect(session.getNode('paragraph-1')!.text).toBe('前漢\u{e0100}新😀后'); const revisions = session.snapshot().metadata.word!.revisions; expect(revisions.map(item => item.kind)).toEqual(['delete', 'insert']); const revision = revisions[0]!; apply([{ op: 'reviewWordRevision', nodeId: revision.nodeId, revisionId: revision.revisionId!, decision: 'reject' }]); expect(session.getNode('paragraph-1')!.text).toBe('前漢\u{e0100}后'); expect(session.snapshot().metadata.word!.revisions).toEqual([]); session.undo(); expect(session.snapshot().metadata.word!.revisions).toHaveLength(2); apply([{ op: 'reviewWordRevision', nodeId: revision.nodeId, revisionId: revision.revisionId!, decision: 'accept' }]); expect(session.getNode('paragraph-1')!.text).toBe('前新😀后'); expect(session.snapshot().metadata.word!.revisions).toEqual([]); });
-test('editing a pending insertion folds into that insertion and invalid tracked ranges leave no partial state', () => { const { session, apply } = setup(); apply([{ op: 'trackWordText', nodeId: 'paragraph-1', from: 0, to: 0, expectedText: '', text: 'AB', author: '甲' }]); apply([{ op: 'trackWordText', nodeId: 'paragraph-1', from: 1, to: 2, expectedText: 'B', text: 'CD', author: '甲' }]); expect(session.snapshot().metadata.word!.revisions).toHaveLength(1); expect(session.getNode('paragraph-1')!.text).toBe('ACD前漢\u{e0100}后'); const before = session.snapshot(); expect(() => apply([{ op: 'trackWordText', nodeId: 'paragraph-1', from: 5, to: 6, expectedText: '漢', text: 'X' }])).toThrow(); expect(session.snapshot()).toEqual(before); });
-test('copied stories receive independent revision groups and reviewing a copy keeps the original pending', () => { const { session, apply } = setup(); apply([{ op: 'insertWordDrawing', nodeId: 'paragraph-1', offset: 0, geometry: { x: 0, y: 0, width: 100, height: 60, rotation: 0, flipH: false, flipV: false }, layout: { mode: 'inline' }, object: { kind: 'textBox', text: 'AB' } }]); const original = session.snapshot().metadata.word!.drawings![0]!, story = 'textStoryId' in original ? original.textStoryId! : ''; const root = session.snapshot().metadata.word!.stories.find(item => item.storyId === story)!.rootNodeId, paragraph = session.getNode(root)!.childNodeIds[0]!; apply([{ op: 'trackWordText', nodeId: paragraph, from: 0, to: 1, expectedText: 'A', text: 'C', author: '甲' }]); const originals = new Set(session.snapshot().metadata.word!.revisions.map(item => item.revisionId)); apply([{ op: 'copyWordDrawing', nodeId: original.nodeId }]); const copy = session.snapshot().metadata.word!.revisions.find(item => !originals.has(item.revisionId))!; apply([{ op: 'reviewWordRevision', nodeId: copy.nodeId, revisionId: copy.revisionId!, decision: 'accept' }]); expect(session.snapshot().metadata.word!.revisions).toHaveLength(2); expect(session.getNode(paragraph)!.text).toBe('ACB'); });
+function setup() {
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "tracked" }), { kind: "document" }),
+  );
+  const apply = (operations: DocumentOperation[]) =>
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "tracked",
+        baseRevision: session.snapshot().manifest.revision,
+        operations,
+      }),
+    );
+  apply([
+    {
+      op: "replaceText",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 0,
+      expectedText: "",
+      text: "前漢\u{e0100}后",
+    },
+  ]);
+  return { session, apply };
+}
+test("tracked text retains deleted styled source and accepts or rejects a replacement as one undoable group", () => {
+  const { session, apply } = setup();
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    {
+      op: "replaceText",
+      nodeId: "paragraph-1",
+      from: 1,
+      to: 4,
+      expectedText: "漢\u{e0100}",
+      text: "新😀",
+    },
+  ]);
+  expect(session.getNode("paragraph-1")!.text).toBe("前漢\u{e0100}新😀后");
+  const revisions = session.snapshot().metadata.word!.revisions;
+  expect(revisions.map((item) => item.kind)).toEqual(["delete", "insert"]);
+  const revision = revisions[0]!;
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: revision.nodeId,
+      revisionId: revision.revisionId!,
+      decision: "reject",
+    },
+  ]);
+  expect(session.getNode("paragraph-1")!.text).toBe("前漢\u{e0100}后");
+  expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+  session.undo();
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(2);
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: revision.nodeId,
+      revisionId: revision.revisionId!,
+      decision: "accept",
+    },
+  ]);
+  expect(session.getNode("paragraph-1")!.text).toBe("前新😀后");
+  expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+});
+test("editing a pending insertion folds into that insertion and invalid tracked ranges leave no partial state", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "trackWordText",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 0,
+      expectedText: "",
+      text: "AB",
+      author: "甲",
+    },
+  ]);
+  apply([
+    {
+      op: "trackWordText",
+      nodeId: "paragraph-1",
+      from: 1,
+      to: 2,
+      expectedText: "B",
+      text: "CD",
+      author: "甲",
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+  expect(session.getNode("paragraph-1")!.text).toBe("ACD前漢\u{e0100}后");
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      { op: "trackWordText", nodeId: "paragraph-1", from: 5, to: 6, expectedText: "漢", text: "X" },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+});
+test("copied stories receive independent revision groups and reviewing a copy keeps the original pending", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "insertWordDrawing",
+      nodeId: "paragraph-1",
+      offset: 0,
+      geometry: { x: 0, y: 0, width: 100, height: 60, rotation: 0, flipH: false, flipV: false },
+      layout: { mode: "inline" },
+      object: { kind: "textBox", text: "AB" },
+    },
+  ]);
+  const original = session.snapshot().metadata.word!.drawings![0]!,
+    story = "textStoryId" in original ? original.textStoryId! : "";
+  const root = session
+      .snapshot()
+      .metadata.word!.stories.find((item) => item.storyId === story)!.rootNodeId,
+    paragraph = session.getNode(root)!.childNodeIds[0]!;
+  apply([
+    {
+      op: "trackWordText",
+      nodeId: paragraph,
+      from: 0,
+      to: 1,
+      expectedText: "A",
+      text: "C",
+      author: "甲",
+    },
+  ]);
+  const originals = new Set(
+    session.snapshot().metadata.word!.revisions.map((item) => item.revisionId),
+  );
+  apply([{ op: "copyWordDrawing", nodeId: original.nodeId }]);
+  const copy = session
+    .snapshot()
+    .metadata.word!.revisions.find((item) => !originals.has(item.revisionId))!;
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: copy.nodeId,
+      revisionId: copy.revisionId!,
+      decision: "accept",
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(2);
+  expect(session.getNode(paragraph)!.text).toBe("ACB");
+});
 
-test('tracked paragraph splits keep unchanged text and rejecting the mark merges source with one undo step',()=>{const{session,apply}=setup();apply([{op:'reconcileWordTracked',nodeId:'section-root-1',html:'<p data-node-id="paragraph-1" data-word-style="Normal" class="word-normal">前</p><p>漢\u{e0100}后</p>',textEdits:[{nodeId:'paragraph-1',from:1,to:5,expectedText:'漢\u{e0100}后',text:''}],author:'甲'}]);const revision=session.snapshot().metadata.word!.revisions[0]!;expect(revision.kind).toBe('paragraphInsert');const ids=session.getNode('section-root-1')!.childNodeIds;expect(ids).toHaveLength(2);expect(session.getNode(ids[1]!)!.attributes['data-word-style']).toBe('Normal');apply([{op:'reviewWordRevision',nodeId:revision.nodeId,revisionId:revision.revisionId!,decision:'reject'}]);expect(session.getNode('section-root-1')!.childNodeIds).toHaveLength(1);expect(session.getNode('section-root-1')!.text).toBe('前漢\u{e0100}后');session.undo();expect(session.snapshot().metadata.word!.revisions[0]!.kind).toBe('paragraphInsert');});
+test("tracked paragraph splits keep unchanged text and rejecting the mark merges source with one undo step", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "reconcileWordTracked",
+      nodeId: "section-root-1",
+      html: '<p data-node-id="paragraph-1" data-word-style="Normal" class="word-normal">前</p><p>漢\u{e0100}后</p>',
+      textEdits: [
+        { nodeId: "paragraph-1", from: 1, to: 5, expectedText: "漢\u{e0100}后", text: "" },
+      ],
+      author: "甲",
+    },
+  ]);
+  const revision = session.snapshot().metadata.word!.revisions[0]!;
+  expect(revision.kind).toBe("paragraphInsert");
+  const ids = session.getNode("section-root-1")!.childNodeIds;
+  expect(ids).toHaveLength(2);
+  expect(session.getNode(ids[1]!)!.attributes["data-word-style"]).toBe("Normal");
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: revision.nodeId,
+      revisionId: revision.revisionId!,
+      decision: "reject",
+    },
+  ]);
+  expect(session.getNode("section-root-1")!.childNodeIds).toHaveLength(1);
+  expect(session.getNode("section-root-1")!.text).toBe("前漢\u{e0100}后");
+  session.undo();
+  expect(session.snapshot().metadata.word!.revisions[0]!.kind).toBe("paragraphInsert");
+});
 
-test('joining a pending paragraph break by its author cancels only the break and retains complete text',()=>{const{session,apply}=setup();apply([{op:'reconcileWordTracked',nodeId:'section-root-1',html:'<p data-node-id="paragraph-1" data-word-style="Normal" class="word-normal">前</p><p>漢\u{e0100}后</p>',textEdits:[{nodeId:'paragraph-1',from:1,to:5,expectedText:'漢\u{e0100}后',text:''}],author:'甲'}]);apply([{op:'reconcileWordTracked',nodeId:'section-root-1',html:'<p data-node-id="paragraph-1" data-word-style="Normal" class="word-normal">前漢\u{e0100}后</p>',textEdits:[{nodeId:'paragraph-1',from:1,to:1,expectedText:'',text:'漢\u{e0100}后'}],author:'甲'}]);expect(session.getNode('section-root-1')!.childNodeIds).toHaveLength(1);expect(session.getNode('section-root-1')!.text).toBe('前漢\u{e0100}后');expect(session.snapshot().metadata.word!.revisions).toEqual([]);session.undo();expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);});
+test("joining a pending paragraph break by its author cancels only the break and retains complete text", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "reconcileWordTracked",
+      nodeId: "section-root-1",
+      html: '<p data-node-id="paragraph-1" data-word-style="Normal" class="word-normal">前</p><p>漢\u{e0100}后</p>',
+      textEdits: [
+        { nodeId: "paragraph-1", from: 1, to: 5, expectedText: "漢\u{e0100}后", text: "" },
+      ],
+      author: "甲",
+    },
+  ]);
+  apply([
+    {
+      op: "reconcileWordTracked",
+      nodeId: "section-root-1",
+      html: '<p data-node-id="paragraph-1" data-word-style="Normal" class="word-normal">前漢\u{e0100}后</p>',
+      textEdits: [
+        { nodeId: "paragraph-1", from: 1, to: 1, expectedText: "", text: "漢\u{e0100}后" },
+      ],
+      author: "甲",
+    },
+  ]);
+  expect(session.getNode("section-root-1")!.childNodeIds).toHaveLength(1);
+  expect(session.getNode("section-root-1")!.text).toBe("前漢\u{e0100}后");
+  expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+  session.undo();
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+});

@@ -1,21 +1,56 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { collectDocumentAssets, createAssetDescriptor, DocumentError, openDocument, parseContract, createDocumentSession } from "@doffi/core";
-import type { AssetDescriptor, AssetProvider, DocumentErrorCode, DocumentPackage } from "@doffi/core";
+import {
+  collectDocumentAssets,
+  createAssetDescriptor,
+  DocumentError,
+  openDocument,
+  parseContract,
+  createDocumentSession,
+} from "@doffi/core";
+import type {
+  AssetDescriptor,
+  AssetProvider,
+  DocumentErrorCode,
+  DocumentPackage,
+} from "@doffi/core";
 
 const encoder = new TextEncoder();
 function files(): Map<string, Uint8Array> {
-  return new Map(["manifest.json", "content.html", "styles.css", "metadata.json", "annotations.json",
-    "assets/sample.png", "assets/sample.jpg", "assets/sample.webp"].map((path) =>
-    [path, new Uint8Array(readFileSync(new URL("../../../examples/fidelity/" + path, import.meta.url)))]));
+  return new Map(
+    [
+      "manifest.json",
+      "content.html",
+      "styles.css",
+      "metadata.json",
+      "annotations.json",
+      "assets/sample.png",
+      "assets/sample.jpg",
+      "assets/sample.webp",
+    ].map((path) => [
+      path,
+      new Uint8Array(readFileSync(new URL("../../../examples/fidelity/" + path, import.meta.url))),
+    ]),
+  );
 }
 function manifest(input: DocumentPackage) {
-  return parseContract("document-manifest", JSON.parse(new TextDecoder().decode(input.get("manifest.json"))));
+  return parseContract(
+    "document-manifest",
+    JSON.parse(new TextDecoder().decode(input.get("manifest.json"))),
+  );
 }
 function changeAsset(input: Map<string, Uint8Array>, changed: Partial<AssetDescriptor>): void {
   const source = manifest(input);
-  input.set("manifest.json", encoder.encode(JSON.stringify({ ...source, assets: [{ ...source.assets[0], ...changed }, ...source.assets.slice(1)] })));
+  input.set(
+    "manifest.json",
+    encoder.encode(
+      JSON.stringify({
+        ...source,
+        assets: [{ ...source.assets[0], ...changed }, ...source.assets.slice(1)],
+      }),
+    ),
+  );
 }
 function error(code: DocumentErrorCode) {
   return (value: unknown) => {
@@ -63,20 +98,31 @@ describe("resource integrity and preservation", () => {
     const image = input.get("assets/sample.png")!;
     image[30] = image[30]! ^ 1;
     expect(() => openDocument(input)).toThrow(expect.toSatisfy(error("InvalidDocument")));
-    const unused = createAssetDescriptor("assets/unused.bin", "application/octet-stream", new Uint8Array([1]));
+    const unused = createAssetDescriptor(
+      "assets/unused.bin",
+      "application/octet-stream",
+      new Uint8Array([1]),
+    );
     const unreferenced = files();
     const source = manifest(unreferenced);
-    unreferenced.set("manifest.json", encoder.encode(JSON.stringify({ ...source, assets: [...source.assets, unused] })));
+    unreferenced.set(
+      "manifest.json",
+      encoder.encode(JSON.stringify({ ...source, assets: [...source.assets, unused] })),
+    );
     unreferenced.set(unused.path, new Uint8Array([2]));
     expect(() => openDocument(unreferenced)).toThrow(expect.toSatisfy(error("InvalidDocument")));
     unreferenced.delete(unused.path);
     expect(() => openDocument(unreferenced)).toThrow(expect.toSatisfy(error("AssetUnavailable")));
   });
 
-  test.each(["image/png", "image/jpeg", "image/webp"])("rejects truncated containers declared as %s", (mimeType) => {
-    expect(() => createAssetDescriptor("assets/truncated", mimeType, new Uint8Array([137, 80, 78, 71])))
-      .toThrow(expect.toSatisfy(error("InvalidDocument")));
-  });
+  test.each(["image/png", "image/jpeg", "image/webp"])(
+    "rejects truncated containers declared as %s",
+    (mimeType) => {
+      expect(() =>
+        createAssetDescriptor("assets/truncated", mimeType, new Uint8Array([137, 80, 78, 71])),
+      ).toThrow(expect.toSatisfy(error("InvalidDocument")));
+    },
+  );
 
   test("retains opaque attachments as data and rejects using them as images", () => {
     const input = files();
@@ -84,9 +130,14 @@ describe("resource integrity and preservation", () => {
     const asset = createAssetDescriptor("assets/opaque.svg", "image/svg+xml", bytes);
     const source = manifest(input);
     input.set(asset.path, bytes);
-    input.set("manifest.json", encoder.encode(JSON.stringify({ ...source, assets: [...source.assets, asset] })));
+    input.set(
+      "manifest.json",
+      encoder.encode(JSON.stringify({ ...source, assets: [...source.assets, asset] })),
+    );
     expect(openDocument(input).serialize().get(asset.path)).toEqual(bytes);
-    const html = new TextDecoder().decode(input.get("content.html")).replace("assets/sample.png", asset.path);
+    const html = new TextDecoder()
+      .decode(input.get("content.html"))
+      .replace("assets/sample.png", asset.path);
     input.set("content.html", encoder.encode(html));
     expect(() => openDocument(input)).toThrow(expect.toSatisfy(error("UnsupportedFeature")));
   });
@@ -99,11 +150,13 @@ describe("host-authorized resource collection", () => {
     input.delete("assets/sample.png");
     const before = new Map(input);
     const called: string[] = [];
-    const collected = await collectDocumentAssets(input, { async readAsset(asset) {
-      expect(Object.isFrozen(asset)).toBe(true);
-      called.push(asset.path);
-      return image;
-    } });
+    const collected = await collectDocumentAssets(input, {
+      async readAsset(asset) {
+        expect(Object.isFrozen(asset)).toBe(true);
+        called.push(asset.path);
+        return image;
+      },
+    });
     expect(called).toEqual(["assets/sample.png"]);
     expect(input).toEqual(before);
     expect(openDocument(collected).getNode("png")).toBeDefined();
@@ -112,49 +165,97 @@ describe("host-authorized resource collection", () => {
     expect(() => openDocument(collected)).not.toThrow();
   });
 
-  test.each([undefined, "throw", new Uint8Array([1, 2, 3])])("reports unavailable or invalid host bytes: %s", async (value) => {
-    const input = files();
-    input.delete("assets/sample.png");
-    const promise = collectDocumentAssets(input, { async readAsset() {
-      if (value === "throw") throw new Error("private host credentials");
-      return value instanceof Uint8Array ? value : undefined;
-    } });
-    await expect(promise).rejects.toSatisfy(error(value instanceof Uint8Array ? "InvalidDocument" : "AssetUnavailable"));
-    await promise.catch((value: DocumentError) => expect(JSON.stringify(value.toJSON())).not.toContain("private host credentials"));
-    expect(input.has("assets/sample.png")).toBe(false);
-  });
+  test.each([undefined, "throw", new Uint8Array([1, 2, 3])])(
+    "reports unavailable or invalid host bytes: %s",
+    async (value) => {
+      const input = files();
+      input.delete("assets/sample.png");
+      const promise = collectDocumentAssets(input, {
+        async readAsset() {
+          if (value === "throw") throw new Error("private host credentials");
+          return value instanceof Uint8Array ? value : undefined;
+        },
+      });
+      await expect(promise).rejects.toSatisfy(
+        error(value instanceof Uint8Array ? "InvalidDocument" : "AssetUnavailable"),
+      );
+      await promise.catch((value: DocumentError) =>
+        expect(JSON.stringify(value.toJSON())).not.toContain("private host credentials"),
+      );
+      expect(input.has("assets/sample.png")).toBe(false);
+    },
+  );
 
   test("checks file counts before requesting the host and byte budgets before retaining responses", async () => {
     const input = files();
     const original = input.get("assets/sample.png")!;
     input.delete("assets/sample.png");
     let calls = 0;
-    const provider: AssetProvider = { async readAsset() { calls++; return original; } };
-    await expect(collectDocumentAssets(input, provider, { limits: { maxFiles: input.size } }))
-      .rejects.toSatisfy(error("ResourceLimitExceeded"));
+    const provider: AssetProvider = {
+      async readAsset() {
+        calls++;
+        return original;
+      },
+    };
+    await expect(
+      collectDocumentAssets(input, provider, { limits: { maxFiles: input.size } }),
+    ).rejects.toSatisfy(error("ResourceLimitExceeded"));
     expect(calls).toBe(0);
     const size = [...input.values()].reduce((sum, bytes) => sum + bytes.length, 0);
-    await expect(collectDocumentAssets(input, provider, { limits: { maxPackageBytes: size } }))
-      .rejects.toSatisfy(error("ResourceLimitExceeded"));
+    await expect(
+      collectDocumentAssets(input, provider, { limits: { maxPackageBytes: size } }),
+    ).rejects.toSatisfy(error("ResourceLimitExceeded"));
     expect(calls).toBe(1);
-    await expect(collectDocumentAssets(input, { async readAsset() { return new Uint8Array(9 * 1024 * 1024); } }))
-      .rejects.toSatisfy(error("ResourceLimitExceeded"));
+    await expect(
+      collectDocumentAssets(input, {
+        async readAsset() {
+          return new Uint8Array(9 * 1024 * 1024);
+        },
+      }),
+    ).rejects.toSatisfy(error("ResourceLimitExceeded"));
   });
 
   test("keeps two providers with identical package paths isolated", async () => {
     const input = files();
     const image = input.get("assets/sample.png")!;
     input.delete("assets/sample.png");
-    const first = collectDocumentAssets(input, { async readAsset() { return image; } });
-    const second = collectDocumentAssets(input, { async readAsset() { return undefined; } });
+    const first = collectDocumentAssets(input, {
+      async readAsset() {
+        return image;
+      },
+    });
+    const second = collectDocumentAssets(input, {
+      async readAsset() {
+        return undefined;
+      },
+    });
     await expect(second).rejects.toSatisfy(error("AssetUnavailable"));
     expect(openDocument(await first).getNode("png")).toBeDefined();
   });
 });
 
-
-test("content models, candidates and sessions copy only declared assets within the requested byte budget",()=>{
- const document=openDocument(files(),{kind:'document'}),session=createDocumentSession(document),candidate=session.prepare({protocolVersion:1,documentId:session.snapshot().manifest.documentId,baseRevision:session.snapshot().manifest.revision,operations:[{op:'setStyle',nodeId:'paragraph',property:'color',value:'#123456'}]});
- for(const model of [document,session,candidate.model]){const bytes=model.getAsset!('assets/sample.png')!,original=bytes[0];bytes[0]=0;expect(model.getAsset!('assets/sample.png')![0]).toBe(original);expect(model.getAsset!('content.html')).toBeUndefined();expect(model.getAsset!('missing.png')).toBeUndefined();expect(()=>model.getAsset!('assets/sample.png',1)).toThrowError(expect.objectContaining({code:'ResourceLimitExceeded'}));expect(()=>model.getAsset!('assets/sample.png',0)).toThrowError(expect.objectContaining({code:'InvalidDocument'}));}
- session.discard(candidate);
+test("content models, candidates and sessions copy only declared assets within the requested byte budget", () => {
+  const document = openDocument(files(), { kind: "document" }),
+    session = createDocumentSession(document),
+    candidate = session.prepare({
+      protocolVersion: 1,
+      documentId: session.snapshot().manifest.documentId,
+      baseRevision: session.snapshot().manifest.revision,
+      operations: [{ op: "setStyle", nodeId: "paragraph", property: "color", value: "#123456" }],
+    });
+  for (const model of [document, session, candidate.model]) {
+    const bytes = model.getAsset!("assets/sample.png")!,
+      original = bytes[0];
+    bytes[0] = 0;
+    expect(model.getAsset!("assets/sample.png")![0]).toBe(original);
+    expect(model.getAsset!("content.html")).toBeUndefined();
+    expect(model.getAsset!("missing.png")).toBeUndefined();
+    expect(() => model.getAsset!("assets/sample.png", 1)).toThrowError(
+      expect.objectContaining({ code: "ResourceLimitExceeded" }),
+    );
+    expect(() => model.getAsset!("assets/sample.png", 0)).toThrowError(
+      expect.objectContaining({ code: "InvalidDocument" }),
+    );
+  }
+  session.discard(candidate);
 });

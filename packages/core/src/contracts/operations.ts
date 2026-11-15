@@ -1,18 +1,26 @@
-import {ReconciledTextEditSchema}from'./text-edit.js';
+import { ReconciledTextEditSchema } from "./text-edit.js";
 import { z } from "zod";
 import { AnchorSchema, AnnotationSchema, AnnotationStatusSchema } from "./annotations.js";
-import { IdentifierSchema, PackagePathSchema, PROTOCOL_VERSION, RevisionSchema } from "./primitives.js";
+import {
+  IdentifierSchema,
+  PackagePathSchema,
+  PROTOCOL_VERSION,
+  RevisionSchema,
+} from "./primitives.js";
 import { PresentationOperationSchema } from "./presentation-operations.js";
 import { WorkbookOperationSchema } from "./workbook-operations.js";
 import { WordOperationSchema } from "./word-operations.js";
 export { WordOperationSchema } from "./word-operations.js";
 export type { WordOperation } from "./word-operations.js";
 export * from "./workbook-operations.js";
-export { PresentationOperationSchema, PresentationObjectInputSchema } from "./presentation-operations.js";
+export {
+  PresentationOperationSchema,
+  PresentationObjectInputSchema,
+} from "./presentation-operations.js";
 export type { PresentationOperation, PresentationObjectInput } from "./presentation-operations.js";
 
-export {ReconciledTextEditSchema}from'./text-edit.js';
-export type{ReconciledTextEdit}from'./text-edit.js';
+export { ReconciledTextEditSchema } from "./text-edit.js";
+export type { ReconciledTextEdit } from "./text-edit.js";
 
 export const DocumentContentOperationSchema = z.discriminatedUnion("op", [
   ...WordOperationSchema.options,

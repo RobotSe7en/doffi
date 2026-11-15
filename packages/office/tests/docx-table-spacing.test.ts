@@ -1,16 +1,140 @@
-import{expect,test}from'vitest';
-import{strFromU8,unzipSync}from'fflate';
-import{createDocumentSession,openDocument,SourceStyleResolver,DEFAULT_DOCUMENT_READ_LIMITS}from'@doffi/core';
-import type{ContentDocumentModel,DocumentOperation,SourceStyleNode}from'@doffi/core';
-import{exportDocx,importDocx}from'@doffi/office';
-import{tableSpacingFixture}from'./table-spacing-fixture.js';
-function spacing(model:ContentDocumentModel,id:string){const css=new SourceStyleResolver(model.snapshot().styles.map(sheet=>sheet.css),DEFAULT_DOCUMENT_READ_LIMITS),project=(id:string):SourceStyleNode=>{const node=model.getNode(id)!;return{tag:node.tagName,attrs:node.attributes,parent:node.parentNodeId?project(node.parentNodeId):undefined};};return css.get(project(id))['--word-table-cell-spacing'];}
-for(const[value,type,expected]of [['120','dxa','6pt'],['1.2pt','dxa','1.2pt'],['100','pct','0pt'],['240','auto','0pt'],['0','nil','0pt']]as const)test('native table spacing units preserve their current effect and original declaration through two reopens: '+value+' '+type,()=>{
- let bytes=tableSpacingFixture(value,type);for(let pass=0;pass<3;pass++){const model=openDocument(importDocx(bytes,{documentId:'table-spacing',unsupportedContent:'reject'}),{kind:'document'}),tables=model.snapshot().metadata.word!.tables,outer=tables.find(info=>model.getNode(info.nodeId)!.text==='ABLRCD')!,inner=tables.find(info=>model.getNode(info.nodeId)!.text==='LR')!;expect(spacing(model,outer.nodeId)).toBe(expected);expect(spacing(model,inner.nodeId)).toBeUndefined();bytes=exportDocx(model).bytes;expect(strFromU8(unzipSync(bytes)['word/document.xml']!)).toContain('w:type="'+type+'" w:w="'+value+'"');}
+import { expect, test } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
+import {
+  createDocumentSession,
+  openDocument,
+  SourceStyleResolver,
+  DEFAULT_DOCUMENT_READ_LIMITS,
+} from "@doffi/core";
+import type { ContentDocumentModel, DocumentOperation, SourceStyleNode } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+import { tableSpacingFixture } from "./table-spacing-fixture.js";
+function spacing(model: ContentDocumentModel, id: string) {
+  const css = new SourceStyleResolver(
+      model.snapshot().styles.map((sheet) => sheet.css),
+      DEFAULT_DOCUMENT_READ_LIMITS,
+    ),
+    project = (id: string): SourceStyleNode => {
+      const node = model.getNode(id)!;
+      return {
+        tag: node.tagName,
+        attrs: node.attributes,
+        parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
+      };
+    };
+  return css.get(project(id))["--word-table-cell-spacing"];
+}
+for (const [value, type, expected] of [
+  ["120", "dxa", "6pt"],
+  ["1.2pt", "dxa", "1.2pt"],
+  ["100", "pct", "0pt"],
+  ["240", "auto", "0pt"],
+  ["0", "nil", "0pt"],
+] as const)
+  test(
+    "native table spacing units preserve their current effect and original declaration through two reopens: " +
+      value +
+      " " +
+      type,
+    () => {
+      let bytes = tableSpacingFixture(value, type);
+      for (let pass = 0; pass < 3; pass++) {
+        const model = openDocument(
+            importDocx(bytes, { documentId: "table-spacing", unsupportedContent: "reject" }),
+            { kind: "document" },
+          ),
+          tables = model.snapshot().metadata.word!.tables,
+          outer = tables.find((info) => model.getNode(info.nodeId)!.text === "ABLRCD")!,
+          inner = tables.find((info) => model.getNode(info.nodeId)!.text === "LR")!;
+        expect(spacing(model, outer.nodeId)).toBe(expected);
+        expect(spacing(model, inner.nodeId)).toBeUndefined();
+        bytes = exportDocx(model).bytes;
+        expect(strFromU8(unzipSync(bytes)["word/document.xml"]!)).toContain(
+          'w:type="' + type + '" w:w="' + value + '"',
+        );
+      }
+    },
+  );
+test("changing only the spacing semantic updates native output and supports tracked reject and undo", () => {
+  const session = createDocumentSession(
+      openDocument(
+        importDocx(tableSpacingFixture(), {
+          documentId: "spacing-edit",
+          unsupportedContent: "reject",
+        }),
+        { kind: "document" },
+      ),
+    ),
+    word = session.snapshot().metadata.word!,
+    table = word.tables.find((info) => session.getNode(info.nodeId)!.text === "ABLRCD")!,
+    root = session.getNode(word.stories[0]!.rootNodeId)!.parentNodeId!,
+    before = session.snapshot(),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "spacing-edit",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  apply([
+    { op: "setWordReview", nodeId: root, trackChanges: true, author: "A" },
+    {
+      op: "formatWordTable",
+      nodeId: table.nodeId,
+      properties: { "--word-table-cell-spacing": "4pt" },
+    },
+  ]);
+  expect(spacing(session, table.nodeId)).toBe("4pt");
+  const native = createDocumentSession(
+      openDocument(
+        importDocx(exportDocx(session).bytes, {
+          documentId: "spacing-native",
+          unsupportedContent: "reject",
+        }),
+        { kind: "document" },
+      ),
+    ),
+    current = native
+      .snapshot()
+      .metadata.word!.tables.find((info) => native.getNode(info.nodeId)!.text === "ABLRCD")!;
+  expect(spacing(native, current.nodeId)).toBe("4pt");
+  native.commit(
+    native.prepare({
+      protocolVersion: 1,
+      documentId: "spacing-native",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevisions",
+          nodeId: native.getNode(native.snapshot().metadata.word!.stories[0]!.rootNodeId)!
+            .parentNodeId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  expect(spacing(native, current.nodeId)).toBe("6pt");
+  openDocument(
+    importDocx(exportDocx(native).bytes, {
+      documentId: "spacing-reviewed",
+      unsupportedContent: "reject",
+    }),
+    { kind: "document" },
+  );
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
 });
-test('changing only the spacing semantic updates native output and supports tracked reject and undo',()=>{
- const session=createDocumentSession(openDocument(importDocx(tableSpacingFixture(),{documentId:'spacing-edit',unsupportedContent:'reject'}),{kind:'document'})),word=session.snapshot().metadata.word!,table=word.tables.find(info=>session.getNode(info.nodeId)!.text==='ABLRCD')!,root=session.getNode(word.stories[0]!.rootNodeId)!.parentNodeId!,before=session.snapshot(),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'spacing-edit',baseRevision:session.snapshot().manifest.revision,operations}));apply([{op:'setWordReview',nodeId:root,trackChanges:true,author:'A'},{op:'formatWordTable',nodeId:table.nodeId,properties:{'--word-table-cell-spacing':'4pt'}}]);expect(spacing(session,table.nodeId)).toBe('4pt');const native=createDocumentSession(openDocument(importDocx(exportDocx(session).bytes,{documentId:'spacing-native',unsupportedContent:'reject'}),{kind:'document'})),current=native.snapshot().metadata.word!.tables.find(info=>native.getNode(info.nodeId)!.text==='ABLRCD')!;expect(spacing(native,current.nodeId)).toBe('4pt');native.commit(native.prepare({protocolVersion:1,documentId:'spacing-native',baseRevision:0,operations:[{op:'reviewWordRevisions',nodeId:native.getNode(native.snapshot().metadata.word!.stories[0]!.rootNodeId)!.parentNodeId!,decision:'reject'}]}));expect(spacing(native,current.nodeId)).toBe('6pt');openDocument(importDocx(exportDocx(native).bytes,{documentId:'spacing-reviewed',unsupportedContent:'reject'}),{kind:'document'});session.undo();expect(session.snapshot().html).toBe(before.html);expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
-});
-test('invalid table spacing units and negative actual spacing do not enter compatibility recovery',()=>{
- for(const[value,type]of [['-1','dxa'],['50%','dxa'],['100','bad'],['garbage','auto']])expect(()=>importDocx(tableSpacingFixture(value,type),{documentId:'bad-spacing'})).toThrow();
+test("invalid table spacing units and negative actual spacing do not enter compatibility recovery", () => {
+  for (const [value, type] of [
+    ["-1", "dxa"],
+    ["50%", "dxa"],
+    ["100", "bad"],
+    ["garbage", "auto"],
+  ])
+    expect(() =>
+      importDocx(tableSpacingFixture(value, type), { documentId: "bad-spacing" }),
+    ).toThrow();
 });

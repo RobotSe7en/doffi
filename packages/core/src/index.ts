@@ -1,18 +1,35 @@
-export * from './contracts/word-conditional.js';
-export {wordTableRegions,wordTableRowRegions,wordTableRowCellProperties,wordTableCellProperties,resolveWordTableStyle,resolveWordStyleRun} from './word-style-context.js';
-export type { WordTableEmptyParagraph } from './contracts/word-table-continuation.js';
-export{wordScriptRole}from'./word-script.js';
-export type{WordScriptRole}from'./word-script.js';
-export { FORMAT_VERSION, PROTOCOL_VERSION, DocumentKindSchema, PackagePathSchema, RectangleSchema } from "./contracts/primitives.js";
+export * from "./contracts/word-conditional.js";
+export {
+  wordTableRegions,
+  wordTableRowRegions,
+  wordTableRowCellProperties,
+  wordTableCellProperties,
+  resolveWordTableStyle,
+  resolveWordStyleRun,
+} from "./word-style-context.js";
+export type { WordTableEmptyParagraph } from "./contracts/word-table-continuation.js";
+export { wordScriptRole } from "./word-script.js";
+export type { WordScriptRole } from "./word-script.js";
+export {
+  FORMAT_VERSION,
+  PROTOCOL_VERSION,
+  DocumentKindSchema,
+  PackagePathSchema,
+  RectangleSchema,
+} from "./contracts/primitives.js";
 export type { DocumentKind, Rectangle } from "./contracts/primitives.js";
 export * from "./contracts/document.js";
 export * from "./contracts/word.js";
-export * from './contracts/word-drawing.js';
-export * from './contracts/word-reference.js';
-export * from './contracts/word-math.js';
-export * from './contracts/word-control.js';
-export { parseWordMath,validateWordMath } from './word-math.js';
-export { DrawingGeometrySchema,DrawingPresetSchema,DrawingTextPropertiesSchema } from './contracts/drawing.js';
+export * from "./contracts/word-drawing.js";
+export * from "./contracts/word-reference.js";
+export * from "./contracts/word-math.js";
+export * from "./contracts/word-control.js";
+export { parseWordMath, validateWordMath } from "./word-math.js";
+export {
+  DrawingGeometrySchema,
+  DrawingPresetSchema,
+  DrawingTextPropertiesSchema,
+} from "./contracts/drawing.js";
 export * from "./contracts/presentation.js";
 export type { DrawingTextProperties } from "./contracts/drawing.js";
 export type { ChartAppearance } from "./contracts/chart.js";
@@ -37,24 +54,49 @@ export type { NumberDisplayPart as WorkbookNumberDisplayPart } from "./workbook/
 export { createWorkbookNumberFormatter } from "./workbook/number-formatter.js";
 export { AxisDimensions as WorkbookAxisDimensions } from "./workbook/axis-dimensions.js";
 export { WorkbookRegionIndex } from "./workbook/region-index.js";
-export type { AxisOverride as WorkbookAxisOverride, AxisCell as WorkbookAxisCell } from "./workbook/axis-dimensions.js";
-export { WorkbookTableRegions, workbookTableRegionBorders, workbookTableRegionOrder } from "./workbook/table-regions.js";
-export type { WorkbookTableRegionElement, WorkbookTableRegionMatch } from "./workbook/table-regions.js";
-export { createWorkbookTableFormatResolver, createWorkbookConditionalFormatResolver } from "./workbook/display-format.js";
-export type { WorkbookNumberFormatter, WorkbookNumberFormatterOptions, WorkbookDisplayFormat, WorkbookNumberDisplay } from "./workbook/number-formatter.js";
+export type {
+  AxisOverride as WorkbookAxisOverride,
+  AxisCell as WorkbookAxisCell,
+} from "./workbook/axis-dimensions.js";
+export {
+  WorkbookTableRegions,
+  workbookTableRegionBorders,
+  workbookTableRegionOrder,
+} from "./workbook/table-regions.js";
+export type {
+  WorkbookTableRegionElement,
+  WorkbookTableRegionMatch,
+} from "./workbook/table-regions.js";
+export {
+  createWorkbookTableFormatResolver,
+  createWorkbookConditionalFormatResolver,
+} from "./workbook/display-format.js";
+export type {
+  WorkbookNumberFormatter,
+  WorkbookNumberFormatterOptions,
+  WorkbookDisplayFormat,
+  WorkbookNumberDisplay,
+} from "./workbook/number-formatter.js";
 export type { WorkbookNumberMeasure } from "./workbook/format-general-section.js";
 export type { NumberFormatColor as WorkbookNumberFormatColor } from "./workbook/number-format.js";
 export { DEFAULT_WORKBOOK_INDEXED_COLORS } from "./workbook/indexed-colors.js";
 export { parseFormula as parseWorkbookFormula } from "./workbook/formula.js";
 export { parseR1C1Formula as parseWorkbookR1C1Formula } from "./workbook/formula.js";
-export type { FormulaExpression as WorkbookFormulaExpression, FormulaOrigin as WorkbookFormulaOrigin } from "./workbook/formula.js";
+export type {
+  FormulaExpression as WorkbookFormulaExpression,
+  FormulaOrigin as WorkbookFormulaOrigin,
+} from "./workbook/formula.js";
 export { printFormula as printWorkbookFormula } from "./workbook/formula-print.js";
 export { printR1C1Formula as printWorkbookR1C1Formula } from "./workbook/formula-print.js";
 export { copyFormula as copyWorkbookFormula } from "./workbook/formula-rewrite.js";
 export { createWorkbookFormulaFiller } from "./workbook/formula-fill.js";
 export type { WorkbookFormulaFiller } from "./workbook/formula-fill.js";
 export { rewriteFormula as rewriteWorkbookFormula } from "./workbook/formula-rewrite.js";
-export type { FormulaLocation as WorkbookFormulaLocation, FormulaReferenceChange as WorkbookFormulaReferenceChange, FormulaRewriteBindings as WorkbookFormulaRewriteBindings } from "./workbook/formula-rewrite.js";
+export type {
+  FormulaLocation as WorkbookFormulaLocation,
+  FormulaReferenceChange as WorkbookFormulaReferenceChange,
+  FormulaRewriteBindings as WorkbookFormulaRewriteBindings,
+} from "./workbook/formula-rewrite.js";
 export { resolveWorkbookSortLayout } from "./workbook/sort-layout.js";
 export type { WorkbookSortLayout } from "./workbook/sort-layout.js";
 export { readWorkbookCellSource } from "./workbook/cell-source.js";
@@ -64,62 +106,162 @@ export { resolveWorkbookCellFormat } from "./workbook/cell-format.js";
 export type { WorkbookCellFormat } from "./workbook/cell-format.js";
 export { isTextBoundary as isDocumentTextBoundary } from "./document/text.js";
 export { SourceStyleResolver, resolveSourceCssVariables } from "./document/source-css.js";
-export type { SourceStyleMap, SourceStyleNode, SourceStyleResolverOptions } from "./document/source-css.js";
-export { length as resolveSourceCssLength, color as resolveSourceCssColor } from "./document/css-values.js";
+export type {
+  SourceStyleMap,
+  SourceStyleNode,
+  SourceStyleResolverOptions,
+} from "./document/source-css.js";
+export {
+  length as resolveSourceCssLength,
+  color as resolveSourceCssColor,
+} from "./document/css-values.js";
 export type { LengthContext as SourceCssLengthContext } from "./document/css-values.js";
-export type { WorkbookReferenceLocation, WorkbookReferenceArea, WorkbookReferenceResult } from "./workbook/reference.js";
+export type {
+  WorkbookReferenceLocation,
+  WorkbookReferenceArea,
+  WorkbookReferenceResult,
+} from "./workbook/reference.js";
 export { createWorkbookScalarEvaluator, copyWorkbookScalarContext } from "./workbook/scalar.js";
 export { captureWorkbookModel } from "./workbook/source.js";
-export type { WorkbookScalarEvaluator, WorkbookScalarResult, WorkbookScalarUnavailable, WorkbookScalarLimits, WorkbookScalarQueryOptions } from "./workbook/scalar.js";
+export type {
+  WorkbookScalarEvaluator,
+  WorkbookScalarResult,
+  WorkbookScalarUnavailable,
+  WorkbookScalarLimits,
+  WorkbookScalarQueryOptions,
+} from "./workbook/scalar.js";
 export type { WorkbookScalarContext } from "./workbook/scalar.js";
 export { readWorkbookChangeImpact } from "./workbook/change-impact.js";
 export type { WorkbookChangeImpact } from "./workbook/change-impact.js";
-export { createWorkbookCalculator, DEFAULT_WORKBOOK_CALCULATION_LIMITS, WORKBOOK_CALCULATION_VERSION } from "./workbook/calculation.js";
+export {
+  createWorkbookCalculator,
+  DEFAULT_WORKBOOK_CALCULATION_LIMITS,
+  WORKBOOK_CALCULATION_VERSION,
+} from "./workbook/calculation.js";
 export { createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
-export { readWorkbookRowVisibility, DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS } from "./workbook/row-visibility.js";
-export type { WorkbookRowVisibility, WorkbookRowVisibilityRequest, WorkbookRowVisibilityOptions, WorkbookRowVisibilityLimits, WorkbookRowVisibilityResult } from "./workbook/row-visibility.js";
-export type { WorkbookCalculator, WorkbookCalculationLimits, WorkbookCalculationOptions, WorkbookCalculationResult, WorkbookCalculatedCell } from "./workbook/calculation.js";
+export {
+  readWorkbookRowVisibility,
+  DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS,
+} from "./workbook/row-visibility.js";
+export type {
+  WorkbookRowVisibility,
+  WorkbookRowVisibilityRequest,
+  WorkbookRowVisibilityOptions,
+  WorkbookRowVisibilityLimits,
+  WorkbookRowVisibilityResult,
+} from "./workbook/row-visibility.js";
+export type {
+  WorkbookCalculator,
+  WorkbookCalculationLimits,
+  WorkbookCalculationOptions,
+  WorkbookCalculationResult,
+  WorkbookCalculatedCell,
+} from "./workbook/calculation.js";
 export { readWorkbookRules, DEFAULT_WORKBOOK_RULE_LIMITS } from "./workbook/rule-reader.js";
-export type { WorkbookRuleReadLimits, WorkbookRuleReadRequest, WorkbookRuleReadOptions, WorkbookRuleReadResponse, WorkbookRuleCell, WorkbookRuleValue, WorkbookRuleIssue,
-  WorkbookConditionalEvaluation, WorkbookValidationEvaluation } from "./workbook/rule-reader.js";
+export type {
+  WorkbookRuleReadLimits,
+  WorkbookRuleReadRequest,
+  WorkbookRuleReadOptions,
+  WorkbookRuleReadResponse,
+  WorkbookRuleCell,
+  WorkbookRuleValue,
+  WorkbookRuleIssue,
+  WorkbookConditionalEvaluation,
+  WorkbookValidationEvaluation,
+} from "./workbook/rule-reader.js";
 export { createSharedFormulaTable as createSharedWorkbookFormulas } from "./workbook/shared-formula.js";
 export type { SharedFormulaTable as SharedWorkbookFormulas } from "./workbook/shared-formula.js";
-export { readPresentationGeometry,isPresentationCommentPoint } from "./document/presentation.js";
+export { readPresentationGeometry, isPresentationCommentPoint } from "./document/presentation.js";
 export { evaluatePresentationPreset } from "./presentation-geometry.js";
-export type { PresentationPathCommand, PresentationPresetGeometry } from "./presentation-geometry.js";
-export { createDocumentSession, DEFAULT_DOCUMENT_SESSION_LIMITS, DEFAULT_INTERACTION_LIMITS } from "./document-session.js";
-export { collectDocumentAssets, createAssetDescriptor } from "./assets.js";
-export{WordNativeFragmentCollectionSchema}from'./contracts/word.js';
 export type {
-  AnnotationSubmissionHandler, AssetProvider, CandidateChange, ChangeMapping, DeepReadonly,
-  DocumentEventListener, DocumentPackage, DocumentSelection, DocumentSession,
-  DocumentModel, DocumentNode, DocumentReadLimits, DocumentSnapshot, InteractionRequestInput,
-  ContentDocumentModel, ContentDocumentSnapshot, WorkbookModel, WorkbookSnapshot, WorkbookCell, WorkbookWindow, WorkbookReadLimits,
-  OpenDocumentOptions, TextOffsetMapping, TransactionReceipt, DocumentEditingSession,
-  DocumentNodeChange, DocumentSessionLimits, DocumentSessionOptions, DocumentHistoryState,
+  PresentationPathCommand,
+  PresentationPresetGeometry,
+} from "./presentation-geometry.js";
+export {
+  createDocumentSession,
+  DEFAULT_DOCUMENT_SESSION_LIMITS,
+  DEFAULT_INTERACTION_LIMITS,
+} from "./document-session.js";
+export { collectDocumentAssets, createAssetDescriptor } from "./assets.js";
+export { WordNativeFragmentCollectionSchema } from "./contracts/word.js";
+export type {
+  AnnotationSubmissionHandler,
+  AssetProvider,
+  CandidateChange,
+  ChangeMapping,
+  DeepReadonly,
+  DocumentEventListener,
+  DocumentPackage,
+  DocumentSelection,
+  DocumentSession,
+  DocumentModel,
+  DocumentNode,
+  DocumentReadLimits,
+  DocumentSnapshot,
+  InteractionRequestInput,
+  ContentDocumentModel,
+  ContentDocumentSnapshot,
+  WorkbookModel,
+  WorkbookSnapshot,
+  WorkbookCell,
+  WorkbookWindow,
+  WorkbookReadLimits,
+  OpenDocumentOptions,
+  TextOffsetMapping,
+  TransactionReceipt,
+  DocumentEditingSession,
+  DocumentNodeChange,
+  DocumentSessionLimits,
+  DocumentSessionOptions,
+  DocumentHistoryState,
   TransactionPrepareOptions,
-  WorkbookLayoutRequest, WorkbookLayoutMeasurement, WorkbookLayoutMeasurer,
-  WorkbookSession, WorkbookCandidateChange, WorkbookInteractionRequestInput, WorkbookRangeChange, WorkbookStructureMapping, TransactionPreparationExecution, TransactionPreparationProgress,
-  PresentationInteractionRequestInput,PresentationAnnotationSubmissionHandler,
+  WorkbookLayoutRequest,
+  WorkbookLayoutMeasurement,
+  WorkbookLayoutMeasurer,
+  WorkbookSession,
+  WorkbookCandidateChange,
+  WorkbookInteractionRequestInput,
+  WorkbookRangeChange,
+  WorkbookStructureMapping,
+  TransactionPreparationExecution,
+  TransactionPreparationProgress,
+  PresentationInteractionRequestInput,
+  PresentationAnnotationSubmissionHandler,
 } from "./runtime.js";
 
 export { createWordDocument } from "./word.js";
 export type { CreateWordDocumentOptions } from "./word.js";
 
-export { findWordText, getWordOutline, getWordTextStatistics, getWordTextDefaults,wordTextReplacementOperations } from "./word-query.js";
-export{WordPageBorderSchema,WordPageBordersSchema}from'./contracts/word-page.js';
-export type{WordPageBorder,WordPageBorders}from'./contracts/word-page.js';
-export{wordColorLuminance}from'./word-color.js';
-export type { WordTextMatch,WordTextRange,WordTextQueryOptions, WordTextFindOptions, WordOutlineEntry, WordTextStatistics } from "./word-query.js";
-export { wordDrawingTransforms } from './word-drawing.js';
+export {
+  findWordText,
+  getWordOutline,
+  getWordTextStatistics,
+  getWordTextDefaults,
+  wordTextReplacementOperations,
+} from "./word-query.js";
+export { WordPageBorderSchema, WordPageBordersSchema } from "./contracts/word-page.js";
+export type { WordPageBorder, WordPageBorders } from "./contracts/word-page.js";
+export { wordColorLuminance } from "./word-color.js";
+export type {
+  WordTextMatch,
+  WordTextRange,
+  WordTextQueryOptions,
+  WordTextFindOptions,
+  WordOutlineEntry,
+  WordTextStatistics,
+} from "./word-query.js";
+export { wordDrawingTransforms } from "./word-drawing.js";
 
-export * from './contracts/word-chart.js';
-export * from './contracts/word-comment.js';
-export * from './contracts/word-revision.js';
+export * from "./contracts/word-chart.js";
+export * from "./contracts/word-comment.js";
+export * from "./contracts/word-revision.js";
 
-export * from './contracts/word-text-style.js';
+export * from "./contracts/word-text-style.js";
 
-export{expandWordRevisionGroups}from'./word-revision-groups.js';
+export { expandWordRevisionGroups } from "./word-revision-groups.js";
 
-export{WordInlineContentSemanticsSchema,WordContentSemanticsSchema}from'./contracts/word-content.js';
-export type{WordInlineContentSemantics,WordContentSemantics}from'./contracts/word-content.js';
+export {
+  WordInlineContentSemanticsSchema,
+  WordContentSemanticsSchema,
+} from "./contracts/word-content.js";
+export type { WordInlineContentSemantics, WordContentSemantics } from "./contracts/word-content.js";

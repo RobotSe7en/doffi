@@ -1,9 +1,63 @@
-import{strFromU8,strToU8,unzipSync,zipSync}from'fflate';
-import{body,mutateDocx,styles}from'./regression-fixtures.js';
-export function floatingTableFixture(position='<w:tblpPr w:horzAnchor="text" w:vertAnchor="text" w:tblpX="1" w:tblpY="1" w:rightFromText="120" w:bottomFromText="120"/>',tail=20,tables=1):Uint8Array{
- const table='<w:tbl><w:tblPr>'+position+'<w:tblW w:type="dxa" w:w="2400"/><w:tblBorders><w:top w:val="single" w:sz="8" w:color="000000"/><w:left w:val="single" w:sz="8" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:color="000000"/><w:right w:val="single" w:sz="8" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:type="dxa" w:w="2400"/></w:tcPr><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
- return mutateDocx('01-text-numbering.docx',{'word/styles.xml':()=>styles('<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:style>'),'word/document.xml':source=>body(source,'<w:p><w:r><w:t>BEFORE</w:t></w:r></w:p>'+table.repeat(tables)+'<w:p><w:r><w:t>'+Array.from({length:tail},()=> 'AFTER text wraps beside the table. ').join('')+'</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="8400" w:h="10000"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/></w:sectPr>')});
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { body, mutateDocx, styles } from "./regression-fixtures.js";
+export function floatingTableFixture(
+  position = '<w:tblpPr w:horzAnchor="text" w:vertAnchor="text" w:tblpX="1" w:tblpY="1" w:rightFromText="120" w:bottomFromText="120"/>',
+  tail = 20,
+  tables = 1,
+): Uint8Array {
+  const table =
+    "<w:tbl><w:tblPr>" +
+    position +
+    '<w:tblW w:type="dxa" w:w="2400"/><w:tblBorders><w:top w:val="single" w:sz="8" w:color="000000"/><w:left w:val="single" w:sz="8" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:color="000000"/><w:right w:val="single" w:sz="8" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:type="dxa" w:w="2400"/></w:tcPr><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+  return mutateDocx("01-text-numbering.docx", {
+    "word/styles.xml": () =>
+      styles(
+        '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:style>',
+      ),
+    "word/document.xml": (source) =>
+      body(
+        source,
+        "<w:p><w:r><w:t>BEFORE</w:t></w:r></w:p>" +
+          table.repeat(tables) +
+          "<w:p><w:r><w:t>" +
+          Array.from({ length: tail }, () => "AFTER text wraps beside the table. ").join("") +
+          '</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="8400" w:h="10000"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/></w:sectPr>',
+      ),
+  });
 }
-export function floatingHeaderFixture():Uint8Array{
- const files=unzipSync(floatingTableFixture('<w:tblpPr w:horzAnchor="page" w:vertAnchor="page" w:tblpX="1441" w:tblpY="481"/>',100)),source=strFromU8(files['word/document.xml']!),table=source.match(/<w:tbl>[\s\S]*?<\/w:tbl>/)![0];files['word/document.xml']=strToU8(source.replace(table,'').replace('<w:sectPr>','<w:sectPr><w:headerReference w:type="default" r:id="floatingHeader"/>'));files['word/header1.xml']=strToU8('<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'+table+'</w:hdr>');files['word/_rels/document.xml.rels']=strToU8(strFromU8(files['word/_rels/document.xml.rels']!).replace('</Relationships>','<Relationship Id="floatingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>'));files['[Content_Types].xml']=strToU8(strFromU8(files['[Content_Types].xml']!).replace('</Types>','<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>'));return zipSync(files);
+export function floatingHeaderFixture(): Uint8Array {
+  const files = unzipSync(
+      floatingTableFixture(
+        '<w:tblpPr w:horzAnchor="page" w:vertAnchor="page" w:tblpX="1441" w:tblpY="481"/>',
+        100,
+      ),
+    ),
+    source = strFromU8(files["word/document.xml"]!),
+    table = source.match(/<w:tbl>[\s\S]*?<\/w:tbl>/)![0];
+  files["word/document.xml"] = strToU8(
+    source
+      .replace(table, "")
+      .replace(
+        "<w:sectPr>",
+        '<w:sectPr><w:headerReference w:type="default" r:id="floatingHeader"/>',
+      ),
+  );
+  files["word/header1.xml"] = strToU8(
+    '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      table +
+      "</w:hdr>",
+  );
+  files["word/_rels/document.xml.rels"] = strToU8(
+    strFromU8(files["word/_rels/document.xml.rels"]!).replace(
+      "</Relationships>",
+      '<Relationship Id="floatingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>',
+    ),
+  );
+  files["[Content_Types].xml"] = strToU8(
+    strFromU8(files["[Content_Types].xml"]!).replace(
+      "</Types>",
+      '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>',
+    ),
+  );
+  return zipSync(files);
 }

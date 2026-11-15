@@ -1,61 +1,582 @@
-import{setContinuationHeader}from'./repeated-header.js';
-import{wordNoteSpecials}from'./word-note-specials.js';
-import { DocumentError } from '@doffi/core';
-import type { ContentDocumentModel,DeepReadonly,WordMetadata,DocumentSection } from '@doffi/core';
-import type { RenderLimits,RenderedPage } from './contracts.js';
-import type { PreviewSource } from './source-index.js';
-import { markViewNode,measureViewContent,ownViewAttribute,ownViewStyle } from './view-nodes.js';
-import { pageLabel } from './pagination.js';
-import{cloneViewTree}from'./view-clone.js';
-export interface WordNoteLayout{attachSections(sections:readonly{definition:DeepReadonly<DocumentSection>;element:HTMLElement}[]):void;reserved(index:number):number;minimumPage(node:Node):number|undefined;measure(pages:readonly RenderedPage[]):readonly RenderedPage[];readonly changed:boolean;readonly requiredPages:number;dispose():void}
+import { setContinuationHeader } from "./repeated-header.js";
+import { wordNoteSpecials } from "./word-note-specials.js";
+import { DocumentError } from "@doffi/core";
+import type {
+  ContentDocumentModel,
+  DeepReadonly,
+  WordMetadata,
+  DocumentSection,
+} from "@doffi/core";
+import type { RenderLimits, RenderedPage } from "./contracts.js";
+import type { PreviewSource } from "./source-index.js";
+import { markViewNode, measureViewContent, ownViewAttribute, ownViewStyle } from "./view-nodes.js";
+import { pageLabel } from "./pagination.js";
+import { cloneViewTree } from "./view-clone.js";
+export interface WordNoteLayout {
+  attachSections(
+    sections: readonly { definition: DeepReadonly<DocumentSection>; element: HTMLElement }[],
+  ): void;
+  reserved(index: number): number;
+  minimumPage(node: Node): number | undefined;
+  measure(pages: readonly RenderedPage[]): readonly RenderedPage[];
+  readonly changed: boolean;
+  readonly requiredPages: number;
+  dispose(): void;
+}
 /** Footnote references and note bodies share source identities. Their numbering,
  * page reservations and continuation clips are derived from one measured flow. */
-export function composeWordNotes(document:Document,model:ContentDocumentModel,source:PreviewSource,limits:Readonly<RenderLimits>,contentBottom?:(index:number)=>number|undefined):WordNoteLayout{
- const word=model.snapshot().metadata.word,root=source.root,article=root.closest<HTMLElement>('[data-office-kind="document"]')!,definitions=new Map((word?.notes??[]).map(note=>[note.noteId,note])),templates=new Map((word?.stories??[]).map(story=>[story.storyId,source.elements.get(story.rootNodeId)?.element])),references=new Map((word?.noteReferences??[]).map(reference=>[reference.nodeId,reference])),ordinals=new Map<string,number>();
- const specials=wordNoteSpecials(document,word,templates,limits);
- const metadata=model.snapshot().metadata,sections=metadata.presentation?[]:metadata.sections,sectionByReference=new Map<string,number>(),regions:HTMLElement[]=[],noteCopies=new Map<string,HTMLElement[]>();
- for(const reference of references.values()){const position=source.elements.get(reference.nodeId)?.from??0;let index=0;for(let current=0;current<sections.length;current++)if((source.elements.get(sections[current]!.rootNodeId)?.from??Infinity)<=position)index=current;sectionByReference.set(reference.nodeId,index);}
- const options=(kind:'footnote'|'endnote',section=0):DeepReadonly<NonNullable<WordMetadata['footnoteOptions']>>=>{const key=kind==='footnote'?'footnoteOptions':'endnoteOptions',local=sections[section]?.[key],global=word?.[key];return{...global,...local,position:kind==='footnote'?local?.position??'pageBottom':global?.position??'docEnd'};};
- const label=(kind:'footnote'|'endnote',number:number,section=0):string=>options(kind,section).format==='chicago'?['*','†','‡','§','‖','¶'][(number-1)%6]!.repeat(Math.floor((number-1)/6)+1):pageLabel(number,options(kind,section).format??(kind==='endnote'?'lowerRoman':'decimal'));
- type Counter={value:number;section:number;page:number};
- const nextNumber=(state:Map<string,Counter>,kind:'footnote'|'endnote',section:number,page:number):number=>{const setting=options(kind,section),previous=state.get(kind),reset=!previous||setting.restart==='eachSect'&&previous.section!==section||setting.restart==='eachPage'&&previous.page!==page,value=reset?setting.start??1:previous.value+1;state.set(kind,{value,section,page});return value;};
- const ordered=[...references.values()].sort((a,b)=>(source.elements.get(a.nodeId)?.from??0)-(source.elements.get(b.nodeId)?.from??0)),initialCounts=new Map<string,Counter>();for(const reference of ordered){const note=definitions.get(reference.noteId)!,section=sectionByReference.get(reference.nodeId)??0;ordinals.set(note.noteId,nextNumber(initialCounts,note.kind,section,0));}
- const marker=(node:HTMLElement,value:string,sup:boolean):void=>{ownViewAttribute(node,'contenteditable');node.contentEditable='false';ownViewStyle(node,'font-size','display','line-height','vertical-align');node.style.fontSize='0';node.style.lineHeight='normal';node.style.display='inline-block';node.style.verticalAlign=sup?'super':'baseline';const display=markViewNode(document.createElement('span'));display.textContent=value;display.style.cssText='font-size:9pt;line-height:1;white-space:pre';node.append(display);};
- for(const reference of references.values()){const node=source.elements.get(reference.nodeId)?.element,note=definitions.get(reference.noteId)!;if(node)marker(node,reference.customMark??label(note.kind,ordinals.get(reference.noteId)!,sectionByReference.get(reference.nodeId)),true);}
- for(const note of definitions.values()){const template=templates.get(note.storyId),reference=ordered.find(reference=>reference.noteId===note.noteId);if(template)for(const node of template.querySelectorAll<HTMLElement>('[data-word-note-number]'))marker(node,reference?.customMark??label(note.kind,ordinals.get(note.noteId)??1,reference?sectionByReference.get(reference.nodeId):0),false);}
- // In an auxiliary editing projection the note definition is deliberately absent.
- for(const node of root.querySelectorAll<HTMLElement>('[data-word-note-number]'))if(!node.querySelector('span'))marker(node,'1',false);
- const layer=markViewNode(document.createElement('div'));layer.className='sdk-word-notes';layer.style.cssText='position:absolute;left:0;top:0;width:100%;pointer-events:none';ownViewStyle(article,'position');article.style.position='relative';article.append(layer);
- const reservations=new Map<number,number>(),minimum=new Map<string,number>();let changed=false,requiredPages=0;
- function clone(note:DeepReadonly<NonNullable<WordMetadata['notes']>[number]>):HTMLElement{const original=templates.get(note.storyId);if(!original)throw new DocumentError('InvalidDocument','The note story is missing.');const result=cloneViewTree(original,limits.maxNodes);result.dataset.sdkWordNoteStory=note.storyId;result.classList.remove('sdk-auxiliary');result.style.cssText+=';display:block;border:0;padding:0;margin:0;position:relative';return result;}
- return{attachSections(views){for(const region of regions.splice(0))region.remove();noteCopies.clear();const groups=new Map<number,typeof ordered>();for(const reference of ordered){const note=definitions.get(reference.noteId)!;if(note.kind!=='endnote')continue;let target=options('endnote').position==='sectEnd'?sectionByReference.get(reference.nodeId)??0:views.length-1;while(target<views.length-1&&views[target]!.definition.noEndnote)target++;const entries=groups.get(target)??[];entries.push(reference);groups.set(target,entries);}let generated=document.querySelectorAll('*').length;for(const[index,entries]of groups){const region=markViewNode(document.createElement('div'));measureViewContent(region);region.dataset.sdkWordEndnotes='';region.className='sdk-word-endnotes';region.contentEditable='false';region.style.cssText='display:flow-root;margin-top:8px;padding-top:8px';const table=document.createElement('table');table.style.cssText='border-collapse:collapse;table-layout:fixed;width:100%;margin:0';const head=document.createElement('thead'),header=document.createElement('tr'),cell=document.createElement('td'),body=document.createElement('tbody');header.dataset.wordRepeatHeader='true';cell.style.cssText='padding:0;border:0;position:relative';const separator=specials.create('endnote','separator');if(separator)cell.append(separator);header.append(cell);head.append(header);table.append(head,body);region.append(table);const measurement=markViewNode(document.createElement('table'));measurement.dataset.sdkNoteHeaderMeasurement='';measurement.style.cssText='position:absolute;visibility:hidden;width:100%;table-layout:fixed;border-collapse:collapse';const continued=document.createElement('tr'),continuedCell=document.createElement('td');continuedCell.style.cssText='padding:0;border:0';const next=specials.create('endnote','continuationSeparator');if(next)continuedCell.append(next);continued.append(continuedCell);measurement.append(continued);cell.append(measurement);setContinuationHeader(header,continued);for(const reference of entries){const note=definitions.get(reference.noteId)!,copy=clone(note),row=document.createElement('tr'),cell=document.createElement('td');cell.style.cssText='padding:0;border:0;vertical-align:top';cell.append(copy);row.append(cell);body.append(row);noteCopies.set(note.noteId,[copy]);generated+=copy.querySelectorAll('*').length+1;}if((generated=document.querySelectorAll('*').length)>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Endnotes exceed the render node budget.');views[index]?.element.append(region);regions.push(region);}},reserved:index=>reservations.get(index)??0,minimumPage(node){const element=node.nodeType===1?node as Element:node.parentElement;return minimum.get(element?.closest<HTMLElement>('[data-word-note-reference]')?.dataset.nodeId??'');},get changed(){return changed;},get requiredPages(){return requiredPages;},measure(input){
-  layer.replaceChildren();changed=false;if(!input.length||!definitions.size)return input;const pages=[...input],origin=root.getBoundingClientRect(),base=article.getBoundingClientRect(),buckets=new Map<number,{noteId:string;offset:number;height:number;placement:'after'|'bottom';more:boolean}[]>(),nextReservations=new Map<number,number>();
-  const pageOf=(element:HTMLElement):number=>Math.max(0,pages.findIndex(page=>{const y=(element.getBoundingClientRect().top-origin.top)*.75;return y>=page.rect.y&&y<page.rect.y+page.rect.height;})),numbered=new Map<string,Counter>();
-  for(const reference of ordered){const note=definitions.get(reference.noteId)!,element=source.elements.get(reference.nodeId)?.element;if(!element)continue;const page=pages[pageOf(element)]!,section=sectionByReference.get(reference.nodeId)??0,number=nextNumber(numbered,note.kind,section,page.index);const value=reference.customMark??label(note.kind,number,section);for(const marker of [element,...templates.get(note.storyId)?.querySelectorAll<HTMLElement>('[data-word-note-number]')??[],...(noteCopies.get(note.noteId)??[]).flatMap(copy=>[...copy.querySelectorAll<HTMLElement>('[data-word-note-number]')])]){const display=marker.lastElementChild;if(display&&display.textContent!==value){display.textContent=value;changed=true;}}}
-  for(const region of regions)source.registerInstances(region);
-  const ensure=(index:number):RenderedPage=>{if(index>=limits.maxPages)throw new DocumentError('ResourceLimitExceeded','Notes exceed the render page budget.');while(index>=pages.length){const last=pages.at(-1)!,next=Object.freeze({...last,pageId:'page-'+(pages.length+1),index:pages.length,number:last.number+1,label:String(last.number+1),rect:Object.freeze({...last.rect,y:last.rect.y+last.rect.height+18}),blank:false});pages.push(next);const paper=document.createElement('div');paper.className='sdk-paper';paper.style.cssText=`position:absolute;left:${(origin.left-base.left)*.75+next.rect.x}pt;top:${(origin.top-base.top)*.75+next.rect.y}pt;width:${next.rect.width}pt;height:${next.rect.height}pt;background:white`;layer.append(paper);}return pages[index]!;};
-  for(const reference of ordered){const note=definitions.get(reference.noteId)!,element=source.elements.get(reference.nodeId)?.element;if(!element||note.kind==='endnote')continue;let index=Math.max(0,pages.findIndex(page=>{const y=(element.getBoundingClientRect().top-origin.top)*.75;return y>=page.rect.y&&y<page.rect.y+page.rect.height;}));if(index>(minimum.get(reference.nodeId)??0)){minimum.set(reference.nodeId,index);changed=true;}
-   const measurement=clone(note),page=ensure(index),printable=page.setup.width-page.setup.margins.left-page.setup.margins.right;measurement.style.width=printable+'pt';measurement.style.position='absolute';measurement.style.visibility='hidden';layer.append(measurement);const bounds=measurement.getBoundingClientRect(),cuts:number[]=[];const walker=document.createTreeWalker(measurement,4);for(let text=walker.nextNode();text;text=walker.nextNode()){const range=document.createRange();range.selectNodeContents(text);for(const rect of range.getClientRects())if(rect.width>.1&&rect.height>.1){const cut=rect.top-bounds.top;if(cut>.5)cuts.push(cut);}}let remaining=Math.max(measurement.scrollHeight,bounds.height),offset=0;cuts.push(remaining);cuts.sort((a,b)=>a-b);measurement.remove();
-   while(remaining>.1){const current=ensure(index),capacity=Math.max(24,(current.setup.height-current.setup.margins.top-current.setup.margins.bottom)*4/3*.72),entries=buckets.get(index)??[],used=entries.reduce((total,entry)=>total+entry.height,0),width=current.setup.width-current.setup.margins.left-current.setup.margins.right,header=Math.max(specials.height('footnote','separator',width,layer),specials.height('footnote','continuationSeparator',width,layer))+8,notice=specials.height('footnote','continuationNotice',width,layer),available=capacity-used-header-(remaining>capacity-used-header?notice:0);if(available<16){index++;continue;}const safe=cuts.filter(cut=>cut>offset+.5&&cut<=offset+available+.5).at(-1),height=remaining<=available?remaining:safe?Math.max(.5,safe-offset):Math.min(remaining,available);entries.push({noteId:note.noteId,offset,height,more:remaining>height+.1,placement:options('footnote',sectionByReference.get(reference.nodeId)).position==='beneathText'?'after':'bottom'});buckets.set(index,entries);remaining-=height;offset+=height;if(remaining>.1)index++;}
+export function composeWordNotes(
+  document: Document,
+  model: ContentDocumentModel,
+  source: PreviewSource,
+  limits: Readonly<RenderLimits>,
+  contentBottom?: (index: number) => number | undefined,
+): WordNoteLayout {
+  const word = model.snapshot().metadata.word,
+    root = source.root,
+    article = root.closest<HTMLElement>('[data-office-kind="document"]')!,
+    definitions = new Map((word?.notes ?? []).map((note) => [note.noteId, note])),
+    templates = new Map(
+      (word?.stories ?? []).map((story) => [
+        story.storyId,
+        source.elements.get(story.rootNodeId)?.element,
+      ]),
+    ),
+    references = new Map(
+      (word?.noteReferences ?? []).map((reference) => [reference.nodeId, reference]),
+    ),
+    ordinals = new Map<string, number>();
+  const specials = wordNoteSpecials(document, word, templates, limits);
+  const metadata = model.snapshot().metadata,
+    sections = metadata.presentation ? [] : metadata.sections,
+    sectionByReference = new Map<string, number>(),
+    regions: HTMLElement[] = [],
+    noteCopies = new Map<string, HTMLElement[]>();
+  for (const reference of references.values()) {
+    const position = source.elements.get(reference.nodeId)?.from ?? 0;
+    let index = 0;
+    for (let current = 0; current < sections.length; current++)
+      if ((source.elements.get(sections[current]!.rootNodeId)?.from ?? Infinity) <= position)
+        index = current;
+    sectionByReference.set(reference.nodeId, index);
   }
-  let generated=document.querySelectorAll('*').length;
-  const countDecoration=(node:HTMLElement):void=>{generated+=node.querySelectorAll('*').length+1;if(generated>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Note decorations exceed the render node budget.');};
-  for(const[index,entries]of buckets){
-   const page=ensure(index),bottomEntries=entries.filter(entry=>entry.placement==='bottom'),bottomHeight=bottomEntries.length?bottomEntries.reduce((total,entry)=>total+entry.height,0)+8+specials.height('footnote',bottomEntries.some(entry=>entry.offset>0)?'continuationSeparator':'separator',page.setup.width-page.setup.margins.left-page.setup.margins.right,layer)+(bottomEntries.some(entry=>entry.more)?specials.height('footnote','continuationNotice',page.setup.width-page.setup.margins.left-page.setup.margins.right,layer):0):0;let reserved=0;
-   for(const placement of ['after','bottom']as const){const visible=entries.filter(entry=>entry.placement===placement);if(!visible.length)continue;const width=page.setup.width-page.setup.margins.left-page.setup.margins.right,separatorType=visible.some(entry=>entry.offset>0)?'continuationSeparator':'separator',hasMore=visible.some(entry=>entry.more),overhead=specials.height('footnote',separatorType,width,layer)+8+(hasMore?specials.height('footnote','continuationNotice',width,layer):0),height=visible.reduce((total,entry)=>total+entry.height,0)+overhead,limit=page.setup.height-page.setup.margins.bottom-height*.75-(placement==='after'?bottomHeight*.75:0),top=placement==='after'?Math.min(limit,contentBottom?.(index)??page.setup.margins.top):limit,container=document.createElement('div');container.className='sdk-page-notes';container.dataset.pageId=page.pageId;container.dataset.notePlacement=placement;container.style.cssText=`position:absolute;left:${(origin.left-base.left)*.75+page.rect.x+page.setup.margins.left}pt;top:${(origin.top-base.top)*.75+page.rect.y+top}pt;width:${page.setup.width-page.setup.margins.left-page.setup.margins.right}pt;height:${height}px;pointer-events:auto;box-sizing:border-box`;layer.append(container);const separator=specials.create('footnote',separatorType);if(separator){countDecoration(separator);container.append(separator);source.registerInstances(separator);}const gap=document.createElement('div');gap.style.height='8px';container.append(gap);
-    for(const entry of visible){const note=definitions.get(entry.noteId)!,clip=document.createElement('div'),content=clone(note);clip.style.cssText=`position:relative;overflow:hidden;height:${entry.height}px`;content.style.top=-entry.offset+'px';clip.append(content);container.append(clip);generated+=content.querySelectorAll('*').length+2;source.registerInstances(content);if(generated>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Note continuations exceed the render node budget.');}
-    if(hasMore){const notice=specials.create('footnote','continuationNotice');if(notice){countDecoration(notice);container.append(notice);source.registerInstances(notice);}}
-    reserved+=height;
-   }
-   if(index<input.length)nextReservations.set(index,reserved);
+  const options = (
+    kind: "footnote" | "endnote",
+    section = 0,
+  ): DeepReadonly<NonNullable<WordMetadata["footnoteOptions"]>> => {
+    const key = kind === "footnote" ? "footnoteOptions" : "endnoteOptions",
+      local = sections[section]?.[key],
+      global = word?.[key];
+    return {
+      ...global,
+      ...local,
+      position:
+        kind === "footnote" ? (local?.position ?? "pageBottom") : (global?.position ?? "docEnd"),
+    };
+  };
+  const label = (kind: "footnote" | "endnote", number: number, section = 0): string =>
+    options(kind, section).format === "chicago"
+      ? ["*", "†", "‡", "§", "‖", "¶"][(number - 1) % 6]!.repeat(Math.floor((number - 1) / 6) + 1)
+      : pageLabel(
+          number,
+          options(kind, section).format ?? (kind === "endnote" ? "lowerRoman" : "decimal"),
+        );
+  type Counter = { value: number; section: number; page: number };
+  const nextNumber = (
+    state: Map<string, Counter>,
+    kind: "footnote" | "endnote",
+    section: number,
+    page: number,
+  ): number => {
+    const setting = options(kind, section),
+      previous = state.get(kind),
+      reset =
+        !previous ||
+        (setting.restart === "eachSect" && previous.section !== section) ||
+        (setting.restart === "eachPage" && previous.page !== page),
+      value = reset ? (setting.start ?? 1) : previous.value + 1;
+    state.set(kind, { value, section, page });
+    return value;
+  };
+  const ordered = [...references.values()].sort(
+      (a, b) =>
+        (source.elements.get(a.nodeId)?.from ?? 0) - (source.elements.get(b.nodeId)?.from ?? 0),
+    ),
+    initialCounts = new Map<string, Counter>();
+  for (const reference of ordered) {
+    const note = definitions.get(reference.noteId)!,
+      section = sectionByReference.get(reference.nodeId) ?? 0;
+    ordinals.set(note.noteId, nextNumber(initialCounts, note.kind, section, 0));
   }
-  // Endnotes flow with the body. Reserve their continuation notice below the
-  // text on every page whose note text continues onto a later physical page.
-  for(const region of regions){const occupied=new Set<number>(),walker=document.createTreeWalker(region,4);for(let node=walker.nextNode();node;node=walker.nextNode()){if(node.parentElement?.closest('[data-sdk-note-header-measurement]'))continue;const range=document.createRange();range.selectNodeContents(node);for(const rect of range.getClientRects()){if(rect.width<.1||rect.height<.1)continue;const y=(rect.top-origin.top)*.75,index=pages.findIndex(page=>y>=page.rect.y&&y<page.rect.y+page.rect.height);if(index>=0)occupied.add(index);}}const last=Math.max(-1,...occupied);for(const index of occupied){if(index===last)continue;const page=pages[index]!,width=page.setup.width-page.setup.margins.left-page.setup.margins.right,height=specials.height('endnote','continuationNotice',width,layer);if(!height)continue;const notice=specials.create('endnote','continuationNotice')!;const foot=nextReservations.get(index)??0;notice.style.cssText+=`;position:absolute;left:${(origin.left-base.left)*.75+page.rect.x+page.setup.margins.left}pt;top:${(origin.top-base.top)*.75+page.rect.y+page.setup.height-page.setup.margins.bottom-(foot+height)*.75}pt;width:${width}pt;pointer-events:auto`;countDecoration(notice);layer.append(notice);source.registerInstances(notice);nextReservations.set(index,foot+height);}}
-  if(document.querySelectorAll('*').length>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Note decorations exceed the render node budget.');
-  const required=buckets.size?Math.max(...buckets.keys())+1:0;if(required!==requiredPages){requiredPages=required;changed=true;}
-  for(const[index,height]of nextReservations)if(Math.abs((reservations.get(index)??0)-height)>.5)changed=true;for(const index of reservations.keys())if(!nextReservations.has(index))changed=true;reservations.clear();for(const entry of nextReservations)reservations.set(...entry);
-  ownViewStyle(root,'min-height');root.style.minHeight=pages.at(-1)!.rect.y+pages.at(-1)!.rect.height+'pt';
-  return Object.freeze(pages);
- },dispose(){layer.remove();for(const region of regions)region.remove();}};
+  const marker = (node: HTMLElement, value: string, sup: boolean): void => {
+    ownViewAttribute(node, "contenteditable");
+    node.contentEditable = "false";
+    ownViewStyle(node, "font-size", "display", "line-height", "vertical-align");
+    node.style.fontSize = "0";
+    node.style.lineHeight = "normal";
+    node.style.display = "inline-block";
+    node.style.verticalAlign = sup ? "super" : "baseline";
+    const display = markViewNode(document.createElement("span"));
+    display.textContent = value;
+    display.style.cssText = "font-size:9pt;line-height:1;white-space:pre";
+    node.append(display);
+  };
+  for (const reference of references.values()) {
+    const node = source.elements.get(reference.nodeId)?.element,
+      note = definitions.get(reference.noteId)!;
+    if (node)
+      marker(
+        node,
+        reference.customMark ??
+          label(
+            note.kind,
+            ordinals.get(reference.noteId)!,
+            sectionByReference.get(reference.nodeId),
+          ),
+        true,
+      );
+  }
+  for (const note of definitions.values()) {
+    const template = templates.get(note.storyId),
+      reference = ordered.find((reference) => reference.noteId === note.noteId);
+    if (template)
+      for (const node of template.querySelectorAll<HTMLElement>("[data-word-note-number]"))
+        marker(
+          node,
+          reference?.customMark ??
+            label(
+              note.kind,
+              ordinals.get(note.noteId) ?? 1,
+              reference ? sectionByReference.get(reference.nodeId) : 0,
+            ),
+          false,
+        );
+  }
+  // In an auxiliary editing projection the note definition is deliberately absent.
+  for (const node of root.querySelectorAll<HTMLElement>("[data-word-note-number]"))
+    if (!node.querySelector("span")) marker(node, "1", false);
+  const layer = markViewNode(document.createElement("div"));
+  layer.className = "sdk-word-notes";
+  layer.style.cssText = "position:absolute;left:0;top:0;width:100%;pointer-events:none";
+  ownViewStyle(article, "position");
+  article.style.position = "relative";
+  article.append(layer);
+  const reservations = new Map<number, number>(),
+    minimum = new Map<string, number>();
+  let changed = false,
+    requiredPages = 0;
+  function clone(note: DeepReadonly<NonNullable<WordMetadata["notes"]>[number]>): HTMLElement {
+    const original = templates.get(note.storyId);
+    if (!original) throw new DocumentError("InvalidDocument", "The note story is missing.");
+    const result = cloneViewTree(original, limits.maxNodes);
+    result.dataset.sdkWordNoteStory = note.storyId;
+    result.classList.remove("sdk-auxiliary");
+    result.style.cssText += ";display:block;border:0;padding:0;margin:0;position:relative";
+    return result;
+  }
+  return {
+    attachSections(views) {
+      for (const region of regions.splice(0)) region.remove();
+      noteCopies.clear();
+      const groups = new Map<number, typeof ordered>();
+      for (const reference of ordered) {
+        const note = definitions.get(reference.noteId)!;
+        if (note.kind !== "endnote") continue;
+        let target =
+          options("endnote").position === "sectEnd"
+            ? (sectionByReference.get(reference.nodeId) ?? 0)
+            : views.length - 1;
+        while (target < views.length - 1 && views[target]!.definition.noEndnote) target++;
+        const entries = groups.get(target) ?? [];
+        entries.push(reference);
+        groups.set(target, entries);
+      }
+      let generated = document.querySelectorAll("*").length;
+      for (const [index, entries] of groups) {
+        const region = markViewNode(document.createElement("div"));
+        measureViewContent(region);
+        region.dataset.sdkWordEndnotes = "";
+        region.className = "sdk-word-endnotes";
+        region.contentEditable = "false";
+        region.style.cssText = "display:flow-root;margin-top:8px;padding-top:8px";
+        const table = document.createElement("table");
+        table.style.cssText = "border-collapse:collapse;table-layout:fixed;width:100%;margin:0";
+        const head = document.createElement("thead"),
+          header = document.createElement("tr"),
+          cell = document.createElement("td"),
+          body = document.createElement("tbody");
+        header.dataset.wordRepeatHeader = "true";
+        cell.style.cssText = "padding:0;border:0;position:relative";
+        const separator = specials.create("endnote", "separator");
+        if (separator) cell.append(separator);
+        header.append(cell);
+        head.append(header);
+        table.append(head, body);
+        region.append(table);
+        const measurement = markViewNode(document.createElement("table"));
+        measurement.dataset.sdkNoteHeaderMeasurement = "";
+        measurement.style.cssText =
+          "position:absolute;visibility:hidden;width:100%;table-layout:fixed;border-collapse:collapse";
+        const continued = document.createElement("tr"),
+          continuedCell = document.createElement("td");
+        continuedCell.style.cssText = "padding:0;border:0";
+        const next = specials.create("endnote", "continuationSeparator");
+        if (next) continuedCell.append(next);
+        continued.append(continuedCell);
+        measurement.append(continued);
+        cell.append(measurement);
+        setContinuationHeader(header, continued);
+        for (const reference of entries) {
+          const note = definitions.get(reference.noteId)!,
+            copy = clone(note),
+            row = document.createElement("tr"),
+            cell = document.createElement("td");
+          cell.style.cssText = "padding:0;border:0;vertical-align:top";
+          cell.append(copy);
+          row.append(cell);
+          body.append(row);
+          noteCopies.set(note.noteId, [copy]);
+          generated += copy.querySelectorAll("*").length + 1;
+        }
+        if ((generated = document.querySelectorAll("*").length) > limits.maxNodes)
+          throw new DocumentError(
+            "ResourceLimitExceeded",
+            "Endnotes exceed the render node budget.",
+          );
+        views[index]?.element.append(region);
+        regions.push(region);
+      }
+    },
+    reserved: (index) => reservations.get(index) ?? 0,
+    minimumPage(node) {
+      const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
+      return minimum.get(
+        element?.closest<HTMLElement>("[data-word-note-reference]")?.dataset.nodeId ?? "",
+      );
+    },
+    get changed() {
+      return changed;
+    },
+    get requiredPages() {
+      return requiredPages;
+    },
+    measure(input) {
+      layer.replaceChildren();
+      changed = false;
+      if (!input.length || !definitions.size) return input;
+      const pages = [...input],
+        origin = root.getBoundingClientRect(),
+        base = article.getBoundingClientRect(),
+        buckets = new Map<
+          number,
+          {
+            noteId: string;
+            offset: number;
+            height: number;
+            placement: "after" | "bottom";
+            more: boolean;
+          }[]
+        >(),
+        nextReservations = new Map<number, number>();
+      const pageOf = (element: HTMLElement): number =>
+          Math.max(
+            0,
+            pages.findIndex((page) => {
+              const y = (element.getBoundingClientRect().top - origin.top) * 0.75;
+              return y >= page.rect.y && y < page.rect.y + page.rect.height;
+            }),
+          ),
+        numbered = new Map<string, Counter>();
+      for (const reference of ordered) {
+        const note = definitions.get(reference.noteId)!,
+          element = source.elements.get(reference.nodeId)?.element;
+        if (!element) continue;
+        const page = pages[pageOf(element)]!,
+          section = sectionByReference.get(reference.nodeId) ?? 0,
+          number = nextNumber(numbered, note.kind, section, page.index);
+        const value = reference.customMark ?? label(note.kind, number, section);
+        for (const marker of [
+          element,
+          ...(templates
+            .get(note.storyId)
+            ?.querySelectorAll<HTMLElement>("[data-word-note-number]") ?? []),
+          ...(noteCopies.get(note.noteId) ?? []).flatMap((copy) => [
+            ...copy.querySelectorAll<HTMLElement>("[data-word-note-number]"),
+          ]),
+        ]) {
+          const display = marker.lastElementChild;
+          if (display && display.textContent !== value) {
+            display.textContent = value;
+            changed = true;
+          }
+        }
+      }
+      for (const region of regions) source.registerInstances(region);
+      const ensure = (index: number): RenderedPage => {
+        if (index >= limits.maxPages)
+          throw new DocumentError("ResourceLimitExceeded", "Notes exceed the render page budget.");
+        while (index >= pages.length) {
+          const last = pages.at(-1)!,
+            next = Object.freeze({
+              ...last,
+              pageId: "page-" + (pages.length + 1),
+              index: pages.length,
+              number: last.number + 1,
+              label: String(last.number + 1),
+              rect: Object.freeze({ ...last.rect, y: last.rect.y + last.rect.height + 18 }),
+              blank: false,
+            });
+          pages.push(next);
+          const paper = document.createElement("div");
+          paper.className = "sdk-paper";
+          paper.style.cssText = `position:absolute;left:${(origin.left - base.left) * 0.75 + next.rect.x}pt;top:${(origin.top - base.top) * 0.75 + next.rect.y}pt;width:${next.rect.width}pt;height:${next.rect.height}pt;background:white`;
+          layer.append(paper);
+        }
+        return pages[index]!;
+      };
+      for (const reference of ordered) {
+        const note = definitions.get(reference.noteId)!,
+          element = source.elements.get(reference.nodeId)?.element;
+        if (!element || note.kind === "endnote") continue;
+        let index = Math.max(
+          0,
+          pages.findIndex((page) => {
+            const y = (element.getBoundingClientRect().top - origin.top) * 0.75;
+            return y >= page.rect.y && y < page.rect.y + page.rect.height;
+          }),
+        );
+        if (index > (minimum.get(reference.nodeId) ?? 0)) {
+          minimum.set(reference.nodeId, index);
+          changed = true;
+        }
+        const measurement = clone(note),
+          page = ensure(index),
+          printable = page.setup.width - page.setup.margins.left - page.setup.margins.right;
+        measurement.style.width = printable + "pt";
+        measurement.style.position = "absolute";
+        measurement.style.visibility = "hidden";
+        layer.append(measurement);
+        const bounds = measurement.getBoundingClientRect(),
+          cuts: number[] = [];
+        const walker = document.createTreeWalker(measurement, 4);
+        for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          for (const rect of range.getClientRects())
+            if (rect.width > 0.1 && rect.height > 0.1) {
+              const cut = rect.top - bounds.top;
+              if (cut > 0.5) cuts.push(cut);
+            }
+        }
+        let remaining = Math.max(measurement.scrollHeight, bounds.height),
+          offset = 0;
+        cuts.push(remaining);
+        cuts.sort((a, b) => a - b);
+        measurement.remove();
+        while (remaining > 0.1) {
+          const current = ensure(index),
+            capacity = Math.max(
+              24,
+              (((current.setup.height - current.setup.margins.top - current.setup.margins.bottom) *
+                4) /
+                3) *
+                0.72,
+            ),
+            entries = buckets.get(index) ?? [],
+            used = entries.reduce((total, entry) => total + entry.height, 0),
+            width = current.setup.width - current.setup.margins.left - current.setup.margins.right,
+            header =
+              Math.max(
+                specials.height("footnote", "separator", width, layer),
+                specials.height("footnote", "continuationSeparator", width, layer),
+              ) + 8,
+            notice = specials.height("footnote", "continuationNotice", width, layer),
+            available =
+              capacity - used - header - (remaining > capacity - used - header ? notice : 0);
+          if (available < 16) {
+            index++;
+            continue;
+          }
+          const safe = cuts
+              .filter((cut) => cut > offset + 0.5 && cut <= offset + available + 0.5)
+              .at(-1),
+            height =
+              remaining <= available
+                ? remaining
+                : safe
+                  ? Math.max(0.5, safe - offset)
+                  : Math.min(remaining, available);
+          entries.push({
+            noteId: note.noteId,
+            offset,
+            height,
+            more: remaining > height + 0.1,
+            placement:
+              options("footnote", sectionByReference.get(reference.nodeId)).position ===
+              "beneathText"
+                ? "after"
+                : "bottom",
+          });
+          buckets.set(index, entries);
+          remaining -= height;
+          offset += height;
+          if (remaining > 0.1) index++;
+        }
+      }
+      let generated = document.querySelectorAll("*").length;
+      const countDecoration = (node: HTMLElement): void => {
+        generated += node.querySelectorAll("*").length + 1;
+        if (generated > limits.maxNodes)
+          throw new DocumentError(
+            "ResourceLimitExceeded",
+            "Note decorations exceed the render node budget.",
+          );
+      };
+      for (const [index, entries] of buckets) {
+        const page = ensure(index),
+          bottomEntries = entries.filter((entry) => entry.placement === "bottom"),
+          bottomHeight = bottomEntries.length
+            ? bottomEntries.reduce((total, entry) => total + entry.height, 0) +
+              8 +
+              specials.height(
+                "footnote",
+                bottomEntries.some((entry) => entry.offset > 0)
+                  ? "continuationSeparator"
+                  : "separator",
+                page.setup.width - page.setup.margins.left - page.setup.margins.right,
+                layer,
+              ) +
+              (bottomEntries.some((entry) => entry.more)
+                ? specials.height(
+                    "footnote",
+                    "continuationNotice",
+                    page.setup.width - page.setup.margins.left - page.setup.margins.right,
+                    layer,
+                  )
+                : 0)
+            : 0;
+        let reserved = 0;
+        for (const placement of ["after", "bottom"] as const) {
+          const visible = entries.filter((entry) => entry.placement === placement);
+          if (!visible.length) continue;
+          const width = page.setup.width - page.setup.margins.left - page.setup.margins.right,
+            separatorType = visible.some((entry) => entry.offset > 0)
+              ? "continuationSeparator"
+              : "separator",
+            hasMore = visible.some((entry) => entry.more),
+            overhead =
+              specials.height("footnote", separatorType, width, layer) +
+              8 +
+              (hasMore ? specials.height("footnote", "continuationNotice", width, layer) : 0),
+            height = visible.reduce((total, entry) => total + entry.height, 0) + overhead,
+            limit =
+              page.setup.height -
+              page.setup.margins.bottom -
+              height * 0.75 -
+              (placement === "after" ? bottomHeight * 0.75 : 0),
+            top =
+              placement === "after"
+                ? Math.min(limit, contentBottom?.(index) ?? page.setup.margins.top)
+                : limit,
+            container = document.createElement("div");
+          container.className = "sdk-page-notes";
+          container.dataset.pageId = page.pageId;
+          container.dataset.notePlacement = placement;
+          container.style.cssText = `position:absolute;left:${(origin.left - base.left) * 0.75 + page.rect.x + page.setup.margins.left}pt;top:${(origin.top - base.top) * 0.75 + page.rect.y + top}pt;width:${page.setup.width - page.setup.margins.left - page.setup.margins.right}pt;height:${height}px;pointer-events:auto;box-sizing:border-box`;
+          layer.append(container);
+          const separator = specials.create("footnote", separatorType);
+          if (separator) {
+            countDecoration(separator);
+            container.append(separator);
+            source.registerInstances(separator);
+          }
+          const gap = document.createElement("div");
+          gap.style.height = "8px";
+          container.append(gap);
+          for (const entry of visible) {
+            const note = definitions.get(entry.noteId)!,
+              clip = document.createElement("div"),
+              content = clone(note);
+            clip.style.cssText = `position:relative;overflow:hidden;height:${entry.height}px`;
+            content.style.top = -entry.offset + "px";
+            clip.append(content);
+            container.append(clip);
+            generated += content.querySelectorAll("*").length + 2;
+            source.registerInstances(content);
+            if (generated > limits.maxNodes)
+              throw new DocumentError(
+                "ResourceLimitExceeded",
+                "Note continuations exceed the render node budget.",
+              );
+          }
+          if (hasMore) {
+            const notice = specials.create("footnote", "continuationNotice");
+            if (notice) {
+              countDecoration(notice);
+              container.append(notice);
+              source.registerInstances(notice);
+            }
+          }
+          reserved += height;
+        }
+        if (index < input.length) nextReservations.set(index, reserved);
+      }
+      // Endnotes flow with the body. Reserve their continuation notice below the
+      // text on every page whose note text continues onto a later physical page.
+      for (const region of regions) {
+        const occupied = new Set<number>(),
+          walker = document.createTreeWalker(region, 4);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (node.parentElement?.closest("[data-sdk-note-header-measurement]")) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          for (const rect of range.getClientRects()) {
+            if (rect.width < 0.1 || rect.height < 0.1) continue;
+            const y = (rect.top - origin.top) * 0.75,
+              index = pages.findIndex(
+                (page) => y >= page.rect.y && y < page.rect.y + page.rect.height,
+              );
+            if (index >= 0) occupied.add(index);
+          }
+        }
+        const last = Math.max(-1, ...occupied);
+        for (const index of occupied) {
+          if (index === last) continue;
+          const page = pages[index]!,
+            width = page.setup.width - page.setup.margins.left - page.setup.margins.right,
+            height = specials.height("endnote", "continuationNotice", width, layer);
+          if (!height) continue;
+          const notice = specials.create("endnote", "continuationNotice")!;
+          const foot = nextReservations.get(index) ?? 0;
+          notice.style.cssText += `;position:absolute;left:${(origin.left - base.left) * 0.75 + page.rect.x + page.setup.margins.left}pt;top:${(origin.top - base.top) * 0.75 + page.rect.y + page.setup.height - page.setup.margins.bottom - (foot + height) * 0.75}pt;width:${width}pt;pointer-events:auto`;
+          countDecoration(notice);
+          layer.append(notice);
+          source.registerInstances(notice);
+          nextReservations.set(index, foot + height);
+        }
+      }
+      if (document.querySelectorAll("*").length > limits.maxNodes)
+        throw new DocumentError(
+          "ResourceLimitExceeded",
+          "Note decorations exceed the render node budget.",
+        );
+      const required = buckets.size ? Math.max(...buckets.keys()) + 1 : 0;
+      if (required !== requiredPages) {
+        requiredPages = required;
+        changed = true;
+      }
+      for (const [index, height] of nextReservations)
+        if (Math.abs((reservations.get(index) ?? 0) - height) > 0.5) changed = true;
+      for (const index of reservations.keys()) if (!nextReservations.has(index)) changed = true;
+      reservations.clear();
+      for (const entry of nextReservations) reservations.set(...entry);
+      ownViewStyle(root, "min-height");
+      root.style.minHeight = pages.at(-1)!.rect.y + pages.at(-1)!.rect.height + "pt";
+      return Object.freeze(pages);
+    },
+    dispose() {
+      layer.remove();
+      for (const region of regions) region.remove();
+    },
+  };
 }

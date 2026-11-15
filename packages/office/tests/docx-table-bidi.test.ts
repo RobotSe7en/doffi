@@ -1,15 +1,123 @@
-import{expect,test}from'vitest';
-import{strFromU8,unzipSync}from'fflate';
-import{createDocumentSession,openDocument,SourceStyleResolver,DEFAULT_DOCUMENT_READ_LIMITS}from'@doffi/core';
-import type{ContentDocumentModel,DocumentOperation,SourceStyleNode}from'@doffi/core';
-import{exportDocx,importDocx}from'@doffi/office';
-import{tableBidiFixture}from'./table-bidi-fixture.js';
-function direction(model:ContentDocumentModel,id:string){const css=new SourceStyleResolver(model.snapshot().styles.map(sheet=>sheet.css),DEFAULT_DOCUMENT_READ_LIMITS),project=(id:string):SourceStyleNode=>{const node=model.getNode(id)!;return{tag:node.tagName,attrs:node.attributes,parent:node.parentNodeId?project(node.parentNodeId):undefined};};return css.get(project(id))['--word-table-bidi'];}
-function setup(override=''){const session=createDocumentSession(openDocument(importDocx(tableBidiFixture(override),{documentId:'table-bidi',unsupportedContent:'reject'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'table-bidi',baseRevision:session.snapshot().manifest.revision,operations}));return{session,apply};}
-for(const override of ['', '<w:bidiVisual w:val="0"/>'])test('table direction maps shared styles and direct OFF without leaking into a nested table: '+override,()=>{
- const{session}=setup(override);expect(session.snapshot().metadata.word!.nativeContent?.fragments??[]).toEqual([]);let bytes=exportDocx(session).bytes;
- for(let pass=0;pass<2;pass++){const model=openDocument(importDocx(bytes,{documentId:'bidi-native',unsupportedContent:'reject'}),{kind:'document'}),tables=model.snapshot().metadata.word!.tables,outer=tables.find(info=>model.getNode(info.nodeId)!.text==='ABLRCD')!,inner=tables.find(info=>model.getNode(info.nodeId)!.text==='LR')!;expect(direction(model,outer.nodeId)).toBe(override?'0':'1');expect(direction(model,inner.nodeId)).toBeUndefined();expect(model.getNode(outer.nodeId)!.text).toBe('ABLRCD');const xml=strFromU8(unzipSync(bytes)['word/document.xml']!);expect(xml.match(/<w:bidiVisual/g)?.length??0).toBe(override?1:0);bytes=exportDocx(model).bytes;}
-});
-test('tracked direction changes preserve native before-properties and reject and undo atomically',()=>{
- const{session,apply}=setup(),table=session.snapshot().metadata.word!.tables.find(info=>session.getNode(info.nodeId)!.text==='ABLRCD')!,root=session.getNode(session.snapshot().metadata.word!.stories[0]!.rootNodeId)!.parentNodeId!,before=session.snapshot();apply([{op:'setWordReview',nodeId:root,trackChanges:true,author:'A'},{op:'formatWordTable',nodeId:table.nodeId,properties:{'--word-table-bidi':'0'}}]);expect(direction(session,table.nodeId)).toBe('0');const native=createDocumentSession(openDocument(importDocx(exportDocx(session).bytes,{documentId:'bidi-review',unsupportedContent:'reject'}),{kind:'document'})),main=native.snapshot().metadata.word!.stories[0]!;native.commit(native.prepare({protocolVersion:1,documentId:'bidi-review',baseRevision:0,operations:[{op:'reviewWordRevisions',nodeId:native.getNode(main.rootNodeId)!.parentNodeId!,decision:'reject'}]}));const retained=native.snapshot().metadata.word!.tables.find(info=>native.getNode(info.nodeId)!.text==='ABLRCD')!;expect(direction(native,retained.nodeId)).toBe('1');openDocument(importDocx(exportDocx(native).bytes,{documentId:'bidi-reviewed',unsupportedContent:'reject'}),{kind:'document'});session.undo();expect(session.snapshot().html).toBe(before.html);expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
+import { expect, test } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
+import {
+  createDocumentSession,
+  openDocument,
+  SourceStyleResolver,
+  DEFAULT_DOCUMENT_READ_LIMITS,
+} from "@doffi/core";
+import type { ContentDocumentModel, DocumentOperation, SourceStyleNode } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+import { tableBidiFixture } from "./table-bidi-fixture.js";
+function direction(model: ContentDocumentModel, id: string) {
+  const css = new SourceStyleResolver(
+      model.snapshot().styles.map((sheet) => sheet.css),
+      DEFAULT_DOCUMENT_READ_LIMITS,
+    ),
+    project = (id: string): SourceStyleNode => {
+      const node = model.getNode(id)!;
+      return {
+        tag: node.tagName,
+        attrs: node.attributes,
+        parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
+      };
+    };
+  return css.get(project(id))["--word-table-bidi"];
+}
+function setup(override = "") {
+  const session = createDocumentSession(
+      openDocument(
+        importDocx(tableBidiFixture(override), {
+          documentId: "table-bidi",
+          unsupportedContent: "reject",
+        }),
+        { kind: "document" },
+      ),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "table-bidi",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  return { session, apply };
+}
+for (const override of ["", '<w:bidiVisual w:val="0"/>'])
+  test(
+    "table direction maps shared styles and direct OFF without leaking into a nested table: " +
+      override,
+    () => {
+      const { session } = setup(override);
+      expect(session.snapshot().metadata.word!.nativeContent?.fragments ?? []).toEqual([]);
+      let bytes = exportDocx(session).bytes;
+      for (let pass = 0; pass < 2; pass++) {
+        const model = openDocument(
+            importDocx(bytes, { documentId: "bidi-native", unsupportedContent: "reject" }),
+            { kind: "document" },
+          ),
+          tables = model.snapshot().metadata.word!.tables,
+          outer = tables.find((info) => model.getNode(info.nodeId)!.text === "ABLRCD")!,
+          inner = tables.find((info) => model.getNode(info.nodeId)!.text === "LR")!;
+        expect(direction(model, outer.nodeId)).toBe(override ? "0" : "1");
+        expect(direction(model, inner.nodeId)).toBeUndefined();
+        expect(model.getNode(outer.nodeId)!.text).toBe("ABLRCD");
+        const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+        expect(xml.match(/<w:bidiVisual/g)?.length ?? 0).toBe(override ? 1 : 0);
+        bytes = exportDocx(model).bytes;
+      }
+    },
+  );
+test("tracked direction changes preserve native before-properties and reject and undo atomically", () => {
+  const { session, apply } = setup(),
+    table = session
+      .snapshot()
+      .metadata.word!.tables.find((info) => session.getNode(info.nodeId)!.text === "ABLRCD")!,
+    root = session.getNode(session.snapshot().metadata.word!.stories[0]!.rootNodeId)!.parentNodeId!,
+    before = session.snapshot();
+  apply([
+    { op: "setWordReview", nodeId: root, trackChanges: true, author: "A" },
+    { op: "formatWordTable", nodeId: table.nodeId, properties: { "--word-table-bidi": "0" } },
+  ]);
+  expect(direction(session, table.nodeId)).toBe("0");
+  const native = createDocumentSession(
+      openDocument(
+        importDocx(exportDocx(session).bytes, {
+          documentId: "bidi-review",
+          unsupportedContent: "reject",
+        }),
+        { kind: "document" },
+      ),
+    ),
+    main = native.snapshot().metadata.word!.stories[0]!;
+  native.commit(
+    native.prepare({
+      protocolVersion: 1,
+      documentId: "bidi-review",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevisions",
+          nodeId: native.getNode(main.rootNodeId)!.parentNodeId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  const retained = native
+    .snapshot()
+    .metadata.word!.tables.find((info) => native.getNode(info.nodeId)!.text === "ABLRCD")!;
+  expect(direction(native, retained.nodeId)).toBe("1");
+  openDocument(
+    importDocx(exportDocx(native).bytes, {
+      documentId: "bidi-reviewed",
+      unsupportedContent: "reject",
+    }),
+    { kind: "document" },
+  );
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
 });

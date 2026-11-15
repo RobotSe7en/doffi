@@ -1,13 +1,179 @@
-import{expect,test}from'vitest';
-import{createWordDocument,createDocumentSession,openDocument}from'@doffi/core';
-import{exportDocx,importDocx}from'@doffi/office';
-import{unzipSync,zipSync,strFromU8,strToU8}from'fflate';
-test('splitting the receiving paragraph retains its opaque native properties on both sides',()=>{
- const source=createDocumentSession(openDocument(createWordDocument({documentId:'block-native-properties-source'}),{kind:'document'}));source.commit(source.prepare({protocolVersion:1,documentId:'block-native-properties-source',baseRevision:0,operations:[{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'ABCD'}]}));const files=unzipSync(exportDocx(source).bytes);files['word/document.xml']=strToU8(strFromU8(files['word/document.xml']!).replace('</w:pPr>','<w:overflowPunct w:val="true"/></w:pPr>'));
- const session=createDocumentSession(openDocument(importDocx(zipSync(files),{documentId:'block-native-properties'}),{kind:'document'})),main=session.getNode(session.snapshot().metadata.word!.stories[0]!.rootNodeId)!,queue=[main.nodeId];let paragraph:string|undefined;for(let index=0;index<queue.length;index++){const node=session.getNode(queue[index]!)!;if(node.tagName==='p'){paragraph=node.nodeId;break;}queue.push(...node.childNodeIds);}expect(paragraph).toBeDefined();session.commit(session.prepare({protocolVersion:1,documentId:'block-native-properties',baseRevision:0,operations:[{op:'pasteWordBlockContent',nodeId:paragraph!,from:1,to:3,expectedText:'BC',html:'<div><p>FIRST</p><p>SECOND</p></div>'}]}));let bytes=exportDocx(session).bytes;for(let pass=0;pass<2;pass++){expect(strFromU8(unzipSync(bytes)['word/document.xml']!).match(/<w:overflowPunct\b/g)).toHaveLength(2);const model=openDocument(importDocx(bytes,{documentId:'block-native-properties-reopen'}),{kind:'document'});bytes=exportDocx(model).bytes;}session.undo();expect(session.getNode(paragraph!)!.text).toBe('ABCD');
+import { expect, test } from "vitest";
+import { createWordDocument, createDocumentSession, openDocument } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
+test("splitting the receiving paragraph retains its opaque native properties on both sides", () => {
+  const source = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "block-native-properties-source" }), {
+      kind: "document",
+    }),
+  );
+  source.commit(
+    source.prepare({
+      protocolVersion: 1,
+      documentId: "block-native-properties-source",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "replaceText",
+          nodeId: "paragraph-1",
+          from: 0,
+          to: 0,
+          expectedText: "",
+          text: "ABCD",
+        },
+      ],
+    }),
+  );
+  const files = unzipSync(exportDocx(source).bytes);
+  files["word/document.xml"] = strToU8(
+    strFromU8(files["word/document.xml"]!).replace(
+      "</w:pPr>",
+      '<w:overflowPunct w:val="true"/></w:pPr>',
+    ),
+  );
+  const session = createDocumentSession(
+      openDocument(importDocx(zipSync(files), { documentId: "block-native-properties" }), {
+        kind: "document",
+      }),
+    ),
+    main = session.getNode(session.snapshot().metadata.word!.stories[0]!.rootNodeId)!,
+    queue = [main.nodeId];
+  let paragraph: string | undefined;
+  for (let index = 0; index < queue.length; index++) {
+    const node = session.getNode(queue[index]!)!;
+    if (node.tagName === "p") {
+      paragraph = node.nodeId;
+      break;
+    }
+    queue.push(...node.childNodeIds);
+  }
+  expect(paragraph).toBeDefined();
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "block-native-properties",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "pasteWordBlockContent",
+          nodeId: paragraph!,
+          from: 1,
+          to: 3,
+          expectedText: "BC",
+          html: "<div><p>FIRST</p><p>SECOND</p></div>",
+        },
+      ],
+    }),
+  );
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    expect(
+      strFromU8(unzipSync(bytes)["word/document.xml"]!).match(/<w:overflowPunct\b/g),
+    ).toHaveLength(2);
+    const model = openDocument(
+      importDocx(bytes, { documentId: "block-native-properties-reopen" }),
+      { kind: "document" },
+    );
+    bytes = exportDocx(model).bytes;
+  }
+  session.undo();
+  expect(session.getNode(paragraph!)!.text).toBe("ABCD");
 });
-for(const tracked of [false,true])test('multi-paragraph semantic paste exports editable paragraph marks and fields across native review '+tracked,()=>{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'native-block-content'}),{kind:'document'}));session.commit(session.prepare({protocolVersion:1,documentId:'native-block-content',baseRevision:0,operations:[{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'ABCD'},{op:'setWordReview',nodeId:'document-root',trackChanges:tracked,author:'Receiver'},{op:'pasteWordBlockContent',nodeId:'paragraph-1',from:1,to:3,expectedText:'BC',html:'<div style="font-family:serif"><p data-node-id="p0">FIRST</p><p data-node-id="p1"><span data-node-id="f" data-word-field="simple">9</span></p></div>',semantics:{fields:[{nodeId:'f',instruction:' PAGE ',resultState:'cached',resultNodeIds:['f']}]}}]}));let bytes=exportDocx(session).bytes;
- for(let pass=0;pass<3;pass++){const model=openDocument(importDocx(bytes,{documentId:'block-reopened',unsupportedContent:'reject'}),{kind:'document'});expect(model.snapshot().metadata.word!.fields).toHaveLength(1);expect(model.snapshot().html.match(/<p\b/g)).toHaveLength(4);bytes=exportDocx(model).bytes;}
- if(tracked)for(const decision of ['accept','reject']as const){const review=createDocumentSession(openDocument(importDocx(bytes,{documentId:'block-review',unsupportedContent:'reject'}),{kind:'document'})),root=review.getNode(review.snapshot().metadata.word!.stories[0]!.rootNodeId)!.parentNodeId!;review.commit(review.prepare({protocolVersion:1,documentId:'block-review',baseRevision:0,operations:[{op:'reviewWordRevisions',nodeId:root,decision}]}));const model=openDocument(importDocx(exportDocx(review).bytes,{documentId:'block-reviewed',unsupportedContent:'reject'}),{kind:'document'});expect(model.snapshot().html.match(/<p\b/g)).toHaveLength(decision==='accept'?4:1);expect(model.snapshot().metadata.word!.fields).toHaveLength(decision==='accept'?1:0);expect(model.getNode(model.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text).toBe(decision==='accept'?'AFIRST9D':'ABCD');}
-});
+for (const tracked of [false, true])
+  test(
+    "multi-paragraph semantic paste exports editable paragraph marks and fields across native review " +
+      tracked,
+    () => {
+      const session = createDocumentSession(
+        openDocument(createWordDocument({ documentId: "native-block-content" }), {
+          kind: "document",
+        }),
+      );
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "native-block-content",
+          baseRevision: 0,
+          operations: [
+            {
+              op: "replaceText",
+              nodeId: "paragraph-1",
+              from: 0,
+              to: 0,
+              expectedText: "",
+              text: "ABCD",
+            },
+            {
+              op: "setWordReview",
+              nodeId: "document-root",
+              trackChanges: tracked,
+              author: "Receiver",
+            },
+            {
+              op: "pasteWordBlockContent",
+              nodeId: "paragraph-1",
+              from: 1,
+              to: 3,
+              expectedText: "BC",
+              html: '<div style="font-family:serif"><p data-node-id="p0">FIRST</p><p data-node-id="p1"><span data-node-id="f" data-word-field="simple">9</span></p></div>',
+              semantics: {
+                fields: [
+                  {
+                    nodeId: "f",
+                    instruction: " PAGE ",
+                    resultState: "cached",
+                    resultNodeIds: ["f"],
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+      let bytes = exportDocx(session).bytes;
+      for (let pass = 0; pass < 3; pass++) {
+        const model = openDocument(
+          importDocx(bytes, { documentId: "block-reopened", unsupportedContent: "reject" }),
+          { kind: "document" },
+        );
+        expect(model.snapshot().metadata.word!.fields).toHaveLength(1);
+        expect(model.snapshot().html.match(/<p\b/g)).toHaveLength(4);
+        bytes = exportDocx(model).bytes;
+      }
+      if (tracked)
+        for (const decision of ["accept", "reject"] as const) {
+          const review = createDocumentSession(
+              openDocument(
+                importDocx(bytes, { documentId: "block-review", unsupportedContent: "reject" }),
+                { kind: "document" },
+              ),
+            ),
+            root = review.getNode(
+              review.snapshot().metadata.word!.stories[0]!.rootNodeId,
+            )!.parentNodeId!;
+          review.commit(
+            review.prepare({
+              protocolVersion: 1,
+              documentId: "block-review",
+              baseRevision: 0,
+              operations: [{ op: "reviewWordRevisions", nodeId: root, decision }],
+            }),
+          );
+          const model = openDocument(
+            importDocx(exportDocx(review).bytes, {
+              documentId: "block-reviewed",
+              unsupportedContent: "reject",
+            }),
+            { kind: "document" },
+          );
+          expect(model.snapshot().html.match(/<p\b/g)).toHaveLength(decision === "accept" ? 4 : 1);
+          expect(model.snapshot().metadata.word!.fields).toHaveLength(
+            decision === "accept" ? 1 : 0,
+          );
+          expect(model.getNode(model.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text).toBe(
+            decision === "accept" ? "AFIRST9D" : "ABCD",
+          );
+        }
+    },
+  );

@@ -1,11 +1,88 @@
-import{expect,test}from'vitest';
-import{createDocumentSession,openDocument,SourceStyleResolver,DEFAULT_DOCUMENT_READ_LIMITS}from'@doffi/core';
-import type{ContentDocumentModel,SourceStyleNode}from'@doffi/core';
-import{exportDocx,importDocx}from'@doffi/office';
-import{contextualSpacingFixture}from'./contextual-spacing-fixture.js';
-function read(bytes:Uint8Array){const session=createDocumentSession(openDocument(importDocx(bytes,{documentId:'contextual',unsupportedContent:'reject'}),{kind:'document'})),word=session.snapshot().metadata.word!,nodes=[word.stories[0]!.rootNodeId];for(let i=0;i<nodes.length;i++)nodes.push(...session.getNode(nodes[i]!)!.childNodeIds);return{session,paragraph:nodes.find(id=>session.getNode(id)!.tagName==='p'&&session.getNode(id)!.text==='A')!,root:session.getNode(nodes[0]!)!.parentNodeId!};}
-function current(model:ContentDocumentModel,id:string){const css=new SourceStyleResolver(model.snapshot().styles.map(sheet=>sheet.css),DEFAULT_DOCUMENT_READ_LIMITS),project=(id:string):SourceStyleNode=>{const node=model.getNode(id)!;return{tag:node.tagName,attrs:node.attributes,parent:node.parentNodeId?project(node.parentNodeId):undefined};};return css.get(project(id))['--word-contextual-spacing'];}
-test('same-style contextual paragraph spacing retains inheritance, explicit OFF and tracked rejection across native reopens',()=>{
- const{session,paragraph,root}=read(contextualSpacingFixture()),before=session.snapshot();expect(current(session,paragraph)).toBe('1');session.commit(session.prepare({protocolVersion:1,documentId:'contextual',baseRevision:0,operations:[{op:'setWordReview',nodeId:root,trackChanges:true,author:'A'},{op:'setWordParagraph',nodeId:paragraph,properties:{'--word-contextual-spacing':'0'}}]}));let bytes=exportDocx(session).bytes;for(let pass=0;pass<3;pass++){const next=read(bytes);expect(current(next.session,next.paragraph)).toBe('0');next.session.commit(next.session.prepare({protocolVersion:1,documentId:'contextual',baseRevision:0,operations:[{op:'reviewWordRevisions',nodeId:next.root,decision:'reject'}]}));expect(current(next.session,next.paragraph)).toBe('1');const rejected=read(exportDocx(next.session).bytes);expect(current(rejected.session,rejected.paragraph)).toBe('1');bytes=exportDocx(read(bytes).session).bytes;}session.undo();expect(session.snapshot().html).toBe(before.html);session.redo();expect(current(session,paragraph)).toBe('0');
+import { expect, test } from "vitest";
+import {
+  createDocumentSession,
+  openDocument,
+  SourceStyleResolver,
+  DEFAULT_DOCUMENT_READ_LIMITS,
+} from "@doffi/core";
+import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+import { contextualSpacingFixture } from "./contextual-spacing-fixture.js";
+function read(bytes: Uint8Array) {
+  const session = createDocumentSession(
+      openDocument(importDocx(bytes, { documentId: "contextual", unsupportedContent: "reject" }), {
+        kind: "document",
+      }),
+    ),
+    word = session.snapshot().metadata.word!,
+    nodes = [word.stories[0]!.rootNodeId];
+  for (let i = 0; i < nodes.length; i++) nodes.push(...session.getNode(nodes[i]!)!.childNodeIds);
+  return {
+    session,
+    paragraph: nodes.find(
+      (id) => session.getNode(id)!.tagName === "p" && session.getNode(id)!.text === "A",
+    )!,
+    root: session.getNode(nodes[0]!)!.parentNodeId!,
+  };
+}
+function current(model: ContentDocumentModel, id: string) {
+  const css = new SourceStyleResolver(
+      model.snapshot().styles.map((sheet) => sheet.css),
+      DEFAULT_DOCUMENT_READ_LIMITS,
+    ),
+    project = (id: string): SourceStyleNode => {
+      const node = model.getNode(id)!;
+      return {
+        tag: node.tagName,
+        attrs: node.attributes,
+        parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
+      };
+    };
+  return css.get(project(id))["--word-contextual-spacing"];
+}
+test("same-style contextual paragraph spacing retains inheritance, explicit OFF and tracked rejection across native reopens", () => {
+  const { session, paragraph, root } = read(contextualSpacingFixture()),
+    before = session.snapshot();
+  expect(current(session, paragraph)).toBe("1");
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "contextual",
+      baseRevision: 0,
+      operations: [
+        { op: "setWordReview", nodeId: root, trackChanges: true, author: "A" },
+        {
+          op: "setWordParagraph",
+          nodeId: paragraph,
+          properties: { "--word-contextual-spacing": "0" },
+        },
+      ],
+    }),
+  );
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 3; pass++) {
+    const next = read(bytes);
+    expect(current(next.session, next.paragraph)).toBe("0");
+    next.session.commit(
+      next.session.prepare({
+        protocolVersion: 1,
+        documentId: "contextual",
+        baseRevision: 0,
+        operations: [{ op: "reviewWordRevisions", nodeId: next.root, decision: "reject" }],
+      }),
+    );
+    expect(current(next.session, next.paragraph)).toBe("1");
+    const rejected = read(exportDocx(next.session).bytes);
+    expect(current(rejected.session, rejected.paragraph)).toBe("1");
+    bytes = exportDocx(read(bytes).session).bytes;
+  }
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  session.redo();
+  expect(current(session, paragraph)).toBe("0");
 });
-test('an invalid contextual-spacing Boolean is malformed rather than native recovery',()=>{expect(()=>read(contextualSpacingFixture('maybe'))).toThrowError(expect.objectContaining({code:'InvalidDocument'}));});
+test("an invalid contextual-spacing Boolean is malformed rather than native recovery", () => {
+  expect(() => read(contextualSpacingFixture("maybe"))).toThrowError(
+    expect.objectContaining({ code: "InvalidDocument" }),
+  );
+});

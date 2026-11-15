@@ -1,16 +1,150 @@
-import type{DocumentEditingSession,DocumentOperation,DocumentSection,DeepReadonly}from'@doffi/core';
+import type {
+  DocumentEditingSession,
+  DocumentOperation,
+  DocumentSection,
+  DeepReadonly,
+} from "@doffi/core";
 /** Section note numbering is distinct from document defaults. Endnote location
  * stays in the shared note panel; Word's endnote placement is document wide. */
-export function addWordSectionNoteControls(document:Document,panel:HTMLElement,session:DocumentEditingSession,selected:()=>{target:DeepReadonly<DocumentSection>},all:()=>boolean,apply:(operations:DocumentOperation[])=>void,onError:(error:unknown)=>void,signal:AbortSignal):()=>void{
- const loads:(()=>void)[]=[];
- const choose=(name:string,values:readonly(readonly[string,string])[]):HTMLSelectElement=>{const label=document.createElement('label'),input=document.createElement('select');input.setAttribute('aria-label',name);label.append(name,input);for(const[value,text]of values){const option=document.createElement('option');option.value=value;option.textContent=text;input.append(option);}panel.append(label);return input;};
- const button=(name:string,run:()=>void):void=>{const node=document.createElement('button');node.type='button';node.textContent=name;node.addEventListener('click',()=>{try{run();}catch(error){onError(error);}},{signal});panel.append(node);};
- for(const[kind,key]of [['脚注','footnoteOptions'],['尾注','endnoteOptions']]as const){
-  const format=choose('本节'+kind+'编号格式',[['','继承文档默认'],...['decimal','lowerRoman','upperRoman','lowerLetter','upperLetter','chicago'].map(value=>[value,value]as const)]),restart=choose('本节'+kind+'重新开始',[['','继承文档默认'],['continuous','连续'],['eachSect','每节'],['eachPage','每页']]),label=document.createElement('label'),start=document.createElement('input');start.type='number';start.min='1';start.setAttribute('aria-label','本节'+kind+'起始值');start.placeholder='继承';label.append('本节'+kind+'起始值',start);panel.append(label);
-  const position=key==='footnoteOptions'?choose('本节脚注位置',[['','页面底端（默认）'],['pageBottom','页面底端'],['beneathText','文字下方']]):undefined;
-  const load=():void=>{const options=selected().target[key];format.value=options?.format??'';restart.value=options?.restart??'';start.value=options?.start===undefined?'':String(options.start);if(position)position.value=options?.position??'';};loads.push(load);load();
-  button('应用本节'+kind+'设置',()=>{const snapshot=session.snapshot(),sections=snapshot.metadata.presentation?[]:all()?snapshot.metadata.sections:[selected().target],options={...(format.value?{format:format.value}:{}),...(restart.value?{restart:restart.value}:{}),...(start.value?{start:Number(start.value)}:{}),...(position?.value?{position:position.value}:{})};apply(sections.map(section=>({op:'setWordSection',nodeId:section.rootNodeId,changes:{[key]:{...(!position&&section[key]?.position?{position:section[key]!.position}:{}),...options}}})));});
- }
- const label=document.createElement('label'),suppress=document.createElement('input');suppress.type='checkbox';suppress.setAttribute('aria-label','尾注移至后续节');label.append(suppress,'尾注移至后续节');panel.append(label);loads.push(()=>{suppress.checked=selected().target.noEndnote??false;});loads.at(-1)!();button('应用尾注延后',()=>{const snapshot=session.snapshot(),sections=snapshot.metadata.presentation?[]:all()?snapshot.metadata.sections:[selected().target];apply(sections.map(section=>({op:'setWordSection',nodeId:section.rootNodeId,changes:{noEndnote:suppress.checked}})));});
- return()=>{for(const load of loads)load();};
+export function addWordSectionNoteControls(
+  document: Document,
+  panel: HTMLElement,
+  session: DocumentEditingSession,
+  selected: () => { target: DeepReadonly<DocumentSection> },
+  all: () => boolean,
+  apply: (operations: DocumentOperation[]) => void,
+  onError: (error: unknown) => void,
+  signal: AbortSignal,
+): () => void {
+  const loads: (() => void)[] = [];
+  const choose = (
+    name: string,
+    values: readonly (readonly [string, string])[],
+  ): HTMLSelectElement => {
+    const label = document.createElement("label"),
+      input = document.createElement("select");
+    input.setAttribute("aria-label", name);
+    label.append(name, input);
+    for (const [value, text] of values) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      input.append(option);
+    }
+    panel.append(label);
+    return input;
+  };
+  const button = (name: string, run: () => void): void => {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.textContent = name;
+    node.addEventListener(
+      "click",
+      () => {
+        try {
+          run();
+        } catch (error) {
+          onError(error);
+        }
+      },
+      { signal },
+    );
+    panel.append(node);
+  };
+  for (const [kind, key] of [
+    ["脚注", "footnoteOptions"],
+    ["尾注", "endnoteOptions"],
+  ] as const) {
+    const format = choose("本节" + kind + "编号格式", [
+        ["", "继承文档默认"],
+        ...["decimal", "lowerRoman", "upperRoman", "lowerLetter", "upperLetter", "chicago"].map(
+          (value) => [value, value] as const,
+        ),
+      ]),
+      restart = choose("本节" + kind + "重新开始", [
+        ["", "继承文档默认"],
+        ["continuous", "连续"],
+        ["eachSect", "每节"],
+        ["eachPage", "每页"],
+      ]),
+      label = document.createElement("label"),
+      start = document.createElement("input");
+    start.type = "number";
+    start.min = "1";
+    start.setAttribute("aria-label", "本节" + kind + "起始值");
+    start.placeholder = "继承";
+    label.append("本节" + kind + "起始值", start);
+    panel.append(label);
+    const position =
+      key === "footnoteOptions"
+        ? choose("本节脚注位置", [
+            ["", "页面底端（默认）"],
+            ["pageBottom", "页面底端"],
+            ["beneathText", "文字下方"],
+          ])
+        : undefined;
+    const load = (): void => {
+      const options = selected().target[key];
+      format.value = options?.format ?? "";
+      restart.value = options?.restart ?? "";
+      start.value = options?.start === undefined ? "" : String(options.start);
+      if (position) position.value = options?.position ?? "";
+    };
+    loads.push(load);
+    load();
+    button("应用本节" + kind + "设置", () => {
+      const snapshot = session.snapshot(),
+        sections = snapshot.metadata.presentation
+          ? []
+          : all()
+            ? snapshot.metadata.sections
+            : [selected().target],
+        options = {
+          ...(format.value ? { format: format.value } : {}),
+          ...(restart.value ? { restart: restart.value } : {}),
+          ...(start.value ? { start: Number(start.value) } : {}),
+          ...(position?.value ? { position: position.value } : {}),
+        };
+      apply(
+        sections.map((section) => ({
+          op: "setWordSection",
+          nodeId: section.rootNodeId,
+          changes: {
+            [key]: {
+              ...(!position && section[key]?.position ? { position: section[key]!.position } : {}),
+              ...options,
+            },
+          },
+        })),
+      );
+    });
+  }
+  const label = document.createElement("label"),
+    suppress = document.createElement("input");
+  suppress.type = "checkbox";
+  suppress.setAttribute("aria-label", "尾注移至后续节");
+  label.append(suppress, "尾注移至后续节");
+  panel.append(label);
+  loads.push(() => {
+    suppress.checked = selected().target.noEndnote ?? false;
+  });
+  loads.at(-1)!();
+  button("应用尾注延后", () => {
+    const snapshot = session.snapshot(),
+      sections = snapshot.metadata.presentation
+        ? []
+        : all()
+          ? snapshot.metadata.sections
+          : [selected().target];
+    apply(
+      sections.map((section) => ({
+        op: "setWordSection",
+        nodeId: section.rootNodeId,
+        changes: { noEndnote: suppress.checked },
+      })),
+    );
+  });
+  return () => {
+    for (const load of loads) load();
+  };
 }

@@ -1,18 +1,101 @@
-import {strFromU8,strToU8,unzipSync,zipSync} from 'fflate';
-import { body, styles, mutateDocx } from './regression-fixtures.js';
-const definition = (id: string, color: string, border: string) => `<w:style w:type="table" w:styleId="${id}"><w:rPr><w:color w:val="${color}"/></w:rPr><w:tblPr><w:tblBorders><w:insideH w:val="single" w:sz="8" w:color="${border}"/></w:tblBorders></w:tblPr><w:tcPr><w:shd w:fill="${color}"/></w:tcPr><w:tblStylePr w:type="firstRow"><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:b/><w:u w:val="single"/></w:rPr><w:tcPr><w:shd w:fill="${border}"/></w:tcPr></w:tblStylePr></w:style>`;
-export function tableStylesFixture() { return mutateDocx('02-table-merges.docx', { 'word/styles.xml': () => styles('<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:pPr><w:spacing w:after="0"/></w:pPr></w:style><w:style w:type="character" w:styleId="Toggle"><w:rPr><w:b/></w:rPr></w:style>' + definition('Red', 'CC0000', 'AA1111') + definition('Blue', '0000CC', '1111AA')), 'word/document.xml': source => body(source, '<w:tbl><w:tblPr><w:tblStyle w:val="Red"/><w:tblLook w:firstRow="1" w:noHBand="1" w:noVBand="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>' + [0, 1].map(row => '<w:tr>' + [0, 1].map(col => '<w:tc><w:tcPr>' + (row === 1 && col === 1 ? '<w:shd w:fill="00FF00"/>' : '') + '</w:tcPr><w:p><w:r>' + (row === 0 && col === 1 ? '<w:rPr><w:rStyle w:val="Toggle"/></w:rPr>' : '') + '<w:t>R' + row + 'C' + col + '</w:t></w:r></w:p></w:tc>').join('') + '</w:tr>').join('') + '</w:tbl>') }); }
-
-export function rowStylesFixture():Uint8Array{
- const files=unzipSync(tableStylesFixture());files['word/styles.xml']=strToU8(strFromU8(files['word/styles.xml']!).replace('<w:tblStylePr w:type="firstRow">','<w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>').replace('<w:style w:type="table" w:styleId="Red">','<w:style w:type="table" w:styleId="Red"><w:tblStylePr w:type="firstCol"><w:tcPr><w:tcMar><w:left w:w="260"/></w:tcMar><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr>'));
- files['word/document.xml']=strToU8(strFromU8(files['word/document.xml']!).replace('w:firstRow="1"','w:firstRow="1" w:firstColumn="1"').replace(/(<w:tr>[\s\S]*?<\/w:tr>)(<w:tr>[\s\S]*?<\/w:tr>)/,(_all,first:string,second:string)=>first+Array.from({length:30},(_,index)=>second.replaceAll('R1','ROW'+index)).join('')));
- return zipSync(files);
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { body, styles, mutateDocx } from "./regression-fixtures.js";
+const definition = (id: string, color: string, border: string) =>
+  `<w:style w:type="table" w:styleId="${id}"><w:rPr><w:color w:val="${color}"/></w:rPr><w:tblPr><w:tblBorders><w:insideH w:val="single" w:sz="8" w:color="${border}"/></w:tblBorders></w:tblPr><w:tcPr><w:shd w:fill="${color}"/></w:tcPr><w:tblStylePr w:type="firstRow"><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:b/><w:u w:val="single"/></w:rPr><w:tcPr><w:shd w:fill="${border}"/></w:tcPr></w:tblStylePr></w:style>`;
+export function tableStylesFixture() {
+  return mutateDocx("02-table-merges.docx", {
+    "word/styles.xml": () =>
+      styles(
+        '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:pPr><w:spacing w:after="0"/></w:pPr></w:style><w:style w:type="character" w:styleId="Toggle"><w:rPr><w:b/></w:rPr></w:style>' +
+          definition("Red", "CC0000", "AA1111") +
+          definition("Blue", "0000CC", "1111AA"),
+      ),
+    "word/document.xml": (source) =>
+      body(
+        source,
+        '<w:tbl><w:tblPr><w:tblStyle w:val="Red"/><w:tblLook w:firstRow="1" w:noHBand="1" w:noVBand="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>' +
+          [0, 1]
+            .map(
+              (row) =>
+                "<w:tr>" +
+                [0, 1]
+                  .map(
+                    (col) =>
+                      "<w:tc><w:tcPr>" +
+                      (row === 1 && col === 1 ? '<w:shd w:fill="00FF00"/>' : "") +
+                      "</w:tcPr><w:p><w:r>" +
+                      (row === 0 && col === 1 ? '<w:rPr><w:rStyle w:val="Toggle"/></w:rPr>' : "") +
+                      "<w:t>R" +
+                      row +
+                      "C" +
+                      col +
+                      "</w:t></w:r></w:p></w:tc>",
+                  )
+                  .join("") +
+                "</w:tr>",
+            )
+            .join("") +
+          "</w:tbl>",
+      ),
+  });
 }
 
-export function conditionalFormatFixture(header=false):Uint8Array{
- const files=unzipSync(tableStylesFixture()),w='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
- const table='<w:tbl><w:tblPr><w:tblStyle w:val="Red"/><w:tblLook w:firstRow="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:cnfStyle w:val="100000000000" w:firstRow="0"/></w:trPr><w:tc><w:tcPr><w:cnfStyle w:val="100000000000" w:firstRow="1" w:lastColumn="0"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:cnfStyle/></w:pPr><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:cnfStyle w:val="000000000000" w:lastRow="1"/><w:vMerge/></w:tcPr><w:p><w:pPr><w:cnfStyle w:firstRow="0"/></w:pPr></w:p><w:p/></w:tc><w:tc><w:tcPr><w:cnfStyle w:lastRow="0"/></w:tcPr><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
- files['word/document.xml']=strToU8(strFromU8(files['word/document.xml']!).replace(/<w:body>[\s\S]*<\/w:body>/,'<w:body>'+table+(header?'<w:sectPr><w:headerReference w:type="default" r:id="headerCnf"/></w:sectPr>':'')+'</w:body>'));
- if(header){files['word/header1.xml']=strToU8('<w:hdr xmlns:w="'+w+'">'+table+'</w:hdr>');files['word/_rels/document.xml.rels']=strToU8(strFromU8(files['word/_rels/document.xml.rels']!).replace('</Relationships>','<Relationship Id="headerCnf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>'));files['[Content_Types].xml']=strToU8(strFromU8(files['[Content_Types].xml']!).replace('</Types>','<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>'));}
- return zipSync(files);
+export function rowStylesFixture(): Uint8Array {
+  const files = unzipSync(tableStylesFixture());
+  files["word/styles.xml"] = strToU8(
+    strFromU8(files["word/styles.xml"]!)
+      .replace(
+        '<w:tblStylePr w:type="firstRow">',
+        '<w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>',
+      )
+      .replace(
+        '<w:style w:type="table" w:styleId="Red">',
+        '<w:style w:type="table" w:styleId="Red"><w:tblStylePr w:type="firstCol"><w:tcPr><w:tcMar><w:left w:w="260"/></w:tcMar><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr>',
+      ),
+  );
+  files["word/document.xml"] = strToU8(
+    strFromU8(files["word/document.xml"]!)
+      .replace('w:firstRow="1"', 'w:firstRow="1" w:firstColumn="1"')
+      .replace(
+        /(<w:tr>[\s\S]*?<\/w:tr>)(<w:tr>[\s\S]*?<\/w:tr>)/,
+        (_all, first: string, second: string) =>
+          first +
+          Array.from({ length: 30 }, (_, index) => second.replaceAll("R1", "ROW" + index)).join(""),
+      ),
+  );
+  return zipSync(files);
+}
+
+export function conditionalFormatFixture(header = false): Uint8Array {
+  const files = unzipSync(tableStylesFixture()),
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const table =
+    '<w:tbl><w:tblPr><w:tblStyle w:val="Red"/><w:tblLook w:firstRow="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:cnfStyle w:val="100000000000" w:firstRow="0"/></w:trPr><w:tc><w:tcPr><w:cnfStyle w:val="100000000000" w:firstRow="1" w:lastColumn="0"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:cnfStyle/></w:pPr><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:cnfStyle w:val="000000000000" w:lastRow="1"/><w:vMerge/></w:tcPr><w:p><w:pPr><w:cnfStyle w:firstRow="0"/></w:pPr></w:p><w:p/></w:tc><w:tc><w:tcPr><w:cnfStyle w:lastRow="0"/></w:tcPr><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+  files["word/document.xml"] = strToU8(
+    strFromU8(files["word/document.xml"]!).replace(
+      /<w:body>[\s\S]*<\/w:body>/,
+      "<w:body>" +
+        table +
+        (header
+          ? '<w:sectPr><w:headerReference w:type="default" r:id="headerCnf"/></w:sectPr>'
+          : "") +
+        "</w:body>",
+    ),
+  );
+  if (header) {
+    files["word/header1.xml"] = strToU8('<w:hdr xmlns:w="' + w + '">' + table + "</w:hdr>");
+    files["word/_rels/document.xml.rels"] = strToU8(
+      strFromU8(files["word/_rels/document.xml.rels"]!).replace(
+        "</Relationships>",
+        '<Relationship Id="headerCnf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>',
+      ),
+    );
+    files["[Content_Types].xml"] = strToU8(
+      strFromU8(files["[Content_Types].xml"]!).replace(
+        "</Types>",
+        '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>',
+      ),
+    );
+  }
+  return zipSync(files);
 }

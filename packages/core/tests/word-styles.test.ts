@@ -1,9 +1,206 @@
-import { expect, test } from 'vitest';
-import { createWordDocument, createDocumentSession, openDocument, getWordTextDefaults, getWordOutline, WordStyleSchema } from '@doffi/core';
-import type { DocumentOperation } from '@doffi/core';
-function setup() { const session = createDocumentSession(openDocument(createWordDocument({ documentId: 'styles' }), { kind: 'document' })), apply = (operations: DocumentOperation[]) => session.commit(session.prepare({ protocolVersion: 1, documentId: 'styles', baseRevision: session.snapshot().manifest.revision, operations })); return { session, apply }; }
-test('style rebasing and removing own overrides recompute descendants through undoable transactions', () => { const { session, apply } = setup(); apply([{ op: 'replaceText', nodeId: 'paragraph-1', from: 0, to: 0, expectedText: '', text: '样式' }, { op: 'setWordStyle', nodeId: 'document-root', style: { styleId: 'A', kind: 'paragraph', cssClass: 'a', basedOn: 'Normal' }, runProperties: { 'font-size': '14pt', color: '#aa0000' } }, { op: 'setWordStyle', nodeId: 'document-root', style: { styleId: 'B', kind: 'paragraph', cssClass: 'b', basedOn: 'Normal' }, runProperties: { 'font-size': '18pt', color: '#0000aa' } }, { op: 'setWordStyle', nodeId: 'document-root', style: { styleId: 'D', kind: 'paragraph', cssClass: 'd', basedOn: 'A' }, runProperties: { 'font-style': 'italic' } }, { op: 'setWordParagraph', nodeId: 'paragraph-1', styleId: 'D' }]); expect(getWordTextDefaults(session, 'paragraph-1')).toMatchObject({ 'font-size': '14pt', 'font-style': 'italic', color: '#aa0000' }); apply([{ op: 'setWordStyle', nodeId: 'document-root', style: { ...WordStyleSchema.parse(session.snapshot().metadata.word!.styles.find(style => style.styleId === 'D')!), basedOn: 'B' }, removeRunProperties: ['font-style'] }]); expect(getWordTextDefaults(session, 'paragraph-1')).toMatchObject({ 'font-size': '18pt', 'font-style': 'normal', color: '#0000aa' }); session.undo(); expect(getWordTextDefaults(session, 'paragraph-1')['font-size']).toBe('14pt'); session.redo(); apply([{ op: 'deleteWordStyle', nodeId: 'document-root', styleId: 'B', replacementStyleId: 'A' }]); expect(getWordTextDefaults(session, 'paragraph-1')).toMatchObject({ 'font-size': '14pt', color: '#aa0000' }); expect(session.snapshot().metadata.word!.styles.find(style => style.styleId === 'D')!.basedOn).toBe('A'); session.undo(); expect(getWordTextDefaults(session, 'paragraph-1')['font-size']).toBe('18pt'); const before = session.snapshot(); expect(() => apply([{ op: 'setWordStyle', nodeId: 'document-root', style: { ...WordStyleSchema.parse(session.snapshot().metadata.word!.styles.find(style => style.styleId === 'B')!), basedOn: 'D' } }])).toThrow(); expect(session.snapshot()).toEqual(before); });
-test('all nine outline levels and an explicit body override follow shared styles', () => { const { session, apply } = setup(); apply([{ op: 'replaceText', nodeId: 'paragraph-1', from: 0, to: 0, expectedText: '', text: '第九级' }, { op: 'setWordStyle', nodeId: 'document-root', style: { styleId: 'H9', kind: 'paragraph', cssClass: 'h9', outlineLevel: 8 } }, { op: 'setWordParagraph', nodeId: 'paragraph-1', styleId: 'H9' }]); expect(getWordOutline(session)).toEqual([{ nodeId: 'paragraph-1', level: 9, text: '第九级' }]); apply([{ op: 'setWordParagraph', nodeId: 'paragraph-1', outlineLevel: 9 }]); expect(getWordOutline(session)).toEqual([]); apply([{ op: 'setWordStyle', nodeId: 'document-root', style: { ...WordStyleSchema.parse(session.snapshot().metadata.word!.styles.find(style => style.styleId === 'H9')!), outlineLevel: 0 } }]); expect(getWordOutline(session)).toEqual([]); session.undo(); session.undo(); expect(getWordOutline(session)[0]!.level).toBe(9); });
-test('applying a named character style tracks its previous association and rejecting restores the source appearance', () => { const { session, apply } = setup(); apply([{ op: 'replaceText', nodeId: 'paragraph-1', from: 0, to: 0, expectedText: '', text: '前文字后' }, { op: 'setWordStyle', nodeId: 'document-root', style: { styleId: 'Emphasis', kind: 'character', cssClass: 'emphasis' }, runProperties: { 'font-style': 'italic', color: '#aa0000' } }, { op: 'setWordReview', nodeId: 'document-root', trackChanges: true, author: '甲' }, { op: 'applyWordCharacterStyle', nodeId: 'paragraph-1', from: 1, to: 3, expectedText: '文字', styleId: 'Emphasis' }]); expect(session.snapshot().html).toContain('data-word-style="Emphasis"'); const revision = session.snapshot().metadata.word!.revisions[0]!; apply([{ op: 'reviewWordRevision', nodeId: revision.nodeId, revisionId: revision.revisionId!, decision: 'reject' }]); expect(session.snapshot().html).not.toContain('data-word-style="Emphasis"'); expect(session.getNode('paragraph-1')!.text).toBe('前文字后'); session.undo(); expect(session.snapshot().metadata.word!.revisions).toHaveLength(1); });
+import { expect, test } from "vitest";
+import {
+  createWordDocument,
+  createDocumentSession,
+  openDocument,
+  getWordTextDefaults,
+  getWordOutline,
+  WordStyleSchema,
+} from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+function setup() {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "styles" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "styles",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  return { session, apply };
+}
+test("style rebasing and removing own overrides recompute descendants through undoable transactions", () => {
+  const { session, apply } = setup();
+  apply([
+    { op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "样式" },
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: { styleId: "A", kind: "paragraph", cssClass: "a", basedOn: "Normal" },
+      runProperties: { "font-size": "14pt", color: "#aa0000" },
+    },
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: { styleId: "B", kind: "paragraph", cssClass: "b", basedOn: "Normal" },
+      runProperties: { "font-size": "18pt", color: "#0000aa" },
+    },
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: { styleId: "D", kind: "paragraph", cssClass: "d", basedOn: "A" },
+      runProperties: { "font-style": "italic" },
+    },
+    { op: "setWordParagraph", nodeId: "paragraph-1", styleId: "D" },
+  ]);
+  expect(getWordTextDefaults(session, "paragraph-1")).toMatchObject({
+    "font-size": "14pt",
+    "font-style": "italic",
+    color: "#aa0000",
+  });
+  apply([
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: {
+        ...WordStyleSchema.parse(
+          session.snapshot().metadata.word!.styles.find((style) => style.styleId === "D")!,
+        ),
+        basedOn: "B",
+      },
+      removeRunProperties: ["font-style"],
+    },
+  ]);
+  expect(getWordTextDefaults(session, "paragraph-1")).toMatchObject({
+    "font-size": "18pt",
+    "font-style": "normal",
+    color: "#0000aa",
+  });
+  session.undo();
+  expect(getWordTextDefaults(session, "paragraph-1")["font-size"]).toBe("14pt");
+  session.redo();
+  apply([
+    { op: "deleteWordStyle", nodeId: "document-root", styleId: "B", replacementStyleId: "A" },
+  ]);
+  expect(getWordTextDefaults(session, "paragraph-1")).toMatchObject({
+    "font-size": "14pt",
+    color: "#aa0000",
+  });
+  expect(
+    session.snapshot().metadata.word!.styles.find((style) => style.styleId === "D")!.basedOn,
+  ).toBe("A");
+  session.undo();
+  expect(getWordTextDefaults(session, "paragraph-1")["font-size"]).toBe("18pt");
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "setWordStyle",
+        nodeId: "document-root",
+        style: {
+          ...WordStyleSchema.parse(
+            session.snapshot().metadata.word!.styles.find((style) => style.styleId === "B")!,
+          ),
+          basedOn: "D",
+        },
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+});
+test("all nine outline levels and an explicit body override follow shared styles", () => {
+  const { session, apply } = setup();
+  apply([
+    { op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "第九级" },
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: { styleId: "H9", kind: "paragraph", cssClass: "h9", outlineLevel: 8 },
+    },
+    { op: "setWordParagraph", nodeId: "paragraph-1", styleId: "H9" },
+  ]);
+  expect(getWordOutline(session)).toEqual([{ nodeId: "paragraph-1", level: 9, text: "第九级" }]);
+  apply([{ op: "setWordParagraph", nodeId: "paragraph-1", outlineLevel: 9 }]);
+  expect(getWordOutline(session)).toEqual([]);
+  apply([
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: {
+        ...WordStyleSchema.parse(
+          session.snapshot().metadata.word!.styles.find((style) => style.styleId === "H9")!,
+        ),
+        outlineLevel: 0,
+      },
+    },
+  ]);
+  expect(getWordOutline(session)).toEqual([]);
+  session.undo();
+  session.undo();
+  expect(getWordOutline(session)[0]!.level).toBe(9);
+});
+test("applying a named character style tracks its previous association and rejecting restores the source appearance", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "replaceText",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 0,
+      expectedText: "",
+      text: "前文字后",
+    },
+    {
+      op: "setWordStyle",
+      nodeId: "document-root",
+      style: { styleId: "Emphasis", kind: "character", cssClass: "emphasis" },
+      runProperties: { "font-style": "italic", color: "#aa0000" },
+    },
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    {
+      op: "applyWordCharacterStyle",
+      nodeId: "paragraph-1",
+      from: 1,
+      to: 3,
+      expectedText: "文字",
+      styleId: "Emphasis",
+    },
+  ]);
+  expect(session.snapshot().html).toContain('data-word-style="Emphasis"');
+  const revision = session.snapshot().metadata.word!.revisions[0]!;
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: revision.nodeId,
+      revisionId: revision.revisionId!,
+      decision: "reject",
+    },
+  ]);
+  expect(session.snapshot().html).not.toContain('data-word-style="Emphasis"');
+  expect(session.getNode("paragraph-1")!.text).toBe("前文字后");
+  session.undo();
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+});
 
-test('formatting a range containing a native object changes only its surrounding text',()=>{const{session,apply}=setup();apply([{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'前后'},{op:'insertWordDrawing',nodeId:'paragraph-1',offset:1,geometry:{x:0,y:0,width:30,height:20,rotation:0,flipH:false,flipV:false},layout:{mode:'inline'},object:{kind:'shape',preset:'rect'}}]);const object=session.snapshot().metadata.word!.drawings![0]!,before=session.getNode(object.nodeId)!.html;apply([{op:'formatWordText',nodeId:'paragraph-1',from:0,to:3,expectedText:'前\ufffc后',properties:{'font-weight':'700'}}]);expect(session.getNode(object.nodeId)!.html).toBe(before);expect(session.getNode('paragraph-1')!.text).toBe('前\ufffc后');});
+test("formatting a range containing a native object changes only its surrounding text", () => {
+  const { session, apply } = setup();
+  apply([
+    { op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "前后" },
+    {
+      op: "insertWordDrawing",
+      nodeId: "paragraph-1",
+      offset: 1,
+      geometry: { x: 0, y: 0, width: 30, height: 20, rotation: 0, flipH: false, flipV: false },
+      layout: { mode: "inline" },
+      object: { kind: "shape", preset: "rect" },
+    },
+  ]);
+  const object = session.snapshot().metadata.word!.drawings![0]!,
+    before = session.getNode(object.nodeId)!.html;
+  apply([
+    {
+      op: "formatWordText",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 3,
+      expectedText: "前\ufffc后",
+      properties: { "font-weight": "700" },
+    },
+  ]);
+  expect(session.getNode(object.nodeId)!.html).toBe(before);
+  expect(session.getNode("paragraph-1")!.text).toBe("前\ufffc后");
+});

@@ -1,39 +1,404 @@
-import{expect,test}from'vitest';
-import{createWordDocument,openDocument,createDocumentSession}from'@doffi/core';
-import type{DocumentOperation}from'@doffi/core';
-function create(){const session=createDocumentSession(openDocument(createWordDocument({documentId:'tables'}),{kind:'document'}));const apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'tables',baseRevision:session.snapshot().manifest.revision,operations}));apply([{op:'insertWordTable',nodeId:'paragraph-1',position:'after',rows:3,columns:3}]);const tableId=session.snapshot().metadata.word!.tables[0]!.nodeId;return{session,apply,tableId};}
-test('new tables use current section columns and gutter while explicit widths remain authoritative',()=>{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'column-tables'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'column-tables',baseRevision:session.snapshot().manifest.revision,operations}));apply([{op:'setWordSection',nodeId:'section-root-1',changes:{pageSetup:{unit:'pt',width:300,height:300,margins:{top:24,right:24,bottom:24,left:24}},gutter:12,columns:{count:2,gap:24}}}]);apply([{op:'insertWordTable',nodeId:'paragraph-1',position:'after',rows:2,columns:2}]);expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual([54,54]);session.undo();expect(session.snapshot().metadata.word!.tables).toEqual([]);
- apply([{op:'setWordSection',nodeId:'section-root-1',changes:{columns:{count:2,gap:24,widths:[80,136],spaces:[24,0]}}},{op:'insertWordTable',nodeId:'paragraph-1',position:'after',rows:1,columns:2}]);expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual([40,40]);apply([{op:'insertWordTable',nodeId:'paragraph-1',position:'after',rows:1,columns:2,width:150}]);expect(session.snapshot().metadata.word!.tables[1]!.grid).toEqual([75,75]);
+import { expect, test } from "vitest";
+import { createWordDocument, openDocument, createDocumentSession } from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+function create() {
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "tables" }), { kind: "document" }),
+  );
+  const apply = (operations: DocumentOperation[]) =>
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "tables",
+        baseRevision: session.snapshot().manifest.revision,
+        operations,
+      }),
+    );
+  apply([{ op: "insertWordTable", nodeId: "paragraph-1", position: "after", rows: 3, columns: 3 }]);
+  const tableId = session.snapshot().metadata.word!.tables[0]!.nodeId;
+  return { session, apply, tableId };
+}
+test("new tables use current section columns and gutter while explicit widths remain authoritative", () => {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "column-tables" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "column-tables",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  apply([
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: {
+        pageSetup: {
+          unit: "pt",
+          width: 300,
+          height: 300,
+          margins: { top: 24, right: 24, bottom: 24, left: 24 },
+        },
+        gutter: 12,
+        columns: { count: 2, gap: 24 },
+      },
+    },
+  ]);
+  apply([{ op: "insertWordTable", nodeId: "paragraph-1", position: "after", rows: 2, columns: 2 }]);
+  expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual([54, 54]);
+  session.undo();
+  expect(session.snapshot().metadata.word!.tables).toEqual([]);
+  apply([
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: { columns: { count: 2, gap: 24, widths: [80, 136], spaces: [24, 0] } },
+    },
+    { op: "insertWordTable", nodeId: "paragraph-1", position: "after", rows: 1, columns: 2 },
+  ]);
+  expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual([40, 40]);
+  apply([
+    {
+      op: "insertWordTable",
+      nodeId: "paragraph-1",
+      position: "after",
+      rows: 1,
+      columns: 2,
+      width: 150,
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.tables[1]!.grid).toEqual([75, 75]);
 });
-test('nested insertion follows unequal cell grids, row spans and direct cell padding and borders',()=>{
- const{session,apply,tableId}=create();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'resize',grid:[80,100,160]}},{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:2,columns:2}}]);const row=session.getNode(tableId)!.childNodeIds.flatMap(id=>session.getNode(id)!.tagName==='tr'?[id]:session.getNode(id)!.childNodeIds)[1]!,cell=session.getNode(row)!.childNodeIds[0]!,paragraph=session.getNode(cell)!.childNodeIds[0]!;apply([{op:'formatWordCell',nodeId:cell,properties:{padding:'5pt',border:'1pt solid black'}},{op:'insertWordTable',nodeId:paragraph,position:'after',rows:1,columns:2}]);expect(session.snapshot().metadata.word!.tables[1]!.grid).toEqual([74,74]);
+test("nested insertion follows unequal cell grids, row spans and direct cell padding and borders", () => {
+  const { session, apply, tableId } = create();
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "resize", grid: [80, 100, 160] } },
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 2 },
+    },
+  ]);
+  const row = session
+      .getNode(tableId)!
+      .childNodeIds.flatMap((id) =>
+        session.getNode(id)!.tagName === "tr" ? [id] : session.getNode(id)!.childNodeIds,
+      )[1]!,
+    cell = session.getNode(row)!.childNodeIds[0]!,
+    paragraph = session.getNode(cell)!.childNodeIds[0]!;
+  apply([
+    {
+      op: "formatWordCell",
+      nodeId: cell,
+      properties: { padding: "5pt", border: "1pt solid black" },
+    },
+    { op: "insertWordTable", nodeId: paragraph, position: "after", rows: 1, columns: 2 },
+  ]);
+  expect(session.snapshot().metadata.word!.tables[1]!.grid).toEqual([74, 74]);
 });
-test('first editing of an authored percentage-width table derives its grid inside the current column',()=>{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'authored-grid'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'authored-grid',baseRevision:session.snapshot().manifest.revision,operations}));apply([{op:'setWordSection',nodeId:'section-root-1',changes:{pageSetup:{unit:'pt',width:300,height:300,margins:{top:24,right:24,bottom:24,left:24}},columns:{count:2,gap:24}}},{op:'replaceFragment',nodeId:'section-root-1',html:'<table style="width:50%"><tr><td><p>A</p></td><td><p>B</p></td></tr></table>'}]);const table=session.getNode('section-root-1')!.childNodeIds[0]!;apply([{op:'formatWordTable',nodeId:table,allowRowSplit:false}]);expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual([28.5,28.5]);
+test("first editing of an authored percentage-width table derives its grid inside the current column", () => {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "authored-grid" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "authored-grid",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  apply([
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: {
+        pageSetup: {
+          unit: "pt",
+          width: 300,
+          height: 300,
+          margins: { top: 24, right: 24, bottom: 24, left: 24 },
+        },
+        columns: { count: 2, gap: 24 },
+      },
+    },
+    {
+      op: "replaceFragment",
+      nodeId: "section-root-1",
+      html: '<table style="width:50%"><tr><td><p>A</p></td><td><p>B</p></td></tr></table>',
+    },
+  ]);
+  const table = session.getNode("section-root-1")!.childNodeIds[0]!;
+  apply([{ op: "formatWordTable", nodeId: table, allowRowSplit: false }]);
+  expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual([28.5, 28.5]);
 });
-test('Word table insertion, merged structure changes, resizing and undo preserve identities and content',()=>{
- const{session,apply,tableId}=create();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'setCells',row:0,column:0,values:[['A','B','C'],['D','E','F'],['G','H','I']]}}]);
- const before=session.snapshot();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:2,columns:2}}]);expect(session.getNode(tableId)!.html).toContain('rowspan="2"');expect(session.getNode(tableId)!.text).toContain('ABDE');
- apply([{op:'editWordTable',nodeId:tableId,change:{kind:'insertColumns',at:1,count:1}},{op:'editWordTable',nodeId:tableId,change:{kind:'insertRows',at:1,count:1}}]);expect(session.snapshot().metadata.word!.tables[0]!.grid).toHaveLength(4);
- session.undo();session.undo();expect(session.snapshot().html).toBe(before.html);
- apply([{op:'editWordTable',nodeId:tableId,change:{kind:'resize',grid:[100,120,140]}}]);expect(session.getNode(tableId)!.html).toContain('width:360pt');
+test("Word table insertion, merged structure changes, resizing and undo preserve identities and content", () => {
+  const { session, apply, tableId } = create();
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: {
+        kind: "setCells",
+        row: 0,
+        column: 0,
+        values: [
+          ["A", "B", "C"],
+          ["D", "E", "F"],
+          ["G", "H", "I"],
+        ],
+      },
+    },
+  ]);
+  const before = session.snapshot();
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 2 },
+    },
+  ]);
+  expect(session.getNode(tableId)!.html).toContain('rowspan="2"');
+  expect(session.getNode(tableId)!.text).toContain("ABDE");
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "insertColumns", at: 1, count: 1 } },
+    { op: "editWordTable", nodeId: tableId, change: { kind: "insertRows", at: 1, count: 1 } },
+  ]);
+  expect(session.snapshot().metadata.word!.tables[0]!.grid).toHaveLength(4);
+  session.undo();
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "resize", grid: [100, 120, 140] } },
+  ]);
+  expect(session.getNode(tableId)!.html).toContain("width:360pt");
 });
-test('merging then splitting keeps original content and creates a rectangular native grid',()=>{
- const{session,apply,tableId}=create();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:2,columns:3}}]);apply([{op:'editWordTable',nodeId:tableId,change:{kind:'splitCell',row:0,column:0}}]);expect(session.getNode(tableId)!.html).not.toContain('rowspan');expect(session.getNode(tableId)!.html).not.toContain('colspan');expect(openDocument(session.serialize(),{kind:'document'}).snapshot()).toEqual(session.snapshot());
+test("merging then splitting keeps original content and creates a rectangular native grid", () => {
+  const { session, apply, tableId } = create();
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 3 },
+    },
+  ]);
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "splitCell", row: 0, column: 0 } },
+  ]);
+  expect(session.getNode(tableId)!.html).not.toContain("rowspan");
+  expect(session.getNode(tableId)!.html).not.toContain("colspan");
+  expect(openDocument(session.serialize(), { kind: "document" }).snapshot()).toEqual(
+    session.snapshot(),
+  );
 });
-test('invalid Word table batches are atomic and header and cell formatting share history',()=>{
- const{session,apply,tableId}=create();const before=session.snapshot();expect(()=>apply([{op:'formatWordTable',nodeId:tableId,repeatHeaderRows:1},{op:'editWordTable',nodeId:tableId,change:{kind:'deleteRows',at:0,count:3}}])).toThrow();expect(session.snapshot()).toEqual(before);
- apply([{op:'formatWordTable',nodeId:tableId,repeatHeaderRows:1,allowRowSplit:false}]);expect(session.getNode(tableId)!.html).toContain('data-word-repeat-header="true"');session.undo();expect(session.snapshot().html).toBe(before.html);
+test("invalid Word table batches are atomic and header and cell formatting share history", () => {
+  const { session, apply, tableId } = create();
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      { op: "formatWordTable", nodeId: tableId, repeatHeaderRows: 1 },
+      { op: "editWordTable", nodeId: tableId, change: { kind: "deleteRows", at: 0, count: 3 } },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  apply([{ op: "formatWordTable", nodeId: tableId, repeatHeaderRows: 1, allowRowSplit: false }]);
+  expect(session.getNode(tableId)!.html).toContain('data-word-repeat-header="true"');
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
 });
-test('arbitrary cell subdivisions refine the native grid and preserve neighbouring cells and contents',()=>{
- const{session,apply,tableId}=create();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'setCells',row:0,column:0,values:[['A','B','C'],['D','E','F'],['G','H','I']]}},{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:2,columns:2}}]);const before=session.snapshot(),text=session.getNode(tableId)!.text,width=before.metadata.word!.tables[0]!.grid.reduce((a,b)=>a+b,0);
- apply([{op:'editWordTable',nodeId:tableId,change:{kind:'splitCell',row:0,column:0,rows:3,columns:3}}]);const snapshot=session.snapshot(),grid=snapshot.metadata.word!.tables[0]!.grid;expect(grid).toHaveLength(5);expect(grid.reduce((a,b)=>a+b,0)).toBeCloseTo(width);expect(session.getNode(tableId)!.text).toBe(text);expect(openDocument(session.serialize(),{kind:'document'}).snapshot()).toEqual(snapshot);session.undo();expect(session.snapshot().html).toBe(before.html);session.redo();expect(session.getNode(tableId)!.text).toBe(text);
+test("arbitrary cell subdivisions refine the native grid and preserve neighbouring cells and contents", () => {
+  const { session, apply, tableId } = create();
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: {
+        kind: "setCells",
+        row: 0,
+        column: 0,
+        values: [
+          ["A", "B", "C"],
+          ["D", "E", "F"],
+          ["G", "H", "I"],
+        ],
+      },
+    },
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 2 },
+    },
+  ]);
+  const before = session.snapshot(),
+    text = session.getNode(tableId)!.text,
+    width = before.metadata.word!.tables[0]!.grid.reduce((a, b) => a + b, 0);
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "splitCell", row: 0, column: 0, rows: 3, columns: 3 },
+    },
+  ]);
+  const snapshot = session.snapshot(),
+    grid = snapshot.metadata.word!.tables[0]!.grid;
+  expect(grid).toHaveLength(5);
+  expect(grid.reduce((a, b) => a + b, 0)).toBeCloseTo(width);
+  expect(session.getNode(tableId)!.text).toBe(text);
+  expect(openDocument(session.serialize(), { kind: "document" }).snapshot()).toEqual(snapshot);
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  session.redo();
+  expect(session.getNode(tableId)!.text).toBe(text);
 });
 
-test('tracked row insertions and deletions review through the merged grid and share undo history',()=>{const{session,apply,tableId}=create();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:2,columns:1}},{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'甲'},{op:'editWordTable',nodeId:tableId,change:{kind:'insertRows',at:1,count:1}}]);expect(session.getNode(tableId)!.html).toContain('rowspan="3"');const inserted=session.snapshot().metadata.word!.revisions.find(revision=>revision.kind==='rowInsert')!;apply([{op:'reviewWordRevision',nodeId:inserted.nodeId,revisionId:inserted.revisionId!,decision:'reject'}]);expect(session.getNode(tableId)!.childNodeIds.flatMap(id=>session.getNode(id)!.tagName==='tr'?[id]:session.getNode(id)!.childNodeIds)).toHaveLength(3);expect(session.getNode(tableId)!.html).toContain('rowspan="2"');session.undo();expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);session.redo();apply([{op:'editWordTable',nodeId:tableId,change:{kind:'deleteRows',at:2,count:1}}]);const deleted=session.snapshot().metadata.word!.revisions.find(revision=>revision.kind==='rowDelete')!;expect(session.getNode(deleted.nodeId)).toBeDefined();apply([{op:'reviewWordRevision',nodeId:deleted.nodeId,revisionId:deleted.revisionId!,decision:'accept'}]);expect(session.getNode(deleted.nodeId)).toBeUndefined();session.undo();expect(session.getNode(deleted.nodeId)).toBeDefined();});
+test("tracked row insertions and deletions review through the merged grid and share undo history", () => {
+  const { session, apply, tableId } = create();
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 1 },
+    },
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    { op: "editWordTable", nodeId: tableId, change: { kind: "insertRows", at: 1, count: 1 } },
+  ]);
+  expect(session.getNode(tableId)!.html).toContain('rowspan="3"');
+  const inserted = session
+    .snapshot()
+    .metadata.word!.revisions.find((revision) => revision.kind === "rowInsert")!;
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: inserted.nodeId,
+      revisionId: inserted.revisionId!,
+      decision: "reject",
+    },
+  ]);
+  expect(
+    session
+      .getNode(tableId)!
+      .childNodeIds.flatMap((id) =>
+        session.getNode(id)!.tagName === "tr" ? [id] : session.getNode(id)!.childNodeIds,
+      ),
+  ).toHaveLength(3);
+  expect(session.getNode(tableId)!.html).toContain('rowspan="2"');
+  session.undo();
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+  session.redo();
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "deleteRows", at: 2, count: 1 } },
+  ]);
+  const deleted = session
+    .snapshot()
+    .metadata.word!.revisions.find((revision) => revision.kind === "rowDelete")!;
+  expect(session.getNode(deleted.nodeId)).toBeDefined();
+  apply([
+    {
+      op: "reviewWordRevision",
+      nodeId: deleted.nodeId,
+      revisionId: deleted.revisionId!,
+      decision: "accept",
+    },
+  ]);
+  expect(session.getNode(deleted.nodeId)).toBeUndefined();
+  session.undo();
+  expect(session.getNode(deleted.nodeId)).toBeDefined();
+});
 
-test('deleting the current author pending inserted rows cancels their marks and leaves no pending history',()=>{const{session,apply,tableId}=create();apply([{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'甲'},{op:'editWordTable',nodeId:tableId,change:{kind:'insertRows',at:1,count:2}},{op:'editWordTable',nodeId:tableId,change:{kind:'deleteRows',at:1,count:2}}]);expect(session.snapshot().metadata.word!.revisions).toEqual([]);});
+test("deleting the current author pending inserted rows cancels their marks and leaves no pending history", () => {
+  const { session, apply, tableId } = create();
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    { op: "editWordTable", nodeId: tableId, change: { kind: "insertRows", at: 1, count: 2 } },
+    { op: "editWordTable", nodeId: tableId, change: { kind: "deleteRows", at: 1, count: 2 } },
+  ]);
+  expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+});
 
-test('merging and splitting follow Word untracked behavior with shared undo while unrelated text history survives',()=>{const{session,apply,tableId}=create(),row=session.getNode(tableId)!.childNodeIds.flatMap(id=>session.getNode(id)!.tagName==='tr'?[id]:session.getNode(id)!.childNodeIds)[0]!,cell=session.getNode(row)!.childNodeIds[0]!,paragraph=session.getNode(cell)!.childNodeIds[0]!;apply([{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'A'},{op:'replaceText',nodeId:paragraph,from:0,to:0,expectedText:'',text:'NEW'}]);const revision=session.snapshot().metadata.word!.revisions[0]!;apply([{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:1,columns:2}}]);expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);expect(session.snapshot().metadata.word!.revisions[0]!.revisionId).toBe(revision.revisionId);expect(session.getNode(tableId)!.html).toContain('colspan="2"');apply([{op:'editWordTable',nodeId:tableId,change:{kind:'splitCell',row:0,column:0}}]);expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);expect(session.getNode(tableId)!.text).toBe('NEW');session.undo();expect(session.getNode(tableId)!.html).toContain('colspan="2"');session.undo();expect(session.getNode(tableId)!.html).not.toContain('colspan');});
-test('merge and split reject incomplete inverse histories atomically but allow unrelated cell formatting',()=>{const{session,apply,tableId}=create(),rows=session.getNode(tableId)!.childNodeIds.flatMap(id=>session.getNode(id)!.tagName==='tr'?[id]:session.getNode(id)!.childNodeIds),first=session.getNode(rows[0]!)!.childNodeIds[0]!,outside=session.getNode(rows[2]!)!.childNodeIds[2]!;apply([{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'A'},{op:'formatWordCell',nodeId:first,properties:{'background-color':'#ff0000'}}]);const before=session.snapshot();expect(()=>apply([{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:1,columns:2}}])).toThrow();expect(session.snapshot()).toEqual(before);apply([{op:'reviewWordRevisions',nodeId:'document-root',decision:'accept'},{op:'formatWordCell',nodeId:outside,properties:{'background-color':'#00ff00'}},{op:'editWordTable',nodeId:tableId,change:{kind:'mergeCells',row:0,column:0,rows:1,columns:2}}]);const merged=session.snapshot();expect(()=>apply([{op:'editWordTable',nodeId:tableId,change:{kind:'splitCell',row:0,column:0,rows:2,columns:3}}])).toThrow();expect(session.snapshot()).toEqual(merged);apply([{op:'editWordTable',nodeId:tableId,change:{kind:'splitCell',row:0,column:0}}]);expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);});
+test("merging and splitting follow Word untracked behavior with shared undo while unrelated text history survives", () => {
+  const { session, apply, tableId } = create(),
+    row = session
+      .getNode(tableId)!
+      .childNodeIds.flatMap((id) =>
+        session.getNode(id)!.tagName === "tr" ? [id] : session.getNode(id)!.childNodeIds,
+      )[0]!,
+    cell = session.getNode(row)!.childNodeIds[0]!,
+    paragraph = session.getNode(cell)!.childNodeIds[0]!;
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "A" },
+    { op: "replaceText", nodeId: paragraph, from: 0, to: 0, expectedText: "", text: "NEW" },
+  ]);
+  const revision = session.snapshot().metadata.word!.revisions[0]!;
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 1, columns: 2 },
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+  expect(session.snapshot().metadata.word!.revisions[0]!.revisionId).toBe(revision.revisionId);
+  expect(session.getNode(tableId)!.html).toContain('colspan="2"');
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "splitCell", row: 0, column: 0 } },
+  ]);
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+  expect(session.getNode(tableId)!.text).toBe("NEW");
+  session.undo();
+  expect(session.getNode(tableId)!.html).toContain('colspan="2"');
+  session.undo();
+  expect(session.getNode(tableId)!.html).not.toContain("colspan");
+});
+test("merge and split reject incomplete inverse histories atomically but allow unrelated cell formatting", () => {
+  const { session, apply, tableId } = create(),
+    rows = session
+      .getNode(tableId)!
+      .childNodeIds.flatMap((id) =>
+        session.getNode(id)!.tagName === "tr" ? [id] : session.getNode(id)!.childNodeIds,
+      ),
+    first = session.getNode(rows[0]!)!.childNodeIds[0]!,
+    outside = session.getNode(rows[2]!)!.childNodeIds[2]!;
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "A" },
+    { op: "formatWordCell", nodeId: first, properties: { "background-color": "#ff0000" } },
+  ]);
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "editWordTable",
+        nodeId: tableId,
+        change: { kind: "mergeCells", row: 0, column: 0, rows: 1, columns: 2 },
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  apply([
+    { op: "reviewWordRevisions", nodeId: "document-root", decision: "accept" },
+    { op: "formatWordCell", nodeId: outside, properties: { "background-color": "#00ff00" } },
+    {
+      op: "editWordTable",
+      nodeId: tableId,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 1, columns: 2 },
+    },
+  ]);
+  const merged = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "editWordTable",
+        nodeId: tableId,
+        change: { kind: "splitCell", row: 0, column: 0, rows: 2, columns: 3 },
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(merged);
+  apply([
+    { op: "editWordTable", nodeId: tableId, change: { kind: "splitCell", row: 0, column: 0 } },
+  ]);
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
+});

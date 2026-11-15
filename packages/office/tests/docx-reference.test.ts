@@ -1,48 +1,658 @@
-import{expect,test}from'vitest';
-import{unzipSync,zipSync,strFromU8,strToU8}from'fflate';
-import{createWordDocument,openDocument,createDocumentSession,createAssetDescriptor}from'@doffi/core';
-import type{DocumentOperation}from'@doffi/core';
-import{exportDocx,importDocx}from'@doffi/office';
-function fixture(){const session=createDocumentSession(openDocument(createWordDocument({documentId:'notes'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'notes',baseRevision:session.snapshot().manifest.revision,operations}));apply([{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'前😀后'},{op:'insertWordNote',nodeId:'paragraph-1',offset:1,kind:'footnote',text:'脚注内容'},{op:'insertWordNote',nodeId:'paragraph-1',offset:0,kind:'endnote',text:'尾注内容',customMark:'*'}]);return{session,apply};}
-test('custom note separators and continuation notices remain editable stories after two native reopens and undo',()=>{
- const{session,apply}=fixture();apply([{op:'setWordNoteSeparator',nodeId:'document-root',kind:'footnote',type:'separator',text:'脚注说明'},{op:'setWordNoteSeparator',nodeId:'document-root',kind:'footnote',type:'continuationSeparator'},{op:'setWordNoteSeparator',nodeId:'document-root',kind:'footnote',type:'continuationNotice',text:'下页继续'},{op:'setWordNoteSeparator',nodeId:'document-root',kind:'endnote',type:'separator',text:'尾注说明'}]);
- let bytes=exportDocx(session).bytes;for(let index=0;index<2;index++){const next=createDocumentSession(openDocument(importDocx(bytes,{documentId:'custom-notes',unsupportedContent:'reject'}),{kind:'document'})),word=next.snapshot().metadata.word!,note=word.notes!.find(note=>note.kind==='footnote'&&note.type==='continuationNotice')!,story=word.stories.find(story=>story.storyId===note.storyId)!;expect(next.getNode(story.rootNodeId)!.text).toBe('下页继续');const paragraph=next.getNode(story.rootNodeId)!.childNodeIds[0]!;next.commit(next.prepare({protocolVersion:1,documentId:'custom-notes',baseRevision:0,operations:[{op:'replaceText',nodeId:paragraph,from:0,to:4,expectedText:'下页继续',text:'翻页接续'}]}));expect(next.getNode(story.rootNodeId)!.text).toBe('翻页接续');next.undo();bytes=exportDocx(next).bytes;}
- const before=session.snapshot();apply([{op:'setWordNoteSeparator',nodeId:'document-root',kind:'footnote',type:'separator',text:''}]);expect(session.snapshot().metadata.word!.notes).toHaveLength(before.metadata.word!.notes!.length);session.undo();expect(session.snapshot().html).toBe(before.html);
+import { expect, test } from "vitest";
+import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
+import {
+  createWordDocument,
+  openDocument,
+  createDocumentSession,
+  createAssetDescriptor,
+} from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+function fixture() {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "notes" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "notes",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  apply([
+    { op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "前😀后" },
+    { op: "insertWordNote", nodeId: "paragraph-1", offset: 1, kind: "footnote", text: "脚注内容" },
+    {
+      op: "insertWordNote",
+      nodeId: "paragraph-1",
+      offset: 0,
+      kind: "endnote",
+      text: "尾注内容",
+      customMark: "*",
+    },
+  ]);
+  return { session, apply };
+}
+test("custom note separators and continuation notices remain editable stories after two native reopens and undo", () => {
+  const { session, apply } = fixture();
+  apply([
+    {
+      op: "setWordNoteSeparator",
+      nodeId: "document-root",
+      kind: "footnote",
+      type: "separator",
+      text: "脚注说明",
+    },
+    {
+      op: "setWordNoteSeparator",
+      nodeId: "document-root",
+      kind: "footnote",
+      type: "continuationSeparator",
+    },
+    {
+      op: "setWordNoteSeparator",
+      nodeId: "document-root",
+      kind: "footnote",
+      type: "continuationNotice",
+      text: "下页继续",
+    },
+    {
+      op: "setWordNoteSeparator",
+      nodeId: "document-root",
+      kind: "endnote",
+      type: "separator",
+      text: "尾注说明",
+    },
+  ]);
+  let bytes = exportDocx(session).bytes;
+  for (let index = 0; index < 2; index++) {
+    const next = createDocumentSession(
+        openDocument(
+          importDocx(bytes, { documentId: "custom-notes", unsupportedContent: "reject" }),
+          { kind: "document" },
+        ),
+      ),
+      word = next.snapshot().metadata.word!,
+      note = word.notes!.find(
+        (note) => note.kind === "footnote" && note.type === "continuationNotice",
+      )!,
+      story = word.stories.find((story) => story.storyId === note.storyId)!;
+    expect(next.getNode(story.rootNodeId)!.text).toBe("下页继续");
+    const paragraph = next.getNode(story.rootNodeId)!.childNodeIds[0]!;
+    next.commit(
+      next.prepare({
+        protocolVersion: 1,
+        documentId: "custom-notes",
+        baseRevision: 0,
+        operations: [
+          {
+            op: "replaceText",
+            nodeId: paragraph,
+            from: 0,
+            to: 4,
+            expectedText: "下页继续",
+            text: "翻页接续",
+          },
+        ],
+      }),
+    );
+    expect(next.getNode(story.rootNodeId)!.text).toBe("翻页接续");
+    next.undo();
+    bytes = exportDocx(next).bytes;
+  }
+  const before = session.snapshot();
+  apply([
+    {
+      op: "setWordNoteSeparator",
+      nodeId: "document-root",
+      kind: "footnote",
+      type: "separator",
+      text: "",
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.notes).toHaveLength(before.metadata.word!.notes!.length);
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
 });
-test('bookmarks cross paragraphs and can be redefined and renamed without losing links or reference fields',()=>{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'range-bookmarks'}),{kind:'document'})),apply=(operations:DocumentOperation[])=>session.commit(session.prepare({protocolVersion:1,documentId:'range-bookmarks',baseRevision:session.snapshot().manifest.revision,operations}));apply([{op:'replaceFragment',nodeId:'section-root-1',html:'<p>前😀甲</p><p>中间</p><p>乙后</p>'}]);const[a,b,c]=session.getNode('section-root-1')!.childNodeIds;
- apply([{op:'insertWordBookmark',nodeId:a!,endNodeId:c!,from:1,to:1,expectedText:'😀甲中间乙',name:'Across'},{op:'insertWordLink',nodeId:b!,from:0,to:2,expectedText:'中间',bookmark:'Across'},{op:'insertWordField',nodeId:c!,offset:2,instruction:' REF "Across" \\h',cachedText:'缓存'}]);const bookmark=session.snapshot().metadata.word!.bookmarks[0]!,before=session.snapshot();
- expect(()=>apply([{op:'setWordBookmark',bookmarkId:bookmark.bookmarkId,nodeId:a!,endNodeId:c!,from:2,to:1,expectedText:'\ude00甲中间乙',name:'Invalid'}])).toThrow();expect(session.snapshot()).toBe(before);
- apply([{op:'setWordBookmark',bookmarkId:bookmark.bookmarkId,nodeId:b!,endNodeId:c!,from:0,to:1,expectedText:'中间乙',name:'Renamed'}]);expect(session.snapshot().metadata.word!.hyperlinks[0]!.bookmark).toBe('Renamed');expect(session.snapshot().metadata.word!.fields[0]!.instruction).toBe(' REF Renamed \\h');const current=session.snapshot();let bytes=exportDocx(session).bytes;
- for(let index=0;index<2;index++){const model=openDocument(importDocx(bytes,{documentId:'bookmark-reopened',unsupportedContent:'reject'}),{kind:'document'});expect(model.snapshot().metadata.word!.bookmarks[0]!.name).toBe('Renamed');expect(model.snapshot().metadata.word!.hyperlinks[0]!.bookmark).toBe('Renamed');bytes=exportDocx(model).bytes;}
- session.undo();expect(session.snapshot().html).toBe(before.html);expect(session.snapshot().metadata.word!.bookmarks[0]!.name).toBe('Across');session.redo();expect(session.snapshot().html).toBe(current.html);
+test("bookmarks cross paragraphs and can be redefined and renamed without losing links or reference fields", () => {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "range-bookmarks" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "range-bookmarks",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  apply([
+    {
+      op: "replaceFragment",
+      nodeId: "section-root-1",
+      html: "<p>前😀甲</p><p>中间</p><p>乙后</p>",
+    },
+  ]);
+  const [a, b, c] = session.getNode("section-root-1")!.childNodeIds;
+  apply([
+    {
+      op: "insertWordBookmark",
+      nodeId: a!,
+      endNodeId: c!,
+      from: 1,
+      to: 1,
+      expectedText: "😀甲中间乙",
+      name: "Across",
+    },
+    { op: "insertWordLink", nodeId: b!, from: 0, to: 2, expectedText: "中间", bookmark: "Across" },
+    {
+      op: "insertWordField",
+      nodeId: c!,
+      offset: 2,
+      instruction: ' REF "Across" \\h',
+      cachedText: "缓存",
+    },
+  ]);
+  const bookmark = session.snapshot().metadata.word!.bookmarks[0]!,
+    before = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "setWordBookmark",
+        bookmarkId: bookmark.bookmarkId,
+        nodeId: a!,
+        endNodeId: c!,
+        from: 2,
+        to: 1,
+        expectedText: "\ude00甲中间乙",
+        name: "Invalid",
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toBe(before);
+  apply([
+    {
+      op: "setWordBookmark",
+      bookmarkId: bookmark.bookmarkId,
+      nodeId: b!,
+      endNodeId: c!,
+      from: 0,
+      to: 1,
+      expectedText: "中间乙",
+      name: "Renamed",
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.hyperlinks[0]!.bookmark).toBe("Renamed");
+  expect(session.snapshot().metadata.word!.fields[0]!.instruction).toBe(" REF Renamed \\h");
+  const current = session.snapshot();
+  let bytes = exportDocx(session).bytes;
+  for (let index = 0; index < 2; index++) {
+    const model = openDocument(
+      importDocx(bytes, { documentId: "bookmark-reopened", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(model.snapshot().metadata.word!.bookmarks[0]!.name).toBe("Renamed");
+    expect(model.snapshot().metadata.word!.hyperlinks[0]!.bookmark).toBe("Renamed");
+    bytes = exportDocx(model).bytes;
+  }
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  expect(session.snapshot().metadata.word!.bookmarks[0]!.name).toBe("Across");
+  session.redo();
+  expect(session.snapshot().html).toBe(current.html);
 });
-test('footnote and endnote transactions retain exact source anchors, editable stories and atomic history',()=>{
- const{session,apply}=fixture(),before=session.snapshot(),word=before.metadata.word!,reference=word.noteReferences![0]!,note=word.notes!.find(note=>note.noteId===reference.noteId)!;expect(session.getNode('paragraph-1')!.text).toBe('\ufffc前\ufffc😀后');const story=word.stories.find(story=>story.storyId===note.storyId)!;expect(session.getNode(story.rootNodeId)!.text).toBe('\ufffc 脚注内容');apply([{op:'convertWordNote',nodeId:reference.nodeId,kind:'endnote'}]);expect(session.snapshot().metadata.word!.notes![0]!.kind).toBe('endnote');session.undo();expect(session.snapshot().html).toBe(before.html);apply([{op:'removeWordNote',nodeId:reference.nodeId}]);expect(session.snapshot().metadata.word!.notes).toHaveLength(1);expect(session.getNode(story.rootNodeId)).toBeUndefined();session.undo();expect(session.snapshot().metadata.word!.notes).toHaveLength(2);
+test("footnote and endnote transactions retain exact source anchors, editable stories and atomic history", () => {
+  const { session, apply } = fixture(),
+    before = session.snapshot(),
+    word = before.metadata.word!,
+    reference = word.noteReferences![0]!,
+    note = word.notes!.find((note) => note.noteId === reference.noteId)!;
+  expect(session.getNode("paragraph-1")!.text).toBe("\ufffc前\ufffc😀后");
+  const story = word.stories.find((story) => story.storyId === note.storyId)!;
+  expect(session.getNode(story.rootNodeId)!.text).toBe("\ufffc 脚注内容");
+  apply([{ op: "convertWordNote", nodeId: reference.nodeId, kind: "endnote" }]);
+  expect(session.snapshot().metadata.word!.notes![0]!.kind).toBe("endnote");
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  apply([{ op: "removeWordNote", nodeId: reference.nodeId }]);
+  expect(session.snapshot().metadata.word!.notes).toHaveLength(1);
+  expect(session.getNode(story.rootNodeId)).toBeUndefined();
+  session.undo();
+  expect(session.snapshot().metadata.word!.notes).toHaveLength(2);
 });
-test('editable footnotes, endnotes and custom reference marks survive two native saves',()=>{
- const{session}=fixture();let model=session;for(let i=0;i<2;i++){const output=exportDocx(model),files=unzipSync(output.bytes);expect(strFromU8(files['word/footnotes.xml']!)).toContain('w:footnoteRef');expect(strFromU8(files['word/endnotes.xml']!)).toContain('w:endnoteRef');model=createDocumentSession(openDocument(importDocx(output.bytes,{documentId:'notes',unsupportedContent:'reject'}),{kind:'document'}));expect(model.snapshot().metadata.word!.notes!.filter(note=>(note.type??'normal')==='normal')).toHaveLength(2);expect(model.snapshot().metadata.word!.noteReferences!.some(reference=>reference.customMark==='*')).toBe(true);expect(model.getNode(model.snapshot().metadata.word!.stories.find(story=>story.kind==='main')!.rootNodeId)!.text).toBe('\ufffc前\ufffc😀后');}
- const story=model.snapshot().metadata.word!.stories.find(story=>story.kind==='footnote')!,paragraph=model.getNode(story.rootNodeId)!.childNodeIds[0]!,text=model.getNode(paragraph)!.text;model.commit(model.prepare({protocolVersion:1,documentId:'notes',baseRevision:0,operations:[{op:'replaceText',nodeId:paragraph,from:text.length,to:text.length,expectedText:'',text:'继续编辑'}]}));expect(strFromU8(unzipSync(exportDocx(model).bytes)['word/footnotes.xml']!)).toContain('继续编辑');
+test("editable footnotes, endnotes and custom reference marks survive two native saves", () => {
+  const { session } = fixture();
+  let model = session;
+  for (let i = 0; i < 2; i++) {
+    const output = exportDocx(model),
+      files = unzipSync(output.bytes);
+    expect(strFromU8(files["word/footnotes.xml"]!)).toContain("w:footnoteRef");
+    expect(strFromU8(files["word/endnotes.xml"]!)).toContain("w:endnoteRef");
+    model = createDocumentSession(
+      openDocument(
+        importDocx(output.bytes, { documentId: "notes", unsupportedContent: "reject" }),
+        { kind: "document" },
+      ),
+    );
+    expect(
+      model.snapshot().metadata.word!.notes!.filter((note) => (note.type ?? "normal") === "normal"),
+    ).toHaveLength(2);
+    expect(
+      model
+        .snapshot()
+        .metadata.word!.noteReferences!.some((reference) => reference.customMark === "*"),
+    ).toBe(true);
+    expect(
+      model.getNode(
+        model.snapshot().metadata.word!.stories.find((story) => story.kind === "main")!.rootNodeId,
+      )!.text,
+    ).toBe("\ufffc前\ufffc😀后");
+  }
+  const story = model.snapshot().metadata.word!.stories.find((story) => story.kind === "footnote")!,
+    paragraph = model.getNode(story.rootNodeId)!.childNodeIds[0]!,
+    text = model.getNode(paragraph)!.text;
+  model.commit(
+    model.prepare({
+      protocolVersion: 1,
+      documentId: "notes",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "replaceText",
+          nodeId: paragraph,
+          from: text.length,
+          to: text.length,
+          expectedText: "",
+          text: "继续编辑",
+        },
+      ],
+    }),
+  );
+  expect(strFromU8(unzipSync(exportDocx(model).bytes)["word/footnotes.xml"]!)).toContain(
+    "继续编辑",
+  );
 });
 
-test('note numbering options compile current settings and reopen without becoming a second source',()=>{
- const{session,apply}=fixture();apply([{op:'setWordNoteOptions',nodeId:'document-root',kind:'footnote',options:{format:'lowerRoman',start:3,restart:'eachPage',position:'pageBottom'}}]);const reopened=openDocument(importDocx(exportDocx(session).bytes,{documentId:'settings',unsupportedContent:'reject'}),{kind:'document'});expect(reopened.snapshot().metadata.word!.footnoteOptions).toEqual({format:'lowerRoman',start:3,restart:'eachPage',position:'pageBottom'});session.undo();expect(session.snapshot().metadata.word!.footnoteOptions).toBeUndefined();
+test("note numbering options compile current settings and reopen without becoming a second source", () => {
+  const { session, apply } = fixture();
+  apply([
+    {
+      op: "setWordNoteOptions",
+      nodeId: "document-root",
+      kind: "footnote",
+      options: { format: "lowerRoman", start: 3, restart: "eachPage", position: "pageBottom" },
+    },
+  ]);
+  const reopened = openDocument(
+    importDocx(exportDocx(session).bytes, { documentId: "settings", unsupportedContent: "reject" }),
+    { kind: "document" },
+  );
+  expect(reopened.snapshot().metadata.word!.footnoteOptions).toEqual({
+    format: "lowerRoman",
+    start: 3,
+    restart: "eachPage",
+    position: "pageBottom",
+  });
+  session.undo();
+  expect(session.snapshot().metadata.word!.footnoteOptions).toBeUndefined();
 });
-test('section note options and deferred endnotes retain current and original settings through native review',()=>{
- const{session,apply}=fixture();apply([{op:'splitWordSection',nodeId:'paragraph-1',breakType:'continuous'},{op:'setWordSection',nodeId:'section-root-1',changes:{footnoteOptions:{format:'lowerRoman',start:3,restart:'eachSect',position:'beneathText'},noEndnote:true}},{op:'setWordNoteOptions',nodeId:'document-root',kind:'endnote',options:{position:'sectEnd'}}]);const second=session.snapshot().metadata.sections![1]!.rootNodeId;apply([{op:'setWordSection',nodeId:second,changes:{footnoteOptions:{format:'decimal',start:7,restart:'eachSect',position:'pageBottom'},endnoteOptions:{format:'upperLetter',start:2,restart:'eachSect'},noEndnote:false}}]);let bytes=exportDocx(session).bytes;
- for(let pass=0;pass<2;pass++){const model=openDocument(importDocx(bytes,{documentId:'section-notes',unsupportedContent:'reject'}),{kind:'document'}),sections=model.snapshot().metadata.sections!;expect(sections[0]!.footnoteOptions).toEqual({format:'lowerRoman',start:3,restart:'eachSect',position:'beneathText'});expect(sections[0]!.noEndnote).toBe(true);expect(sections[1]!.endnoteOptions).toEqual({format:'upperLetter',start:2,restart:'eachSect'});expect(sections[1]!.noEndnote).toBe(false);bytes=exportDocx(model).bytes;}
- apply([{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'A'},{op:'setWordSection',nodeId:'section-root-1',changes:{footnoteOptions:{format:'decimal',start:4,position:'pageBottom'}}},{op:'setWordReview',nodeId:'document-root',trackChanges:true,author:'B'},{op:'setWordSection',nodeId:'section-root-1',changes:{footnoteOptions:{format:'upperRoman',start:5,position:'pageBottom'},noEndnote:false}}]);const reopened=createDocumentSession(openDocument(importDocx(exportDocx(session).bytes,{documentId:'section-review',unsupportedContent:'reject'}),{kind:'document'})),revision=reopened.snapshot().metadata.word!.revisions.find(item=>item.property==='section')!;expect(revision.author).toBe('B');expect(revision.before!.section!.footnoteOptions).toMatchObject({format:'lowerRoman',start:3,position:'beneathText'});reopened.commit(reopened.prepare({protocolVersion:1,documentId:'section-review',baseRevision:0,operations:[{op:'reviewWordRevision',nodeId:revision.nodeId,revisionId:revision.revisionId!,decision:'reject'}]}));expect(reopened.snapshot().metadata.sections![0]!.footnoteOptions?.start).toBe(3);expect(reopened.snapshot().metadata.sections![0]!.noEndnote).toBe(true);
+test("section note options and deferred endnotes retain current and original settings through native review", () => {
+  const { session, apply } = fixture();
+  apply([
+    { op: "splitWordSection", nodeId: "paragraph-1", breakType: "continuous" },
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: {
+        footnoteOptions: {
+          format: "lowerRoman",
+          start: 3,
+          restart: "eachSect",
+          position: "beneathText",
+        },
+        noEndnote: true,
+      },
+    },
+    {
+      op: "setWordNoteOptions",
+      nodeId: "document-root",
+      kind: "endnote",
+      options: { position: "sectEnd" },
+    },
+  ]);
+  const second = session.snapshot().metadata.sections![1]!.rootNodeId;
+  apply([
+    {
+      op: "setWordSection",
+      nodeId: second,
+      changes: {
+        footnoteOptions: {
+          format: "decimal",
+          start: 7,
+          restart: "eachSect",
+          position: "pageBottom",
+        },
+        endnoteOptions: { format: "upperLetter", start: 2, restart: "eachSect" },
+        noEndnote: false,
+      },
+    },
+  ]);
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+        importDocx(bytes, { documentId: "section-notes", unsupportedContent: "reject" }),
+        { kind: "document" },
+      ),
+      sections = model.snapshot().metadata.sections!;
+    expect(sections[0]!.footnoteOptions).toEqual({
+      format: "lowerRoman",
+      start: 3,
+      restart: "eachSect",
+      position: "beneathText",
+    });
+    expect(sections[0]!.noEndnote).toBe(true);
+    expect(sections[1]!.endnoteOptions).toEqual({
+      format: "upperLetter",
+      start: 2,
+      restart: "eachSect",
+    });
+    expect(sections[1]!.noEndnote).toBe(false);
+    bytes = exportDocx(model).bytes;
+  }
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "A" },
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: { footnoteOptions: { format: "decimal", start: 4, position: "pageBottom" } },
+    },
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "B" },
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: {
+        footnoteOptions: { format: "upperRoman", start: 5, position: "pageBottom" },
+        noEndnote: false,
+      },
+    },
+  ]);
+  const reopened = createDocumentSession(
+      openDocument(
+        importDocx(exportDocx(session).bytes, {
+          documentId: "section-review",
+          unsupportedContent: "reject",
+        }),
+        { kind: "document" },
+      ),
+    ),
+    revision = reopened
+      .snapshot()
+      .metadata.word!.revisions.find((item) => item.property === "section")!;
+  expect(revision.author).toBe("B");
+  expect(revision.before!.section!.footnoteOptions).toMatchObject({
+    format: "lowerRoman",
+    start: 3,
+    position: "beneathText",
+  });
+  reopened.commit(
+    reopened.prepare({
+      protocolVersion: 1,
+      documentId: "section-review",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevision",
+          nodeId: revision.nodeId,
+          revisionId: revision.revisionId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  expect(reopened.snapshot().metadata.sections![0]!.footnoteOptions?.start).toBe(3);
+  expect(reopened.snapshot().metadata.sections![0]!.noEndnote).toBe(true);
 });
-test('shared footnote placement compiles explicit section positions for Word and invalid local placement fails atomically',()=>{
- const{session,apply}=fixture();apply([{op:'splitWordSection',nodeId:'paragraph-1',breakType:'nextPage'},{op:'setWordNoteOptions',nodeId:'document-root',kind:'footnote',options:{position:'beneathText'}}]);expect(session.snapshot().metadata.sections!.every(section=>section.footnoteOptions?.position==='beneathText')).toBe(true);const before=session.snapshot();expect(()=>apply([{op:'setWordSection',nodeId:'section-root-1',changes:{footnoteOptions:{position:'sectEnd'}as never}}])).toThrow();expect(session.snapshot()).toEqual(before);const reopened=openDocument(importDocx(exportDocx(session).bytes,{documentId:'shared-position',unsupportedContent:'reject'}),{kind:'document'});expect(reopened.snapshot().metadata.sections!.every(section=>section.footnoteOptions?.position==='beneathText')).toBe(true);session.undo();expect(session.snapshot().metadata.sections).toHaveLength(1);expect(session.snapshot().metadata.sections![0]!.footnoteOptions).toBeUndefined();
+test("shared footnote placement compiles explicit section positions for Word and invalid local placement fails atomically", () => {
+  const { session, apply } = fixture();
+  apply([
+    { op: "splitWordSection", nodeId: "paragraph-1", breakType: "nextPage" },
+    {
+      op: "setWordNoteOptions",
+      nodeId: "document-root",
+      kind: "footnote",
+      options: { position: "beneathText" },
+    },
+  ]);
+  expect(
+    session
+      .snapshot()
+      .metadata.sections!.every((section) => section.footnoteOptions?.position === "beneathText"),
+  ).toBe(true);
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "setWordSection",
+        nodeId: "section-root-1",
+        changes: { footnoteOptions: { position: "sectEnd" } as never },
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  const reopened = openDocument(
+    importDocx(exportDocx(session).bytes, {
+      documentId: "shared-position",
+      unsupportedContent: "reject",
+    }),
+    { kind: "document" },
+  );
+  expect(
+    reopened
+      .snapshot()
+      .metadata.sections!.every((section) => section.footnoteOptions?.position === "beneathText"),
+  ).toBe(true);
+  session.undo();
+  expect(session.snapshot().metadata.sections).toHaveLength(1);
+  expect(session.snapshot().metadata.sections![0]!.footnoteOptions).toBeUndefined();
 });
-test('legacy whole native section properties retain unknown numbering while current note edits and their original history stay distinct',()=>{
- const{session:initial}=fixture(),native=unzipSync(exportDocx(initial).bytes),namespace='http://schemas.openxmlformats.org/wordprocessingml/2006/main';native['word/document.xml']=strToU8(strFromU8(native['word/document.xml']!).replace('<w:sectPr>','<w:sectPr><w:footnotePr><w:pos w:val="beneathText"/><w:numFmt w:val="hebrew1"/><w:numStart w:val="3"/></w:footnotePr>').replace('<w:titlePg','<w:noEndnote/><w:titlePg'));const sourceXml=strFromU8(native['word/document.xml']!),model=openDocument(importDocx(zipSync(native),{documentId:'legacy-note-options'}),{kind:'document'}),snapshot=model.snapshot(),files=new Map(model.serialize()),metadata=JSON.parse(JSON.stringify(snapshot.metadata)),fragment=metadata.word.nativeContent.fragments.find((item:{propertyName?:string})=>item.propertyName===namespace+' numFmt'),asset=fragment.assetPath,collection=JSON.parse(strFromU8(files.get(asset)!));collection.fragments[fragment.fragmentKey]=sourceXml.match(/<w:sectPr>[\s\S]*?<\/w:sectPr>/)![0].replace('<w:sectPr>','<w:sectPr xmlns:w="'+namespace+'">');fragment.propertyPath=[];fragment.propertyName=namespace+' sectPr';delete fragment.propertyIndices;delete fragment.propertyIndex;delete metadata.sections[0].footnoteOptions;delete metadata.sections[0].noEndnote;const bytes=strToU8(JSON.stringify(collection)),manifest=JSON.parse(JSON.stringify(snapshot.manifest));manifest.assets=manifest.assets.map((item:{path:string;mimeType:string})=>item.path===asset?createAssetDescriptor(asset,item.mimeType,bytes):item);files.set(asset,bytes);files.set('manifest.json',strToU8(JSON.stringify(manifest)));files.set(snapshot.manifest.metadata,strToU8(JSON.stringify(metadata)));const session=createDocumentSession(openDocument(files,{kind:'document'})),root=session.getNode(session.snapshot().metadata.word!.stories.find(story=>story.kind==='main')!.rootNodeId)!.parentNodeId!,section=session.snapshot().metadata.sections![0]!.rootNodeId;session.commit(session.prepare({protocolVersion:1,documentId:'legacy-note-options',baseRevision:0,operations:[{op:'setWordReview',nodeId:root,trackChanges:true,author:'new'},{op:'setWordSection',nodeId:section,changes:{footnoteOptions:{format:'decimal',start:4,position:'pageBottom'},noEndnote:false}}]}));const output=exportDocx(session).bytes,xml=strFromU8(unzipSync(output)['word/document.xml']!);expect(xml).toContain('sectPrChange');expect(xml).toContain('hebrew1');const reopened=createDocumentSession(openDocument(importDocx(output,{documentId:'legacy-note-review'}),{kind:'document'})),current=reopened.snapshot().metadata.sections![0]!,revision=reopened.snapshot().metadata.word!.revisions.find(item=>item.property==='section')!;expect(current.footnoteOptions).toMatchObject({format:'decimal',start:4,position:'pageBottom'});expect(current.noEndnote).toBe(false);expect(revision.before!.section!.footnoteOptions).toMatchObject({start:3,position:'beneathText'});reopened.commit(reopened.prepare({protocolVersion:1,documentId:'legacy-note-review',baseRevision:0,operations:[{op:'reviewWordRevision',nodeId:revision.nodeId,revisionId:revision.revisionId!,decision:'reject'}]}));const restored=strFromU8(unzipSync(exportDocx(reopened).bytes)['word/document.xml']!);expect(restored).toContain('hebrew1');expect(restored).toContain('beneathText');expect(reopened.snapshot().metadata.sections![0]!.noEndnote).toBe(true);
+test("legacy whole native section properties retain unknown numbering while current note edits and their original history stay distinct", () => {
+  const { session: initial } = fixture(),
+    native = unzipSync(exportDocx(initial).bytes),
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  native["word/document.xml"] = strToU8(
+    strFromU8(native["word/document.xml"]!)
+      .replace(
+        "<w:sectPr>",
+        '<w:sectPr><w:footnotePr><w:pos w:val="beneathText"/><w:numFmt w:val="hebrew1"/><w:numStart w:val="3"/></w:footnotePr>',
+      )
+      .replace("<w:titlePg", "<w:noEndnote/><w:titlePg"),
+  );
+  const sourceXml = strFromU8(native["word/document.xml"]!),
+    model = openDocument(importDocx(zipSync(native), { documentId: "legacy-note-options" }), {
+      kind: "document",
+    }),
+    snapshot = model.snapshot(),
+    files = new Map(model.serialize()),
+    metadata = JSON.parse(JSON.stringify(snapshot.metadata)),
+    fragment = metadata.word.nativeContent.fragments.find(
+      (item: { propertyName?: string }) => item.propertyName === namespace + " numFmt",
+    ),
+    asset = fragment.assetPath,
+    collection = JSON.parse(strFromU8(files.get(asset)!));
+  collection.fragments[fragment.fragmentKey] = sourceXml
+    .match(/<w:sectPr>[\s\S]*?<\/w:sectPr>/)![0]
+    .replace("<w:sectPr>", '<w:sectPr xmlns:w="' + namespace + '">');
+  fragment.propertyPath = [];
+  fragment.propertyName = namespace + " sectPr";
+  delete fragment.propertyIndices;
+  delete fragment.propertyIndex;
+  delete metadata.sections[0].footnoteOptions;
+  delete metadata.sections[0].noEndnote;
+  const bytes = strToU8(JSON.stringify(collection)),
+    manifest = JSON.parse(JSON.stringify(snapshot.manifest));
+  manifest.assets = manifest.assets.map((item: { path: string; mimeType: string }) =>
+    item.path === asset ? createAssetDescriptor(asset, item.mimeType, bytes) : item,
+  );
+  files.set(asset, bytes);
+  files.set("manifest.json", strToU8(JSON.stringify(manifest)));
+  files.set(snapshot.manifest.metadata, strToU8(JSON.stringify(metadata)));
+  const session = createDocumentSession(openDocument(files, { kind: "document" })),
+    root = session.getNode(
+      session.snapshot().metadata.word!.stories.find((story) => story.kind === "main")!.rootNodeId,
+    )!.parentNodeId!,
+    section = session.snapshot().metadata.sections![0]!.rootNodeId;
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "legacy-note-options",
+      baseRevision: 0,
+      operations: [
+        { op: "setWordReview", nodeId: root, trackChanges: true, author: "new" },
+        {
+          op: "setWordSection",
+          nodeId: section,
+          changes: {
+            footnoteOptions: { format: "decimal", start: 4, position: "pageBottom" },
+            noEndnote: false,
+          },
+        },
+      ],
+    }),
+  );
+  const output = exportDocx(session).bytes,
+    xml = strFromU8(unzipSync(output)["word/document.xml"]!);
+  expect(xml).toContain("sectPrChange");
+  expect(xml).toContain("hebrew1");
+  const reopened = createDocumentSession(
+      openDocument(importDocx(output, { documentId: "legacy-note-review" }), { kind: "document" }),
+    ),
+    current = reopened.snapshot().metadata.sections![0]!,
+    revision = reopened
+      .snapshot()
+      .metadata.word!.revisions.find((item) => item.property === "section")!;
+  expect(current.footnoteOptions).toMatchObject({
+    format: "decimal",
+    start: 4,
+    position: "pageBottom",
+  });
+  expect(current.noEndnote).toBe(false);
+  expect(revision.before!.section!.footnoteOptions).toMatchObject({
+    start: 3,
+    position: "beneathText",
+  });
+  reopened.commit(
+    reopened.prepare({
+      protocolVersion: 1,
+      documentId: "legacy-note-review",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevision",
+          nodeId: revision.nodeId,
+          revisionId: revision.revisionId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  const restored = strFromU8(unzipSync(exportDocx(reopened).bytes)["word/document.xml"]!);
+  expect(restored).toContain("hebrew1");
+  expect(restored).toContain("beneathText");
+  expect(reopened.snapshot().metadata.sections![0]!.noEndnote).toBe(true);
 });
-test('bookmarks and range links preserve source identities, formatting and text through native export and removal',()=>{
- const{session,apply}=fixture();const text=session.getNode('paragraph-1')!.text;apply([{op:'insertWordBookmark',nodeId:'paragraph-1',from:2,to:text.length,expectedText:text.slice(2),name:'Reference1'},{op:'insertWordLink',nodeId:'paragraph-1',from:2,to:text.length,expectedText:text.slice(2),bookmark:'Reference1'}]);expect(session.getNode('paragraph-1')!.text).toBe(text);const mark=session.snapshot().metadata.word!.bookmarks[0]!,link=session.snapshot().metadata.word!.hyperlinks[0]!;expect(session.getNode(link.nodeId)!.attributes['data-word-link']).toBe('start');const bytes=exportDocx(session).bytes,xml=strFromU8(unzipSync(bytes)['word/document.xml']!);expect(xml).toContain('w:anchor="Reference1"');const reopened=openDocument(importDocx(bytes,{documentId:'references',unsupportedContent:'reject'}),{kind:'document'});expect(reopened.snapshot().metadata.word!.hyperlinks[0]!.bookmark).toBe('Reference1');expect(reopened.snapshot().metadata.word!.bookmarks[0]!.name).toBe('Reference1');
- apply([{op:'removeWordBookmark',nodeId:'document-root',bookmarkId:mark.bookmarkId}]);expect(session.snapshot().metadata.word!.bookmarks).toHaveLength(0);expect(session.snapshot().metadata.word!.hyperlinks).toHaveLength(0);expect(session.getNode('paragraph-1')!.text).toBe(text);session.undo();expect(session.snapshot().metadata.word!.hyperlinks).toHaveLength(1);
+test("bookmarks and range links preserve source identities, formatting and text through native export and removal", () => {
+  const { session, apply } = fixture();
+  const text = session.getNode("paragraph-1")!.text;
+  apply([
+    {
+      op: "insertWordBookmark",
+      nodeId: "paragraph-1",
+      from: 2,
+      to: text.length,
+      expectedText: text.slice(2),
+      name: "Reference1",
+    },
+    {
+      op: "insertWordLink",
+      nodeId: "paragraph-1",
+      from: 2,
+      to: text.length,
+      expectedText: text.slice(2),
+      bookmark: "Reference1",
+    },
+  ]);
+  expect(session.getNode("paragraph-1")!.text).toBe(text);
+  const mark = session.snapshot().metadata.word!.bookmarks[0]!,
+    link = session.snapshot().metadata.word!.hyperlinks[0]!;
+  expect(session.getNode(link.nodeId)!.attributes["data-word-link"]).toBe("start");
+  const bytes = exportDocx(session).bytes,
+    xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+  expect(xml).toContain('w:anchor="Reference1"');
+  const reopened = openDocument(
+    importDocx(bytes, { documentId: "references", unsupportedContent: "reject" }),
+    { kind: "document" },
+  );
+  expect(reopened.snapshot().metadata.word!.hyperlinks[0]!.bookmark).toBe("Reference1");
+  expect(reopened.snapshot().metadata.word!.bookmarks[0]!.name).toBe("Reference1");
+  apply([{ op: "removeWordBookmark", nodeId: "document-root", bookmarkId: mark.bookmarkId }]);
+  expect(session.snapshot().metadata.word!.bookmarks).toHaveLength(0);
+  expect(session.snapshot().metadata.word!.hyperlinks).toHaveLength(0);
+  expect(session.getNode("paragraph-1")!.text).toBe(text);
+  session.undo();
+  expect(session.snapshot().metadata.word!.hyperlinks).toHaveLength(1);
 });
-test('collapsed bookmarks retain ordered empty markers and crossing or unsafe links fail atomically',()=>{
- const{session,apply}=fixture();apply([{op:'insertWordBookmark',nodeId:'paragraph-1',from:0,to:0,expectedText:'',name:'Empty'}]);const before=session.snapshot(),text=session.getNode('paragraph-1')!.text;expect(()=>apply([{op:'insertWordLink',nodeId:'paragraph-1',from:0,to:1,expectedText:text.slice(0,1),target:'javascript:alert(1)'}])).toThrow();expect(session.snapshot()).toEqual(before);apply([{op:'insertWordLink',nodeId:'paragraph-1',from:1,to:5,expectedText:text.slice(1,5),target:'https://example.com'}]);const linked=session.snapshot();expect(()=>apply([{op:'insertWordLink',nodeId:'paragraph-1',from:3,to:6,expectedText:text.slice(3,6),target:'https://example.org'}])).toThrow();expect(session.snapshot()).toEqual(linked);
+test("collapsed bookmarks retain ordered empty markers and crossing or unsafe links fail atomically", () => {
+  const { session, apply } = fixture();
+  apply([
+    {
+      op: "insertWordBookmark",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 0,
+      expectedText: "",
+      name: "Empty",
+    },
+  ]);
+  const before = session.snapshot(),
+    text = session.getNode("paragraph-1")!.text;
+  expect(() =>
+    apply([
+      {
+        op: "insertWordLink",
+        nodeId: "paragraph-1",
+        from: 0,
+        to: 1,
+        expectedText: text.slice(0, 1),
+        target: "javascript:alert(1)",
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  apply([
+    {
+      op: "insertWordLink",
+      nodeId: "paragraph-1",
+      from: 1,
+      to: 5,
+      expectedText: text.slice(1, 5),
+      target: "https://example.com",
+    },
+  ]);
+  const linked = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "insertWordLink",
+        nodeId: "paragraph-1",
+        from: 3,
+        to: 6,
+        expectedText: text.slice(3, 6),
+        target: "https://example.org",
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(linked);
 });

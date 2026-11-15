@@ -1,6 +1,61 @@
-import{strFromU8,strToU8,unzipSync,zipSync}from'fflate';
-import{createWordDocument,createDocumentSession,openDocument}from'@doffi/core';
-import{exportDocx}from'@doffi/office';
-export function nativeDrawingFrameFixture(kind:'size'|'position'='size',count=1):Uint8Array{
- const session=createDocumentSession(openDocument(createWordDocument({documentId:'native-frame-fixture'}),{kind:'document'}));session.commit(session.prepare({protocolVersion:1,documentId:'native-frame-fixture',baseRevision:0,operations:[{op:'replaceText',nodeId:'paragraph-1',from:0,to:0,expectedText:'',text:'BEFOREAFTER'},{op:'insertWordDrawing',nodeId:'paragraph-1',offset:6,geometry:{x:0,y:0,width:120,height:75,rotation:0,flipH:false,flipV:false},layout:{mode:'floating',wrap:'square'},object:{kind:'shape',preset:'rect'}}]}));const files=unzipSync(exportDocx(session).bytes),source=strFromU8(files['word/document.xml']!),original=source.match(/<w:drawing[\s\S]*?<\/w:drawing>/)![0],ns='http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing',extra=kind==='size'?'<wp14:sizeRelH xmlns:wp14="'+ns+'" relativeFrom="page"><wp14:pctWidth>50000</wp14:pctWidth></wp14:sizeRelH>':'<wp14:pctPosHOffset xmlns:wp14="'+ns+'">50000</wp14:pctPosHOffset>',raw=original.replace(kind==='size'?'</wp:anchor>':'</wp:positionH>',extra+(kind==='size'?'</wp:anchor>':'</wp:positionH>'));files['word/document.xml']=strToU8(source.replace('mc:Ignorable="w14"','mc:Ignorable="w14 wp14" xmlns:wp14="'+ns+'"').replace(original,Array.from({length:count},(_,index)=>raw.replace(/(<wp:docPr\b[^>]*\bid=")\d+/,(_,prefix:string)=>prefix+(index+1))).join('')));return zipSync(files);
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { createWordDocument, createDocumentSession, openDocument } from "@doffi/core";
+import { exportDocx } from "@doffi/office";
+export function nativeDrawingFrameFixture(
+  kind: "size" | "position" = "size",
+  count = 1,
+): Uint8Array {
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "native-frame-fixture" }), { kind: "document" }),
+  );
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "native-frame-fixture",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "replaceText",
+          nodeId: "paragraph-1",
+          from: 0,
+          to: 0,
+          expectedText: "",
+          text: "BEFOREAFTER",
+        },
+        {
+          op: "insertWordDrawing",
+          nodeId: "paragraph-1",
+          offset: 6,
+          geometry: { x: 0, y: 0, width: 120, height: 75, rotation: 0, flipH: false, flipV: false },
+          layout: { mode: "floating", wrap: "square" },
+          object: { kind: "shape", preset: "rect" },
+        },
+      ],
+    }),
+  );
+  const files = unzipSync(exportDocx(session).bytes),
+    source = strFromU8(files["word/document.xml"]!),
+    original = source.match(/<w:drawing[\s\S]*?<\/w:drawing>/)![0],
+    ns = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
+    extra =
+      kind === "size"
+        ? '<wp14:sizeRelH xmlns:wp14="' +
+          ns +
+          '" relativeFrom="page"><wp14:pctWidth>50000</wp14:pctWidth></wp14:sizeRelH>'
+        : '<wp14:pctPosHOffset xmlns:wp14="' + ns + '">50000</wp14:pctPosHOffset>',
+    raw = original.replace(
+      kind === "size" ? "</wp:anchor>" : "</wp:positionH>",
+      extra + (kind === "size" ? "</wp:anchor>" : "</wp:positionH>"),
+    );
+  files["word/document.xml"] = strToU8(
+    source
+      .replace('mc:Ignorable="w14"', 'mc:Ignorable="w14 wp14" xmlns:wp14="' + ns + '"')
+      .replace(
+        original,
+        Array.from({ length: count }, (_, index) =>
+          raw.replace(/(<wp:docPr\b[^>]*\bid=")\d+/, (_, prefix: string) => prefix + (index + 1)),
+        ).join(""),
+      ),
+  );
+  return zipSync(files);
 }

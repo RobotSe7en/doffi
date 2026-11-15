@@ -14,4 +14,10 @@ export type { DocxExportOptions, DocxExportReport, DocxExportResult } from "./do
 export type { UnexportedAnnotation } from "./export/annotations.js";
 
 export { exportPptx } from "./pptx-export.js";
-export type { PptxExportOptions, PptxExportReport, PptxExportResult, PptxAnnotationLoss, UnexportedPptxAnnotation } from "./pptx-export.js";
+export type {
+  PptxExportOptions,
+  PptxExportReport,
+  PptxExportResult,
+  PptxAnnotationLoss,
+  UnexportedPptxAnnotation,
+} from "./pptx-export.js";
