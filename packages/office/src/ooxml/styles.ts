@@ -1,5 +1,6 @@
 import {passiveWordRunBooleans,passiveWordRunValues,passiveWordRunCss} from './word-passive-run-properties.js';
 import {passiveWordParagraphBooleans,passiveWordParagraphCss} from './word-passive-paragraph-properties.js';
+import {measurePoints} from './measure.js';
 import {wordColorLuminance} from '@doffi/core';
 import { DocumentError } from "@doffi/core";
 import type { WordMetadata, WordNumberLevel } from "@doffi/core";
@@ -1055,11 +1056,14 @@ export class DocxStyles {
     const type = attr(node, "type") ?? "dxa";
     const raw = attr(node, "w");
     if (type === "auto" || type === "nil") return {};
-    if (type === "pct")
-      return { [property]: String(number(raw, node) / 50) + "%" };
+    if (type === "pct"){
+      const literal=raw&&/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))%$/.exec(raw),value=literal?Number(literal[1]):number(raw,node)/50;
+      if(value<0&&property!=='margin-left')unsupported(node,'This negative preferred width remains native.');
+      return { [property]: String(value) + "%" };
+    }
     if (type !== "dxa")
       return unsupported(node, "An OOXML width unit is not supported.");
-    return { [property]: pt(number(raw, node) / 20) };
+    const value=measurePoints(raw,node);if(value<0&&property!=='margin-left')unsupported(node,'This negative preferred width remains native.');return { [property]: pt(value) };
   }
   resolve(id: string, visiting: Set<string> = new Set<string>()): StyleValues {
     const cached = this.resolved.get(id);

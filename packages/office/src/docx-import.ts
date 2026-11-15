@@ -1,5 +1,6 @@
 import { readWordEmptyContinuation } from './docx-table-continuation.js';
 import {readWordRowGapCount,readWordRowGapWidths} from './docx-row-gaps.js';
+import {measurePoints} from './ooxml/measure.js';
 import{wordCompatibilityNames}from'./ooxml/word-compatibility.js';
 import {bindWordConditionalFormat,readWordConditionalFormat} from './docx-conditional-format.js';
 import {resolveWordTableStyle,wordTableRegions,wordTableRowRegions,wordTableRowCellProperties} from '@doffi/core';
@@ -1320,10 +1321,10 @@ class Importer {
     });
     const gridSource=child(source,"tblGrid");check(gridSource,["gridCol","tblGridChange"]);
     const grid = elements(gridSource, "gridCol").map(
-      (item) => number(attr(item, "w"), item) / 20,
+      (item) => measurePoints(attr(item, "w"), item,20,0),
     );
-    if (!grid.length || grid.some((value) => value <= 0))
-      fail(source, "A table requires a valid column grid.");
+    if(grid.some(value=>value<0))fail(source,'A native table grid width cannot be negative.');
+    if(!grid.length||grid.some(value=>value===0))unsupported(source,'An automatically inferred native table grid is preserved with its layout.');
     this.word.tables.push({ nodeId: this.id(table), grid });
     let previous = new Map<number, { cell: Html; span: number;css:Css }>();
     const rows = elements(source, "tr");
@@ -1387,7 +1388,8 @@ class Importer {
       for (const cell of elements(row, "tc")) {
         const props = child(cell, "tcPr");
         const span = number(attr(child(props, "gridSpan"), "val"), cell, 1);
-        if (span < 1 || column + span > grid.length)
+        if(column+span>grid.length)unsupported(source,'A dynamically expanded native table grid is preserved with its layout.');
+        if (span < 1)
           fail(cell, "A table cell exceeds its grid.");
         const merge = child(props, "vMerge");
         const value = attr(merge, "val") ?? "continue";
