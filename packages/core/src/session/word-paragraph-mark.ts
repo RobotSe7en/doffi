@@ -5,6 +5,40 @@ import type {DocumentEdit} from '../document/edit.js';
 import type {ParsedHtml} from '../document/html.js';
 import type {SourceStyleEdit} from './source-styles.js';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+/** Only the newly inserted paragraph mark inherits current formatting. The
+ * original mark and its preexisting history remain on the last paragraph. */
+export function inheritWordSplitParagraphMarks(word:WordMetadata,before:ParsedHtml,edit:DocumentEdit,parse:()=>ParsedHtml,styles:SourceStyleEdit):void{
+    let current=parse();const oldIds=new Set(before.nodeIds());
+    if(current.nodeIds().filter(id=>/^p$|^h[1-6]$/.test(current.peekNode(id)!.tagName)).length!==before.nodeIds().filter(id=>/^p$|^h[1-6]$/.test(before.peekNode(id)!.tagName)).length+1)return;
+    for(const id of before.nodeIds()){
+        const old=before.peekNode(id)!;if(!/^p$|^h[1-6]$/.test(old.tagName)||!old.parentNodeId)continue;
+        const markerId=old.childNodeIds.find(child=>before.peekNode(child)!.attributes['data-word-paragraph-mark']==='true');if(!markerId)continue;
+        const first=current.peekNode(id);if(!first||first.parentNodeId!==old.parentNodeId)continue;
+        const siblings=current.peekNode(first.parentNodeId!)!.childNodeIds,tailId=siblings[siblings.indexOf(id)+1],tail=tailId?current.peekNode(tailId):undefined;
+        if(!tail||oldIds.has(tail.nodeId)||!/^p$|^h[1-6]$/.test(tail.tagName)||before.getNode(id)!.text!==current.getNode(id)!.text+current.getNode(tail.nodeId)!.text)continue;
+        const markers=[...first.childNodeIds,...tail.childNodeIds].filter(child=>current.peekNode(child)!.attributes['data-word-paragraph-mark']==='true');
+        // Explicitly supplied independent marks already describe the new state.
+        if(markers.some(child=>child!==markerId))continue;
+        let original=markerId;
+        if(!current.peekNode(original)){
+            const restored=edit.insertSource(tail.nodeId,before.getNode(markerId)!.html,undefined,true);original=restored.rootNodeIds[0]!;
+            styles.aliasNodeIds(new Map([[markerId,original]]));
+            for(const revision of word.revisions)if(revision.nodeId===markerId)revision.nodeId=original;
+            for(const fragment of word.nativeContent?.fragments??[])if(fragment.nodeId===markerId)fragment.nodeId=original;
+        }else if(current.peekNode(original)!.parentNodeId!==tail.nodeId)edit.moveWordParagraphMark(original,tail.nodeId);
+        for(const fragment of word.nativeContent?.fragments??[])if((fragment.nodeId===id||fragment.nodeId===tail.nodeId)&&fragment.kind==='property'&&fragment.propertyPath[0]===W+' pPr'){
+            const count=fragment.propertyPath[1]===W+' rPr'?2:fragment.propertyPath.length===1&&fragment.propertyName===W+' rPr'?1:0;if(!count)continue;
+            fragment.nodeId=original;fragment.ownerName='rPr';fragment.propertyPath=fragment.propertyPath.slice(count);if(fragment.propertyIndices)fragment.propertyIndices=fragment.propertyIndices.slice(count);
+        }
+        const clone=edit.cloneSource(original,id).rootNodeIds[0]!;styles.aliasNodeIds(new Map([[original,clone]]));
+        const tabs=word.tabs.find(tab=>tab.paragraphNodeId===id);if(tabs&&!word.tabs.some(tab=>tab.paragraphNodeId===tail.nodeId))word.tabs.push({...tabs,paragraphNodeId:tail.nodeId,stops:tabs.stops.map(stop=>({...stop}))});
+        const native=word.nativeContent;
+        if(native)native.fragments.push(...native.fragments.filter(fragment=>fragment.nodeId===original&&fragment.kind==='property'&&!fragment.revisionPrevious&&!fragment.propertyName?.endsWith('Change')&&!fragment.propertyPath.some(path=>path.endsWith('Change'))).map((fragment,index)=>{
+            const copy={...JSON.parse(JSON.stringify(fragment))as typeof fragment,nodeId:clone,nativeId:clone+'-split-mark-'+index,...(fragment.propertyName===W+' rPr'?{currentRunPropertiesOnly:true}:{})};delete copy.revisionSourceId;delete copy.revisionPrevious;return copy;
+        }));
+        current=parse();
+    }
+}
 /** Paragraph marks are empty source runs; their history has no body-text range. */
 export function formatWordParagraphMark(word:WordMetadata,edit:DocumentEdit,parse:()=>ParsedHtml,paragraphId:string,properties:Readonly<Record<string,string>>):void{
     const source=parse(),paragraph=source.peekNode(paragraphId)!;

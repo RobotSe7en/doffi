@@ -192,6 +192,13 @@ export class DocumentEdit {
     return this.insertSource(parentId, serializeHtmlOuter(target), beforeId,true);
   }
 
+  /** A paragraph split moves the original zero-width mark to the last part. */
+  moveWordParagraphMark(nodeId:string,paragraphId:string):void{
+    const index=this.index(),mark=index.get(nodeId),paragraph=index.get(paragraphId);
+    if(!mark||attr(mark,'data-word-paragraph-mark')!=='true'||mark.childNodes.length||!paragraph||!/^p$|^h[1-6]$/.test(paragraph.tagName))fail('A paragraph mark move requires an empty mark and paragraph.');
+    adapter.detachNode(mark);adapter.appendChild(paragraph,mark);
+  }
+
   /** Internal table adapter may address parser-created row groups by core identity. */
   sourceParent(nodeId:string):string {
     const target=this.index().get(nodeId),parent=target?.parentNode;

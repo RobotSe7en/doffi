@@ -99,3 +99,5 @@ Word 命令 `insertFootnote`、`insertEndnote` 和 `referenceSettings` 打开注
 Word 段落的 `--word-kinsoku`、`--word-word-wrap`、`--word-auto-space-de` 和 `--word-auto-space-dn` 使用 `0`／`1` 保存禁则、整词换行和中西文／数字间距，段落面板可修改，并参与格式修订、撤销和原生读写。`wordWrap=0` 按原生示例允许英文字符级换行；关闭中文禁则不拆开设置为整词换行的英文。未声明的中西文／数字间距默认启用。固定字符网格已有自身的间距投影；其他段落使用跨 run 的可折叠视图间距，不改写正文或 UTF-16 锚点。
 
 预览间距采用 [CSS Text 的 1/8 CJK 字宽](https://www.w3.org/TR/css-text-4/#text-autospace-property)，源中保留原生开关；这不声称已验证 Word 实机逐像素一致。原生换行的适用语言参考 [Microsoft 实现说明](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/5c96914d-820a-4f49-a239-40024839685e)。悬挂标点、行首标点压缩及自定义禁则表仍在后续排版收口范围内。
+
+回车或 SDK 协调产生单次段落拆分时，新段落标记继承当前字符格式与原生效果；原标记和已有格式历史保留在末段。两段保留独立制表位声明。拒绝分段修订会合并正文并保留原标记的历史，撤销同时恢复源和元数据。
