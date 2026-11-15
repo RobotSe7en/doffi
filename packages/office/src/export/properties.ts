@@ -131,6 +131,7 @@ export function cellMargins(css: Css, name: string): string {
 }
 export function tableProperties(css: Css): string {
   let out = nativeWidth("tblW", css.width, css);
+  if(css['--word-table-bidi']!==undefined){if(!['0','1'].includes(css['--word-table-bidi']))unsupported('A native table direction must be zero or one.');out+=toggle('bidiVisual',css['--word-table-bidi']==='1');}
   if (css["margin-left"] === "auto") out += value("jc", css["margin-right"] === "auto" ? "center" : "right");
   else out += nativeWidth("tblInd", css["margin-left"], css);
   out += borders(css, "tblBorders", true) + shade(css);

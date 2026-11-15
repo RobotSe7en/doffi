@@ -38,13 +38,14 @@ export function bindWordTableResize(root: HTMLElement, session: DocumentEditingS
         const selection = cells.get(cell.dataset.nodeId!);
         if (!selection)
             return;
-        const rect = cell.getBoundingClientRect(), grid = [...info.grid], column = selection.column + selection.columns - 1, row = selection.row + selection.rows - 1, ratio = grid.reduce((a, b) => a + b, 0) / table.getBoundingClientRect().width;
+        const rect = cell.getBoundingClientRect(), grid = [...info.grid], column = selection.column + selection.columns - 1, row = selection.row + selection.rows - 1, ratio = grid.reduce((a, b) => a + b, 0) / table.getBoundingClientRect().width,bidi=table.dataset.sdkWordTableBidi==='true';
         const heights = rows.map(id => { const element = root.querySelector<HTMLElement>('[data-node-id="' + view.CSS.escape(id) + '"]'); return Math.max(1, (element?.getBoundingClientRect().height ?? 0) * .75 || 20); });
         const commit = (axis: 'column' | 'row', delta: number, baseRevision: number): void => { if (Math.abs(delta) < .01)
             return; try {
             const snapshot = session.snapshot();
             if (snapshot.manifest.revision !== baseRevision)
                 throw new DocumentError('RevisionConflict', '拖动期间文档已更改，请重试。');
+            if(axis==='column'&&bidi)delta=-delta;
             const change = axis === 'column' ? { kind: 'resize' as const, grid: [...grid] } : { kind: 'resize' as const, rowIndex:row, rowHeight:heights[row]! };
             if ('grid' in change) {
                 const minimum=Math.min(6,grid[column]!,grid[column+1]??6),maximum=column+1<grid.length?grid[column+1]!-minimum:Infinity,amount=Math.max(minimum-grid[column]!,Math.min(maximum,delta));
@@ -64,7 +65,7 @@ export function bindWordTableResize(root: HTMLElement, session: DocumentEditingS
             guide.type = 'button';
             guide.setAttribute('aria-label', axis === 'column' ? '调整第 ' + (column + 1) + ' 列宽度' : '调整第 ' + (row + 1) + ' 行高度');
             guide.dataset.sdkTableResize = axis;
-            guide.style.cssText = `position:fixed;z-index:1000;box-sizing:border-box;border:1px solid #2563eb;background:#2563eb66;padding:0;border-radius:2px;cursor:${axis === 'column' ? 'col' : 'row'}-resize;left:${axis === 'column' ? rect.right - 4 : rect.left + Math.max(0, rect.width / 2 - 12)}px;top:${axis === 'column' ? rect.top + Math.max(0, rect.height / 2 - 12) : rect.bottom - 4}px;width:${axis === 'column' ? 8 : 24}px;height:${axis === 'column' ? 24 : 8}px`;
+            guide.style.cssText = `position:fixed;z-index:1000;box-sizing:border-box;border:1px solid #2563eb;background:#2563eb66;padding:0;border-radius:2px;cursor:${axis === 'column' ? 'col' : 'row'}-resize;left:${axis === 'column' ? (bidi?rect.left:rect.right) - 4 : rect.left + Math.max(0, rect.width / 2 - 12)}px;top:${axis === 'column' ? rect.top + Math.max(0, rect.height / 2 - 12) : rect.bottom - 4}px;width:${axis === 'column' ? 8 : 24}px;height:${axis === 'column' ? 24 : 8}px`;
             document.body.append(guide);
             guides.push(guide);
             guide.addEventListener('keydown', event => { const negative = axis === 'column' ? 'ArrowLeft' : 'ArrowUp', positive = axis === 'column' ? 'ArrowRight' : 'ArrowDown'; if (event.key !== negative && event.key !== positive)

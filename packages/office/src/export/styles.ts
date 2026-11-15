@@ -113,7 +113,7 @@ export class ExportStyles {
       out.add("<w:rPr>" + this.runSource(style).source + "</w:rPr>");
       if (style.kind === "table") {
         const tableCss=style.components?.table?this.component(style.components.table):css,cellCss=style.components?.cell?this.component(style.components.cell):pick(css,Object.keys(css).filter(key=>key.startsWith('padding-')));
-        out.add("<w:tblPr>" + (style.rowBandSize !== undefined ? value("tblStyleRowBandSize", style.rowBandSize) : "") + (style.columnBandSize !== undefined ? value("tblStyleColBandSize", style.columnBandSize) : "") + tableProperties(tableCss) + (style.tableLookMask !== undefined ? empty("w:tblLook", { "w:val": style.tableLookMask.toString(16).padStart(4, "0") }) : "") + "</w:tblPr>");
+        out.add("<w:tblPr>" + orderedProperties("tblPr",(style.rowBandSize !== undefined ? value("tblStyleRowBandSize", style.rowBandSize) : "") + (style.columnBandSize !== undefined ? value("tblStyleColBandSize", style.columnBandSize) : "") + tableProperties(tableCss) + (style.tableLookMask !== undefined ? empty("w:tblLook", { "w:val": style.tableLookMask.toString(16).padStart(4, "0") }) : "") )+ "</w:tblPr>");
         if(style.components?.row)out.add('<w:trPr>'+rowProperties(this.component(style.components.row))+'</w:trPr>');
         out.add("<w:tcPr>" + cellProperties(cellCss) + "</w:tcPr>");
         for (const condition of style.conditions ?? []) {

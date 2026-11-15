@@ -26,7 +26,7 @@ export function composeWordContinuationCells(document:Document,model:ContentDocu
      let paint=paints[index];if(!paint){if(++count>limits.maxNodes)throw new DocumentError('ResourceLimitExceeded','Continuation cell paint exceeds the render node budget.');paint=markViewNode(document.createElement('div'));paint.className='sdk-word-continuation-segment';paint.dataset.sdkWordPhysicalRow=String(physicalRow);paint.setAttribute('aria-hidden','true');cell.append(paint);paints[index]=paint;}
      const physical=rows[physicalRow]!.getBoundingClientRect(),bottom=rows[rowIndex+height-1]!.getBoundingClientRect().bottom;
      paint.style.cssText=`position:absolute;pointer-events:none;user-select:none;box-sizing:border-box;z-index:-1;left:${-left}px;right:${-right}px;top:${physical.top-box.top-top}px;height:${(index===height-1?bottom:physical.bottom)-physical.top}px;background-color:${appearance['background-color']}`;
-     for(const side of sides){if(side==='top'&&index!==0||side==='bottom'&&index!==height-1)continue;for(const key of ['width','style','color'])paint.style.setProperty('border-'+side+'-'+key,appearance['border-'+side+'-'+key]??(key==='color'?appearance.color!:'initial'));}
+     for(const side of sides){if(side==='top'&&index!==0||side==='bottom'&&index!==height-1)continue;const visual=table.dataset.sdkWordTableBidi==='true'?(side==='left'?'right':side==='right'?'left':side):side;for(const key of ['width','style','color'])paint.style.setProperty('border-'+visual+'-'+key,appearance['border-'+side+'-'+key]??(key==='color'?appearance.color!:'initial'));}
     }
    }});
   }

@@ -951,10 +951,11 @@ export class DocxStyles {
       "tblCaption",
       "tblDescription", "tblPrChange",
     ]);
-    if (child(properties, "tblpPr") || on(child(properties, "bidiVisual")))
-      unsupported(properties, "Floating or bidi tables are not supported.");
+    if (child(properties, "tblpPr"))
+      unsupported(properties, "This floating table retains its native positioning.");
     this.cellSpacing(properties);
     const result: Css = { "border-collapse": "collapse" };
+    if(child(properties,'bidiVisual'))result['--word-table-bidi']=on(child(properties,'bidiVisual'))?'1':'0';
     Object.assign(result, this.borders(child(properties, "tblBorders")));
     const width = child(properties, "tblW");
     if (width) Object.assign(result, this.width(width, "width"));
