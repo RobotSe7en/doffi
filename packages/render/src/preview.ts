@@ -1,3 +1,4 @@
+import{composeWordContextualSpacing}from'./word-contextual-spacing.js';
 import{composeWordFloatingTables}from'./word-floating-tables.js';
 import {composeWordTextRuns} from './word-text-runs.js';
 import{composeWordLanguages}from'./word-languages.js';
@@ -460,6 +461,7 @@ export function mountPreview(
     // invalidate the operating system's composition target.
     if (composing) return;
     const restoreSelection=retainFlowSelection(source.root,projection?.ignored);
+    composeWordContextualSpacing(iframe.contentDocument!,model);
     composeWordTypography(iframe.contentDocument!,model,limits);
     let pages: DocumentRenderReport["pages"] = [], nodePages: DocumentRenderReport["nodePages"] = {}, results: DocumentRenderReport["fields"] = [], stable = !pagination;
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
@@ -486,6 +488,7 @@ export function mountPreview(
     composeWordTextRuns(frame,model,limits);
     composeWordParagraphMarks(frame,model);
     composeWordLanguages(frame,model,limits);
+    composeWordContextualSpacing(frame,model);
     composeWordTypography(frame,model,limits);
     const sourceFonts = resolvePreviewFonts(frame,"[data-node-id],[data-sdk-word-script-view]");
     source = new PreviewSource(frame, model);

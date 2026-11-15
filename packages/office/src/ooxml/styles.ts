@@ -755,7 +755,6 @@ export class DocxStyles {
     for (const name of [
       "topLinePunct",
       "adjustRightInd",
-      "contextualSpacing",
       "mirrorIndents",
       "suppressOverlap",
       "textAlignment",
@@ -766,7 +765,7 @@ export class DocxStyles {
         unsupported(item, "This paragraph layout property is not yet mapped.");
     }
     const css: Css = {};
-    for(const [name,key] of [['kinsoku','--word-kinsoku'],['wordWrap','--word-word-wrap'],['autoSpaceDE','--word-auto-space-de'],['autoSpaceDN','--word-auto-space-dn']] as const){const item=child(properties,name);if(item)css[key]=on(item)?'1':'0';}
+    for(const [name,key] of [['contextualSpacing','--word-contextual-spacing'],['kinsoku','--word-kinsoku'],['wordWrap','--word-word-wrap'],['autoSpaceDE','--word-auto-space-de'],['autoSpaceDN','--word-auto-space-dn']] as const){const item=child(properties,name);if(item)css[key]=on(item)?'1':'0';}
     if(child(properties,"snapToGrid")) css["--word-paragraph-snap-to-grid"]=on(child(properties,"snapToGrid"))?"1":"0";
     const overflowPunctuation = child(properties, "overflowPunct");
     if (overflowPunctuation) {
