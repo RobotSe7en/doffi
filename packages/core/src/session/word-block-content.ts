@@ -25,11 +25,6 @@ export function pasteWordBlockContent(
   comments?: WordContentCommentContext,
 ): { tailNodeId: string } {
   const word = metadata.word!;
-  if (
-    word.trackChanges &&
-    operation.semantics?.nativeContent?.fragments.some((f) => f.kind === "block")
-  )
-    throw new DocumentError("UnsupportedFeature", "原生保留区块暂不能记录追踪粘贴，候选未应用。");
   if (operation.endNodeId && operation.endNodeId !== operation.nodeId) {
     const group = context ?? {
       groupId: "word-paste-" + createOpaqueId(),
@@ -194,7 +189,24 @@ export function pasteWordBlockContent(
         "A pasted table requires its complete column grid.",
       );
   if (word.trackChanges) {
+    const copiedNodes = new Set(content.identities.values()),
+      nativeBlocks = new Set(
+        (word.nativeContent?.fragments ?? [])
+          .filter((f) => f.kind === "block" && f.nodeId && copiedNodes.has(f.nodeId))
+          .map((f) => f.nodeId!),
+      );
+    for (const id of nativeBlocks)
+      word.revisions.push({
+        nodeId: id,
+        sourceId: id + "-native-paste",
+        revisionId: id + "-native-paste",
+        kind: "nativeInsert",
+        author,
+        date,
+        groupId,
+      });
     for (const id of paragraphs) {
+      if (nativeBlocks.has(id)) continue;
       const wrapper = edit.wrapSourceParagraphContent(id, "ins");
       if (wrapper)
         word.revisions.push({
@@ -219,7 +231,7 @@ export function pasteWordBlockContent(
         groupId,
       });
     }
-    for (const id of [operation.nodeId, ...outerParagraphs]) {
+    for (const id of [operation.nodeId, ...outerParagraphs.filter((id) => !nativeBlocks.has(id))]) {
       const revisionId = id + "-paste-mark-" + groupId;
       word.revisions.push({
         nodeId: id,

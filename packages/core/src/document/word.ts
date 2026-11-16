@@ -77,6 +77,16 @@ export function validateWord(
           invalid("Native fragments require unique identities and declared resources.");
         ids.add(fragment.nativeId);
         if (
+          fragment.numberingKind &&
+          (!fragment.numberingSourceId ||
+            fragment.kind !== "property" ||
+            fragment.nodeId ||
+            fragment.styleId ||
+            fragment.ownerName !== "numbering" ||
+            fragment.propertyPath.length)
+        )
+          invalid("A preserved numbering definition requires an isolated native numbering owner.");
+        if (
           fragment.styleRegion &&
           (!fragment.styleId || fragment.ownerName !== "style" || fragment.kind !== "property")
         )
@@ -122,6 +132,16 @@ export function validateWord(
           invalid("Native parts require unique paths and declared resources.");
         parts.add(part.sourcePart);
       }
+      for (const fragment of native.fragments)
+        if (
+          fragment.dependencyParts &&
+          (new Set(fragment.dependencyParts).size !== fragment.dependencyParts.length ||
+            fragment.dependencyParts.some((part) => !parts.has(part)))
+        )
+          invalid("An indirect native dependency requires its declared OPC part.");
+      for (const part of native.parts)
+        if (part.customXml && !parts.has(part.customXml.propertiesPart))
+          invalid("A custom XML item requires its declared properties part.");
       const relations = new Set<string>();
       for (const relation of native.relationships) {
         const key = relation.sourcePart + "\n" + relation.id;
@@ -687,6 +707,13 @@ export function validateWord(
         invalid("A text revision requires its matching source container.");
       if (revision.kind === "format" && (!revision.property || !revision.before))
         invalid("A formatting revision requires its previous properties.");
+      if (
+        revision.kind === "nativeInsert" &&
+        !word.nativeContent?.fragments.some(
+          (f) => f.nodeId === revision.nodeId && f.kind === "block",
+        )
+      )
+        invalid("A native insertion requires its intact block placeholder.");
       if (
         revision.property === "section" &&
         (!revision.before?.section ||

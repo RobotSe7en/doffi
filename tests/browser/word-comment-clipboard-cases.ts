@@ -402,12 +402,9 @@ export function registerWordCommentClipboardTests(
       { kind: "document" },
     );
     expect(reopened.snapshot().annotations).toHaveLength(1);
+    const reopenedAnchor = reopened.snapshot().annotations[0]!.anchor;
     expect(
-      reopened.snapshot().annotations[0]!.anchor.kind === "text-set" &&
-        reopened
-          .snapshot()
-          .annotations[0]!.anchor.ranges.map((r) => r.quote)
-          .join(""),
+      reopenedAnchor.kind === "text-set" && reopenedAnchor.ranges.map((r) => r.quote).join(""),
     ).toBe("重复😀禰\u{e0100}");
   });
 

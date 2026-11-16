@@ -4,6 +4,8 @@ import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
 import { sortWordProperties } from "./ooxml/word-property-order.js";
 import { sortWordNoteProperties } from "./ooxml/word-note-order.js";
 import { NativeDrawingIdentities } from "./docx-native-identities.js";
+import { bindingKey, CUSTOM_XML, isolatedStoreItemId } from "./docx-native-custom-xml.js";
+import { acceptNativeBlockInsertion, insertNativeBlock } from "./docx-native-revisions.js";
 import { sortWordSettings } from "./ooxml/word-settings-order.js";
 import { DocumentError, WordNativeFragmentCollectionSchema } from "@doffi/core";
 import type {
@@ -59,6 +61,7 @@ export function restoreDocxNative(
   generated: ReadonlyMap<string, Uint8Array>,
   limits: DocumentReadLimits,
   commentBindings: readonly NativeCommentBinding[] = [],
+  unexportedNativeRevisionIds: string[] = [],
 ): ReadonlyMap<string, Uint8Array> {
   const native = model.snapshot().metadata.word?.nativeContent,
     mappedCompatibility = new Set<string>(
@@ -167,6 +170,40 @@ export function restoreDocxNative(
       };
       scan(root);
     }
+  const rawDefinitions = native.fragments.filter((f) => f.numberingKind),
+    numberingIds = new Map<string, string>();
+  let numberingPart = [...parsed].find(
+    ([, root]) => root.uri === W && root.name === "numbering",
+  )?.[0];
+  if (rawDefinitions.length && !numberingPart) {
+    numberingPart = "word/numbering.xml";
+    parsed.set(numberingPart, {
+      name: "numbering",
+      uri: W,
+      attrs: new Map(),
+      namespaces: {},
+      content: [],
+      part: numberingPart,
+    });
+  }
+  for (const kind of ["num", "abstractNum", "numPicBullet"] as const) {
+    const attribute =
+        W +
+        " " +
+        (kind === "num" ? "numId" : kind === "abstractNum" ? "abstractNumId" : "numPicBulletId"),
+      root = numberingPart ? parsed.get(numberingPart)! : undefined,
+      used = new Set(
+        root?.content.flatMap((n) =>
+          typeof n === "string" || n.name !== kind ? [] : [n.attrs.get(attribute)],
+        ) ?? [],
+      );
+    let next = kind === "num" ? 1 : 0;
+    for (const f of rawDefinitions.filter((f) => f.numberingKind === kind)) {
+      while (used.has(String(next))) next++;
+      numberingIds.set(f.nativeId, String(next));
+      used.add(String(next++));
+    }
+  }
   const partMap = new Map<string, string>([[native.mainPart, "word/document.xml"]]);
   for (const fragment of native.fragments) {
     const locations = fragment.nodeId ? nodeParts.get(fragment.nodeId) : undefined;
@@ -196,6 +233,12 @@ export function restoreDocxNative(
   }
   const requiredParts = new Set<string>(),
     requiredRelations = new Set<string>();
+  const requirePart = (part: string): void => {
+    if (requiredParts.has(part)) return;
+    requiredParts.add(part);
+    for (const relation of native.relationships)
+      if (relation.sourcePart === part) requireRelation(part, relation.id);
+  };
   const requireRelation = (part: string, id: string): void => {
     const key = part + "\n" + id;
     if (requiredRelations.has(key)) return;
@@ -203,14 +246,13 @@ export function restoreDocxNative(
     if (!relation) return;
     requiredRelations.add(key);
     if (!relation.external) {
-      requiredParts.add(relation.target);
-      for (const child of native.relationships)
-        if (child.sourcePart === relation.target) requireRelation(child.sourcePart, child.id);
+      requirePart(relation.target);
     }
   };
   for (const relation of native.relationships)
     if (relation.root) requireRelation(relation.sourcePart, relation.id);
   for (const fragment of native.fragments) {
+    for (const part of fragment.dependencyParts ?? []) requirePart(part);
     const root = readFragment(fragment);
     const collect = (node: XmlNode): void => {
       for (const [key, value] of node.attrs)
@@ -289,8 +331,81 @@ export function restoreDocxNative(
     }
     mapping.set(rel.id, id);
   }
+  for (const part of retained) {
+    if (!part.customXml) continue;
+    const root = relationshipRoot("word/document.xml"),
+      target = "/" + partMap.get(part.sourcePart)!,
+      type = R + "/customXml";
+    if (
+      root.content.some(
+        (n) =>
+          typeof n !== "string" &&
+          n.attrs.get(" Type") === type &&
+          n.attrs.get(" Target") === target,
+      )
+    )
+      continue;
+    const ids = new Set(
+      root.content.flatMap((n) => (typeof n === "string" ? [] : [n.attrs.get(" Id")])),
+    );
+    let id = "nativeCustomXml";
+    for (let at = 1; ids.has(id); at++) id = "nativeCustomXml" + at;
+    root.content.push({
+      name: "Relationship",
+      uri: PKG,
+      attrs: new Map([
+        [" Id", id],
+        [" Type", type],
+        [" Target", target],
+      ]),
+      namespaces: {},
+      content: [],
+      part: relPath("word/document.xml"),
+    });
+  }
+  if (rawDefinitions.length && numberingPart) {
+    const root = relationshipRoot("word/document.xml"),
+      type = R + "/numbering";
+    if (!root.content.some((n) => typeof n !== "string" && n.attrs.get(" Type") === type)) {
+      const ids = new Set(
+        root.content.flatMap((n) => (typeof n === "string" ? [] : [n.attrs.get(" Id")])),
+      );
+      let id = "nativeNumbering";
+      for (let at = 1; ids.has(id); at++) id = "nativeNumbering" + at;
+      root.content.push({
+        name: "Relationship",
+        uri: PKG,
+        attrs: new Map([
+          [" Id", id],
+          [" Type", type],
+          [" Target", "/" + numberingPart],
+        ]),
+        namespaces: {},
+        content: [],
+        part: relPath("word/document.xml"),
+      });
+    }
+  }
   const nativeComments = new NativeWordComments(commentBindings);
-  const drawingIdentities = new NativeDrawingIdentities(native, parsed.values());
+  const drawingIdentities = new NativeDrawingIdentities(
+    native,
+    parsed.values(),
+    model.snapshot().metadata.word!.revisions.map((_, i) => String(i)),
+  );
+  const bindingId = (fragment: (typeof native.fragments)[number], id: string): string => {
+    const item = native.parts.find(
+      (part) =>
+        part.customXml &&
+        bindingKey(part.customXml.storeItemId) === bindingKey(id) &&
+        fragment.dependencyParts?.includes(part.sourcePart),
+    );
+    return (
+      item?.customXml?.copiedStoreItemId ??
+      item?.customXml?.storeItemId ??
+      // Packages predating the indirect index retain their original binding.
+      (fragment.dependencyParts === undefined ? id : isolatedStoreItemId(fragment.sourcePart, id))
+    );
+  };
   const fragmentXml = (
     fragment: DeepReadonly<NonNullable<WordMetadata["nativeContent"]>["fragments"][number]>,
   ): XmlNode => {
@@ -301,6 +416,7 @@ export function restoreDocxNative(
     });
     const root = copy(readFragment(fragment)),
       mapping = relationMaps.get(fragment.sourcePart);
+    if (fragment.insertionSourceId) acceptNativeBlockInsertion(root, fragment.insertionSourceId);
     drawingIdentities.mark(root, fragment.sourcePart, fragment.nativeId);
     if (fragment.kind !== "property") nativeComments.restore(root, fragment.nodeId);
     if (fragment.currentRunPropertiesOnly && root.uri === W && root.name === "rPr")
@@ -315,12 +431,76 @@ export function restoreDocxNative(
         ),
       );
     const rewrite = (node: XmlNode): void => {
+      if (fragment.numberingKind && node === root) {
+        const attr =
+          W +
+          " " +
+          (fragment.numberingKind === "num"
+            ? "numId"
+            : fragment.numberingKind === "abstractNum"
+              ? "abstractNumId"
+              : "numPicBulletId");
+        (node.attrs as Map<string, string>).set(attr, numberingIds.get(fragment.nativeId)!);
+      }
+      if (node.uri === W) {
+        const value = node.attrs.get(W + " val"),
+          word = model.snapshot().metadata.word!;
+        if (
+          value &&
+          ["pStyle", "rStyle", "tblStyle"].includes(node.name) &&
+          fragment.styleReferences?.[value]
+        )
+          (node.attrs as Map<string, string>).set(W + " val", fragment.styleReferences[value]!);
+        const referenceKey =
+            value &&
+            (node.name === "abstractNumId"
+              ? "abstractNum:" + value
+              : node.name === "lvlPicBulletId"
+                ? "numPicBullet:" + value
+                : node.name === "numId"
+                  ? value
+                  : undefined),
+          reference = referenceKey ? fragment.numberingReferences?.[referenceKey] : undefined;
+        if (reference) {
+          const rawId = numberingIds.get(reference);
+          const index = word.numbering.findIndex((n) => n.numberingId === reference);
+          if (rawId !== undefined) (node.attrs as Map<string, string>).set(W + " val", rawId);
+          else {
+            if (index < 0)
+              throw new DocumentError(
+                "ExportFailed",
+                "A preserved native numbering definition is missing.",
+              );
+            (node.attrs as Map<string, string>).set(W + " val", String(index + 1));
+          }
+        }
+      }
+      if (node.uri === W && node.name === "dataBinding") {
+        const id = node.attrs.get(W + " storeItemID");
+        if (id)
+          (node.attrs as Map<string, string>).set(W + " storeItemID", bindingId(fragment, id));
+      }
       for (const [key, value] of node.attrs)
         if (key.startsWith(R + " ") && mapping?.has(value))
           (node.attrs as Map<string, string>).set(key, mapping.get(value)!);
       for (const item of node.content) if (typeof item !== "string") rewrite(item);
     };
     rewrite(root);
+    if (fragment.kind === "block") {
+      const word = model.snapshot().metadata.word!,
+        revision = word.revisions.find(
+          (r) => r.nodeId === fragment.nodeId && r.kind === "nativeInsert",
+        );
+      if (
+        revision &&
+        !insertNativeBlock(root, {
+          id: String(word.revisions.indexOf(revision)),
+          author: revision.author ?? "",
+          ...(revision.date ? { date: revision.date } : {}),
+        })
+      )
+        unexportedNativeRevisionIds.push(revision.revisionId ?? revision.nodeId);
+    }
     return root;
   };
   const restored = new Set<string>();
@@ -712,11 +892,22 @@ export function restoreDocxNative(
           : root;
         if (!target)
           throw new DocumentError("ExportFailed", "A preserved native style owner is missing.");
-        applyProperty(target, fragment);
+        if (fragment.numberingKind) {
+          target.content.push(fragmentXml(fragment));
+          restored.add(fragment.nativeId);
+        } else applyProperty(target, fragment);
       }
     sortWordSettings(root);
     sortWordProperties(root);
     sortWordNoteProperties(root);
+    if (root.uri === W && root.name === "numbering") {
+      const order = ["numPicBullet", "abstractNum", "num", "numIdMacAtCleanup"];
+      root.content.sort(
+        (a, b) =>
+          (typeof a === "string" ? -1 : order.indexOf(a.name)) -
+          (typeof b === "string" ? -1 : order.indexOf(b.name)),
+      );
+    }
   }
   nativeComments.removeDuplicates(parsed.values());
   drawingIdentities.rewrite(parsed.values());
@@ -726,7 +917,19 @@ export function restoreDocxNative(
   for (const part of retained) {
     const bytes = sourceFiles.get(part.assetPath);
     if (!bytes) throw new DocumentError("AssetUnavailable", "A retained OPC part is missing.");
-    files.set(partMap.get(part.sourcePart)!, bytes);
+    const item = native.parts.find(
+      (p) => p.customXml?.propertiesPart === part.sourcePart && p.customXml.copiedStoreItemId,
+    );
+    if (item?.customXml) {
+      const root = read(bytes, part.sourcePart);
+      if (root.uri !== CUSTOM_XML || root.name !== "datastoreItem")
+        throw new DocumentError("InvalidDocument", "A custom XML properties root is invalid.");
+      (root.attrs as Map<string, string>).set(
+        CUSTOM_XML + " itemID",
+        item.customXml.copiedStoreItemId!,
+      );
+      files.set(partMap.get(part.sourcePart)!, encoder.encode(declaration + serializeXml(root)));
+    } else files.set(partMap.get(part.sourcePart)!, bytes);
   }
   for (const [part, root] of relationRoots)
     files.set(relPath(part), encoder.encode(declaration + serializeXml(root)));
@@ -747,6 +950,27 @@ export function restoreDocxNative(
         ],
       );
   const types = read(files.get("[Content_Types].xml")!, "[Content_Types].xml");
+  if (
+    rawDefinitions.length &&
+    numberingPart &&
+    !types.content.some(
+      (n) => typeof n !== "string" && n.attrs.get(" PartName") === "/" + numberingPart,
+    )
+  )
+    types.content.push({
+      name: "Override",
+      uri: CT,
+      attrs: new Map([
+        [" PartName", "/" + numberingPart],
+        [
+          " ContentType",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
+        ],
+      ]),
+      namespaces: {},
+      content: [],
+      part: "[Content_Types].xml",
+    });
   for (const part of retained)
     types.content.push({
       name: "Override",

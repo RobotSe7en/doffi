@@ -215,7 +215,7 @@ test("removing copied opaque endpoints releases only their selected native bytes
   expect(session.serialize().get(graph.assets[0]!.descriptor.path)).toEqual(graph.assets[0]!.bytes);
 });
 
-test("tracked opaque blocks reject atomically until their full native structural transfer is available", () => {
+test("tracked opaque blocks retain native comments through insertion review", () => {
   const graph = opaqueGraph("inside", false),
     documentId = "opaque-block-reject",
     session = createDocumentSession(
@@ -237,7 +237,7 @@ test("tracked opaque blocks reject atomically until their full native structural
     }),
   );
   const before = session.snapshot();
-  expect(() =>
+  session.commit(
     session.prepare(
       {
         protocolVersion: 1,
@@ -257,8 +257,39 @@ test("tracked opaque blocks reject atomically until their full native structural
       },
       { assets: graph.assets },
     ),
-  ).toThrow(/追踪粘贴/);
-  expect(session.snapshot()).toEqual(before);
+  );
+  const inserted = session
+    .snapshot()
+    .metadata.word!.revisions.find((r) => r.kind === "nativeInsert")!;
+  expect(inserted).toBeDefined();
+  expect(
+    controls(exportDocx(session).bytes).filter((c) => c.kind === "commentReference"),
+  ).toHaveLength(2);
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId,
+      baseRevision: session.snapshot().manifest.revision,
+      operations: [
+        {
+          op: "reviewWordRevision",
+          nodeId: inserted.nodeId,
+          revisionId: inserted.revisionId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  expect(session.getNode(target)).toBeUndefined();
+  expect(session.snapshot().annotations).toHaveLength(2);
+  expect(
+    session
+      .snapshot()
+      .annotations.find((a) => a.annotationId !== before.annotations[0]!.annotationId)!.status,
+  ).toBe("needs_reanchor");
+  session.undo();
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
 });
 
 for (const textAnchor of [false, true])

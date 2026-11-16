@@ -316,7 +316,7 @@ export function attachWordContent(
       }),
     );
   }
-  attachWordContentNative(word, edit, ids, semantics.nativeContent);
+  attachWordContentNative(word, edit, ids, semantics.nativeContent, numberingIds);
   attachWordContentComments(word, semantics, ids, storyIds, owners, parse(), comments);
   if (storyIds.size !== owners.size || [...storyIds.keys()].some((id) => !owners.has(id)))
     invalid("Clipboard stories must belong to selected objects or note references.");

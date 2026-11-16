@@ -87,6 +87,22 @@ export function pruneWordNativeResources(
 ): void {
   const native = word.nativeContent;
   if (!native || JSON.stringify(native) === JSON.stringify(previous)) return;
+  const definitions = new Map(
+      native.fragments.filter((f) => f.numberingKind).map((f) => [f.nativeId, f]),
+    ),
+    usedDefinitions = new Set<string>(),
+    definitionQueue = native.fragments.filter((f) => !f.numberingKind);
+  for (let at = 0; at < definitionQueue.length; at++)
+    for (const id of Object.values(definitionQueue[at]!.numberingReferences ?? {})) {
+      const definition = definitions.get(id);
+      if (definition && !usedDefinitions.has(id)) {
+        usedDefinitions.add(id);
+        definitionQueue.push(definition);
+      }
+    }
+  native.fragments = native.fragments.filter(
+    (f) => !f.numberingKind || usedDefinitions.has(f.nativeId),
+  );
   const owned = new Set([
     ...(previous?.fragments ?? []).flatMap((fragment) => [
       fragment.assetPath,
@@ -113,6 +129,13 @@ export function pruneWordNativeResources(
     ),
     wildcards = new Set<string>();
   const pending: string[] = [];
+  const selectPart = (path: string): void => {
+    if (!parts.has(path)) invalid("An indirect native dependency is missing.");
+    if (!keepParts.has(path)) {
+      keepParts.add(path);
+      pending.push(path);
+    }
+  };
   const select = (relation: (typeof native.relationships)[number]): void => {
     const key = relation.sourcePart + "\n" + relation.id;
     if (selected.has(key)) return;
@@ -124,6 +147,7 @@ export function pruneWordNativeResources(
   };
   for (const relation of native.relationships) if (relation.root) select(relation);
   for (const fragment of native.fragments) {
+    for (const path of fragment.dependencyParts ?? []) selectPart(path);
     if (parts.has(fragment.sourcePart) && !keepParts.has(fragment.sourcePart)) {
       keepParts.add(fragment.sourcePart);
       pending.push(fragment.sourcePart);

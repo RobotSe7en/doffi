@@ -89,6 +89,9 @@ export function pasteClipboardFormat(
       typeof item !== "object" ||
       !properties(item.p) ||
       !properties(item.r) ||
+      (item.nativeSignature !== undefined &&
+        (typeof item.nativeSignature !== "string" ||
+          !/^[a-f0-9]{64}$/.test(item.nativeSignature))) ||
       (item.table &&
         (!properties(item.table.table) ||
           !properties(item.table.cell) ||
@@ -110,6 +113,7 @@ export function pasteClipboardFormat(
       throw new DocumentError("InvalidOperation", "剪贴板样式身份重复。");
     seenIds.add(style.styleId);
     return {
+      ...(item.nativeSignature ? { nativeSignature: item.nativeSignature } : {}),
       style,
       p: item.p,
       r: item.r,
@@ -142,7 +146,7 @@ export function pasteClipboardFormat(
           (item) =>
             existing.has(item.style?.styleId) &&
             canonical(item) ===
-              canonical(readDefinition(existing.get(item.style.styleId)!, targetCss)),
+              canonical(readDefinition(existing.get(item.style.styleId)!, targetCss, model)),
         )
         .map((item) => item.style.styleId),
     );
@@ -284,6 +288,29 @@ export function pasteClipboardFormat(
       });
     }
   }
+  if (value.semantics?.nativeContent)
+    for (const fragment of value.semantics.nativeContent.fragments)
+      if (fragment.styleId) {
+        const id = ids.get(fragment.styleId);
+        if (!id) throw new DocumentError("InvalidOperation", "剪贴板原生样式缺失。");
+        fragment.styleId = id;
+      }
+  if (value.semantics?.nativeContent) {
+    const unresolved = new Map<string, string>();
+    for (const fragment of value.semantics.nativeContent.fragments)
+      if (fragment.styleReferences)
+        fragment.styleReferences = Object.fromEntries(
+          Object.entries(fragment.styleReferences).map(([source, definition]) => {
+            let id = ids.get(definition) ?? unresolved.get(definition);
+            if (!id) {
+              id = namespace + "-unresolved-style-" + unresolved.size;
+              unresolved.set(definition, id);
+            }
+            return [source, id];
+          }),
+        );
+  }
+
   for (const table of value.semantics?.tables ?? [])
     for (const entry of table.continuationFormats ?? [])
       for (const paragraph of entry.emptyParagraphs ?? []) {

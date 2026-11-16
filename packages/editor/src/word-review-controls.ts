@@ -141,6 +141,7 @@ export function createWordReviewControls(
       rowDelete: "删除行",
       cellInsert: "插入单元格",
       cellDelete: "删除单元格",
+      nativeInsert: "插入原生区块",
     };
     const render = (): void => {
       list.replaceChildren();

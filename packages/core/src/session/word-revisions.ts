@@ -538,6 +538,7 @@ export function applyWordRevision(
         "paragraphMoveTo",
         "rowInsert",
         "cellInsert",
+        "nativeInsert",
       ].includes(revision.kind),
       remove = operation.decision === "accept" ? !insertion : insertion;
     if (["insert", "delete", "moveFrom", "moveTo"].includes(revision.kind)) {

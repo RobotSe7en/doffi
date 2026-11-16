@@ -12,8 +12,9 @@ function identity(kind: string, raw: string): string {
 }
 /** Each OOXML range family owns a separate ID namespace. Paired boundaries
  * can live in different preserved fragments of the same original part. */
-function family(node: XmlNode): string | undefined {
+function family(node: XmlNode, parent?: XmlNode): string | undefined {
   if (node.uri !== W) return;
+  if (node.name === "id" && parent?.uri === W && parent.name === "sdtPr") return "control";
   if (["bookmarkStart", "bookmarkEnd"].includes(node.name)) return "bookmark";
   if (["permStart", "permEnd"].includes(node.name)) return "permission";
   const range =
@@ -50,11 +51,12 @@ export class NativeWordIdentities {
   constructor(
     roots: readonly XmlNode[],
     private readonly origin: (node: XmlNode) => Origin | undefined,
+    reservedRevisions: Iterable<string> = [],
   ) {
-    const visit = (node: XmlNode, word = true): void => {
+    const visit = (node: XmlNode, word = true, parent?: XmlNode): void => {
       word = (node.uri === W && (word || node.name === "txbxContent")) || (node.uri === MC && word);
-      const kind = word ? family(node) : undefined,
-        id = node.attrs.get(W + " id");
+      const kind = word ? family(node, parent) : undefined,
+        id = node.attrs.get(W + (kind === "control" ? " val" : " id"));
       if (kind && id !== undefined) {
         let used = this.used.get(kind);
         if (!used) {
@@ -63,16 +65,20 @@ export class NativeWordIdentities {
         }
         used.add(identity(kind, id));
       }
-      for (const child of node.content) if (typeof child !== "string") visit(child, word);
+      for (const child of node.content) if (typeof child !== "string") visit(child, word, node);
     };
     for (const root of roots) visit(root);
+    const revisions = this.used.get("revision") ?? new Set<string>();
+    for (const id of reservedRevisions) revisions.add(id);
+    this.used.set("revision", revisions);
   }
   rewrite(roots: readonly XmlNode[]): void {
-    const visit = (node: XmlNode, word = true): void => {
+    const visit = (node: XmlNode, word = true, parent?: XmlNode): void => {
       word = (node.uri === W && (word || node.name === "txbxContent")) || (node.uri === MC && word);
       const origin = this.origin(node),
-        kind = word ? family(node) : undefined,
-        old = node.attrs.get(W + " id");
+        kind = word ? family(node, parent) : undefined,
+        attribute = W + (kind === "control" ? " val" : " id"),
+        old = node.attrs.get(attribute);
       if (origin && kind && old !== undefined) {
         const key = kind + "\n" + origin.part + "\n" + identity(kind, old);
         let id = this.mapped.get(key);
@@ -94,9 +100,9 @@ export class NativeWordIdentities {
           this.next.set(kind, next + 1);
           this.mapped.set(key, id);
         }
-        (node.attrs as Map<string, string>).set(W + " id", id);
+        (node.attrs as Map<string, string>).set(attribute, id);
       }
-      for (const child of node.content) if (typeof child !== "string") visit(child, word);
+      for (const child of node.content) if (typeof child !== "string") visit(child, word, node);
     };
     for (const root of roots) visit(root);
   }

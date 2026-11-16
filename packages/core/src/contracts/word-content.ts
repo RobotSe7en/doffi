@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { WordMetadataSchema } from "./word.js";
+import { WordMetadataSchema, WordNativeContentSchema } from "./word.js";
 import { IdentifierSchema } from "./primitives.js";
 import { AnnotationSchema } from "./annotations.js";
 /** Source identities are local transport references. The receiving transaction
@@ -44,6 +44,11 @@ export const WordInlineContentSemanticsSchema = z.union([
   WordContentSemanticsSchema.omit({ numbering: true, tables: true, tabs: true }),
   WordContentSemanticsSchema.extend({
     stories: WordContentSemanticsSchema.shape.stories.unwrap().min(1),
+  }),
+  WordContentSemanticsSchema.extend({
+    nativeContent: WordNativeContentSchema.extend({
+      fragments: WordNativeContentSchema.shape.fragments.min(1),
+    }),
   }),
 ]);
 export type WordInlineContentSemantics = z.infer<typeof WordInlineContentSemanticsSchema>;

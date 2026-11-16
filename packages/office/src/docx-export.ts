@@ -71,6 +71,9 @@ export interface DocxExportReport {
   readonly exportedAnnotationIds: readonly string[];
   readonly preservedNativeIds?: readonly string[];
   readonly unexportedAnnotations: readonly UnexportedAnnotation[];
+  /** Opaque blocks whose complete insertion cannot be represented with native
+   * paragraph/run/row marks retain their content and report that revision. */
+  readonly unexportedNativeRevisionIds?: readonly string[];
 }
 export interface DocxExportResult {
   readonly bytes: Uint8Array;
@@ -2409,14 +2412,22 @@ export function exportDocx(
     limits = { ...DEFAULT_DOCUMENT_READ_LIMITS, ...options.limits };
   if (model.snapshot().manifest.kind !== "document")
     throw new DocumentError("UnsupportedFormat", "DOCX export requires a Word document package.");
-  const output = new Exporter(model, limits).write();
+  const output = new Exporter(model, limits).write(),
+    unexportedNativeRevisionIds: string[] = [],
+    nativeFiles = restoreDocxNative(
+      model,
+      output.files,
+      limits,
+      output.nativeComments,
+      unexportedNativeRevisionIds,
+    );
   return Object.freeze({
-    bytes: writeOpcZip(
-      restoreDocxNative(model, output.files, limits, output.nativeComments),
-      options,
-    ),
+    bytes: writeOpcZip(nativeFiles, options),
     report: Object.freeze({
       ...output.report,
+      ...(unexportedNativeRevisionIds.length
+        ? { unexportedNativeRevisionIds: Object.freeze(unexportedNativeRevisionIds) }
+        : {}),
       preservedNativeIds: Object.freeze(
         model
           .snapshot()

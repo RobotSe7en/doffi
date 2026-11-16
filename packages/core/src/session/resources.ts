@@ -109,11 +109,28 @@ export function checkResourceUse(
   const native = metadata?.word?.nativeContent;
   if (native) {
     const pending: string[] = [],
-      selected = new Set<string>();
+      selected = new Set<string>(),
+      parts = new Map(native.parts.map((p) => [p.sourcePart, p])),
+      keptParts = new Set<string>();
+    const requirePart = (path: string): void => {
+      if (keptParts.has(path)) return;
+      keptParts.add(path);
+      const part = parts.get(path);
+      if (part) unused.delete(part.assetPath);
+      for (const relation of native.relationships)
+        if (relation.sourcePart === path) pending.push(path + "\n" + relation.id);
+    };
     for (const fragment of native.fragments) {
-      if (!fragment.nodeId || !after.hasNode(fragment.nodeId)) continue;
+      if (
+        fragment.nodeId
+          ? !after.hasNode(fragment.nodeId)
+          : !fragment.numberingKind &&
+            !metadata?.word?.styles.some((s) => s.styleId === fragment.styleId)
+      )
+        continue;
       unused.delete(fragment.assetPath);
       if (fragment.preview) unused.delete(fragment.preview.assetPath);
+      for (const part of fragment.dependencyParts ?? []) requirePart(part);
       for (const id of fragment.relationshipIds ?? [])
         pending.push(fragment.sourcePart + "\n" + id);
     }
@@ -124,10 +141,7 @@ export function checkResourceUse(
       selected.add(key);
       const relation = relations.get(key);
       if (!relation || relation.external) continue;
-      const part = native.parts.find((p) => p.sourcePart === relation.target);
-      if (part) unused.delete(part.assetPath);
-      for (const child of native.relationships)
-        if (child.sourcePart === relation.target) pending.push(child.sourcePart + "\n" + child.id);
+      requirePart(relation.target);
     }
   }
   if (unused.size) invalid("New transaction resources must be referenced by the final source.");

@@ -64,6 +64,12 @@ export const WordNativeContentSchema = z.strictObject({
       fragmentKey: IdentifierSchema.optional(),
       fragmentFormat: z.enum(["xml", "json"]).optional(),
       relationshipIds: z.array(z.string().min(1)).optional(),
+      /** Indirect OPC dependencies, such as a content control's custom XML item. */
+      dependencyParts: z.array(PackagePathSchema).optional(),
+      styleReferences: z.record(IdentifierSchema, IdentifierSchema).optional(),
+      numberingReferences: z.record(IdentifierSchema, IdentifierSchema).optional(),
+      numberingKind: z.enum(["num", "abstractNum", "numPicBullet"]).optional(),
+      numberingSourceId: z.string().regex(/^\d+$/).optional(),
       propertyPath: z.array(z.string().min(1)),
       propertyIndices: z.array(z.number().int().nonnegative()).optional(),
       propertyIndex: z.number().int().nonnegative().optional(),
@@ -75,6 +81,7 @@ export const WordNativeContentSchema = z.strictObject({
       revisionSourceId: IdentifierSchema.optional(),
       revisionPrevious: z.boolean().optional(),
       currentRunPropertiesOnly: z.boolean().optional(),
+      insertionSourceId: z.string().min(1).optional(),
     }),
   ),
   parts: z.array(
@@ -82,6 +89,13 @@ export const WordNativeContentSchema = z.strictObject({
       sourcePart: PackagePathSchema,
       assetPath: PackagePathSchema,
       contentType: z.string().min(1),
+      customXml: z
+        .strictObject({
+          storeItemId: z.string().min(1),
+          propertiesPart: PackagePathSchema,
+          copiedStoreItemId: z.string().min(1).optional(),
+        })
+        .optional(),
     }),
   ),
   relationships: z.array(

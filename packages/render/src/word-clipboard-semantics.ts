@@ -63,7 +63,9 @@ export function copyWordClipboardSemantics(
       word.controls?.filter(
         (item) =>
           complete(item.nodeId) &&
-          !word.nativeContent?.fragments.some((fragment) => fragment.nodeId === item.nodeId),
+          !word.nativeContent?.fragments.some(
+            (fragment) => fragment.nodeId === item.nodeId && fragment.kind !== "property",
+          ),
       ) ?? [],
     hyperlinks = word.hyperlinks.filter(
       (link) => nodes.has(link.nodeId) && (!link.endNodeId || nodes.has(link.endNodeId)),
@@ -152,6 +154,10 @@ export function copyWordClipboardSemantics(
         node.dataset.wordNumbering ? [node.dataset.wordNumbering] : [],
       ),
     );
+  for (const fragment of word.nativeContent?.fragments ?? [])
+    if (fragment.nodeId && nodes.has(fragment.nodeId))
+      for (const id of Object.values(fragment.numberingReferences ?? {}))
+        if (word.numbering.some((n) => n.numberingId === id)) numberingIds.add(id);
   for (const table of tables)
     for (const entry of table.continuationFormats ?? []) {
       if (entry.cellCssClass) classes.add(entry.cellCssClass);

@@ -33,9 +33,13 @@ export class NativeDrawingIdentities {
   private readonly vml = new Map<string, string>();
   private readonly usedVml = new Set<string>();
   private nextVml = 1;
-  constructor(native: Native, roots: Iterable<XmlNode>) {
+  constructor(native: Native, roots: Iterable<XmlNode>, reservedRevisions: Iterable<string> = []) {
     const documents = [...roots];
-    this.word = new NativeWordIdentities(documents, (node) => this.origins.get(node));
+    this.word = new NativeWordIdentities(
+      documents,
+      (node) => this.origins.get(node),
+      reservedRevisions,
+    );
     const scan = (node: XmlNode): void => {
       const type = kind(node),
         id = node.attrs.get(" id"),

@@ -126,6 +126,22 @@ const runPositions = new Map(
 );
 /** Native preservation may add a property absent from the compiled output.
  * Reorder standard children in their existing slots; extension nodes stay put. */
+const numberingLevelPositions = new Map(
+  [
+    "start",
+    "numFmt",
+    "lvlRestart",
+    "pStyle",
+    "isLgl",
+    "suff",
+    "lvlText",
+    "lvlPicBulletId",
+    "legacy",
+    "lvlJc",
+    "pPr",
+    "rPr",
+  ].map((name, index) => [name, index]),
+);
 export function sortWordProperties(root: XmlNode): void {
   const positions =
     root.uri === W
@@ -137,7 +153,9 @@ export function sortWordProperties(root: XmlNode): void {
             ? runPositions
             : root.name === "tblPrEx"
               ? rowExceptionPositions
-              : undefined
+              : root.name === "lvl"
+                ? numberingLevelPositions
+                : undefined
       : undefined;
   if (positions) {
     const known = root.content

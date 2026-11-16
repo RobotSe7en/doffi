@@ -2,9 +2,15 @@ import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
 import { createAssetDescriptor, DocumentError } from "@doffi/core";
 import type { ContentDocumentManifest, WordMetadata } from "@doffi/core";
 import type { OpcPackage } from "./ooxml/package.js";
-import { W, R, MC, WP, unsupportedSource } from "./ooxml/xml.js";
+import { W, R, MC, WP, unsupportedSource, xml } from "./ooxml/xml.js";
 import type { XmlNode, UnsupportedXmlSource } from "./ooxml/xml.js";
 import { serializeXml } from "./ooxml/serialize.js";
+import {
+  indexNativeCustomXml,
+  nativeDataBindings,
+  nativeSemanticReferences,
+} from "./docx-native-custom-xml.js";
+import { nativeBlockInsertion } from "./docx-native-revisions.js";
 
 type Native = NonNullable<WordMetadata["nativeContent"]>;
 interface Pending {
@@ -652,7 +658,8 @@ export class DocxNativeImport {
           });
         }
 
-    const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] };
+    const native: Native = { mainPart: this.main, fragments: [], parts: [], relationships: [] },
+      customXml = indexNativeCustomXml(this.original, this.main);
     const encoder = new (
         globalThis as unknown as { TextEncoder: new () => { encode(text: string): Uint8Array } }
       ).TextEncoder(),
@@ -697,7 +704,20 @@ export class DocxNativeImport {
       const type = this.original.contentType(sourcePart) ?? "application/octet-stream";
       if (/(?:\/|\+)xml(?:;|$)/i.test(type) || sourcePart.endsWith(".xml"))
         this.original.read(sourcePart);
-      native.parts.push({ sourcePart, assetPath: add(bytes, type), contentType: type });
+      const binding = [...customXml.values()].find((item) => item.sourcePart === sourcePart);
+      native.parts.push({
+        sourcePart,
+        assetPath: add(bytes, type),
+        contentType: type,
+        ...(binding
+          ? {
+              customXml: {
+                storeItemId: binding.storeItemId,
+                propertiesPart: binding.propertiesPart,
+              },
+            }
+          : {}),
+      });
       relationships(sourcePart);
     };
     const previews = new Map<string, string>();
@@ -743,6 +763,45 @@ export class DocxNativeImport {
     };
     const fragmentXml: [string, string][] = [];
     const fragmentAssetPath = "assets/native-fragments.json";
+    const rawNumbering = new Map<string, string>();
+    let numberingRoot: XmlNode | undefined;
+    const preserveNumbering = (
+      kind: "num" | "abstractNum" | "numPicBullet",
+      id: string,
+    ): string | undefined => {
+      const key = kind + "\n" + id,
+        existing = rawNumbering.get(key);
+      if (existing) return existing;
+      const path = this.original.related(this.main, "numbering");
+      if (!path) return;
+      numberingRoot ??= xml(
+        this.original.files.get(path)!,
+        path,
+        this.original.limits,
+        this.original.xmlBudget,
+      );
+      const name =
+          kind === "num" ? "numId" : kind === "abstractNum" ? "abstractNumId" : "numPicBulletId",
+        source = numberingRoot.content.find(
+          (n): n is XmlNode =>
+            typeof n !== "string" &&
+            n.uri === W &&
+            n.name === kind &&
+            n.attrs.get(W + " " + name) === id,
+        );
+      if (!source) return;
+      const nativeId = "native-" + ++this.serial;
+      rawNumbering.set(key, nativeId);
+      this.pending.push({
+        original: source,
+        kind: "property",
+        owner: numberingRoot,
+        path: [],
+        label: "原生编号定义 " + kind,
+        id: nativeId,
+      });
+      return nativeId;
+    };
     const globals = new Set([
       "style",
       "styles",
@@ -817,8 +876,59 @@ export class DocxNativeImport {
           : {}),
       });
       const binding = native.fragments[native.fragments.length - 1]!;
+      if (
+        item.owner === numberingRoot &&
+        ["num", "abstractNum", "numPicBullet"].includes(item.original.name)
+      ) {
+        binding.numberingKind = item.original.name as "num" | "abstractNum" | "numPicBullet";
+        binding.numberingSourceId = item.original.attrs.get(
+          W +
+            " " +
+            (item.original.name === "num"
+              ? "numId"
+              : item.original.name === "abstractNum"
+                ? "abstractNumId"
+                : "numPicBulletId"),
+        )!;
+      }
+      if (item.kind === "block" && nodeId) {
+        const insertion = nativeBlockInsertion(item.original);
+        if (insertion) {
+          binding.insertionSourceId = insertion.id;
+          word.revisions.push({
+            nodeId,
+            sourceId: insertion.id,
+            revisionId: nodeId + "-native-insert",
+            kind: "nativeInsert",
+            author: insertion.author,
+            ...(insertion.date ? { date: insertion.date } : {}),
+          });
+        }
+      }
       binding.fragmentFormat = "json";
       binding.relationshipIds = [];
+      Object.assign(binding, nativeSemanticReferences(item.original));
+      for (const id of Object.keys(binding.numberingReferences ?? {})) {
+        const definition = preserveNumbering("num", id);
+        if (definition) binding.numberingReferences![id] = definition;
+      }
+      if (binding.numberingKind) {
+        const collect = (node: XmlNode): void => {
+          const kind =
+              node.uri === W && node.name === "abstractNumId"
+                ? "abstractNum"
+                : node.uri === W && node.name === "lvlPicBulletId"
+                  ? "numPicBullet"
+                  : undefined,
+            id = node.attrs.get(W + " val");
+          if (kind && id) {
+            const definition = preserveNumbering(kind, id);
+            if (definition) (binding.numberingReferences ??= {})[kind + ":" + id] = definition;
+          }
+          for (const child of node.content) if (typeof child !== "string") collect(child);
+        };
+        collect(item.original);
+      }
       // Relationships are package-local data; preserving never follows external links.
       const visit = (node: XmlNode): void => {
         for (const [key, id] of node.attrs)
@@ -837,6 +947,13 @@ export class DocxNativeImport {
         for (const child of node.content) if (typeof child !== "string") visit(child);
       };
       visit(item.original);
+      binding.dependencyParts = [];
+      for (const id of nativeDataBindings(item.original)) {
+        const item = customXml.get(id);
+        if (!item) continue; // Preserve a genuinely unresolved native binding.
+        binding.dependencyParts.push(item.sourcePart);
+        part(item.sourcePart);
+      }
     }
     if (fragmentXml.length) {
       const bytes = encoder.encode(

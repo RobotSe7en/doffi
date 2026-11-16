@@ -4,6 +4,7 @@ import { copyWordClipboardSemantics } from "./word-clipboard-semantics.js";
 import { copyWordClipboardComments } from "./word-clipboard-comments.js";
 import type { WordClipboardSourceRanges } from "./word-clipboard-comments.js";
 import { copyWordClipboardNative } from "./word-clipboard-native.js";
+import { nativeClipboardStyleSignature } from "./word-clipboard-native-style.js";
 import type { WordContentSemantics } from "@doffi/core";
 import {
   DEFAULT_DOCUMENT_READ_LIMITS,
@@ -32,6 +33,7 @@ export interface WordClipboardTableStyleProperties {
   row: Record<string, string>;
 }
 export interface WordClipboardStyleDefinition {
+  nativeSignature?: string;
   style: Style;
   p: Record<string, string>;
   r: Record<string, string>;
@@ -69,6 +71,7 @@ const declarations = (properties: Readonly<Record<string, string>>): string =>
 export function wordClipboardStyleDefinition(
   style: DeepReadonly<Style>,
   css: SourceStyleResolver,
+  model?: ContentDocumentModel,
 ): WordClipboardStyleDefinition {
   const own = {
       ...css.specifiedClass(style.cssClass),
@@ -127,7 +130,9 @@ export function wordClipboardStyleDefinition(
           ) as unknown as WordClipboardTableStyleProperties),
         }))
       : undefined;
+  const nativeSignature = model ? nativeClipboardStyleSignature(model, style.styleId) : undefined;
   return {
+    ...(nativeSignature ? { nativeSignature } : {}),
     style: WordStyleSchema.parse(style),
     p: { ...p },
     r,
@@ -201,9 +206,6 @@ export function copyWordClipboardFormat(
   const semantic = copyWordClipboardSemantics(holder, model, graph.completeNodes, css, graph.roots);
   const comments = copyWordClipboardComments(graph.roots, model, graph.completeNodes, selected);
   if (comments.annotations?.length) semantic.semantics = { ...semantic.semantics, ...comments };
-  const opaque = copyWordClipboardNative(graph.roots, model);
-  if (opaque.nativeContent)
-    semantic.semantics = { ...semantic.semantics, nativeContent: opaque.nativeContent };
   for (const drawing of semantic.semantics?.drawings ?? [])
     if (drawing.kind === "chart" && drawing.chart.native) {
       const native = drawing.chart.native,
@@ -269,6 +271,24 @@ export function copyWordClipboardFormat(
         if (paragraph.styleId) used.add(paragraph.styleId);
         for (const run of paragraph.runs) if (run.styleId) used.add(run.styleId);
       }
+  const opaque = copyWordClipboardNative(graph.roots, model, used);
+  if (opaque.nativeContent)
+    semantic.semantics = { ...semantic.semantics, nativeContent: opaque.nativeContent };
+  for (const fragment of opaque.nativeContent?.fragments ?? [])
+    for (const id of Object.values(fragment.numberingReferences ?? {})) {
+      const definition = word.numbering.find((n) => n.numberingId === id);
+      if (!definition || semantic.semantics?.numbering?.some((n) => n.numberingId === id)) continue;
+      const semantics = (semantic.semantics ??= {});
+      (semantics.numbering ??= []).push(
+        JSON.parse(JSON.stringify(definition)) as NonNullable<
+          WordContentSemantics["numbering"]
+        >[number],
+      );
+      for (const level of definition.levels)
+        (semantics.extraClasses ??= {})[level.cssClass] = css.specifiedClass(level.cssClass);
+    }
+  for (const fragment of opaque.nativeContent?.fragments ?? [])
+    for (const id of Object.values(fragment.styleReferences ?? {})) if (byId.has(id)) used.add(id);
   const pending = [...used];
   for (let index = 0; index < pending.length; index++) {
     const style = byId.get(pending[index]!);
@@ -280,7 +300,7 @@ export function copyWordClipboardFormat(
       }
   }
   const definitions: WordClipboardStyleDefinition[] = pending.map((id) =>
-    wordClipboardStyleDefinition(byId.get(id)!, css),
+    wordClipboardStyleDefinition(byId.get(id)!, css, model),
   );
   const knownClasses = new Set(
     definitions.flatMap((item) =>

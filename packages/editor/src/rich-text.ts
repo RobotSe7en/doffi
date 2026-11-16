@@ -2348,13 +2348,13 @@ export function mountDocumentTextEditor(
         projection.setViewAttribute(
           node,
           "data-sdk-word-revision",
-          ["moveTo", "insert", "rowInsert", "cellInsert"].includes(item.kind)
+          ["moveTo", "insert", "rowInsert", "cellInsert", "nativeInsert"].includes(item.kind)
             ? "insert"
             : ["moveFrom", "delete", "rowDelete", "cellDelete"].includes(item.kind)
               ? "delete"
               : item.kind,
         );
-        if (["moveTo", "insert", "rowInsert", "cellInsert"].includes(item.kind))
+        if (["moveTo", "insert", "rowInsert", "cellInsert", "nativeInsert"].includes(item.kind))
           projection.setViewAttribute(node, "data-sdk-word-inserted", "true");
         if (["delete", "moveFrom", "rowDelete", "cellDelete"].includes(item.kind)) {
           projection.setViewAttribute(node, "data-sdk-word-deleted", "true");

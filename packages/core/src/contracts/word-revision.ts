@@ -50,6 +50,7 @@ export const WordRevisionSchema = z.strictObject({
     "rowDelete",
     "cellInsert",
     "cellDelete",
+    "nativeInsert",
   ]),
   author: z.string().optional(),
   date: z.string().optional(),
