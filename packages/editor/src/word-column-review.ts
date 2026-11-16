@@ -1,4 +1,4 @@
-import { DocumentError } from "@doffi/core";
+import { DocumentError, resolveWordGridInsertion } from "@doffi/core";
 import type { DeepReadonly, WordMetadata } from "@doffi/core";
 import type { SourceProjection } from "@doffi/render";
 /** Keep pending cells in the live DOM for source reconciliation. Only their
@@ -17,7 +17,10 @@ export function projectWordColumnReview(
         .filter((revision) => revision.kind === hiddenKind)
         .map((revision) => revision.nodeId),
     );
-  if (!hidden.size) return;
+  if (!hidden.size && !word.revisions.some((item) => item.property === "tableGrid")) return;
+  const histories = new Map(
+    word.revisions.map((item) => [item.nodeId + "\n" + (item.property ?? item.kind), item]),
+  );
   const tables = new Map(word.tables.map((table) => [table.nodeId, table])),
     oldGrids = new Map(
       word.revisions
@@ -57,12 +60,44 @@ export function projectWordColumnReview(
         if (hidden.has(child.dataset.nodeId!))
           for (let c = column; c < column + cell.columns; c++) candidates.add(c);
       }
+    const previous = oldGrids.get(info.nodeId);
+    if (display === "original" && previous && previous.length < info.grid.length) {
+      const segments = occupied.map((row, index) => {
+        const out: import("@doffi/core").WordGridHistoryCell[] = [];
+        for (let column = 0; column < row.length; ) {
+          const cell = row[column];
+          if (!cell) return [];
+          const id = cell.node.dataset.nodeId!,
+            gap = cell.node.dataset.wordGridGap,
+            format = histories.get(id + "\ncell"),
+            rowHistory = histories.get(rows[index]!.dataset.nodeId + "\nrow");
+          const old =
+            gap === "before" || gap === "after"
+              ? (rowHistory?.before?.rowOmissions?.[gap] ?? cell.columns)
+              : hidden.has(id)
+                ? 0
+                : format?.before?.attributes && "colspan" in format.before.attributes
+                  ? Number(format.before.attributes.colspan ?? 1)
+                  : cell.columns;
+          out.push({ column, columns: cell.columns, beforeColumns: old });
+          column += cell.columns;
+        }
+        return out;
+      });
+      const resolved = resolveWordGridInsertion(
+        info.grid.length,
+        previous.length,
+        segments,
+        maxNodes,
+      );
+      if (resolved) {
+        candidates.clear();
+        for (const column of resolved) candidates.add(column);
+      }
+    }
     if (!candidates.size) continue;
-    const previous = oldGrids.get(info.nodeId),
-      inserted =
-        display === "original" &&
-        previous &&
-        previous.length + candidates.size === info.grid.length;
+    const inserted =
+      display === "original" && previous && previous.length + candidates.size === info.grid.length;
     const removed = [...candidates]
       .filter(
         (column) =>

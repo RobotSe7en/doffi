@@ -1,5 +1,5 @@
 import { removeWordRows, wordTableRows } from "./word-row-revisions.js";
-import { removeWordCells } from "./word-cell-revisions.js";
+import { removeWordCells, rejectWordGridInsertion } from "./word-cell-revisions.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import { expandWordRevisionGroups } from "../word-revision-groups.js";
 import { reconcileTrackedWord } from "./word-tracked-structure.js";
@@ -448,6 +448,10 @@ export function applyWordRevision(
       .map((revision) => revision.nodeId),
   );
   if (rowRemovals.size) removeWordRows(word, edit, parse, rowRemovals, limits);
+  if (operation.decision === "reject")
+    for (const revision of selected)
+      if (revision.property === "tableGrid")
+        rejectWordGridInsertion(word, edit, parse, revision, limits);
   const cellRemovals = new Set(
     selected
       .filter((revision) =>

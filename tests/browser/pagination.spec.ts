@@ -1,3 +1,4 @@
+import { gridBoundaryFixture } from "../../packages/office/tests/grid-boundary-fixture.js";
 import {
   dynamicGridFixture,
   dynamicTableLayoutFixture,
@@ -8999,3 +9000,124 @@ test("inferred native table grid merges and omissions share paginated input and 
   expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("inferred-grid.png") });
 });
+
+for (const kind of ["merged", "vertical", "before", "after"] as const)
+  test(
+    "structural-only column revisions restore original view, input and native review " + kind,
+    async ({ page }, testInfo) => {
+      const session = createDocumentSession(
+        openWordDocument(
+          importDocx(gridBoundaryFixture(kind, kind === "merged" ? 60 : 2), {
+            documentId: "structural-grid-ui",
+            unsupportedContent: "reject",
+          }),
+          { kind: "document" },
+        ),
+      );
+      const tableId = session.snapshot().metadata.word!.tables[0]!.nodeId,
+        root = session.getNode(
+          session.snapshot().metadata.word!.stories[0]!.rootNodeId,
+        )!.parentNodeId!;
+      const geometry = async () =>
+        page
+          .frameLocator("iframe")
+          .locator("table")
+          .first()
+          .locator("tr")
+          .first()
+          .locator("td")
+          .evaluateAll((cells) =>
+            cells.map((cell) => ({
+              span: (cell as HTMLTableCellElement).colSpan,
+              width: cell.getBoundingClientRect().width,
+            })),
+          );
+      await mount(page, session.serialize(), "edit");
+      const original = await geometry();
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "structural-grid-ui",
+          baseRevision: 0,
+          operations: [
+            { op: "setWordReview", nodeId: root, trackChanges: true, author: "A" },
+            {
+              op: "editWordTable",
+              nodeId: tableId,
+              change: { kind: "insertColumns", at: kind === "after" ? 2 : 1, count: 2 },
+            },
+          ],
+        }),
+      );
+      await mount(page, session.serialize(), "edit");
+      const frame = page.frameLocator("iframe"),
+        table = frame.locator("table").first();
+      const save = async (name: string) => {
+        const data = await page.evaluate(() =>
+          [...window.paginationHost.session!.serialize()].map(
+            ([path, bytes]) => [path, [...bytes]] as const,
+          ),
+        );
+        let bytes = exportDocx(
+          openWordDocument(new Map(data.map(([path, bytes]) => [path, new Uint8Array(bytes)])), {
+            kind: "document",
+          }),
+        ).bytes;
+        writeFileSync(testInfo.outputPath(name + ".docx"), bytes);
+        for (let pass = 0; pass < 2; pass++) {
+          const model = openWordDocument(
+            importDocx(bytes, { documentId: "structural-reopen", unsupportedContent: "reject" }),
+            { kind: "document" },
+          );
+          bytes = exportDocx(model).bytes;
+        }
+      };
+      await save("pending-grid");
+      await page.evaluate(() =>
+        (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+          type: "word",
+          action: "review",
+        }),
+      );
+      await page.getByLabel("修订显示", { exact: true }).selectOption("original");
+      const projected = await geometry();
+      expect(projected.map((c) => c.span)).toEqual(original.map((c) => c.span));
+      projected.forEach((c, index) => expect(c.width).toBeCloseTo(original[index]!.width, 0));
+      if (kind === "merged")
+        expect(
+          (await page.evaluate(() => window.paginationHost.layout())).pages.length,
+        ).toBeGreaterThan(1);
+      const p = table.locator("p").first();
+      await p.click();
+      await page.keyboard.press("End");
+      await page.keyboard.insertText("EDIT");
+      await expect
+        .poll(() =>
+          page.evaluate((id) => window.paginationHost.session!.getNode(id)!.text, tableId),
+        )
+        .toContain("ROW0EDIT");
+      expect(
+        await page.evaluate(
+          () => window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid,
+        ),
+      ).toHaveLength(5);
+      await page.evaluate(() => window.paginationHost.session!.undo());
+      await page.getByRole("button", { name: "接受全部显示的修订", exact: true }).click();
+      expect(
+        await page.evaluate(
+          () => window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid,
+        ),
+      ).toHaveLength(5);
+      await save("accepted-grid");
+      await page.evaluate(() => window.paginationHost.session!.undo());
+      await page.getByRole("button", { name: "拒绝全部显示的修订", exact: true }).click();
+      expect(
+        await page.evaluate(
+          () => window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid,
+        ),
+      ).toEqual([40, 60, 116]);
+      await save("rejected-grid");
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath("structural-grid.png") });
+    },
+  );

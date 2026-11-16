@@ -1,3 +1,5 @@
+export { resolveWordGridInsertion } from "./word-grid-insertion.js";
+export type { WordGridHistoryCell } from "./word-grid-insertion.js";
 export * from "./word-row-exceptions.js";
 export * from "./contracts/word-conditional.js";
 export {

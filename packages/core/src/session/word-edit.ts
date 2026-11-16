@@ -768,6 +768,7 @@ export function applyWordOperation(
             (revision) =>
               revision.groupId === grid.groupId &&
               revision.kind === "cellInsert" &&
+              revision.groupId === grid.groupId &&
               parse().hasNode(revision.nodeId),
           )
         )
@@ -830,11 +831,6 @@ export function applyWordOperation(
           author = word.trackingAuthor ?? "",
           date = new Date().toISOString(),
           groupId = insertion!.groupId;
-        if (!added.length)
-          throw new DocumentError(
-            "UnsupportedFeature",
-            "An insertion wholly inside merged or omitted regions requires explicit native column boundaries.",
-          );
         for (const cell of added)
           word.revisions.push({
             nodeId: cell.id,

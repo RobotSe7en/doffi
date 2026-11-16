@@ -1,3 +1,5 @@
+import { resolveWordGridInsertion } from "../word-grid-insertion.js";
+import type { WordRevision } from "../contracts/word-revision.js";
 import type { WordMetadata } from "../contracts/word.js";
 import type { ParsedHtml } from "../document/html.js";
 import type { DocumentEdit } from "../document/edit.js";
@@ -203,6 +205,88 @@ export function trackWordColumnDeletion(
       "InvalidOperation",
       "Tracked column deletion must retain a nonempty table and stay within its grid.",
     );
+  const pending = word.revisions.find(
+    (item) =>
+      item.nodeId === tableId &&
+      item.property === "tableGrid" &&
+      item.groupId &&
+      item.author === (word.trackingAuthor ?? ""),
+  );
+  if (
+    pending?.before?.grid &&
+    pending.before.grid.length < info.grid.length &&
+    info.grid.length - count >= pending.before.grid.length
+  ) {
+    const source = parse(),
+      projection = wordTableCells(source, tableId, info.grid.length, limits),
+      rows = wordGridHistoryRows(word, source, projection);
+    const remaining = rows.map((row) => {
+      const out: import("../word-grid-insertion.js").WordGridHistoryCell[] = [];
+      let column = 0;
+      for (const cell of row) {
+        const overlap = Math.max(
+            0,
+            Math.min(cell.column + cell.columns, at + count) - Math.max(cell.column, at),
+          ),
+          span = cell.columns - overlap;
+        if (span || cell.beforeColumns)
+          out.push({ column, columns: span, beforeColumns: cell.beforeColumns });
+        column += span;
+      }
+      return out;
+    });
+    const previous = pending.before.grid.length,
+      current = info.grid.length - count;
+    const valid =
+      current === previous
+        ? remaining.every((row) => row.every((cell) => cell.columns === cell.beforeColumns))
+        : !!resolveWordGridInsertion(current, previous, remaining, limits.maxNodes);
+    if (
+      valid &&
+      !projection.cells.some(
+        (cell) =>
+          cell.column < at + count &&
+          cell.column + cell.columns > at &&
+          word.revisions.some(
+            (item) =>
+              item.nodeId === cell.id &&
+              item.kind === "cellInsert" &&
+              item.author !== (word.trackingAuthor ?? ""),
+          ),
+      )
+    ) {
+      const width = info.grid.reduce((a, b) => a + b, 0),
+        change = { kind: "deleteColumns" as const, at, count };
+      moveWordContinuationFormats(info, change);
+      const result = editSourceTable(
+        { edit, parse, limits, wordOmissions: true },
+        tableId,
+        info.grid,
+        { width, height: projection.rows.length * 20 },
+        change,
+      );
+      info.grid = result.grid.map((value) => (value * width) / result.width);
+      const live = parse();
+      word.revisions = word.revisions.filter((item) => live.hasNode(item.nodeId));
+      for (const cell of result.cells) {
+        const width = info.grid
+          .slice(cell.column, cell.column + cell.columns)
+          .reduce((a, b) => a + b, 0);
+        edit.sourceStyle(cell.id, "width", width + "pt");
+        const side = live.peekNode(cell.id)!.attributes["data-word-grid-gap"];
+        if (side === "before" || side === "after")
+          for (let row = cell.row; row < cell.row + cell.rows; row++) {
+            const prefix = "data-word-" + side + "-width-";
+            edit.attributes(projection.rows[row]!, {
+              [prefix + "present"]: "true",
+              [prefix + "type"]: "dxa",
+              [prefix + "value"]: String(Math.round(width * 20)),
+            });
+          }
+      }
+      return;
+    }
+  }
   const grid = wordTableCells(parse(), tableId, info.grid.length, limits),
     selected = grid.cells.filter(
       (cell) => !cell.gap && cell.column < at + count && cell.column + cell.columns > at,
@@ -316,4 +400,83 @@ export function prepareWordColumnInsertion(
   for (const revision of word.revisions)
     if (revision.kind === "cellInsert" && ids.has(revision.nodeId)) revision.groupId = groupId;
   return { cells: grid.cells, groupId };
+}
+
+/** Restore structural columns before individual format histories. This also
+ * handles insertions which only enlarged merged/omitted regions. */
+export function rejectWordGridInsertion(
+  word: WordMetadata,
+  edit: DocumentEdit,
+  parse: () => ParsedHtml,
+  revision: WordRevision,
+  limits: DocumentReadLimits,
+): void {
+  const info = word.tables.find((info) => info.nodeId === revision.nodeId),
+    previous = revision.before?.grid;
+  if (!info || !previous || previous.length >= info.grid.length) return;
+  const source = parse(),
+    grid = wordTableCells(source, info.nodeId, info.grid.length, limits),
+    rows = wordGridHistoryRows(word, source, grid);
+  const inserted = resolveWordGridInsertion(
+    info.grid.length,
+    previous.length,
+    rows,
+    limits.maxNodes,
+  );
+  if (!inserted)
+    throw new DocumentError(
+      "InvalidOperation",
+      "The table insertion has no complete original-grid inverse.",
+    );
+  const groups: { at: number; count: number }[] = [];
+  for (const column of inserted) {
+    const last = groups.at(-1);
+    if (last && last.at + last.count === column) last.count++;
+    else groups.push({ at: column, count: 1 });
+  }
+  const width = info.grid.reduce((a, b) => a + b, 0);
+  for (const group of groups.reverse()) {
+    const change = { kind: "deleteColumns" as const, ...group };
+    moveWordContinuationFormats(info, change);
+    const result = editSourceTable(
+      { edit, parse, limits, wordOmissions: true },
+      info.nodeId,
+      info.grid,
+      { width, height: grid.rows.length * 20 },
+      change,
+    );
+    info.grid = result.grid;
+  }
+}
+
+function wordGridHistoryRows(
+  word: WordMetadata,
+  source: ParsedHtml,
+  grid: ReturnType<typeof wordTableCells>,
+): import("../word-grid-insertion.js").WordGridHistoryCell[][] {
+  const histories = new Map(
+    word.revisions.map((item) => [item.nodeId + "\n" + (item.property ?? item.kind), item]),
+  );
+  const rows = grid.occupied.map((row, index) => {
+    const cells: import("../word-grid-insertion.js").WordGridHistoryCell[] = [];
+    for (let column = 0; column < row.length; ) {
+      const cell = row[column];
+      if (!cell) return [];
+      const gap = source.peekNode(cell.id)!.attributes["data-word-grid-gap"],
+        format = histories.get(cell.id + "\ncell"),
+        rowHistory = histories.get(grid.rows[index] + "\nrow");
+      const old =
+        gap === "before" || gap === "after"
+          ? (rowHistory?.before?.rowOmissions?.[gap] ?? cell.columns)
+          : histories.has(cell.id + "\ncellInsert")
+            ? 0
+            : format?.before?.attributes && "colspan" in format.before.attributes
+              ? Number(format.before.attributes.colspan ?? 1)
+              : cell.columns;
+      cells.push({ column, columns: cell.columns, beforeColumns: old });
+      column += cell.columns;
+    }
+    return cells;
+  });
+  return rows;
 }
