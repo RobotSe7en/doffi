@@ -1,3 +1,7 @@
+import {
+  wordRowExceptionProperties,
+  wordRowExceptionCellProperties,
+} from "../word-row-exceptions.js";
 import { expandSourceCssProperty } from "../document/source-css.js";
 import type { WordMetadata } from "../contracts/word.js";
 import type { DocumentEdit } from "../document/edit.js";
@@ -105,17 +109,20 @@ export function refreshWordTableStyles(
     const occupied: number[] = Array(info.grid.length).fill(0),
       mask = info.lookMask ?? setting("tableLookMask") ?? 0;
     rows.forEach((rowId, rowIndex) => {
+      const exception = wordRowExceptionProperties(resolver.get(project(rowId))),
+        rowMask = exception["look-mask"] === undefined ? mask : Number(exception["look-mask"]);
       const rowRegions = wordTableRowRegions(
           rowIndex,
           rows.length,
           info.grid.length,
-          mask,
+          rowMask,
           info.rowBandSize ?? setting("rowBandSize") ?? 0,
           info.columnBandSize ?? setting("columnBandSize") ?? 0,
         ),
         rowStyle = resolveWordTableStyle(word, read, styleId, rowRegions),
         rowCell = wordTableRowCellProperties(rowStyle.cell);
       assign(rowId, "row", rowStyle.row);
+
       let column = 0;
       for (const cellId of source.peekNode(rowId)!.childNodeIds) {
         const cell = source.peekNode(cellId)!;
@@ -134,7 +141,7 @@ export function refreshWordTableStyles(
             rows.length,
             info.grid.length,
             span,
-            mask,
+            rowMask,
             info.rowBandSize ?? setting("rowBandSize") ?? 0,
             info.columnBandSize ?? setting("columnBandSize") ?? 0,
           ),
@@ -147,9 +154,20 @@ export function refreshWordTableStyles(
         assign(cellId, "cell", {
           "padding-left": "5.4pt",
           "padding-right": "5.4pt",
+          ...inner,
+          ...wordRowExceptionCellProperties(exception, column, span, info.grid.length),
           ...value.cell,
           ...rowCell,
-          ...inner,
+          ...Object.fromEntries(
+            Object.entries(resolver.get(project(info.nodeId)))
+              .filter(([key]) => key.startsWith("--word-table-cell-padding-"))
+              .map(([key, value]) => [key.slice(18), value]),
+          ),
+          ...Object.fromEntries(
+            Object.entries(
+              wordRowExceptionCellProperties(exception, column, span, info.grid.length),
+            ).filter(([key]) => key.startsWith("padding-")),
+          ),
         });
         const visit = (id: string, pRun: Record<string, string>, paragraphRun = pRun) => {
           const node = source.peekNode(id)!;

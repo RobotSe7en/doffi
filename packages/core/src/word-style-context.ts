@@ -1,3 +1,7 @@
+import {
+  wordRowExceptionCellProperties,
+  wordRowExceptionProperties,
+} from "./word-row-exceptions.js";
 import type { WordMetadata } from "./contracts/word.js";
 import type { DeepReadonly } from "./runtime.js";
 import { DocumentError } from "./errors.js";
@@ -200,11 +204,16 @@ export function wordTableCellProperties(
   column: number,
   rows: number,
   span: number,
+  rowProperties: Css = {},
 ): Css {
   const styles = chain(word, styleId),
     setting = (key: "tableLookMask" | "rowBandSize" | "columnBandSize") =>
       [...styles].reverse().find((style) => style[key] !== undefined)?.[key] ?? 0;
-  const mask = info.lookMask ?? setting("tableLookMask"),
+  const exception = wordRowExceptionProperties(rowProperties);
+  const mask =
+      exception["look-mask"] === undefined
+        ? (info.lookMask ?? setting("tableLookMask"))
+        : Number(exception["look-mask"]),
     rowBand = info.rowBandSize ?? setting("rowBandSize"),
     columnBand = info.columnBandSize ?? setting("columnBandSize"),
     base = resolveWordTableStyle(word, read, styleId, []),
@@ -228,8 +237,14 @@ export function wordTableCellProperties(
   return {
     "padding-left": "5.4pt",
     "padding-right": "5.4pt",
+    ...inner,
+    ...wordRowExceptionCellProperties(exception, column, span, info.grid.length),
     ...value.cell,
     ...wordTableRowCellProperties(rowStyle.cell),
-    ...inner,
+    ...Object.fromEntries(
+      Object.entries(
+        wordRowExceptionCellProperties(exception, column, span, info.grid.length),
+      ).filter(([key]) => key.startsWith("padding-")),
+    ),
   };
 }

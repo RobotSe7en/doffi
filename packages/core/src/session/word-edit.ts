@@ -1,3 +1,4 @@
+import { wordRowExceptionCss, wordRowExceptionProperties } from "../word-row-exceptions.js";
 import type { WordContentCommentContext } from "./word-content-comments.js";
 import { pasteWordBlockContent } from "./word-block-content.js";
 import { pasteWordInlineContent } from "./word-inline-content.js";
@@ -935,6 +936,73 @@ export function applyWordOperation(
       operation.rowHeightRule !== undefined
     )
       for (const id of rowIds) recordWordFormat(word, parse(), id, "row");
+    if (operation.rowExceptionProperties !== undefined) {
+      const selected =
+        operation.rowIndex === undefined
+          ? rowIds
+          : [rowIds[operation.rowIndex] ?? fail("The exception row exceeds the table.")];
+      const allowed =
+        /^(?:width|margin-(?:left|right)|padding(?:-(?:top|right|bottom|left))?|border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|background-color|table-layout|--word-border-inside-[hv]|--word-table-cell-spacing(?:-type|-value)?|look-mask|indent|alignment)$/;
+      for (const [key, value] of Object.entries(operation.rowExceptionProperties)) {
+        if (!allowed.test(key)) fail("This property is not a table row exception.");
+        if (value !== null) {
+          if (key === "look-mask" && (!/^\d+$/.test(value) || Number(value) > 65535))
+            fail("A row look mask must be a 16-bit integer.");
+          if (key === "alignment" && !["left", "start", "center", "right"].includes(value))
+            fail("A row alignment is invalid.");
+          if (key === "table-layout" && !["fixed", "auto"].includes(value))
+            fail("A row layout is invalid.");
+          for (const [name, amount] of Object.entries(
+            wordRowExceptionProperties(wordRowExceptionCss({ [key]: value })),
+          )) {
+            if (
+              !/^(?:width|indent|margin-(?:left|right)|padding-|border-.*-width|--word-table-cell-spacing$)/.test(
+                name,
+              ) ||
+              amount === "auto" ||
+              amount === "initial" ||
+              ["thin", "medium", "thick"].includes(amount)
+            )
+              continue;
+            const size = length(amount, { font: 12, percent: 468 });
+            if (
+              !Number.isFinite(size) ||
+              (size < 0 && name !== "indent" && !name.startsWith("margin-"))
+            )
+              fail("A row exception size is invalid.");
+          }
+        }
+        for (const id of selected) {
+          const old = word.revisions.find(
+            (item) => item.nodeId === id && item.property === "tableException",
+          );
+          recordWordFormat(word, parse(), id, "tableException");
+          const revision = word.revisions.find(
+            (item) => item.nodeId === id && item.property === "tableException",
+          );
+          if (revision && !old) {
+            const tree = parse(),
+              project = (nodeId: string): SourceStyleNode => {
+                const node = tree.peekNode(nodeId)!;
+                return {
+                  tag: node.tagName,
+                  attrs: node.attributes,
+                  parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
+                };
+              };
+            revision.before = {
+              properties: wordRowExceptionCss(
+                wordRowExceptionProperties(styles.resolver().get(project(id))),
+              ),
+            };
+          }
+          for (const [name, amount] of Object.entries(
+            wordRowExceptionCss({ [key]: value ?? "initial" }),
+          ))
+            edit.sourceStyle(id, name, amount);
+        }
+      }
+    }
     if (operation.rowCellSpacing !== undefined) {
       const selected =
         operation.rowIndex === undefined

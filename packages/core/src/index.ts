@@ -1,3 +1,4 @@
+export * from "./word-row-exceptions.js";
 export * from "./contracts/word-conditional.js";
 export {
   wordTableRegions,

@@ -1,3 +1,4 @@
+import { composeWordRowExceptions } from "./word-row-exceptions.js";
 import { composeWordContextualSpacing } from "./word-contextual-spacing.js";
 import { composeWordFloatingTables } from "./word-floating-tables.js";
 import { composeWordTextRuns } from "./word-text-runs.js";
@@ -596,6 +597,7 @@ export function mountPreview(
     decorate(frame, snapshot.metadata.word);
     composeWordTableSpacing(frame, model);
     const rowSpacing = composeWordRowSpacing(frame, model, limits);
+    composeWordRowExceptions(frame, model, limits);
     composeWordTableBidi(frame, model);
     composeWordTableLayout(frame, limits, snapshot.metadata.word);
     continuationCells = composeWordContinuationCells(frame, model, limits, rowSpacing);

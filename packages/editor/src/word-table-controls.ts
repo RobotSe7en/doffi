@@ -1,3 +1,4 @@
+import { wordRowExceptionProperties } from "@doffi/core";
 import {
   DocumentError,
   resolveSourceCssLength,
@@ -449,6 +450,70 @@ export function createWordTableControls(
           nodeId: tableId,
           rowIndex: Number(row.value) - 1,
           rowCellSpacing: rowSpacingMode.value === "inherit" ? null : Number(rowSpacingValue.value),
+        },
+      ]),
+    );
+    const exception = wordRowExceptionProperties(currentRowCss),
+      rowFill = field("当前行例外底纹", exception["background-color"] ?? "#ffffff", "color"),
+      rowBorder = field("当前行例外边框颜色", exception["border-left-color"] ?? "#000000", "color"),
+      rowBorderWidth = field(
+        "当前行例外边框宽度（磅）",
+        parseFloat(exception["border-left-width"] ?? "0.5"),
+      ),
+      rowIndent = field(
+        "当前行例外缩进（磅）",
+        parseFloat(exception.indent ?? exception["margin-left"] ?? "0") || 0,
+      ),
+      rowWidth = field(
+        "当前行例外宽度（磅）",
+        parseFloat(exception.width ?? String(grid?.reduce((a, b) => a + b, 0) ?? 468)),
+      ),
+      rowPadding = field(
+        "当前行例外单元格边距（磅）",
+        parseFloat(exception["padding-left"] ?? "5.4"),
+      ),
+      rowAlign = choose(
+        "当前行例外对齐",
+        [
+          ["left", "左对齐"],
+          ["center", "居中"],
+          ["right", "右对齐"],
+        ],
+        exception["margin-left"] === "auto"
+          ? exception["margin-right"] === "auto"
+            ? "center"
+            : "right"
+          : "left",
+      );
+    rowBorderWidth.step = rowIndent.step = rowWidth.step = rowPadding.step = ".1";
+    button("应用当前行表格例外", () =>
+      apply([
+        {
+          op: "formatWordTable",
+          nodeId: tableId,
+          rowIndex: Number(row.value) - 1,
+          rowExceptionProperties: {
+            "background-color": rowFill.value,
+            border: rowBorderWidth.value + "pt solid " + rowBorder.value,
+            width: rowWidth.value + "pt",
+            indent: rowIndent.value + "pt",
+            alignment: rowAlign.value,
+            "margin-left": rowAlign.value === "left" ? rowIndent.value + "pt" : "auto",
+            "margin-right": rowAlign.value === "center" ? "auto" : "0pt",
+            padding: rowPadding.value + "pt",
+          },
+        },
+      ]),
+    );
+    button("清除当前行表格例外", () =>
+      apply([
+        {
+          op: "formatWordTable",
+          nodeId: tableId,
+          rowIndex: Number(row.value) - 1,
+          rowExceptionProperties: Object.fromEntries(
+            Object.keys(exception).map((key) => [key, null]),
+          ),
         },
       ]),
     );

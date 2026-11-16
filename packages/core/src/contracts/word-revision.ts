@@ -55,7 +55,9 @@ export const WordRevisionSchema = z.strictObject({
   author: z.string().optional(),
   date: z.string().optional(),
   moveId: IdentifierSchema.optional(),
-  property: z.enum(["run", "paragraph", "table", "row", "cell", "section", "tableGrid"]).optional(),
+  property: z
+    .enum(["run", "paragraph", "table", "row", "cell", "section", "tableGrid", "tableException"])
+    .optional(),
   before: z
     .strictObject({
       rowOmissions: z

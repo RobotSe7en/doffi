@@ -81,6 +81,18 @@ const propertyOrder: Readonly<Record<string, readonly string[]>> = {
     "rPrChange",
   ],
   pPr: wordParagraphPropertyOrder,
+  tblPrEx: [
+    "tblW",
+    "jc",
+    "tblCellSpacing",
+    "tblInd",
+    "tblBorders",
+    "shd",
+    "tblLayout",
+    "tblCellMar",
+    "tblLook",
+    "tblPrExChange",
+  ],
   tblPr: [
     "tblStyle",
     "tblpPr",

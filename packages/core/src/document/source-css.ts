@@ -791,8 +791,9 @@ export class SourceStyleResolver {
             key.startsWith("--word-table-position-") ||
             key === "--word-table-bidi" ||
             key.startsWith("--word-table-cell-spacing") ||
+            key.startsWith("--word-table-cell-padding-") ||
             key.startsWith("--word-row-cell-spacing") ||
-            key.startsWith("--word-row-exception-cell-spacing")
+            key.startsWith("--word-row-exception-")
           )
             delete result[key];
       if (node.tag === "ul") result["list-style-type"] = "disc";

@@ -8753,3 +8753,97 @@ registerWordNoteClipboardTests(mount);
 registerWordCommentClipboardTests(mount);
 
 registerWordNativeClipboardTests(mount);
+
+for (const count of [3, 60])
+  test(
+    "row exception appearance and geometry stay editable across pagination " + count,
+    async ({ page }, testInfo) => {
+      await mount(
+        page,
+        importDocx(rowExceptionFixture(count, true), {
+          documentId: "row-ex-layout",
+          unsupportedContent: "reject",
+        }),
+        "edit",
+      );
+      const frame = page.frameLocator("iframe"),
+        table = frame.locator("table[data-node-id]").first(),
+        row = table.locator("tr").first(),
+        paragraph = row.locator("p").first();
+      const box = row.locator(".sdk-word-row-exception-content").first();
+      await expect(box).toBeVisible();
+      await expect(row.locator(".sdk-word-cell-spacing-paint").first()).toHaveCSS(
+        "background-color",
+        "rgb(255, 238, 221)",
+      );
+      await expect(box).toHaveCSS("padding-left", /10\.6/);
+      const width = (await box.boundingBox())!.width;
+      expect(
+        await paragraph.evaluate((p) => {
+          const r = p.getBoundingClientRect();
+          const hit = p.ownerDocument.elementFromPoint(r.x + 8, r.y + r.height / 2);
+          return !!hit && (hit === p || p.contains(hit));
+        }),
+      ).toBe(true);
+      if (count > 3)
+        expect(
+          (await page.evaluate(() => window.paginationHost.layout())).pages.length,
+        ).toBeGreaterThan(1);
+      await paragraph.click();
+      await page.keyboard.press("End");
+      await page.keyboard.insertText("EDIT");
+      await expect
+        .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
+        .toContain("A0EDIT");
+      await page.evaluate(() =>
+        (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+          type: "word",
+          action: "tableSettings",
+        }),
+      );
+      await page.getByLabel("当前行例外底纹", { exact: true }).fill("#112233");
+      await page.getByLabel("当前行例外宽度（磅）", { exact: true }).fill("120");
+      await page.getByRole("button", { name: "应用当前行表格例外", exact: true }).click();
+      await expect(row.locator(".sdk-word-cell-spacing-paint").first()).toHaveCSS(
+        "background-color",
+        "rgb(17, 34, 51)",
+      );
+      expect((await box.boundingBox())!.width).toBeLessThan(width);
+      const files = await page.evaluate(() =>
+        [...window.paginationHost.session!.serialize()].map(
+          ([key, value]) => [key, typeof value === "string" ? value : [...value]] as const,
+        ),
+      );
+      let native = exportDocx(
+        openWordDocument(
+          new Map(
+            files.map(([key, value]) => [
+              key,
+              typeof value === "string" ? value : new Uint8Array(value),
+            ]),
+          ),
+          { kind: "document" },
+        ),
+      ).bytes;
+      writeFileSync(testInfo.outputPath("row-exceptions.docx"), native);
+      for (let pass = 0; pass < 2; pass++) {
+        const reopened = openWordDocument(
+          importDocx(native, { documentId: "row-ex-reopen", unsupportedContent: "reject" }),
+          { kind: "document" },
+        );
+        expect(reopened.snapshot().html).toContain("A0EDIT");
+        native = exportDocx(reopened).bytes;
+      }
+      await page.getByRole("button", { name: "关闭表格设置", exact: true }).click();
+      await page.evaluate(() => window.paginationHost.session!.undo());
+      await expect(row.locator(".sdk-word-cell-spacing-paint").first()).toHaveCSS(
+        "background-color",
+        "rgb(255, 238, 221)",
+      );
+      expect(
+        await page.evaluate(() => window.paginationHost.session!.snapshot().html),
+      ).not.toContain("sdk-word-row-exception");
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath("row-exceptions.png") });
+    },
+  );

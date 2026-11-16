@@ -1707,7 +1707,7 @@ class Exporter {
             : cell.column + cell.span !== grid.length)
         )
           unsupported("A native row omission must occupy its leading or trailing grid edge.");
-      const exception = rowExceptionProperties(rowCss);
+      const exception = rowExceptionProperties(rowCss) + this.review.tableException(row);
       this.add(
         "<w:tr" +
           this.nativeMark(row.attrs["data-node-id"]) +

@@ -11,6 +11,7 @@ const propertyNames = {
   paragraph: "pPr",
   table: "tblPr",
   row: "trPr",
+  tableException: "tblPrEx",
   cell: "tcPr",
 } as const;
 export function readWordFormatRevision(
@@ -101,6 +102,10 @@ export function readWordFormatRevision(
       const item = child(previous, name);
       if (item) before.tableStyleOptions[key] = number(attr(item, "val"), item);
     }
+  } else if (property === "tableException") {
+    css = styles.rowException(previous);
+    before.properties = css;
+    delete before.attributes;
   } else if (property === "cell") {
     if (attr(child(previous, "vMerge"), "val") !== attr(child(properties, "vMerge"), "val"))
       unsupported(change, "A cell merge revision is preserved with its native grid.");

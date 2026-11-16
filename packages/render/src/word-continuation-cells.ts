@@ -1,8 +1,10 @@
+import { wordRowExceptionBounds } from "./word-row-exceptions.js";
 import {
   SourceStyleResolver,
   DEFAULT_DOCUMENT_READ_LIMITS,
   DocumentError,
   wordTableCellProperties,
+  wordRowExceptionProperties,
 } from "@doffi/core";
 import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
@@ -19,12 +21,7 @@ export function composeWordContinuationCells(
 ): () => void {
   const snapshot = model.snapshot(),
     word = snapshot.metadata.word,
-    tables =
-      word?.tables.filter(
-        (table) =>
-          rowSpacing.has(table.nodeId) ||
-          table.continuationFormats?.some((entry) => entry.cellCssClass),
-      ) ?? [];
+    tables = word?.tables ?? [];
   if (!tables.length) return () => {};
   const css = new SourceStyleResolver(
       snapshot.styles.map((sheet) => sheet.css),
@@ -51,12 +48,18 @@ export function composeWordContinuationCells(
       for (const table of document.querySelectorAll<HTMLTableElement>(
         'table[data-node-id="' + CSS.escape(info.nodeId) + '"]',
       )) {
-        const rows = [...table.rows],
+        const rows = [...table.rows].filter(
+            (row) => !!row.dataset.nodeId && !!model.getNode(row.dataset.nodeId),
+          ),
           occupied: number[] = Array(info.grid.length).fill(0),
           entries = new Map(
             info.continuationFormats?.map((entry) => [entry.row + "\n" + entry.column, entry]),
           ),
-          spacing = rowSpacing.get(info.nodeId);
+          spacing = rowSpacing.get(info.nodeId),
+          exceptions = rows.map((row) =>
+            wordRowExceptionProperties(css.get(project(row.dataset.nodeId!))),
+          ),
+          hasExceptions = exceptions.some((item) => Object.keys(item).length > 0);
         rows.forEach((row, rowIndex) => {
           let column = 0;
           for (const cell of row.cells) {
@@ -70,9 +73,10 @@ export function composeWordContinuationCells(
               cell.dataset.wordGridGap ||
               (!spacing &&
                 (height < 2 ||
-                  !Array.from({ length: height - 1 }, (_, i) =>
-                    entries.get(rowIndex + i + 1 + "\n" + start),
-                  ).some((entry) => entry?.cellCssClass)))
+                  (!hasExceptions &&
+                    !Array.from({ length: height - 1 }, (_, i) =>
+                      entries.get(rowIndex + i + 1 + "\n" + start),
+                    ).some((entry) => entry?.cellCssClass))))
             )
               continue;
             const id = cell.dataset.nodeId;
@@ -94,6 +98,13 @@ export function composeWordContinuationCells(
               for (const side of sides)
                 cell.style.setProperty("border-" + side + "-color", "transparent", "important");
             }
+            const geometry = cell.querySelector<HTMLElement>(".sdk-word-row-exception-content");
+            if (geometry) {
+              cell.style.isolation = "auto";
+              geometry.style.backgroundColor = "transparent";
+              geometry.style.borderColor = "transparent";
+            }
+            const geometryBox = geometry?.getBoundingClientRect();
             const box = cell.getBoundingClientRect(),
               computed = document.defaultView!.getComputedStyle(cell),
               factor =
@@ -108,29 +119,35 @@ export function composeWordContinuationCells(
                 entry = entries.get(physicalRow + "\n" + start),
                 own = entry?.cellCssClass,
                 base = project(id),
-                context = own
-                  ? wordTableCellProperties(
-                      word!,
-                      (name) => css.specifiedClass(name),
-                      table.dataset.wordStyle,
-                      info,
-                      physicalRow,
-                      start,
-                      rows.length,
-                      span,
-                    )
-                  : undefined;
-              const appearance = own
-                ? css.get({
-                    tag: base.tag,
-                    attrs: {
-                      style: Object.entries({ ...context, ...css.specifiedClass(own) })
-                        .map(([key, value]) => key + ":" + value)
-                        .join(";"),
-                    },
-                    parent: project(row.dataset.nodeId!),
-                  })
-                : css.get(base);
+                context =
+                  own || (hasExceptions && index > 0)
+                    ? wordTableCellProperties(
+                        word!,
+                        (name) => css.specifiedClass(name),
+                        table.dataset.wordStyle,
+                        info,
+                        physicalRow,
+                        start,
+                        rows.length,
+                        span,
+                        css.get(project(rows[physicalRow]!.dataset.nodeId!)),
+                      )
+                    : undefined;
+              const appearance =
+                own || (hasExceptions && index > 0)
+                  ? css.get({
+                      tag: base.tag,
+                      attrs: {
+                        style: Object.entries({
+                          ...context,
+                          ...(own ? css.specifiedClass(own) : {}),
+                        })
+                          .map(([key, value]) => key + ":" + value)
+                          .join(";"),
+                      },
+                      parent: project(row.dataset.nodeId!),
+                    })
+                  : css.get(base);
               let paint = paints[index];
               if (!paint) {
                 if (++count > limits.maxNodes)
@@ -161,6 +178,20 @@ export function composeWordContinuationCells(
                 segmentBottom =
                   index === height - 1 ? bottom : physical.bottom + (spacing?.base ?? 0) / 2;
               paint.style.cssText = `position:absolute;pointer-events:none;user-select:none;box-sizing:border-box;z-index:-1;left:${-left + (bidi ? logicalRight : logicalLeft)}px;right:${-right + (bidi ? logicalLeft : logicalRight)}px;top:${segmentTop - box.top - top + verticalTop}px;height:${Math.max(0, segmentBottom - segmentTop - verticalTop - verticalBottom)}px;background-color:${appearance["background-color"]}`;
+              if (geometryBox) {
+                const rowBounds = wordRowExceptionBounds(table, exceptions[physicalRow] ?? {}),
+                  total = info.grid.reduce((a, b) => a + b, 0),
+                  offset = info.grid.slice(0, start).reduce((a, b) => a + b, 0) / total,
+                  size = info.grid.slice(start, start + span).reduce((a, b) => a + b, 0) / total;
+                const paintLeft =
+                    rowBounds.left + rowBounds.width * (bidi ? 1 - offset - size : offset),
+                  paintRight = paintLeft + rowBounds.width * size;
+                paint.style.zIndex = "0";
+                paint.style.left =
+                  paintLeft - box.left + (bidi ? logicalRight : logicalLeft) + "px";
+                paint.style.right =
+                  box.right - paintRight + (bidi ? logicalLeft : logicalRight) + "px";
+              }
               for (const side of sides) {
                 if ((side === "top" && index !== 0) || (side === "bottom" && index !== height - 1))
                   continue;

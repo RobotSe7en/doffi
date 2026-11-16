@@ -167,6 +167,7 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
     lookMask: z.number().int().min(0).max(65535).nullable().optional(),
     rowBandSize: z.number().int().nonnegative().nullable().optional(),
     columnBandSize: z.number().int().nonnegative().nullable().optional(),
+    rowExceptionProperties: z.record(z.string().min(1), z.string().min(1).nullable()).optional(),
     rowCellSpacing: z.number().nonnegative().nullable().optional(),
     rowIndex: z.number().int().nonnegative().optional(),
     repeatHeaderRows: z.number().int().nonnegative().optional(),

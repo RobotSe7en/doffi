@@ -331,6 +331,7 @@ function nativeReview(
         cell: "tcPr",
         section: "sectPr",
         tableGrid: "tblGrid",
+        tableException: "tblPrEx",
       } as const
     )[revision.property ?? "run"],
     change = property + "Change";
@@ -498,6 +499,21 @@ export function applyWordRevision(
             tab = { paragraphNodeId: revision.nodeId, ...before.tabs };
           if (old < 0) word.tabs.push(tab);
           else word.tabs[old] = tab;
+        }
+        if (revision.property === "tableException") {
+          const resolver = styles!.resolver(),
+            tree = parse();
+          const project = (id: string): import("../document/source-css.js").SourceStyleNode => {
+            const node = tree.peekNode(id)!;
+            return {
+              tag: node.tagName,
+              attrs: node.attributes,
+              parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
+            };
+          };
+          for (const key of Object.keys(resolver.get(project(revision.nodeId))))
+            if (key.startsWith("--word-row-exception-"))
+              edit.sourceStyle(revision.nodeId, key, "initial");
         }
         for (const [key, value] of Object.entries(before.properties ?? {}))
           edit.sourceStyle(revision.nodeId, key, value);

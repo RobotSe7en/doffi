@@ -179,3 +179,8 @@ type CellValueKind = "blank" | "text" | "number" | "boolean" | "error" | "formul
 - PPT 父子关系是树；几何更新只写原始变换属性。Excel 分块不得导致重复单元格身份，合并与规则引用按逻辑坐标校验。
 - 区块替换、对象移动、单元格写入及批注变更后，都重新校验受影响引用，并经同一事务批量提交；自动分页、选区和缓存重建不独立推进修订。
 - 新格式专属操作在实现时显式加入契约，模型设计中的类型名称不会自动成为当前已支持操作。
+
+
+### Word 行级表格例外
+
+行的 `--word-row-exception-*` CSS 声明保存原生 `tblPrEx`，包括首选宽度、对齐／缩进、边框、底纹、默认单元格边距、布局和外观位；它们不是整表直接属性。`formatWordTable.rowExceptionProperties` 可按 `rowIndex` 设置或以 null 清除属性。格式修订的 `tableException` 历史只拥有这组声明，并原生输出为 `tblPrExChange`。行宽度／偏移的内容框及纵向合并的逐行绘制均为可移除视图，正文、UTF-16 选区和撤销继续使用原源树。

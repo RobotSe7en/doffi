@@ -12,6 +12,7 @@ import type { Css } from "./ooxml/styles.js";
 import { attributes, empty, value, orderedProperties } from "./export/xml.js";
 import {
   rowProperties,
+  rowExceptionProperties,
   paragraphProperties,
   paragraphKeys,
   runProperties,
@@ -368,6 +369,12 @@ export class ExportWordRevisions {
         }),
       )
       .join("");
+  }
+  tableException(node: SourceElement): string {
+    const entry = this.revision(node, "tableException");
+    if (!entry) return "";
+    const old = this.old(node, entry.revision, {});
+    return this.change(entry.revision, "tblPrEx", rowExceptionProperties(old.css), entry.owner);
   }
   row(node: SourceElement): string {
     const entry = this.revision(node, "row");

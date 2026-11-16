@@ -1,3 +1,4 @@
+import { wordRowExceptionCss } from "@doffi/core";
 import { readWordTablePosition } from "./word-table-position.js";
 import {
   passiveWordRunBooleans,
@@ -951,6 +952,8 @@ export class DocxStyles {
     if (child(properties, "bidiVisual"))
       result["--word-table-bidi"] = on(child(properties, "bidiVisual")) ? "1" : "0";
     Object.assign(result, this.borders(child(properties, "tblBorders")));
+    for (const [key, value] of Object.entries(this.margins(child(properties, "tblCellMar"))))
+      result["--word-table-cell-" + key] = value;
     const width = child(properties, "tblW");
     if (width) Object.assign(result, this.width(width, "width"));
     const layout =
@@ -971,6 +974,44 @@ export class DocxStyles {
     if (shade && attr(shade, "fill") !== "auto")
       result["background-color"] = this.color(shade, "fill") ?? "transparent";
     return result;
+  }
+  rowException(properties: XmlNode | undefined): Css {
+    if (!properties) return {};
+    check(properties, [
+      "tblW",
+      "jc",
+      "tblCellSpacing",
+      "tblInd",
+      "tblBorders",
+      "shd",
+      "tblLayout",
+      "tblCellMar",
+      "tblLook",
+      "tblPrExChange",
+    ]);
+    const current = {
+      ...properties,
+      content: properties.content.filter(
+        (item) => typeof item === "string" || item.name !== "tblPrExChange",
+      ),
+    };
+    const css = { ...this.table(current), ...this.margins(child(current, "tblCellMar")) };
+    delete css["border-collapse"];
+    delete css["border-spacing"];
+    for (const key of Object.keys(css))
+      if (key.startsWith("--word-table-cell-padding-")) delete css[key];
+    const alignment = val(child(current, "jc")),
+      indent = child(current, "tblInd");
+    if (indent) css.indent = this.width(indent, "margin-left")["margin-left"] ?? "0pt";
+    if (alignment) {
+      css.alignment = alignment;
+      if (alignment === "center" || alignment === "right") css["margin-left"] = "auto";
+      css["margin-right"] ??= "0pt";
+      css["margin-left"] ??= "0pt";
+    }
+    const look = tableLookMask(child(current, "tblLook"));
+    if (look !== undefined) css["look-mask"] = String(look);
+    return wordRowExceptionCss(css);
   }
   row(properties: XmlNode | undefined): Css {
     if (!properties) return {};

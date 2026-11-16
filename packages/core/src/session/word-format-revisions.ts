@@ -10,7 +10,7 @@ export function recordWordFormat(
   word: WordMetadata,
   source: ParsedHtml,
   nodeId: string,
-  property: "paragraph" | "table" | "row" | "cell",
+  property: "paragraph" | "table" | "row" | "cell" | "tableException",
   index?: Map<string, WordRevision>,
 ): void {
   if (!word.trackChanges) return;

@@ -773,6 +773,8 @@ export function validateWord(
         invalid("A section history requires its section and previous properties.");
       if (revision.property === "tableGrid" && (tag !== "table" || !revision.before?.grid?.length))
         invalid("A grid history requires its table and previous columns.");
+      if (revision.property === "tableException" && tag !== "tr")
+        invalid("A table exception history requires a row.");
       const span = revision.before?.attributes?.colspan;
       if (
         span !== undefined &&

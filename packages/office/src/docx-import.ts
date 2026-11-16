@@ -1,3 +1,4 @@
+import { wordRowExceptionProperties, wordRowExceptionCellProperties } from "@doffi/core";
 import { commentControl, wordScope } from "./docx-native-comments.js";
 import { readWordEmptyContinuation } from "./docx-table-continuation.js";
 import { bindWordGridInsertion } from "./docx-grid-revision.js";
@@ -1809,15 +1810,7 @@ class Importer {
     for (const row of rows) {
       check(row, ["tblPrEx", "trPr", "tc"]);
       const exceptions = child(row, "tblPrEx");
-      check(exceptions, ["tblCellSpacing"]);
-      const exceptionCss = Object.fromEntries(
-        Object.entries(this.styles.cellSpacing(exceptions, true))
-          .filter(([key]) => key.startsWith("--word-table-cell-spacing"))
-          .map(([key, value]) => [
-            key.replace("--word-table-cell-spacing", "--word-row-exception-cell-spacing"),
-            value,
-          ]),
-      );
+      const exceptionCss = this.styles.rowException(exceptions);
       const rowProperties = child(row, "trPr");
       const rowCss = this.styles.row(rowProperties);
       const htmlRow = this.make("tr", {
@@ -1832,11 +1825,15 @@ class Importer {
         this.styles.css.push("." + name + "{" + declarations(exceptionCss) + "}");
         htmlRow.attrs.class = name;
       }
+      const rowMask =
+        wordRowExceptionProperties(exceptionCss)["look-mask"] === undefined
+          ? mask
+          : Number(wordRowExceptionProperties(exceptionCss)["look-mask"]);
       const rowRegions = wordTableRowRegions(
         rowIndex,
         rows.length,
         grid.length,
-        mask,
+        rowMask,
         rowBand,
         columnBand,
       );
@@ -1872,6 +1869,7 @@ class Importer {
         }
       }
       readWordFormatRevision(this.word, rowProperties, htmlRow, "row", this.styles);
+      readWordFormatRevision(this.word, exceptions, htmlRow, "tableException", this.styles);
       this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);
       const requestedBefore = readWordRowGapCount(rowProperties, "before"),
@@ -1966,7 +1964,7 @@ class Importer {
             rows.length,
             grid.length,
             span,
-            mask,
+            rowMask,
             rowBand,
             columnBand,
           );
@@ -1982,10 +1980,7 @@ class Importer {
           if (tableCss["--word-border-inside-v"] && column > 0)
             inner["border-left"] = "var(--word-border-inside-v)";
           const htmlCell = this.make(on(child(rowProperties, "tblHeader")) ? "th" : "td", {
-            style: declarations({
-              ...this.styles.margins(child(properties, "tblCellMar")),
-              ...cellCss,
-            }),
+            style: declarations(cellCss),
             ...(span > 1 ? { colspan: String(span) } : {}),
           });
           bindWordConditionalFormat(this.word, props, this.id(htmlCell));
@@ -1995,10 +1990,27 @@ class Importer {
             {
               "padding-left": "5.4pt",
               "padding-right": "5.4pt",
+              ...inner,
+              ...wordRowExceptionCellProperties(
+                wordRowExceptionProperties(exceptionCss),
+                column,
+                span,
+                grid.length,
+              ),
               ...style.cell,
               ...conditional.cell,
               ...rowCell,
-              ...inner,
+              ...this.styles.margins(child(properties, "tblCellMar")),
+              ...Object.fromEntries(
+                Object.entries(
+                  wordRowExceptionCellProperties(
+                    wordRowExceptionProperties(exceptionCss),
+                    column,
+                    span,
+                    grid.length,
+                  ),
+                ).filter(([key]) => key.startsWith("padding-")),
+              ),
             },
             tableInfo,
           );

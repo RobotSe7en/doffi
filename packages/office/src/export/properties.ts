@@ -1,3 +1,4 @@
+import { wordRowExceptionProperties } from "@doffi/core";
 import { writeWordTablePosition } from "./table-position.js";
 import {
   passiveWordRunBooleans,
@@ -470,6 +471,14 @@ export function tableProperties(css: Css): string {
     out += toggle("bidiVisual", css["--word-table-bidi"] === "1");
   }
   out += wordCellSpacing(css, "table");
+  out += cellMargins(
+    Object.fromEntries(
+      Object.entries(css)
+        .filter(([key]) => key.startsWith("--word-table-cell-padding-"))
+        .map(([key, value]) => [key.slice(18), value]),
+    ),
+    "tblCellMar",
+  );
   if (css["margin-left"] === "auto")
     out += value("jc", css["margin-right"] === "auto" ? "center" : "right");
   else out += nativeWidth("tblInd", css["margin-left"], css);
@@ -481,7 +490,22 @@ export function tableProperties(css: Css): string {
   return orderedProperties("tblPr", out);
 }
 export function rowExceptionProperties(css: Css): string {
-  return wordCellSpacing(css, "row-exception");
+  const properties = wordRowExceptionProperties(css),
+    look = properties["look-mask"];
+  return orderedProperties(
+    "tblPrEx",
+    tableProperties(properties).replace(
+      /<w:tblInd[^>]*\/>/g,
+      properties.indent !== undefined ? "" : "$&",
+    ) +
+      (properties.indent !== undefined
+        ? nativeWidth("tblInd", properties.indent, properties)
+        : "") +
+      cellMargins(properties, "tblCellMar") +
+      (look !== undefined
+        ? empty("w:tblLook", { "w:val": Number(look).toString(16).padStart(4, "0") })
+        : ""),
+  );
 }
 function wordCellSpacing(css: Css, kind: "table" | "row" | "row-exception"): string {
   let out = "";
