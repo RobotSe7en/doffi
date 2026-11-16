@@ -93,6 +93,7 @@ export function copyPreviewSelection(
       model,
       (ancestor as HTMLElement).dataset.nodeId ?? root.dataset.nodeId!,
       projection.completeClipboardNodes(range),
+      projection.clipboardSourceRanges(range),
     );
   }
   stripClipboardIdentities(holder);

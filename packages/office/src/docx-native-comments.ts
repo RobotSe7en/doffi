@@ -22,13 +22,33 @@ export function wordScope(node: XmlNode, parent = true): boolean {
 /** Retain native endpoints only while the current source still anchors there.
  * A deleted/reanchored thread cannot leave dangling controls in opaque XML. */
 export class NativeWordComments {
-  private readonly bindings: ReadonlyMap<string, NativeCommentBinding>;
+  private readonly bindings: ReadonlyMap<string, readonly NativeCommentBinding[]>;
   private readonly suppressed = new Set<string>();
   private readonly originals = new WeakSet<XmlNode>();
   constructor(bindings: readonly NativeCommentBinding[]) {
-    this.bindings = new Map(bindings.map((binding) => [binding.sourceId, binding]));
+    const indexed = new Map<string, NativeCommentBinding[]>();
+    for (const binding of bindings) {
+      const items = indexed.get(binding.sourceId) ?? [];
+      items.push(binding);
+      indexed.set(binding.sourceId, items);
+    }
+    this.bindings = indexed;
   }
   restore(root: XmlNode, nodeId: string | undefined): void {
+    const ranges = new Set<string>();
+    const scan = (parent: XmlNode, scope = true): void => {
+      scope = wordScope(parent, scope);
+      for (const child of parent.content) {
+        if (typeof child === "string") continue;
+        const kind = wordScope(child, scope) ? commentControl(child) : undefined;
+        if (kind === "commentRangeStart" || kind === "commentRangeEnd") {
+          const id = child.attrs.get(W + " id") ?? "",
+            endpoint = kind === "commentRangeStart" ? "startNodeId" : "endNodeId";
+          if (nodeId && this.bindings.get(id)?.some((b) => b[endpoint] === nodeId)) ranges.add(id);
+        } else scan(child, scope);
+      }
+    };
+    scan(root);
     const visit = (parent: XmlNode, scope = true): void => {
       scope = wordScope(parent, scope);
       for (let index = parent.content.length - 1; index >= 0; index--) {
@@ -39,7 +59,15 @@ export class NativeWordComments {
           visit(node, scope);
           continue;
         }
-        const binding = this.bindings.get(node.attrs.get(W + " id") ?? ""),
+        const endpoint =
+          kind === "commentRangeStart"
+            ? "startNodeId"
+            : kind === "commentRangeEnd"
+              ? "endNodeId"
+              : "referenceNodeId";
+        const binding = this.bindings
+            .get(node.attrs.get(W + " id") ?? "")
+            ?.find((binding) => nodeId && binding[endpoint] === nodeId),
           owner =
             kind === "commentRangeStart"
               ? binding?.startNodeId
@@ -56,7 +84,8 @@ export class NativeWordComments {
         if (
           kind === "commentReference" &&
           binding.startNodeId === nodeId &&
-          binding.endNodeId === nodeId
+          binding.endNodeId === nodeId &&
+          !ranges.has(binding.sourceId)
         ) {
           this.suppressed.add(binding.id + "\ncommentRangeStart");
           this.suppressed.add(binding.id + "\ncommentRangeEnd");

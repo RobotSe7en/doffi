@@ -7,6 +7,7 @@ import {
   viewNodeRole,
   viewStyleSource,
 } from "./view-nodes.js";
+import { clipboardNodeText } from "./clipboard-node-text.js";
 /** Reversible projection: layout, font fallback, assets and labels never become source. */
 export class SourceProjection {
   private readonly originals = new WeakMap<Element, Element>();
@@ -164,6 +165,48 @@ export class SourceProjection {
     }
     return complete;
   }
+  /** Exact provenance of a selected source slice, including text before hidden
+   * revisions. Equal words elsewhere in the source are never searched. */
+  clipboardSourceRanges(
+    range: Range,
+  ): ReadonlyMap<string, { from: number; to: number; inexact?: boolean }> {
+    const result = new Map<string, { from: number; to: number; inexact?: boolean }>();
+    let root = range.commonAncestorContainer;
+    if (root.nodeType !== 1) root = root.parentNode!;
+    const nodes = new Set<Element>([
+      root as Element,
+      ...(root as Element).querySelectorAll("[data-node-id]"),
+    ]);
+    for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.add(parent);
+    for (const node of nodes) {
+      const id = node.getAttribute("data-node-id");
+      if (!id || !this.originals.has(node) || this.ignored(node) || !range.intersectsNode(node))
+        continue;
+      const selected = node.ownerDocument.createRange();
+      selected.selectNodeContents(node);
+      if (range.compareBoundaryPoints(0, selected) > 0)
+        selected.setStart(range.startContainer, range.startOffset);
+      if (range.compareBoundaryPoints(2, selected) < 0)
+        selected.setEnd(range.endContainer, range.endOffset);
+      let inexact = false;
+      const offset = (end: boolean): number => {
+        const prefix = node.ownerDocument.createRange();
+        prefix.selectNodeContents(node);
+        prefix.setEnd(
+          end ? selected.endContainer : selected.startContainer,
+          end ? selected.endOffset : selected.startOffset,
+        );
+        const boundary = { end, inexact: false };
+        const projected = this.project(node, prefix, false, true, boundary);
+        inexact ||= boundary.inexact;
+        return projected ? clipboardNodeText(projected).length : 0;
+      };
+      const from = offset(false),
+        to = offset(true);
+      result.set(id, { from, to, ...(inexact ? { inexact } : {}) });
+    }
+    return result;
+  }
   serializeRange(range: Range): DocumentFragment {
     let node = range.commonAncestorContainer;
     for (let parent = node.parentElement; parent; parent = parent.parentElement)
@@ -177,11 +220,17 @@ export class SourceProjection {
     else if (result) fragment.append(result);
     return fragment;
   }
-  private project(root: Node, range?: Range, shell = false): Node | undefined {
+  private project(
+    root: Node,
+    range?: Range,
+    shell = false,
+    includeHidden = false,
+    boundary?: { end: boolean; inexact: boolean },
+  ): Node | undefined {
     const seen = new Set<string>();
     const clone = (node: Node): Node | undefined => {
       if (this.ignored(node)) return;
-      if (range && hiddenFromViewSelection(node)) return;
+      if (range && !includeHidden && hiddenFromViewSelection(node)) return;
       if (range && node !== root && !range.intersectsNode(node)) return;
       // Pagination can add owned wrappers after capture (e.g. a later resize).
       // Resolve live ownership as well as the initial projection snapshot.
@@ -291,10 +340,32 @@ export class SourceProjection {
       if (field && range?.intersectsNode(field.display)) {
         const selected = node.ownerDocument!.createRange();
         selected.selectNodeContents(field.display);
+        if (
+          includeHidden &&
+          range.compareBoundaryPoints(0, selected) <= 0 &&
+          range.compareBoundaryPoints(2, selected) >= 0
+        ) {
+          result.append(...[...field.original.childNodes].map((child) => child.cloneNode(true)));
+          return result;
+        }
         if (range.compareBoundaryPoints(0, selected) > 0)
           selected.setStart(range.startContainer, range.startOffset);
         if (range.compareBoundaryPoints(2, selected) < 0)
           selected.setEnd(range.endContainer, range.endOffset);
+        if (
+          includeHidden &&
+          boundary &&
+          clipboardNodeText(field.original) !== field.display.textContent &&
+          selected.toString()
+        ) {
+          // A changed computed field has no character correspondence inside its
+          // old cache. Use its exact source envelope for intersection only;
+          // the comment mapper explicitly invalidates ambiguous inner anchors.
+          boundary.inexact = true;
+          if (boundary.end)
+            result.append(...[...field.original.childNodes].map((child) => child.cloneNode(true)));
+          return result;
+        }
         result.append(result.ownerDocument.createTextNode(selected.toString()));
         return result;
       }

@@ -2006,6 +2006,7 @@ export function mountDocumentTextEditor(
           session.snapshot().metadata.word?.stories[0]?.rootNodeId ??
           root.dataset.nodeId!,
         objects?.complete ?? projection.completeClipboardNodes(range!),
+        objects ? undefined : projection.clipboardSourceRanges(range!),
       );
       if (source.innerHTML.length > WORD_CLIPBOARD_BYTES)
         throw new DocumentError("ResourceLimitExceeded", "复制内容超过 64 MiB。");

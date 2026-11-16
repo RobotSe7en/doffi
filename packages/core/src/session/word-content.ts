@@ -7,6 +7,9 @@ import type { ParsedHtml } from "../document/html.js";
 import { createOpaqueId } from "../identifiers.js";
 import { remapWordFieldBookmarks } from "./word-field-bookmarks.js";
 import { ensureWordMainStoryContainer } from "./word-story-container.js";
+import { attachWordContentComments } from "./word-content-comments.js";
+import type { WordContentCommentContext } from "./word-content-comments.js";
+import { attachWordContentNative } from "./word-content-native.js";
 const invalid = (message: string): never => {
   throw new DocumentError("InvalidOperation", message);
 };
@@ -18,6 +21,7 @@ export function attachWordContent(
   semantics: WordContentSemantics,
   styles?: SourceStyleEdit,
   insertedRootIds?: readonly string[],
+  comments?: WordContentCommentContext,
 ): void {
   const word = metadata.word!,
     ids = new Map(sourceIds),
@@ -312,6 +316,8 @@ export function attachWordContent(
       }),
     );
   }
+  attachWordContentNative(word, edit, ids, semantics.nativeContent);
+  attachWordContentComments(word, semantics, ids, storyIds, owners, parse(), comments);
   if (storyIds.size !== owners.size || [...storyIds.keys()].some((id) => !owners.has(id)))
     invalid("Clipboard stories must belong to selected objects or note references.");
 }

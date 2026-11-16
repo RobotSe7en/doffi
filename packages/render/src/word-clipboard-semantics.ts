@@ -1,6 +1,6 @@
 import { WordContentSemanticsSchema } from "@doffi/core";
 import type { ContentDocumentModel, WordContentSemantics, SourceStyleResolver } from "@doffi/core";
-import { clipboardNodeText } from "./word-clipboard-stories.js";
+import { clipboardNodeText } from "./clipboard-node-text.js";
 /** Only complete supported structures enter the semantic graph. Partial fields
  * and controls keep their selected text/format without copying outside text. */
 export function copyWordClipboardSemantics(

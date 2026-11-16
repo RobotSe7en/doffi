@@ -1,3 +1,4 @@
+import type { WordContentCommentContext } from "./word-content-comments.js";
 import { pasteWordBlockContent } from "./word-block-content.js";
 import { pasteWordInlineContent } from "./word-inline-content.js";
 import { cutWordContent, cutWordDrawings, linkWordContentMove } from "./word-content-move.js";
@@ -90,6 +91,7 @@ export function applyWordOperation(
   operation: WordOperation,
   limits: DocumentReadLimits,
   annotations: Annotation[] = [],
+  commentContext?: WordContentCommentContext,
 ): void {
   if (!metadata.word) {
     const source = parse(),
@@ -512,8 +514,8 @@ export function applyWordOperation(
   if (operation.op === "pasteWordBlockContent" || operation.op === "pasteWordInlineContent") {
     const before = new Set(word.revisions.map((r) => r.revisionId ?? r.nodeId));
     if (operation.op === "pasteWordBlockContent")
-      pasteWordBlockContent(metadata, edit, parse, styles, operation);
-    else pasteWordInlineContent(metadata, edit, parse, styles, operation);
+      pasteWordBlockContent(metadata, edit, parse, styles, operation, undefined, commentContext);
+    else pasteWordInlineContent(metadata, edit, parse, styles, operation, commentContext);
     linkWordContentMove(word, edit, parse, operation.cutId, before);
     return;
   }

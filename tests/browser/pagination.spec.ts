@@ -1,3 +1,4 @@
+import { registerWordCommentClipboardTests } from "./word-comment-clipboard-cases.js";
 import { registerWordListClipboardTests } from "./word-list-clipboard-cases.js";
 import { registerWordCrossClipboardTests } from "./word-cross-clipboard-cases.js";
 import { registerWordMoveClipboardTests } from "./word-move-clipboard-cases.js";
@@ -8747,3 +8748,5 @@ registerWordCrossClipboardTests(mount);
 registerWordMoveClipboardTests(mount);
 registerWordObjectClipboardTests(mount);
 registerWordNoteClipboardTests(mount);
+
+registerWordCommentClipboardTests(mount);

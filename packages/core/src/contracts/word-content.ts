@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { WordMetadataSchema } from "./word.js";
 import { IdentifierSchema } from "./primitives.js";
+import { AnnotationSchema } from "./annotations.js";
 /** Source identities are local transport references. The receiving transaction
  * allocates every actual node ID before attaching the semantic graph. Owned
  * stories are transport fragments, serialized into the one document source. */
@@ -17,15 +18,18 @@ export const WordContentSemanticsSchema = WordMetadataSchema.pick({
   numbering: true,
   tables: true,
   tabs: true,
+  comments: true,
+  nativeContent: true,
 })
   .partial()
   .extend({
+    annotations: z.array(AnnotationSchema).optional(),
     stories: z
       .array(
         z.strictObject({
           storyId: IdentifierSchema,
           rootNodeId: IdentifierSchema,
-          kind: z.enum(["textBox", "footnote", "endnote"]),
+          kind: z.enum(["textBox", "footnote", "endnote", "comment"]),
           html: z.string().min(1),
         }),
       )

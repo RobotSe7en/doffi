@@ -106,5 +106,29 @@ export function checkResourceUse(
   for (const drawing of metadata?.word?.drawings ?? [])
     if (drawing.kind === "chart" && after.hasNode(drawing.nodeId))
       for (const part of drawing.chart.native?.parts ?? []) unused.delete(part.assetPath);
+  const native = metadata?.word?.nativeContent;
+  if (native) {
+    const pending: string[] = [],
+      selected = new Set<string>();
+    for (const fragment of native.fragments) {
+      if (!fragment.nodeId || !after.hasNode(fragment.nodeId)) continue;
+      unused.delete(fragment.assetPath);
+      if (fragment.preview) unused.delete(fragment.preview.assetPath);
+      for (const id of fragment.relationshipIds ?? [])
+        pending.push(fragment.sourcePart + "\n" + id);
+    }
+    const relations = new Map(native.relationships.map((r) => [r.sourcePart + "\n" + r.id, r]));
+    for (let index = 0; index < pending.length; index++) {
+      const key = pending[index]!;
+      if (selected.has(key)) continue;
+      selected.add(key);
+      const relation = relations.get(key);
+      if (!relation || relation.external) continue;
+      const part = native.parts.find((p) => p.sourcePart === relation.target);
+      if (part) unused.delete(part.assetPath);
+      for (const child of native.relationships)
+        if (child.sourcePart === relation.target) pending.push(child.sourcePart + "\n" + child.id);
+    }
+  }
   if (unused.size) invalid("New transaction resources must be referenced by the final source.");
 }

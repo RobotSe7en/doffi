@@ -28,7 +28,17 @@ export function pasteClipboardResources(
   const parts = (format.semantics?.drawings ?? []).flatMap((d) =>
       d.kind === "chart" ? (d.chart.native?.parts ?? []) : [],
     ),
-    required = new Set(parts.map((p) => p.assetPath)),
+    native = format.semantics?.nativeContent,
+    nativePaths = native
+      ? [
+          ...native.fragments.flatMap((f) => [
+            f.assetPath,
+            ...(f.preview ? [f.preview.assetPath] : []),
+          ]),
+          ...native.parts.map((p) => p.assetPath),
+        ]
+      : [],
+    required = new Set([...parts.map((p) => p.assetPath), ...nativePaths]),
     paths = new Map<string, string>(),
     assets: NonNullable<TransactionPrepareOptions["assets"]>[number][] = [],
     prefix = createOpaqueId();
@@ -74,5 +84,17 @@ export function pasteClipboardResources(
       (() => {
         throw new DocumentError("AssetUnavailable", "剪贴板图表缺少依赖资源。");
       })();
+  if (native) {
+    const map = (path: string): string =>
+      paths.get(path) ??
+      (() => {
+        throw new DocumentError("AssetUnavailable", "剪贴板原生批注端点缺少依赖资源。");
+      })();
+    for (const fragment of native.fragments) {
+      fragment.assetPath = map(fragment.assetPath);
+      if (fragment.preview) fragment.preview.assetPath = map(fragment.preview.assetPath);
+    }
+    for (const part of native.parts) part.assetPath = map(part.assetPath);
+  }
   return assets.length ? { assets } : undefined;
 }

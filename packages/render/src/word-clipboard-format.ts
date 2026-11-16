@@ -1,6 +1,9 @@
 import { copyWordClipboardStories } from "./word-clipboard-stories.js";
 import { copyWordClipboardImages } from "./word-clipboard-images.js";
 import { copyWordClipboardSemantics } from "./word-clipboard-semantics.js";
+import { copyWordClipboardComments } from "./word-clipboard-comments.js";
+import type { WordClipboardSourceRanges } from "./word-clipboard-comments.js";
+import { copyWordClipboardNative } from "./word-clipboard-native.js";
 import type { WordContentSemantics } from "@doffi/core";
 import {
   DEFAULT_DOCUMENT_READ_LIMITS,
@@ -146,10 +149,26 @@ export function copyWordClipboardFormat(
   model: ContentDocumentModel,
   contextId: string,
   completeNodes?: ReadonlySet<string>,
+  selected?: WordClipboardSourceRanges,
 ): void {
   const snapshot = model.snapshot(),
     word = snapshot.metadata.word;
-  if (!word || holder.querySelector("[data-word-native-object]")) return;
+  if (!word) return;
+  // Inline selections can contain only a Text node. Give that exact slice a
+  // transport identity without expanding it to the unselected paragraph.
+  if (
+    snapshot.annotations.length &&
+    selected?.has(contextId) &&
+    !holder.querySelector("p,h1,h2,h3,h4,h5,h6,table,div,section,article,ul,ol") &&
+    ![...holder.querySelectorAll<HTMLElement>("[data-node-id]")].some(
+      (n) => n.dataset.nodeId === contextId,
+    )
+  ) {
+    const span = holder.ownerDocument.createElement("span");
+    span.dataset.nodeId = contextId;
+    span.append(...holder.childNodes);
+    holder.append(span);
+  }
   for (const table of [...holder.querySelectorAll<HTMLElement>("table")])
     if (completeNodes && !completeNodes.has(table.dataset.nodeId!))
       for (const element of [table, ...table.querySelectorAll("thead,tbody,tfoot,tr,td,th")]
@@ -168,7 +187,7 @@ export function copyWordClipboardFormat(
         .map((item) => item.nodeId),
     ),
   );
-  const graph = copyWordClipboardStories(holder, model, completeNodes);
+  const graph = copyWordClipboardStories(holder, model, completeNodes, selected);
   for (const story of graph.stories) {
     copyWordClipboardImages(story.holder, model);
     const root = story.holder.firstElementChild!;
@@ -180,6 +199,11 @@ export function copyWordClipboardFormat(
     );
   }
   const semantic = copyWordClipboardSemantics(holder, model, graph.completeNodes, css, graph.roots);
+  const comments = copyWordClipboardComments(graph.roots, model, graph.completeNodes, selected);
+  if (comments.annotations?.length) semantic.semantics = { ...semantic.semantics, ...comments };
+  const opaque = copyWordClipboardNative(graph.roots, model);
+  if (opaque.nativeContent)
+    semantic.semantics = { ...semantic.semantics, nativeContent: opaque.nativeContent };
   for (const drawing of semantic.semantics?.drawings ?? [])
     if (drawing.kind === "chart" && drawing.chart.native) {
       const native = drawing.chart.native,
@@ -353,6 +377,7 @@ export function copyWordClipboardFormat(
     ...(semantic.semantics ? { semantics: semantic.semantics } : {}),
     styles: definitions,
     nodes,
+    ...(opaque.resources.length ? { resources: opaque.resources } : {}),
   };
   if (graph.stories.length) {
     const semantics = (format.semantics ??= {});

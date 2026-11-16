@@ -1,26 +1,21 @@
 import { DocumentError } from "@doffi/core";
 import type { ContentDocumentModel } from "@doffi/core";
-export function clipboardNodeText(node: Node): string {
-  if (node.nodeType === 3) return node.textContent ?? "";
-  if (node.nodeType === 1) {
-    const element = node as Element;
-    if (element.localName === "img") return "\ufffc";
-    if (element.localName === "br") return "\n";
-  }
-  return [...node.childNodes].map(clipboardNodeText).join("");
-}
+import { copyWordClipboardComments } from "./word-clipboard-comments.js";
+import type { WordClipboardSourceRanges } from "./word-clipboard-comments.js";
+import { clipboardNodeText } from "./clipboard-node-text.js";
 /** Traverse ownership from selected objects only. Sibling stories and source
  * body content never enter the transport graph. */
 export function copyWordClipboardStories(
   holder: HTMLElement,
   model: ContentDocumentModel,
   completeNodes: ReadonlySet<string> | undefined,
+  sourceRanges?: WordClipboardSourceRanges,
 ): {
   roots: HTMLElement[];
   stories: {
     storyId: string;
     rootNodeId: string;
-    kind: "textBox" | "footnote" | "endnote";
+    kind: "textBox" | "footnote" | "endnote" | "comment";
     holder: HTMLElement;
   }[];
   completeNodes: ReadonlySet<string> | undefined;
@@ -31,7 +26,7 @@ export function copyWordClipboardStories(
     stories: {
       storyId: string;
       rootNodeId: string;
-      kind: "textBox" | "footnote" | "endnote";
+      kind: "textBox" | "footnote" | "endnote" | "comment";
       holder: HTMLElement;
     }[] = [],
     seen = new Set<string>();
@@ -51,7 +46,10 @@ export function copyWordClipboardStories(
           : clipboardNodeText(node) === model.getNode(id)!.text)
       );
     };
-    const ownedStories: { storyId: string; kind: "textBox" | "footnote" | "endnote" }[] = [];
+    const ownedStories: {
+      storyId: string;
+      kind: "textBox" | "footnote" | "endnote" | "comment";
+    }[] = [];
     for (const drawing of word.drawings ?? [])
       if ("textStoryId" in drawing && drawing.textStoryId && selected(drawing.nodeId))
         ownedStories.push({ storyId: drawing.textStoryId, kind: "textBox" });
@@ -62,6 +60,21 @@ export function copyWordClipboardStories(
           throw new DocumentError("InvalidDocument", "复制注释缺少其正常正文故事。");
         ownedStories.push({ storyId: note.storyId, kind: note.kind });
       }
+    const threads = copyWordClipboardComments(
+      roots,
+      model,
+      completeNodes ? complete : undefined,
+      sourceRanges,
+    );
+    for (const thread of threads.annotations ?? [])
+      for (const message of [thread, ...(thread.replies ?? [])])
+        if (message.bodyNodeId) {
+          const story = word.stories.find(
+            (s) => s.kind === "comment" && s.rootNodeId === message.bodyNodeId,
+          );
+          if (!story) throw new DocumentError("InvalidDocument", "复制批注缺少其正文故事。");
+          ownedStories.push({ storyId: story.storyId, kind: "comment" });
+        }
     for (const owner of ownedStories) {
       if (seen.has(owner.storyId)) continue;
       const story = word.stories.find((s) => s.storyId === owner.storyId);

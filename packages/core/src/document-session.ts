@@ -64,6 +64,7 @@ import {
 } from "./session/presentation-edit.js";
 import { applyWordOperation, isWordOperation } from "./session/word-edit.js";
 import { pruneWordComments } from "./session/word-comments.js";
+import { mergeWordMovedClipboardComments } from "./session/word-content-comments.js";
 import { validateWordCandidate } from "./session/word-interaction.js";
 import { updateWordDrawingConnectors } from "./word-drawing.js";
 import { copyContentAsset } from "./document/assets.js";
@@ -253,12 +254,18 @@ export function createDocumentSession(
     const parseEdited = (): ParsedHtml =>
       parseHtml(edit.html(), resources.state.snapshot.manifest, files, limits, { nodes: 0 });
     const explicit = new Set<string>();
+    const copiedComments = new Map<string, { source: ParsedHtml; at: number; transfers: number }>();
+    const copiedCommentSources = new Map<string, string>();
     const unresolved = new Set(
       base.snapshot.annotations
         .filter((item) => item.status === "needs_reanchor")
         .map((item) => item.annotationId),
     );
     for (const operation of transaction.operations) {
+      const priorComments =
+        operation.op === "pasteWordInlineContent" || operation.op === "pasteWordBlockContent"
+          ? new Set(annotations.map((a) => a.annotationId))
+          : undefined;
       const markBase =
         metadata.word &&
         [
@@ -319,6 +326,12 @@ export function createDocumentSession(
             : operation,
           limits,
           annotations,
+          {
+            annotations,
+            documentId: base.snapshot.manifest.documentId,
+            baseRevision: base.snapshot.manifest.revision,
+            copies: copiedCommentSources,
+          },
         );
       } else if ("nodeId" in operation) {
         guardPresentationContent(base, operation);
@@ -353,6 +366,17 @@ export function createDocumentSession(
         if (operation.op === "reconcileFragment" || operation.op === "reconcileWordTracked")
           inheritWordSplitParagraphMarks(metadata.word, markBase, edit, parseEdited, styles);
         inheritWordEmptyParagraphText(metadata.word, markBase, edit, parseEdited, styles);
+      }
+      if (priorComments) {
+        const added = annotations.filter((a) => !priorComments.has(a.annotationId));
+        if (added.length) {
+          const checkpoint = {
+            source: parseEdited(),
+            at: edit.textEdits.length,
+            transfers: edit.textTransfers.length,
+          };
+          for (const annotation of added) copiedComments.set(annotation.annotationId, checkpoint);
+        }
       }
     }
     if (metadata.word)
@@ -558,7 +582,49 @@ export function createDocumentSession(
     const workflows = new Map(
       annotations.map((annotation) => [annotation.annotationId, annotation.status]),
     );
-    mapAnnotations(annotations, base.html, parsed, edit, explicit, regionChanged);
+    mapAnnotations(
+      annotations.filter((a) => !copiedComments.has(a.annotationId)),
+      base.html,
+      parsed,
+      edit,
+      explicit,
+      regionChanged,
+    );
+    for (const annotation of annotations) {
+      const checkpoint = copiedComments.get(annotation.annotationId);
+      if (!checkpoint) continue;
+      mapAnnotations(
+        [annotation],
+        checkpoint.source,
+        parsed,
+        {
+          textEdits: edit.textEdits.slice(checkpoint.at),
+          textTransfers: edit.textTransfers
+            .slice(checkpoint.transfers)
+            .map((transfer) => ({ ...transfer, at: transfer.at - checkpoint.at })),
+          replacedTextNodes: edit.replacedTextNodes,
+          structuralTextNodes: edit.structuralTextNodes,
+        },
+        explicit,
+        regionChanged,
+      );
+    }
+    if (
+      metadata.word &&
+      (metadata.word.moves?.length ?? 0) > (base.snapshot.metadata.word?.moves?.length ?? 0)
+    ) {
+      mergeWordMovedClipboardComments(
+        metadata.word,
+        annotations,
+        copiedCommentSources,
+        base.html,
+        parsed,
+        edit,
+        base.snapshot.annotations,
+      );
+      pruneWordComments(metadata.word, annotations, edit, parseEdited);
+      parsed = parseEdited();
+    }
     updatePresentationRecovery(metadata, base, annotations, workflows);
     updateWordMetadata(metadata, base, parsed);
     if (metadata.word)

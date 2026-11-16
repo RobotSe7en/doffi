@@ -1,3 +1,4 @@
+import type { WordContentCommentContext } from "./word-content-comments.js";
 import { copyWordSplitRun } from "./word-format-revisions.js";
 import { deleteWordTrackedContent } from "./word-content-revisions.js";
 import type { SourceStyleEdit } from "./source-styles.js";
@@ -22,6 +23,7 @@ export function pasteWordInlineContent(
   parse: () => ParsedHtml,
   styles: SourceStyleEdit,
   operation: Extract<WordOperation, { op: "pasteWordInlineContent" }>,
+  comments?: WordContentCommentContext,
 ): void {
   const word = metadata.word!;
   if (operation.endNodeId && operation.endNodeId !== operation.nodeId) {
@@ -39,13 +41,20 @@ export function pasteWordInlineContent(
       ? parse().getNode(operation.nodeId)!.text.length
       : operation.from;
     const old = new Set(word.revisions.map((item) => item.revisionId ?? item.nodeId));
-    pasteWordInlineContent(metadata, edit, parse, styles, {
-      ...operation,
-      endNodeId: undefined,
-      from: offset,
-      to: offset,
-      expectedText: "",
-    });
+    pasteWordInlineContent(
+      metadata,
+      edit,
+      parse,
+      styles,
+      {
+        ...operation,
+        endNodeId: undefined,
+        from: offset,
+        to: offset,
+        expectedText: "",
+      },
+      comments,
+    );
     for (const revision of word.revisions)
       if (!old.has(revision.revisionId ?? revision.nodeId)) revision.groupId = group.groupId;
     if (!word.trackChanges && sameScope) edit.mergeSourceParagraphMark(operation.nodeId);
@@ -67,7 +76,7 @@ export function pasteWordInlineContent(
   edit.assertInlineSource(operation.nodeId, operation.html);
   const semantics = operation.semantics ?? {},
     attach = (ids: ReadonlyMap<string, string>): void =>
-      attachWordContent(metadata, edit, parse, ids, semantics, styles);
+      attachWordContent(metadata, edit, parse, ids, semantics, styles, undefined, comments);
   const keepEmpty = Object.values(semantics).some(
     (items) => Array.isArray(items) && items.length > 0,
   );

@@ -1,3 +1,4 @@
+import type { WordContentCommentContext } from "./word-content-comments.js";
 import { deleteWordTrackedContent } from "./word-content-revisions.js";
 import { createOpaqueId } from "../identifiers.js";
 import { DocumentError } from "../errors.js";
@@ -21,8 +22,14 @@ export function pasteWordBlockContent(
   styles: SourceStyleEdit,
   operation: Extract<WordOperation, { op: "pasteWordBlockContent" }>,
   context?: { groupId: string; author: string; date: string },
+  comments?: WordContentCommentContext,
 ): { tailNodeId: string } {
   const word = metadata.word!;
+  if (
+    word.trackChanges &&
+    operation.semantics?.nativeContent?.fragments.some((f) => f.kind === "block")
+  )
+    throw new DocumentError("UnsupportedFeature", "原生保留区块暂不能记录追踪粘贴，候选未应用。");
   if (operation.endNodeId && operation.endNodeId !== operation.nodeId) {
     const group = context ?? {
       groupId: "word-paste-" + createOpaqueId(),
@@ -44,6 +51,7 @@ export function pasteWordBlockContent(
       styles,
       { ...operation, endNodeId: undefined, from: offset, to: offset, expectedText: "" },
       group,
+      comments,
     );
     if (!word.trackChanges && sameScope) {
       edit.textTransfers.push({
@@ -140,6 +148,7 @@ export function pasteWordBlockContent(
     operation.semantics ?? {},
     styles,
     content.rootNodeIds,
+    comments,
   );
   normalizeWordListContent(word, edit, parse(), inserted, styles);
   const after = parse(),
@@ -173,7 +182,10 @@ export function pasteWordBlockContent(
       if (!table) outerParagraphs.push(id);
     }
   }
-  if (!paragraphs.length)
+  if (
+    !paragraphs.length &&
+    !operation.semantics?.nativeContent?.fragments.some((f) => f.kind === "block")
+  )
     throw new DocumentError("InvalidOperation", "Word block content requires paragraph structure.");
   for (const id of tables)
     if (!word.tables.some((table) => table.nodeId === id))
