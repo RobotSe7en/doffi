@@ -1,3 +1,4 @@
+import { needsWordTableLineExclusion } from "./word-center-wrap.js";
 import {
   SourceStyleResolver,
   resolveSourceCssLength,
@@ -80,6 +81,13 @@ export function composeWordFloatingTables(
     table.before(anchor, box);
     box.append(table);
     box.style.cssText = "display:flow-root;box-sizing:content-box;float:left;margin:0;";
+    if (
+      needsWordTableLineExclusion(css) &&
+      table.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
+    ) {
+      box.style.position = "absolute";
+      box.style.cssFloat = "none";
+    }
     const left = amount(css, "left-distance"),
       right = amount(css, "right-distance"),
       top = amount(css, "top-distance"),
@@ -234,6 +242,32 @@ export function composeWordFloatingTables(
           box.style.top =
             origin.top + (top - amount(css, "top-distance")) / 0.75 - bounds.top + "px";
           paper.append(box);
+          continue;
+        }
+        if (
+          needsWordTableLineExclusion(css) &&
+          table.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
+        ) {
+          const parent = (box.offsetParent as HTMLElement | null) ?? root,
+            bounds = parent.getBoundingClientRect();
+          const x =
+              origin.left +
+              (left - amount(css, "left-distance")) / 0.75 -
+              bounds.left -
+              parent.clientLeft,
+            y =
+              origin.top +
+              (top - amount(css, "top-distance")) / 0.75 -
+              bounds.top -
+              parent.clientTop;
+          for (const [key, value] of [
+            ["left", x],
+            ["top", y],
+          ] as const)
+            if (Math.abs((parseFloat(box.style.getPropertyValue(key)) || 0) - value) > 0.05) {
+              box.style.setProperty(key, value + "px");
+              changed = true;
+            }
           continue;
         }
         const float = left + width / 2 > page.rect.x + setup.width / 2 ? "right" : "left",

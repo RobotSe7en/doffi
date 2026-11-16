@@ -92,6 +92,14 @@ export function wordCharacterGrid(
               boundary++;
               return;
             }
+            if (
+              viewNodeRole(node) === "remove" &&
+              isMeasuredViewContent(node) &&
+              !element.childNodes.length
+            ) {
+              boundary++;
+              return;
+            }
             const css = view.getComputedStyle(element);
             if (css.display === "none" || css.visibility === "hidden") {
               boundary++;

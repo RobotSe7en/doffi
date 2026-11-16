@@ -1,3 +1,4 @@
+import { wordCenterWrap } from "./word-center-wrap.js";
 import { composeWordRowExceptions } from "./word-row-exceptions.js";
 import { composeWordContextualSpacing } from "./word-contextual-spacing.js";
 import { composeWordFloatingTables } from "./word-floating-tables.js";
@@ -489,6 +490,7 @@ export function mountPreview(
   let projection: SourceProjection | undefined;
   let drawings: ReturnType<typeof composeWordDrawings> | undefined;
   let floatingTables: ReturnType<typeof composeWordFloatingTables> | undefined;
+  let centeredWrap: ReturnType<typeof wordCenterWrap> | undefined;
   let continuationCells: (() => void) | undefined;
   let notes: ReturnType<typeof composeWordNotes> | undefined;
   let disposed = false,
@@ -523,6 +525,8 @@ export function mountPreview(
     const restoreSelection = retainFlowSelection(source.root, projection?.ignored);
     composeWordContextualSpacing(iframe.contentDocument!, model);
     composeWordTypography(iframe.contentDocument!, model, limits);
+    centeredWrap?.reset();
+    if (centeredWrap?.active) source.reindex();
     let pages: DocumentRenderReport["pages"] = [],
       nodePages: DocumentRenderReport["nodePages"] = {},
       results: DocumentRenderReport["fields"] = [],
@@ -532,9 +536,16 @@ export function mountPreview(
       pages = notes?.measure(pages) ?? pages;
       drawings?.measure(pages, source.root);
       floatingTables?.measure(pages, source.root);
+      centeredWrap?.measure(pages, source.root);
+      if (centeredWrap?.changed) source.reindex();
       nodePages = pagination.nodePages(pages);
       results = fields?.evaluate(pages, nodePages) ?? [];
-      if (!fields?.changed && !notes?.changed && !floatingTables?.changed) {
+      if (
+        !fields?.changed &&
+        !notes?.changed &&
+        !floatingTables?.changed &&
+        !centeredWrap?.changed
+      ) {
         stable = true;
         break;
       }
@@ -544,10 +555,52 @@ export function mountPreview(
       );
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
+    if (!pagination && centeredWrap?.active) {
+      const origin = source.root.getBoundingClientRect(),
+        snapshot = model.snapshot();
+      const canvases = (snapshot.metadata.sections ?? []).flatMap((section, index) => {
+        const node = source!.root.querySelector<HTMLElement>(
+          '[data-node-id="' + CSS.escape(section.rootNodeId) + '"]',
+        );
+        if (!node) return [];
+        const bounds = node.getBoundingClientRect(),
+          setup = section.pageSetup ?? snapshot.metadata.pageSetup;
+        if (!setup) return [];
+        return [
+          {
+            pageId: "continuous-" + section.sectionId,
+            index,
+            sectionId: section.sectionId,
+            number: index + 1,
+            label: String(index + 1),
+            blank: false,
+            setup,
+            rect: {
+              x: (bounds.left - origin.left) * 0.75,
+              y: (bounds.top - origin.top) * 0.75,
+              width: setup.width,
+              height: Math.max(setup.height, bounds.height * 0.75),
+            },
+          },
+        ];
+      });
+      stable = false;
+      for (let pass = 0; pass < limits.maxLayoutPasses; pass++) {
+        source.clearInstances();
+        drawings?.measure(canvases, source.root);
+        floatingTables?.measure(canvases, source.root);
+        centeredWrap.measure(canvases, source.root);
+        if (centeredWrap.changed) source.reindex();
+        if (!floatingTables?.changed && !centeredWrap.changed) {
+          stable = true;
+          break;
+        }
+      }
+    }
     if (!stable)
       throw new DocumentError(
         "ResourceLimitExceeded",
-        "Layout fields did not converge within the render pass budget.",
+        "Document layout did not converge within the render pass budget.",
       );
     fields?.repeat(pages);
     continuationCells?.();
@@ -606,6 +659,7 @@ export function mountPreview(
     composeWordControls(frame, model);
     composeWordMath(frame, model, limits);
     drawings = composeWordDrawings(frame, model, limits, source);
+    centeredWrap = wordCenterWrap(frame, model, limits);
     notes = composeWordNotes(frame, model, source, limits, (index) =>
       pagination?.contentBottom(index),
     );

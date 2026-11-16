@@ -9121,3 +9121,373 @@ for (const kind of ["merged", "vertical", "before", "after"] as const)
       await page.screenshot({ path: testInfo.outputPath("structural-grid.png") });
     },
   );
+
+for (const kind of ["table", "drawing", "image"] as const)
+  for (const layout of ["pages", "continuous"] as const)
+    test(
+      "centered floating objects exclude each line on both sides without changing source " +
+        kind +
+        " " +
+        layout,
+      async ({ page }, testInfo) => {
+        test.setTimeout(90_000);
+        const { centerWrapFixture, centerWrapText } = await import(
+          "../../packages/office/tests/center-wrap-fixture.js"
+        );
+        const files = importDocx(centerWrapFixture(kind), {
+          documentId: "center-wrap-ui",
+          unsupportedContent: "reject",
+        });
+        const model = openWordDocument(files, { kind: "document" }),
+          beforeHtml = model.snapshot().html;
+        await mount(page, files, "edit", { layout });
+        const frame = page.frameLocator("iframe"),
+          object =
+            kind === "table"
+              ? frame.locator(".sdk-word-floating-table > table").first()
+              : frame.locator(".sdk-word-floating-layer [data-sdk-word-object]").first();
+        await expect(object).toBeVisible();
+        const inspect = () =>
+          object.evaluate((object) => {
+            const box = object.getBoundingClientRect(),
+              body = object.ownerDocument,
+              root = body.querySelector('[data-office-story="main"]')!,
+              rects: { left: number; right: number; top: number; bottom: number }[] = [];
+            for (const p of root.querySelectorAll("p")) {
+              if (p.closest(".sdk-word-floating-table,[data-sdk-word-object]")) continue;
+              const walker = body.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+              for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+                if (text.parentElement?.closest("[data-sdk-word-object]")) continue;
+                const range = body.createRange();
+                range.selectNodeContents(text);
+                for (const r of range.getClientRects())
+                  if (r.bottom > box.top + 1 && r.top < box.bottom - 1 && r.width > 0.5)
+                    rects.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+              }
+            }
+            return {
+              box: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
+              rects,
+              exclusions: body.querySelectorAll(".sdk-word-center-exclusion").length,
+            };
+          });
+        const observed = await inspect();
+        expect(observed.exclusions).toBeGreaterThan(0);
+        expect(observed.rects.some((r) => r.right <= observed.box.left + 1)).toBe(true);
+        expect(observed.rects.some((r) => r.left >= observed.box.right - 1)).toBe(true);
+        expect(
+          observed.rects.filter(
+            (r) => r.right > observed.box.left + 1 && r.left < observed.box.right - 1,
+          ),
+        ).toEqual([]);
+        const left = observed.rects.filter((r) => r.right <= observed.box.left + 1),
+          right = observed.rects.filter((r) => r.left >= observed.box.right - 1);
+        expect(left.some((a) => right.some((b) => Math.abs(a.top - b.top) < 2))).toBe(true);
+        expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(
+          beforeHtml,
+        );
+        const pages = (await page.evaluate(() => window.paginationHost.layout())).pages.length;
+        if (layout === "pages") expect(pages).toBeGreaterThan(1);
+        for (let i = 0; i < 3; i++) {
+          await page.evaluate(() => window.paginationHost.view!.settled());
+          expect((await page.evaluate(() => window.paginationHost.layout())).pages.length).toBe(
+            pages,
+          );
+        }
+        const target = frame
+          .locator('[data-office-story="main"] p')
+          .filter({ hasText: centerWrapText.slice(0, 4) })
+          .first();
+        const source = await target.getAttribute("data-node-id"),
+          beforeText = await page.evaluate(
+            (id) => window.paginationHost.session!.getNode(id!)!.text,
+            source,
+          );
+        await target.click({ position: { x: 12, y: 35 } });
+        await page.keyboard.press("End");
+        await page.keyboard.insertText("输入");
+        await expect
+          .poll(() =>
+            page.evaluate((id) => window.paginationHost.session!.getNode(id!)!.text, source),
+          )
+          .toContain("输入");
+        const after = await page.evaluate(
+          (id) => window.paginationHost.session!.getNode(id!)!.text,
+          source,
+        );
+        expect(after.replace("输入", "")).toBe(beforeText);
+        expect(
+          await page.evaluate(() => window.paginationHost.session!.snapshot().html),
+        ).not.toContain("sdk-word-center-exclusion");
+        await page.evaluate(() => window.paginationHost.session!.undo());
+        expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(
+          beforeHtml,
+        );
+        const copy = await target.evaluate((p, length) => {
+          const data = new DataTransfer(),
+            doc = p.ownerDocument,
+            walker = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT),
+            texts: Text[] = [];
+          for (let node = walker.nextNode(); node; node = walker.nextNode())
+            if (
+              node.textContent &&
+              !node.parentElement?.closest("[data-sdk-word-object],[data-word-native-object]") &&
+              doc.defaultView!.getComputedStyle(node.parentElement!).visibility === "visible"
+            )
+              texts.push(node as Text);
+          const range = doc.createRange();
+          range.setStart(texts[0]!, 0);
+          let remaining = length;
+          for (const text of texts) {
+            if (remaining <= text.length) {
+              range.setEnd(text, remaining);
+              break;
+            }
+            remaining -= text.length;
+          }
+          const selection = doc.getSelection()!;
+          selection.removeAllRanges();
+          selection.addRange(range);
+          const event = new ClipboardEvent("copy", { bubbles: true, cancelable: true });
+          Object.defineProperty(event, "clipboardData", { value: data });
+          p.dispatchEvent(event);
+          return data.getData("text/plain");
+        }, centerWrapText.length * 2);
+        expect(copy).toBe(centerWrapText.repeat(2));
+        await target.evaluate((p) => p.ownerDocument.getSelection()?.removeAllRanges());
+        if (kind === "drawing" && layout === "pages") {
+          await object.click({ position: { x: 15, y: 15 } });
+          await expect(page.getByLabel("对象水平对齐", { exact: true })).toHaveValue("center");
+          const rect = (await object.boundingBox())!;
+          await page.mouse.move(rect.x + 20, rect.y + 20);
+          await page.mouse.down();
+          await page.mouse.move(rect.x + 36, rect.y + 20, { steps: 3 });
+          await page.mouse.up();
+          await page.evaluate(() => window.paginationHost.view!.settled());
+          expect(
+            await page.evaluate(
+              () =>
+                window.paginationHost.session!.snapshot().metadata.word!.drawings![0]!.layout
+                  .alignH,
+            ),
+          ).toBeUndefined();
+          const moved = await inspect();
+          expect(moved.rects.some((r) => r.right <= moved.box.left + 1)).toBe(true);
+          expect(moved.rects.some((r) => r.left >= moved.box.right - 1)).toBe(true);
+          expect(
+            moved.rects.filter((r) => r.right > moved.box.left + 1 && r.left < moved.box.right - 1),
+          ).toEqual([]);
+          await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
+          await page.evaluate(() => window.paginationHost.session!.undo());
+        }
+        if (kind === "table") {
+          await object.locator("p").first().click();
+          await page.evaluate(() =>
+            (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+              type: "word",
+              action: "tableSettings",
+            }),
+          );
+          await page.getByLabel("表格水平定位", { exact: true }).selectOption("offset");
+          await page.getByLabel("表格水平位置（磅）", { exact: true }).fill("120");
+          await page.getByRole("button", { name: "应用表格位置", exact: true }).click();
+          const moved = await inspect();
+          expect(moved.rects.some((r) => r.right <= moved.box.left + 1)).toBe(true);
+          expect(moved.rects.some((r) => r.left >= moved.box.right - 1)).toBe(true);
+          expect(
+            moved.rects.filter((r) => r.right > moved.box.left + 1 && r.left < moved.box.right - 1),
+          ).toEqual([]);
+          await page.getByRole("button", { name: "关闭表格设置", exact: true }).click();
+          await page.evaluate(() => window.paginationHost.session!.undo());
+        }
+        const data = await page.evaluate(() =>
+          [...window.paginationHost.session!.serialize()].map(
+            ([path, bytes]) => [path, [...bytes]] as const,
+          ),
+        );
+        let native = exportDocx(
+          openWordDocument(new Map(data.map(([path, bytes]) => [path, new Uint8Array(bytes)])), {
+            kind: "document",
+          }),
+        ).bytes;
+        writeFileSync(testInfo.outputPath("center-wrap.docx"), native);
+        for (let pass = 0; pass < 2; pass++) {
+          const reopened = openWordDocument(
+            importDocx(native, { documentId: "center-wrap-reopen", unsupportedContent: "reject" }),
+            { kind: "document" },
+          );
+          expect(reopened.snapshot().html).toContain(centerWrapText.slice(0, 4));
+          native = exportDocx(reopened).bytes;
+        }
+        expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+        writeFileSync(
+          testInfo.outputPath("font-report.json"),
+          JSON.stringify(await page.evaluate(() => window.paginationHost.layout().fonts), null, 2),
+        );
+        await target.evaluate((p) => p.ownerDocument.getSelection()?.removeAllRanges());
+        await page.screenshot({ path: testInfo.outputPath("center-wrap.png") });
+        if (layout === "pages") {
+          await page.evaluate(
+            (entries) => window.paginationHost.mount(entries, "preview"),
+            data.map(([path, bytes]) => [path, bytes] as [string, number[]]),
+          );
+          const printed = await page.evaluate(() => {
+            const output = (
+              window.paginationHost.view as import("@doffi/editor").DocumentPreview
+            ).printDocument();
+            return {
+              html: output.documentElement.outerHTML,
+              spaces: output.querySelectorAll(".sdk-word-center-exclusion").length,
+              pages: output.querySelectorAll(".sdk-print-page").length,
+            };
+          });
+          expect(printed.spaces).toBeGreaterThan(0);
+          expect(printed.pages).toBe(pages);
+          writeFileSync(testInfo.outputPath("center-print.html"), printed.html);
+        }
+      },
+    );
+
+test("centered wrapping breaks a long unspaced Latin run safely across both sides", async ({
+  page,
+}) => {
+  const { centerWrapFixture } = await import("../../packages/office/tests/center-wrap-fixture.js");
+  const session = createDocumentSession(
+    openWordDocument(
+      importDocx(centerWrapFixture("drawing", 1), {
+        documentId: "long-center",
+        unsupportedContent: "reject",
+      }),
+      { kind: "document" },
+    ),
+  );
+  const ids = [session.snapshot().metadata.word!.stories[0]!.rootNodeId];
+  for (let index = 0; index < ids.length; index++)
+    ids.push(...session.getNode(ids[index]!)!.childNodeIds);
+  const p = ids.map((id) => session.getNode(id)!).find((node) => node.tagName === "p")!;
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "long-center",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "replaceText",
+          nodeId: p.nodeId,
+          from: 1,
+          to: p.text.length,
+          expectedText: p.text.slice(1),
+          text: "A".repeat(2000),
+        },
+      ],
+    }),
+  );
+  const before = session.snapshot().html;
+  await mount(page, session.serialize(), "edit");
+  const result = await page
+    .frameLocator("iframe")
+    .locator(".sdk-word-floating-layer [data-sdk-word-object]")
+    .first()
+    .evaluate((object) => {
+      const box = object.getBoundingClientRect(),
+        doc = object.ownerDocument,
+        rects: DOMRect[] = [];
+      for (const p of doc.querySelectorAll('[data-office-story="main"] p')) {
+        const walker = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (node.parentElement?.closest("[data-sdk-word-object]")) continue;
+          const range = doc.createRange();
+          range.selectNodeContents(node);
+          rects.push(...range.getClientRects());
+        }
+      }
+      const beside = rects.filter((r) => r.top < box.bottom - 1 && r.bottom > box.top + 1);
+      return {
+        left: beside.some((r) => r.right <= box.left + 1),
+        right: beside.some((r) => r.left >= box.right - 1),
+        overlap: beside.some((r) => r.right > box.left + 1 && r.left < box.right - 1),
+      };
+    });
+  expect(result).toEqual({ left: true, right: true, overlap: false });
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as const)
+  test(
+    "centered wrapping composes with paragraph alignment and character grids " + variant,
+    async ({ page }) => {
+      const { centerWrapFixture } = await import(
+        "../../packages/office/tests/center-wrap-fixture.js"
+      );
+      const session = createDocumentSession(
+        openWordDocument(
+          importDocx(centerWrapFixture("drawing", 5), {
+            documentId: "center-combination",
+            unsupportedContent: "reject",
+          }),
+          { kind: "document" },
+        ),
+      );
+      const ids = [session.snapshot().metadata.word!.stories[0]!.rootNodeId];
+      for (let index = 0; index < ids.length; index++)
+        ids.push(...session.getNode(ids[index]!)!.childNodeIds);
+      const p = ids.map((id) => session.getNode(id)!).find((node) => node.tagName === "p")!;
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "center-combination",
+          baseRevision: 0,
+          operations:
+            variant === "center" || variant === "right"
+              ? [
+                  {
+                    op: "setWordParagraph",
+                    nodeId: p.nodeId,
+                    properties: { "text-align": variant },
+                  },
+                ]
+              : [
+                  {
+                    op: "setWordSection",
+                    nodeId: session.snapshot().metadata.sections![0]!.rootNodeId,
+                    changes: { grid: { type: variant, linePitch: 16, characterSpacing: 0 } },
+                  },
+                ],
+        }),
+      );
+      const before = session.snapshot().html;
+      await mount(page, session.serialize(), "edit");
+      const result = await page
+        .frameLocator("iframe")
+        .locator(".sdk-word-floating-layer [data-sdk-word-object]")
+        .first()
+        .evaluate((object) => {
+          const box = object.getBoundingClientRect(),
+            doc = object.ownerDocument,
+            rects: DOMRect[] = [];
+          for (const p of doc.querySelectorAll('[data-office-story="main"] p')) {
+            const walker = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              if (node.parentElement?.closest("[data-sdk-word-object]")) continue;
+              const range = doc.createRange();
+              range.selectNodeContents(node);
+              rects.push(...range.getClientRects());
+            }
+          }
+          const beside = rects.filter(
+            (r) => r.top < box.bottom - 1 && r.bottom > box.top + 1 && r.width > 0.1,
+          );
+          return {
+            left: beside.some((r) => r.right <= box.left + 1),
+            right: beside.some((r) => r.left >= box.right - 1),
+            overlap: beside.some((r) => r.right > box.left + 1 && r.left < box.right - 1),
+          };
+        });
+      expect(result).toEqual({ left: true, right: true, overlap: false });
+      expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(
+        before,
+      );
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    },
+  );

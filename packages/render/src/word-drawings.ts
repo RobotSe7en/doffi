@@ -1,3 +1,4 @@
+import { needsWordDrawingLineExclusion } from "./word-center-wrap.js";
 import { wordFloatingLayer } from "./word-floating-layer.js";
 import { wordDrawingPosition } from "./word-drawing-position.js";
 import type { PreviewSource } from "./source-index.js";
@@ -245,7 +246,13 @@ export function composeWordDrawings(
         const layout = item.layout,
           wrap = layout.wrap ?? "square",
           d = layout.distances ?? { left: 0, right: 0, top: 0, bottom: 0 },
-          relative = wrap !== "none" && !layout.behindText;
+          relative =
+            wrap !== "none" &&
+            !layout.behindText &&
+            !(
+              needsWordDrawingLineExclusion(item) &&
+              paragraph.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
+            );
         if (relative) {
           const side = layout.wrapSide === "left" || layout.alignH === "right" ? "right" : "left";
           style(frame, {
