@@ -95,3 +95,5 @@ pnpm check:docx-reference
 自动化覆盖导入内容、样式覆盖、合并、图片字节、字段和嵌套引用、批注范围、修订、危险输入及资源预算；同时检查保存/ZIP/重开、打包消费和固定视口截图。截图是检查过的连续视图回归，不是 DOCX 导出结果。字段缓存按源 XML 验收，参考应用自动更新后的值不能替代原缓存。原生 DOCX 可编辑导出和 LibreOffice 实际重开在 R1-13 验证，Word／WPS 尚未实机验证；完整 Playground 闭环仍在 R1-14。
 
 实现依据：[ECMA-376](https://ecma-international.org/publications-and-standards/standards/ecma-376/)、[Word 条件表格格式优先级](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/f7f85a73-5f60-4f7e-a725-4f1f06198388)、[Word 主题颜色变换](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/8229a077-7fc8-4fba-96cc-c77b6a4fc768)。
+
+绘图框架和嵌套 DrawingML 按实际映射的属性／子元素检查。非零效果扩展、非可视锁定或其他未建模属性保留完整原生绘图并报告，严格模式拒绝；占位周围的正文仍可编辑。已知的无效数值不通过兼容保留绕过校验。

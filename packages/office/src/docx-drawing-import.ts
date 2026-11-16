@@ -1,3 +1,4 @@
+import { checkWordDrawingCoverage } from "./docx-drawing-coverage.js";
 import { readWordChart } from "./docx-chart-import.js";
 import { WordDrawingSchema } from "@doffi/core";
 import type { WordDrawing, WordDrawingLayout, WordMetadata } from "@doffi/core";
@@ -143,6 +144,7 @@ function appearance(
       )[actual - 1];
     if (!entry) unsupported(original, "The drawing theme reference cannot be represented.");
     try {
+      checkWordDrawingCoverage(entry);
       let css =
         type === "fill"
           ? fill({ ...entry, content: [entry] })
@@ -216,6 +218,7 @@ export function importWordDrawing(
             node,
             "This drawing position extension is preserved with its complete native drawing.",
           );
+  checkWordDrawingCoverage(source);
   const extent = child(frame, "extent", WP);
   if (!extent) fail(frame, "A drawing extent is missing.");
   const size = { width: points(extent, "cx"), height: points(extent, "cy") };
@@ -514,6 +517,7 @@ export function importWordDrawing(
       native.uri === PIC
         ? child(child(native, "nvPicPr", PIC), "cNvPr", PIC)
         : child(native, "cNvPr", native.uri);
+    if (!root && attr(identity, "name", "")) parsed.data.name = attr(identity, "name", "")!;
     const nativeId = attr(identity, "id", "");
     if (nativeId && nativeId !== "0") localIds.set(nativeId, node.attrs["data-node-id"]!);
     context.identity(native, node.attrs["data-node-id"]!, nativeId);

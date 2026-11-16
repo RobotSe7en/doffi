@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { createWordDocument, createDocumentSession, openDocument } from "@doffi/core";
 import { exportDocx } from "@doffi/office";
 export function nativeDrawingFrameFixture(
-  kind: "size" | "position" = "size",
+  kind: "size" | "position" | "none" | "effects" = "size",
   count = 1,
 ): Uint8Array {
   const session = createDocumentSession(
@@ -43,10 +43,15 @@ export function nativeDrawingFrameFixture(
           ns +
           '" relativeFrom="page"><wp14:pctWidth>50000</wp14:pctWidth></wp14:sizeRelH>'
         : '<wp14:pctPosHOffset xmlns:wp14="' + ns + '">50000</wp14:pctPosHOffset>',
-    raw = original.replace(
-      kind === "size" ? "</wp:anchor>" : "</wp:positionH>",
-      extra + (kind === "size" ? "</wp:anchor>" : "</wp:positionH>"),
-    );
+    raw =
+      kind === "effects"
+        ? original.replace(/(<wp:effectExtent[^>]* l=")0/, "$112700")
+        : kind === "none"
+          ? original
+          : original.replace(
+              kind === "size" ? "</wp:anchor>" : "</wp:positionH>",
+              extra + (kind === "size" ? "</wp:anchor>" : "</wp:positionH>"),
+            );
   files["word/document.xml"] = strToU8(
     source
       .replace('mc:Ignorable="w14"', 'mc:Ignorable="w14 wp14" xmlns:wp14="' + ns + '"')

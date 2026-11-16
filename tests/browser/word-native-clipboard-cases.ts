@@ -1,3 +1,4 @@
+import { nativeDrawingFrameFixture } from "../../packages/office/tests/native-drawing-frame-fixture.js";
 import { nativeRangeFixture } from "../../packages/office/tests/native-range-fixture.js";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
@@ -71,6 +72,46 @@ async function current(page: Page) {
 export function registerWordNativeClipboardTests(
   mount: (page: Page, files: DocumentPackage, mode?: "edit" | "preview") => Promise<void>,
 ): void {
+  test("native drawing residuals retain complete frames while surrounding text stays editable", async ({
+    page,
+  }) => {
+    const source = openDocument(
+        importDocx(nativeDrawingFrameFixture("effects"), { documentId: "native-drawing-browser" }),
+        { kind: "document" },
+      ),
+      fragment = source
+        .snapshot()
+        .metadata.word!.nativeContent!.fragments.find((f) => f.kind !== "property")!,
+      nodes = [source.snapshot().metadata.word!.stories[0]!.rootNodeId];
+    for (let i = 0; i < nodes.length; i++) nodes.push(...source.getNode(nodes[i]!)!.childNodeIds);
+    const paragraph = nodes.find(
+      (id) => source.getNode(id)!.tagName === "p" && source.getNode(id)!.text.includes("AFTER"),
+    )!;
+    await mount(page, source.serialize(), "edit");
+    const frame = page.frameLocator("iframe");
+    await expect(frame.locator('[data-node-id="' + fragment.nodeId + '"]')).toBeVisible();
+    await frame.locator('[data-node-id="' + paragraph + '"]').evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      const selection = document.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      (node.closest("[data-office-editor]") as HTMLElement).focus();
+    });
+    await page.keyboard.insertText("-EDIT");
+    const edited = await current(page),
+      bytes = exportDocx(edited).bytes,
+      xml = new TextDecoder().decode(readDocumentZip(bytes).get("word/document.xml")!);
+    expect(xml).toContain('l="12700"');
+    expect(edited.getNode(paragraph)!.text).toContain("AFTER-EDIT");
+    expect(() => importDocx(bytes, { documentId: "drawing-preserved" })).not.toThrow();
+    expect(() =>
+      importDocx(bytes, { documentId: "drawing-strict", unsupportedContent: "reject" }),
+    ).toThrow();
+    await page.evaluate(() => window.paginationHost.session!.undo());
+    expect((await current(page)).snapshot().html).toBe(source.snapshot().html);
+  });
   test("native ranges keep zero-width source mapping through split and partial clipboard", async ({
     page,
   }) => {

@@ -288,6 +288,41 @@ export class DocxNativeImport {
         }
       }
     }
+    if (info.attribute) {
+      const key = [
+          "attribute",
+          info.node.uri,
+          info.node.name,
+          targetParent?.uri ?? "",
+          targetParent?.name ?? "",
+          info.attribute,
+        ].join("\n"),
+        seen = this.batched.get(key) ?? new WeakSet<XmlNode>(),
+        targets: XmlNode[] = [];
+      this.batched.set(key, seen);
+      const scan = (node: XmlNode): void => {
+        const parent = this.parents.get(node);
+        if (
+          node.uri === info.node.uri &&
+          node.name === info.node.name &&
+          parent?.uri === targetParent?.uri &&
+          parent?.name === targetParent?.name &&
+          node.attrs.has(info.attribute!)
+        )
+          targets.push(node);
+        for (const child of node.content) if (typeof child !== "string") scan(child);
+      };
+      for (const root of this.roots.values())
+        if (!seen.has(root)) {
+          seen.add(root);
+          scan(root);
+        }
+      if (targets.length) {
+        for (const node of targets)
+          if (!this.isDetached(node) && !this.recoverSource({ ...info, node }, error)) return false;
+        return true;
+      }
+    }
     const collection = info.collection,
       parent = collection ? this.parents.get(collection.owner) : undefined;
     if (collection && collection.owner.uri === W && propertyRoots.has(collection.owner.name)) {
