@@ -1,3 +1,4 @@
+import { NativeXmlResources, indexLegacyNativeResources } from "./word-native-xml.js";
 import { WordNativeFragmentCollectionSchema } from "../contracts/word.js";
 import type { WordNativeContent, WordMetadata } from "../contracts/word.js";
 import type { ParsedHtml } from "../document/html.js";
@@ -74,9 +75,9 @@ export function pruneRemovedWordImages(
   for (const path of removed) files.delete(path);
   files.set("manifest.json", encode(JSON.stringify(manifest)));
 }
-/** The native graph owns opaque resources. Core follows its declared edges,
- * without parsing OOXML or fetching relationships. Older unindexed fragments
- * conservatively retain their source-part dependencies. */
+/** The native graph owns opaque resources. Core follows declared edges and
+ * safely indexes legacy XML collection/OPC envelopes without interpreting Word
+ * properties or fetching relationships. Unknown envelopes retain their closure. */
 export function pruneWordNativeResources(
   word: WordMetadata,
   previous: DeepReadonly<WordNativeContent> | undefined,
@@ -115,6 +116,17 @@ export function pruneWordNativeResources(
     ]),
     ...native.parts.map((part) => part.assetPath),
   ]);
+  const xml = new NativeXmlResources(files, limits),
+    former = indexLegacyNativeResources(native, previous, xml);
+  // Old imports marked every unknown main-part relationship as a root, even
+  // when a source fragment was its sole owner. Persist the recovered ownership.
+  for (const relation of native.relationships)
+    if (
+      relation.root &&
+      (former.relationships.has(relation.sourcePart + "\n" + relation.id) ||
+        (!relation.external && former.parts.has(relation.target)))
+    )
+      relation.root = false;
   const selected = new Set<string>(),
     keepParts = new Set<string>(),
     parts = new Map(native.parts.map((part) => [part.sourcePart, part])),
@@ -168,40 +180,63 @@ export function pruneWordNativeResources(
     selected.has(relation.sourcePart + "\n" + relation.id),
   );
   const manifest = parseContract("document-manifest", readJson(files, "manifest.json")),
-    collections = new Map<string, Set<string>>();
+    collections = new Map<string, { format: "json" | "xml"; keys: Set<string> }>();
   for (const fragment of native.fragments)
-    if (fragment.fragmentFormat === "json") {
-      if (!fragment.fragmentKey) invalid("A native JSON fragment requires its collection key.");
-      const keys = collections.get(fragment.assetPath) ?? new Set<string>();
-      keys.add(fragment.fragmentKey);
-      collections.set(fragment.assetPath, keys);
+    if (fragment.fragmentKey) {
+      const format = fragment.fragmentFormat === "json" ? "json" : "xml",
+        selection = collections.get(fragment.assetPath) ?? { format, keys: new Set<string>() };
+      if (selection.format !== format) invalid("A native collection cannot mix encodings.");
+      selection.keys.add(fragment.fragmentKey);
+      collections.set(fragment.assetPath, selection);
+    } else if (fragment.fragmentFormat === "json")
+      invalid("A native JSON fragment requires its collection key.");
+  const wholeAssets = new Set(
+    native.fragments.filter((f) => !f.fragmentKey).map((f) => f.assetPath),
+  );
+  for (const [path, { format, keys }] of collections) {
+    if (wholeAssets.has(path)) continue;
+    let content: string | undefined;
+    if (format === "xml") content = xml.slice(path, keys);
+    else {
+      const parsed = WordNativeFragmentCollectionSchema.safeParse(readJson(files, path));
+      if (!parsed.success) invalid("The native fragment collection is invalid.");
+      checkLimit(Object.keys(parsed.data.fragments).length, limits.maxNodes);
+      const entries = [...keys].map((key) => {
+        const value = Object.hasOwn(parsed.data.fragments, key)
+          ? parsed.data.fragments[key]
+          : undefined;
+        if (value === undefined) invalid("The native fragment collection entry is missing.");
+        return [key, value] as const;
+      });
+      if (entries.length !== Object.keys(parsed.data.fragments).length)
+        content = JSON.stringify({ ...parsed.data, fragments: Object.fromEntries(entries) });
     }
-  for (const [path, keys] of collections) {
-    const parsed = WordNativeFragmentCollectionSchema.safeParse(readJson(files, path));
-    if (!parsed.success) invalid("The native fragment collection is invalid.");
-    checkLimit(Object.keys(parsed.data.fragments).length, limits.maxNodes);
-    const entries = [...keys].map((key) => {
-      const value = Object.hasOwn(parsed.data.fragments, key)
-        ? parsed.data.fragments[key]
-        : undefined;
-      if (value === undefined) invalid("The native fragment collection entry is missing.");
-      return [key, value] as const;
-    });
-    if (entries.length === Object.keys(parsed.data.fragments).length) continue;
-    const bytes = encode(
-      JSON.stringify({ ...parsed.data, fragments: Object.fromEntries(entries) }),
-    );
+    if (content === undefined) continue;
+    if (content.startsWith("<?xml")) {
+      const end = content.indexOf("?>");
+      content =
+        content.slice(0, end).replace(/encoding\s*=\s*["'][^"']*["']/i, 'encoding="UTF-8"') +
+        content.slice(end);
+    }
+    const bytes = encode(content);
     checkLimit(bytes.byteLength, limits.maxFileBytes);
     const sha256 = assetDigest(bytes),
-      next = "assets/native-fragments-" + sha256 + ".json",
+      next = "assets/native-fragments-" + sha256 + "." + format,
       existing = files.get(next);
     if (existing && assetDigest(existing) !== sha256)
       invalid("A native collection resource path is already occupied.");
     files.set(next, bytes);
     if (!manifest.assets.some((asset) => asset.path === next))
-      manifest.assets.push({ path: next, mimeType: "application/json", sha256 });
+      manifest.assets.push({
+        path: next,
+        mimeType: format === "json" ? "application/json" : "application/xml",
+        sha256,
+      });
     for (const fragment of native.fragments)
-      if (fragment.assetPath === path && fragment.fragmentFormat === "json")
+      if (
+        fragment.assetPath === path &&
+        (fragment.fragmentFormat === "json" ? "json" : "xml") === format
+      )
         fragment.assetPath = next;
     owned.add(path);
   }

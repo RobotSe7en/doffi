@@ -72,6 +72,63 @@ async function current(page: Page) {
 export function registerWordNativeClipboardTests(
   mount: (page: Page, files: DocumentPackage, mode?: "edit" | "preview") => Promise<void>,
 ): void {
+  test("legacy native deletion slices private entries and undo restores original resources", async ({
+    page,
+  }, info) => {
+    const source = openDocument(
+        legacyNativeContent(
+          importDocx(wordNativeContentFixture(), { documentId: "legacy-delete-browser" }),
+        ),
+        { kind: "document" },
+      ),
+      atoms = source
+        .snapshot()
+        .metadata.word!.nativeContent!.fragments.filter((f) => f.kind === "block"),
+      before = source.serialize();
+    await mount(page, before, "edit");
+    for (const [index, atom] of atoms.entries()) {
+      await page.evaluate((nodeId) => {
+        const session = window.paginationHost.session!,
+          snapshot = session.snapshot();
+        session.commit(
+          session.prepare({
+            protocolVersion: 1,
+            documentId: snapshot.manifest.documentId,
+            baseRevision: snapshot.manifest.revision,
+            operations: [{ op: "removeNode", nodeId }],
+          }),
+        );
+      }, atom.nodeId!);
+      const model = await current(page),
+        files = model.serialize();
+      expect(files.has(atoms[0]!.assetPath)).toBe(false);
+      for (const bytes of files.values()) {
+        expect(new TextDecoder().decode(bytes)).not.toContain("SELECTED-NATIVE");
+        if (index === atoms.length - 1)
+          expect(new TextDecoder().decode(bytes)).not.toContain("PRIVATE-NATIVE-OUTSIDE");
+      }
+      if (index === 0)
+        await expect(
+          page.frameLocator("iframe").locator('[data-node-id="' + atoms[1]!.nodeId + '"]'),
+        ).toBeVisible();
+      const output = exportDocx(model).bytes,
+        path = info.outputPath("legacy-delete-" + index + ".docx");
+      writeFileSync(path, output);
+      await info.attach("legacy-delete-" + index + ".docx", {
+        path,
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      expect(() => importDocx(output, { documentId: "legacy-delete-reopen" })).not.toThrow();
+    }
+    await page.evaluate(() => {
+      window.paginationHost.session!.undo();
+      window.paginationHost.session!.undo();
+    });
+    const restored = (await current(page)).serialize();
+    expect([...restored.keys()].sort()).toEqual([...before.keys()].sort());
+    for (const [path, bytes] of before)
+      if (path !== "manifest.json") expect(restored.get(path)).toEqual(bytes);
+  });
   test("native drawing residuals retain complete frames while surrounding text stays editable", async ({
     page,
   }) => {

@@ -92,6 +92,9 @@ importers:
       parse5:
         specifier: 8.0.1
         version: 8.0.1
+      saxes:
+        specifier: 6.0.0
+        version: 6.0.0(patch_hash=70475d62791419524500c8ceb49dd00060d7844990e6603e323fb53a26ee1afd)
       zod:
         specifier: 4.1.12
         version: 4.1.12
