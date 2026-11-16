@@ -122,7 +122,7 @@ export function validateWord(
           if (
             fragment.kind !== "property" &&
             (owner.attributes["data-word-native-object"] !== fragment.nativeId ||
-              html.getNode(fragment.nodeId)!.text !== "\ufffc")
+              html.getNode(fragment.nodeId)!.text !== (fragment.rangeBoundary ? "" : "\ufffc"))
           )
             invalid("Native objects require an intact atomic source placeholder.");
         } else if (fragment.kind !== "property") invalid("Native objects must have a source node.");
@@ -174,6 +174,57 @@ export function validateWord(
       }
       return undefined;
     };
+    if (word.nativeContent) {
+      const native = word.nativeContent;
+      const rangePairs = new Map<
+        string,
+        {
+          side: string;
+          story: string | undefined;
+          identity: string;
+          nodeId: string;
+          ordinal: number;
+        }[]
+      >();
+      for (const fragment of native.fragments) {
+        if (
+          fragment.rangeBoundary &&
+          (fragment.kind !== "inline" || !fragment.rangeBoundaries?.length)
+        )
+          invalid("A native boundary requires its indexed inline range.");
+        for (const [ordinal, boundary] of (fragment.rangeBoundaries ?? []).entries()) {
+          if (boundary.active === false) continue;
+          if (!fragment.nodeId || fragment.kind === "property")
+            invalid("A native range requires a source object owner.");
+          const endpoints = rangePairs.get(boundary.rangeId) ?? [];
+          endpoints.push({
+            side: boundary.side,
+            story: storyOf(fragment.nodeId),
+            identity: fragment.sourcePart + "\n" + boundary.family + "\n" + boundary.sourceId,
+            nodeId: fragment.nodeId,
+            ordinal,
+          });
+          rangePairs.set(boundary.rangeId, endpoints);
+        }
+      }
+      for (const endpoints of rangePairs.values()) {
+        if (
+          endpoints.length !== 2 ||
+          endpoints[0]!.side === endpoints[1]!.side ||
+          endpoints[0]!.story !== endpoints[1]!.story ||
+          endpoints[0]!.identity !== endpoints[1]!.identity
+        )
+          invalid("A preserved native range requires paired endpoints in one story.");
+        const start = endpoints.find((e) => e.side === "start")!,
+          end = endpoints.find((e) => e.side === "end")!;
+        if (
+          start.nodeId === end.nodeId
+            ? start.ordinal >= end.ordinal
+            : order.get(start.nodeId)! > order.get(end.nodeId)!
+        )
+          invalid("A preserved native range is reversed.");
+      }
+    }
     if (word.stories.filter((story) => story.kind === "main").length !== 1)
       invalid("Word requires exactly one main story.");
     for (const story of word.stories) {

@@ -775,6 +775,24 @@ class Importer {
       this.fieldResult(object);
       return;
     }
+    if (this.native?.preservedMove(source))
+      unsupported(
+        source,
+        "A move crossing a native object boundary remains preserved as native content.",
+      );
+    if (
+      this.native &&
+      source.uri === W &&
+      /^(?:bookmark|perm|(?:moveFrom|moveTo|customXmlIns|customXmlDel|customXmlMoveFrom|customXmlMoveTo)Range)(?:Start|End)$/.test(
+        source.name,
+      )
+    ) {
+      const marker = this.make("span");
+      if (this.native.rangeMarker(source, marker.attrs)) {
+        parent.children.push(marker);
+        return;
+      }
+    }
     if (source.uri === M && source.name === "oMath") {
       this.math(source, parent, "inline");
       return;

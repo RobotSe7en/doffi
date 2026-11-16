@@ -258,7 +258,7 @@ export class PreviewSource {
         if (viewNodeRole(node) === "remove") return;
         const element = node.nodeType === 1 ? (node as HTMLElement) : undefined,
           atomic = element?.matches(
-            "br,img,[data-word-tab],[data-word-drawing],[data-word-native-object],[data-word-note-reference],[data-word-note-number],[data-word-equation]",
+            "br,img,[data-word-tab],[data-word-drawing],[data-word-native-object]:not([data-word-native-boundary]),[data-word-note-reference],[data-word-note-number],[data-word-equation]",
           ),
           size = node.nodeType === 3 ? node.textContent!.length : atomic ? 1 : undefined;
         if (size !== undefined) {

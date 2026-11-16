@@ -86,7 +86,7 @@ export function wordCharacterGrid(
             if (
               (viewNodeRole(node) === "remove" && !isMeasuredViewContent(node)) ||
               element.matches(
-                "br,img,[data-word-tab],[data-word-drawing],[data-word-native-object],[data-word-note-reference],[data-word-equation]",
+                "br,img,[data-word-tab],[data-word-drawing],[data-word-native-object]:not([data-word-native-boundary]),[data-word-note-reference],[data-word-equation]",
               )
             ) {
               boundary++;

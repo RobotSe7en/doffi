@@ -105,6 +105,7 @@ export function attachWordContentNative(
   const nativeIds = new Map(
     supplied.fragments.map((f) => [f.nativeId, "word-content-native-" + createOpaqueId()]),
   );
+  const rangeIds = new Map<string, string>();
   native.fragments.push(
     ...supplied.fragments.map((original) => {
       const copy = JSON.parse(JSON.stringify(original)) as typeof original;
@@ -116,6 +117,14 @@ export function attachWordContentNative(
         );
       copy.nativeId = nativeIds.get(original.nativeId)!;
       copy.sourcePart = part(copy.sourcePart);
+      for (const boundary of copy.rangeBoundaries ?? []) {
+        let id = rangeIds.get(boundary.rangeId);
+        if (!id) {
+          id = "native-range-" + createOpaqueId();
+          rangeIds.set(boundary.rangeId, id);
+        }
+        boundary.rangeId = id;
+      }
       if (copy.dependencyParts) copy.dependencyParts = copy.dependencyParts.map(part);
       if (copy.numberingReferences)
         copy.numberingReferences = Object.fromEntries(

@@ -1,3 +1,4 @@
+import { NativeRangeIndex, nativeRangeControl } from "./docx-native-ranges.js";
 import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
 import { createAssetDescriptor, DocumentError } from "@doffi/core";
 import type { ContentDocumentManifest, WordMetadata } from "@doffi/core";
@@ -23,6 +24,7 @@ interface Pending {
   original: XmlNode;
   kind: "inline" | "block" | "property";
   runChild?: boolean;
+  rangeBoundary?: boolean;
   path: string[];
   label: string;
   id: string;
@@ -107,6 +109,13 @@ export class DocxNativeImport {
   private readonly suppressed = new Set<string>();
   private readonly recovered = new WeakMap<XmlNode, Set<string>>();
   private serial = 0;
+  private readonly sourcePositions = new WeakMap<XmlNode, number>();
+  private sourcePosition = 0;
+  private readonly rangeIndex = new NativeRangeIndex(
+    (node) => this.parents.get(node),
+    (node) => this.sourcePositions.get(node)!,
+  );
+  private preservedMoves = new WeakSet<XmlNode>();
   private readonly detached = new WeakSet<XmlNode>();
   private readonly batched = new Map<string, WeakSet<XmlNode>>();
   private readonly identities = new Map<string, NonNullable<Native["identities"]>[number]>();
@@ -132,6 +141,7 @@ export class DocxNativeImport {
     return view;
   }
   private index(root: XmlNode): void {
+    if (!this.sourcePositions.has(root)) this.sourcePositions.set(root, this.sourcePosition++);
     const counts = new Map<string, number>();
     for (const item of root.content)
       if (typeof item !== "string") {
@@ -155,7 +165,57 @@ export class DocxNativeImport {
     const kind = source.uri === WP ? "frame" : "object";
     this.identities.set(nodeId + "\n" + kind, { nodeId, sourcePart: source.part, sourceId, kind });
   }
+  rangeMarker(source: XmlNode, attrs: Record<string, string>): boolean {
+    if (!this.rangeIndex.preserves(source)) return false;
+    const item: Pending = {
+      original: source,
+      owner: source,
+      kind: "inline",
+      path: [],
+      rangeBoundary: true,
+      label: "原生范围边界：" + source.name,
+      id: "native-" + ++this.serial,
+    };
+    this.pending.push(item);
+    attrs["data-word-native-object"] = item.id;
+    attrs["data-word-native-boundary"] = "true";
+    this.bindings.set(source, attrs["data-node-id"]!);
+    return true;
+  }
+  preservedMove(source: XmlNode): boolean {
+    return this.preservedMoves.has(source);
+  }
   beginAttempt(): void {
+    for (let at = this.pending.length - 1; at >= 0; at--)
+      if (this.pending[at]!.rangeBoundary) this.pending.splice(at, 1);
+    this.rangeIndex.begin(this.pending.filter((p) => p.kind !== "property").map((p) => p.original));
+    this.preservedMoves = new WeakSet();
+    // Reconstruct source traversal across placeholders before finding move content.
+    const active = new Map<string, XmlNode[]>();
+    const scan = (source: XmlNode): void => {
+      const node = this.placeholders.get(source)?.original ?? source,
+        control = nativeRangeControl(node);
+      if (control && ["moveFrom", "moveTo"].includes(control.family)) {
+        const stack = active.get(control.family) ?? [];
+        if (control.side === "start") stack.push(node);
+        else {
+          const at = stack.findIndex((n) => nativeRangeControl(n)!.sourceId === control.sourceId);
+          if (at >= 0) stack.splice(at, 1);
+        }
+        active.set(control.family, stack);
+      }
+      if (
+        node.uri === W &&
+        ["moveFrom", "moveTo"].includes(node.name) &&
+        active.get(node.name)?.some((start) => this.rangeIndex.preserves(start))
+      )
+        this.preservedMoves.add(node);
+      for (const item of node.content) if (typeof item !== "string") scan(item);
+    };
+    for (const root of this.roots.values()) {
+      active.clear();
+      scan(root);
+    }
     this.bindings.clear();
     this.identities.clear();
   }
@@ -858,6 +918,10 @@ export class DocxNativeImport {
         ...(nodeId ? { nodeId } : {}),
         kind: item.kind,
         ...(item.runChild ? { runChild: true } : {}),
+        ...(item.rangeBoundary ? { rangeBoundary: true } : {}),
+        ...(item.kind !== "property"
+          ? { rangeBoundaries: this.rangeIndex.index(item.original) }
+          : {}),
         sourcePart: item.original.part,
         assetPath,
         fragmentKey: item.id,
@@ -955,6 +1019,20 @@ export class DocxNativeImport {
         part(item.sourcePart);
       }
     }
+    this.rangeIndex.validate();
+    const pairs = new Map<string, string[]>();
+    for (const fragment of native.fragments)
+      for (const boundary of fragment.rangeBoundaries ?? []) {
+        const sides = pairs.get(boundary.rangeId) ?? [];
+        sides.push(boundary.side);
+        pairs.set(boundary.rangeId, sides);
+      }
+    for (const sides of pairs.values())
+      if (sides.length !== 2 || sides[0] === sides[1])
+        throw new DocumentError(
+          "InvalidDocument",
+          "A preserved native range is unpaired or repeated.",
+        );
     if (fragmentXml.length) {
       const bytes = encoder.encode(
         JSON.stringify({

@@ -1,3 +1,4 @@
+import { nativeRangeControl, visitNativeRanges } from "./docx-native-ranges.js";
 import { NativeWordComments } from "./docx-native-comments.js";
 import type { NativeCommentBinding } from "./docx-native-comments.js";
 import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
@@ -406,6 +407,7 @@ export function restoreDocxNative(
       (fragment.dependencyParts === undefined ? id : isolatedStoreItemId(fragment.sourcePart, id))
     );
   };
+  const nativeRangeIds = new Map<string, string>();
   const fragmentXml = (
     fragment: DeepReadonly<NonNullable<WordMetadata["nativeContent"]>["fragments"][number]>,
   ): XmlNode => {
@@ -414,8 +416,74 @@ export function restoreDocxNative(
       attrs: new Map(node.attrs),
       content: node.content.map((item) => (typeof item === "string" ? item : copy(item))),
     });
-    const root = copy(readFragment(fragment)),
-      mapping = relationMaps.get(fragment.sourcePart);
+    let root = copy(readFragment(fragment));
+    const mapping = relationMaps.get(fragment.sourcePart);
+    if (fragment.rangeBoundaries) {
+      let at = 0;
+      const removed = new WeakSet<XmlNode>(),
+        handled = new WeakSet<XmlNode>();
+      visitNativeRanges(root, (node) => {
+        const control = nativeRangeControl(node);
+        if (!control) return;
+        handled.add(node);
+        const boundary = fragment.rangeBoundaries![at++];
+        if (
+          !boundary ||
+          boundary.family !== control.family ||
+          boundary.sourceId !== control.sourceId ||
+          boundary.side !== control.side
+        )
+          throw new DocumentError(
+            "InvalidDocument",
+            "A native range index does not match its fragment.",
+          );
+        if (boundary.active === false) removed.add(node);
+        else {
+          let id = nativeRangeIds.get(boundary.rangeId);
+          if (id === undefined) {
+            id = String(nativeRangeIds.size);
+            nativeRangeIds.set(boundary.rangeId, id);
+          }
+          (node.attrs as Map<string, string>).set(W + " id", id);
+        }
+      });
+      // Unselected compatibility branches can repeat the same logical control.
+      // Keep their outside pairing consistent without counting them twice.
+      visitNativeRanges(
+        root,
+        (node) => {
+          if (handled.has(node)) return;
+          const control = nativeRangeControl(node);
+          if (!control) return;
+          const boundary = fragment.rangeBoundaries!.find(
+            (b) =>
+              b.family === control.family &&
+              b.sourceId === control.sourceId &&
+              b.side === control.side,
+          );
+          if (!boundary) return;
+          if (boundary.active === false) removed.add(node);
+          else
+            (node.attrs as Map<string, string>).set(
+              W + " id",
+              nativeRangeIds.get(boundary.rangeId)!,
+            );
+        },
+        true,
+      );
+      if (at !== fragment.rangeBoundaries.length)
+        throw new DocumentError("InvalidDocument", "A native range index is incomplete.");
+      const prune = (node: XmlNode): void => {
+        for (let i = node.content.length - 1; i >= 0; i--) {
+          const child = node.content[i]!;
+          if (typeof child === "string") continue;
+          if (removed.has(child)) node.content.splice(i, 1);
+          else prune(child);
+        }
+      };
+      if (removed.has(root)) root = { ...root, uri: W, name: "r", attrs: new Map(), content: [] };
+      else prune(root);
+    }
     if (fragment.insertionSourceId) acceptNativeBlockInsertion(root, fragment.insertionSourceId);
     drawingIdentities.mark(root, fragment.sourcePart, fragment.nativeId);
     if (fragment.kind !== "property") nativeComments.restore(root, fragment.nodeId);

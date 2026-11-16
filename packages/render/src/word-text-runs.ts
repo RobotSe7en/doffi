@@ -78,7 +78,7 @@ export function composeWordTextRuns(
       if (
         !node.textContent ||
         parent.closest(
-          "math,[data-word-drawing],[data-word-native-object],[data-word-note-reference],[data-word-note-number],[data-word-note-separator],[data-word-equation]",
+          "math,[data-word-drawing],[data-word-native-object]:not([data-word-native-boundary]),[data-word-note-reference],[data-word-note-number],[data-word-note-separator],[data-word-equation]",
         )
       )
         continue;

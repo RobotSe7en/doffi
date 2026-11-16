@@ -188,6 +188,14 @@ export function copyWordClipboardNative(
     }
     fragments.push(copy);
   }
+  const rangeCounts = new Map<string, number>();
+  for (const fragment of fragments)
+    for (const boundary of fragment.rangeBoundaries ?? [])
+      if (boundary.active !== false)
+        rangeCounts.set(boundary.rangeId, (rangeCounts.get(boundary.rangeId) ?? 0) + 1);
+  for (const fragment of fragments)
+    for (const boundary of fragment.rangeBoundaries ?? [])
+      if (rangeCounts.get(boundary.rangeId) !== 2) boundary.active = false;
   const bytes = new TextEncoder().encode(
       JSON.stringify({ format: "doffi-word-native-fragments", version: 1, fragments: entries }),
     ),

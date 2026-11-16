@@ -195,6 +195,7 @@ export function copyWordStorySemantics(
       }
       return copy;
     };
+    const rangeIds = new Map<string, string>();
     const fragments = native.fragments
       .filter((item) => item.nodeId && identities.has(item.nodeId))
       .map((item, index) => {
@@ -212,6 +213,18 @@ export function copyWordStorySemantics(
           nodeId,
           nativeId,
           sourcePart,
+          ...(item.rangeBoundaries
+            ? {
+                rangeBoundaries: item.rangeBoundaries.map((b) => {
+                  let rangeId = rangeIds.get(b.rangeId);
+                  if (!rangeId) {
+                    rangeId = cloneId + "-range-" + rangeIds.size;
+                    rangeIds.set(b.rangeId, rangeId);
+                  }
+                  return { ...b, rangeId };
+                }),
+              }
+            : {}),
           ...(item.revisionSourceId
             ? {
                 revisionSourceId:

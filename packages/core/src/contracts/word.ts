@@ -52,6 +52,20 @@ export const WordNativeContentSchema = z.strictObject({
       nodeId: IdentifierSchema.optional(),
       kind: z.enum(["inline", "block", "property"]),
       runChild: z.boolean().optional(),
+      /** Zero-width preserved boundary, rather than a visible native object. */
+      rangeBoundary: z.boolean().optional(),
+      /** Ordered native range controls, indexed by the Office adapter. */
+      rangeBoundaries: z
+        .array(
+          z.strictObject({
+            rangeId: IdentifierSchema,
+            family: z.string().min(1),
+            sourceId: z.string().min(1),
+            side: z.enum(["start", "end"]),
+            active: z.boolean().optional(),
+          }),
+        )
+        .optional(),
       preview: z
         .strictObject({
           assetPath: PackagePathSchema,

@@ -1,3 +1,4 @@
+import { pruneWordNativeRanges } from "./session/word-native-ranges.js";
 import { refreshWordResetStyles } from "./session/word-reset-text.js";
 import {
   inheritWordEmptyParagraphText,
@@ -536,6 +537,10 @@ export function createDocumentSession(
         parsed,
         edit,
       );
+      parsed = parseEdited();
+    }
+    if (metadata.word) {
+      pruneWordNativeRanges(metadata.word, edit, parseEdited);
       parsed = parseEdited();
     }
     files.set(base.snapshot.manifest.entrypoint, encode(parsed.html));

@@ -1404,7 +1404,8 @@ class Exporter {
             (this.bookmarkStarts.has(node.attrs["data-node-id"] ?? "") ||
               this.bookmarkEnds.has(node.attrs["data-node-id"] ?? "") ||
               this.moveStarts.has(node.attrs["data-node-id"] ?? "") ||
-              this.moveEnds.has(node.attrs["data-node-id"] ?? ""))
+              this.moveEnds.has(node.attrs["data-node-id"] ?? "") ||
+              !!node.attrs["data-word-native-boundary"])
           )
             result.push(node);
       } else {

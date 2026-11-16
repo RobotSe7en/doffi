@@ -72,7 +72,9 @@ export function composeWordTypography(
   for (const paragraph of document.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6")) {
     if (
       !paragraph.closest('[data-office-kind="document"]') ||
-      paragraph.closest("[data-word-native-object],[data-word-drawing]")
+      paragraph.closest(
+        "[data-word-native-object]:not([data-word-native-boundary]),[data-word-drawing]",
+      )
     )
       continue;
     const css = view.getComputedStyle(paragraph),
@@ -107,7 +109,7 @@ export function composeWordTypography(
         if (
           viewNodeRole(node) === "remove" ||
           element.matches(
-            "br,img,[data-word-tab],[data-word-drawing],[data-word-native-object],[data-word-note-reference],[data-word-equation]",
+            "br,img,[data-word-tab],[data-word-drawing],[data-word-native-object]:not([data-word-native-boundary]),[data-word-note-reference],[data-word-equation]",
           )
         ) {
           previous = "other";

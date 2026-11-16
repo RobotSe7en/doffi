@@ -1,3 +1,4 @@
+import { nativeRangeFixture } from "../../packages/office/tests/native-range-fixture.js";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
@@ -70,6 +71,65 @@ async function current(page: Page) {
 export function registerWordNativeClipboardTests(
   mount: (page: Page, files: DocumentPackage, mode?: "edit" | "preview") => Promise<void>,
 ): void {
+  test("native ranges keep zero-width source mapping through split and partial clipboard", async ({
+    page,
+  }) => {
+    const source = openDocument(
+        importDocx(nativeRangeFixture("bookmark"), { documentId: "native-range-browser" }),
+        { kind: "document" },
+      ),
+      boundary = source
+        .snapshot()
+        .metadata.word!.nativeContent!.fragments.find((f) => f.rangeBoundary)!,
+      atom = source
+        .snapshot()
+        .metadata.word!.nativeContent!.fragments.find((f) => f.kind === "block")!,
+      paragraph = source.getNode(boundary.nodeId!)!.parentNodeId!;
+    await mount(page, source.serialize(), "edit");
+    const frame = page.frameLocator("iframe"),
+      editable = frame.locator('[data-node-id="' + paragraph + '"]');
+    await expect(frame.locator('[data-node-id="' + boundary.nodeId + '"]')).toBeHidden();
+    await editable.evaluate((node) => {
+      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT),
+        text = walker.nextNode()!,
+        range = document.createRange();
+      range.setStart(text, 3);
+      range.collapse(true);
+      const selection = document.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      (node.closest("[data-office-editor]") as HTMLElement).focus();
+    });
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("X");
+    const edited = await current(page),
+      xml = new TextDecoder().decode(
+        readDocumentZip(exportDocx(edited).bytes).get("word/document.xml")!,
+      );
+    expect(xml).toContain("bookmarkStart");
+    expect(xml).toContain("bookmarkEnd");
+    expect(xml).toContain("XORE");
+    expect(() => importDocx(exportDocx(edited).bytes, { documentId: "range-split" })).not.toThrow();
+    const copied = await copy(page, atom.nodeId!),
+      data = payload(copied);
+    expect(
+      data.semantics
+        .nativeContent!.fragments.flatMap((f) => f.rangeBoundaries ?? [])
+        .every((b) => b.active === false),
+    ).toBe(true);
+    await mount(page, createWordDocument({ documentId: "range-partial-target" }), "edit");
+    await paste(page, copied);
+    const target = await current(page),
+      output = new TextDecoder().decode(
+        readDocumentZip(exportDocx(target).bytes).get("word/document.xml")!,
+      );
+    expect(output).toContain("PRIVATE");
+    expect(output).not.toContain("bookmarkStart");
+    expect(output).not.toContain("bookmarkEnd");
+    expect(() =>
+      importDocx(exportDocx(target).bytes, { documentId: "range-target" }),
+    ).not.toThrow();
+  });
   for (const legacy of [false, true])
     for (const tracked of [false, true])
       test(
