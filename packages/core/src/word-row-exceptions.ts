@@ -12,7 +12,12 @@ export function wordRowExceptionProperties(
     Object.entries(css).flatMap(([key, value]) => {
       if (!key.startsWith(prefix) || value === "initial") return [];
       const name = key.slice(prefix.length);
-      return [[name.startsWith("cell-spacing") ? "--word-table-" + name : name, value]];
+      return [
+        [
+          name.startsWith("cell-spacing") || name === "width-type" ? "--word-table-" + name : name,
+          value,
+        ],
+      ];
     }),
   );
 }

@@ -955,7 +955,13 @@ export class DocxStyles {
     for (const [key, value] of Object.entries(this.margins(child(properties, "tblCellMar"))))
       result["--word-table-cell-" + key] = value;
     const width = child(properties, "tblW");
-    if (width) Object.assign(result, this.width(width, "width"));
+    if (width) {
+      Object.assign(result, this.width(width, "width"));
+      if (["auto", "nil"].includes(attr(width, "type") ?? "")) {
+        result.width = "auto";
+        result["--word-table-width-type"] = attr(width, "type")!;
+      }
+    }
     const layout =
       val(child(properties, "tblLayout")) ?? attr(child(properties, "tblLayout"), "type");
     if (layout) {

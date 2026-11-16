@@ -5,7 +5,7 @@ import { ownViewStyle } from "./view-nodes.js";
  * tables resolve their own spacing instead of inheriting a browser variable. */
 export function composeWordTableSpacing(document: Document, model: ContentDocumentModel): void {
   const snapshot = model.snapshot(),
-    tables = new Set(snapshot.metadata.word?.tables.map((table) => table.nodeId));
+    tables = new Map(snapshot.metadata.word?.tables.map((table) => [table.nodeId, table] as const));
   if (!tables.size) return;
   const css = new SourceStyleResolver(
       snapshot.styles.map((sheet) => sheet.css),
@@ -26,6 +26,18 @@ export function composeWordTableSpacing(document: Document, model: ContentDocume
       spacing = computed["--word-table-cell-spacing"];
     ownViewStyle(table, "border-spacing");
     table.style.borderSpacing = spacing ?? computed["border-spacing"] ?? "0pt";
+    if (computed["table-layout"] !== "fixed") {
+      const info = tables.get(id)!;
+      for (const [index, column] of [
+        ...table.querySelectorAll<HTMLTableColElement>(":scope > colgroup > col"),
+      ].entries())
+        column.style.width = (info.grid[index]! / info.grid.reduce((a, b) => a + b, 0)) * 100 + "%";
+      if (!computed.width || computed.width === "auto") {
+        ownViewStyle(table, "width", "max-width");
+        table.style.width = info.grid.reduce((a, b) => a + b, 0) + "pt";
+        table.style.maxWidth = "100%";
+      }
+    }
     if (spacing !== undefined) {
       ownViewStyle(table, "border-collapse");
       table.style.borderCollapse =

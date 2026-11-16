@@ -184,3 +184,8 @@ type CellValueKind = "blank" | "text" | "number" | "boolean" | "error" | "formul
 ### Word 行级表格例外
 
 行的 `--word-row-exception-*` CSS 声明保存原生 `tblPrEx`，包括首选宽度、对齐／缩进、边框、底纹、默认单元格边距、布局和外观位；它们不是整表直接属性。`formatWordTable.rowExceptionProperties` 可按 `rowIndex` 设置或以 null 清除属性。格式修订的 `tableException` 历史只拥有这组声明，并原生输出为 `tblPrExChange`。行宽度／偏移的内容框及纵向合并的逐行绘制均为可移除视图，正文、UTF-16 选区和撤销继续使用原源树。
+
+
+### Word 自动表格网格
+
+合法的空／零宽／动态扩展原生网格由真实行、单元格跨度、省略区域及首选尺寸补齐为可编辑的正尺寸 `word.tables[].grid`。该网格仍是唯一源中的布局提示；自动布局的字体测量和行分页不写回源。`table-layout` 与 `width` 控制自动／固定布局和首选宽度，原生 auto／nil 宽度类型保存为 `--word-table-width-type`。显式列宽调整进入固定布局，面板可再切换；所有变化复用表格格式／网格修订、冲突保护和撤销。

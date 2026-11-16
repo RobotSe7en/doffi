@@ -300,6 +300,57 @@ export function createWordTableControls(
         },
       ]),
     );
+    const tableCss = rowStyleResolver.get(projectRow(tableId)),
+      layoutMode = choose(
+        "表格布局算法",
+        [
+          ["auto", "根据内容自动调整"],
+          ["fixed", "固定列宽"],
+        ],
+        tableCss["table-layout"] ?? "auto",
+      ),
+      preferredMode = choose(
+        "表格首选宽度类型",
+        [
+          ["auto", "自动"],
+          ["pt", "磅"],
+          ["percent", "百分比"],
+        ],
+        !tableCss.width || tableCss.width === "auto"
+          ? "auto"
+          : tableCss.width.endsWith("%")
+            ? "percent"
+            : "pt",
+      ),
+      preferredWidth = field(
+        "表格首选宽度",
+        parseFloat(tableCss.width ?? "0") || grid?.reduce((a, b) => a + b, 0) || 468,
+      );
+    preferredWidth.step = ".1";
+    button("应用表格布局", () => {
+      const width = Number(preferredWidth.value);
+      if (preferredMode.value !== "auto" && (!Number.isFinite(width) || width <= 0))
+        throw new DocumentError("InvalidOperation", "表格首选宽度必须大于零。");
+      apply([
+        {
+          op: "formatWordTable",
+          nodeId: tableId,
+          properties: {
+            "table-layout": layoutMode.value,
+            width:
+              preferredMode.value === "auto"
+                ? "auto"
+                : width + (preferredMode.value === "percent" ? "%" : "pt"),
+            "--word-table-width-type":
+              preferredMode.value === "auto"
+                ? "auto"
+                : preferredMode.value === "percent"
+                  ? "pct"
+                  : "dxa",
+          },
+        },
+      ]);
+    });
     const position = rowStyleResolver.get(projectRow(tableId)),
       floating = choose(
         "表格文字环绕",

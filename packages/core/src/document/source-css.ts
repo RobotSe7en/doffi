@@ -790,6 +790,7 @@ export class SourceStyleResolver {
             key === "--word-table-overlap" ||
             key.startsWith("--word-table-position-") ||
             key === "--word-table-bidi" ||
+            key === "--word-table-width-type" ||
             key.startsWith("--word-table-cell-spacing") ||
             key.startsWith("--word-table-cell-padding-") ||
             key.startsWith("--word-row-cell-spacing") ||

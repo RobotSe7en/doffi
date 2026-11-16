@@ -1,3 +1,7 @@
+import {
+  dynamicGridFixture,
+  dynamicTableLayoutFixture,
+} from "../../packages/office/tests/dynamic-grid-fixture.js";
 import { registerWordNativeClipboardTests } from "./word-native-clipboard-cases.js";
 import { registerWordCommentClipboardTests } from "./word-comment-clipboard-cases.js";
 import { registerWordListClipboardTests } from "./word-list-clipboard-cases.js";
@@ -8847,3 +8851,151 @@ for (const count of [3, 60])
       await page.screenshot({ path: testInfo.outputPath("row-exceptions.png") });
     },
   );
+
+for (const [grid, span] of [
+  ["", 1],
+  ['<w:gridCol w:w="0"/>', 1],
+  ['<w:gridCol w:w="1440"/>', 2],
+] as const)
+  test(
+    "inferred native table grids expose actual input, drag and layout controls " + grid + span,
+    async ({ page }, testInfo) => {
+      await mount(
+        page,
+        importDocx(dynamicGridFixture(grid, span), {
+          documentId: "inferred-ui",
+          unsupportedContent: "reject",
+        }),
+        "edit",
+      );
+      const frame = page.frameLocator("iframe"),
+        table = frame.locator("table").first(),
+        p = table.locator("p").first();
+      await expect(p).toHaveText("DYNAMIC");
+      await p.click();
+      await page.keyboard.press("End");
+      await page.keyboard.insertText("EDIT");
+      await expect
+        .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
+        .toContain("DYNAMICEDIT");
+      const before = await page.evaluate(
+        () => window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid,
+      );
+      await p.click();
+      const handle = frame.getByRole("button", { name: "调整第 " + span + " 列宽度", exact: true });
+      await expect(handle).toBeVisible();
+      const r = (await handle.boundingBox())!;
+      await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(r.x + r.width / 2 + 12, r.y + r.height / 2);
+      await page.mouse.up();
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid.at(-1),
+          ),
+        )
+        .toBeGreaterThan(before.at(-1)!);
+      await p.click();
+      await page.evaluate(() =>
+        (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+          type: "word",
+          action: "tableSettings",
+        }),
+      );
+      await page.getByLabel("表格布局算法", { exact: true }).selectOption("auto");
+      await page.getByLabel("表格首选宽度类型", { exact: true }).selectOption("percent");
+      await page.getByLabel("表格首选宽度", { exact: true }).fill("80");
+      await page.getByRole("button", { name: "应用表格布局", exact: true }).click();
+      await expect(table).toHaveCSS("table-layout", "auto");
+      const data = await page.evaluate(() =>
+        [...window.paginationHost.session!.serialize()].map(
+          ([path, bytes]) => [path, [...bytes]] as const,
+        ),
+      );
+      let bytes = exportDocx(
+        openWordDocument(new Map(data.map(([path, bytes]) => [path, new Uint8Array(bytes)])), {
+          kind: "document",
+        }),
+      ).bytes;
+      writeFileSync(testInfo.outputPath("inferred-grid.docx"), bytes);
+      for (let pass = 0; pass < 2; pass++) {
+        const model = openWordDocument(
+          importDocx(bytes, { documentId: "inferred-reopen", unsupportedContent: "reject" }),
+          { kind: "document" },
+        );
+        expect(model.snapshot().html).toContain("DYNAMICEDIT");
+        expect(model.snapshot().metadata.word!.tables).toHaveLength(1);
+        bytes = exportDocx(model).bytes;
+      }
+      await page.getByRole("button", { name: "关闭表格设置", exact: true }).click();
+      await page.evaluate(() => window.paginationHost.session!.undo());
+      expect(
+        await page.evaluate(() => window.paginationHost.session!.snapshot().html),
+      ).not.toContain("sdk-");
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath("inferred-grid.png") });
+    },
+  );
+
+test("inferred native table grid merges and omissions share paginated input and split undo", async ({
+  page,
+}, testInfo) => {
+  await mount(
+    page,
+    importDocx(dynamicTableLayoutFixture(), {
+      documentId: "inferred-pages",
+      unsupportedContent: "reject",
+    }),
+    "edit",
+  );
+  expect((await page.evaluate(() => window.paginationHost.layout())).pages.length).toBeGreaterThan(
+    1,
+  );
+  const frame = page.frameLocator("iframe"),
+    table = frame.locator("table").first(),
+    p = table.locator("p").filter({ hasText: "MERGED" });
+  await p.click();
+  await page.keyboard.press("End");
+  await page.keyboard.insertText("EDIT");
+  await expect
+    .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
+    .toContain("MERGEDEDIT");
+  const before = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
+  await page.evaluate(() =>
+    (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+      type: "word",
+      action: "tableSettings",
+    }),
+  );
+  await page.getByRole("button", { name: "拆分单元格", exact: true }).click();
+  await expect(table.locator("tr").first().locator("td")).toHaveCount(2);
+  expect((await page.evaluate(() => window.paginationHost.layout())).pages.length).toBeGreaterThan(
+    1,
+  );
+  const data = await page.evaluate(() =>
+    [...window.paginationHost.session!.serialize()].map(
+      ([path, bytes]) => [path, [...bytes]] as const,
+    ),
+  );
+  let bytes = exportDocx(
+    openWordDocument(new Map(data.map(([path, bytes]) => [path, new Uint8Array(bytes)])), {
+      kind: "document",
+    }),
+  ).bytes;
+  writeFileSync(testInfo.outputPath("inferred-grid.docx"), bytes);
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openWordDocument(
+      importDocx(bytes, { documentId: "inferred-pages-reopen", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(model.snapshot().html).toContain("MERGEDEDIT");
+    expect(model.snapshot().metadata.word!.tables[0]!.grid).toHaveLength(2);
+    bytes = exportDocx(model).bytes;
+  }
+  await page.getByRole("button", { name: "关闭表格设置", exact: true }).click();
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("inferred-grid.png") });
+});

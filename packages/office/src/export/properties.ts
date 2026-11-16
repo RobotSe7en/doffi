@@ -464,7 +464,10 @@ export function cellMargins(css: Css, name: string): string {
   return out ? "<w:" + name + ">" + out + "</w:" + name + ">" : "";
 }
 export function tableProperties(css: Css): string {
-  let out = nativeWidth("tblW", css.width, css) + writeWordTablePosition(css);
+  let out =
+    (css.width === "auto" && ["auto", "nil"].includes(css["--word-table-width-type"] ?? "")
+      ? empty("w:tblW", { "w:type": css["--word-table-width-type"], "w:w": "0" })
+      : nativeWidth("tblW", css.width, css)) + writeWordTablePosition(css);
   if (css["--word-table-bidi"] !== undefined) {
     if (!["0", "1"].includes(css["--word-table-bidi"]))
       unsupported("A native table direction must be zero or one.");

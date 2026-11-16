@@ -1,3 +1,4 @@
+import { readEditableWordGrid, wordSectionTableWidth } from "./docx-table-grid.js";
 import { wordRowExceptionProperties, wordRowExceptionCellProperties } from "@doffi/core";
 import { commentControl, wordScope } from "./docx-native-comments.js";
 import { readWordEmptyContinuation } from "./docx-table-continuation.js";
@@ -215,6 +216,7 @@ class Importer {
         );
     }
   }
+  private tableAvailable = 468;
   private activeTable: WordMetadata["tables"][number] | undefined;
   private context(
     node: Html,
@@ -452,7 +454,25 @@ class Importer {
       const item = this.section(properties, section);
       this.sections.push(item);
     };
-    for (const item of this.compat(body)) {
+    const bodyItems = this.compat(body),
+      sectionProperties: (XmlNode | undefined)[] = [];
+    let upcoming: XmlNode | undefined;
+    for (let index = bodyItems.length - 1; index >= 0; index--) {
+      const item = bodyItems[index]!;
+      const properties =
+        item.name === "sectPr"
+          ? item
+          : item.name === "p"
+            ? child(child(item, "pPr"), "sectPr")
+            : undefined;
+      if (properties) upcoming = properties;
+      sectionProperties[index] = upcoming;
+    }
+    for (const [index, item] of bodyItems.entries()) {
+      this.tableAvailable = wordSectionTableWidth(
+        sectionProperties[index],
+        this.sections.at(-1)?.pageSetup,
+      );
       if (item.uri === W && item.name === "sectPr") {
         if (settings) fail(item, "A body has repeated section properties.");
         settings = item;
@@ -1765,17 +1785,12 @@ class Importer {
       ...(styleId ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) } : {}),
     });
     const gridSource = child(source, "tblGrid");
-    check(gridSource, ["gridCol", "tblGridChange"]);
-    const grid = elements(gridSource, "gridCol").map((item) =>
-      measurePoints(attr(item, "w"), item, 20, 0),
+    const grid = readEditableWordGrid(
+      source,
+      this.styles,
+      this.tableAvailable,
+      this.opc.limits.maxNodes,
     );
-    if (grid.some((value) => value < 0))
-      fail(source, "A native table grid width cannot be negative.");
-    if (!grid.length || grid.some((value) => value === 0))
-      unsupported(
-        source,
-        "An automatically inferred native table grid is preserved with its layout.",
-      );
     this.word.tables.push({ nodeId: this.id(table), grid });
     let previous = new Map<number, { cell: Html; span: number; css: Css }>();
     const rows = elements(source, "tr");
@@ -1872,8 +1887,7 @@ class Importer {
       readWordFormatRevision(this.word, exceptions, htmlRow, "tableException", this.styles);
       this.native?.bind(row, htmlRow.attrs);
       table.children.push(htmlRow);
-      const requestedBefore = readWordRowGapCount(rowProperties, "before"),
-        before = requestedBefore > grid.length ? 0 : requestedBefore;
+      const before = readWordRowGapCount(rowProperties, "before");
       readWordRowGapCount(rowProperties, "after");
       const gap = (side: "before" | "after", start: number, count: number): Html =>
         this.make("td", {
@@ -1889,11 +1903,6 @@ class Importer {
         if (child(props, "cellIns") && child(props, "cellDel"))
           fail(props!, "A native cell can carry only one insertion, deletion or merge mark.");
         const span = number(attr(child(props, "gridSpan"), "val"), cell, 1);
-        if (column + span > grid.length)
-          unsupported(
-            source,
-            "A dynamically expanded native table grid is preserved with its layout.",
-          );
         if (span < 1) fail(cell, "A table cell exceeds its grid.");
         const merge = child(props, "vMerge");
         if (merge && (child(props, "cellIns") || child(props, "cellDel")))
@@ -2014,7 +2023,9 @@ class Importer {
             },
             tableInfo,
           );
-          const previousTable = this.activeTable;
+          const previousTable = this.activeTable,
+            previousAvailable = this.tableAvailable;
+          this.tableAvailable = grid.slice(column, column + span).reduce((a, b) => a + b, 0);
           this.activeTable = tableInfo;
           htmlCell.children.push(
             ...this.blocks(
@@ -2027,6 +2038,7 @@ class Importer {
             ),
           );
           this.activeTable = previousTable;
+          this.tableAvailable = previousAvailable;
           if (textDirection) htmlCell.attrs["data-word-text-direction"] = textDirection;
           readWordFormatRevision(this.word, props, htmlCell, "cell", this.styles);
           for (const [kind, name] of [

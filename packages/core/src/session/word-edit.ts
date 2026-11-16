@@ -906,8 +906,10 @@ export function applyWordOperation(
           limits,
           styles,
         );
-      if (operation.change.kind === "resize" && operation.change.grid)
+      if (operation.change.kind === "resize" && operation.change.grid) {
         edit.sourceStyle(operation.nodeId, "width", result.width + "pt");
+        edit.sourceStyle(operation.nodeId, "table-layout", "fixed");
+      }
       if (
         preserveWidth ||
         (operation.change.kind === "resize" && operation.change.grid) ||
@@ -942,7 +944,7 @@ export function applyWordOperation(
           ? rowIds
           : [rowIds[operation.rowIndex] ?? fail("The exception row exceeds the table.")];
       const allowed =
-        /^(?:width|margin-(?:left|right)|padding(?:-(?:top|right|bottom|left))?|border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|background-color|table-layout|--word-border-inside-[hv]|--word-table-cell-spacing(?:-type|-value)?|look-mask|indent|alignment)$/;
+        /^(?:width|margin-(?:left|right)|padding(?:-(?:top|right|bottom|left))?|border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|background-color|table-layout|--word-border-inside-[hv]|--word-table-cell-spacing(?:-type|-value)?|look-mask|indent|alignment|--word-table-width-type)$/;
       for (const [key, value] of Object.entries(operation.rowExceptionProperties)) {
         if (!allowed.test(key)) fail("This property is not a table row exception.");
         if (value !== null) {
