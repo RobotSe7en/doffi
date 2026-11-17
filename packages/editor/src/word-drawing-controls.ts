@@ -312,6 +312,30 @@ export function createWordDrawingControls(
     for (const input of Object.values(wrapDistances)) input.min = "0";
     layer.min = "0";
     layer.step = "1";
+    const polygonText = (l.wrapPolygon ?? []).map((point) => point.x + "," + point.y).join("; "),
+      polygon = field("环绕边界点（x,y；21600 为完整宽高）", polygonText, "text");
+    polygon.style.width = "320px";
+    polygon.maxLength = 100000;
+    const polygonLayout = (): Pick<WordDrawingLayout, "wrapPolygon" | "wrapPolygonEdited"> => {
+      if (polygon.value === polygonText)
+        return {
+          wrapPolygon: l.wrapPolygon ? l.wrapPolygon.map((point) => ({ ...point })) : undefined,
+          wrapPolygonEdited: l.wrapPolygonEdited,
+        };
+      if (!polygon.value.trim()) return { wrapPolygon: undefined, wrapPolygonEdited: undefined };
+      const points = polygon.value.split(/[;；]/).map((value) => {
+        const parts = value.trim().split(/[,，]/);
+        if (
+          parts.length !== 2 ||
+          parts.some((part) => !part.trim() || !Number.isSafeInteger(Number(part)))
+        )
+          throw new DocumentError("InvalidOperation", "环绕边界须为整数 x,y 坐标，以分号分隔。");
+        return { x: Number(parts[0]), y: Number(parts[1]) };
+      });
+      if (points.length < 3)
+        throw new DocumentError("InvalidOperation", "环绕边界至少需要三个点。");
+      return { wrapPolygon: points, wrapPolygonEdited: true };
+    };
     const geometry = (): WordDrawing["geometry"] => ({
       ...g,
       x: Number(x.value),
@@ -322,6 +346,7 @@ export function createWordDrawingControls(
     });
     const layout = (): WordDrawingLayout => ({
       ...absoluteLayout(l),
+      ...polygonLayout(),
       mode: mode.value as "inline" | "floating",
       wrap: wrap.value as NonNullable<WordDrawingLayout["wrap"]>,
       horizontal: horizontal.value as NonNullable<WordDrawingLayout["horizontal"]>,

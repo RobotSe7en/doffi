@@ -1,10 +1,18 @@
 import { DocumentError } from "@doffi/core";
 import type { ContentDocumentModel, DeepReadonly, WordDrawing } from "@doffi/core";
-import type { RenderedPage, RenderLimits } from "./contracts.js";
+import type { LayoutDiagnostic, RenderedPage, RenderLimits } from "./contracts.js";
 import type { PreviewSource } from "./source-index.js";
 import { cloneViewTree } from "./view-clone.js";
-import { markViewNode, ownViewStyle, viewNodeRole } from "./view-nodes.js";
+import {
+  hideFromViewSelection,
+  markViewNode,
+  measureViewContent,
+  ownViewStyle,
+  viewNodeRole,
+} from "./view-nodes.js";
 import { wordDrawingPosition } from "./word-drawing-position.js";
+import { avoidWordDrawingOverlap, wordWrapPoints } from "./word-wrap-geometry.js";
+import type { WrapBounds } from "./word-wrap-geometry.js";
 
 /** Floating paint lives outside the clipped text flow. The original atomic
  * source stays at its insertion point, alongside a reversible layout anchor. */
@@ -19,13 +27,32 @@ export function wordFloatingLayer(
     model.snapshot().metadata.sections?.map((section) => [section.sectionId, section]),
   );
   const containers = new Map<string, HTMLElement>(),
-    paints = new Map<HTMLElement, HTMLElement>();
+    paints = new Map<HTMLElement, HTMLElement>(),
+    cellSpaces = new Map<HTMLElement, HTMLElement>();
   let layer: HTMLElement | undefined;
+  let changed = false;
+  let diagnostics: readonly LayoutDiagnostic[] = [];
   return {
+    get diagnostics(): readonly LayoutDiagnostic[] {
+      return diagnostics;
+    },
+    get active(): boolean {
+      return entries.length > 0;
+    },
+    get changed(): boolean {
+      return changed;
+    },
+    reset(): void {
+      for (const space of cellSpaces.values()) space.remove();
+      cellSpaces.clear();
+    },
     add(drawing: DeepReadonly<WordDrawing>, frame: HTMLElement): void {
       entries.push({ drawing, frame });
     },
     measure(pages: readonly RenderedPage[], root: HTMLElement): void {
+      changed = false;
+      const overflow: LayoutDiagnostic[] = [];
+      diagnostics = overflow;
       if (!entries.length || !pages.length) return;
       ownViewStyle(root, "position", "isolation");
       root.style.position = "relative";
@@ -69,6 +96,15 @@ export function wordFloatingLayer(
         page: RenderedPage;
         position: ReturnType<typeof wordDrawingPosition>;
       }[] = [];
+      const placed = new Map<string, (WrapBounds & { allowOverlap: boolean })[]>();
+      let work = 0;
+      const reserve = () => {
+        if (++work > limits.maxNodes * 32)
+          throw new DocumentError(
+            "ResourceLimitExceeded",
+            "Floating object collisions exceed the render measurement budget.",
+          );
+      };
       for (const { drawing, frame } of ordered) {
         ownViewStyle(frame, "visibility", "pointer-events");
         frame.style.visibility = "hidden";
@@ -78,14 +114,8 @@ export function wordFloatingLayer(
           const a = anchor.getBoundingClientRect(),
             paragraph = anchor.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6")!,
             page = pageAt(a.top);
-          if (page && paragraph)
-            placements.push({
-              drawing,
-              frame,
-              anchor,
-              paragraph,
-              page,
-              position: wordDrawingPosition(
+          if (page && paragraph) {
+            const position = wordDrawingPosition(
                 drawing,
                 page,
                 origin,
@@ -93,7 +123,68 @@ export function wordFloatingLayer(
                 anchor,
                 sections.get(page.sectionId),
               ),
+              cell =
+                drawing.layout.layoutInCell !== false
+                  ? paragraph.closest<HTMLElement>("td,th")
+                  : null,
+              scope = page.pageId + ":" + (cell?.dataset.nodeId ?? "main"),
+              previous = placed.get(scope) ?? [],
+              points = wordWrapPoints(
+                [
+                  { x: 0, y: 0 },
+                  { x: 21600, y: 0 },
+                  { x: 21600, y: 21600 },
+                  { x: 0, y: 21600 },
+                ],
+                {
+                  left: position.left,
+                  top: position.top,
+                  width: drawing.geometry.width / 0.75,
+                  height: drawing.geometry.height / 0.75,
+                },
+                drawing.geometry,
+              ),
+              bounds = {
+                left: Math.min(...points.map((p) => p.x)),
+                right: Math.max(...points.map((p) => p.x)),
+                top: Math.min(...points.map((p) => p.y)),
+                bottom: Math.max(...points.map((p) => p.y)),
+              },
+              delta = avoidWordDrawingOverlap(
+                bounds,
+                drawing.layout.allowOverlap !== false,
+                previous,
+                reserve,
+              );
+            position.top += delta;
+            position.offsetY += delta * 0.75;
+            if (
+              delta > 0.1 &&
+              bounds.bottom + delta > origin.top + (page.rect.y + page.rect.height) / 0.75 + 0.1
+            )
+              overflow.push(
+                Object.freeze({
+                  code: "ContentOverflow",
+                  nodeId: drawing.nodeId,
+                  message: "Collision avoidance moves this drawing beyond its anchor page.",
+                }),
+              );
+            previous.push({
+              ...bounds,
+              top: bounds.top + delta,
+              bottom: bounds.bottom + delta,
+              allowOverlap: drawing.layout.allowOverlap !== false,
             });
+            placed.set(scope, previous);
+            placements.push({
+              drawing,
+              frame,
+              anchor,
+              paragraph,
+              page,
+              position,
+            });
+          }
         }
       }
       const retained = new Set(placements.map((placement) => placement.anchor)),
@@ -104,6 +195,7 @@ export function wordFloatingLayer(
           paints.delete(anchor);
         }
       let count = document.querySelectorAll("*").length;
+      const cellBottoms = new Map<HTMLElement, number>();
       // Read all source positions before inserting paint. Drawing layers
       // cannot perturb the next object's source measurements.
       for (const { drawing, frame, anchor, paragraph, page, position } of placements) {
@@ -133,12 +225,49 @@ export function wordFloatingLayer(
         paint.dataset.sdkWordSourceParagraph = paragraph.dataset.nodeId!;
         paint.dataset.sdkWordPositionX = String(position.offsetX);
         paint.dataset.sdkWordPositionY = String(position.offsetY);
+        paint.dataset.sdkWordLayoutLeft = String(position.left - origin.left);
+        paint.dataset.sdkWordLayoutTop = String(position.top - origin.top);
+        const cell =
+          drawing.layout.layoutInCell !== false ? paragraph.closest<HTMLElement>("td,th") : null;
+        if (cell) paint.dataset.sdkWordWrapCell = cell.dataset.nodeId!;
+        else delete paint.dataset.sdkWordWrapCell;
         paint.style.visibility = "visible";
         paint.style.pointerEvents = "auto";
         paint.style.position = "absolute";
         paint.style.left = position.left - origin.left - page.rect.x / 0.75 + "px";
         paint.style.top = position.top - origin.top - page.rect.y / 0.75 + "px";
         container.append(paint);
+        if (cell && drawing.layout.wrap !== "none" && !drawing.layout.behindText) {
+          const bottom =
+            paint.getBoundingClientRect().bottom + (drawing.layout.distances?.bottom ?? 0) / 0.75;
+          cellBottoms.set(cell, Math.max(cellBottoms.get(cell) ?? -Infinity, bottom));
+        }
+      }
+      // Reserve only the space below real cell content. This participates in
+      // row measurement without adding an authored node or changing row rules.
+      for (const [cell, bottom] of cellBottoms) {
+        let space = cellSpaces.get(cell);
+        if (!space) {
+          if (++count > limits.maxNodes)
+            throw new DocumentError(
+              "ResourceLimitExceeded",
+              "Floating cell layout exceeds the render node budget.",
+            );
+          space = markViewNode(document.createElement("div"));
+          measureViewContent(space);
+          hideFromViewSelection(space);
+          space.contentEditable = "false";
+          space.className = "sdk-word-cell-float-space";
+          space.style.cssText =
+            "height:0;padding:0;margin:0;border:0;pointer-events:none;user-select:none";
+          cell.append(space);
+          cellSpaces.set(cell, space);
+        }
+        const height = Math.max(0, bottom - space.getBoundingClientRect().top);
+        if (Math.abs((parseFloat(space.style.height) || 0) - height) > 0.1) {
+          space.style.height = height + "px";
+          changed = true;
+        }
       }
       for (const [key, container] of containers)
         if (!keptContainers.has(key)) {

@@ -1,4 +1,3 @@
-import { needsWordDrawingLineExclusion } from "./word-center-wrap.js";
 import { wordFloatingLayer } from "./word-floating-layer.js";
 import { wordDrawingPosition } from "./word-drawing-position.js";
 import type { PreviewSource } from "./source-index.js";
@@ -23,6 +22,9 @@ export function composeWordDrawings(
   source: PreviewSource,
 ): {
   readonly diagnostics: readonly LayoutDiagnostic[];
+  readonly active: boolean;
+  readonly changed: boolean;
+  reset(): void;
   measure(pages: readonly RenderedPage[], root: HTMLElement): void;
 } {
   const metadata = model.snapshot().metadata,
@@ -250,7 +252,7 @@ export function composeWordDrawings(
             wrap !== "none" &&
             !layout.behindText &&
             !(
-              needsWordDrawingLineExclusion(item) &&
+              item.layout.mode === "floating" &&
               paragraph.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
             );
         if (relative) {
@@ -309,15 +311,27 @@ export function composeWordDrawings(
     if (!child) compose(item);
   }
   return {
-    diagnostics: Object.freeze(
-      [...definitions.values()].flatMap((item) =>
-        item.kind === "chart"
-          ? (item.chart.native?.previewWarnings ?? []).map((message) =>
-              Object.freeze({ code: "NativeFormatting" as const, nodeId: item.nodeId, message }),
-            )
-          : [],
-      ),
-    ),
+    get active(): boolean {
+      return layer.active;
+    },
+    get changed(): boolean {
+      return layer.changed;
+    },
+    reset(): void {
+      layer.reset();
+    },
+    get diagnostics(): readonly LayoutDiagnostic[] {
+      return Object.freeze([
+        ...layer.diagnostics,
+        ...[...definitions.values()].flatMap((item) =>
+          item.kind === "chart"
+            ? (item.chart.native?.previewWarnings ?? []).map((message) =>
+                Object.freeze({ code: "NativeFormatting" as const, nodeId: item.nodeId, message }),
+              )
+            : [],
+        ),
+      ]);
+    },
     measure(pages, root) {
       const origin = root.getBoundingClientRect(),
         headerInstances = new Map<string, HTMLElement[]>();

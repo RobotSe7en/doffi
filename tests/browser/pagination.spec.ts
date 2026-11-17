@@ -1,3 +1,4 @@
+import { registerWordDrawingWrapTests } from "./word-drawing-wrap-cases.js";
 import { gridBoundaryFixture } from "../../packages/office/tests/grid-boundary-fixture.js";
 import {
   dynamicGridFixture,
@@ -9491,3 +9492,5 @@ for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as con
       expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
     },
   );
+
+registerWordDrawingWrapTests(mount);

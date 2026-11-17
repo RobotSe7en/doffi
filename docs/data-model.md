@@ -196,6 +196,10 @@ type CellValueKind = "blank" | "text" | "number" | "boolean" | "error" | "formul
 没有新增实际单元格的列插入仍生成同组 `tableGrid` 和单元格／行格式历史。当前与历史的物理行跨度、省略数共同约束列逆映射，拒绝时使用同一表格结构操作恢复最初网格与跨度。原始显示只投影视图，实际输入仍绑定当前网格；自己的待定插入可以部分／全部取消。不能证明完整逆映射的特殊原生历史继续保留。
 
 
-### Word 矩形浮动对象的两侧排文
+### Word 浮动对象与绘图环绕
 
-正文中的居中／偏移浮动表格及 `square`／`bothSides` 绘图使用实际行框的排除空间。排除、片段对齐及长词软断点只属于派生 DOM，不生成第二份源段落，也不进入剪贴板或文档包。布局切分遵守 UTF-16／变体选择符边界并刷新源索引；分页、连续视图、原生输入、选区和共享打印仍使用同一源。紧密／穿越环绕、完整避让、单元格与复杂节／重复故事组合见尚待实施的 R16～R18。
+正文中的居中／偏移浮动表格及绘图使用实际行框的排除空间。绘图的 `square`、`tight`、`through`、`topAndBottom` 与四种 `wrapSide` 参与重排；`none`／文字后方对象不排除文字。排除、片段对齐及长词软断点只属于派生 DOM，不生成第二份源段落，也不进入剪贴板或文档包。布局切分遵守 UTF-16／变体选择符边界并刷新源索引；分页、连续视图、原生输入、选区和共享打印仍使用同一源。
+
+`wrapPolygon` 保存原生边界坐标，未设置时使用对象矩形；`wrapPolygonEdited` 可选地保留用户编辑标记。Office 使用固定的 [21600×21600 坐标空间](https://learn.microsoft.com/en-us/answers/questions/405731/unit-for-coordinates-of-points-in-wrappolygon)，边界随根对象旋转／翻转；嵌套组合继续由同一根框架环绕。行级排除投影整个文字高度和四侧距离；紧密模式封闭行内凹口，穿越模式允许文字进入边界形成的开放区域，符合[原生穿越语义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.wordprocessing.wrapthrough?view=openxml-3.0.1)。边界点设置、环绕侧和开关修改均通过 `setWordDrawingLayout`，保留统一候选、冲突保护和撤销；原生导出不反写派生碰撞位移。
+
+同一布局区域中任一对象不允许重叠时，后出现对象向下避让，旋转后的外接框参与碰撞检查。`layoutInCell=true` 使用单元格可用框，环绕只作用于该单元格，并为自动行高预留必要空间；false 使用故事／页面参照，允许离开单元格。碰撞后越出锚点页面会返回 `ContentOverflow`。跨不等宽栏、连续节、跨页表格和重复故事的复杂定位／碰撞／分页组合仍归 R18，相对尺寸归 R17。

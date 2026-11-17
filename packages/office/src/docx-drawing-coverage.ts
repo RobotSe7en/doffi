@@ -36,9 +36,10 @@ rule(WP, "align posOffset");
 rule(WP, "extent", "cx cy");
 rule(WP, "effectExtent", "l t r b");
 rule(WP, "docPr", "id name descr");
-rule(WP, "cNvGraphicFramePr wrapNone wrapTopAndBottom");
-rule(WP, "wrapSquare", "wrapText");
-rule(WP, "wrapTight wrapThrough", "wrapText", names(WP, "wrapPolygon"));
+rule(WP, "cNvGraphicFramePr wrapNone");
+rule(WP, "wrapTopAndBottom", "distT distB");
+rule(WP, "wrapSquare", "wrapText distT distB distL distR");
+rule(WP, "wrapTight wrapThrough", "wrapText distL distR", names(WP, "wrapPolygon"));
 rule(WP, "wrapPolygon", "edited", names(WP, "start lineTo"));
 rule(A, "graphic", "", names(A, "graphicData"));
 rule(A, "graphicData", "uri", [
@@ -143,11 +144,6 @@ export function checkWordDrawingCoverage(source: XmlNode): void {
       ["x", "y"].some((n) => integer(node, n, 0) !== 0)
     )
       unsupported(node, "Native simple-position coordinates remain preserved with their drawing.");
-    if (node.uri === WP && node.name === "wrapPolygon" && bool(node, "edited", false))
-      unsupported(
-        node,
-        "Edited native wrap polygon properties remain preserved with their drawing.",
-      );
     if (
       node.uri === A &&
       node.name === "fillRect" &&

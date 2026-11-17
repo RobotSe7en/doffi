@@ -49,6 +49,7 @@ export const WordDrawingLayoutSchema = z.strictObject({
     .array(z.strictObject({ x: z.number(), y: z.number() }))
     .min(3)
     .optional(),
+  wrapPolygonEdited: z.boolean().optional(),
 });
 const crop = z.strictObject({
   left: z.number().nonnegative().lt(1),

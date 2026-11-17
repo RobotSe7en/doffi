@@ -287,9 +287,16 @@ export function writeWordDrawing(
         "<wp:" +
         tag +
         attributes({ wrapText: layout.wrapSide ?? "bothSides" }) +
-        '><wp:wrapPolygon edited="0">' +
+        "><wp:wrapPolygon" +
+        attributes(
+          layout.wrapPolygonEdited === undefined
+            ? {}
+            : { edited: layout.wrapPolygonEdited ? 1 : 0 },
+        ) +
+        ">" +
         empty("wp:start", { x: integer(polygon[0]!.x), y: integer(polygon[0]!.y) }) +
-        [...polygon.slice(1), polygon[0]!]
+        polygon
+          .slice(1)
           .map((point) => empty("wp:lineTo", { x: integer(point.x), y: integer(point.y) }))
           .join("") +
         "</wp:wrapPolygon></wp:" +

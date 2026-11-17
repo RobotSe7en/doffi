@@ -75,9 +75,24 @@ export function wordDrawingPosition(
     const cell = paragraph.closest<HTMLElement>("td,th");
     if (cell) {
       const rect = cell.getBoundingClientRect();
-      if (horizontal !== "character") h = { start: rect.left, size: rect.width };
+      const css = cell.ownerDocument.defaultView!.getComputedStyle(cell),
+        leftInset = (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.borderLeftWidth) || 0),
+        rightInset = (parseFloat(css.paddingRight) || 0) + (parseFloat(css.borderRightWidth) || 0),
+        topInset =
+          (parseFloat(css.paddingTop) || 0) +
+          (parseFloat(css.borderTopWidth) || 0) +
+          (l.distances?.top ?? 0) / 0.75,
+        bottomInset =
+          (parseFloat(css.paddingBottom) || 0) +
+          (parseFloat(css.borderBottomWidth) || 0) +
+          (l.distances?.bottom ?? 0) / 0.75;
+      if (horizontal !== "character")
+        h = { start: rect.left + leftInset, size: rect.width - leftInset - rightInset };
       if (vertical !== "line" && vertical !== "paragraph")
-        v = { start: rect.top, size: rect.height };
+        v = {
+          start: rect.top + topInset,
+          size: Math.max(g.height / 0.75, rect.height - topInset - bottomInset),
+        };
     }
   }
   const aligned = (
@@ -96,10 +111,26 @@ export function wordDrawingPosition(
   };
   const offsetX = aligned(l.alignH, h.size, g.width / 0.75, g.x, true),
     offsetY = aligned(l.alignV, v.size, g.height / 0.75, g.y, false);
+  let x = h.start + offsetX,
+    y = v.start + offsetY;
+  const cell = l.layoutInCell !== false ? paragraph.closest<HTMLElement>("td,th") : null;
+  if (cell) {
+    const bounds = cell.getBoundingClientRect(),
+      css = cell.ownerDocument.defaultView!.getComputedStyle(cell),
+      left =
+        bounds.left + (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.borderLeftWidth) || 0),
+      right =
+        bounds.right -
+        (parseFloat(css.paddingRight) || 0) -
+        (parseFloat(css.borderRightWidth) || 0),
+      top = bounds.top + (parseFloat(css.paddingTop) || 0) + (parseFloat(css.borderTopWidth) || 0);
+    x = Math.max(left, Math.min(x, Math.max(left, right - g.width / 0.75)));
+    y = Math.max(top, y);
+  }
   return {
-    left: h.start + offsetX,
-    top: v.start + offsetY,
-    offsetX: offsetX * 0.75,
-    offsetY: offsetY * 0.75,
+    left: x,
+    top: y,
+    offsetX: (x - h.start) * 0.75,
+    offsetY: (y - v.start) * 0.75,
   };
 }

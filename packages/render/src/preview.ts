@@ -526,6 +526,7 @@ export function mountPreview(
     composeWordContextualSpacing(iframe.contentDocument!, model);
     composeWordTypography(iframe.contentDocument!, model, limits);
     centeredWrap?.reset();
+    drawings?.reset();
     if (centeredWrap?.active) source.reindex();
     let pages: DocumentRenderReport["pages"] = [],
       nodePages: DocumentRenderReport["nodePages"] = {},
@@ -543,6 +544,7 @@ export function mountPreview(
       if (
         !fields?.changed &&
         !notes?.changed &&
+        !drawings?.changed &&
         !floatingTables?.changed &&
         !centeredWrap?.changed
       ) {
@@ -555,7 +557,7 @@ export function mountPreview(
       );
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
-    if (!pagination && centeredWrap?.active) {
+    if (!pagination && (centeredWrap?.active || drawings?.active)) {
       const origin = source.root.getBoundingClientRect(),
         snapshot = model.snapshot();
       const canvases = (snapshot.metadata.sections ?? []).flatMap((section, index) => {
@@ -589,9 +591,9 @@ export function mountPreview(
         source.clearInstances();
         drawings?.measure(canvases, source.root);
         floatingTables?.measure(canvases, source.root);
-        centeredWrap.measure(canvases, source.root);
-        if (centeredWrap.changed) source.reindex();
-        if (!floatingTables?.changed && !centeredWrap.changed) {
+        centeredWrap?.measure(canvases, source.root);
+        if (centeredWrap?.changed) source.reindex();
+        if (!drawings?.changed && !floatingTables?.changed && !centeredWrap?.changed) {
           stable = true;
           break;
         }

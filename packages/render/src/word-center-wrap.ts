@@ -1,3 +1,5 @@
+import { wordWrapIntervals, wordWrapPoints } from "./word-wrap-geometry.js";
+import type { WrapPoint } from "./word-wrap-geometry.js";
 import {
   DEFAULT_DOCUMENT_READ_LIMITS,
   DocumentError,
@@ -18,13 +20,7 @@ import {
 
 export function needsWordDrawingLineExclusion(drawing: DeepReadonly<WordDrawing>): boolean {
   const layout = drawing.layout;
-  return (
-    layout.mode === "floating" &&
-    (layout.alignH === "center" || (!layout.alignH && drawing.geometry.x > 0)) &&
-    !layout.behindText &&
-    (layout.wrap ?? "square") === "square" &&
-    (layout.wrapSide ?? "bothSides") === "bothSides"
-  );
+  return layout.mode === "floating" && !layout.behindText && (layout.wrap ?? "square") !== "none";
 }
 export function needsWordTableLineExclusion(css: Readonly<Record<string, string>>): boolean {
   const align = css["--word-table-position-x-align"];
@@ -44,6 +40,9 @@ interface Obstacle {
   right: number;
   top: number;
   bottom: number;
+  layout?: DeepReadonly<WordDrawing>["layout"];
+  points?: WrapPoint[] | undefined;
+  cell?: string | undefined;
 }
 /** Inline exclusions leave one logical paragraph and the original inline owners
  * intact. They split only UTF-16-safe Text boundaries and carry no source text.
@@ -101,7 +100,7 @@ export function wordCenterWrap(
     view = document.defaultView!;
   const spacers = new Map<
       HTMLElement,
-      { key: string; height: number; baseline: number; rtl: boolean }
+      { key: string; height: number; baseline: number; rtl: boolean; obstacle: Obstacle }
     >(),
     paragraphStyles = new Map<
       HTMLElement,
@@ -156,12 +155,22 @@ export function wordCenterWrap(
     measure(pages: readonly RenderedPage[], root: HTMLElement): void {
       changed = false;
       if (!active) return;
+      let work = 0,
+        nodes = document.querySelectorAll("*").length;
+      const reserve = () => {
+        if (++work > limits.maxNodes * 32)
+          throw new DocumentError(
+            "ResourceLimitExceeded",
+            "Word wrapping exceeds its measurement budget.",
+          );
+      };
       const obstacles: Obstacle[] = [],
         origin = root.getBoundingClientRect();
       const add = (
         node: HTMLElement,
         id: string,
         distances: { left: number; right: number; top: number; bottom: number },
+        drawing?: DeepReadonly<WordDrawing>,
       ) => {
         if (!node.getClientRects().length || view.getComputedStyle(node).visibility === "hidden")
           return;
@@ -173,24 +182,49 @@ export function wordCenterWrap(
             rect.top < origin.top + (page.rect.y + page.rect.height) / 0.75,
         );
         if (!page) return;
+        const points =
+          drawing && (drawing.layout.wrap === "tight" || drawing.layout.wrap === "through")
+            ? wordWrapPoints(
+                drawing.layout.wrapPolygon ?? [
+                  { x: 0, y: 0 },
+                  { x: 21600, y: 0 },
+                  { x: 21600, y: 21600 },
+                  { x: 0, y: 21600 },
+                ],
+                {
+                  left: origin.left + Number(node.dataset.sdkWordLayoutLeft),
+                  top: origin.top + Number(node.dataset.sdkWordLayoutTop),
+                  width: drawing.geometry.width / 0.75,
+                  height: drawing.geometry.height / 0.75,
+                },
+                drawing.geometry,
+                reserve,
+              )
+            : undefined;
+        const bounds = points
+          ? {
+              left: points.reduce((v, p) => Math.min(v, p.x), Infinity),
+              right: points.reduce((v, p) => Math.max(v, p.x), -Infinity),
+              top: points.reduce((v, p) => Math.min(v, p.y), Infinity),
+              bottom: points.reduce((v, p) => Math.max(v, p.y), -Infinity),
+            }
+          : rect;
         obstacles.push({
           key: id + ":" + page.pageId,
-          left: rect.left - distances.left / 0.75,
-          right: rect.right + distances.right / 0.75,
-          top: rect.top - distances.top / 0.75,
-          bottom: rect.bottom + distances.bottom / 0.75,
+          ...(drawing
+            ? { layout: drawing.layout, points, cell: node.dataset.sdkWordWrapCell }
+            : {}),
+          left: bounds.left - distances.left / 0.75,
+          right: bounds.right + distances.right / 0.75,
+          top: bounds.top - distances.top / 0.75,
+          bottom: bounds.bottom + distances.bottom / 0.75,
         });
       };
       for (const frame of document.querySelectorAll<HTMLElement>(
         ".sdk-word-floating-layer [data-sdk-word-object]",
       )) {
         const drawing = drawings.get(frame.dataset.sdkWordObject!);
-        if (drawing)
-          add(
-            frame,
-            drawing.nodeId,
-            drawing.layout.distances ?? { left: 0, right: 0, top: 0, bottom: 0 },
-          );
+        if (drawing) add(frame, drawing.nodeId, { left: 0, right: 0, top: 0, bottom: 0 }, drawing);
       }
       for (const table of document.querySelectorAll<HTMLTableElement>(
         ".sdk-word-floating-table > table[data-node-id]",
@@ -210,18 +244,16 @@ export function wordCenterWrap(
         });
       }
       const byKey = new Map(obstacles.map((item) => [item.key, item]));
-      let work = 0,
-        nodes = document.querySelectorAll("*").length;
-      const reserve = () => {
-        if (++work > limits.maxNodes * 32)
-          throw new DocumentError(
-            "ResourceLimitExceeded",
-            "Centered wrapping exceeds its measurement budget.",
-          );
-      };
       for (const [spacer, entry] of spacers) {
         const box = spacer.getBoundingClientRect(),
-          obstacle = byKey.get(entry.key);
+          raw = byKey.get(entry.key),
+          obstacle = raw
+            ? {
+                ...raw,
+                top: raw.top - (raw.layout?.distances?.top ?? 0) / 0.75,
+                bottom: raw.bottom + (raw.layout?.distances?.bottom ?? 0) / 0.75,
+              }
+            : undefined;
         if (
           !spacer.isConnected ||
           !obstacle ||
@@ -276,7 +308,12 @@ export function wordCenterWrap(
           )
             continue;
           const bounds = p.getBoundingClientRect(),
-            relevant = obstacles.filter((o) => overlaps(bounds, o));
+            relevant = obstacles.filter(
+              (o) =>
+                (!o.cell || p.closest("td,th")?.getAttribute("data-node-id") === o.cell) &&
+                bounds.bottom > o.top - (o.layout?.distances?.top ?? 0) / 0.75 &&
+                bounds.top < o.bottom + (o.layout?.distances?.bottom ?? 0) / 0.75,
+            );
           if (!relevant.length) continue;
           const css = view.getComputedStyle(p),
             rtl = css.direction === "rtl";
@@ -320,124 +357,178 @@ export function wordCenterWrap(
             const range = document.createRange();
             range.selectNodeContents(text);
             for (const line of range.getClientRects())
-              for (const obstacle of relevant) {
-                if (!overlaps(line, obstacle)) continue;
-                let low = 0,
-                  high = text.length;
-                while (low < high) {
-                  const mid = Math.floor((low + high) / 2),
-                    rect = charRect(text, mid, Math.min(text.length, mid + 1));
-                  if (rect.bottom <= line.top + 0.5) low = mid + 1;
-                  else high = mid;
-                }
-                while (low > 0 && !isDocumentTextBoundary(text.data, low)) low--;
-                const first = low;
-                for (let at = first; at < text.length; ) {
-                  let end = at + 1;
-                  while (end < text.length && !isDocumentTextBoundary(text.data, end)) end++;
-                  const glyph = charRect(text, at, end);
-                  if (glyph.top >= line.bottom - 0.5) break;
-                  if (overlaps(glyph, obstacle)) {
-                    // Keep an ordinary Latin word together when it fits a side.
-                    if (/[A-Za-z0-9]/.test(text.data[at] ?? "")) {
-                      let start = at,
-                        end = at + 1;
-                      while (start > first && /[A-Za-z0-9]/.test(text.data[start - 1] ?? "")) {
-                        reserve();
-                        start--;
-                      }
-                      while (end < text.length && /[A-Za-z0-9]/.test(text.data[end] ?? "")) {
-                        reserve();
-                        end++;
-                      }
-                      const font = view.getComputedStyle(text.parentElement!);
-                      context.font = font.font;
-                      const wordWidth =
-                        context.measureText(text.data.slice(start, end)).width +
-                        (parseFloat(font.letterSpacing) || 0) * (end - start);
-                      const available = Math.max(
-                        obstacle.left - bounds.left,
-                        bounds.right - obstacle.right,
-                      );
-                      if (wordWidth <= available) at = start;
-                      else if (!text.parentElement!.closest(".sdk-word-unbroken-run")) {
-                        if (++nodes > limits.maxNodes)
-                          throw new DocumentError(
-                            "ResourceLimitExceeded",
-                            "Long-word wrapping exceeds its render node budget.",
-                          );
-                        const word = start ? text.splitText(start) : text;
-                        if (end - start < word.length) word.splitText(end - start);
-                        const wrapper = markViewNode(document.createElement("span"), "unwrap");
-                        wrapper.className = "sdk-word-unbroken-run";
-                        wrapper.style.cssText = "word-break:break-all;overflow-wrap:anywhere";
-                        word.before(wrapper);
-                        wrapper.append(word);
-                        const widths = [...new Set(word.data)].map(
-                          (character) =>
-                            context.measureText(character).width +
-                            (parseFloat(font.letterSpacing) || 0),
-                        );
-                        const sides = [
+              for (const original of relevant)
+                for (const span of original.layout
+                  ? wordWrapIntervals(
+                      original,
+                      original.points,
+                      original.layout,
+                      line,
+                      bounds,
+                      rtl,
+                      reserve,
+                    )
+                  : [original]) {
+                  const obstacle: Obstacle = {
+                    ...original,
+                    ...span,
+                    top: original.top - (original.layout?.distances?.top ?? 0) / 0.75,
+                    bottom: original.bottom + (original.layout?.distances?.bottom ?? 0) / 0.75,
+                  };
+                  if (!overlaps(line, obstacle)) continue;
+                  let low = 0,
+                    high = text.length;
+                  while (low < high) {
+                    const mid = Math.floor((low + high) / 2),
+                      rect = charRect(text, mid, Math.min(text.length, mid + 1));
+                    if (rect.bottom <= line.top + 0.5) low = mid + 1;
+                    else high = mid;
+                  }
+                  while (low > 0 && !isDocumentTextBoundary(text.data, low)) low--;
+                  const first = low;
+                  for (let at = first; at < text.length; ) {
+                    let end = at + 1;
+                    while (end < text.length && !isDocumentTextBoundary(text.data, end)) end++;
+                    const glyph = charRect(text, at, end);
+                    if (glyph.top >= line.bottom - 0.5) break;
+                    if (overlaps(glyph, obstacle)) {
+                      // Keep an ordinary Latin word together when it fits a side.
+                      if (/[A-Za-z0-9]/.test(text.data[at] ?? "")) {
+                        let start = at,
+                          end = at + 1;
+                        while (start > first && /[A-Za-z0-9]/.test(text.data[start - 1] ?? "")) {
+                          reserve();
+                          start--;
+                        }
+                        while (end < text.length && /[A-Za-z0-9]/.test(text.data[end] ?? "")) {
+                          reserve();
+                          end++;
+                        }
+                        const font = view.getComputedStyle(text.parentElement!);
+                        context.font = font.font;
+                        const wordWidth =
+                          context.measureText(text.data.slice(start, end)).width +
+                          (parseFloat(font.letterSpacing) || 0) * (end - start);
+                        const available = Math.max(
                           obstacle.left - bounds.left,
                           bounds.right - obstacle.right,
-                        ].filter((width) => width > 1);
-                        const chunk = Math.max(
-                          1,
-                          Math.min(
-                            16,
-                            Math.floor(Math.min(...sides) / Math.max(0.1, ...widths)) - 1,
-                          ),
                         );
-                        if (nodes + Math.ceil(word.length / chunk) > limits.maxNodes)
-                          throw new DocumentError(
-                            "ResourceLimitExceeded",
-                            "Long-word soft breaks exceed the render node budget.",
+                        if (wordWidth <= available) at = start;
+                        else if (!text.parentElement!.closest(".sdk-word-unbroken-run")) {
+                          if (++nodes > limits.maxNodes)
+                            throw new DocumentError(
+                              "ResourceLimitExceeded",
+                              "Long-word wrapping exceeds its render node budget.",
+                            );
+                          const word = start ? text.splitText(start) : text;
+                          if (end - start < word.length) word.splitText(end - start);
+                          const wrapper = markViewNode(document.createElement("span"), "unwrap");
+                          wrapper.className = "sdk-word-unbroken-run";
+                          wrapper.style.cssText = "word-break:break-all;overflow-wrap:anywhere";
+                          word.before(wrapper);
+                          wrapper.append(word);
+                          const widths = [...new Set(word.data)].map(
+                            (character) =>
+                              context.measureText(character).width +
+                              (parseFloat(font.letterSpacing) || 0),
                           );
-                        const fragment = document.createDocumentFragment();
-                        for (let index = 0; index < word.length; index += chunk) {
-                          fragment.append(
-                            document.createTextNode(word.data.slice(index, index + chunk)),
+                          const sides = [
+                            obstacle.left - bounds.left,
+                            bounds.right - obstacle.right,
+                          ].filter((width) => width > 1);
+                          const chunk = Math.max(
+                            1,
+                            Math.min(
+                              16,
+                              Math.floor(Math.min(...sides) / Math.max(0.1, ...widths)) - 1,
+                            ),
                           );
-                          if (index + chunk < word.length) {
-                            const br = markViewNode(document.createElement("wbr"));
-                            softBreaks.add(br);
-                            fragment.append(br);
-                            nodes++;
+                          if (nodes + Math.ceil(word.length / chunk) > limits.maxNodes)
+                            throw new DocumentError(
+                              "ResourceLimitExceeded",
+                              "Long-word soft breaks exceed the render node budget.",
+                            );
+                          const fragment = document.createDocumentFragment();
+                          for (let index = 0; index < word.length; index += chunk) {
+                            fragment.append(
+                              document.createTextNode(word.data.slice(index, index + chunk)),
+                            );
+                            if (index + chunk < word.length) {
+                              const br = markViewNode(document.createElement("wbr"));
+                              softBreaks.add(br);
+                              fragment.append(br);
+                              nodes++;
+                            }
                           }
+                          word.replaceWith(fragment);
+                          longWords.add(wrapper);
+                          changed = true;
+                          return find();
                         }
-                        word.replaceWith(fragment);
-                        longWords.add(wrapper);
-                        changed = true;
-                        return find();
                       }
+                      while (at > 0 && !isDocumentTextBoundary(text.data, at)) at--;
+                      const boundary =
+                        at === first
+                          ? charRect(text, at, Math.min(text.length, at + 1))
+                          : charRect(text, at - 1, at);
+                      const x = rtl
+                        ? at === first
+                          ? boundary.right
+                          : boundary.left
+                        : at === first
+                          ? boundary.left
+                          : boundary.right;
+                      return { text, at, x, line, p, obstacle, rtl };
                     }
-                    while (at > 0 && !isDocumentTextBoundary(text.data, at)) at--;
-                    const boundary =
-                      at === first
-                        ? charRect(text, at, Math.min(text.length, at + 1))
-                        : charRect(text, at - 1, at);
-                    const x = rtl
-                      ? at === first
-                        ? boundary.right
-                        : boundary.left
-                      : at === first
-                        ? boundary.left
-                        : boundary.right;
-                    return { text, at, x, line, p, obstacle, rtl };
+                    at = end;
                   }
-                  at = end;
                 }
-              }
           }
         }
         return undefined;
       };
       for (let hit = find(); hit; hit = find()) {
+        const width = hit.rtl ? hit.x - hit.obstacle.left : hit.obstacle.right - hit.x;
+        const previous =
+          hit.at === 0 && hit.text.previousSibling?.nodeType === 1
+            ? (hit.text.previousSibling as HTMLElement)
+            : undefined;
+        const paragraphBox = hit.p.getBoundingClientRect();
+        const previousEntry = previous ? spacers.get(previous) : undefined;
+        // Glyph bounds can overlap their adjacent advance by a pixel (notably
+        // in WebKit's CJK runs). Extend an existing gap by that residual instead
+        // of treating a rounding/ink overlap as a wholly blocked text line.
+        if (
+          previous &&
+          previousEntry?.key === hit.obstacle.key &&
+          previous.style.display !== "block" &&
+          Math.abs(previous.getBoundingClientRect().top - previousEntry.baseline - hit.line.top) <
+            0.5
+        ) {
+          const next = (parseFloat(previous.style.width) || 0) + Math.max(1, width);
+          if (next < paragraphBox.width - 0.5) {
+            previous.style.width = next + "px";
+            changed = true;
+            continue;
+          }
+        }
+        const breakOnly = hit.rtl
+          ? hit.obstacle.left <= paragraphBox.left + 0.5 && hit.x < paragraphBox.right - 2
+          : hit.obstacle.right >= paragraphBox.right - 0.5 && hit.x > paragraphBox.left + 2;
+        const blocked =
+          !breakOnly &&
+          (width >= paragraphBox.width - 0.5 ||
+            (previous &&
+              spacers.get(previous)?.key === hit.obstacle.key &&
+              Math.abs(
+                previous.getBoundingClientRect().top -
+                  spacers.get(previous)!.baseline -
+                  hit.line.top,
+              ) < 0.5));
         if (++nodes > limits.maxNodes)
           throw new DocumentError(
             "ResourceLimitExceeded",
-            "Centered wrapping exceeds its render node budget.",
+            "Word wrapping exceeds its render node budget.",
           );
         const spacer = markViewNode(document.createElement("span"));
         hideFromViewSelection(spacer);
@@ -445,19 +536,6 @@ export function wordCenterWrap(
         spacer.className = "sdk-word-center-exclusion";
         spacer.contentEditable = "false";
         spacer.setAttribute("aria-hidden", "true");
-        const width = hit.rtl ? hit.x - hit.obstacle.left : hit.obstacle.right - hit.x;
-        const previous =
-          hit.at === 0 && hit.text.previousSibling?.nodeType === 1
-            ? (hit.text.previousSibling as HTMLElement)
-            : undefined;
-        const paragraphBox = hit.p.getBoundingClientRect();
-        const breakOnly = hit.rtl
-          ? hit.obstacle.left <= paragraphBox.left + 0.5 && hit.x < paragraphBox.right - 2
-          : hit.obstacle.right >= paragraphBox.right - 0.5 && hit.x > paragraphBox.left + 2;
-        const blocked =
-          !breakOnly &&
-          (width >= paragraphBox.width - 0.5 ||
-            (previous && spacers.get(previous)?.key === hit.obstacle.key));
         spacer.style.cssText = breakOnly
           ? "display:block;height:0;line-height:0;font-size:0;width:0;padding:0;margin:0;border:0;pointer-events:none;user-select:none"
           : blocked
@@ -473,6 +551,7 @@ export function wordCenterWrap(
             Math.max(0, spacer.getBoundingClientRect().top - hit.line.top),
           ),
           rtl: hit.rtl,
+          obstacle: hit.obstacle,
         });
         changed = true;
       }
@@ -480,7 +559,7 @@ export function wordCenterWrap(
         if (!old.right || aligned.has(p)) continue;
         const gaps = [...spacers].filter(([spacer]) => spacer.closest("p,h1,h2,h3,h4,h5,h6") === p);
         for (const [gap, entry] of gaps) {
-          const obstacle = byKey.get(entry.key),
+          const obstacle = byKey.has(entry.key) ? entry.obstacle : undefined,
             box = gap.getBoundingClientRect();
           if (!obstacle || gap.style.display === "block") continue;
           const top = box.top - entry.baseline,
@@ -530,7 +609,7 @@ export function wordCenterWrap(
             if (++nodes > limits.maxNodes)
               throw new DocumentError(
                 "ResourceLimitExceeded",
-                "Centered alignment exceeds its render node budget.",
+                "Word wrapping alignment exceeds its render node budget.",
               );
             const filler = markViewNode(document.createElement("span"));
             hideFromViewSelection(filler);

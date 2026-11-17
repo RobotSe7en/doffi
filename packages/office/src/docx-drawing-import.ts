@@ -268,11 +268,34 @@ export function importWordDrawing(
       )[wrap?.name as "wrapNone"] ?? "square";
     if (wrap && attr(wrap, "wrapText", ""))
       layout.wrapSide = attr(wrap, "wrapText", "") as NonNullable<WordDrawingLayout["wrapSide"]>;
+    if (wrap)
+      for (const [side, key] of [
+        ["top", "distT"],
+        ["right", "distR"],
+        ["bottom", "distB"],
+        ["left", "distL"],
+      ] as const)
+        if (attr(wrap, key, "") !== undefined) {
+          const value = integer(wrap, key);
+          if (value < 0) fail(wrap, "Wrap distances must be nonnegative.");
+          layout.distances![side] = value / 12700;
+        }
+    if (
+      wrap &&
+      (wrap.name === "wrapTight" || wrap.name === "wrapThrough") &&
+      elements(wrap, "wrapPolygon", WP).length !== 1
+    )
+      fail(wrap, "Tight and through wrapping require exactly one wrap polygon.");
     const polygon = child(wrap, "wrapPolygon", WP);
     if (polygon) {
+      if (attr(polygon, "edited", "") !== undefined)
+        layout.wrapPolygonEdited = valueBool(polygon, "edited");
       const start = child(polygon, "start", WP);
       if (!start) fail(polygon, "A wrap polygon start is missing.");
-      layout.wrapPolygon = [start, ...elements(polygon, "lineTo", WP)].map((node) => ({
+      const segments = elements(polygon, "lineTo", WP);
+      if (elements(polygon, "start", WP).length !== 1 || segments.length < 2)
+        fail(polygon, "A wrap polygon requires one start and at least two line segments.");
+      layout.wrapPolygon = [start, ...segments].map((node) => ({
         x: integer(node, "x"),
         y: integer(node, "y"),
       }));
