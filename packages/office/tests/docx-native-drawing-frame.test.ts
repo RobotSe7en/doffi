@@ -3,7 +3,7 @@ import { strFromU8, unzipSync } from "fflate";
 import { openDocument, createDocumentSession } from "@doffi/core";
 import { exportDocx, importDocx, importDocxWithReport } from "@doffi/office";
 import { nativeDrawingFrameFixture } from "./native-drawing-frame-fixture.js";
-for (const kind of ["size", "position"] as const)
+for (const kind of ["sizeExtension", "position"] as const)
   test(
     "unmodeled drawing " +
       kind +
@@ -12,7 +12,7 @@ for (const kind of ["size", "position"] as const)
       const original = nativeDrawingFrameFixture(kind);
       expect(() =>
         importDocx(original, { documentId: "strict-native-frame", unsupportedContent: "reject" }),
-      ).toThrow(/frame extension|position extension/);
+      ).toThrow(/frame extension|position extension|drawing attribute/);
       const imported = importDocxWithReport(original, { documentId: "native-frame" }),
         session = createDocumentSession(openDocument(imported.files, { kind: "document" })),
         snapshot = session.snapshot(),
@@ -50,7 +50,7 @@ for (const kind of ["size", "position"] as const)
       let bytes = exportDocx(session).bytes;
       for (let pass = 0; pass < 3; pass++) {
         const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
-        expect(xml).toContain(kind === "size" ? "sizeRelH" : "pctPosHOffset");
+        expect(xml).toContain(kind === "sizeExtension" ? "sizeRelH" : "pctPosHOffset");
         expect(xml).toContain("50000");
         expect(xml).toContain("EDIT");
         const model = openDocument(importDocx(bytes, { documentId: "native-frame-reopened" }), {
@@ -70,7 +70,7 @@ for (const kind of ["size", "position"] as const)
     },
   );
 test("more than one thousand identical drawing extensions recover in one bounded native collection", () => {
-  const imported = importDocxWithReport(nativeDrawingFrameFixture("size", 1100), {
+  const imported = importDocxWithReport(nativeDrawingFrameFixture("sizeExtension", 1100), {
       documentId: "native-frame-batch",
     }),
     model = openDocument(imported.files, { kind: "document" }),

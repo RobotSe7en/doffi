@@ -1,5 +1,45 @@
 import type { DocumentSection, DeepReadonly, WordDrawing } from "@doffi/core";
 import type { RenderedPage } from "./contracts.js";
+import { isDocumentTextBoundary } from "@doffi/core";
+import { isMeasuredViewContent, viewNodeRole } from "./view-nodes.js";
+
+/** A page gap may sit after a leading zero-width anchor. Find its first real
+ * following glyph so the floating object follows the paragraph onto that page. */
+export function wordDrawingLeadingTextRect(
+  paragraph: HTMLElement,
+  anchor: HTMLElement,
+): DOMRect | undefined {
+  const document = paragraph.ownerDocument,
+    walker = document.createTreeWalker(paragraph, 4);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    if (
+      !text.length ||
+      text.parentElement?.closest("[data-sdk-word-object],[data-word-native-object]")
+    )
+      continue;
+    let ignored = false;
+    for (let p: Node | null = text.parentNode; p && p !== paragraph; p = p.parentNode)
+      if (viewNodeRole(p) === "remove" && !isMeasuredViewContent(p)) {
+        ignored = true;
+        break;
+      }
+    if (
+      ignored ||
+      document.defaultView!.getComputedStyle(text.parentElement!).visibility !== "visible"
+    )
+      continue;
+    if (!(anchor.compareDocumentPosition(text) & 4)) return;
+    let end = 1;
+    while (end < text.length && !isDocumentTextBoundary(text.data, end)) end++;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, end);
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) return rect;
+  }
+  return;
+}
 
 /** Coordinates are measured after pagination and column projection. The
  * paragraph's CSS box can span several columns; its anchor identifies the
@@ -11,11 +51,12 @@ export function wordDrawingPosition(
   paragraph: HTMLElement,
   anchor: HTMLElement,
   section?: DeepReadonly<DocumentSection>,
+  anchorRect?: DOMRect,
 ): { left: number; top: number; offsetX: number; offsetY: number } {
   const g = drawing.geometry,
     l = drawing.layout,
     p = paragraph.getBoundingClientRect(),
-    a = anchor.getBoundingClientRect(),
+    a = anchorRect ?? anchor.getBoundingClientRect(),
     s = page.setup,
     m = s.margins;
   const left = surface.left + page.rect.x / 0.75,
@@ -26,7 +67,12 @@ export function wordDrawingPosition(
   const horizontal = l.horizontal ?? "column",
     vertical = l.vertical ?? "paragraph";
   let h = { start: left + m.left / 0.75, size: (s.width - m.left - m.right) / 0.75 },
-    v = { start: p.top, size: p.height };
+    v = {
+      start: anchorRect ? Math.max(p.top, top + m.top / 0.75) : p.top,
+      size: anchorRect
+        ? Math.max(a.height, p.bottom - Math.max(p.top, top + m.top / 0.75))
+        : p.height,
+    };
   if (horizontal === "page") h = { start: left, size: width };
   else if (horizontal === "character") h = { start: a.left, size: 0 };
   else if (["leftMargin", "rightMargin", "insideMargin", "outsideMargin"].includes(horizontal)) {

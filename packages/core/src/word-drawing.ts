@@ -96,7 +96,43 @@ export function wordDrawingTransforms(word: DeepReadonly<WordMetadata>, source: 
       !br.layout.alignV
     );
   };
-  return { world, parent, endpoint, root, paragraph, sameCanvas };
+  const connectorGeometry = (id: string): WordDrawing["geometry"] => {
+    const item = object(id);
+    if (item.kind !== "connector")
+      throw new DocumentError("InvalidOperation", "The target is not a connector.");
+    const binding = item.connector,
+      g = item.geometry;
+    if (!binding.startNodeId && !binding.endNodeId) return { ...g };
+    const matrix = world(id),
+      back = inverse(parent(id)),
+      a = point(
+        back,
+        binding.startNodeId
+          ? endpoint(binding.startNodeId, binding.startSite ?? 0)
+          : point(matrix, { x: 0, y: 0 }),
+      ),
+      b = point(
+        back,
+        binding.endNodeId
+          ? endpoint(binding.endNodeId, binding.endSite ?? 0)
+          : point(matrix, { x: g.width, y: g.height }),
+      );
+    const clean = (value: number): number => {
+      if (!Number.isFinite(value))
+        throw new DocumentError("InvalidOperation", "Connector geometry must be finite.");
+      return Math.abs(value) < 1e-10 ? 0 : value;
+    };
+    return {
+      x: clean(Math.min(a.x, b.x)),
+      y: clean(Math.min(a.y, b.y)),
+      width: clean(Math.abs(a.x - b.x)),
+      height: clean(Math.abs(a.y - b.y)),
+      rotation: 0,
+      flipH: b.x < a.x,
+      flipV: b.y < a.y,
+    };
+  };
+  return { world, parent, endpoint, root, paragraph, sameCanvas, connectorGeometry };
 }
 
 /** Update the native connector fallback in the same transaction as its targets. */
@@ -109,34 +145,6 @@ export function updateWordDrawingConnectors(word: WordMetadata, source: Source):
     for (const side of ["startNodeId", "endNodeId"] as const)
       if (binding[side] && !objects.has(binding[side]!)) delete binding[side];
     if (!binding.startNodeId && !binding.endNodeId) continue;
-    const g = item.geometry,
-      matrix = transforms.world(item.nodeId),
-      back = inverse(transforms.parent(item.nodeId));
-    const a = point(
-        back,
-        binding.startNodeId
-          ? transforms.endpoint(binding.startNodeId, binding.startSite ?? 0)
-          : point(matrix, { x: 0, y: 0 }),
-      ),
-      b = point(
-        back,
-        binding.endNodeId
-          ? transforms.endpoint(binding.endNodeId, binding.endSite ?? 0)
-          : point(matrix, { x: g.width, y: g.height }),
-      );
-    const clean = (value: number): number => {
-      if (!Number.isFinite(value))
-        throw new DocumentError("InvalidOperation", "Connector geometry must be finite.");
-      return Math.abs(value) < 1e-10 ? 0 : value;
-    };
-    item.geometry = {
-      x: clean(Math.min(a.x, b.x)),
-      y: clean(Math.min(a.y, b.y)),
-      width: clean(Math.abs(a.x - b.x)),
-      height: clean(Math.abs(a.y - b.y)),
-      rotation: 0,
-      flipH: b.x < a.x,
-      flipV: b.y < a.y,
-    };
+    item.geometry = transforms.connectorGeometry(item.nodeId);
   }
 }

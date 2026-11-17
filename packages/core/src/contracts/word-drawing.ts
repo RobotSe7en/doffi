@@ -45,6 +45,32 @@ export const WordDrawingLayoutSchema = z.strictObject({
   layoutInCell: z.boolean().optional(),
   locked: z.boolean().optional(),
   zOrder: z.number().int().nonnegative().optional(),
+  relativeWidth: z
+    .strictObject({
+      relativeFrom: z.enum([
+        "page",
+        "margin",
+        "leftMargin",
+        "rightMargin",
+        "insideMargin",
+        "outsideMargin",
+      ]),
+      percent: z.number().nonnegative().max(2147483.647),
+    })
+    .optional(),
+  relativeHeight: z
+    .strictObject({
+      relativeFrom: z.enum([
+        "page",
+        "margin",
+        "topMargin",
+        "bottomMargin",
+        "insideMargin",
+        "outsideMargin",
+      ]),
+      percent: z.number().nonnegative().max(2147483.647),
+    })
+    .optional(),
   wrapPolygon: z
     .array(z.strictObject({ x: z.number(), y: z.number() }))
     .min(3)

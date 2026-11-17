@@ -4,6 +4,8 @@ import type { SourceStyleNode, SourceStyleResolver } from "./source-css.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import { length } from "./css-values.js";
 import { checkLimit } from "./validation.js";
+import { wordDrawingDimensions } from "../word-drawing-size.js";
+import { evaluatePresentationPreset } from "../presentation-geometry.js";
 /** Derive an insertion's containing width from authoritative section, table and
  * drawing definitions. A host can supply an explicit width for an unequal
  * column; without layout coordinates use the narrowest column that can hold it. */
@@ -44,13 +46,33 @@ export function wordContainerWidth(
         : (width - columns.gap * (columns.count - 1)) / columns.count;
   }
   const drawing = word?.drawings?.find(
-    (drawing) => drawing.kind === "textBox" && drawing.textStoryId === story?.storyId,
+    (drawing) =>
+      (drawing.kind === "textBox" || drawing.kind === "shape") &&
+      drawing.textStoryId === story?.storyId,
   );
-  if (drawing?.kind === "textBox")
-    width =
-      drawing.geometry.width -
-      (drawing.text?.insets?.left ?? 7.2) -
-      (drawing.text?.insets?.right ?? 7.2);
+  if (drawing?.kind === "textBox" || drawing?.kind === "shape") {
+    const side =
+        section?.gutterPosition === "top"
+          ? "top"
+          : section?.gutterPosition === "right"
+            ? "right"
+            : "left",
+      effective = {
+        ...setup,
+        margins: { ...setup.margins, [side]: setup.margins[side] + (section?.gutter ?? 0) },
+      },
+      size = wordDrawingDimensions(drawing, { index: 0, setup: effective }, section),
+      textWidth =
+        drawing.kind === "shape"
+          ? (evaluatePresentationPreset(
+              drawing.preset,
+              size.width,
+              size.height,
+              drawing.adjustments,
+            ).textRect?.width ?? size.width)
+          : size.width;
+    width = textWidth - (drawing.text?.insets?.left ?? 7.2) - (drawing.text?.insets?.right ?? 7.2);
+  }
   const projected = new Map<string, SourceStyleNode>(),
     project = (id: string): SourceStyleNode => {
       let result = projected.get(id);

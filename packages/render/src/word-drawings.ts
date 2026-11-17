@@ -1,5 +1,7 @@
 import { wordFloatingLayer } from "./word-floating-layer.js";
 import { wordDrawingPosition } from "./word-drawing-position.js";
+import { wordDrawingDimensions as wordDrawingSize } from "@doffi/core";
+import { createWordDrawingResize } from "./word-drawing-resize.js";
 import type { PreviewSource } from "./source-index.js";
 import { renderWordChart } from "./word-chart.js";
 import { DocumentError, evaluatePresentationPreset } from "@doffi/core";
@@ -44,9 +46,12 @@ export function composeWordDrawings(
       paragraph: HTMLElement;
       anchor: HTMLElement;
     }[] = [],
-    layer = wordFloatingLayer(document, model, source, limits);
+    auxiliaryFloats: { definition: DeepReadonly<WordDrawing>; frame: HTMLElement }[] = [],
+    resize = createWordDrawingResize(document, limits, metadata.locale),
+    layer = wordFloatingLayer(document, model, source, limits, resize);
   let serial = 0,
     count = document.querySelectorAll("*").length;
+  let auxiliaryChanged = false;
   const composed = new Set<string>();
   const account = (node: Element): void => {
     count += 1 + node.querySelectorAll("*").length;
@@ -213,6 +218,7 @@ export function composeWordDrawings(
         text.style.cssText = `position:absolute;box-sizing:border-box;display:flex;flex-direction:column;left:${rect.x}pt;top:${rect.y}pt;width:${rect.width}pt;height:${rect.height}pt;padding:${insets.top}pt ${insets.right}pt ${insets.bottom}pt ${insets.left}pt;overflow:hidden;white-space:${body.wrap === false ? "pre" : "pre-wrap"};overflow-wrap:anywhere;color:${originalColor};font-size:${originalFont};line-height:normal;justify-content:${body.vertical === "middle" ? "center" : body.vertical === "bottom" ? "flex-end" : "flex-start"};writing-mode:${body.direction && body.direction !== "horizontal" ? "vertical-rl" : "horizontal-tb"};transform:rotate(${(body.rotation ?? 0) + (body.direction === "vertical270" ? 180 : 0)}deg)`;
         const sourceStyle = view.getComputedStyle(original);
         text.style.fontSize = sourceStyle.fontSize;
+        text.dataset.sdkWordBaseFont = originalFont;
         text.style.color = sourceStyle.color;
         const clone = original.cloneNode(true) as HTMLElement;
         clone.classList.remove("sdk-auxiliary");
@@ -256,6 +262,8 @@ export function composeWordDrawings(
               paragraph.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
             );
         if (relative) {
+          if (layout.relativeWidth || layout.relativeHeight)
+            auxiliaryFloats.push({ definition: item, frame });
           const side = layout.wrapSide === "left" || layout.alignH === "right" ? "right" : "left";
           style(frame, {
             float: side,
@@ -312,10 +320,10 @@ export function composeWordDrawings(
   }
   return {
     get active(): boolean {
-      return layer.active;
+      return layer.active || floating.length > 0 || auxiliaryFloats.length > 0;
     },
     get changed(): boolean {
-      return layer.changed;
+      return layer.changed || auxiliaryChanged;
     },
     reset(): void {
       layer.reset();
@@ -333,15 +341,50 @@ export function composeWordDrawings(
       ]);
     },
     measure(pages, root) {
+      auxiliaryChanged = false;
       const origin = root.getBoundingClientRect(),
         headerInstances = new Map<string, HTMLElement[]>();
       for (const instance of document.querySelectorAll<HTMLElement>(
-        ".sdk-paper [data-sdk-word-object][data-sdk-word-story-anchor]",
+        ".sdk-paper [data-sdk-word-object]",
       )) {
         const id = instance.dataset.sdkWordObject!,
           instances = headerInstances.get(id) ?? [];
         instances.push(instance);
         headerInstances.set(id, instances);
+      }
+      for (const { definition: item, frame } of auxiliaryFloats) {
+        const storyRoot = frame.closest<HTMLElement>("[data-office-story]"),
+          storyId = word?.stories.find(
+            (story) => story.rootNodeId === storyRoot?.dataset.nodeId,
+          )?.storyId,
+          owner = metadata.sections?.find(
+            (section) =>
+              storyId &&
+              [
+                ...Object.values(section.headers ?? {}),
+                ...Object.values(section.footers ?? {}),
+              ].includes(storyId),
+          ),
+          page =
+            pages.find((page) => !page.blank && (!owner || page.sectionId === owner.sectionId)) ??
+            pages[0];
+        if (!page) continue;
+        const geometry = wordDrawingSize(item, page, sections.get(page.sectionId)),
+          previousWidth = parseFloat(frame.style.width),
+          previousHeight = parseFloat(frame.style.height);
+        resize(frame, item, geometry);
+        if (
+          Math.abs(previousWidth - geometry.width) > 0.0001 ||
+          Math.abs(previousHeight - geometry.height) > 0.0001
+        )
+          auxiliaryChanged = true;
+        for (const instance of headerInstances.get(item.nodeId) ?? []) {
+          const page = pages.find(
+            (page) => page.pageId === instance.closest<HTMLElement>(".sdk-paper")?.dataset.pageId,
+          );
+          if (page)
+            resize(instance, item, wordDrawingSize(item, page, sections.get(page.sectionId)));
+        }
       }
       for (const entry of floating) {
         const item = entry.definition,
@@ -354,9 +397,11 @@ export function composeWordDrawings(
             },
             ...(headerInstances.get(item.nodeId) ?? []).flatMap((frame) => {
               const paper = frame.closest<HTMLElement>(".sdk-paper")!,
-                paragraph = paper.querySelector<HTMLElement>(
-                  '[data-node-id="' + CSS.escape(frame.dataset.sdkWordStoryAnchor!) + '"]',
-                ),
+                paragraph = frame.dataset.sdkWordStoryAnchor
+                  ? paper.querySelector<HTMLElement>(
+                      '[data-node-id="' + CSS.escape(frame.dataset.sdkWordStoryAnchor!) + '"]',
+                    )
+                  : frame.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6"),
                 anchor = paragraph?.querySelector<HTMLElement>(
                   '[data-sdk-word-anchor="' + CSS.escape(item.nodeId) + '"]',
                 );
@@ -372,9 +417,17 @@ export function composeWordDrawings(
                     (a.top - origin.top) * 0.75 >= page.rect.y &&
                     (a.top - origin.top) * 0.75 < page.rect.y + page.rect.height,
                 );
-          if (!page) continue;
+          if (!page) {
+            if (pages[0])
+              resize(
+                frame,
+                item,
+                wordDrawingSize(item, pages[0], sections.get(pages[0].sectionId)),
+              );
+            continue;
+          }
           const position = wordDrawingPosition(
-              item,
+              { ...item, geometry: wordDrawingSize(item, page, sections.get(page.sectionId)) },
               page,
               origin,
               paragraph,
@@ -382,6 +435,7 @@ export function composeWordDrawings(
               sections.get(page.sectionId),
             ),
             containing = paper?.getBoundingClientRect() ?? paragraph.getBoundingClientRect();
+          resize(frame, item, wordDrawingSize(item, page, sections.get(page.sectionId)));
           frame.style.left = position.left - containing.left + "px";
           frame.style.top = position.top - containing.top + "px";
         }

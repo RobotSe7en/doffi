@@ -202,4 +202,23 @@ type CellValueKind = "blank" | "text" | "number" | "boolean" | "error" | "formul
 
 `wrapPolygon` 保存原生边界坐标，未设置时使用对象矩形；`wrapPolygonEdited` 可选地保留用户编辑标记。Office 使用固定的 [21600×21600 坐标空间](https://learn.microsoft.com/en-us/answers/questions/405731/unit-for-coordinates-of-points-in-wrappolygon)，边界随根对象旋转／翻转；嵌套组合继续由同一根框架环绕。行级排除投影整个文字高度和四侧距离；紧密模式封闭行内凹口，穿越模式允许文字进入边界形成的开放区域，符合[原生穿越语义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.wordprocessing.wrapthrough?view=openxml-3.0.1)。边界点设置、环绕侧和开关修改均通过 `setWordDrawingLayout`，保留统一候选、冲突保护和撤销；原生导出不反写派生碰撞位移。
 
-同一布局区域中任一对象不允许重叠时，后出现对象向下避让，旋转后的外接框参与碰撞检查。`layoutInCell=true` 使用单元格可用框，环绕只作用于该单元格，并为自动行高预留必要空间；false 使用故事／页面参照，允许离开单元格。碰撞后越出锚点页面会返回 `ContentOverflow`。跨不等宽栏、连续节、跨页表格和重复故事的复杂定位／碰撞／分页组合仍归 R18，相对尺寸归 R17。
+同一布局区域中任一对象不允许重叠时，后出现对象向下避让，旋转后的外接框参与碰撞检查。`layoutInCell=true` 使用单元格可用框，环绕只作用于该单元格，并为自动行高预留必要空间；false 使用故事／页面参照，允许离开单元格。碰撞后越出锚点页面会返回 `ContentOverflow`。跨不等宽栏、连续节、跨页表格和重复故事的复杂定位／碰撞／分页组合仍归 R18。
+
+
+### Word 绘图相对尺寸
+
+浮动根对象的 `layout.relativeWidth`／`relativeHeight` 保存独立的参照区域与 `percent`，50 表示 50%。字段缺省时使用 `geometry` 的固定尺寸；为兼容原生零值声明，0 保留写回并按未启用处理，使用同轴固定回退。宽度支持页面、正文区域、左／右／内／外边距，高度支持页面、正文区域、上／下／内／外边距，与[官方 WP14 Schema](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-odrawxml/1a38a99a-16ae-420d-8c79-23dc2e922717)一致。原生百分比每 1000 单位表示 1%，读取保留该精度，输出按同单位量化；数值范围有界且非负。原生 `wp:anchor@relativeHeight` 继续映射到 `zOrder`，与 `wp14:sizeRelV` 的高度声明区分。
+
+```json
+{
+  "mode": "floating",
+  "relativeWidth": { "relativeFrom": "page", "percent": 50 },
+  "relativeHeight": { "relativeFrom": "margin", "percent": 25 }
+}
+```
+
+`wordDrawingDimensions(drawing, { index, setup }, section)` 以物理页及已经应用镜像／装订线的页边距计算派生几何，参照独立于对象位置与单元格约束。内／外边距按当前页及装订方向的边距矩形取宽／高，沿用已有锚点参照。源尺寸、百分比和组内坐标不因分页测量而改写。预览重新生成目标尺寸下的 SVG／图表并重排文字框，保留物理线宽、字体和文字边距；组合缩放自己的子画布。实际尺寸用于对齐、环绕、碰撞和正文绑定连接线端点；页眉实例按各自物理页重算。派生尺寸属性和绘制节点由视图所有权清理，打印复用同一结果。
+
+用户于 2026-11-17 选择：移动保留百分比，右下角直接缩放转为当前固定尺寸，一次撤销恢复原百分比。面板可分别切换宽／高的固定与百分比方式。界面组合／取消组合先将显示尺寸转为固定值，再在同一事务中改变结构；直接事务调用须先显式提供这一转换，核心不会猜测屏幕上的尺寸。对象文字故事中插入表格的默认宽度使用来源节的首物理页参照与实际文字区域，宿主仍可显式提供测量宽度。
+
+DOCX 输出同时保存固定回退与 `wp14:sizeRelH/sizeRelV`，声明 MCE 可忽略扩展，支持严格重开及编辑。缺失／重复百分比、非法参照、负值、非整数原生值、越界及内嵌帧上的相对尺寸明确拒绝。未知尺寸属性、百分比位置及其他特殊原生结构继续按完整原生内容保留。复杂跨栏／连续节／跨页表格和重复故事的定位、碰撞与分页组合仍归 R18；未声明 Word 实机像素验收。

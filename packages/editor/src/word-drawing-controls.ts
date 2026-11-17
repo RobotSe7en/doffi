@@ -54,11 +54,28 @@ export function createWordDrawingControls(
       ...(boundRoot?.querySelectorAll<HTMLElement>(
         '[data-sdk-word-object="' + CSS.escape(object.nodeId) + '"]',
       ) ?? []),
-    ].find((node) => node.dataset.sdkWordPositionX !== undefined);
+    ].find(
+      (node) =>
+        node.dataset.sdkWordPositionX !== undefined || node.dataset.sdkWordWidth !== undefined,
+    );
     return {
       ...object.geometry,
-      x: node ? Number(node.dataset.sdkWordPositionX) : object.geometry.x,
-      y: node ? Number(node.dataset.sdkWordPositionY) : object.geometry.y,
+      x:
+        node?.dataset.sdkWordPositionX !== undefined
+          ? Number(node.dataset.sdkWordPositionX)
+          : object.geometry.x,
+      y:
+        node?.dataset.sdkWordPositionY !== undefined
+          ? Number(node.dataset.sdkWordPositionY)
+          : object.geometry.y,
+      width:
+        node?.dataset.sdkWordWidth !== undefined
+          ? Number(node.dataset.sdkWordWidth)
+          : object.geometry.width,
+      height:
+        node?.dataset.sdkWordHeight !== undefined
+          ? Number(node.dataset.sdkWordHeight)
+          : object.geometry.height,
     };
   };
   const absoluteLayout = (
@@ -69,6 +86,33 @@ export function createWordDrawingControls(
     delete layout.alignV;
     return layout;
   };
+  const fixedSizeLayout = (
+    input: ReturnType<typeof drawings>[number]["layout"],
+  ): WordDrawingLayout => {
+    const layout = JSON.parse(JSON.stringify(input)) as WordDrawingLayout;
+    delete layout.relativeWidth;
+    delete layout.relativeHeight;
+    return layout;
+  };
+  const materialize = (
+    objects: readonly ReturnType<typeof drawings>[number][],
+    force = false,
+  ): DocumentOperation[] =>
+    objects.flatMap((object) => {
+      if (!force && !object.layout.relativeWidth && !object.layout.relativeHeight) return [];
+      return [
+        {
+          op: "setWordDrawingGeometry" as const,
+          nodeId: object.nodeId,
+          geometry: displayed(object),
+        },
+        {
+          op: "setWordDrawingLayout" as const,
+          nodeId: object.nodeId,
+          layout: fixedSizeLayout(absoluteLayout(object.layout)),
+        },
+      ];
+    });
   const close = (): void => {
     controller?.abort();
     panel?.remove();
@@ -168,15 +212,17 @@ export function createWordDrawingControls(
     };
     button("关闭绘图设置", close);
     const current = drawings().find((item) => item.nodeId === selected[0]),
-      g = current?.geometry ?? {
-        x: 0,
-        y: 0,
-        width: 180,
-        height: 100,
-        rotation: 0,
-        flipH: false,
-        flipV: false,
-      },
+      g = current
+        ? displayed(current)
+        : {
+            x: 0,
+            y: 0,
+            width: 180,
+            height: 100,
+            rotation: 0,
+            flipH: false,
+            flipV: false,
+          },
       l = current?.layout ?? { mode: "inline" as const };
     const x = field("对象水平位置（磅）", g.x),
       y = field("对象垂直位置（磅）", g.y),
@@ -312,6 +358,69 @@ export function createWordDrawingControls(
     for (const input of Object.values(wrapDistances)) input.min = "0";
     layer.min = "0";
     layer.step = "1";
+    const sizeModeW = choose(
+        "对象宽度方式",
+        [
+          ["absolute", "固定尺寸"],
+          ["relative", "百分比"],
+        ],
+        l.relativeWidth ? "relative" : "absolute",
+      ),
+      sizeModeH = choose(
+        "对象高度方式",
+        [
+          ["absolute", "固定尺寸"],
+          ["relative", "百分比"],
+        ],
+        l.relativeHeight ? "relative" : "absolute",
+      ),
+      sizeFromW = choose(
+        "相对宽度参照",
+        [
+          ["page", "页面"],
+          ["margin", "正文区域"],
+          ["leftMargin", "左页边距区域"],
+          ["rightMargin", "右页边距区域"],
+          ["insideMargin", "内页边距区域"],
+          ["outsideMargin", "外页边距区域"],
+        ],
+        l.relativeWidth?.relativeFrom ?? "page",
+      ),
+      sizeFromH = choose(
+        "相对高度参照",
+        [
+          ["page", "页面"],
+          ["margin", "正文区域"],
+          ["topMargin", "上页边距区域"],
+          ["bottomMargin", "下页边距区域"],
+          ["insideMargin", "内页边距区域"],
+          ["outsideMargin", "外页边距区域"],
+        ],
+        l.relativeHeight?.relativeFrom ?? "page",
+      ),
+      percentW = field("相对宽度（%，0 使用固定尺寸）", l.relativeWidth?.percent ?? 50),
+      percentH = field("相对高度（%，0 使用固定尺寸）", l.relativeHeight?.percent ?? 50);
+    for (const input of [percentW, percentH]) {
+      input.min = "0";
+      input.max = "2147483.647";
+      input.step = "0.001";
+    }
+    const sizeHint = document.createElement("span");
+    sizeHint.textContent = "移动保留百分比；拖动右下角缩放会改为固定尺寸，可撤销。";
+    panel.append(sizeHint);
+    const syncSizeFields = (): void => {
+      const floating = mode.value === "floating",
+        relativeW = floating && sizeModeW.value === "relative",
+        relativeH = floating && sizeModeH.value === "relative";
+      sizeModeW.disabled = sizeModeH.disabled = !floating;
+      sizeFromW.disabled = percentW.disabled = !relativeW;
+      sizeFromH.disabled = percentH.disabled = !relativeH;
+      width.disabled = relativeW && Number(percentW.value) > 0;
+      height.disabled = relativeH && Number(percentH.value) > 0;
+    };
+    for (const input of [mode, sizeModeW, sizeModeH, percentW, percentH])
+      input.addEventListener("input", syncSizeFields, { signal });
+    syncSizeFields();
     const polygonText = (l.wrapPolygon ?? []).map((point) => point.x + "," + point.y).join("; "),
       polygon = field("环绕边界点（x,y；21600 为完整宽高）", polygonText, "text");
     polygon.style.width = "320px";
@@ -345,7 +454,27 @@ export function createWordDrawingControls(
       rotation: Number(rotation.value),
     });
     const layout = (): WordDrawingLayout => ({
-      ...absoluteLayout(l),
+      ...fixedSizeLayout(absoluteLayout(l)),
+      ...(mode.value === "floating" && sizeModeW.value === "relative"
+        ? {
+            relativeWidth: {
+              relativeFrom: sizeFromW.value as NonNullable<
+                WordDrawingLayout["relativeWidth"]
+              >["relativeFrom"],
+              percent: Number(percentW.value),
+            },
+          }
+        : {}),
+      ...(mode.value === "floating" && sizeModeH.value === "relative"
+        ? {
+            relativeHeight: {
+              relativeFrom: sizeFromH.value as NonNullable<
+                WordDrawingLayout["relativeHeight"]
+              >["relativeFrom"],
+              percent: Number(percentH.value),
+            },
+          }
+        : {}),
       ...polygonLayout(),
       mode: mode.value as "inline" | "floating",
       wrap: wrap.value as NonNullable<WordDrawingLayout["wrap"]>,
@@ -639,7 +768,14 @@ export function createWordDrawingControls(
             source?.dataset.sdkWordSourceParagraph ??
             source?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6")?.dataset.nodeId;
         if (!paragraphId) throw new DocumentError("InvalidOperation", "组合对象须在同一段落中。");
-        apply([{ op: "groupWordDrawings", nodeId: paragraphId, nodeIds: [...selected] }]);
+        const objects = drawings().filter((item) => selected.includes(item.nodeId));
+        apply([
+          ...materialize(
+            objects,
+            objects.some((item) => !!item.layout.relativeWidth || !!item.layout.relativeHeight),
+          ),
+          { op: "groupWordDrawings", nodeId: paragraphId, nodeIds: [...selected] },
+        ]);
         const group = drawings().find(
           (item) =>
             item.kind === "group" && session.getNode(item.nodeId)!.childNodeIds.includes(id),
@@ -649,7 +785,7 @@ export function createWordDrawingControls(
       });
     if (current?.kind === "group")
       button("取消组合", () => {
-        apply([{ op: "ungroupWordDrawing", nodeId: current.nodeId }]);
+        apply([...materialize([current]), { op: "ungroupWordDrawing", nodeId: current.nodeId }]);
         selected = [];
         close();
       });
@@ -720,8 +856,9 @@ export function createWordDrawingControls(
           handle.style.outline = "2px dashed #2563eb";
           handle.style.translate = resize ? "0 0" : `${dx}pt ${dy}pt`;
           if (resize) {
-            handle.style.width = Math.max(0.5, item.geometry.width + dx) + "pt";
-            handle.style.height = Math.max(0.5, item.geometry.height + dy) + "pt";
+            const measured = initial.find((object) => object.nodeId === item.nodeId)!.geometry;
+            handle.style.width = Math.max(0.5, measured.width + dx) + "pt";
+            handle.style.height = Math.max(0.5, measured.height + dy) + "pt";
           }
         };
         const end = (): void => {
@@ -750,18 +887,26 @@ export function createWordDrawingControls(
                         : { x: object.geometry.x + dx, y: object.geometry.y + dy }),
                     },
                   },
-                  ...(!resize
+                  ...(resize
                     ? [
                         {
                           op: "setWordDrawingLayout" as const,
                           nodeId: object.nodeId,
-                          layout:
-                            object.layout.mode === "inline"
-                              ? { mode: "floating" as const, wrap: "none" as const }
-                              : absoluteLayout(object.layout),
+                          layout: fixedSizeLayout(object.layout),
                         },
                       ]
-                    : []),
+                    : !resize
+                      ? [
+                          {
+                            op: "setWordDrawingLayout" as const,
+                            nodeId: object.nodeId,
+                            layout:
+                              object.layout.mode === "inline"
+                                ? { mode: "floating" as const, wrap: "none" as const }
+                                : absoluteLayout(object.layout),
+                          },
+                        ]
+                      : []),
                 ]),
               );
             });

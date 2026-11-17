@@ -255,6 +255,7 @@ export type {
   WordTextStatistics,
 } from "./word-query.js";
 export { wordDrawingTransforms } from "./word-drawing.js";
+export { wordDrawingDimensions } from "./word-drawing-size.js";
 
 export * from "./contracts/word-chart.js";
 export * from "./contracts/word-comment.js";

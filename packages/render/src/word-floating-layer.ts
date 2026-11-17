@@ -1,4 +1,4 @@
-import { DocumentError } from "@doffi/core";
+import { DocumentError, wordDrawingTransforms } from "@doffi/core";
 import type { ContentDocumentModel, DeepReadonly, WordDrawing } from "@doffi/core";
 import type { LayoutDiagnostic, RenderedPage, RenderLimits } from "./contracts.js";
 import type { PreviewSource } from "./source-index.js";
@@ -10,9 +10,10 @@ import {
   ownViewStyle,
   viewNodeRole,
 } from "./view-nodes.js";
-import { wordDrawingPosition } from "./word-drawing-position.js";
+import { wordDrawingPosition, wordDrawingLeadingTextRect } from "./word-drawing-position.js";
 import { avoidWordDrawingOverlap, wordWrapPoints } from "./word-wrap-geometry.js";
 import type { WrapBounds } from "./word-wrap-geometry.js";
+import { wordDrawingDimensions as wordDrawingSize } from "@doffi/core";
 
 /** Floating paint lives outside the clipped text flow. The original atomic
  * source stays at its insertion point, alongside a reversible layout anchor. */
@@ -21,6 +22,11 @@ export function wordFloatingLayer(
   model: ContentDocumentModel,
   source: PreviewSource,
   limits: Readonly<RenderLimits>,
+  resize: (
+    frame: HTMLElement,
+    drawing: DeepReadonly<WordDrawing>,
+    geometry: WordDrawing["geometry"],
+  ) => void,
 ) {
   const entries: { drawing: DeepReadonly<WordDrawing>; frame: HTMLElement }[] = [];
   const sections = new Map(
@@ -28,7 +34,8 @@ export function wordFloatingLayer(
   );
   const containers = new Map<string, HTMLElement>(),
     paints = new Map<HTMLElement, HTMLElement>(),
-    cellSpaces = new Map<HTMLElement, HTMLElement>();
+    cellSpaces = new Map<HTMLElement, HTMLElement>(),
+    leadingPages = new Map<HTMLElement, { delta: number; index: number; rect: DOMRect } | null>();
   let layer: HTMLElement | undefined;
   let changed = false;
   let diagnostics: readonly LayoutDiagnostic[] = [];
@@ -45,6 +52,7 @@ export function wordFloatingLayer(
     reset(): void {
       for (const space of cellSpaces.values()) space.remove();
       cellSpaces.clear();
+      leadingPages.clear();
     },
     add(drawing: DeepReadonly<WordDrawing>, frame: HTMLElement): void {
       entries.push({ drawing, frame });
@@ -95,8 +103,36 @@ export function wordFloatingLayer(
         paragraph: HTMLElement;
         page: RenderedPage;
         position: ReturnType<typeof wordDrawingPosition>;
+        geometry: WordDrawing["geometry"];
       }[] = [];
       const placed = new Map<string, (WrapBounds & { allowOverlap: boolean })[]>();
+      const projections = new Map<string, ReturnType<typeof wordDrawingTransforms>>();
+      const measuredGeometry = (
+        drawing: DeepReadonly<WordDrawing>,
+        page: RenderedPage,
+      ): WordDrawing["geometry"] => {
+        if (
+          drawing.kind !== "connector" ||
+          (!drawing.connector.startNodeId && !drawing.connector.endNodeId)
+        )
+          return wordDrawingSize(drawing, page, sections.get(page.sectionId));
+        let transforms = projections.get(page.pageId);
+        if (!transforms) {
+          const word = model.snapshot().metadata.word!;
+          transforms = wordDrawingTransforms(
+            {
+              ...word,
+              drawings: word.drawings!.map((item) => ({
+                ...item,
+                geometry: wordDrawingSize(item, page, sections.get(page.sectionId)),
+              })),
+            },
+            model,
+          );
+          projections.set(page.pageId, transforms);
+        }
+        return transforms.connectorGeometry(drawing.nodeId);
+      };
       let work = 0;
       const reserve = () => {
         if (++work > limits.maxNodes * 32)
@@ -113,15 +149,37 @@ export function wordFloatingLayer(
           if (anchor.closest(".sdk-auxiliary") || anchor.getClientRects().length === 0) continue;
           const a = anchor.getBoundingClientRect(),
             paragraph = anchor.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6")!,
-            page = pageAt(a.top);
+            rawPage = pageAt(a.top);
+          // Freeze a leading anchor's page correction before exclusions are
+          // inserted. It must not chase text pushed down by its own wrap box.
+          if (!leadingPages.has(anchor)) {
+            const first = paragraph ? wordDrawingLeadingTextRect(paragraph, anchor) : undefined,
+              firstPage = first ? pageAt(first.top + Math.min(first.height / 2, 3)) : undefined;
+            leadingPages.set(
+              anchor,
+              first && firstPage && (!rawPage || firstPage.index > rawPage.index)
+                ? {
+                    delta: firstPage.index - (rawPage?.index ?? 0),
+                    index: firstPage.index,
+                    rect: first,
+                  }
+                : null,
+            );
+          }
+          const correction = leadingPages.get(anchor),
+            page = correction
+              ? pages[rawPage ? rawPage.index + correction.delta : correction.index]
+              : rawPage;
           if (page && paragraph) {
-            const position = wordDrawingPosition(
-                drawing,
+            const geometry = measuredGeometry(drawing, page),
+              position = wordDrawingPosition(
+                { ...drawing, geometry },
                 page,
                 origin,
                 paragraph,
                 anchor,
                 sections.get(page.sectionId),
+                correction?.rect,
               ),
               cell =
                 drawing.layout.layoutInCell !== false
@@ -139,8 +197,8 @@ export function wordFloatingLayer(
                 {
                   left: position.left,
                   top: position.top,
-                  width: drawing.geometry.width / 0.75,
-                  height: drawing.geometry.height / 0.75,
+                  width: geometry.width / 0.75,
+                  height: geometry.height / 0.75,
                 },
                 drawing.geometry,
               ),
@@ -183,6 +241,7 @@ export function wordFloatingLayer(
               paragraph,
               page,
               position,
+              geometry,
             });
           }
         }
@@ -198,7 +257,7 @@ export function wordFloatingLayer(
       const cellBottoms = new Map<HTMLElement, number>();
       // Read all source positions before inserting paint. Drawing layers
       // cannot perturb the next object's source measurements.
-      for (const { drawing, frame, anchor, paragraph, page, position } of placements) {
+      for (const { drawing, frame, anchor, paragraph, page, position, geometry } of placements) {
         const key = page.pageId + (drawing.layout.behindText ? "-back" : "-front");
         keptContainers.add(key);
         let container = containers.get(key);
@@ -223,6 +282,7 @@ export function wordFloatingLayer(
             );
         }
         paint.dataset.sdkWordSourceParagraph = paragraph.dataset.nodeId!;
+        resize(paint, drawing, geometry);
         paint.dataset.sdkWordPositionX = String(position.offsetX);
         paint.dataset.sdkWordPositionY = String(position.offsetY);
         paint.dataset.sdkWordLayoutLeft = String(position.left - origin.left);

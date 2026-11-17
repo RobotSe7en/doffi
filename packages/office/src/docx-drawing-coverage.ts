@@ -3,6 +3,7 @@ import { A, C, PIC, R, W, WP, fail, unsupported } from "./ooxml/xml.js";
 import type { XmlNode } from "./ooxml/xml.js";
 const WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
   WPG = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+const WP14 = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
 type Rule = { attrs: readonly string[]; children: readonly string[] };
 const rules = new Map<string, Rule>();
 const names = (uri: string, locals: string): string[] =>
@@ -28,6 +29,7 @@ rule(
       "simplePos positionH positionV extent effectExtent wrapNone wrapSquare wrapTight wrapThrough wrapTopAndBottom docPr cNvGraphicFramePr",
     ),
     ...names(A, "graphic"),
+    ...names(WP14, "sizeRelH sizeRelV"),
   ],
 );
 rule(WP, "simplePos start lineTo", "x y");
@@ -41,6 +43,9 @@ rule(WP, "wrapTopAndBottom", "distT distB");
 rule(WP, "wrapSquare", "wrapText distT distB distL distR");
 rule(WP, "wrapTight wrapThrough", "wrapText distL distR", names(WP, "wrapPolygon"));
 rule(WP, "wrapPolygon", "edited", names(WP, "start lineTo"));
+rule(WP14, "sizeRelH", "relativeFrom", names(WP14, "pctWidth"));
+rule(WP14, "sizeRelV", "relativeFrom", names(WP14, "pctHeight"));
+rule(WP14, "pctWidth pctHeight");
 rule(A, "graphic", "", names(A, "graphicData"));
 rule(A, "graphicData", "uri", [
   ...names(PIC, "pic"),
@@ -128,7 +133,11 @@ export function checkWordDrawingCoverage(source: XmlNode): void {
     if (!known)
       unsupported(node, "This nested drawing feature remains preserved with its native drawing.");
     for (const key of node.attrs.keys())
-      if (!key.startsWith("http://www.w3.org/2000/xmlns/ ") && !known.attrs.includes(key))
+      if (
+        !key.startsWith("http://www.w3.org/2000/xmlns/ ") &&
+        key !== "http://schemas.openxmlformats.org/markup-compatibility/2006 Ignorable" &&
+        !known.attrs.includes(key)
+      )
         unsupported(node, "This drawing attribute remains preserved with its native drawing.", key);
     if (
       node.uri === WP &&
@@ -155,7 +164,11 @@ export function checkWordDrawingCoverage(source: XmlNode): void {
         if (!known.children.includes(child.uri + " " + child.name))
           unsupported(child, "This drawing child remains preserved with its native drawing.");
         scan(child);
-      } else if (child.trim() && !(node.uri === WP && ["align", "posOffset"].includes(node.name)))
+      } else if (
+        child.trim() &&
+        !(node.uri === WP && ["align", "posOffset"].includes(node.name)) &&
+        !(node.uri === WP14 && ["pctWidth", "pctHeight"].includes(node.name))
+      )
         fail(node, "A drawing container has unexpected text.");
   };
   scan(source);

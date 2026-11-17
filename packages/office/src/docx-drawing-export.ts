@@ -9,6 +9,7 @@ const C = "http://schemas.openxmlformats.org/drawingml/2006/chart";
 const WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
   WPG = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
   PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const WP14 = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
 export interface WordDrawingWriteContext {
   readonly word: DeepReadonly<WordMetadata>;
   readonly tree: SourceTree;
@@ -325,7 +326,13 @@ export function writeWordDrawing(
     WPS +
     '" xmlns:wpg="' +
     WPG +
-    '">' +
+    '"' +
+    (!inline && (layout.relativeWidth || layout.relativeHeight)
+      ? ' xmlns:wp14="' +
+        WP14 +
+        '" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wp14"'
+      : "") +
+    ">" +
     opening +
     identity(
       "wp:docPr",
@@ -344,7 +351,36 @@ export function writeWordDrawing(
         payload({ ...drawing, geometry: { ...g, x: 0, y: 0 } }, true) +
         "</wpg:wgp>"
       : payload(drawing)) +
-    "</a:graphicData></a:graphic></wp:" +
+    "</a:graphicData></a:graphic>" +
+    (!inline
+      ? (
+          [
+            ["sizeRelH", "pctWidth", layout.relativeWidth],
+            ["sizeRelV", "pctHeight", layout.relativeHeight],
+          ] as const
+        )
+          .map(([name, valueName, size]) =>
+            size
+              ? "<wp14:" +
+                name +
+                ' xmlns:wp14="' +
+                WP14 +
+                '" relativeFrom="' +
+                size.relativeFrom +
+                '"><wp14:' +
+                valueName +
+                ">" +
+                integer(size.percent, 1000, 0, 2147483647) +
+                "</wp14:" +
+                valueName +
+                "></wp14:" +
+                name +
+                ">"
+              : "",
+          )
+          .join("")
+      : "") +
+    "</wp:" +
     (inline ? "inline" : "anchor") +
     "></w:drawing></w:r>"
   );

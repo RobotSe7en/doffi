@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { createWordDocument, createDocumentSession, openDocument } from "@doffi/core";
 import { exportDocx } from "@doffi/office";
 export function nativeDrawingFrameFixture(
-  kind: "size" | "position" | "none" | "effects" = "size",
+  kind: "size" | "sizeExtension" | "position" | "none" | "effects" = "size",
   count = 1,
 ): Uint8Array {
   const session = createDocumentSession(
@@ -38,19 +38,24 @@ export function nativeDrawingFrameFixture(
     original = source.match(/<w:drawing[\s\S]*?<\/w:drawing>/)![0],
     ns = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
     extra =
-      kind === "size"
+      kind === "size" || kind === "sizeExtension"
         ? '<wp14:sizeRelH xmlns:wp14="' +
           ns +
           '" relativeFrom="page"><wp14:pctWidth>50000</wp14:pctWidth></wp14:sizeRelH>'
         : '<wp14:pctPosHOffset xmlns:wp14="' + ns + '">50000</wp14:pctPosHOffset>',
+    preservedExtra =
+      kind === "sizeExtension"
+        ? extra.replace('relativeFrom="page"', 'relativeFrom="page" futureSize="keep"')
+        : extra,
     raw =
       kind === "effects"
         ? original.replace(/(<wp:effectExtent[^>]* l=")0/, "$112700")
         : kind === "none"
           ? original
           : original.replace(
-              kind === "size" ? "</wp:anchor>" : "</wp:positionH>",
-              extra + (kind === "size" ? "</wp:anchor>" : "</wp:positionH>"),
+              kind === "size" || kind === "sizeExtension" ? "</wp:anchor>" : "</wp:positionH>",
+              preservedExtra +
+                (kind === "size" || kind === "sizeExtension" ? "</wp:anchor>" : "</wp:positionH>"),
             );
   files["word/document.xml"] = strToU8(
     source

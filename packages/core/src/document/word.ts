@@ -475,6 +475,11 @@ export function validateWord(
       )
         invalid("Cropping must retain a positive image area.");
       const parent = parentDrawing(drawing.nodeId);
+      if (
+        drawing.layout.mode !== "floating" &&
+        (drawing.layout.relativeWidth || drawing.layout.relativeHeight)
+      )
+        invalid("Relative drawing sizes require a floating root frame.");
       if (parent) {
         if (drawings.get(parent)!.kind !== "group" || drawing.layout.mode !== "inline")
           invalid("Only a group can contain Word drawing objects.");

@@ -115,6 +115,8 @@ export function applyWordDrawing(
     const selected = operation.nodeIds.map(
       (id) => drawings.find((item) => item.nodeId === id) ?? fail("A selected drawing is missing."),
     );
+    if (selected.some((item) => item.layout.relativeWidth || item.layout.relativeHeight))
+      fail("Resolve relative drawing sizes to fixed extents before grouping.");
     const contains = (id: string): boolean => {
       for (
         let current: string | null = id;
@@ -244,6 +246,8 @@ export function applyWordDrawing(
     return;
   } else if (operation.op === "ungroupWordDrawing") {
     if (drawing.kind !== "group") fail("Ungrouping requires a group.");
+    if (drawing.layout.relativeWidth || drawing.layout.relativeHeight)
+      fail("Resolve the relative group size to fixed extents before ungrouping.");
     const parent = target.parentNodeId!,
       siblings = source.peekNode(parent)!.childNodeIds,
       before = siblings[siblings.indexOf(drawing.nodeId) + 1],

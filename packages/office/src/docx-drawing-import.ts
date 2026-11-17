@@ -27,6 +27,7 @@ import { declarations } from "./ooxml/styles.js";
 import type { Css } from "./ooxml/styles.js";
 export const WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
   WPG = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+const WP14 = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
 export interface WordDrawingHtml {
   tag: string;
   attrs: Record<string, string>;
@@ -182,6 +183,58 @@ export function importWordDrawing(
     frame = inline ?? anchor;
   if (!frame || (inline && anchor))
     fail(source, "A drawing requires one inline or floating frame.");
+  const relative: Pick<WordDrawingLayout, "relativeWidth" | "relativeHeight"> = {};
+  if (inline && (child(inline, "sizeRelH", WP14) || child(inline, "sizeRelV", WP14)))
+    fail(inline, "Relative drawing sizes require a floating frame.");
+  if (anchor) {
+    for (const [name, valueName, key, references] of [
+      [
+        "sizeRelH",
+        "pctWidth",
+        "relativeWidth",
+        ["page", "margin", "leftMargin", "rightMargin", "insideMargin", "outsideMargin"],
+      ],
+      [
+        "sizeRelV",
+        "pctHeight",
+        "relativeHeight",
+        ["page", "margin", "topMargin", "bottomMargin", "insideMargin", "outsideMargin"],
+      ],
+    ] as const) {
+      const nodes = elements(anchor, name, WP14);
+      if (nodes.length > 1) fail(anchor, "Relative drawing size is duplicated.");
+      const node = nodes[0];
+      if (!node) continue;
+      const values = elements(node, valueName, WP14),
+        relativeFrom = attr(node, "relativeFrom", "");
+      if (
+        values.length !== 1 ||
+        !relativeFrom ||
+        !(references as readonly string[]).includes(relativeFrom)
+      )
+        fail(node, "Relative drawing size requires one percentage and a valid reference.");
+      const raw = text(values[0]!).trim();
+      if (!/^\+?\d+$/.test(raw))
+        fail(node, "A relative drawing percentage must be a nonnegative integer.");
+      const percent = number(raw, node);
+      if (!Number.isSafeInteger(percent) || percent > 2147483647)
+        fail(node, "A relative drawing percentage is outside its native range.");
+      if (key === "relativeWidth")
+        relative.relativeWidth = {
+          relativeFrom: relativeFrom as NonNullable<
+            WordDrawingLayout["relativeWidth"]
+          >["relativeFrom"],
+          percent: percent / 1000,
+        };
+      else
+        relative.relativeHeight = {
+          relativeFrom: relativeFrom as NonNullable<
+            WordDrawingLayout["relativeHeight"]
+          >["relativeFrom"],
+          percent: percent / 1000,
+        };
+    }
+  }
   const frameChildren = new Set([
     "simplePos",
     "positionH",
@@ -200,6 +253,7 @@ export function importWordDrawing(
     if (typeof node === "string") continue;
     const known =
       (node.uri === WP && frameChildren.has(node.name)) ||
+      (!!anchor && node.uri === WP14 && ["sizeRelH", "sizeRelV"].includes(node.name)) ||
       (node.uri === A && node.name === "graphic");
     if (!known)
       unsupportedType(
@@ -224,6 +278,7 @@ export function importWordDrawing(
   const size = { width: points(extent, "cx"), height: points(extent, "cy") };
   const layout: WordDrawingLayout = {
     mode: inline ? "inline" : "floating",
+    ...relative,
     distances: {
       top: points(frame, "distT", 0),
       right: points(frame, "distR", 0),

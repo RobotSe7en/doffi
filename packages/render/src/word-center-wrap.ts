@@ -194,8 +194,8 @@ export function wordCenterWrap(
                 {
                   left: origin.left + Number(node.dataset.sdkWordLayoutLeft),
                   top: origin.top + Number(node.dataset.sdkWordLayoutTop),
-                  width: drawing.geometry.width / 0.75,
-                  height: drawing.geometry.height / 0.75,
+                  width: Number(node.dataset.sdkWordWidth ?? drawing.geometry.width) / 0.75,
+                  height: Number(node.dataset.sdkWordHeight ?? drawing.geometry.height) / 0.75,
                 },
                 drawing.geometry,
                 reserve,
