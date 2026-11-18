@@ -439,6 +439,11 @@ export function pageFlow(
   }
   function walk(element: HTMLElement): void {
     if (viewNodeRole(element) === "remove" && !isMeasuredViewContent(element)) return;
+    if (
+      element.classList.contains("sdk-word-floating-table") &&
+      element.style.position === "absolute"
+    )
+      return;
     const style = view.getComputedStyle(element),
       rect = element.getBoundingClientRect();
     if (style.display === "none" || style.visibility === "collapse") return;

@@ -1,4 +1,6 @@
+import { registerFloatingStoryPaint } from "./word-floating-placement.js";
 import { sectionFlow } from "./section-flow.js";
+import { sameColumnGeometry } from "./column-regions.js";
 import { cloneViewTree } from "./view-clone.js";
 import { DocumentError } from "@doffi/core";
 import type {
@@ -75,6 +77,7 @@ interface Group {
 }
 export interface Pagination {
   measure(): readonly RenderedPage[];
+  storyDiagnostics(): readonly LayoutDiagnostic[];
   contentBottom(index: number): number;
   nodePages(pages: readonly RenderedPage[]): Readonly<Record<string, readonly string[]>>;
   readonly diagnostics: readonly LayoutDiagnostic[];
@@ -198,17 +201,29 @@ export function paginate(
   document.head.append(layoutStyle);
   for (const section of mainSections) {
     const previousSection = mainSections[mainSections.indexOf(section) - 1];
+    const setup = wordPageSetup(section.definition, metadata.pageSetup),
+      { width, height, margins } = setup,
+      changedPageGeometry =
+        previousSection &&
+        JSON.stringify(setup) !==
+          JSON.stringify(wordPageSetup(previousSection.definition, metadata.pageSetup));
     if (
       section.definition.breakType === "nextColumn" &&
       previousSection &&
-      (previousSection.definition.columns?.count ?? 1) > 1 &&
-      JSON.stringify(previousSection.definition.columns) !==
-        JSON.stringify(section.definition.columns)
+      (changedPageGeometry ||
+        ((previousSection.definition.columns?.count ?? 1) > 1 &&
+          !sameColumnGeometry(
+            previousSection.definition.columns,
+            section.definition.columns,
+            width - margins.left - margins.right,
+          )))
     )
       diagnostics.push({
         code: "SectionGeometryChange",
         nodeId: section.definition.rootNodeId,
-        message: "A next-column section with a different column geometry starts on a new page.",
+        message: changedPageGeometry
+          ? "A next-column section with different page geometry starts on a new page."
+          : "A next-column section with different column geometry starts on a new page.",
       });
     const grid = applyWordGrid(
       document,
@@ -230,8 +245,6 @@ export function paginate(
       },
     );
     if (grid) grids.push(grid);
-    const setup = wordPageSetup(section.definition, metadata.pageSetup),
-      { width, height, margins } = setup;
     if (
       width - margins.left - margins.right <= 0 ||
       height - margins.top - margins.bottom <= 0 ||
@@ -243,15 +256,13 @@ export function paginate(
         "Page dimensions must provide a positive printable area within the render size limit.",
       );
     let group = groups.at(-1);
-    const columns = variableSections.has(section)
-      ? "sections"
-      : JSON.stringify(section.definition.columns ?? { count: 1, gap: 0 });
+    const columns = variableSections.has(section) ? "sections" : "regular";
     if (
       !group ||
       JSON.stringify(group.setup) !== JSON.stringify(setup) ||
       group.columns !== columns
     ) {
-      if (group && section.definition.breakType === "continuous")
+      if (changedPageGeometry && section.definition.breakType === "continuous")
         diagnostics.push({
           code: "SectionGeometryChange",
           nodeId: section.definition.rootNodeId,
@@ -304,6 +315,7 @@ export function paginate(
                         ? px(setup.margins.right - setup.margins.left)
                         : 0
                   : undefined,
+                () => group!.startIndex,
               )
             : (definition && (definition.count > 1 || definition.widths)) ||
                 metadata.word?.mirrorMargins
@@ -327,9 +339,10 @@ export function paginate(
                     : undefined,
                   definition?.widths?.map(px),
                   definition?.spaces?.map(px),
-                  (definition?.count ?? 1) > 1
-                    ? { balanceEnd: () => balanceEnd(group!.sections.at(-1)!) }
-                    : undefined,
+                  {
+                    firstPageIndex: () => group!.startIndex,
+                    balanceEnd: () => balanceEnd(group!.sections.at(-1)!),
+                  },
                 )
               : pageFlow(
                   document,
@@ -495,6 +508,23 @@ export function paginate(
         paper.setAttribute("aria-hidden", "true");
         paper.style.cssText = `left:${page.rect.x}pt;top:${page.rect.y}pt;width:${setup.width}pt;height:${setup.height}pt`;
         layer.append(paper);
+        let storyPaint: HTMLElement | undefined;
+        const paint = (node: HTMLElement, story: HTMLElement): void => {
+          if (!storyPaint) {
+            if (++renderNodes > limits.maxNodes)
+              throw new DocumentError(
+                "ResourceLimitExceeded",
+                "Repeated stories exceed the render node budget.",
+              );
+            storyPaint = markViewNode(document.createElement("div"));
+            storyPaint.className = "sdk-page-story-paint";
+            storyPaint.style.cssText =
+              "position:absolute;inset:0;overflow:hidden;pointer-events:none";
+            paper.append(storyPaint);
+          }
+          registerFloatingStoryPaint(node, story);
+          storyPaint.append(node);
+        };
         for (const kind of ["headers", "footers"] as const) {
           if (blank) continue;
           const variant =
@@ -535,24 +565,20 @@ export function paginate(
             const definition = metadata.word?.drawings?.find(
               (drawing) => drawing.nodeId === object.dataset.sdkWordObject,
             );
-            if (definition?.layout.mode !== "floating" || !definition.layout.behindText) continue;
+            if (
+              definition?.layout.mode !== "floating" ||
+              object.previousElementSibling?.getAttribute("data-sdk-word-anchor") !==
+                definition.nodeId
+            )
+              continue;
             const paragraph = object.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6");
             if (!paragraph?.dataset.nodeId) continue;
             object.dataset.sdkWordStoryAnchor = paragraph.dataset.nodeId;
-            object.style.zIndex = "0";
-            paper.append(object);
+            object.style.zIndex = definition.layout.behindText ? "0" : "2";
+            paint(object, story);
           }
           for (const table of story.querySelectorAll<HTMLElement>(".sdk-word-floating-table"))
-            if (viewNodeRole(table) === "unwrap") paper.append(table);
-          if (
-            story.scrollHeight > px(available) + 1 &&
-            !diagnostics.some((item) => item.code === "ContentOverflow" && item.nodeId === id)
-          )
-            diagnostics.push({
-              code: "ContentOverflow",
-              nodeId: id!,
-              message: "A header or footer exceeds the available margin area and is clipped.",
-            });
+            if (viewNodeRole(table) === "unwrap") paint(table, story);
         }
         renderNodes += composeWordPageBorders(
           document,
@@ -594,6 +620,18 @@ export function paginate(
   return {
     measure,
     diagnostics,
+    storyDiagnostics() {
+      const overflow = new Set<string>();
+      for (const story of layer.querySelectorAll<HTMLElement>(".sdk-page-story")) {
+        const id = story.dataset.nodeId;
+        if (id && story.scrollHeight > px(parseFloat(story.style.maxHeight)) + 1) overflow.add(id);
+      }
+      return [...overflow].map((nodeId) => ({
+        code: "ContentOverflow",
+        nodeId,
+        message: "A header or footer exceeds the available margin area and is clipped.",
+      }));
+    },
     contentBottom(index) {
       const group = groups.find(
         (group) => index >= group.startIndex && index < group.startIndex + group.paginator.count,

@@ -2,6 +2,7 @@ import { wordCenterWrap } from "./word-center-wrap.js";
 import { composeWordRowExceptions } from "./word-row-exceptions.js";
 import { composeWordContextualSpacing } from "./word-contextual-spacing.js";
 import { composeWordFloatingTables } from "./word-floating-tables.js";
+import { wordFloatingPlacement } from "./word-floating-placement.js";
 import { composeWordTextRuns } from "./word-text-runs.js";
 import { composeWordLanguages } from "./word-languages.js";
 import { composeWordTypography } from "./word-typography.js";
@@ -528,6 +529,17 @@ export function mountPreview(
     centeredWrap?.reset();
     drawings?.reset();
     if (centeredWrap?.active) source.reindex();
+    const placeFloats = (
+      pages: DocumentRenderReport["pages"],
+      root: HTMLElement,
+      storiesOnly = false,
+    ): void => {
+      const placement = wordFloatingPlacement(limits);
+      const finish = drawings?.measure(pages, root, placement, storiesOnly);
+      floatingTables?.measure(pages, root, placement, storiesOnly);
+      placement.place();
+      finish?.();
+    };
     let pages: DocumentRenderReport["pages"] = [],
       nodePages: DocumentRenderReport["nodePages"] = {},
       results: DocumentRenderReport["fields"] = [],
@@ -535,8 +547,7 @@ export function mountPreview(
     for (let pass = 0; pagination && pass < limits.maxLayoutPasses; pass++) {
       pages = pagination.measure();
       pages = notes?.measure(pages) ?? pages;
-      drawings?.measure(pages, source.root);
-      floatingTables?.measure(pages, source.root);
+      placeFloats(pages, source.root);
       centeredWrap?.measure(pages, source.root);
       if (centeredWrap?.changed) source.reindex();
       nodePages = pagination.nodePages(pages);
@@ -557,7 +568,7 @@ export function mountPreview(
       );
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
-    if (!pagination && (centeredWrap?.active || drawings?.active)) {
+    if (!pagination && (centeredWrap?.active || drawings?.active || floatingTables?.active)) {
       const origin = source.root.getBoundingClientRect(),
         snapshot = model.snapshot();
       const canvases = (snapshot.metadata.sections ?? []).flatMap((section, index) => {
@@ -589,8 +600,7 @@ export function mountPreview(
       stable = false;
       for (let pass = 0; pass < limits.maxLayoutPasses; pass++) {
         source.clearInstances();
-        drawings?.measure(canvases, source.root);
-        floatingTables?.measure(canvases, source.root);
+        placeFloats(canvases, source.root);
         centeredWrap?.measure(canvases, source.root);
         if (centeredWrap?.changed) source.reindex();
         if (!drawings?.changed && !floatingTables?.changed && !centeredWrap?.changed) {
@@ -605,6 +615,18 @@ export function mountPreview(
         "Document layout did not converge within the render pass budget.",
       );
     fields?.repeat(pages);
+    if (iframe.contentDocument!.querySelector(".sdk-page-story-paint")) {
+      for (let pass = 0; pass < limits.maxLayoutPasses; pass++) {
+        placeFloats(pages, source.root, true);
+        centeredWrap?.measure(pages, source.root, true);
+        if (!centeredWrap?.storiesChanged) break;
+        if (pass + 1 === limits.maxLayoutPasses)
+          throw new DocumentError(
+            "ResourceLimitExceeded",
+            "Repeated story layout did not converge within the render pass budget.",
+          );
+      }
+    }
     continuationCells?.();
     restoreSelection();
     source.setPages(pages);
@@ -617,8 +639,10 @@ export function mountPreview(
       fields: results,
       diagnostics: Object.freeze([
         ...(pagination?.diagnostics ?? []),
+        ...(pagination?.storyDiagnostics() ?? []),
         ...(fields?.diagnostics ?? []),
         ...(drawings?.diagnostics ?? []),
+        ...(floatingTables?.diagnostics ?? []),
       ]),
       fonts: fontReport,
     });

@@ -1,3 +1,5 @@
+import { floatingStory } from "./word-floating-placement.js";
+import { columnRegion } from "./column-regions.js";
 import { wordWrapIntervals, wordWrapPoints } from "./word-wrap-geometry.js";
 import type { WrapPoint } from "./word-wrap-geometry.js";
 import {
@@ -43,6 +45,7 @@ interface Obstacle {
   layout?: DeepReadonly<WordDrawing>["layout"];
   points?: WrapPoint[] | undefined;
   cell?: string | undefined;
+  story?: HTMLElement | undefined;
 }
 /** Inline exclusions leave one logical paragraph and the original inline owners
  * intact. They split only UTF-16-safe Text boundaries and carry no source text.
@@ -50,8 +53,9 @@ interface Obstacle {
 export interface WordCenterWrap {
   readonly active: boolean;
   readonly changed: boolean;
+  readonly storiesChanged: boolean;
   reset(): void;
-  measure(pages: readonly RenderedPage[], root: HTMLElement): void;
+  measure(pages: readonly RenderedPage[], root: HTMLElement, storiesOnly?: boolean): void;
 }
 export function wordCenterWrap(
   document: Document,
@@ -60,20 +64,20 @@ export function wordCenterWrap(
 ): WordCenterWrap {
   const snapshot = model.snapshot(),
     roots = new Map(snapshot.metadata.word?.stories.map((story) => [story.rootNodeId, story.kind]));
-  const inMain = (id: string): boolean => {
+  const inFlow = (id: string): boolean => {
     for (
       let node = model.getNode(id);
       node;
       node = node.parentNodeId ? model.getNode(node.parentNodeId) : undefined
     ) {
       const kind = roots.get(node.nodeId);
-      if (kind) return kind === "main";
+      if (kind) return kind === "main" || kind === "header" || kind === "footer";
     }
     return false;
   };
   const drawings = new Map(
     snapshot.metadata.word?.drawings
-      ?.filter((item) => needsWordDrawingLineExclusion(item) && inMain(item.nodeId))
+      ?.filter((item) => needsWordDrawingLineExclusion(item) && inFlow(item.nodeId))
       .map((item) => [item.nodeId, item]),
   );
   const resolver = new SourceStyleResolver(
@@ -91,7 +95,7 @@ export function wordCenterWrap(
   const tables = new Map(
     snapshot.metadata.word?.tables.flatMap((info) => {
       const css = resolver.get(project(info.nodeId));
-      return needsWordTableLineExclusion(css) && inMain(info.nodeId)
+      return css["--word-table-floating"] === "1" && inFlow(info.nodeId)
         ? [[info.nodeId, css] as const]
         : [];
     }),
@@ -112,7 +116,8 @@ export function wordCenterWrap(
     softBreaks = new Set<HTMLElement>();
   const canvas = document.createElement("canvas"),
     context = canvas.getContext("2d")!;
-  let changed = false;
+  let changed = false,
+    storiesChanged = false;
   const reset = () => {
     const parents = new Set<Node>();
     for (const spacer of spacers.keys()) {
@@ -144,16 +149,23 @@ export function wordCenterWrap(
       }
     }
     paragraphStyles.clear();
-    changed = false;
+    changed = storiesChanged = false;
   };
   return {
     active,
     get changed(): boolean {
       return changed;
     },
+    get storiesChanged() {
+      return storiesChanged;
+    },
     reset,
-    measure(pages: readonly RenderedPage[], root: HTMLElement): void {
-      changed = false;
+    measure(pages, root, storiesOnly = false): void {
+      changed = storiesChanged = false;
+      const markChange = (story?: HTMLElement): void => {
+        if (story) storiesChanged = true;
+        else changed = true;
+      };
       if (!active) return;
       let work = 0,
         nodes = document.querySelectorAll("*").length;
@@ -171,15 +183,21 @@ export function wordCenterWrap(
         id: string,
         distances: { left: number; right: number; top: number; bottom: number },
         drawing?: DeepReadonly<WordDrawing>,
+        anchor?: HTMLElement | null,
       ) => {
         if (!node.getClientRects().length || view.getComputedStyle(node).visibility === "hidden")
           return;
-        const rect = node.getBoundingClientRect();
+        const rect = node.getBoundingClientRect(),
+          pageId = node.closest<HTMLElement>(".sdk-word-floating-page,.sdk-paper")?.dataset.pageId,
+          story = floatingStory(anchor);
+        if (storiesOnly && !story) return;
         const page = pages.find(
           (page) =>
             !page.blank &&
-            rect.top >= origin.top + page.rect.y / 0.75 - 0.5 &&
-            rect.top < origin.top + (page.rect.y + page.rect.height) / 0.75,
+            (pageId
+              ? page.pageId === pageId
+              : rect.top >= origin.top + page.rect.y / 0.75 - 0.5 &&
+                rect.top < origin.top + (page.rect.y + page.rect.height) / 0.75),
         );
         if (!page) return;
         const points =
@@ -211,41 +229,69 @@ export function wordCenterWrap(
           : rect;
         obstacles.push({
           key: id + ":" + page.pageId,
+          story,
           ...(drawing
-            ? { layout: drawing.layout, points, cell: node.dataset.sdkWordWrapCell }
-            : {}),
+            ? {
+                layout: drawing.layout,
+                points,
+                cell:
+                  node.dataset.sdkWordWrapCell ??
+                  (drawing.layout.layoutInCell !== false
+                    ? anchor?.closest<HTMLElement>("td,th")?.dataset.nodeId
+                    : undefined),
+              }
+            : { cell: anchor?.closest<HTMLElement>("td,th")?.dataset.nodeId }),
           left: bounds.left - distances.left / 0.75,
           right: bounds.right + distances.right / 0.75,
-          top: bounds.top - distances.top / 0.75,
-          bottom: bounds.bottom + distances.bottom / 0.75,
+          top: Math.max(bounds.top - distances.top / 0.75, origin.top + page.rect.y / 0.75),
+          bottom: Math.min(
+            bounds.bottom + distances.bottom / 0.75,
+            origin.top + (page.rect.y + page.rect.height) / 0.75,
+          ),
         });
       };
       for (const frame of document.querySelectorAll<HTMLElement>(
-        ".sdk-word-floating-layer [data-sdk-word-object]",
+        ".sdk-word-floating-layer [data-sdk-word-object], .sdk-paper [data-sdk-word-story-anchor]",
       )) {
         const drawing = drawings.get(frame.dataset.sdkWordObject!);
-        if (drawing) add(frame, drawing.nodeId, { left: 0, right: 0, top: 0, bottom: 0 }, drawing);
+        const paper = frame.closest(".sdk-paper"),
+          anchor = paper?.querySelector<HTMLElement>(
+            '[data-sdk-word-anchor="' + CSS.escape(frame.dataset.sdkWordObject!) + '"]',
+          );
+        if (drawing && (!paper || anchor))
+          add(frame, drawing.nodeId, { left: 0, right: 0, top: 0, bottom: 0 }, drawing, anchor);
       }
       for (const table of document.querySelectorAll<HTMLTableElement>(
         ".sdk-word-floating-table > table[data-node-id]",
       )) {
-        const css = tables.get(table.dataset.nodeId!);
-        if (!css) continue;
+        const id = table.dataset.nodeId!,
+          css = tables.get(id),
+          box = table.parentElement!;
+        if (!css || box.style.position !== "absolute" || table.closest(".sdk-repeat-header"))
+          continue;
+        const anchor =
+          table
+            .closest(".sdk-paper")
+            ?.querySelector<HTMLElement>('[data-sdk-word-table-anchor="' + CSS.escape(id) + '"]') ??
+          (box.previousElementSibling as HTMLElement | null);
         const distance = (side: string) =>
           resolveSourceCssLength(css["--word-table-position-" + side + "-distance"] ?? "0pt", {
             font: 12,
             percent: 468,
           });
-        add(table, table.dataset.nodeId!, {
+        const distances = {
           left: distance("left"),
           right: distance("right"),
           top: distance("top"),
           bottom: distance("bottom"),
-        });
+        };
+        add(table, id, distances, undefined, anchor);
       }
       const byKey = new Map(obstacles.map((item) => [item.key, item]));
       for (const [spacer, entry] of spacers) {
-        const box = spacer.getBoundingClientRect(),
+        if (storiesOnly && !entry.obstacle.story) continue;
+        const connected = spacer.isConnected,
+          box = spacer.getBoundingClientRect(),
           raw = byKey.get(entry.key),
           obstacle = raw
             ? {
@@ -262,7 +308,7 @@ export function wordCenterWrap(
         ) {
           spacer.remove();
           spacers.delete(spacer);
-          changed = true;
+          if (connected) markChange(entry.obstacle.story);
           continue;
         }
         if (spacer.style.display === "block") continue;
@@ -270,7 +316,7 @@ export function wordCenterWrap(
         if (width <= 0) {
           spacer.remove();
           spacers.delete(spacer);
-          changed = true;
+          markChange(entry.obstacle.story);
           continue;
         }
       }
@@ -296,23 +342,34 @@ export function wordCenterWrap(
             x: number;
             line: DOMRect;
             p: HTMLElement;
+            bounds: { left: number; right: number };
             obstacle: Obstacle;
             rtl: boolean;
           }
         | undefined => {
-        for (const p of root.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6")) {
+        const paragraphs = obstacles.some((obstacle) => obstacle.story)
+          ? document.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6")
+          : root.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6");
+        for (const p of paragraphs) {
           reserve();
+          const story = floatingStory(p),
+            insideFloatingTable = Boolean(p.closest(".sdk-word-floating-table")),
+            cell = p.closest<HTMLElement>("td,th")?.dataset.nodeId;
           if (
-            p.closest(".sdk-word-floating-table,[data-sdk-word-object],.sdk-paper") ||
-            p.closest("[data-office-story]")?.getAttribute("data-office-story") !== "main"
+            p.closest("[data-sdk-word-object]") ||
+            (!story &&
+              p.closest("[data-office-story]")?.getAttribute("data-office-story") !== "main")
           )
             continue;
-          const bounds = p.getBoundingClientRect(),
+          const paragraphBox = p.getBoundingClientRect(),
+            fragmented = columnRegion(p, paragraphBox, p)?.fragmented,
             relevant = obstacles.filter(
               (o) =>
-                (!o.cell || p.closest("td,th")?.getAttribute("data-node-id") === o.cell) &&
-                bounds.bottom > o.top - (o.layout?.distances?.top ?? 0) / 0.75 &&
-                bounds.top < o.bottom + (o.layout?.distances?.bottom ?? 0) / 0.75,
+                o.story === story &&
+                (o.cell ? cell === o.cell : !insideFloatingTable) &&
+                (fragmented ||
+                  (paragraphBox.bottom > o.top - (o.layout?.distances?.top ?? 0) / 0.75 &&
+                    paragraphBox.top < o.bottom + (o.layout?.distances?.bottom ?? 0) / 0.75)),
             );
           if (!relevant.length) continue;
           const css = view.getComputedStyle(p),
@@ -330,7 +387,7 @@ export function wordCenterWrap(
             if (css.direction !== "rtl" && css.textAlign === "right") {
               ownViewStyle(p, "text-align");
               p.style.textAlign = "left";
-              changed = true;
+              markChange(story);
             }
           }
           const walker = document.createTreeWalker(p, 4);
@@ -356,8 +413,24 @@ export function wordCenterWrap(
               continue;
             const range = document.createRange();
             range.selectNodeContents(text);
-            for (const line of range.getClientRects())
-              for (const original of relevant)
+            for (const line of range.getClientRects()) {
+              const region = columnRegion(p, line, p),
+                fragment = region?.fragment ?? region,
+                bounds = fragment ? { left: fragment.left, right: fragment.right } : paragraphBox;
+              for (const original of relevant) {
+                reserve();
+                if (
+                  line.bottom <=
+                    original.top - (original.layout?.distances?.top ?? 0) / 0.75 + 0.25 ||
+                  line.top >=
+                    original.bottom + (original.layout?.distances?.bottom ?? 0) / 0.75 - 0.25 ||
+                  (region &&
+                    (original.right + (original.layout?.distances?.right ?? 0) / 0.75 <=
+                      bounds.left ||
+                      original.left - (original.layout?.distances?.left ?? 0) / 0.75 >=
+                        bounds.right))
+                )
+                  continue;
                 for (const span of original.layout
                   ? wordWrapIntervals(
                       original,
@@ -462,7 +535,7 @@ export function wordCenterWrap(
                           }
                           word.replaceWith(fragment);
                           longWords.add(wrapper);
-                          changed = true;
+                          markChange(story);
                           return find();
                         }
                       }
@@ -478,11 +551,13 @@ export function wordCenterWrap(
                         : at === first
                           ? boundary.left
                           : boundary.right;
-                      return { text, at, x, line, p, obstacle, rtl };
+                      return { text, at, x, line, p, bounds, obstacle, rtl };
                     }
                     at = end;
                   }
                 }
+              }
+            }
           }
         }
         return undefined;
@@ -493,7 +568,8 @@ export function wordCenterWrap(
           hit.at === 0 && hit.text.previousSibling?.nodeType === 1
             ? (hit.text.previousSibling as HTMLElement)
             : undefined;
-        const paragraphBox = hit.p.getBoundingClientRect();
+        const paragraphBox = hit.bounds,
+          widthInFlow = paragraphBox.right - paragraphBox.left;
         const previousEntry = previous ? spacers.get(previous) : undefined;
         // Glyph bounds can overlap their adjacent advance by a pixel (notably
         // in WebKit's CJK runs). Extend an existing gap by that residual instead
@@ -506,9 +582,9 @@ export function wordCenterWrap(
             0.5
         ) {
           const next = (parseFloat(previous.style.width) || 0) + Math.max(1, width);
-          if (next < paragraphBox.width - 0.5) {
+          if (next < widthInFlow - 0.5) {
             previous.style.width = next + "px";
-            changed = true;
+            markChange(hit.obstacle.story);
             continue;
           }
         }
@@ -517,7 +593,7 @@ export function wordCenterWrap(
           : hit.obstacle.right >= paragraphBox.right - 0.5 && hit.x > paragraphBox.left + 2;
         const blocked =
           !breakOnly &&
-          (width >= paragraphBox.width - 0.5 ||
+          (width >= widthInFlow - 0.5 ||
             (previous &&
               spacers.get(previous)?.key === hit.obstacle.key &&
               Math.abs(
@@ -553,9 +629,14 @@ export function wordCenterWrap(
           rtl: hit.rtl,
           obstacle: hit.obstacle,
         });
-        changed = true;
+        markChange(hit.obstacle.story);
       }
       for (const [p, old] of paragraphStyles) {
+        if (!p.isConnected) {
+          paragraphStyles.delete(p);
+          aligned.delete(p);
+          continue;
+        }
         if (!old.right || aligned.has(p)) continue;
         const gaps = [...spacers].filter(([spacer]) => spacer.closest("p,h1,h2,h3,h4,h5,h6") === p);
         for (const [gap, entry] of gaps) {

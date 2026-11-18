@@ -5,6 +5,7 @@ import type { PageFlow, PageFlowConstraints } from "./flow.js";
 import { columnFlow } from "./column-flow.js";
 import type { PreviewSource } from "./source-index.js";
 import { markViewNode } from "./view-nodes.js";
+import { sameColumnGeometry } from "./column-regions.js";
 export interface FlowSection {
   readonly element: HTMLElement;
   readonly definition: DeepReadonly<DocumentSection>;
@@ -31,6 +32,7 @@ export function sectionFlow(
   balanceEnd: (section: FlowSection) => boolean,
   constraints?: PageFlowConstraints,
   pageOffset?: (page: number) => number,
+  firstPageIndex?: () => number,
 ): PageFlow {
   const bands = new Map<HTMLElement, Band>(),
     starts = new Map<HTMLElement, number>(),
@@ -83,6 +85,7 @@ export function sectionFlow(
         firstColumn: () => band.firstColumn,
         balanceEnd: () => balanceEnd(section),
         compact: true,
+        firstPageIndex: () => (firstPageIndex?.() ?? 0) + band.start,
       },
     );
     band = { section, flow: wrapper, paginator, start: 0, inset: 0, firstColumn: 0 };
@@ -111,8 +114,11 @@ export function sectionFlow(
           columns = band.section.definition.columns?.count ?? 1;
         if (
           next < columns &&
-          JSON.stringify(previous.section.definition.columns) ===
-            JSON.stringify(band.section.definition.columns)
+          sameColumnGeometry(
+            previous.section.definition.columns,
+            band.section.definition.columns,
+            width * 0.75,
+          )
         ) {
           band.firstColumn = next;
           inset = page === previous.start ? previous.inset : 0;
@@ -121,8 +127,8 @@ export function sectionFlow(
           inset = 0;
         }
       }
-      if (forcePage && inset > 0.5) {
-        page++;
+      if (forcePage && previous) {
+        page = Math.max(page, previous.start + previous.paginator.count);
         inset = 0;
       }
       if (area - (constraints?.reserved(page) ?? 0) - inset < 24) {

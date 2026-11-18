@@ -8,6 +8,7 @@ import type { PageFlow, PageFlowConstraints } from "./flow.js";
 import { markViewNode, ownViewStyle, viewNodeRole } from "./view-nodes.js";
 import type { PreviewSource } from "./source-index.js";
 import { wordRowVisibleRect } from "./word-table-layout.js";
+import { floatingTableColumnOffset, setColumnRegions } from "./column-regions.js";
 
 /** Measure one narrow, reversible source flow, then project logical columns onto
  * physical pages. Text and source elements retain identity, order and UTF-16 offsets. */
@@ -16,6 +17,7 @@ export interface ColumnFlowOptions {
   firstColumn?: number | (() => number);
   balanceEnd?: boolean | (() => boolean);
   compact?: boolean;
+  firstPageIndex?: () => number;
 }
 export function columnFlow(
   document: Document,
@@ -121,8 +123,7 @@ export function columnFlow(
     x: columnOffsets[column % count]! + (pageOffset?.(Math.floor(column / count)) ?? 0),
     y: Math.floor(column / count) * pitch - column * area - (column >= count ? firstInset() : 0),
   });
-  const move = (element: HTMLElement, column: number): void => {
-    const delta = offset(column);
+  const move = (element: HTMLElement, delta: { x: number; y: number }): void => {
     if (!delta.x && !delta.y) return;
     if (!positions.has(element)) positions.set(element, element.style.cssText);
     ownViewStyle(element, "position", "left", "top");
@@ -158,6 +159,12 @@ export function columnFlow(
           (node as Element).classList.contains("sdk-column-exclusion"))
       )
         return;
+      if (
+        node.nodeType === 1 &&
+        (node as Element).matches(".sdk-word-floating-table,[data-sdk-word-object]") &&
+        (node as HTMLElement).style.position === "absolute"
+      )
+        return;
       let rect: DOMRect, textLines: DOMRect[] | undefined;
       if (node.nodeType === 3) {
         const range = document.createRange();
@@ -171,10 +178,13 @@ export function columnFlow(
       const anchor =
           node.nodeType === 1 &&
           viewNodeRole(node) === "remove" &&
-          (node as HTMLElement).dataset.sdkWordAnchor !== undefined,
+          ((node as HTMLElement).dataset.sdkWordAnchor !== undefined ||
+            (node as HTMLElement).dataset.sdkWordTableAnchor !== undefined),
         clipped = wordRowVisibleRect(
           node.nodeType === 1 ? (node as Element) : node.parentElement!,
-          anchor ? new DOMRect(rect.x, rect.y, Math.max(0.1, rect.width), rect.height) : rect,
+          anchor || (node.nodeType === 1 && rect.height >= 0.1)
+            ? new DOMRect(rect.x, rect.y, Math.max(0.1, rect.width), Math.max(0.1, rect.height))
+            : rect,
         );
       if (!clipped) return;
       rect = clipped;
@@ -232,6 +242,27 @@ export function columnFlow(
       return { from, to };
     };
     measure(flow);
+    const floatingAncestors = new Set<Node>();
+    for (const carrier of flow.querySelectorAll<HTMLElement>(".sdk-word-floating-table"))
+      if (floatingTableColumnOffset.has(carrier) && carrier.style.position !== "absolute")
+        for (
+          let parent = carrier.parentElement;
+          parent && parent !== flow;
+          parent = parent.parentElement
+        )
+          floatingAncestors.add(parent);
+    const projectedOffset = (node: Element, column: number): { x: number; y: number } => {
+      const delta = offset(column),
+        carrier = node.closest<HTMLElement>(".sdk-word-floating-table"),
+        align = carrier && floatingTableColumnOffset.get(carrier),
+        measured = carrier && nodes.get(carrier);
+      if (align && measured && carrier!.style.position !== "absolute") {
+        const index = column % count,
+          page = (options?.firstPageIndex?.() ?? 0) + Math.floor(column / count);
+        delta.x += align(columnWidths[index]!, page) - (measured.rect.left - base.left);
+      }
+      return delta;
+    };
     for (const table of flow.querySelectorAll<HTMLTableElement>("table")) {
       const header: HTMLTableRowElement[] = [];
       for (const row of table.rows) {
@@ -249,7 +280,7 @@ export function columnFlow(
             3,
         );
         const clone = markViewNode(table.cloneNode(false) as HTMLTableElement),
-          delta = offset(column);
+          delta = projectedOffset(table, column);
         clone.contentEditable = "false";
         clone.classList.add("sdk-repeat-header");
         clone.setAttribute("aria-hidden", "true");
@@ -297,7 +328,7 @@ export function columnFlow(
           bottom = Math.min(rect.bottom - base.top, column * area + capacity(column));
         if (bottom <= top) continue;
         reserve();
-        const delta = offset(column),
+        const delta = projectedOffset(element, column),
           fragment = markViewNode(document.createElement("div"));
         fragment.style.cssText = `position:absolute;pointer-events:none;box-sizing:border-box;left:${rect.left - base.left + delta.x}px;top:${top + delta.y}px;width:${Math.min(rect.width, columnWidths[column % count]!)}px;height:${bottom - top}px;background-color:${color};border-left:${borders.left};border-right:${borders.right};border-top:${column === from ? borders.top : "0"};border-bottom:${column === to ? borders.bottom : "0"};z-index:-1`;
         flow.append(fragment);
@@ -307,18 +338,18 @@ export function columnFlow(
     const walk = (node: Node): void => {
       const bounds = nodes.get(node);
       if (!bounds) return;
-      if (node !== flow && bounds.from === bounds.to) {
+      if (node !== flow && bounds.from === bounds.to && !floatingAncestors.has(node)) {
         if (node.nodeType === 1) {
           if (widths && bounds.rect.width > columnWidths[bounds.from % count]! + 0.1)
             paint(node as HTMLElement, bounds.rect, bounds.from, bounds.to);
-          move(node as HTMLElement, bounds.from);
+          move(node as HTMLElement, projectedOffset(node as HTMLElement, bounds.from));
         } else if (bounds.rect.height > 0.1 && bounds.rect.width > 0.01) {
           reserve();
           const wrapper = markViewNode(document.createElement("span"), "unwrap");
           node.parentNode!.insertBefore(wrapper, node);
           wrapper.append(node);
           wrappers.push(wrapper);
-          move(wrapper, bounds.from);
+          move(wrapper, projectedOffset(wrapper, bounds.from));
         }
         return;
       }
@@ -349,6 +380,59 @@ export function columnFlow(
         }
     flow.dataset.sdkColumnCount = String(count);
     projected = true;
+    setColumnRegions(flow, (node, rect, owner) => {
+      if (!projected) return;
+      const origin = flow.getBoundingClientRect(),
+        page = Math.max(0, Math.floor((rect.top - origin.top + firstInset() + 0.25) / pitch)),
+        measured = nodes.get(node),
+        anchor =
+          node.hasAttribute("data-sdk-word-anchor") ||
+          node.hasAttribute("data-sdk-word-table-anchor") ||
+          node.localName === "tr",
+        exact =
+          anchor &&
+          measured?.from === measured?.to &&
+          measured &&
+          Math.abs(node.getBoundingClientRect().top - rect.top) < 0.1 &&
+          Math.abs(node.getBoundingClientRect().left - rect.left) < 0.1
+            ? measured.from
+            : undefined,
+        x = rect.left - origin.left - (pageOffset?.(page) ?? 0);
+      let index = exact === undefined ? 0 : exact % count;
+      if (exact === undefined)
+        while (
+          index + 1 < count &&
+          x >= columnOffsets[index]! + columnWidths[index]! + (spaces?.[index] ?? gap) / 2
+        )
+          index++;
+      const column = exact ?? page * count + index,
+        delta = offset(column),
+        left = origin.left + delta.x,
+        top = origin.top + column * area + delta.y,
+        right = left + columnWidths[index]!,
+        bottom = top + capacity(column);
+      const ownerBounds = owner ? nodes.get(owner) : undefined,
+        box = ownerBounds?.rect,
+        ownerDelta = owner ? projectedOffset(owner, column) : delta;
+      return {
+        ordinal: column,
+        left,
+        right,
+        top,
+        bottom,
+        ...(box
+          ? {
+              fragmented: ownerBounds!.from !== ownerBounds!.to,
+              fragment: {
+                left: origin.left + box.left - base.left + ownerDelta.x,
+                right: Math.min(right, origin.left + box.right - base.left + ownerDelta.x),
+                top: Math.max(top, origin.top + box.top - base.top + delta.y),
+                bottom: Math.min(bottom, origin.top + box.bottom - base.top + delta.y),
+              },
+            }
+          : {}),
+      };
+    });
   }
   function layout(element: HTMLElement, forcePage?: boolean, parity?: number): void {
     if (widths)

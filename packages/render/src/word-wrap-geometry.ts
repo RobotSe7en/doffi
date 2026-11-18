@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { DeepReadonly, WordDrawingLayout } from "@doffi/core";
+import type { DeepReadonly, WordDrawing, WordDrawingLayout } from "@doffi/core";
 
 export interface WrapPoint {
   x: number;
@@ -14,6 +14,28 @@ export interface WrapBounds {
 export interface WrapInterval {
   left: number;
   right: number;
+}
+
+export function wordDrawingCollisionBounds(
+  position: { left: number; top: number },
+  geometry: DeepReadonly<WordDrawing["geometry"]>,
+): WrapBounds {
+  const points = wordWrapPoints(
+    [
+      { x: 0, y: 0 },
+      { x: 21600, y: 0 },
+      { x: 21600, y: 21600 },
+      { x: 0, y: 21600 },
+    ],
+    { ...position, width: geometry.width / 0.75, height: geometry.height / 0.75 },
+    geometry,
+  );
+  return {
+    left: Math.min(...points.map(({ x }) => x)),
+    right: Math.max(...points.map(({ x }) => x)),
+    top: Math.min(...points.map(({ y }) => y)),
+    bottom: Math.max(...points.map(({ y }) => y)),
+  };
 }
 
 /** Word uses a 21600-square coordinate space. Apply the same center rotation

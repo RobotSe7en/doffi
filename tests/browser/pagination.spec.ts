@@ -1,3 +1,4 @@
+import { registerWordFloatingSectionTests } from "./word-floating-section-cases.js";
 import { registerWordDrawingSizeTests } from "./word-drawing-size-cases.js";
 import { registerWordDrawingWrapTests } from "./word-drawing-wrap-cases.js";
 import { gridBoundaryFixture } from "../../packages/office/tests/grid-boundary-fixture.js";
@@ -9497,3 +9498,5 @@ for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as con
 registerWordDrawingWrapTests(mount);
 
 registerWordDrawingSizeTests(mount);
+
+registerWordFloatingSectionTests(mount);

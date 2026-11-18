@@ -1,3 +1,10 @@
+import { floatingStory } from "./word-floating-placement.js";
+import {
+  columnRegion,
+  floatingTableColumnOffset,
+  floatingTableFragments,
+} from "./column-regions.js";
+import type { WordFloatingPlacement } from "./word-floating-placement.js";
 import { needsWordTableLineExclusion } from "./word-center-wrap.js";
 import {
   SourceStyleResolver,
@@ -6,17 +13,46 @@ import {
 } from "@doffi/core";
 import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
 import { DocumentError } from "@doffi/core";
-import type { RenderLimits, RenderedPage } from "./contracts.js";
+import type { LayoutDiagnostic, RenderLimits, RenderedPage } from "./contracts.js";
 import { markViewNode, ownViewStyle } from "./view-nodes.js";
+const align = (
+  value: string | undefined,
+  size: number,
+  object: number,
+  offset: number,
+  odd: boolean,
+): number =>
+  value === "center"
+    ? (size - object) / 2
+    : value === "right" ||
+        value === "bottom" ||
+        (value === "outside" && odd) ||
+        (value === "inside" && !odd)
+      ? size - object
+      : value && value !== "none" && value !== "inline"
+        ? 0
+        : offset;
+
 /** The actual source table remains editable. Only the float carrier and its
  * measured margins are view data; native coordinates stay in the source CSS. */
 export function composeWordFloatingTables(
   document: Document,
   model: ContentDocumentModel,
   limits: Readonly<RenderLimits>,
-): { readonly changed: boolean; measure(pages: readonly RenderedPage[], root: HTMLElement): void } {
+): {
+  readonly active: boolean;
+  readonly changed: boolean;
+  readonly diagnostics: readonly LayoutDiagnostic[];
+  measure(
+    pages: readonly RenderedPage[],
+    root: HTMLElement,
+    placement: WordFloatingPlacement,
+    storiesOnly?: boolean,
+  ): void;
+} {
   const snapshot = model.snapshot(),
     word = snapshot.metadata.word,
+    continued = new WeakSet<HTMLElement>(),
     entries: {
       table: HTMLTableElement;
       box: HTMLElement;
@@ -99,78 +135,72 @@ export function composeWordFloatingTables(
     table.style.maxWidth = "none";
     table.style.margin = "0";
     table.style.float = "none";
+    if (h === "text" && !anchor.closest("td,th"))
+      floatingTableColumnOffset.set(box, (span, page) =>
+        align(
+          css["--word-table-position-x-align"],
+          span,
+          width / 0.75,
+          (amount(css, "x") - (amount(css, "x") > 0 ? 0.05 : 0)) / 0.75,
+          page % 2 === 0,
+        ),
+      );
     entries.push({ table, box, anchor, css, width });
   }
   let changed = false;
+  let diagnostics: LayoutDiagnostic[] = [],
+    storyDiagnostics: LayoutDiagnostic[] = [];
   return {
+    get active() {
+      return entries.length > 0;
+    },
+    get diagnostics() {
+      return [...diagnostics, ...storyDiagnostics];
+    },
     get changed(): boolean {
       return changed;
     },
-    measure(pages: readonly RenderedPage[], root: HTMLElement): void {
-      changed = false;
+    measure(pages, root, placement, storiesOnly = false): void {
+      if (!storiesOnly) {
+        changed = false;
+        diagnostics = [];
+      }
+      storyDiagnostics = [];
       const origin = root.getBoundingClientRect(),
-        placed: {
-          page: string;
-          left: number;
-          right: number;
-          top: number;
-          bottom: number;
-          never: boolean;
-        }[] = [];
-      const align = (
-        value: string | undefined,
-        size: number,
-        object: number,
-        offset: number,
-        odd: boolean,
-      ): number =>
-        value === "center"
-          ? (size - object) / 2
-          : value === "right" ||
-              value === "bottom" ||
-              (value === "outside" && odd) ||
-              (value === "inside" && !odd)
-            ? size - object
-            : value && value !== "none" && value !== "inline"
-              ? 0
-              : offset;
-      const instances = entries.flatMap((entry) => [
-        entry,
-        ...[
-          ...document.querySelectorAll<HTMLTableElement>(
-            '.sdk-paper .sdk-word-floating-table > table[data-node-id="' +
+        byPage = new Map(pages.map((page) => [page.pageId, page])),
+        pageAt = (y: number) =>
+          pages.find(
+            (page) => !page.blank && y >= page.rect.y - 0.1 && y < page.rect.y + page.rect.height,
+          );
+      const entriesById = new Map(entries.map((entry) => [entry.table.dataset.nodeId!, entry])),
+        instances = storiesOnly ? [] : [...entries];
+      for (const anchor of document.querySelectorAll<HTMLElement>(
+        ".sdk-paper [data-sdk-word-table-anchor], .sdk-repeat-header [data-sdk-word-table-anchor]",
+      )) {
+        const entry = entriesById.get(anchor.dataset.sdkWordTableAnchor!);
+        if (!entry) continue;
+        const paper = anchor.closest(".sdk-paper");
+        if (storiesOnly && !paper) continue;
+        const candidate = anchor.nextElementSibling,
+          table = (
+            candidate?.classList.contains("sdk-word-floating-table") ? candidate : paper
+          )?.querySelector<HTMLTableElement>(
+            '.sdk-word-floating-table > table[data-node-id="' +
               CSS.escape(entry.table.dataset.nodeId!) +
               '"]',
-          ),
-        ].map((table) => ({
-          ...entry,
-          table,
-          box: table.parentElement!,
-          anchor: table
-            .closest(".sdk-paper")!
-            .querySelector<HTMLElement>(
-              '[data-sdk-word-table-anchor="' + CSS.escape(entry.table.dataset.nodeId!) + '"]',
-            )!,
-        })),
-      ]);
+          );
+        if (table) instances.push({ ...entry, table, box: table.parentElement!, anchor });
+      }
       for (const { table, box, anchor, css, width } of instances) {
         if (!anchor || !table.getClientRects().length) continue;
         const a = anchor.getBoundingClientRect(),
           y = (a.top - origin.top) * 0.75,
           paper = box.closest<HTMLElement>(".sdk-paper"),
-          page = paper
-            ? pages.find((page) => page.pageId === paper.dataset.pageId)
-            : pages.find(
-                (page) =>
-                  !page.blank && y >= page.rect.y - 0.1 && y < page.rect.y + page.rect.height,
-              );
+          page = paper ? byPage.get(paper.dataset.pageId!) : pageAt(y);
         if (!page) continue;
         const setup = page.setup,
           m = setup.margins,
           odd = page.index % 2 === 0,
-          section = snapshot.metadata.sections?.find(
-            (section) => section.sectionId === page.sectionId,
-          ),
           h = css["--word-table-position-h-anchor"] ?? "text",
           v = css["--word-table-position-v-anchor"] ?? "margin",
           x = amount(css, "x") > 0 ? amount(css, "x") - 0.05 : amount(css, "x"),
@@ -178,120 +208,184 @@ export function composeWordFloatingTables(
           height = table.getBoundingClientRect().height * 0.75;
         let startX = page.rect.x + m.left,
           sizeX = setup.width - m.left - m.right;
+        const cell = anchor.closest<HTMLElement>("td,th"),
+          story = floatingStory(anchor),
+          column = !story ? columnRegion(anchor, a, cell ?? undefined) : undefined;
         if (h === "page") {
           startX = page.rect.x;
           sizeX = setup.width;
-        } else if (h === "text" && (section?.columns?.count ?? 1) > 1) {
-          const count = section!.columns!.count,
-            gap = section!.columns!.gap ?? 0,
-            span = (sizeX - gap * (count - 1)) / count,
-            index = Math.max(
-              0,
-              Math.min(
-                count - 1,
-                Math.floor(((a.left - origin.left) * 0.75 - startX) / (span + gap)),
-              ),
-            );
-          startX += index * (span + gap);
-          sizeX = section!.columns!.widths?.[index] ?? span;
+        } else if (h === "text") {
+          const region = story?.getBoundingClientRect() ?? column;
+          if (region) {
+            startX = (region.left - origin.left) * 0.75;
+            sizeX = (region.right - region.left) * 0.75;
+          }
         }
         let startY = v === "text" ? y : page.rect.y + (v === "page" ? 0 : m.top),
           sizeY =
             v === "page" ? setup.height : v === "margin" ? setup.height - m.top - m.bottom : 0;
-        const cell = table.parentElement?.closest("td,th");
         if (cell) {
-          const bounds = cell.getBoundingClientRect();
-          startX = (bounds.left - origin.left) * 0.75;
-          sizeX = bounds.width * 0.75;
+          const bounds = column?.fragment ?? cell.getBoundingClientRect(),
+            style = document.defaultView!.getComputedStyle(cell),
+            inset = (side: string) =>
+              (parseFloat(style.getPropertyValue("padding-" + side)) || 0) +
+              (parseFloat(style.getPropertyValue("border-" + side + "-width")) || 0),
+            left = bounds.left + inset("left"),
+            right = bounds.right - inset("right");
+          startX = (left - origin.left) * 0.75;
+          sizeX = (right - left) * 0.75;
           if (v !== "text") {
-            startY = (bounds.top - origin.top) * 0.75;
-            sizeY = bounds.height * 0.75;
+            startY = (bounds.top + inset("top") - origin.top) * 0.75;
+            sizeY = (bounds.bottom - inset("bottom") - origin.top) * 0.75 - startY;
           }
         }
         const left = startX + align(css["--word-table-position-x-align"], sizeX, width, x, odd);
-        let top =
+        const desiredTop =
           startY +
           (v === "text"
             ? offsetY
             : align(css["--word-table-position-y-align"], sizeY, height, offsetY, odd));
-        for (const before of placed)
-          if (
-            (css["--word-table-overlap"] === "never" || before.never) &&
-            before.page === page.pageId &&
-            left < before.right &&
-            left + width > before.left &&
-            top < before.bottom &&
-            top + height > before.top
-          )
-            top = before.bottom + amount(css, "top-distance");
-        placed.push({
-          never: css["--word-table-overlap"] === "never",
-          page: page.pageId,
-          left,
-          right: left + width,
-          top,
-          bottom: top + height + amount(css, "bottom-distance"),
-        });
-        if (paper) {
-          const bounds = paper.getBoundingClientRect();
-          box.style.position = "absolute";
-          box.style.cssFloat = "none";
-          box.style.margin = "0";
-          box.style.left =
-            origin.left + (left - amount(css, "left-distance")) / 0.75 - bounds.left + "px";
-          box.style.top =
-            origin.top + (top - amount(css, "top-distance")) / 0.75 - bounds.top + "px";
-          paper.append(box);
-          continue;
-        }
+        const physicalBottom = origin.top + (page.rect.y + page.rect.height) / 0.75,
+          columnBottom = column?.bottom ?? physicalBottom - m.bottom / 0.75;
         if (
-          needsWordTableLineExclusion(css) &&
-          table.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
+          !paper &&
+          box.style.position === "absolute" &&
+          box.closest(".sdk-page-flow") &&
+          height > 0 &&
+          origin.top + (desiredTop + height + amount(css, "bottom-distance")) / 0.75 >
+            columnBottom + 0.5 &&
+          (v === "text" || height > setup.height - m.top - m.bottom)
         ) {
-          const parent = (box.offsetParent as HTMLElement | null) ?? root,
-            bounds = parent.getBoundingClientRect();
-          const x =
-              origin.left +
-              (left - amount(css, "left-distance")) / 0.75 -
-              bounds.left -
-              parent.clientLeft,
-            y =
-              origin.top +
-              (top - amount(css, "top-distance")) / 0.75 -
-              bounds.top -
-              parent.clientTop;
-          for (const [key, value] of [
-            ["left", x],
-            ["top", y],
-          ] as const)
-            if (Math.abs((parseFloat(box.style.getPropertyValue(key)) || 0) - value) > 0.05) {
-              box.style.setProperty(key, value + "px");
-              changed = true;
-            }
+          // Keep the real rows in the measured flow when the positioned table
+          // needs the table paginator's continuation handling.
+          box.style.position = "";
+          box.style.cssFloat = "none";
+          continued.add(box);
+          box.style.left = box.style.top = "";
+          changed = true;
           continue;
         }
-        const float = left + width / 2 > page.rect.x + setup.width / 2 ? "right" : "left",
-          actual = table.getBoundingClientRect(),
-          dx =
-            float === "left"
-              ? left - (actual.left - origin.left) * 0.75
-              : (actual.right - origin.left) * 0.75 - left - width,
-          dy = top - (actual.top - origin.top) * 0.75;
-        if (box.style.cssFloat !== float) {
-          box.style.cssFloat = float;
+        const scope = cell ?? story ?? root,
+          allowOverlap = css["--word-table-overlap"] !== "never",
+          fragments =
+            column && box.style.position !== "absolute"
+              ? [...floatingTableFragments(table).values()]
+              : [],
+          [first, ...continuations] = fragments;
+        if (
+          !paper &&
+          !continued.has(box) &&
+          box.style.position !== "absolute" &&
+          (continuations.some(({ top }) => pageAt((top - origin.top) * 0.75) !== page) ||
+            (!column && height > setup.height - m.top - m.bottom))
+        ) {
+          // The default native behavior puts following content after the
+          // last row when a floating table breaks over a physical page.
+          continued.add(box);
+          box.style.cssFloat = "none";
           box.style.marginLeft = box.style.marginRight = "0pt";
           changed = true;
           continue;
         }
-        const nudge = (key: "margin-left" | "margin-right" | "margin-top", delta: number): void => {
-          if (Math.abs(delta) < 0.05) return;
-          const value =
-            Math.round(((parseFloat(box.style.getPropertyValue(key)) || 0) + delta) * 1000) / 1000;
-          box.style.setProperty(key, value + "pt");
-          changed = true;
-        };
-        nudge(float === "left" ? "margin-left" : "margin-right", dx);
-        nudge("margin-top", dy);
+        for (const bounds of continuations) {
+          const continuation = pageAt((bounds.top - origin.top) * 0.75);
+          if (continuation)
+            placement.add({ anchor, page: continuation, scope, allowOverlap, bounds });
+        }
+        const collisionHeight = first ? (first.bottom - first.top) * 0.75 : height;
+        placement.add({
+          anchor,
+          page,
+          scope,
+          bounds: {
+            left: origin.left + (left - amount(css, "left-distance")) / 0.75,
+            right: origin.left + (left + width + amount(css, "right-distance")) / 0.75,
+            top: origin.top + (desiredTop - amount(css, "top-distance")) / 0.75,
+            bottom:
+              origin.top + (desiredTop + collisionHeight + amount(css, "bottom-distance")) / 0.75,
+          },
+          allowOverlap,
+          apply(delta) {
+            const top = desiredTop + delta * 0.75;
+            if (delta > 0.1 && origin.top + (top + collisionHeight) / 0.75 > physicalBottom + 0.1)
+              (paper ? storyDiagnostics : diagnostics).push({
+                code: "ContentOverflow",
+                nodeId: table.dataset.nodeId!,
+                message: "Collision avoidance moves this table beyond its anchor page.",
+              });
+            if (paper) {
+              const bounds = paper.getBoundingClientRect();
+              box.style.position = "absolute";
+              box.style.cssFloat = "none";
+              box.style.margin = "0";
+              box.style.left =
+                origin.left + (left - amount(css, "left-distance")) / 0.75 - bounds.left + "px";
+              box.style.top =
+                origin.top + (top - amount(css, "top-distance")) / 0.75 - bounds.top + "px";
+              return;
+            }
+            if (box.style.position === "absolute") {
+              const parent = (box.offsetParent as HTMLElement | null) ?? root,
+                bounds = parent.getBoundingClientRect();
+              const x =
+                  origin.left +
+                  (left - amount(css, "left-distance")) / 0.75 -
+                  bounds.left -
+                  parent.clientLeft,
+                y =
+                  origin.top +
+                  (top - amount(css, "top-distance")) / 0.75 -
+                  bounds.top -
+                  parent.clientTop;
+              for (const [key, value] of [
+                ["left", x],
+                ["top", y],
+              ] as const)
+                if (Math.abs((parseFloat(box.style.getPropertyValue(key)) || 0) - value) > 0.05) {
+                  box.style.setProperty(key, value + "px");
+                  changed = true;
+                }
+              return;
+            }
+            const columnAligned = column && floatingTableColumnOffset.has(box);
+            const center = column
+              ? ((column.left + column.right) / 2 - origin.left) * 0.75
+              : page.rect.x + setup.width / 2;
+            const float = continued.has(box)
+                ? "none"
+                : !columnAligned && left + width / 2 > center
+                  ? "right"
+                  : "left",
+              actual = table.rows[0]?.getBoundingClientRect() ?? table.getBoundingClientRect(),
+              dx =
+                float !== "right"
+                  ? left - (actual.left - origin.left) * 0.75
+                  : (actual.right - origin.left) * 0.75 - left - width,
+              dy =
+                column && (actual.top < column.top - 0.5 || actual.top >= column.bottom)
+                  ? 0
+                  : top - (actual.top - origin.top) * 0.75;
+            if (box.style.cssFloat !== float) {
+              box.style.cssFloat = float;
+              box.style.marginLeft = box.style.marginRight = "0pt";
+              changed = true;
+              return;
+            }
+            const nudge = (
+              key: "margin-left" | "margin-right" | "margin-top",
+              delta: number,
+            ): void => {
+              if (Math.abs(delta) < 0.05) return;
+              const value =
+                Math.round(((parseFloat(box.style.getPropertyValue(key)) || 0) + delta) * 1000) /
+                1000;
+              box.style.setProperty(key, value + "pt");
+              changed = true;
+            };
+            if (!columnAligned) nudge(float === "right" ? "margin-right" : "margin-left", dx);
+            nudge("margin-top", dy);
+          },
+        });
       }
     },
   };

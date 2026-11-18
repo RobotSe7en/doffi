@@ -3,6 +3,7 @@ import type { Anchor, DeepReadonly, ContentDocumentModel, Rectangle, TextRange }
 import type { RenderedPage } from "./contracts.js";
 import { viewNodeRole } from "./view-nodes.js";
 import { wordRowVisibleRect } from "./word-table-layout.js";
+import { floatingTableFragments } from "./column-regions.js";
 
 interface SourceElement {
   readonly element: HTMLElement;
@@ -66,6 +67,16 @@ export class PreviewSource {
         [...node.getClientRects()].flatMap((rect) => this.instanceClip(node, rect)),
       );
     if (!entry) return copies;
+    if (entry.element.matches(".sdk-word-floating-table > table")) {
+      const fragments = floatingTableFragments(entry.element as HTMLTableElement);
+      if (fragments.size > 1)
+        return [
+          ...[...fragments.values()].map(
+            ({ left, top, right, bottom }) => new DOMRect(left, top, right - left, bottom - top),
+          ),
+          ...copies,
+        ];
+    }
     if (entry.element.hasAttribute("data-word-drawing")) {
       const frame = entry.element.closest<HTMLElement>("[data-sdk-word-object]") ?? entry.element;
       if (

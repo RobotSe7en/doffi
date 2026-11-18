@@ -1,7 +1,9 @@
+import { floatingStory } from "./word-floating-placement.js";
 import type { DocumentSection, DeepReadonly, WordDrawing } from "@doffi/core";
 import type { RenderedPage } from "./contracts.js";
 import { isDocumentTextBoundary } from "@doffi/core";
 import { isMeasuredViewContent, viewNodeRole } from "./view-nodes.js";
+import { columnRegion } from "./column-regions.js";
 
 /** A page gap may sit after a leading zero-width anchor. Find its first real
  * following glyph so the floating object follows the paragraph onto that page. */
@@ -65,13 +67,19 @@ export function wordDrawingPosition(
     height = s.height / 0.75;
   const odd = page.index % 2 === 0;
   const horizontal = l.horizontal ?? "column",
-    vertical = l.vertical ?? "paragraph";
+    vertical = l.vertical ?? "paragraph",
+    story = floatingStory(anchor),
+    cell = l.layoutInCell !== false ? paragraph.closest<HTMLElement>("td,th") : null,
+    column = !story ? columnRegion(anchor, a, cell ?? paragraph) : undefined,
+    paragraphFragment = !cell ? column?.fragment : undefined;
   let h = { start: left + m.left / 0.75, size: (s.width - m.left - m.right) / 0.75 },
     v = {
-      start: anchorRect ? Math.max(p.top, top + m.top / 0.75) : p.top,
+      start: paragraphFragment?.top ?? (anchorRect ? Math.max(p.top, top + m.top / 0.75) : p.top),
       size: anchorRect
         ? Math.max(a.height, p.bottom - Math.max(p.top, top + m.top / 0.75))
-        : p.height,
+        : paragraphFragment
+          ? paragraphFragment.bottom - paragraphFragment.top
+          : p.height,
     };
   if (horizontal === "page") h = { start: left, size: width };
   else if (horizontal === "character") h = { start: a.left, size: 0 };
@@ -84,22 +92,8 @@ export function wordDrawingPosition(
       ? { start: left, size: m.left / 0.75 }
       : { start: left + width - m.right / 0.75, size: m.right / 0.75 };
   } else if (horizontal === "column") {
-    const columns = section?.columns,
-      count = columns?.count ?? 1,
-      gap = (columns?.gap ?? 0) / 0.75,
-      widths =
-        columns?.widths?.map((value) => value / 0.75) ??
-        Array.from({ length: count }, () => (h.size - gap * (count - 1)) / count);
-    let start = h.start;
-    for (let index = 0; index < count; index++) {
-      const size = widths[index]!,
-        space = (columns?.spaces?.[index] ?? columns?.gap ?? 0) / 0.75;
-      if (a.left < start + size + space / 2 || index === count - 1) {
-        h = { start, size };
-        break;
-      }
-      start += size + space;
-    }
+    const region = story?.getBoundingClientRect() ?? column;
+    if (region) h = { start: region.left, size: region.right - region.left };
   }
   if (vertical === "page") v = { start: top, size: height };
   else if (vertical === "margin")
@@ -117,29 +111,26 @@ export function wordDrawingPosition(
           : { start: top + height - m.bottom / 0.75, size: m.bottom / 0.75 }
         : { start: top, size: height };
   } else if (vertical === "line") v = { start: a.top, size: a.height };
-  if (l.layoutInCell !== false) {
-    const cell = paragraph.closest<HTMLElement>("td,th");
-    if (cell) {
-      const rect = cell.getBoundingClientRect();
-      const css = cell.ownerDocument.defaultView!.getComputedStyle(cell),
-        leftInset = (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.borderLeftWidth) || 0),
-        rightInset = (parseFloat(css.paddingRight) || 0) + (parseFloat(css.borderRightWidth) || 0),
-        topInset =
-          (parseFloat(css.paddingTop) || 0) +
-          (parseFloat(css.borderTopWidth) || 0) +
-          (l.distances?.top ?? 0) / 0.75,
-        bottomInset =
-          (parseFloat(css.paddingBottom) || 0) +
-          (parseFloat(css.borderBottomWidth) || 0) +
-          (l.distances?.bottom ?? 0) / 0.75;
-      if (horizontal !== "character")
-        h = { start: rect.left + leftInset, size: rect.width - leftInset - rightInset };
-      if (vertical !== "line" && vertical !== "paragraph")
-        v = {
-          start: rect.top + topInset,
-          size: Math.max(g.height / 0.75, rect.height - topInset - bottomInset),
-        };
-    }
+  if (cell) {
+    const rect = column?.fragment ?? cell.getBoundingClientRect();
+    const css = cell.ownerDocument.defaultView!.getComputedStyle(cell),
+      leftInset = (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.borderLeftWidth) || 0),
+      rightInset = (parseFloat(css.paddingRight) || 0) + (parseFloat(css.borderRightWidth) || 0),
+      topInset =
+        (parseFloat(css.paddingTop) || 0) +
+        (parseFloat(css.borderTopWidth) || 0) +
+        (l.distances?.top ?? 0) / 0.75,
+      bottomInset =
+        (parseFloat(css.paddingBottom) || 0) +
+        (parseFloat(css.borderBottomWidth) || 0) +
+        (l.distances?.bottom ?? 0) / 0.75;
+    if (horizontal !== "character")
+      h = { start: rect.left + leftInset, size: rect.right - rect.left - leftInset - rightInset };
+    if (vertical !== "line" && vertical !== "paragraph")
+      v = {
+        start: rect.top + topInset,
+        size: Math.max(g.height / 0.75, rect.bottom - rect.top - topInset - bottomInset),
+      };
   }
   const aligned = (
     kind: string | undefined,
@@ -159,9 +150,8 @@ export function wordDrawingPosition(
     offsetY = aligned(l.alignV, v.size, g.height / 0.75, g.y, false);
   let x = h.start + offsetX,
     y = v.start + offsetY;
-  const cell = l.layoutInCell !== false ? paragraph.closest<HTMLElement>("td,th") : null;
   if (cell) {
-    const bounds = cell.getBoundingClientRect(),
+    const bounds = column?.fragment ?? cell.getBoundingClientRect(),
       css = cell.ownerDocument.defaultView!.getComputedStyle(cell),
       left =
         bounds.left + (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.borderLeftWidth) || 0),
@@ -173,10 +163,5 @@ export function wordDrawingPosition(
     x = Math.max(left, Math.min(x, Math.max(left, right - g.width / 0.75)));
     y = Math.max(top, y);
   }
-  return {
-    left: x,
-    top: y,
-    offsetX: (x - h.start) * 0.75,
-    offsetY: (y - v.start) * 0.75,
-  };
+  return { left: x, top: y, offsetX: (x - h.start) * 0.75, offsetY: (y - v.start) * 0.75 };
 }

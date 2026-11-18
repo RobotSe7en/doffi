@@ -1,3 +1,6 @@
+import { floatingStory } from "./word-floating-placement.js";
+import type { WordFloatingPlacement } from "./word-floating-placement.js";
+import { wordDrawingCollisionBounds } from "./word-wrap-geometry.js";
 import { wordFloatingLayer } from "./word-floating-layer.js";
 import { wordDrawingPosition } from "./word-drawing-position.js";
 import { wordDrawingDimensions as wordDrawingSize } from "@doffi/core";
@@ -27,7 +30,12 @@ export function composeWordDrawings(
   readonly active: boolean;
   readonly changed: boolean;
   reset(): void;
-  measure(pages: readonly RenderedPage[], root: HTMLElement): void;
+  measure(
+    pages: readonly RenderedPage[],
+    root: HTMLElement,
+    placement: WordFloatingPlacement,
+    storiesOnly?: boolean,
+  ): (() => void) | undefined;
 } {
   const metadata = model.snapshot().metadata,
     sections = new Map(metadata.sections?.map((section) => [section.sectionId, section])),
@@ -51,7 +59,8 @@ export function composeWordDrawings(
     layer = wordFloatingLayer(document, model, source, limits, resize);
   let serial = 0,
     count = document.querySelectorAll("*").length;
-  let auxiliaryChanged = false;
+  let auxiliaryChanged = false,
+    storyDiagnostics: LayoutDiagnostic[] = [];
   const composed = new Set<string>();
   const account = (node: Element): void => {
     count += 1 + node.querySelectorAll("*").length;
@@ -254,13 +263,13 @@ export function composeWordDrawings(
         const layout = item.layout,
           wrap = layout.wrap ?? "square",
           d = layout.distances ?? { left: 0, right: 0, top: 0, bottom: 0 },
+          story = paragraph.closest("[data-office-story]")?.getAttribute("data-office-story"),
           relative =
             wrap !== "none" &&
             !layout.behindText &&
-            !(
-              item.layout.mode === "floating" &&
-              paragraph.closest("[data-office-story]")?.getAttribute("data-office-story") === "main"
-            );
+            story !== "main" &&
+            story !== "header" &&
+            story !== "footer";
         if (relative) {
           if (layout.relativeWidth || layout.relativeHeight)
             auxiliaryFloats.push({ definition: item, frame });
@@ -331,6 +340,7 @@ export function composeWordDrawings(
     get diagnostics(): readonly LayoutDiagnostic[] {
       return Object.freeze([
         ...layer.diagnostics,
+        ...storyDiagnostics,
         ...[...definitions.values()].flatMap((item) =>
           item.kind === "chart"
             ? (item.chart.native?.previewWarnings ?? []).map((message) =>
@@ -340,8 +350,9 @@ export function composeWordDrawings(
         ),
       ]);
     },
-    measure(pages, root) {
-      auxiliaryChanged = false;
+    measure(pages, root, placement, storiesOnly = false) {
+      if (!storiesOnly) auxiliaryChanged = false;
+      storyDiagnostics = [];
       const origin = root.getBoundingClientRect(),
         headerInstances = new Map<string, HTMLElement[]>();
       for (const instance of document.querySelectorAll<HTMLElement>(
@@ -352,7 +363,7 @@ export function composeWordDrawings(
         instances.push(instance);
         headerInstances.set(id, instances);
       }
-      for (const { definition: item, frame } of auxiliaryFloats) {
+      for (const { definition: item, frame } of storiesOnly ? [] : auxiliaryFloats) {
         const storyRoot = frame.closest<HTMLElement>("[data-office-story]"),
           storyId = word?.stories.find(
             (story) => story.rootNodeId === storyRoot?.dataset.nodeId,
@@ -389,12 +400,16 @@ export function composeWordDrawings(
       for (const entry of floating) {
         const item = entry.definition,
           instances = [
-            {
-              frame: entry.frame,
-              paragraph: entry.paragraph,
-              anchor: entry.anchor,
-              paper: undefined as HTMLElement | undefined,
-            },
+            ...(storiesOnly
+              ? []
+              : [
+                  {
+                    frame: entry.frame,
+                    paragraph: entry.paragraph,
+                    anchor: entry.anchor,
+                    paper: undefined as HTMLElement | undefined,
+                  },
+                ]),
             ...(headerInstances.get(item.nodeId) ?? []).flatMap((frame) => {
               const paper = frame.closest<HTMLElement>(".sdk-paper")!,
                 paragraph = frame.dataset.sdkWordStoryAnchor
@@ -426,8 +441,9 @@ export function composeWordDrawings(
               );
             continue;
           }
-          const position = wordDrawingPosition(
-              { ...item, geometry: wordDrawingSize(item, page, sections.get(page.sectionId)) },
+          const geometry = wordDrawingSize(item, page, sections.get(page.sectionId)),
+            position = wordDrawingPosition(
+              { ...item, geometry },
               page,
               origin,
               paragraph,
@@ -435,12 +451,38 @@ export function composeWordDrawings(
               sections.get(page.sectionId),
             ),
             containing = paper?.getBoundingClientRect() ?? paragraph.getBoundingClientRect();
-          resize(frame, item, wordDrawingSize(item, page, sections.get(page.sectionId)));
-          frame.style.left = position.left - containing.left + "px";
-          frame.style.top = position.top - containing.top + "px";
+          const apply = (delta: number): void => {
+            resize(frame, item, geometry);
+            frame.style.left = position.left - containing.left + "px";
+            frame.style.top = position.top - containing.top + delta + "px";
+            frame.dataset.sdkWordLayoutLeft = String(position.left - origin.left);
+            frame.dataset.sdkWordLayoutTop = String(position.top + delta - origin.top);
+          };
+          const story = floatingStory(anchor);
+          if (paper && story) {
+            const bounds = wordDrawingCollisionBounds(position, geometry);
+            const cell =
+              item.layout.layoutInCell !== false ? anchor.closest<HTMLElement>("td,th") : null;
+            placement.add({
+              anchor,
+              page,
+              scope: cell ?? story,
+              bounds,
+              allowOverlap: item.layout.allowOverlap !== false,
+              apply(delta) {
+                if (delta > 0.1 && bounds.bottom + delta > containing.bottom + 0.1)
+                  storyDiagnostics.push({
+                    code: "ContentOverflow",
+                    nodeId: item.nodeId,
+                    message: "Collision avoidance moves this drawing beyond its anchor page.",
+                  });
+                apply(delta);
+              },
+            });
+          } else apply(0);
         }
       }
-      layer.measure(pages, root);
+      return storiesOnly ? undefined : layer.measure(pages, root, placement);
     },
   };
 }
