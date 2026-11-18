@@ -2,6 +2,7 @@ import { nativeRangeControl, visitNativeRanges } from "./docx-native-ranges.js";
 import { NativeWordComments } from "./docx-native-comments.js";
 import type { NativeCommentBinding } from "./docx-native-comments.js";
 import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { wordTypographySettings } from "./ooxml/word-typography.js";
 import { sortWordProperties } from "./ooxml/word-property-order.js";
 import { sortWordNoteProperties } from "./ooxml/word-note-order.js";
 import { NativeDrawingIdentities } from "./docx-native-identities.js";
@@ -65,6 +66,7 @@ export function restoreDocxNative(
   unexportedNativeRevisionIds: string[] = [],
 ): ReadonlyMap<string, Uint8Array> {
   const native = model.snapshot().metadata.word?.nativeContent,
+    mappedTypography = model.snapshot().metadata.word?.typography !== undefined,
     mappedCompatibility = new Set<string>(
       wordCompatibilityNames.filter((name) => model.snapshot().metadata.word?.[name] !== undefined),
     );
@@ -580,6 +582,16 @@ export function restoreDocxNative(
       byNode.set(fragment.nodeId, list);
     }
   const mergeProperty = (target: XmlNode, original: XmlNode): void => {
+    if (
+      target.uri === W &&
+      (wordTypographySettings.some((name) => name === target.name) ||
+        ["overflowPunct", "topLinePunct", "doNotWrapTextWithPunct"].includes(target.name))
+    ) {
+      // Older document packages may still carry the whole declaration as a
+      // residual. Keep extension attributes, with the compiled value taking precedence.
+      for (const key of [W + " val", W + " lang"])
+        if (target.attrs.has(key)) (original.attrs as Map<string, string>).delete(key);
+    }
     if (target.uri === W && target.name === "compat" && mappedCompatibility.size)
       original.content.splice(
         0,
@@ -835,6 +847,7 @@ export function restoreDocxNative(
         );
       else if (
         mappedCompatibility.has(original.name) &&
+        (original.name !== "doNotWrapTextWithPunct" || original.attrs.has(W + " val")) &&
         fragment.propertyPath.some((path) => path === W + " compat")
       )
         return;
@@ -862,7 +875,15 @@ export function restoreDocxNative(
             : true),
       )[original.name === "tblStylePr" && fragment.styleRegion ? 0 : (fragment.propertyIndex ?? 0)];
       if (current) mergeProperty(current, original);
-      else target.content.push(original);
+      else if (
+        !(
+          mappedTypography &&
+          target.name === "settings" &&
+          original.uri === W &&
+          wordTypographySettings.some((name) => name === original.name)
+        )
+      )
+        target.content.push(original);
     }
   };
   const apply = (root: XmlNode): XmlNode => {

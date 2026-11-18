@@ -2,6 +2,7 @@ import { registerFloatingStoryPaint } from "./word-floating-placement.js";
 import { sectionFlow } from "./section-flow.js";
 import { sameColumnGeometry } from "./column-regions.js";
 import { cloneViewTree } from "./view-clone.js";
+import { wordPunctuationLayout } from "./word-punctuation.js";
 import { DocumentError } from "@doffi/core";
 import type {
   DeepReadonly,
@@ -98,6 +99,19 @@ export function paginate(
       "Presentation surfaces do not use Word pagination.",
     );
   const root = source.root;
+  const punctuation = wordPunctuationLayout(
+    document,
+    metadata.word,
+    new Set(
+      metadata.sections
+        .filter(
+          (section) =>
+            section.grid?.type === "snapToChars" || section.grid?.type === "linesAndChars",
+        )
+        .map((section) => section.rootNodeId),
+    ),
+    limits,
+  );
   const diagnostics: LayoutDiagnostic[] = [],
     groups: Group[] = [];
   const sourceElements = new Map(
@@ -394,7 +408,9 @@ export function paginate(
     source.clearInstances();
     repeated.clear();
     for (const group of groups) group.paginator.reset();
+    punctuation.reset();
     for (const grid of grids) grid.measure();
+    for (const group of groups) punctuation.measure(group.flow);
     let physical = 0;
     for (const group of groups) {
       group.startIndex = physical;
@@ -560,6 +576,7 @@ export function paginate(
           story.style.cssText += `;left:${page.setup.margins.left}pt;width:${setup.width - setup.margins.left - setup.margins.right}pt;max-height:${available}pt;${kind === "headers" ? "top:" : "bottom:"}${distance}pt`;
           paper.append(story);
           story.style.zIndex = "1";
+          punctuation.measure(story, false);
           source.registerInstances(story);
           for (const object of [...story.querySelectorAll<HTMLElement>("[data-sdk-word-object]")]) {
             const definition = metadata.word?.drawings?.find(

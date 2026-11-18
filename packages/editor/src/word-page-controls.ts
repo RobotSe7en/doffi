@@ -206,6 +206,86 @@ export function createWordPageControls(
         }),
       );
     };
+    const typography = metadata.word?.typography,
+      spacing = choose(
+        "东亚字符压缩",
+        [
+          ["", "默认"],
+          ["doNotCompress", "不压缩"],
+          ["compressPunctuation", "压缩标点"],
+          ["compressPunctuationAndJapaneseKana", "压缩标点与日文假名"],
+        ],
+        typography?.characterSpacingControl ?? "",
+      ),
+      japanese = choose(
+        "日文禁则",
+        [
+          ["", "默认"],
+          ["0", "标准"],
+          ["1", "严格"],
+        ],
+        typography?.strictFirstAndLastChars === undefined
+          ? ""
+          : typography.strictFirstAndLastChars
+            ? "1"
+            : "0",
+      ),
+      gridHanging = checkbox("允许标点悬挂到字符网格之外", !metadata.word?.doNotWrapTextWithPunct);
+    const kinsokuFields = (label: string, rule?: { language: string; characters: string }) => {
+      const enabled = checkbox("自定义" + label, rule !== undefined),
+        language = field(label + "语言", ""),
+        characters = document.createElement("textarea"),
+        caption = document.createElement("label");
+      caption.textContent = label + "字符";
+      characters.setAttribute("aria-label", caption.textContent);
+      characters.rows = 1;
+      caption.append(characters);
+      panel!.append(caption);
+      language.type = "text";
+      language.value = rule?.language ?? "zh-CN";
+      characters.value = rule?.characters ?? "";
+      language.maxLength = 128;
+      const toggle = () => {
+        language.disabled = characters.disabled = !enabled.checked;
+      };
+      enabled.addEventListener("change", toggle, { signal });
+      toggle();
+      return () =>
+        enabled.checked
+          ? {
+              language: language.value.trim(),
+              characters:
+                rule && characters.value === rule.characters.replace(/\r\n?/g, "\n")
+                  ? rule.characters
+                  : characters.value,
+            }
+          : undefined;
+    };
+    const beforeLine = kinsokuFields("行首禁则", typography?.noLineBreaksBefore),
+      afterLine = kinsokuFields("行尾禁则", typography?.noLineBreaksAfter);
+    button("应用东亚排版设置", () => {
+      const root = new DOMParser()
+        .parseFromString(session.snapshot().html, "text/html")
+        .querySelector<HTMLElement>('[data-office-kind="document"]')!;
+      const characterSpacingControl = spacing.value as
+        | NonNullable<typeof typography>["characterSpacingControl"]
+        | "";
+      const noLineBreaksBefore = beforeLine(),
+        noLineBreaksAfter = afterLine();
+      apply([
+        {
+          op: "setWordOptions",
+          nodeId: root.dataset.nodeId!,
+          doNotWrapTextWithPunct: !gridHanging.checked,
+          typography: {
+            ...(characterSpacingControl ? { characterSpacingControl } : {}),
+            ...(japanese.value ? { strictFirstAndLastChars: japanese.value === "1" } : {}),
+            ...(noLineBreaksBefore ? { noLineBreaksBefore } : {}),
+            ...(noLineBreaksAfter ? { noLineBreaksAfter } : {}),
+          },
+        },
+      ]);
+    });
     const loadBorders = addWordPageBorderControls(
       document,
       panel,

@@ -59,6 +59,8 @@ export function wordSemanticChanges(
             "mirrorMargins",
             "evenAndOddHeaders",
             "automaticHyphenation",
+            "typography",
+            "doNotWrapTextWithPunct",
             "noColumnBalance",
             "adjustLineHeightInTable",
             "defaultRunCssClass",

@@ -1,4 +1,5 @@
 import { registerWordFloatingSectionTests } from "./word-floating-section-cases.js";
+import { registerWordPunctuationTests } from "./word-punctuation-cases.js";
 import { registerWordDrawingSizeTests } from "./word-drawing-size-cases.js";
 import { registerWordDrawingWrapTests } from "./word-drawing-wrap-cases.js";
 import { gridBoundaryFixture } from "../../packages/office/tests/grid-boundary-fixture.js";
@@ -6238,7 +6239,7 @@ test("paragraph word wrapping respects the native Boolean and retains Chinese li
         {
           op: "replaceFragment",
           nodeId: "section-root-1",
-          html: '<p class="whole-word" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:1">ABC ABCDE</p><p class="whole-loose" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:1;--word-kinsoku:0">ABC ABCDE</p><p class="break-word" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:0">ABC ABCDE</p><p class="kinsoku-on" style="font-size:16px;font-family:sans-serif;width:32px;line-height:24px;margin:0;--word-kinsoku:1">汉字，中文</p><p class="kinsoku-off" style="font-size:16px;font-family:sans-serif;width:32px;line-height:24px;margin:0;--word-kinsoku:0">汉字，中文</p>',
+          html: '<p class="whole-word" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:1">ABC ABCDE</p><p class="whole-loose" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:1;--word-kinsoku:0">ABC ABCDE</p><p class="break-word" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:0">ABC ABCDE</p><p class="kinsoku-on" style="font-size:16px;font-family:sans-serif;width:32px;line-height:24px;margin:0;--word-overflow-punctuation:0;--word-kinsoku:1">汉字，中文</p><p class="kinsoku-off" style="font-size:16px;font-family:sans-serif;width:32px;line-height:24px;margin:0;--word-overflow-punctuation:0;--word-kinsoku:0">汉字，中文</p>',
         },
       ],
     }),
@@ -9500,3 +9501,4 @@ registerWordDrawingWrapTests(mount);
 registerWordDrawingSizeTests(mount);
 
 registerWordFloatingSectionTests(mount);
+registerWordPunctuationTests(mount);

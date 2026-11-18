@@ -68,6 +68,10 @@ ASCII、高位西文、东亚及复杂文字字体分别保留在 CSS 自定义�
 
 常用宋体、仿宋及楷体名称变体的编辑保留、补充开源字体环境及替代规则见[中文字体](fonts.md)。固定基线使用 Noto Sans CJK SC、Noto Serif CJK SC 和 Liberation Serif。字体文件未随 SDK 分发；参考记录保存实际文件摘要。Noto 字体使用 SIL OFL，Liberation 使用其 OFL 许可；实际使用或分发其他字体由宿主确保授权。
 
+## 东亚排版
+
+段落与共享样式分别映射 `overflowPunct`（行尾悬挂）和 `topLinePunct`（行首压缩），保留显式关闭值和段落格式历史。段落面板可编辑两项设置。页面设置可通过 `setWordOptions` 修改 `word.typography` 中的字符压缩、日文禁则方式、两份带语言的自定义禁则表，以及文档兼容选项 `doNotWrapTextWithPunct`。自定义禁则表保留空字符集和补充平面字符。[分页与排版](pagination-rendering.md#东亚标点和禁则)
+
 ## 预览与生命周期
 
 `mountDocumentPreview` 重新校验传入模型的序列化源，在无脚本的 sandbox iframe 和限制性 CSP 中加载文档样式。包内图片转为当前组件拥有的 Blob URL；辅助标签、编号标记、表格列、字体替代及测量都是派生 DOM，不回写源。

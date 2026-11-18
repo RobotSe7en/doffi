@@ -2,6 +2,7 @@ import type { NativeCommentBinding } from "./docx-native-comments.js";
 import { writeWordEmptyContinuation } from "./docx-table-continuation.js";
 import { writeWordRowGapWidths } from "./docx-row-gaps.js";
 import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { writeWordTypography } from "./ooxml/word-typography.js";
 import { writeWordConditionalFormat } from "./docx-conditional-format.js";
 import { ExportWordRevisions } from "./docx-revisions-export.js";
 import { writeWordPageBorders } from "./docx-page-borders.js";
@@ -2384,6 +2385,7 @@ class Exporter {
                 : 0,
             ) +
             value("updateFields", 0) +
+            writeWordTypography(this.snapshot.metadata.word?.typography) +
             this.noteSettings("footnote") +
             this.noteSettings("endnote") +
             (wordCompatibilityNames.some(

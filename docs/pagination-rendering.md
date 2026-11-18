@@ -36,6 +36,12 @@ const report = await view.settled();
 
 `DocumentRenderReport` 绑定文档 ID 和修订，包含物理页、打印页码、pt 几何、源节点页映射、字段结果、字体报告及诊断。区域批注仍使用主故事坐标；整个矩形位于一张纸内时增加实际 `pageId`，布局变化仍要求显式重定位。
 
+## 东亚标点和禁则
+
+段落启用行尾悬挂时，预览按文字语言选取可悬挂字符，并在实际换行处测量能否让一个标点随前一行排出行尾。字符网格兼容选项可禁止这个溢出。行首压缩按当前可见行首和字形宽度计算；文档字符压缩收窄全角标点空白，日文假名使用字体提供的比例宽度。字网格继续提供固定节距，混合字号使用各自的字体测量结果。[Microsoft 悬挂标点规则](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/879a1ee2-5d6c-4181-8fd5-7b4b1b55949f)
+
+自定义禁则按 run 的东亚语言分别替换相应的行首或行尾字符集合。显式日文标准／严格设置优先处理日语文字。默认语言由可见段落文字推断。浏览器保留其余文字的原有换行和字形度量。预测换行时生成的断点和布局节点随当前修订视图重算，保存、复制和 UTF-16 源选区仍使用原文字。[ECMA-376 Part 1 §17.3.1.16](https://ecma-international.org/publications-and-standards/standards/ecma-376/) · [Microsoft 日文禁则优先级](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4de15093-b8f2-48fa-a66b-08b9e11c112b)
+
 ## 字段和复制
 
 PAGE、NUMPAGES 和基本标题大纲 TOC 是派生显示；TOC 目前支持标题层级及 `\\o` 范围，不生成原生可点击目录链接。锁定字段和未支持的字段／开关组合保留缓存并报告 `UnsupportedField`，不默认为正确的新结果。

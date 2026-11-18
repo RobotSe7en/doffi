@@ -101,6 +101,8 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
     mirrorMargins: z.boolean().optional(),
     evenAndOddHeaders: z.boolean().optional(),
     automaticHyphenation: z.boolean().optional(),
+    typography: WordMetadataSchema.shape.typography,
+    doNotWrapTextWithPunct: z.boolean().optional(),
     noColumnBalance: z.boolean().optional(),
     adjustLineHeightInTable: z.boolean().optional(),
   }),

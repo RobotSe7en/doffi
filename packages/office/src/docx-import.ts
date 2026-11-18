@@ -6,6 +6,7 @@ import { bindWordGridInsertion } from "./docx-grid-revision.js";
 import { readWordRowGapCount, readWordRowGapWidths } from "./docx-row-gaps.js";
 import { measurePoints } from "./ooxml/measure.js";
 import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { readWordTypography } from "./ooxml/word-typography.js";
 import { bindWordConditionalFormat, readWordConditionalFormat } from "./docx-conditional-format.js";
 import {
   resolveWordTableStyle,
@@ -208,6 +209,8 @@ class Importer {
       if (flag) this.word[name] = on(flag);
     }
     this.word.automaticHyphenation = on(child(this.settings, "autoHyphenation"));
+    const typography = readWordTypography(this.settings);
+    if (typography) this.word.typography = typography;
     for (const name of ["documentProtection", "writeProtection", "mailMerge", "attachedTemplate"]) {
       if (child(this.settings, name))
         unsupported(

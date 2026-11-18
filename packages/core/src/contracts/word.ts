@@ -194,6 +194,25 @@ export const WordNumberLevelSchema = z.strictObject({
   restart: z.number().int().min(0).max(8).optional(),
   cssClass: IdentifierSchema,
 });
+const WordKinsokuRuleSchema = z.strictObject({
+  language: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/),
+  characters: z
+    .string()
+    .regex(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\ud800-\udfff\ufffe\uffff]*$/u),
+});
+export const WordTypographySchema = z.strictObject({
+  characterSpacingControl: z
+    .enum(["doNotCompress", "compressPunctuation", "compressPunctuationAndJapaneseKana"])
+    .optional(),
+  strictFirstAndLastChars: z.boolean().optional(),
+  noLineBreaksAfter: WordKinsokuRuleSchema.optional(),
+  noLineBreaksBefore: WordKinsokuRuleSchema.optional(),
+});
+export type WordTypography = z.infer<typeof WordTypographySchema>;
 export const WordMetadataSchema = z.strictObject({
   conditionalFormats: z.array(WordConditionalFormatSchema).optional(),
   bordersDoNotSurroundHeader: z.boolean().optional(),
@@ -215,6 +234,8 @@ export const WordMetadataSchema = z.strictObject({
   mirrorMargins: z.boolean().optional(),
   evenAndOddHeaders: z.boolean().optional(),
   automaticHyphenation: z.boolean().optional(),
+  typography: WordTypographySchema.optional(),
+  doNotWrapTextWithPunct: z.boolean().optional(),
   noColumnBalance: z.boolean().optional(),
   adjustLineHeightInTable: z.boolean().optional(),
   defaultRunCssClass: IdentifierSchema.optional(),

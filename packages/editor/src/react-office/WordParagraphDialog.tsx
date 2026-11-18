@@ -38,6 +38,8 @@ export function WordParagraphDialog({
     ["widows", "孤行控制", "2", "1"],
     ["--word-paragraph-snap-to-grid", "对齐到文档网格", "1", "0"],
     ["--word-kinsoku", "中文行首行尾禁则", "1", "0"],
+    ["--word-overflow-punctuation", "允许行尾悬挂标点", "1", "0"],
+    ["--word-top-line-punctuation", "压缩行首标点", "1", "0"],
     ["--word-word-wrap", "英文单词整体换行", "1", "0"],
     ["--word-auto-space-de", "自动调整中文与西文间距", "1", "0"],
     ["--word-auto-space-dn", "自动调整中文与数字间距", "1", "0"],

@@ -1,5 +1,6 @@
 import { NativeRangeIndex, nativeRangeControl } from "./docx-native-ranges.js";
 import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { wordTypographySettings } from "./ooxml/word-typography.js";
 import { createAssetDescriptor, DocumentError } from "@doffi/core";
 import type { ContentDocumentManifest, WordMetadata } from "@doffi/core";
 import type { OpcPackage } from "./ooxml/package.js";
@@ -713,6 +714,7 @@ export class DocxNativeImport {
       "trackRevisions",
       "footnotePr",
       "endnotePr",
+      ...wordTypographySettings,
     ]);
     for (const root of this.roots.values())
       if (root.uri === W && root.name === "settings")

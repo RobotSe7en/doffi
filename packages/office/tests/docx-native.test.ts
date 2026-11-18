@@ -232,14 +232,14 @@ test("preserves unknown inline content while surrounding text remains editable a
 });
 test("preserves unsupported paragraph properties rather than losing the paragraph", () => {
   const bytes = fixture(
-    '<w:p><w:pPr><w:overflowPunct w:val="true"/></w:pPr><w:r><w:t>悬挂标点</w:t></w:r></w:p>',
+    '<w:p><w:pPr><w:mirrorIndents w:val="true"/></w:pPr><w:r><w:t>原生段落属性</w:t></w:r></w:p>',
   );
   const model = openDocument(importDocx(bytes, { documentId: "native-props" }), {
     kind: "document",
   });
-  expect(mainText(model)).toContain("悬挂标点");
+  expect(mainText(model)).toContain("原生段落属性");
   const output = unzipSync(exportDocx(model).bytes);
-  expect(strFromU8(output["word/document.xml"]!)).toContain("overflowPunct");
+  expect(strFromU8(output["word/document.xml"]!)).toContain("mirrorIndents");
   expect(() =>
     importDocx(bytes, { documentId: "strict", unsupportedContent: "reject" }),
   ).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));

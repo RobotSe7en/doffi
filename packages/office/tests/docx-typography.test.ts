@@ -2,17 +2,32 @@ import { expect, test } from "vitest";
 import { createDocumentSession, openDocument } from "@doffi/core";
 import { exportDocx, importDocx } from "@doffi/office";
 import { strFromU8, unzipSync } from "fflate";
-import { body, mutateDocx, styles } from "./regression-fixtures.js";
+import { body, mutateDocx, styles, wordNamespace } from "./regression-fixtures.js";
 
-const names = ["kinsoku", "wordWrap", "autoSpaceDE", "autoSpaceDN"] as const;
+const names = [
+  "kinsoku",
+  "wordWrap",
+  "autoSpaceDE",
+  "autoSpaceDN",
+  "overflowPunct",
+  "topLinePunct",
+] as const;
 const keys = [
   "--word-kinsoku",
   "--word-word-wrap",
   "--word-auto-space-de",
   "--word-auto-space-dn",
+  "--word-overflow-punctuation",
+  "--word-top-line-punctuation",
 ] as const;
-function fixture(properties: string, shared = "") {
+function fixture(properties: string, shared = "", settings?: string) {
   return mutateDocx("01-text-numbering.docx", {
+    ...(settings === undefined
+      ? {}
+      : {
+          "word/settings.xml": () =>
+            '<w:settings xmlns:w="' + wordNamespace + '">' + settings + "</w:settings>",
+        }),
     "word/styles.xml": () =>
       styles(
         '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:pPr>' +
@@ -28,9 +43,9 @@ function fixture(properties: string, shared = "") {
       ),
   });
 }
-function current(bytes: Uint8Array) {
+function current(bytes: Uint8Array, unsupportedContent: "reject" | "preserve" = "reject") {
   const session = createDocumentSession(
-      openDocument(importDocx(bytes, { documentId: "typography", unsupportedContent: "reject" }), {
+      openDocument(importDocx(bytes, { documentId: "typography", unsupportedContent }), {
         kind: "document",
       }),
     ),
@@ -126,3 +141,74 @@ for (const name of names)
       importDocx(fixture("<w:" + name + ' w:val="maybe"/>'), { documentId: "invalid" }),
     ).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
   });
+
+test("document typography settings are editable, undoable and ordered across strict reopens", () => {
+  const { session, root } = current(
+    fixture(
+      "",
+      "",
+      '<w:characterSpacingControl w:val="compressPunctuation"/><w:strictFirstAndLastChars/>' +
+        '<w:noLineBreaksAfter w:lang="ja-JP" w:val="（"/><w:noLineBreaksBefore w:lang="zh-CN" w:val="丁&amp;𠀀&#9;"/>' +
+        "<w:compat><w:doNotWrapTextWithPunct/><w:useAltKinsokuLineBreakRules/></w:compat>",
+    ),
+    "preserve",
+  );
+  expect(session.snapshot().metadata.word!.typography).toEqual({
+    characterSpacingControl: "compressPunctuation",
+    strictFirstAndLastChars: true,
+    noLineBreaksAfter: { language: "ja-JP", characters: "（" },
+    noLineBreaksBefore: { language: "zh-CN", characters: "丁&𠀀\t" },
+  });
+  expect(session.snapshot().metadata.word!.doNotWrapTextWithPunct).toBe(true);
+  const typography = {
+    characterSpacingControl: "compressPunctuationAndJapaneseKana" as const,
+    strictFirstAndLastChars: false,
+    noLineBreaksBefore: { language: "zh-Hant", characters: "" },
+  };
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "typography",
+      baseRevision: 0,
+      operations: [
+        { op: "setWordOptions", nodeId: root, typography, doNotWrapTextWithPunct: false },
+      ],
+    }),
+  );
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const xml = strFromU8(unzipSync(bytes)["word/settings.xml"]!),
+      next = current(bytes, "preserve").session;
+    current(bytes);
+    expect(next.snapshot().metadata.word!.typography).toEqual(typography);
+    expect(next.snapshot().metadata.word!.doNotWrapTextWithPunct).toBe(false);
+    expect(xml).not.toContain("noLineBreaksAfter");
+    expect(xml).toContain('<w:doNotWrapTextWithPunct w:val="0"');
+    expect(xml).toContain("<w:useAltKinsokuLineBreakRules");
+    expect(xml.indexOf("<w:characterSpacingControl")).toBeLessThan(
+      xml.indexOf("<w:strictFirstAndLastChars"),
+    );
+    expect(xml.indexOf("<w:strictFirstAndLastChars")).toBeLessThan(
+      xml.indexOf("<w:noLineBreaksBefore"),
+    );
+    bytes = exportDocx(next).bytes;
+  }
+  session.undo();
+  expect(session.snapshot().metadata.word!.typography?.noLineBreaksAfter?.language).toBe("ja-JP");
+  session.redo();
+  expect(session.snapshot().metadata.word!.typography).toEqual(typography);
+});
+
+test.each([
+  "<w:characterSpacingControl/>",
+  '<w:characterSpacingControl w:val="unknown"/>',
+  '<w:strictFirstAndLastChars w:val="unknown"/>',
+  '<w:noLineBreaksBefore w:lang="zh-CN"/>',
+  '<w:noLineBreaksAfter w:val="（"/>',
+  '<w:noLineBreaksAfter w:lang="zh-CN" w:val="（"/><w:noLineBreaksAfter w:lang="ja-JP" w:val="（"/>',
+  '<w:compat><w:doNotWrapTextWithPunct w:val="unknown"/></w:compat>',
+])("rejects malformed East Asian settings (%s)", (settings) => {
+  expect(() => importDocx(fixture("", "", settings), { documentId: "invalid" })).toThrowError(
+    expect.objectContaining({ code: "InvalidDocument" }),
+  );
+});

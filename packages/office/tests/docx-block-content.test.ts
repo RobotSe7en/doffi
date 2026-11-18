@@ -29,7 +29,7 @@ test("splitting the receiving paragraph retains its opaque native properties on 
   files["word/document.xml"] = strToU8(
     strFromU8(files["word/document.xml"]!).replace(
       "</w:pPr>",
-      '<w:overflowPunct w:val="true"/></w:pPr>',
+      '<w:mirrorIndents w:val="true"/></w:pPr>',
     ),
   );
   const session = createDocumentSession(
@@ -69,7 +69,7 @@ test("splitting the receiving paragraph retains its opaque native properties on 
   let bytes = exportDocx(session).bytes;
   for (let pass = 0; pass < 2; pass++) {
     expect(
-      strFromU8(unzipSync(bytes)["word/document.xml"]!).match(/<w:overflowPunct\b/g),
+      strFromU8(unzipSync(bytes)["word/document.xml"]!).match(/<w:mirrorIndents\b/g),
     ).toHaveLength(2);
     const model = openDocument(
       importDocx(bytes, { documentId: "block-native-properties-reopen" }),

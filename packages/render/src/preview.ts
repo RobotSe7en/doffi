@@ -6,6 +6,7 @@ import { wordFloatingPlacement } from "./word-floating-placement.js";
 import { composeWordTextRuns } from "./word-text-runs.js";
 import { composeWordLanguages } from "./word-languages.js";
 import { composeWordTypography } from "./word-typography.js";
+import { wordPunctuationLayout } from "./word-punctuation.js";
 import { retainFlowSelection } from "./flow-selection.js";
 import { composeWordTableLayout } from "./word-table-layout.js";
 import { composeWordContinuationCells } from "./word-continuation-cells.js";
@@ -509,6 +510,7 @@ export function mountPreview(
     diagnostics: [],
     fonts: [],
   });
+  let continuousPunctuation: ReturnType<typeof wordPunctuationLayout> | undefined;
   let resolveReady: () => void = () => {},
     rejectReady: (reason: unknown) => void = () => {};
   const ready = new Promise<void>((resolve, reject) => {
@@ -528,7 +530,11 @@ export function mountPreview(
     composeWordTypography(iframe.contentDocument!, model, limits);
     centeredWrap?.reset();
     drawings?.reset();
-    if (centeredWrap?.active) source.reindex();
+    if (continuousPunctuation) {
+      continuousPunctuation.reset();
+      continuousPunctuation.measure(source.root, false);
+    }
+    if (centeredWrap?.active || continuousPunctuation) source.reindex();
     const placeFloats = (
       pages: DocumentRenderReport["pages"],
       root: HTMLElement,
@@ -692,7 +698,14 @@ export function mountPreview(
     if ((options.layout ?? "pages") === "pages") {
       fields = layoutFields(frame, source, snapshot.metadata.word);
       pagination = paginate(frame, source, snapshot.metadata, limits, notes);
-    }
+      continuousPunctuation = undefined;
+    } else
+      continuousPunctuation = wordPunctuationLayout(
+        frame,
+        snapshot.metadata.word,
+        new Set(),
+        limits,
+      );
     baseFonts = Object.freeze([
       ...sourceFonts,
       ...resolvePreviewFonts(

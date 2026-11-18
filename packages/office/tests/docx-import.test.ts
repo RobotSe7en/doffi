@@ -107,7 +107,11 @@ test.each([
   ["unsupported shape", "<w:p><w:r><w:pict/></w:r></w:p>", "UnsupportedFeature"],
   ["malformed format revision", "<w:p><w:pPr><w:pPrChange/></w:pPr></w:p>", "InvalidDocument"],
   ["malformed move revision", "<w:p><w:moveFrom/></w:p>", "InvalidDocument"],
-  ["hanging punctuation", "<w:p><w:pPr><w:overflowPunct/></w:pPr></w:p>", "UnsupportedFeature"],
+  [
+    "unmodeled paragraph layout",
+    "<w:p><w:pPr><w:mirrorIndents/></w:pPr></w:p>",
+    "UnsupportedFeature",
+  ],
   ["unknown namespace", '<x:content xmlns:x="urn:unknown"/>', "UnsupportedFeature"],
 ] as const)("rejects %s without partial output", (_name, content, code) => {
   const bytes = mutate(cases[0]!.file, "word/document.xml", (source) =>

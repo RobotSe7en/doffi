@@ -310,7 +310,12 @@ export function applyWordOperation(
     }
     if (operation.evenAndOddHeaders !== undefined)
       word.evenAndOddHeaders = operation.evenAndOddHeaders;
-    for (const key of ["noColumnBalance", "adjustLineHeightInTable"] as const)
+    if (operation.typography !== undefined) word.typography = operation.typography;
+    for (const key of [
+      "noColumnBalance",
+      "adjustLineHeightInTable",
+      "doNotWrapTextWithPunct",
+    ] as const)
       if (operation[key] !== undefined) word[key] = operation[key];
     if (operation.automaticHyphenation !== undefined)
       word.automaticHyphenation = operation.automaticHyphenation;

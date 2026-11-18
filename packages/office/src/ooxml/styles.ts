@@ -742,7 +742,6 @@ export class DocxStyles {
       "pPrChange",
     ]);
     for (const name of [
-      "topLinePunct",
       "adjustRightInd",
       "mirrorIndents",
       "suppressOverlap",
@@ -757,6 +756,8 @@ export class DocxStyles {
       ["contextualSpacing", "--word-contextual-spacing"],
       ["kinsoku", "--word-kinsoku"],
       ["wordWrap", "--word-word-wrap"],
+      ["overflowPunct", "--word-overflow-punctuation"],
+      ["topLinePunct", "--word-top-line-punctuation"],
       ["autoSpaceDE", "--word-auto-space-de"],
       ["autoSpaceDN", "--word-auto-space-dn"],
     ] as const) {
@@ -765,12 +766,6 @@ export class DocxStyles {
     }
     if (child(properties, "snapToGrid"))
       css["--word-paragraph-snap-to-grid"] = on(child(properties, "snapToGrid")) ? "1" : "0";
-    const overflowPunctuation = child(properties, "overflowPunct");
-    if (overflowPunctuation) {
-      if (on(overflowPunctuation))
-        unsupported(overflowPunctuation, "Hanging punctuation is not yet supported.");
-      css["--word-overflow-punctuation"] = "0";
-    }
     const suppressHyphens = child(properties, "suppressAutoHyphens");
     if (suppressHyphens) css["--word-suppress-auto-hyphens"] = on(suppressHyphens) ? "1" : "0";
     const align = val(child(properties, "jc"));
