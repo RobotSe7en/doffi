@@ -6,6 +6,7 @@ import type { Page } from "@playwright/test";
 import { openSdkHost } from './sdk-host.js';
 import { openDocument } from "@doffi/core";
 import { importPptx, readDocumentZip } from "@doffi/office";
+import { body as nativeBody, mutateDocx } from "../../packages/office/tests/regression-fixtures.js";
 import type {} from "./fixtures/interaction-host.js";
 
 async function report(page: Page): Promise<void> {
@@ -26,6 +27,67 @@ async function selectText(page: Page, from = 2, to = 8): Promise<void> {
     await page.getByRole('button', { name: '新建批注', exact: true }).click();
   }
 }
+
+test("Word preview and editing load Playground web fonts and keep the native font names", async ({ page }, info) => {
+  const families = [
+    ["宋体", "Doffi Serif SC"],
+    ["黑体", "Doffi Sans SC"],
+    ["仿宋_GB2312", "Doffi Fangsong SC"],
+    ["楷体", "Doffi Kai SC"],
+  ] as const;
+  const fontRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "fetch" && new URL(request.url()).pathname.endsWith(".woff2"))
+      fontRequests.push(request.url());
+  });
+  await page.addInitScript(() => localStorage.setItem("doffi:editing", "preview"));
+  await page.goto("/");
+  expect(fontRequests).toHaveLength(0);
+  const name = "word-web-fonts.docx";
+  const bytes = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => nativeBody(source, families.map(([family], index) =>
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Liberation Serif" w:eastAsia="' + family + '"/></w:rPr>' +
+      '<w:t>汉字测试' + index + 'ABC</w:t></w:r></w:p>',
+    ).join("")),
+  });
+  await page.getByLabel("打开文件", { exact: true }).setInputFiles({
+    name, mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(bytes),
+  });
+  async function checkFonts(title: string): Promise<void> {
+    const frame = page.frameLocator(`iframe[title="${title}"]`);
+    for (const [index, [, family]] of families.entries()) {
+      const paragraph = frame.locator("p").filter({ hasText: new RegExp("汉字测试\\s*" + index + "ABC") }).first();
+      const cjk = paragraph.getByText("汉字测试", { exact: true });
+      await expect(cjk).toHaveCSS("font-family", new RegExp('^"?' + family));
+      expect(await cjk.evaluate((node, name) => [...node.ownerDocument.fonts].some((face) => face.family === name && face.status === "loaded"), family)).toBe(true);
+      await expect(paragraph.getByText(index + "ABC", { exact: true })).toHaveCSS("font-family", /Liberation Serif/);
+    }
+  }
+  await checkFonts("文档只读预览");
+  expect(fontRequests).toHaveLength(4);
+  await page.getByRole("button", { name: "编辑正文", exact: true }).click();
+  await checkFonts("正文编辑");
+  expect(fontRequests).toHaveLength(4);
+  const target = page.frameLocator('iframe[title="正文编辑"]').locator("p").filter({ hasText: /汉字测试\s*0ABC/ }).first();
+  await target.click();
+  await target.evaluate((node) => {
+    const range = document.createRange(); range.selectNodeContents(node); range.collapse(false);
+    const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  await page.keyboard.insertText("增");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "下载文档包", exact: true }).click();
+  const saved = info.outputPath("web-font-edit.zip");
+  await (await pending).saveAs(saved);
+  const snapshot = openDocument(readDocumentZip(new Uint8Array(readFileSync(saved)))).snapshot();
+  if (!('html' in snapshot)) throw new Error("Expected a Word document.");
+  for (const [family] of families) expect(snapshot.html).toContain(family);
+  expect(snapshot.html).toContain("增");
+  expect(snapshot.html).not.toMatch(/Doffi (Serif|Sans|Fangsong|Kai) SC/);
+});
 
 test("homepage drop opens a document and home navigation preserves its editing history", async ({ page }) => {
   await page.goto("/");

@@ -1864,6 +1864,32 @@ async function mount(
     },
   );
 }
+for (const layout of ["pages", "continuous"] as const)
+  test(`native point indent and out-of-range table width fit the Word ${layout} view`, async ({ page }) => {
+    const docx = mutateDocx("01-text-numbering.docx", {
+      "word/document.xml": (source) => nativeBody(source,
+        '<w:p><w:pPr><w:ind w:firstLine="480" w:firstLineChars="200"/></w:pPr><w:r><w:t>INDENTED</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>UNINDENTED</w:t></w:r></w:p>' +
+        '<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="56700"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+        '<w:tblGrid><w:gridCol w:w="2769"/><w:gridCol w:w="2769"/><w:gridCol w:w="2769"/></w:tblGrid>' +
+        '<w:tr>' + [1247, 1474, 2948].map((width) => '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="' + width + '"/></w:tcPr><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc>').join("") +
+        '</w:tr></w:tbl><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1474" w:bottom="1417" w:left="1474"/></w:sectPr>'),
+    });
+    const files = importDocx(docx, { documentId: "word-width-fallback" });
+    await mount(page, files, "preview", { layout });
+    const indented = await bandTextBounds(page, "INDENTED");
+    const plain = await bandTextBounds(page, "UNINDENTED");
+    expect(indented.x - plain.x).toBeCloseTo(32, 0);
+    const width = await page.frameLocator("iframe").locator("table").evaluate((table) => ({
+      layout: getComputedStyle(table).tableLayout,
+      points: table.getBoundingClientRect().width * 0.75,
+      fits: table.getBoundingClientRect().right <= table.parentElement!.getBoundingClientRect().right,
+    }));
+    expect(width.layout).toBe("fixed");
+    expect(width.points).toBeCloseTo(415.35, 0);
+    expect(width.fits).toBe(true);
+    expect(new TextDecoder().decode(files.get("content.html"))).toContain("width:2835pt");
+  });
 function columnFiles(table = false): DocumentPackage {
   const session = createDocumentSession(
     openWordDocument(

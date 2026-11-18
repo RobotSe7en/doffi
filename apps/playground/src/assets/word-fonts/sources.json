@@ -1,0 +1,66 @@
+{
+  "subset": "GB 2312 repertoire plus Latin-1 and common General Punctuation, CJK Symbols and Punctuation, and Halfwidth and Fullwidth Forms.",
+  "conversion": "FontTools 4.63.0 and Brotli 1.2.1. WOFF2 subsets with distinct family and PostScript names and original copyright metadata.",
+  "fonts": [
+    {
+      "family": "Doffi Serif SC",
+      "originalFamily": "Noto Serif CJK SC",
+      "version": "Version 2.003;hotconv 1.1.1;makeotfexe 2.6.0",
+      "style": "Regular",
+      "file": "serif-regular.woff2",
+      "bytes": 3476368,
+      "sha256": "83426e642e3a31068ad0821ee44aaf3b944e0fdceaf6f48ecc3ea26e448a5b18",
+      "sourceSha256": "5d9c31a059600193c9d7968a998bde886ccdc77e934006ad243b41794c496a7d",
+      "cmapEntries": 7688,
+      "license": "SIL-OFL-1.1",
+      "licenseFile": "NOTO-LICENSE.txt",
+      "source": "https://deb.debian.org/debian/pool/main/f/fonts-noto-cjk/fonts-noto-cjk_20240730+repack1-1_all.deb",
+      "sourceFile": "NotoSerifCJK-Regular.ttc (face 2)"
+    },
+    {
+      "family": "Doffi Sans SC",
+      "originalFamily": "Noto Sans CJK SC",
+      "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603",
+      "style": "Regular",
+      "file": "sans-regular.woff2",
+      "bytes": 2521212,
+      "sha256": "c56c2b7c06b08610a65bbf52f63bcdffcb8033779c9c671af381613fd260c268",
+      "sourceSha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+      "cmapEntries": 7688,
+      "license": "SIL-OFL-1.1",
+      "licenseFile": "NOTO-LICENSE.txt",
+      "source": "https://deb.debian.org/debian/pool/main/f/fonts-noto-cjk/fonts-noto-cjk_20240730+repack1-1_all.deb",
+      "sourceFile": "NotoSansCJK-Regular.ttc (face 2)"
+    },
+    {
+      "family": "Doffi Fangsong SC",
+      "originalFamily": "Zhuque Fangsong (technical preview)",
+      "version": "Version 0.212",
+      "style": "Regular",
+      "file": "fangsong-regular.woff2",
+      "bytes": 2605424,
+      "sha256": "5ddbe83d5909474f3a513645388a1f4452d41b6ce72bcec4527bbee1c760e398",
+      "sourceSha256": "558c62730844fe54ba220146ed62f859d4e2880188d92d985f8921c6e3743bc4",
+      "cmapEntries": 7349,
+      "license": "SIL-OFL-1.1",
+      "licenseFile": "ZHUQUE-OFL.txt",
+      "source": "https://github.com/TrionesType/zhuque/releases/download/v0.212/ZhuqueFangsong-v0.212.zip",
+      "sourceFile": "ZhuqueFangsong-Regular.ttf"
+    },
+    {
+      "family": "Doffi Kai SC",
+      "originalFamily": "LXGW WenKai",
+      "version": "Version 1.530; October 18, 2026",
+      "style": "Regular",
+      "file": "kai-regular.woff2",
+      "bytes": 1631080,
+      "sha256": "aac6916a2279b065d2373ad741717e2ccdcca723e225352ab98f2da69afbcaea",
+      "sourceSha256": "2d73eea94ad808999d90c0000c239a84a33b09d4bc6ab6c5b8bbf1eda8a7fc8b",
+      "cmapEntries": 7707,
+      "license": "SIL-OFL-1.1",
+      "licenseFile": "WENKAI-OFL.txt",
+      "source": "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKai-Regular.ttf",
+      "sourceFile": "LXGWWenKai-Regular.ttf"
+    }
+  ]
+}

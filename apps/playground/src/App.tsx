@@ -26,6 +26,8 @@ import { DocumentWorkbench, PresentationWorkbench } from "@doffi/editor/react";
 import { reportFiles, sampleProposal, presentationFiles, presentationProposal } from "./samples.js";
 import { exportCurrentPptx } from "./export-pptx.js";
 import { exportCurrentDocx } from "./export-docx.js";
+import { wordWebFonts } from "./word-web-fonts.js";
+import { docxDiagnosticsEnabled, docxDiagnosticsNotice, reportDocx, retainDocx } from "./docx-diagnostics.js";
 import { downloadBytes } from "./download.js";
 import { Icon } from "./icons.js";
 import { openWorkbookFile } from "./open-workbook.js";
@@ -105,6 +107,7 @@ export function App() {
   const [filter, setFilter] = useState<"all" | WorkspaceFile["kind"]>("all");
   const opened = useRef(new Map<string, OpenedWorkspaceDocument>());
   const sessions = useRef(new Map<DocumentModel, DocumentSession>());
+  const docxCaptures = useRef(new WeakMap<DocumentModel, string>());
   const fileInput = useRef<HTMLInputElement>(null);
   const [model, setModel] = useState<DocumentModel>();
   const [workbook, setWorkbook] = useState<HostedWorkbook>();
@@ -332,6 +335,7 @@ export function App() {
     bytes: Promise<ArrayBuffer>,
     kind: "docx" | "pptx" | "xlsx" | "package",
     file: WorkspaceFile,
+    localUpload = false,
   ): Promise<void> {
     const started = beginLoad();
     if (!started) {
@@ -340,11 +344,26 @@ export function App() {
     }
     const { current, controller } = started;
     let next: OpenedWorkspaceDocument | undefined;
+    const diagnose = kind === "docx" && localUpload && docxDiagnosticsEnabled;
+    let captureId: string | undefined, docxPhase: "import" | "open-document" = "import";
+    let phaseStarted = 0;
     try {
       const value = new Uint8Array(await bytes);
       if (controller.signal.aborted || current !== generation.current) return;
-      next =
-        kind === "xlsx" || kind === "package"
+      if (kind === "docx") {
+        if (diagnose) captureId = await retainDocx(value, controller.signal);
+        if (controller.signal.aborted || current !== generation.current) return;
+        phaseStarted = performance.now();
+        const files = importDocx(value, { documentId: createOpaqueId() });
+        docxPhase = "open-document";
+        phaseStarted = performance.now();
+        next = openDocument(files, { kind: "document" });
+        if (captureId) {
+          docxCaptures.current.set(next, captureId);
+          reportDocx(captureId, docxPhase, phaseStarted, { annotations: next.snapshot().annotations.length });
+        }
+      } else {
+        next = kind === "xlsx" || kind === "package"
           ? await openWorkbookFile(value, kind, createOpaqueId(), createOpaqueId(), {
               signal: controller.signal,
               onProgress(value) {
@@ -354,13 +373,10 @@ export function App() {
                 if (activeDocument.current === next) setError(error.message);
               },
             })
-          : kind === "docx"
-            ? openDocument(importDocx(value, { documentId: createOpaqueId() }), {
-                kind: "document",
-              })
-            : openDocument(importPptx(value, { documentId: createOpaqueId() }), {
-                kind: "presentation",
-              });
+          : openDocument(importPptx(value, { documentId: createOpaqueId() }), {
+              kind: "presentation",
+            });
+      }
       if (current === generation.current && !controller.signal.aborted) {
         if (next.kind === "workbook") {
           setProgress(undefined);
@@ -372,15 +388,16 @@ export function App() {
           });
       }
     } catch (reason) {
+      if (captureId) reportDocx(captureId, docxPhase, phaseStarted, { error: reason });
       if (current === generation.current)
         setError(
-          reason instanceof DocumentError
+          (reason instanceof DocumentError
             ? [
                 reason.code,
                 reason.message,
                 ...reason.details.map((item) => item.path.join(" / ")),
               ].join(" · ")
-            : "无法读取文件。",
+            : "无法读取文件。") + (captureId ? ` · 诊断编号 ${captureId}` : diagnose ? " · 诊断副本未保存" : ""),
         );
     } finally {
       if (next?.kind === "workbook" && opened.current.get(file.id) !== next) next.dispose();
@@ -990,6 +1007,7 @@ export function App() {
             ? Math.max(1, Math.round(file.size / 1024)) + " KB"
             : (file.size / 1024 / 1024).toFixed(1) + " MB"),
       },
+      true,
     );
   }
   function newWordDocument(): void {
@@ -1050,6 +1068,7 @@ export function App() {
       {home && (
         <WelcomeScreen
           loading={loading}
+          docxDiagnostics={docxDiagnosticsEnabled ? docxDiagnosticsNotice : undefined}
           onOpen={(id) => {
             const file = files.find((item) => item.id === id);
             if (file) openFile(file);
@@ -1155,7 +1174,7 @@ export function App() {
           <span className="avatar">D</span>
           <div>
             <strong>本地工作空间</strong>
-            <small>文档仅保留在当前页面</small>
+            <small>{docxDiagnosticsEnabled ? "DOCX 临时诊断已开启" : "文档仅保留在当前页面"}</small>
           </div>
           <span className="connection-dot" />
         </div>
@@ -1305,6 +1324,7 @@ export function App() {
           />
         </div>
         <div className="workspace-feedback">
+          {docxDiagnosticsEnabled && <p className="document-status">{docxDiagnosticsNotice}</p>}
           {exporting && (
             <p role="status">
               正在导出 {exporting.toUpperCase()}…{" "}
@@ -1503,6 +1523,7 @@ export function App() {
         {model && session && !isPresentation && (
           <DocumentWorkbench
             session={session}
+            wordWebFonts={wordWebFonts}
             appearance="workspace"
             annotationTrigger="command"
             layout={layout}
@@ -1512,14 +1533,18 @@ export function App() {
             onViewChange={(view) => {
               workbenchRef.current = view;
               if (view) {
+                const captureId = docxCaptures.current.get(model), started = performance.now();
                 view.setRulers(rulers);
                 if (editing) void view.setEditing(true).catch((reason) => setError(reason.message));
                 void view.ready
                   .then(() => {
+                    if (captureId) reportDocx(captureId, "preview", started, { annotations: session.getAnnotations().length });
                     if (workbenchRef.current === view)
                       setPageCount(view.layout()?.pages.length ?? 0);
                   })
-                  .catch(() => {});
+                  .catch((reason) => {
+                    if (captureId) reportDocx(captureId, "preview", started, { error: reason });
+                  });
               }
             }}
             onSubmitAnnotations={() => {

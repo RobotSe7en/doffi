@@ -84,8 +84,8 @@ const parseBoundedCss = (() => {
       if (!parse) continue;
       node.parse = function (...args) {
         const state = active!;
-        checkLimit(++state.nodes, state.limits.maxCssNodes);
-        checkLimit(++state.depth, state.limits.maxDepth);
+        checkLimit(++state.nodes, state.limits.maxCssNodes, "maxCssNodes", "CSS");
+        checkLimit(++state.depth, state.limits.maxDepth, "maxDepth", "CSS");
         try {
           const result = parse.apply(this, args);
           // Some parsers also create nodes directly, such as an attribute's
@@ -93,7 +93,7 @@ const parseBoundedCss = (() => {
           walk(result, function (child) {
             if (child === result) return undefined;
             if (state.parsed.has(child)) return this.skip;
-            checkLimit(++state.nodes, state.limits.maxCssNodes);
+            checkLimit(++state.nodes, state.limits.maxCssNodes, "maxCssNodes", "CSS");
             return undefined;
           });
           state.parsed.add(result);
@@ -175,8 +175,8 @@ export function normalizeCss(
     let depth = 0;
     walk(ast, {
       enter(node: CssNode) {
-        checkLimit(++budget.nodes, limits.maxCssNodes);
-        checkLimit(++depth, limits.maxDepth);
+        checkLimit(++budget.nodes, limits.maxCssNodes, "maxCssNodes", "CSS");
+        checkLimit(++depth, limits.maxDepth, "maxDepth", "CSS");
         switch (node.type) {
           case "Atrule":
           case "IdSelector":

@@ -97,6 +97,8 @@ pnpm pack:packages
 
 R1-12 的浏览器 CI 使用 Ubuntu 24.04、固定 Playwright 引擎、Poppler 和宿主 Noto 字体；另校验官方归档后安装 Chromium 109，并在 macOS 15 使用真实 SafariDriver。Safari 输出实际版本及验收结果，不能用 Linux WebKit 结果冒充 Safari。PDF 开发中间件默认只接受本机连接；远程访问可将 Vite 绑定 `0.0.0.0` 并显式配置确切同源开发地址，见 [Word 闭环](word-closure.md#远程开发访问)。正式转换认证由宿主管理。
 
+需要重现远程 DOCX 导入问题时，可在测试环境用 `DOFFI_DEV_DOCX_DIAGNOSTICS=1 pnpm --filter @doffi/playground dev --port 5174 --strictPort` 启用诊断。选择本地 DOCX 后，服务端先把原始字节写入私有临时目录，再由浏览器导入。Vite 日志用诊断编号关联临时文件、导入及预览结果，导入失败时页面也显示该编号。副本最多保留一小时，服务关闭时清理。
+
 PPT 的独立 ZIP/XML 样例与参考环境见 [PPTX 样例](../examples/pptx/README.md)。`pnpm check:pptx-fixtures` 不需要 Office；`pnpm check:pptx-reference` 需要 Impress、Calc、Poppler 和上述字体，会实际打开、重存并重开。环境不同只运行内容检查并明确记录未比较像素，不自动刷新基线。
 
 Office CI 也执行 `pnpm check:xlsx-fixtures` 与 `pnpm check:xlsx-reference`，核对 [XLSX 独立来源](../examples/xlsx/README.md)的可重现字节、官方结构、负例和固定 Calc 重开。源及重存后的结构差异始终对照已记录预期；只有渲染环境完全相同时才比较页数与像素摘要。日常省略一万行重开，专项运行完整来源；结果分别上传为 `office-workbook` 和 `workbook-scale-acceptance`，环境不同会明确标为未比较像素，不更新参考文件。

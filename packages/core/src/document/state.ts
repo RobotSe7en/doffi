@@ -71,11 +71,11 @@ export function buildDocumentState(
   files.set(manifest.annotations, encode(JSON.stringify(annotations, null, 2) + "\n"));
   for (const style of styles) files.set(style.path, encode(style.css));
   let total = 0;
-  for (const bytes of files.values()) {
-    checkLimit(bytes.byteLength, limits.maxFileBytes);
+  for (const [path, bytes] of files) {
+    checkLimit(bytes.byteLength, limits.maxFileBytes, "maxFileBytes", `normalized ${path}`);
     total += bytes.byteLength;
   }
-  checkLimit(total, limits.maxPackageBytes);
+  checkLimit(total, limits.maxPackageBytes, "maxPackageBytes", "the normalized package");
 
   return { files, snapshot, html };
 }

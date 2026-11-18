@@ -232,7 +232,7 @@ class Importer {
     info.styleContexts ??= [];
     info.styleContexts.push({ nodeId: this.id(node), kind, cssClass });
     node.attrs.class = [node.attrs.class, cssClass].filter(Boolean).join(" ");
-    this.styles.css.push(("." + cssClass).repeat(5) + "{" + declarations(css) + "}");
+    this.styles.addIndependentRule(("." + cssClass).repeat(5), css);
   }
   private make(tag: string, attrs: Record<string, string> = {}): Html {
     const id = "n" + (this.serial + 1);
@@ -532,7 +532,7 @@ class Importer {
     this.native?.finish(this.files, manifest, this.word);
     const css =
       ".word-main{white-space:normal}.word-main p,.word-main h1,.word-main h2,.word-main h3,.word-main h4,.word-main h5,.word-main h6{white-space:pre-wrap}.word-main table{border-collapse:collapse}.word-main td{vertical-align:top}.word-main ins{text-decoration:underline;color:#006400}.word-main del{text-decoration:line-through;color:#a00000}\n" +
-      this.styles.css.join("\n");
+      this.styles.stylesheet();
     mainStory.attrs.class = "word-main";
 
     this.put("manifest.json", JSON.stringify(manifest, null, 2));

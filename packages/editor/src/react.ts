@@ -102,6 +102,7 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
       ...(props.annotationTrigger ? { annotationTrigger: props.annotationTrigger } : {}),
       ...(props.title ? { title: props.title } : {}),
       ...(props.layout ? { layout: props.layout } : {}), ...(props.limits ? { limits: props.limits } : {}),
+      ...(props.wordWebFonts ? { wordWebFonts: props.wordWebFonts } : {}),
       ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}),
       ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
       ...(hasSubmission ? { onSubmitAnnotations: (request) => latest.current.onSubmitAnnotations?.(request) } : {}),
@@ -115,7 +116,7 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
     let active = true;
     void view.ready.catch((error: unknown) => { if (active) latest.current.onError?.(error instanceof Error ? error : new Error("Preview failed.")); });
     return () => { active = false; view.dispose(); latest.current.onViewChange?.(undefined); };
-  }, [props.session, props.title, props.layout, props.limits, props.supportedOperations, props.contextLimits, props.editable, props.appearance, props.annotationTrigger, hasSubmission]);
+  }, [props.session, props.title, props.layout, props.limits, props.wordWebFonts, props.supportedOperations, props.contextLimits, props.editable, props.appearance, props.annotationTrigger, hasSubmission]);
   return createElement("div", { ref: container, className: props.className });
 }
 

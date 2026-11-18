@@ -150,6 +150,7 @@ export function parseHtml(
     const domIds = new Set<string>();
     const stylePaths: string[] = [];
     const assets = new Map(manifest.assets.map((asset) => [asset.path, asset]));
+    const inlineStyles = manifest.kind === "document" ? new Map<string, string>() : undefined;
     const stack: { node: Node; depth: number; inBody: boolean; parentId: string | null }[] = [
       { node: tree, depth: 0, inBody: false, parentId: null },
     ];
@@ -158,8 +159,8 @@ export function parseHtml(
     let titles = 0;
     while (stack.length) {
       const { node, depth, inBody, parentId } = stack.pop()!;
-      checkLimit(++count, limits.maxNodes);
-      checkLimit(depth, limits.maxDepth);
+      checkLimit(++count, limits.maxNodes, "maxNodes", "HTML");
+      checkLimit(depth, limits.maxDepth, "maxDepth", "HTML");
       let childParentId = parentId;
       if (isElement(node)) {
         const tag = node.tagName;
@@ -182,8 +183,18 @@ export function parseHtml(
           ) {
             unsupported("The HTML attribute is outside the supported document structure.");
           }
-          if (attr.name === "style")
-            attr.value = normalizeCss(attr.value, "declarationList", limits, cssBudget);
+          if (attr.name === "style") {
+            const source = attr.value;
+            const cached = inlineStyles?.get(source);
+            if (cached !== undefined) {
+              // An identical declaration list shares its parse, but each use costs one node.
+              checkLimit(++cssBudget.nodes, limits.maxCssNodes, "maxCssNodes", "inline CSS");
+              attr.value = cached;
+            } else {
+              attr.value = normalizeCss(source, "declarationList", limits, cssBudget);
+              inlineStyles?.set(source, attr.value);
+            }
+          }
           if (attr.name === "dir" && !["ltr", "rtl", "auto"].includes(attr.value))
             invalid("The HTML text direction is invalid.");
           if (

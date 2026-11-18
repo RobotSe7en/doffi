@@ -1,6 +1,31 @@
 import type { FontResolution } from "./contracts.js";
 import type { FontProbeCache } from "./font-probe-cache.js";
+import { ownViewStyle } from "./view-nodes.js";
 export type { FontResolution } from "./contracts.js";
+
+/** Font bytes supplied by an application, independent of the document package. */
+export interface WordWebFont {
+  readonly family: string;
+  readonly aliases: readonly string[];
+  readonly load: () => Promise<ArrayBuffer>;
+}
+
+export async function loadWordWebFonts(document: Document, fonts: readonly WordWebFont[]): Promise<ReadonlyMap<string, string>> {
+  const aliases = new Map<string, string>();
+  const loaded = await Promise.allSettled(fonts.map(async (definition) => {
+    const face = new document.defaultView!.FontFace(definition.family, await definition.load());
+    await face.load();
+    return { definition, face };
+  }));
+  for (const result of loaded) {
+    if (result.status !== "fulfilled") continue;
+    const { definition, face } = result.value;
+    document.fonts.add(face);
+    for (const name of [definition.family, ...definition.aliases])
+      aliases.set(name.toLowerCase(), definition.family);
+  }
+  return aliases;
+}
 const generic = new Set([
   "serif",
   "sans-serif",
@@ -23,12 +48,13 @@ function families(value: string): string[] {
 export function resolvePreviewFonts(
   document: Document,
   selector: string = "[data-node-id]",
+  hosted?: ReadonlyMap<string, string>,
 ): readonly FontResolution[] {
-  return resolvePreviewFontsInScope(document, document, selector);
+  return resolvePreviewFontsInScope(document, document, selector, undefined, hosted);
 }
 /** Limit private probes/window diagnostics to their owning surface. A selector
  * in another mounted document must not participate in font substitution. */
-export function resolvePreviewFontsInScope(document: Document, scope: ParentNode, selector: string, probes?: FontProbeCache): readonly FontResolution[] {
+export function resolvePreviewFontsInScope(document: Document, scope: ParentNode, selector: string, probes?: FontProbeCache, hosted?: ReadonlyMap<string, string>): readonly FontResolution[] {
   probes?.watch(document.fonts);
   let canvas: HTMLCanvasElement | undefined, context: CanvasRenderingContext2D | undefined, glyphPhase = false;
   const probe = (): CanvasRenderingContext2D => {
@@ -68,12 +94,12 @@ export function resolvePreviewFontsInScope(document: Document, scope: ParentNode
   const nodes = [...scope.querySelectorAll<HTMLElement>(selector)];
   // Resolve parents before children so inherited fallback and native east-Asian overrides remain distinct.
   for (const node of nodes) {
-    const requested = families(
-      document.defaultView!.getComputedStyle(node).fontFamily,
-    );
+    const sourceFamily = document.defaultView!.getComputedStyle(node).fontFamily;
+    const requested = families(sourceFamily);
     if (!requested.length) continue;
     const first = requested[0]!;
-    let rendered = requested.find(available);
+    const preferred = hosted?.get(first.toLowerCase());
+    let rendered = preferred ?? requested.find(available);
     if (!rendered) {
       const candidates = /仿宋|FangSong/i.test(first)
         ? ["FandolFang", "Noto Serif CJK SC", "serif"]
@@ -84,7 +110,10 @@ export function resolvePreviewFontsInScope(document: Document, scope: ParentNode
             : ["Noto Sans CJK SC", "Noto Serif CJK SC", "sans-serif"];
       rendered = candidates.find(available)!;
     }
-    if (rendered !== first) node.style.fontFamily = JSON.stringify(rendered);
+    if (rendered !== first) {
+      if (preferred) ownViewStyle(node, "font-family");
+      node.style.fontFamily = JSON.stringify(rendered) + (preferred ? "," + sourceFamily : "");
+    }
     selected.set(node, first);
     if (!resolutions.has(first))
       resolutions.set(first, {

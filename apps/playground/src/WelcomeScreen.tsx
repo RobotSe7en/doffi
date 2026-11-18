@@ -80,6 +80,7 @@ function Miniature({ kind }: { kind: "word" | "workbook" | "presentation" }) {
 
 export function WelcomeScreen({
   loading,
+  docxDiagnostics,
   onOpen,
   onChooseFile,
   onFile,
@@ -87,6 +88,7 @@ export function WelcomeScreen({
   onNewWord,
 }: {
   loading: boolean;
+  docxDiagnostics: string | undefined;
   onOpen(id: string): void;
   onChooseFile(): void;
   onFile(file: File): void;
@@ -142,6 +144,7 @@ export function WelcomeScreen({
             打开自己的文件
           </button>
         </div>
+        {docxDiagnostics && <p>{docxDiagnostics}</p>}
       </section>
       <section className="welcome-samples" id="sample-documents">
         <div className="welcome-container">
@@ -204,6 +207,7 @@ export function WelcomeScreen({
       <section className="welcome-upload welcome-container">
         <h2>打开自己的文件</h2>
         <p>支持 .docx、.xlsx、.pptx 和 doffi 文档包 .zip。</p>
+        {docxDiagnostics && <p>{docxDiagnostics}</p>}
         <div
           className={"upload-zone" + (dragging ? " dragging" : "")}
           onDragOver={(event) => {
@@ -226,7 +230,7 @@ export function WelcomeScreen({
           <p>
             <strong>在浏览器中打开与编辑</strong>
             <span>
-              文档与修改保留在当前页面；刷新前请下载保存。PDF / PNG 导出使用本地转换服务。
+              {docxDiagnostics ? "预览和修改保留在当前页面" : "文档与修改保留在当前页面"}；刷新前请下载保存。PDF / PNG 导出使用本地转换服务。
             </span>
           </p>
         </div>

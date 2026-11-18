@@ -17,8 +17,8 @@ import { composeWordParagraphMarks } from "./word-paragraph-marks.js";
 import { composeWordNative } from "./word-native.js";
 import { composeWordControls } from "./word-controls.js";
 import { DocumentError, openDocument } from "@doffi/core";
-import { resolvePreviewFonts } from "./fonts.js";
-import type { FontResolution } from "./fonts.js";
+import { loadWordWebFonts, resolvePreviewFonts } from "./fonts.js";
+import type { FontResolution, WordWebFont } from "./fonts.js";
 import type { DeepReadonly, ContentDocumentModel, WordMetadata } from "@doffi/core";
 import { PreviewSource } from "./source-index.js";
 import { renderLimits } from "./contracts.js";
@@ -56,6 +56,7 @@ export interface DocumentPreviewOptions {
   readonly title?: string;
   readonly layout?: "pages" | "continuous";
   readonly limits?: Partial<RenderLimits>;
+  readonly wordWebFonts?: readonly WordWebFont[];
   /** Read-only editing projection of a registered master/layout/notes-master root. */
   readonly presentationSurfaceId?: string;
 }
@@ -511,6 +512,7 @@ export function mountPreview(
     fonts: [],
   });
   let continuousPunctuation: ReturnType<typeof wordPunctuationLayout> | undefined;
+  let hostedFonts: ReadonlyMap<string, string> | undefined;
   let resolveReady: () => void = () => {},
     rejectReady: (reason: unknown) => void = () => {};
   const ready = new Promise<void>((resolve, reject) => {
@@ -571,6 +573,7 @@ export function mountPreview(
       const derivedFonts = resolvePreviewFonts(
         iframe.contentDocument!,
         ".sdk-field-display [data-word-script]",
+        hostedFonts,
       );
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
@@ -670,8 +673,10 @@ export function mountPreview(
     composeWordParagraphMarks(frame, model);
     composeWordLanguages(frame, model, limits);
     composeWordContextualSpacing(frame, model);
+    const fontSelector = "[data-node-id],[data-sdk-word-script-view]";
+    const hostedResolution = hostedFonts?.size ? resolvePreviewFonts(frame, fontSelector, hostedFonts) : undefined;
     composeWordTypography(frame, model, limits);
-    const sourceFonts = resolvePreviewFonts(frame, "[data-node-id],[data-sdk-word-script-view]");
+    const sourceFonts = hostedResolution ?? resolvePreviewFonts(frame, fontSelector);
     source = new PreviewSource(frame, model);
     // Empty native runs still need a real line box in preview and editing.
     // A derived break provides it without adding a source newline/identity.
@@ -711,6 +716,7 @@ export function mountPreview(
       ...resolvePreviewFonts(
         frame,
         ".sdk-number-marker,.sdk-word-equation-view,.sdk-word-equation-view *,[data-sdk-word-chart] text,[data-sdk-word-chart] tspan",
+        hostedFonts,
       ),
     ]);
     fontReport = baseFonts;
@@ -782,9 +788,12 @@ export function mountPreview(
   }
   let composing = false;
   const load = (): void => {
-    if (disposed || !iframe.contentDocument) return;
-    void iframe.contentDocument.fonts.ready
-      .then(() => {
+    const frame = iframe.contentDocument;
+    if (disposed || !frame) return;
+    void frame.fonts.ready
+      .then(async () => {
+        if (options.wordWebFonts?.length && !disposed)
+          hostedFonts = await loadWordWebFonts(frame, options.wordWebFonts);
         if (!disposed) {
           loaded = true;
           iframe.contentDocument!.addEventListener(

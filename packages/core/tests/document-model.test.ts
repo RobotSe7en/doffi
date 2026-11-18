@@ -389,13 +389,27 @@ describe("bounded document input", () => {
   test.each([
     { maxFiles: 4 }, { maxPackageBytes: 10 }, { maxFileBytes: 10 },
     { maxNodes: 10 }, { maxDepth: 3 }, { maxCssNodes: 3 },
-  ])("enforces configured limits %j", (limits) => { failure(files(), "ResourceLimitExceeded", limits); });
+  ])("reports the configured limit exceeded by %j", (limits) => {
+    expect(failure(files(), "ResourceLimitExceeded", limits).message).toContain(Object.keys(limits)[0]);
+  });
 
   test("counts CSS budgets across files and inline styles", () => {
     const input = body('<p data-node-id="p" style="color:red">正文</p>');
     input.set("styles.css", encoder.encode("p{color:blue}"));
     // Each input alone is below ten AST nodes; the combined document is above it.
-    failure(input, "ResourceLimitExceeded", { maxCssNodes: 10 });
+    expect(failure(input, "ResourceLimitExceeded", { maxCssNodes: 10 }).message)
+      .toBe("Document input exceeds maxCssNodes (12 > 10) in CSS.");
+  });
+
+  test("shares identical Word inline declarations while budgeting every use", () => {
+    const input = body(Array.from({ length: 20 }, (_, index) =>
+      `<p data-node-id="inline-${index}" style="color: red">text</p>`).join(""));
+    input.set("styles.css", encoder.encode(""));
+    const limits = { maxCssNodes: 24 };
+    const opened = openDocument(input, { limits });
+    expect(openDocument(opened.serialize(), { limits }).snapshot()).toEqual(opened.snapshot());
+    expect(failure(input, "ResourceLimitExceeded", { maxCssNodes: 23 }).message)
+      .toBe("Document input exceeds maxCssNodes (24 > 23) in inline CSS.");
   });
 
   test.each([

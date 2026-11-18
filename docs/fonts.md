@@ -24,3 +24,11 @@ Linux Office CI 通过独立[验收脚本](../scripts/install-acceptance-fonts.m
 这些是预览替代，不承诺与微软或华文字体相同的字形、字宽或断行。已有正版字体可由宿主安装后使用；当前未从第三方下载或安装微软宋体、仿宋、楷体等专有字体。
 
 浏览器用固定字体用例验证 FandolSong/FandolFang/FandolKai/LXGW WenKai 实际可选，以及仿宋、楷体名称的显式替代、中西文分工和缺字诊断。测量诊断仍受[DOCX 读取说明](docx-import.md#中文字体)所列边界约束。
+
+## Playground 的 Word Web 字体
+
+打开首份 Word 文档后，Playground 从同一站点加载四份 WOFF2 字体，并在会话中复用已加载的字节。宋体／新宋体映射为 Noto Serif CJK SC，黑体／微软雅黑等映射为 Noto Sans CJK SC，仿宋映射为朱雀仿宋，楷体映射为霞鹜文楷。浏览器优先使用这些 Web 字体显示已映射的名称，文档源与原生导出继续保留所请求的字体名。
+
+Web 字体覆盖 GB 2312 常用汉字和常见中西文标点。较罕见的字形仍按字体列表回退，粗体及斜体可由浏览器合成。字体文件为 SIL OFL 1.1，发行来源、版本和原始及派生文件摘要见[字体清单](../apps/playground/src/assets/word-fonts/sources.json)。
+
+Word 预览、批注、正文编辑和提案比较共用 `wordWebFonts` 宿主选项。浏览器宿主先读取已授权的字节，Word 预览在隔离文档里注册字体，再开始测量。预览内的 CSP 继续阻止从文档内容发起字体请求。服务端 PDF／PNG 使用服务端渲染环境的字体。

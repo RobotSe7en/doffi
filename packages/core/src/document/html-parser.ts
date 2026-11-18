@@ -19,8 +19,8 @@ function boundedParser(limits: DocumentReadLimits, supportedTags: ReadonlySet<st
   let count = 0;
 
   function checkNode(node: Node, depth: number): void {
-    if (!depths.has(node)) checkLimit(++count, limits.maxNodes);
-    checkLimit(depth, limits.maxDepth);
+    if (!depths.has(node)) checkLimit(++count, limits.maxNodes, "maxNodes", "HTML");
+    checkLimit(depth, limits.maxDepth, "maxDepth", "HTML");
     depths.set(node, depth);
   }
 

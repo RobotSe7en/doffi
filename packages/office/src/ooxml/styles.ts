@@ -125,6 +125,7 @@ export function tableLookMask(node: XmlNode | undefined): number | undefined {
 }
 export class DocxStyles {
   readonly css: string[] = [];
+  private readonly independentRules = new Map<string, string[]>();
   readonly styles: WordMetadata["styles"] = [];
   readonly numbering: WordMetadata["numbering"] = [];
   readonly defaults: StyleValues;
@@ -398,8 +399,22 @@ export class DocxStyles {
   private readonly componentValues = new Map<string, Css>();
   component(name: string, values: Css): string {
     this.componentValues.set(name, values);
-    this.css.push("." + name + "{" + declarations(values) + "}");
+    this.addIndependentRule("." + name, values);
     return name;
+  }
+  /** These selectors bind distinct source identities and have no shared cascade order. */
+  addIndependentRule(selector: string, values: Css): void {
+    const block = declarations(values);
+    const group = this.independentRules.get(block);
+    if (group) group.push(selector);
+    else this.independentRules.set(block, [selector]);
+  }
+  stylesheet(): string {
+    const grouped: string[] = [];
+    for (const [block, selectors] of this.independentRules)
+      for (let start = 0; start < selectors.length; start += 256)
+        grouped.push(selectors.slice(start, start + 256).join(",") + "{" + block + "}");
+    return [...this.css, ...grouped].join("\n");
   }
   readComponent = (name: string): Css => this.componentValues.get(name) ?? {};
   drawingThemeProperties(): Css {
@@ -823,12 +838,11 @@ export class DocxStyles {
       }
       const hanging = attr(indent, "hanging");
       if (hanging !== undefined) css["text-indent"] = pt(-number(hanging, indent) / 20);
-      if (
-        ["leftChars", "rightChars", "firstLineChars", "hangingChars"].some(
-          (name) => attr(indent, name) !== undefined,
-        )
-      )
-        unsupported(indent, "Character-unit indentation is not supported.");
+      const characterIndent = ["leftChars", "rightChars", "firstLineChars", "hangingChars"].find(
+        (name) => attr(indent, name) !== undefined,
+      );
+      if (characterIndent)
+        unsupported(indent, "Character-unit indentation remains native.", W + " " + characterIndent);
     }
     if (child(properties, "keepNext"))
       css["break-after"] = on(child(properties, "keepNext")) ? "avoid" : "auto";

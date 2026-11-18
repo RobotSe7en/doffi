@@ -244,6 +244,20 @@ test("preserves unsupported paragraph properties rather than losing the paragrap
     importDocx(bytes, { documentId: "strict", unsupportedContent: "reject" }),
   ).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
 });
+test("projects the point indent and retains the native character indent on reopen", () => {
+  let bytes = fixture(
+    '<w:p><w:pPr><w:ind w:left="120" w:firstLine="480" w:firstLineChars="200"/></w:pPr><w:r><w:t>INDENT</w:t></w:r></w:p>',
+  );
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(importDocx(bytes, { documentId: "character-indent" }), { kind: "document" });
+    expect(model.snapshot().html).toMatch(/<p[^>]*style="[^"]*margin-left:6pt[^"]*text-indent:24pt/);
+    bytes = exportDocx(model).bytes;
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    const indent = xml.match(/<w:ind\b[^>]*w:firstLineChars="200"[^>]*>/)?.[0];
+    expect(indent).toContain('w:left="120"');
+    expect(indent).toContain('w:firstLine="480"');
+  }
+});
 test("preserves an unknown block and its embedded binary relationship", () => {
   const files = base();
   files["word/document.xml"] = strToU8(

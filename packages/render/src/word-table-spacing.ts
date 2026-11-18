@@ -1,6 +1,10 @@
 import { SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS } from "@doffi/core";
 import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
 import { ownViewStyle } from "./view-nodes.js";
+
+// Word expects the native preferred table width to fit a signed short in twips.
+const maxNativeWidthPt = 32767 / 20;
+
 /** Native spacing is authoritative over an earlier CSS projection. Nested
  * tables resolve their own spacing instead of inheriting a browser variable. */
 export function composeWordTableSpacing(document: Document, model: ContentDocumentModel): void {
@@ -20,21 +24,30 @@ export function composeWordTableSpacing(document: Document, model: ContentDocume
       };
     };
   for (const table of document.querySelectorAll<HTMLTableElement>("table")) {
-    const id = table.dataset.nodeId;
-    if (!id || !tables.has(id)) continue;
+    const id = table.dataset.nodeId,
+      info = id ? tables.get(id) : undefined;
+    if (!id || !info) continue;
     const computed = css.get(project(id)),
-      spacing = computed["--word-table-cell-spacing"];
+      spacing = computed["--word-table-cell-spacing"],
+      fixed = computed["table-layout"] === "fixed",
+      width = computed.width,
+      gridWidth = info.grid.reduce((a, b) => a + b, 0);
     ownViewStyle(table, "border-spacing");
     table.style.borderSpacing = spacing ?? computed["border-spacing"] ?? "0pt";
-    if (computed["table-layout"] !== "fixed") {
-      const info = tables.get(id)!;
+    if (!fixed) {
       for (const [index, column] of [
         ...table.querySelectorAll<HTMLTableColElement>(":scope > colgroup > col"),
       ].entries())
-        column.style.width = (info.grid[index]! / info.grid.reduce((a, b) => a + b, 0)) * 100 + "%";
-      if (!computed.width || computed.width === "auto") {
-        ownViewStyle(table, "width", "max-width");
-        table.style.width = info.grid.reduce((a, b) => a + b, 0) + "pt";
+        column.style.width = (info.grid[index]! / gridWidth) * 100 + "%";
+    }
+    if (
+      (width?.endsWith("pt") && parseFloat(width) > maxNativeWidthPt) ||
+      (!fixed && (!width || width === "auto"))
+    ) {
+      ownViewStyle(table, "width");
+      table.style.width = gridWidth + "pt";
+      if (!fixed) {
+        ownViewStyle(table, "max-width");
         table.style.maxWidth = "100%";
       }
     }

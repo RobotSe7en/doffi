@@ -243,6 +243,7 @@ function mountContentWorkbench(
   const interaction = mountDocumentInteraction(interactionHost, session, {
     ...(options.layout ? { layout: options.layout } : {}),
     ...(options.limits ? { limits: options.limits } : {}),
+    ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
     ...(options.title ? { title: options.title } : {}),
     ...(options.annotationTrigger ? { annotationTrigger: options.annotationTrigger } : {}),
     ...(options.appearance ? { appearance: options.appearance } : {}),
@@ -311,6 +312,7 @@ function mountContentWorkbench(
           : {}),
         ...(options.layout ? { layout: options.layout } : {}),
         ...(options.limits ? { limits: options.limits } : {}),
+        ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
         ...(options.appearance ? { appearance: options.appearance } : {}),
         onError: report,
       });
@@ -568,7 +570,10 @@ function mountContentWorkbench(
     const previewContainer = document.createElement("div");
     previewContainer.className = "candidate";
     diff.append(title, summary, list, annotationSummary, previewContainer, apply, reject);
-    candidatePreview = mountDocumentPreview(previewContainer, model, { title: "提案候选预览" });
+    candidatePreview = mountDocumentPreview(previewContainer, model, {
+      title: "提案候选预览",
+      ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
+    });
     candidateReady = candidatePreview.ready;
     void candidateReady.catch(report);
     status.textContent =

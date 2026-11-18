@@ -102,6 +102,41 @@ function descendants(
   const node = session.getNode(id)!;
   return [node, ...node.childNodeIds.flatMap((child) => descendants(session, child))];
 }
+test("shares repeated table rule declarations while keeping each table independently editable", () => {
+  const archive = unzipSync(tableStylesFixture());
+  archive["word/document.xml"] = strToU8(
+    strFromU8(archive["word/document.xml"]!).replace(/<w:tbl>[\s\S]*?<\/w:tbl>/, (table) => table + table),
+  );
+  const open = (bytes: Uint8Array) => createDocumentSession(openDocument(importDocx(bytes, {
+    documentId: "grouped-table-css",
+    unsupportedContent: "reject",
+  }), { kind: "document" }));
+  const session = open(zipSync(archive));
+  const tables = session.snapshot().metadata.word!.tables;
+  const colors = (current: typeof session) => current.snapshot().metadata.word!.tables.map(({ nodeId }) => {
+    const firstCell = descendants(current, nodeId).find((node) => node.tagName === "td")!;
+    return css(current, firstCell.nodeId)["background-color"];
+  });
+  const selectors = tables.map((table) => {
+    const context = table.styleContexts!.find(({ kind }) => kind === "cell")!;
+    return ("." + context.cssClass).repeat(5);
+  });
+  const ruleSelectors = session.snapshot().styles[0]!.css.match(/[^{}]+(?=\{)/g) ?? [];
+  expect(ruleSelectors.some((list) => selectors.every((selector) => list.split(",").includes(selector))))
+    .toBe(true);
+  expect(colors(session)).toEqual(["#aa1111", "#aa1111"]);
+  session.commit(session.prepare({
+    protocolVersion: 1,
+    documentId: "grouped-table-css",
+    baseRevision: 0,
+    operations: [{ op: "formatWordTable", nodeId: tables[0]!.nodeId, styleId: "Blue" }],
+  }));
+  expect(colors(session)).toEqual(["#1111aa", "#aa1111"]);
+  const reopened = open(exportDocx(session).bytes);
+  expect(colors(reopened)).toEqual(["#1111aa", "#aa1111"]);
+  reopened.dispose();
+  session.dispose();
+});
 test("switching table styles recomposes conditional cells and run toggles, retains direct formats, and remains style-driven after two native reopens", () => {
   const session = createDocumentSession(
     openDocument(

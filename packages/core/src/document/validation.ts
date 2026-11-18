@@ -9,9 +9,11 @@ export function unsupported(message: string): never {
   throw new DocumentError("UnsupportedFeature", message);
 }
 
-export function checkLimit(value: number, maximum: number): void {
+export function checkLimit(value: number, maximum: number, limit?: keyof DocumentReadLimits, context?: string): void {
   if (value > maximum) {
-    throw new DocumentError("ResourceLimitExceeded", "Document input exceeds the configured limit.");
+    throw new DocumentError("ResourceLimitExceeded", limit
+      ? `Document input exceeds ${limit} (${value} > ${maximum})${context ? ` in ${context}` : ""}.`
+      : "Document input exceeds the configured limit.");
   }
 }
 

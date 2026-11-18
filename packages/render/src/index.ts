@@ -43,7 +43,7 @@ export type {
 } from "./workbook/read-transport.js";
 export { transportConfig as resolveWorkbookReadTransportOptions } from "./workbook/read-transport.js";
 export { resolvePreviewFonts } from "./fonts.js";
-export type { FontResolution } from "./fonts.js";
+export type { FontResolution, WordWebFont } from "./fonts.js";
 export { PreviewSource } from "./source-index.js";
 export { SourceProjection } from "./projection.js";
 export { sourceSelectionText, stripClipboardIdentities } from "./clipboard.js";
