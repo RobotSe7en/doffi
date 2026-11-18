@@ -40,6 +40,7 @@ export class ExportStyles {
   readonly paragraphDefaults: Css;
   readonly ids: Map<string, string>;
   readonly numberingIds: Map<string, string> = new Map<string, string>();
+  private readonly numberingClasses = new Map<string, string>();
   private readonly definitions: Map<string, Style>;
   private readonly native = new Map<string, { p: Css; r: Css }>();
   private readonly contexts = new Map<string, Css>();
@@ -90,9 +91,20 @@ export class ExportStyles {
       },
       "word/document.xml",
     );
-    word?.numbering.forEach((definition, index) =>
-      this.numberingIds.set(definition.numberingId, String(index + 1)),
-    );
+    word?.numbering.forEach((definition, index) => {
+      this.numberingIds.set(definition.numberingId, String(index + 1));
+      for (const level of definition.levels)
+        this.numberingClasses.set(definition.numberingId + ":" + level.level, level.cssClass);
+    });
+  }
+  numberingParagraph(numberingId: string, level: string): Css {
+    const cssClass = this.numberingClasses.get(numberingId + ":" + level);
+    return cssClass
+      ? pick(
+          this.css.classStyle(cssClass, this.defaults),
+          this.css.classKeys(cssClass).filter((key) => paragraphKeys.includes(key)),
+        )
+      : {};
   }
   private neutralTableId: string | undefined;
   /** An absent tblStyle would reapply the document's default table style. */

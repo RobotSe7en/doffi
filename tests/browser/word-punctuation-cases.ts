@@ -126,6 +126,137 @@ async function capture(page: Page, info: TestInfo) {
   }
 }
 export function registerWordPunctuationTests(mount: Mount): void {
+  test("native character width changes line breaks and preserves source text", async ({ page }) => {
+    const text = "甲乙丙丁戊己庚辛";
+    await mount(page, fixture(
+      para(144, run(text)) +
+      para(144, run(text, '<w:w w:val="66"/>')) +
+      para(144, run(text, '<w:w w:val="125"/>')),
+    ), "edit");
+    const p = paragraphs(page),
+      { marks: plain } = await geometry(p.nth(0)),
+      { marks: condensed } = await geometry(p.nth(1)),
+      { marks: expanded } = await geometry(p.nth(2)),
+      advance = (marks: typeof plain) => marks[1]!.x - marks[0]!.x;
+    expect(advance(condensed) / advance(plain)).toBeCloseTo(0.66, 2);
+    expect(advance(expanded) / advance(plain)).toBeCloseTo(1.25, 2);
+    expect(condensed.at(-1)!.y).toBeCloseTo(condensed[0]!.y, 1);
+    expect(expanded.at(-1)!.y).toBeGreaterThan(expanded[0]!.y);
+    const snapshot = await page.evaluate(() => window.paginationHost.session!.snapshot());
+    expect(snapshot.html).not.toContain("sdk-word-run-width");
+    expect(snapshot.html).not.toContain("\u2060");
+  });
+
+  test("an East Asian font hint routes ambiguous punctuation without changing basic Latin", async ({
+    page,
+  }) => {
+    const fonts = ' w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="SimSun"';
+    await mount(page, fixture(
+      para(192, run("A“甲”", '<w:rFonts' + fonts + '/>')) +
+      para(192, run("A“甲”", '<w:rFonts' + fonts + ' w:hint="eastAsia"/>')) +
+      para(192, run("A“甲”", '<w:rFonts w:hAnsi="SimSun" w:eastAsia="SimSun"/>')),
+    ));
+    const roles = await paragraphs(page).evaluateAll((nodes) =>
+      nodes.map((node) =>
+        [...node.querySelectorAll<HTMLElement>("[data-sdk-word-script-view]")].map(
+          (span) => [span.textContent, span.dataset.wordScript, span.style.fontVariantEastAsian],
+        ),
+      ),
+    );
+    expect(roles).toEqual([
+      [["A", "ascii", ""], ["“", "hAnsi", ""], ["甲", "eastAsia", ""], ["”", "hAnsi", ""]],
+      [["A", "ascii", ""], ["“", "eastAsia", "full-width"], ["甲", "eastAsia", ""], ["”", "eastAsia", "full-width"]],
+      [["A", "ascii", ""], ["“", "hAnsi", "full-width"], ["甲", "eastAsia", ""], ["”", "hAnsi", "full-width"]],
+    ]);
+  });
+
+  test("justified punctuation compression respects the available break after the next glyph", async ({
+    page,
+  }) => {
+    const dense = "甲，乙、丙，丁、戊，己、庚，辛、壬，癸，甲，乙、丙，丁、戊，己、庚，辛",
+      sparse = "甲乙，丙丁、戊己庚辛壬癸。甲乙，丙丁、戊己庚辛壬癸。甲乙，丙丁。",
+      content = para(152, run(dense), '<w:jc w:val="both"/>') +
+        para(152, run(sparse), '<w:jc w:val="both"/>'),
+      firstLine = async (p: Locator) => {
+        const { marks } = await geometry(p);
+        return marks.filter((mark) => Math.abs(mark.y - marks[0]!.y) < 3)
+          .map((mark) => mark.text).join("");
+      };
+    for (const spacing of ["doNotCompress", "compressPunctuation"]) {
+      await mount(page, fixture(content, '<w:characterSpacingControl w:val="' + spacing + '"/>'));
+      const p = paragraphs(page);
+      // The Microsoft Word reference hangs the first paragraph's closing comma
+      // in both modes and fits one extra ideograph in the second paragraph.
+      expect(await firstLine(p.nth(0))).toBe("甲，乙、丙，丁、戊，");
+      expect(await firstLine(p.nth(1))).toBe(
+        "甲乙，丙丁、戊己庚" + (spacing === "compressPunctuation" ? "辛" : ""),
+      );
+    }
+  });
+
+  test("hanging punctuation stays adjacent to justified text in an indented paragraph", async ({
+    page,
+  }) => {
+    const indented = (content: string) =>
+      para(65, content, '<w:jc w:val="both"/><w:overflowPunct/>')
+        .replace("<w:ind ", '<w:ind w:firstLine="480" ');
+    const markup =
+      indented(run("甲乙") + run("。") + run("丙丁")) +
+      indented(run("前行") + "<w:r><w:br/></w:r>" + run("丙丁戊己") + run("、") + run("庚辛"));
+    await mount(page, fixture(markup, '<w:characterSpacingControl w:val="doNotCompress"/>'));
+    const cases = [[0, 2, "。"], [1, 6, "、"]] as const;
+    for (const [number, index, text] of cases) {
+      const paragraph = paragraphs(page).nth(number),
+        { marks, width } = await geometry(paragraph);
+      const hanging = paragraph.locator(".sdk-word-punctuation").filter({ hasText: text });
+      await expect(hanging).toHaveCSS("inline-size", "0px");
+      const prior = marks[index - 1]!, mark = marks[index]!;
+      expect(mark.text).toBe(text);
+      expect(mark.y).toBeCloseTo(prior.y, 1);
+      expect(mark.x - prior.end).toBeCloseTo(0, 0);
+      expect(mark.x).toBeLessThanOrEqual(width + 0.5);
+    }
+  });
+
+  test("centered Word table text keeps full-width punctuation with compression enabled", async ({
+    page,
+  }) => {
+    const sample = run("甲，乙、丙"),
+      table =
+        '<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="1920"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+        '<w:tblGrid><w:gridCol w:w="1920"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>' +
+        '<w:jc w:val="center"/></w:pPr>' + sample + '</w:p></w:tc></w:tr></w:tbl>';
+    await mount(page, fixture(table, '<w:characterSpacingControl w:val="compressPunctuation"/>'));
+    const { marks } = await geometry(paragraphs(page).first());
+    expect(marks[2]!.x - marks[1]!.x).toBeCloseTo(marks[1]!.x - marks[0]!.x, 1);
+    expect(marks[4]!.x - marks[3]!.x).toBeCloseTo(marks[3]!.x - marks[2]!.x, 1);
+  });
+  test("table cells keep closing punctuation within their text bounds even when hanging is enabled", async ({
+    page,
+  }) => {
+    const sample = run("甲乙丙丁戊己庚。辛壬"),
+      table =
+        '<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="1920"/><w:tblLayout w:type="fixed"/>' +
+        '<w:tblCellMar><w:left w:type="dxa" w:w="108"/><w:right w:type="dxa" w:w="108"/></w:tblCellMar>' +
+        '</w:tblPr><w:tblGrid><w:gridCol w:w="1920"/></w:tblGrid>' +
+        ['', "<w:overflowPunct/>", hangingOff].map((flag) =>
+          '<w:tr><w:tc><w:tcPr><w:tcW w:type="dxa" w:w="1920"/></w:tcPr>' +
+          '<w:p><w:pPr>' + flag + '</w:pPr>' + sample + '</w:p></w:tc></w:tr>',
+        ).join("") + '</w:tbl>';
+    await mount(page, fixture(para(112, sample, "<w:overflowPunct/>") + table));
+    const p = paragraphs(page);
+    const outside = (await geometry(p.first())).marks;
+    expect(outside[7]!.y).toBeCloseTo(outside[0]!.y, 1);
+    const cells = page.frameLocator("iframe").locator("table td p");
+    await expect(cells).toHaveCount(3);
+    for (const paragraph of await cells.all()) {
+      const { marks, width } = await geometry(paragraph);
+      expect(width).toBeGreaterThan(112);
+      expect(marks[5]!.y).toBeCloseTo(marks[0]!.y, 1);
+      expect(marks[6]!.y).toBeGreaterThan(marks[5]!.y + 8);
+      expect(marks[7]!.y).toBeCloseTo(marks[6]!.y, 1);
+    }
+  });
   test("R19 hangs one closing mark across runs and compresses actual line starts", async ({
     page,
   }, info) => {
@@ -196,7 +327,7 @@ export function registerWordPunctuationTests(mount: Mount): void {
           para(33, run("甲丙，乙"), hangingOff) +
           para(33, run("甲乙丙丁", '<w:lang w:eastAsia="zh-TW"/>'), hangingOff) +
           para(33, run("甲乙ぁ丙", '<w:lang w:eastAsia="ja-JP"/>'), hangingOff) +
-          para(96, run("甲，丙"), hangingOff),
+          para(96, run("甲，丙"), hangingOff + '<w:jc w:val="distribute"/>'),
         settings,
       ),
       "edit",
@@ -209,12 +340,13 @@ export function registerWordPunctuationTests(mount: Mount): void {
     }
     const { marks: replaced } = await geometry(p.nth(2)),
       { marks: other } = await geometry(p.nth(3)),
-      { marks: standard } = await geometry(p.nth(4)),
-      { marks: uncompressed } = await geometry(p.nth(5));
+      { marks: standard } = await geometry(p.nth(4));
+    const punctuation = p.nth(5).locator(".sdk-word-punctuation");
     expect(replaced[1]!.y).toBeCloseTo(replaced[0]!.y, 1);
     expect(replaced[2]!.y).toBeGreaterThan(replaced[1]!.y + 8);
     expect(other[1]!.y).toBeCloseTo(other[0]!.y, 1);
     expect(standard[2]!.y).toBeGreaterThan(standard[1]!.y + 8);
+    await expect(punctuation).toHaveCount(0);
     expect(
       await p.first().evaluate((paragraph) => {
         const editor = paragraph.closest<HTMLElement>("[data-office-editor]")!;
@@ -239,10 +371,7 @@ export function registerWordPunctuationTests(mount: Mount): void {
       }),
     );
     await expect(page.getByLabel("行首禁则语言", { exact: true })).toHaveValue("zh-CN");
-    const beforeCharacters = page.getByLabel("行首禁则字符", { exact: true });
-    await beforeCharacters.press("Control+a");
-    await beforeCharacters.press("X");
-    await expect(beforeCharacters).toHaveValue("X");
+    await page.getByLabel("行首禁则字符", { exact: true }).fill("X");
     await page.getByLabel("自定义行尾禁则", { exact: true }).uncheck();
     await page.getByLabel("东亚字符压缩", { exact: true }).selectOption("compressPunctuation");
     await page.getByLabel("日文禁则", { exact: true }).selectOption("1");
@@ -259,10 +388,10 @@ export function registerWordPunctuationTests(mount: Mount): void {
     });
     const { marks: changed } = await geometry(p.nth(0));
     expect(changed[1]!.y).toBeCloseTo(changed[0]!.y, 1);
-    const { marks: strict } = await geometry(p.nth(4)),
-      { marks: compressed } = await geometry(p.nth(5));
+    const { marks: strict } = await geometry(p.nth(4));
     expect(strict[2]!.y).toBeCloseTo(strict[1]!.y, 1);
-    expect(uncompressed[2]!.x - compressed[2]!.x).toBeGreaterThan(5);
+    // Distribution can add the recovered space back as inter-character gaps.
+    await expect(punctuation).toHaveCSS("margin-inline-end", "-8px");
     await capture(page, info);
     await page.evaluate(() => window.paginationHost.session!.undo());
     await page.evaluate(() => window.paginationHost.view!.settled());

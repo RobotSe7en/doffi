@@ -63,6 +63,7 @@ rule(A, "noFill round bevel");
 rule(A, "solidFill gs fillRef lnRef effectRef", "", names(A, "srgbClr schemeClr sysClr"));
 rule(A, "gs", "pos", names(A, "srgbClr schemeClr sysClr"));
 rule(A, "fillRef lnRef effectRef", "idx", names(A, "srgbClr schemeClr sysClr"));
+rule(A, "fontRef", "idx", names(A, "schemeClr"));
 rule(A, "srgbClr schemeClr", "val", names(A, "alpha lumMod lumOff tint shade"));
 rule(A, "sysClr", "val lastClr", names(A, "alpha lumMod lumOff tint shade"));
 rule(A, "alpha lumMod lumOff tint shade prstDash", "val");
@@ -103,12 +104,12 @@ rule(WPS, "cNvPr", "id name descr");
 rule(WPS, "cNvSpPr", "txBox");
 rule(WPS, "cNvCnPr", "", names(A, "stCxn endCxn"));
 rule(WPS, "spPr", "", names(A, "xfrm prstGeom solidFill noFill gradFill ln effectLst"));
-rule(WPS, "style", "", names(A, "fillRef lnRef effectRef"));
+rule(WPS, "style", "", names(A, "fillRef lnRef effectRef fontRef"));
 rule(WPS, "txbx", "", names(W, "txbxContent"));
 rule(
   WPS,
   "bodyPr",
-  "lIns tIns rIns bIns anchor vert wrap numCol rtlCol fromWordArt rot",
+  "lIns tIns rIns bIns anchor vert wrap numCol rtlCol fromWordArt rot spcFirstLastPara vertOverflow horzOverflow spcCol anchorCtr forceAA compatLnSpc",
   names(A, "noAutofit normAutofit spAutoFit"),
 );
 rule(WPG, "wgp grpSp", "", [
@@ -132,13 +133,22 @@ export function checkWordDrawingCoverage(source: XmlNode): void {
     const known = rules.get(node.uri + " " + node.name);
     if (!known)
       unsupported(node, "This nested drawing feature remains preserved with its native drawing.");
-    for (const key of node.attrs.keys())
+    for (const [key, value] of node.attrs) {
+      if (
+        node.uri === WP &&
+        (node.name === "anchor" || node.name === "inline") &&
+        (key === WP14 + " anchorId" || key === WP14 + " editId")
+      ) {
+        if (!/^[0-9a-f]{8}$/i.test(value)) fail(node, "A drawing edit identity is invalid.");
+        continue;
+      }
       if (
         !key.startsWith("http://www.w3.org/2000/xmlns/ ") &&
         key !== "http://schemas.openxmlformats.org/markup-compatibility/2006 Ignorable" &&
         !known.attrs.includes(key)
       )
         unsupported(node, "This drawing attribute remains preserved with its native drawing.", key);
+    }
     if (
       node.uri === WP &&
       node.name === "effectExtent" &&

@@ -41,6 +41,12 @@ test.each([
     '<w:p><w:r><w:rPr><w:color w:val="FED123"/></w:rPr><w:t/></w:r></w:p>',
     "FED123",
   ],
+  [
+    "optional border color and Word save identities",
+    '<w:tcBorders><w:top w:val="nil"/><w:bottom w:val="single" w:sz="8"/></w:tcBorders>',
+    '<w:p xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:paraId="1C8A9B1E" w14:textId="77777777" w:rsidR="00AC0012"><w:r w:rsidRPr="00AC0012"><w:t/></w:r></w:p>',
+    'w:val="nil"',
+  ],
   ["unknown cell property", '<w:cellIns w:id="41" w:author="author"/>', "<w:p/>", "cellIns"],
 ])(
   "preserves independent vertical continuation %s instead of discarding or attaching it to a wrong cell",

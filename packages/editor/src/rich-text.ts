@@ -13,7 +13,6 @@ import { createWordDrawingControls } from "./word-drawing-controls.js";
 import { createWordReferenceControls } from "./word-reference-controls.js";
 import { createWordLinkControls } from "./word-link-controls.js";
 import { createWordMathControls } from "./word-math-controls.js";
-import { createWordViewport, mountWordRulers } from "./word-ruler.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { bindWordSelectionScroll } from "./word-selection-scroll.js";
 import { showWordWhitespace } from "./word-marks.js";
@@ -183,7 +182,6 @@ export interface DocumentTextEditor {
   execute(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
   setZoom(zoom: number): void;
-  setRulers(visible: boolean): void;
   editStory(storyId?: string): void;
   selection(): DocumentSelection | undefined;
   clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
@@ -227,8 +225,7 @@ export function mountDocumentTextEditor(
   const plane = document.createElement("div");
   plane.style.cssText = "position:relative;margin-inline:auto;min-width:0";
   stage.append(plane);
-  const viewport = createWordViewport(stage);
-  shadow.append(style, toolbar, viewport, error);
+  shadow.append(style, toolbar, stage, error);
   container.append(element);
   const controls = new AbortController(),
     initial = session.snapshot();
@@ -263,7 +260,7 @@ export function mountDocumentTextEditor(
   };
   const tableControls = createWordTableControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -294,7 +291,7 @@ export function mountDocumentTextEditor(
   };
   const pageControls = createWordPageControls(
     shadow,
-    viewport,
+    stage,
     session,
     currentSection,
     editStory,
@@ -302,14 +299,14 @@ export function mountDocumentTextEditor(
   );
   const watermarkControls = createWordWatermarkControls(
     shadow,
-    viewport,
+    stage,
     session,
     currentSection,
     report,
   );
   const fontControls = createWordFontControls(
     shadow,
-    viewport,
+    stage,
     (mark) => {
       if (mark && root && frame) {
         const paragraph = selectedParagraphs(false)[0],
@@ -336,7 +333,7 @@ export function mountDocumentTextEditor(
   );
   const styleControls = createWordStyleControls(
     shadow,
-    viewport,
+    stage,
     session,
     (style) => {
       const snapshot = session.snapshot(),
@@ -384,14 +381,14 @@ export function mountDocumentTextEditor(
   );
   const listControls = createWordListControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => selectedParagraphs().map((node) => node.dataset.nodeId!),
     report,
   );
   const drawingControls = createWordDrawingControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -407,7 +404,7 @@ export function mountDocumentTextEditor(
   );
   const referenceControls = createWordReferenceControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -423,7 +420,7 @@ export function mountDocumentTextEditor(
   );
   const chartControls = createWordChartControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -438,7 +435,7 @@ export function mountDocumentTextEditor(
   );
   const controlControls = createWordControlControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -453,7 +450,7 @@ export function mountDocumentTextEditor(
   );
   const reviewControls = createWordReviewControls(
     shadow,
-    viewport,
+    stage,
     session,
     report,
     () => revisionDisplay,
@@ -468,7 +465,7 @@ export function mountDocumentTextEditor(
   );
   const mathControls = createWordMathControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -483,7 +480,7 @@ export function mountDocumentTextEditor(
   );
   const linkControls = createWordLinkControls(
     shadow,
-    viewport,
+    stage,
     session,
     () => {
       const range = selectedRange(),
@@ -1269,7 +1266,7 @@ export function mountDocumentTextEditor(
       panel.append(summary, results);
       queueMicrotask(() => query.focus());
     }
-    shadow.insertBefore(panel, viewport);
+    shadow.insertBefore(panel, stage);
   }
   function selectedParagraphs(focus = true): HTMLElement[] {
     if (!root) return [];
@@ -2540,122 +2537,6 @@ export function mountDocumentTextEditor(
   });
   const preview = mountDocumentPreview(plane, viewModel(), { ...options, title: "正文编辑" });
   let zoom = 1;
-  const rulers = mountWordRulers(
-    stage,
-    preview.element,
-    () => root,
-    () => preview.layout(),
-    () => wordMetadata().pageSetup,
-    {
-      pageId() {
-        const range = selectedRange();
-        if (!range || !root) return;
-        const rect = range.getBoundingClientRect();
-        if (!rect.height) return;
-        const y = (rect.top + rect.height / 2 - root.getBoundingClientRect().top) * 0.75;
-        return preview
-          .layout()
-          .pages.find((page) => y >= page.rect.y && y < page.rect.y + page.rect.height)?.pageId;
-      },
-      read() {
-        const paragraph = selectedParagraphs(false)[0];
-        if (!paragraph || !frame) return;
-        const style = frame.defaultView!.getComputedStyle(paragraph),
-          tabs = wordMetadata().word?.tabs.find(
-            (tab) => tab.paragraphNodeId === paragraph.dataset.nodeId,
-          );
-        return {
-          left: Math.round((parseFloat(style.marginLeft) * 0.75 || 0) * 100) / 100,
-          right: Math.round((parseFloat(style.marginRight) * 0.75 || 0) * 100) / 100,
-          first: Math.round((parseFloat(style.textIndent) * 0.75 || 0) * 100) / 100,
-          tabs:
-            tabs?.stops.filter((stop) => stop.alignment !== "clear").map((stop) => stop.position) ??
-            [],
-        };
-      },
-      commit(kind, value, previous) {
-        const snapshot = session.snapshot(),
-          operations: import("@doffi/core").DocumentOperation[] = [];
-        for (const paragraph of selectedParagraphs()) {
-          if (kind === "tab") {
-            const tabs = snapshot.metadata.word?.tabs.find(
-              (tab) => tab.paragraphNodeId === paragraph.dataset.nodeId,
-            );
-            operations.push({
-              op: "setWordTabs",
-              nodeId: paragraph.dataset.nodeId!,
-              defaultInterval:
-                tabs?.defaultInterval ?? snapshot.metadata.word?.tabs[0]?.defaultInterval ?? 36,
-              stops: [
-                ...(tabs?.stops ?? []).filter(
-                  (stop) => stop.position !== previous && stop.position !== value,
-                ),
-                ...(value >= 0
-                  ? [{ position: value, alignment: "left" as const, leader: "none" as const }]
-                  : []),
-              ].sort((a, b) => a.position - b.position),
-            });
-          } else
-            operations.push({
-              op: "setWordParagraph",
-              nodeId: paragraph.dataset.nodeId!,
-              properties: {
-                [kind === "left"
-                  ? "margin-left"
-                  : kind === "right"
-                    ? "margin-right"
-                    : "text-indent"]: value + "pt",
-              },
-            });
-        }
-        if (operations.length)
-          session.commit(
-            session.prepare({
-              protocolVersion: 1,
-              documentId: snapshot.manifest.documentId,
-              baseRevision: snapshot.manifest.revision,
-              operations,
-            }),
-          );
-      },
-      commitMargin(side, value, sectionId, pageIndex) {
-        const snapshot = session.snapshot(),
-          metadata = wordMetadata(),
-          section =
-            metadata.sections.find((section) => section.sectionId === sectionId) ??
-            metadata.sections.find((section) => section.rootNodeId === currentSection()) ??
-            metadata.sections[0]!,
-          setup = section.pageSetup ?? metadata.pageSetup,
-          physical =
-            preview.layout().pages.find((page) => page.index === pageIndex)?.setup ?? setup,
-          sourceSide =
-            metadata.word?.mirrorMargins &&
-            pageIndex !== undefined &&
-            pageIndex % 2 === 1 &&
-            (side === "left" || side === "right")
-              ? side === "left"
-                ? "right"
-                : "left"
-              : side,
-          delta = physical.margins[side] - setup.margins[sourceSide],
-          next = {
-            ...setup,
-            margins: { ...setup.margins, [sourceSide]: Math.max(0, value - delta) },
-          };
-        session.commit(
-          session.prepare({
-            protocolVersion: 1,
-            documentId: snapshot.manifest.documentId,
-            baseRevision: snapshot.manifest.revision,
-            operations: [
-              { op: "setWordSection", nodeId: section.rootNodeId, changes: { pageSetup: next } },
-            ],
-          }),
-        );
-      },
-      onError: report,
-    },
-  );
   function resizePlane(
     anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom),
   ): void {
@@ -2678,7 +2559,6 @@ export function mountDocumentTextEditor(
     if (plane.style.width !== width) plane.style.width = width;
     if (plane.style.height !== height) plane.style.height = height;
     restoreZoomAnchor(stage, plane, zoom, anchor);
-    rulers.refresh();
   }
   function setZoom(value: number): void {
     if (disposed || !Number.isFinite(value) || value < 0.5 || value > 2)
@@ -2711,7 +2591,6 @@ export function mountDocumentTextEditor(
             }
             savedSelection = next ?? savedSelection;
             notifyFormat();
-            rulers.refresh();
           }
         },
         { signal: controls.signal },
@@ -2733,11 +2612,6 @@ export function mountDocumentTextEditor(
     formatState,
     setZoom,
     editStory,
-    setRulers(visible) {
-      const anchor = captureZoomAnchor(stage, plane, zoom);
-      rulers.setVisible(visible);
-      resizePlane(anchor);
-    },
     selection() {
       const range = selectedRange();
       if (!frame || !range || range.collapsed || composing || disposed) return undefined;
@@ -2804,7 +2678,6 @@ export function mountDocumentTextEditor(
       if (disposed) return;
       disposed = true;
       geometryObserver.disconnect();
-      rulers.dispose();
       unsubscribe();
       controls.abort();
       viewControls.abort();

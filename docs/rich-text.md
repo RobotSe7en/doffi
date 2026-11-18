@@ -14,7 +14,6 @@ await input.ready;
 input.focus();
 input.execute({ type: "toggle", property: "bold" }); // 依据当前选区／输入格式开关
 input.setZoom(1.25); // 缩放不改来源／修订，保留视口中心位置
-input.setRulers(true); // 显示派生标尺，不写入源／导出
 // session 由宿主创建与释放。
 input.dispose();
 ```

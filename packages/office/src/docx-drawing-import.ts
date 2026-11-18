@@ -74,6 +74,11 @@ function textBody(
     integer(body, "numCol", 1) !== 1 ||
     valueBool(body, "rtlCol") ||
     valueBool(body, "fromWordArt") ||
+    valueBool(body, "spcFirstLastPara") ||
+    valueBool(body, "anchorCtr") ||
+    valueBool(body, "forceAA") ||
+    (attr(body, "vertOverflow", "") ?? "overflow") !== "overflow" ||
+    (attr(body, "horzOverflow", "") ?? "overflow") !== "overflow" ||
     child(body, "prstTxWarp", A)
   )
     unsupported(source, "This text body layout is preserved with its native drawing.");
@@ -128,6 +133,17 @@ function appearance(
     context.opc.related(context.part, "theme") ?? context.opc.related(context.main, "theme");
   const theme = themePath ? context.opc.read(themePath) : undefined,
     scheme = child(child(theme, "themeElements", A), "fmtScheme", A);
+  const font = child(style, "fontRef", A);
+  if (font) {
+    const color = child(font, "schemeClr", A);
+    if (
+      attr(font, "idx", "") !== "minor" ||
+      !color ||
+      !["dk1", "tx1"].includes(attr(color, "val", "") ?? "") ||
+      elements(color).length
+    )
+      unsupported(original, "This drawing theme font remains native.");
+  }
   for (const [type, name, list] of [
     ["fill", "fillRef", "fillStyleLst"],
     ["line", "lnRef", "lnStyleLst"],

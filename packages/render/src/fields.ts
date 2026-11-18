@@ -327,12 +327,32 @@ export function layoutFields(
     },
     evaluate(pages, nodePages) {
       changed = false;
+      const drawingFields = new Map<string, HTMLElement[]>();
+      for (const node of document.querySelectorAll<HTMLElement>(
+        ".sdk-word-drawing-text .sdk-field-display[data-sdk-field-node-id]",
+      )) {
+        if (node.closest(".sdk-paper")) continue;
+        const id = node.dataset.sdkFieldNodeId!,
+          instances = drawingFields.get(id) ?? [];
+        instances.push(node);
+        drawingFields.set(id, instances);
+      }
       return Object.freeze(
         views.map((view) => {
           const result = value(view, pages, nodePages);
           if (view.display.textContent !== result) {
             displayText(document, view.display, result);
             changed = true;
+          }
+          for (const node of drawingFields.get(view.id) ?? []) {
+            const drawing = node.closest<HTMLElement>("[data-sdk-word-object]"),
+              ownerPages = nodePages[drawing?.dataset.sdkWordObject ?? ""],
+              ownerPage = ownerPages && pages.find((page) => ownerPages.includes(page.pageId)),
+              result = value(view, pages, nodePages, ownerPage);
+            if (node.textContent !== result) {
+              displayText(document, node, result);
+              changed = true;
+            }
           }
           return Object.freeze({
             fieldNodeId: view.id,

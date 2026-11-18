@@ -36,7 +36,8 @@ export function mergeTabs(inherited: TabStops = [], properties?: XmlNode): TabSt
   const stops = new Map(inherited.map((stop) => [stop.position, stop]));
   check(properties, ["tab"]);
   for (const stop of elements(properties, "tab")) {
-    const alignment = attr(stop, "val") ?? "left";
+    const type = attr(stop, "val") ?? "left";
+    const alignment = type === "num" || type === "start" ? "left" : type === "end" ? "right" : type;
     const leader = attr(stop, "leader") ?? "none";
     if (
       !["left", "center", "right", "decimal", "clear"].includes(alignment) ||
@@ -94,7 +95,7 @@ export interface StyleValues {
   table: Css;
   cell: Css;
   row?: Css;
-  numbering?: { id: string; level: number };
+  numbering?: { id?: string; indent: Css };
   tabs?: TabStops;
   outline?: number;
 }
@@ -132,7 +133,8 @@ export class DocxStyles {
   readonly defaultParagraph: string | undefined;
   readonly defaultCharacter: string | undefined;
   readonly defaultTable: string | undefined;
-  private readonly numberProperties = new Map<string, Css>();
+  private readonly numberProperties = new Map<string, { paragraph: Css; tabs?: XmlNode }>();
+  private readonly numberStyleLevels = new Map<string, number>();
   private readonly definitions = new Map<string, XmlNode>();
   private readonly resolved = new Map<string, StyleValues>();
   private readonly themeColors = new Map<string, string>();
@@ -523,6 +525,11 @@ export class DocxStyles {
     }
     const fonts = child(properties, "rFonts");
     if (fonts) {
+      const hint = attr(fonts, "hint");
+      if (hint !== undefined) {
+        if (!["default", "eastAsia", "cs"].includes(hint)) fail(fonts, "Invalid run font hint.");
+        css["--word-font-hint"] = hint;
+      }
       for (const [name, themeName] of [
         ["ascii", "asciiTheme"],
         ["hAnsi", "hAnsiTheme"],
@@ -686,11 +693,18 @@ export class DocxStyles {
     }
     const spacing = child(properties, "spacing");
     if (spacing) css["letter-spacing"] = pt(number(val(spacing), spacing) / 20);
-    for (const feature of ["w", "position", "bdr", "em"]) {
+    const width = child(properties, "w");
+    if (width) {
+      const raw = val(width)?.trim() ?? "",
+        scale = Number(raw.replace(/%$/, ""));
+      if (!/^\+?\d+%?$/.test(raw) || scale < 1 || scale > 600)
+        fail(width, "A run character scale must be a whole percent between 1 and 600.");
+      css["--word-run-native-w"] = String(scale);
+    }
+    for (const feature of ["position", "bdr", "em"]) {
       const item = child(properties, feature);
       if (
         item &&
-        !(feature === "w" && val(item) === "100") &&
         !(feature === "position" && val(item) === "0") &&
         !(feature === "em" && val(item) === "none")
       )
@@ -915,14 +929,19 @@ export class DocxStyles {
         thick: "solid",
       };
       if (!styles[style]) unsupported(border, "A border style is not supported.");
-      const width = number(attr(border, "sz"), border, 4) / 8;
+      const width = number(attr(border, "sz"), border, 4) / 8,
+        hasColor = attr(border, "color") !== undefined || attr(border, "themeColor") !== undefined,
+        color =
+          styles[style] === "none" || !hasColor
+            ? "#000000"
+            : (this.color(border, "color") ?? "#000000");
       result[
         border.name === "insideH"
           ? "--word-border-inside-h"
           : border.name === "insideV"
             ? "--word-border-inside-v"
             : "border-" + sides[border.name]
-      ] = pt(width) + " " + styles[style] + " " + (this.color(border, "color") ?? "#000000");
+      ] = pt(width) + " " + styles[style] + " " + color;
     }
     return result;
   }
@@ -1201,11 +1220,27 @@ export class DocxStyles {
     const pPr = child(source, "pPr");
     const numPr = child(pPr, "numPr");
     const num = val(child(numPr, "numId"));
+    const paragraph = this.paragraph(pPr);
+    const numbering =
+      num !== undefined || child(numPr, "ilvl") || parent.numbering
+        ? {
+            ...(parent.numbering?.id !== undefined ? { id: parent.numbering.id } : {}),
+            ...(num !== undefined ? { id: num } : {}),
+            indent: {
+              ...(num !== undefined && num !== parent.numbering?.id ? {} : parent.numbering?.indent),
+              ...Object.fromEntries(
+                Object.entries(paragraph).filter(([name]) =>
+                  ["margin-left", "margin-right", "text-indent"].includes(name),
+                ),
+              ),
+            },
+          }
+        : undefined;
     const outline = child(pPr, "outlineLvl");
     const tableProperties = child(source, "tblPr");
     this.cellSpacing(child(source, "trPr"));
     const result: StyleValues = {
-      p: { ...parent.p, ...this.paragraph(pPr) },
+      p: { ...parent.p, ...paragraph },
       r: {
         ...parent.r,
         ...this.run(child(source, "rPr"), parent.r, attr(source, "type") !== "table"),
@@ -1216,17 +1251,9 @@ export class DocxStyles {
         ...this.margins(child(tableProperties, "tblCellMar")),
         ...this.cell(child(source, "tcPr")),
       },
-      ...(parent.numbering ? { numbering: parent.numbering } : {}),
+      ...(numbering ? { numbering } : {}),
       tabs: mergeTabs(parent.tabs ?? this.defaults.tabs, child(pPr, "tabs")),
       ...(parent.outline !== undefined ? { outline: parent.outline } : {}),
-      ...(num
-        ? {
-            numbering: {
-              id: num,
-              level: number(val(child(numPr, "ilvl")), numPr!, 0),
-            },
-          }
-        : {}),
       ...(outline ? { outline: number(val(outline), outline) } : {}),
     };
     visiting.delete(id);
@@ -1284,8 +1311,40 @@ export class DocxStyles {
     if (!item) throw new Error("Missing style");
     return item.cssClass;
   }
-  numberingParagraph(id: string, level: number): Css {
-    return this.numberProperties.get(id + ":" + level) ?? {};
+  paragraphNumbering(
+    source: XmlNode,
+    properties: XmlNode | undefined,
+    styleId: string | undefined,
+  ): { id: string; level: number; paragraph: Css; tabs?: XmlNode } | undefined {
+    const num = child(properties, "numPr"),
+      directId = val(child(num, "numId")),
+      style = this.get(styleId).numbering,
+      id = directId ?? style?.id;
+    if (id === undefined) return;
+    if (id === "0") return { id, level: 0, paragraph: {} };
+    const directLevel = child(num, "ilvl");
+    let level = directLevel ? number(val(directLevel), directLevel) : undefined;
+    for (let current = styleId; level === undefined && current;) {
+      const definition = this.definitions.get(current),
+        associated = this.numberStyleLevels.get(id + ":" + current),
+        styleLevel = child(child(child(definition, "pPr"), "numPr"), "ilvl");
+      level = associated ?? (styleLevel ? number(val(styleLevel), styleLevel) : undefined);
+      current = val(child(definition, "basedOn"));
+    }
+    level ??= 0;
+    const definition = this.numberProperties.get(id + ":" + level);
+    if (!definition) fail(source, "A paragraph refers to missing numbering.");
+    return {
+      ...definition,
+      id,
+      level,
+      paragraph: {
+        ...definition.paragraph,
+        // A style can explicitly position its own list, including zero
+        // indentation. A list applied directly still uses the selected level.
+        ...(directId === undefined && directLevel === undefined ? style?.indent : {}),
+      },
+    };
   }
   private readNumbering(root: XmlNode): void {
     check(root, ["numPicBullet", "abstractNum", "num", "numIdMacAtCleanup"]);
@@ -1357,8 +1416,13 @@ export class DocxStyles {
         )
           unsupported(source, "The numbering format is not supported.");
         const cssClass = "wn" + this.numbering.length + "l" + level;
-        const paragraph = this.paragraph(child(source, "pPr"));
-        this.numberProperties.set(id + ":" + level, paragraph);
+        const pPr = child(source, "pPr"),
+          paragraph = this.paragraph(pPr),
+          tabs = child(pPr, "tabs"),
+          styleId = val(child(source, "pStyle"));
+        this.numberProperties.set(id + ":" + level, { paragraph, ...(tabs ? { tabs } : {}) });
+        if (styleId && !this.numberStyleLevels.has(id + ":" + styleId))
+          this.numberStyleLevels.set(id + ":" + styleId, level);
         this.css.push(
           "." +
             cssClass +

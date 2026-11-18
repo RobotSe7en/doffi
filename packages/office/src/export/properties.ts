@@ -35,12 +35,14 @@ export const runKeys: readonly string[] = [
   "--word-font-hAnsi",
   "--word-font-eastAsia",
   "--word-font-cs",
+  "--word-font-hint",
   "--word-font-size-cs",
   "--word-bold-cs",
   "--word-italic-cs",
   "--word-kerning-threshold",
   "--word-run-shading",
   "--word-run-snap-to-grid",
+  "--word-run-native-w",
   ...["val", "eastAsia", "bidi"].map((role) => "--word-language-" + role),
 ];
 export const paragraphKeys: readonly string[] = [
@@ -126,6 +128,7 @@ export function rowProperties(css: Css): string {
 export function runProperties(css: Css, inherited: Css = {}, style = false, role?: string): string {
   let out = "";
   const fonts: Record<string, string> = {};
+  const hint = css["--word-font-hint"];
   for (const name of ["ascii", "hAnsi", "eastAsia", "cs"]) {
     const raw = css["--word-font-" + name];
     if (raw) fonts["w:" + name] = fontName(raw);
@@ -136,6 +139,10 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
     else if (!Object.keys(fonts).length)
       for (const key of ["ascii", "hAnsi", "eastAsia", "cs"]) fonts["w:" + key] = name;
   }
+  if (hint !== undefined) {
+    if (!["default", "eastAsia", "cs"].includes(hint)) unsupported("Invalid native run font hint.");
+    fonts["w:hint"] = hint;
+  }
   for (const name of passiveWordRunBooleans) {
     const raw = css[passiveWordRunCss(name)];
     if (raw !== undefined) {
@@ -143,12 +150,19 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
       out += toggle(name, raw === "1");
     }
   }
+  const width = css["--word-run-native-w"];
+  if (width !== undefined) {
+    const scale = Number(width);
+    if (!/^\d+$/.test(width) || scale < 1 || scale > 600)
+      unsupported("A native run character scale must be a whole percent between 1 and 600.");
+    out += value("w", scale);
+  }
   for (const name of passiveWordRunValues) {
     const raw = css[passiveWordRunCss(name)];
     if (raw !== undefined) {
       if (
         raw !==
-        ({ w: "100", position: "0", em: "none", effect: "none" } as Record<string, string>)[name]
+        ({ position: "0", em: "none", effect: "none" } as const)[name]
       )
         unsupported("An active native run effect is outside the editable profile.");
       out += value(name, raw);

@@ -2,6 +2,8 @@
 
 核对日期：2026-11-10。对象是 Playground 当前已经开放的操作，以及用户指出的 Word 标尺、左侧选行、字体和缩放问题。参考 Windows 桌面 Office 的公开说明与截图；没有运行 Microsoft Word／Excel／PowerPoint 实机对照，不能据此声明完整 Office 行为兼容。
 
+2026-11-18 已移除 Word 编辑和预览的标尺。下文保留当时的核对记录。
+
 ## 参考依据
 
 - Microsoft [Using the ruler in Word](https://support.microsoft.com/en-us/word/using-the-ruler-in-word)：标尺位置、缩进和制表位含义。页面中的桌面截图用于检查标尺与文档视口的关系，没有复用其图片或代码。

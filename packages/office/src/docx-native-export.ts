@@ -1,7 +1,7 @@
 import { nativeRangeControl, visitNativeRanges } from "./docx-native-ranges.js";
 import { NativeWordComments } from "./docx-native-comments.js";
 import type { NativeCommentBinding } from "./docx-native-comments.js";
-import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { wordCompatibilityKey, wordCompatibilityNames } from "./ooxml/word-compatibility.js";
 import { wordTypographySettings } from "./ooxml/word-typography.js";
 import { sortWordProperties } from "./ooxml/word-property-order.js";
 import { sortWordNoteProperties } from "./ooxml/word-note-order.js";
@@ -70,6 +70,8 @@ export function restoreDocxNative(
     mappedCompatibility = new Set<string>(
       wordCompatibilityNames.filter((name) => model.snapshot().metadata.word?.[name] !== undefined),
     );
+  if (model.snapshot().metadata.word?.compatibilityMode !== undefined)
+    mappedCompatibility.add("compatibilityMode");
   if (!native) return generated;
   const files = new Map(generated),
     sourceFiles = model.serialize(),
@@ -598,11 +600,15 @@ export function restoreDocxNative(
         original.content.length,
         ...target.content.filter(
           (child) =>
-            typeof child !== "string" && child.uri === W && mappedCompatibility.has(child.name),
+            typeof child !== "string" &&
+            child.uri === W &&
+            mappedCompatibility.has(wordCompatibilityKey(child)),
         ),
         ...original.content.filter(
           (child) =>
-            typeof child === "string" || child.uri !== W || !mappedCompatibility.has(child.name),
+            typeof child === "string" ||
+            child.uri !== W ||
+            !mappedCompatibility.has(wordCompatibilityKey(child)),
         ),
       );
     merge(target, original);
@@ -842,11 +848,13 @@ export function restoreDocxNative(
           original.content.length,
           ...original.content.filter(
             (child) =>
-              typeof child === "string" || child.uri !== W || !mappedCompatibility.has(child.name),
+              typeof child === "string" ||
+              child.uri !== W ||
+              !mappedCompatibility.has(wordCompatibilityKey(child)),
           ),
         );
       else if (
-        mappedCompatibility.has(original.name) &&
+        mappedCompatibility.has(wordCompatibilityKey(original)) &&
         (original.name !== "doNotWrapTextWithPunct" || original.attrs.has(W + " val")) &&
         fragment.propertyPath.some((path) => path === W + " compat")
       )

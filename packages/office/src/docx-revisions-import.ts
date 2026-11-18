@@ -73,19 +73,19 @@ export function readWordFormatRevision(
     before.tagName = level !== undefined && level < 6 ? (("h" + (level + 1)) as "h1") : "p";
     attributes["data-word-line-rule"] =
       css["line-height"] && /^\d+(?:\.\d+)?$/.test(css["line-height"]) ? "auto" : null;
-    const num = child(previous, "numPr"),
-      id = attr(child(num, "numId"), "val") ?? style.numbering?.id;
+    const numbering = styles.paragraphNumbering(previous, previous, styleId),
+      id = numbering?.id;
     attributes["data-word-numbering"] = id && id !== "0" ? id : null;
     attributes["data-word-numbering-off"] = id === "0" ? "true" : null;
     attributes["data-word-level"] =
-      id && id !== "0"
-        ? String(
-            number(attr(child(num, "ilvl"), "val"), num ?? previous, style.numbering?.level ?? 0),
-          )
-        : null;
+      numbering && numbering.id !== "0" ? String(numbering.level) : null;
+    if (numbering) css = { ...numbering.paragraph, ...css };
     before.tabs = {
       defaultInterval: options.defaultTab ?? 36,
-      stops: mergeTabs(style.tabs ?? styles.defaults.tabs, child(previous, "tabs")),
+      stops: mergeTabs(
+        mergeTabs(style.tabs ?? styles.defaults.tabs, numbering?.tabs),
+        child(previous, "tabs"),
+      ),
     };
   } else if (property === "table") {
     const styleId = attr(child(previous, "tblStyle"), "val") ?? styles.defaultTable;

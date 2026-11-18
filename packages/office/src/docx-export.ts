@@ -1,7 +1,7 @@
 import type { NativeCommentBinding } from "./docx-native-comments.js";
 import { writeWordEmptyContinuation } from "./docx-table-continuation.js";
 import { writeWordRowGapWidths } from "./docx-row-gaps.js";
-import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { wordCompatibilityNames, wordCompatibilityUri } from "./ooxml/word-compatibility.js";
 import { writeWordTypography } from "./ooxml/word-typography.js";
 import { writeWordConditionalFormat } from "./docx-conditional-format.js";
 import { ExportWordRevisions } from "./docx-revisions-export.js";
@@ -1309,11 +1309,15 @@ class Exporter {
         value("ilvl", node.attrs["data-word-level"] ?? list?.level ?? 0) +
         value("numId", numId) +
         "</w:numPr>";
-    const expectedParagraph = this.styleContext(
-        node,
-        this.styles.paragraphContext(style),
-        "paragraph",
-      ),
+    const numberingId = node.attrs["data-word-numbering"];
+    const expectedParagraph = {
+        ...this.styleContext(node, this.styles.paragraphContext(style), "paragraph"),
+        // The effective source list is written as direct numPr. Retain any
+        // indent override that would otherwise be replaced by that level.
+        ...(numberingId
+          ? this.styles.numberingParagraph(numberingId, node.attrs["data-word-level"] ?? "0")
+          : {}),
+      },
       paragraphCss = { ...css };
     for (const side of ["top", "right", "bottom", "left"])
       if (
@@ -2348,7 +2352,15 @@ class Exporter {
   private writeSettings(): void {
     const out = this.opc.part("word/settings.xml", contentType("settings")),
       tabs = this.snapshot.metadata.word?.tabs ?? [],
-      intervals = new Set(tabs.map((tab) => tab.defaultInterval));
+      intervals = new Set(tabs.map((tab) => tab.defaultInterval)),
+      word = this.snapshot.metadata.word,
+      compatibility = wordCompatibilityNames
+        .filter((name) => word?.[name] !== undefined)
+        .map((name) => value(name, word![name] ? 1 : 0))
+        .join("") +
+        (word?.compatibilityMode === undefined
+          ? ""
+          : `<w:compatSetting w:name="compatibilityMode" w:uri="${wordCompatibilityUri}" w:val="${word.compatibilityMode}"/>`);
     if (intervals.size > 1) unsupported("DOCX has one document-wide default tab interval.");
     const sections = this.snapshot.metadata.sections;
     if (
@@ -2388,16 +2400,7 @@ class Exporter {
             writeWordTypography(this.snapshot.metadata.word?.typography) +
             this.noteSettings("footnote") +
             this.noteSettings("endnote") +
-            (wordCompatibilityNames.some(
-              (name) => this.snapshot.metadata.word?.[name] !== undefined,
-            )
-              ? "<w:compat>" +
-                wordCompatibilityNames
-                  .filter((name) => this.snapshot.metadata.word?.[name] !== undefined)
-                  .map((name) => value(name, this.snapshot.metadata.word![name] ? 1 : 0))
-                  .join("") +
-                "</w:compat>"
-              : ""),
+            (compatibility ? "<w:compat>" + compatibility + "</w:compat>" : ""),
         ) +
         "</w:settings>",
     );

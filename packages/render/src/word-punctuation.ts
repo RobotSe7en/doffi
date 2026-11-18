@@ -66,6 +66,7 @@ interface Glyph {
   language: string;
   grid: boolean;
   fontSize: number;
+  fullWidth: boolean;
   prior: Glyph | undefined;
   next?: Glyph;
   guard?: "join" | "break";
@@ -81,11 +82,15 @@ interface Punctuation {
 
 function fitPunctuation(
   items: Punctuation[],
-  writingMode: string,
+  glyphs: readonly Glyph[],
+  paragraph: HTMLElement,
+  css: CSSStyleDeclaration,
   range: Range,
   step: () => void,
 ): void {
-  const vertical = writingMode.startsWith("vertical"),
+  const writingMode = css.writingMode,
+    vertical = writingMode.startsWith("vertical"),
+    distributed = css.getPropertyValue("--word-distributed").trim() === "1",
     progress = (rect: DOMRect) =>
       vertical ? (writingMode === "vertical-rl" ? -rect.right : rect.left) : rect.top,
     extent = (rect: DOMRect) => (vertical ? rect.height : rect.width),
@@ -116,6 +121,14 @@ function fitPunctuation(
     item.span.style.marginInlineStart = start ? -start + "px" : "";
     item.span.style.marginInlineEnd = end ? -end + "px" : "";
   };
+  const compressible = distributed
+    ? new Map<Glyph, Punctuation>()
+    : new Map(items.filter((item) => item.start || item.end).map((item) => [item.glyph, item]));
+  const trimSpace = new Map<Punctuation, [number, number]>();
+  for (const item of compressible.values()) {
+    trimSpace.set(item, [item.start, item.end]);
+    item.start = item.end = 0;
+  }
   for (const item of items) place(item, item.start, item.end);
 
   const leading = new Map<Punctuation, number>();
@@ -161,6 +174,10 @@ function fitPunctuation(
     item.span.style.display = enabled ? "inline-block" : "";
     item.span.style.inlineSize = enabled ? "0px" : "";
     item.span.style.whiteSpace = enabled ? "nowrap" : "";
+    // The hanging box has its own line. Keep the glyph at the box's inline
+    // start without inheriting the surrounding paragraph's first-line indent.
+    item.span.style.textIndent = enabled ? "0" : "";
+    item.span.style.textAlign = enabled ? "start" : "";
     place(item, enabled ? 0 : (leading.get(item) ?? item.start), enabled ? 0 : item.end);
   };
   for (const { item } of probes) hang(item, true);
@@ -190,6 +207,87 @@ function fitPunctuation(
       leading.delete(item);
       hang(item, false);
     }
+  }
+
+  if (!compressible.size) return;
+  const hanging = new Map(items.filter((item) => item.hanging).map((item) => [item.glyph, item]));
+  const beforeAlignment = paragraph.style.getPropertyValue("text-align"),
+    priority = paragraph.style.getPropertyPriority("text-align"),
+    rtl = css.direction === "rtl",
+    box = paragraph.getBoundingClientRect(),
+    padding = parseFloat(css.paddingInlineEnd) || 0,
+    border = parseFloat(css.borderInlineEndWidth) || 0,
+    edge = vertical ? (rtl ? -box.top : box.bottom) : rtl ? -box.left : box.right,
+    inlineEnd = (rect: DOMRect) =>
+      vertical ? (rtl ? -rect.top : rect.bottom) : rtl ? -rect.left : rect.right;
+  // Measure remaining space before the browser distributes it for justification.
+  paragraph.style.setProperty("text-align", "start", "important");
+  try {
+    let read = measure();
+    for (let index = 0; index < glyphs.length;) {
+      const first = glyphs[index++]!,
+        reference = read(first),
+        candidates: Punctuation[] = [];
+      let last = first,
+        end = reference ? inlineEnd(reference) : -Infinity;
+      const offer = (glyph: Glyph) => {
+        const item = compressible.get(glyph);
+        if (item && !leading.has(item) && item.span.style.inlineSize !== "0px")
+          candidates.push(item);
+      };
+      offer(first);
+      while (glyphs[index] === last.next && index < glyphs.length) {
+        const glyph = glyphs[index]!,
+          rect = read(glyph);
+        if (rect && !sameLine(reference, rect)) break;
+        if (rect) end = Math.max(end, inlineEnd(rect));
+        offer(glyph);
+        last = glyph;
+        index++;
+      }
+      const next = last.next,
+        nextRect = read(next);
+      if (!candidates.length || !next || !nextRect || !reference ||
+        hanging.get(last)?.span.style.inlineSize === "0px") continue;
+      const after = next.next,
+        afterLocale = after && locale(after.language),
+        joinedMark =
+          after?.guard !== "break" &&
+          (after?.guard === "join" ||
+            (afterLocale && lineRules[afterLocale].before.includes([...after!.text][0]!))),
+        trailing = joinedMark && after?.next ? hanging.get(after) : undefined;
+      // Recover only the space needed to fit the next ideograph. A closing
+      // mark that must stay with it can make that break unavailable.
+      if (
+        !eastAsianText.test(next.text) || !/[\p{L}\p{N}]/u.test(next.text) ||
+        (joinedMark && !trailing)
+      ) continue;
+      const room = edge - padding - border - end,
+        deficit = extent(nextRect) - room + 0.04,
+        capacity = candidates.reduce((sum, item) => {
+          const [start, end] = trimSpace.get(item)!;
+          return sum + start + end;
+        }, 0);
+      if (deficit <= 0 || deficit > capacity || room < -0.5) continue;
+      for (const item of candidates) {
+        const [start, end] = trimSpace.get(item)!;
+        place(item, (deficit * start) / capacity, (deficit * end) / capacity);
+      }
+      const alreadyHangs = trailing?.span.style.inlineSize === "0px";
+      if (trailing && !alreadyHangs) hang(trailing, true);
+      read = measure();
+      if (
+        sameLine(read(first), read(next)) &&
+        (!trailing || (sameLine(read(next), read(after)) && !sameLine(read(after), read(after?.next))))
+      ) index += trailing ? 2 : 1;
+      else {
+        for (const item of candidates) place(item, 0, 0);
+        if (trailing && !alreadyHangs) hang(trailing, false);
+        read = measure();
+      }
+    }
+  } finally {
+    paragraph.style.setProperty("text-align", beforeAlignment, priority);
   }
 }
 
@@ -255,14 +353,20 @@ export function wordPunctuationLayout(
       )
         continue;
       const top = css.getPropertyValue("--word-top-line-punctuation").trim() === "1",
-        overflow = css.getPropertyValue("--word-overflow-punctuation").trim() !== "0",
+        // Word keeps punctuation inside table cells even when the paragraph
+        // enables hanging punctuation. Keep applying its regular kinsoku rules.
+        overflow =
+          !paragraph.closest("td,th") &&
+          css.getPropertyValue("--word-overflow-punctuation").trim() !== "0",
         kinsoku = css.getPropertyValue("--word-kinsoku").trim() !== "0",
         custom =
           kinsoku &&
           (before !== undefined ||
             after !== undefined ||
             options?.strictFirstAndLastChars !== undefined),
-        compress = spacing && spacing !== "doNotCompress";
+        // Word uses character compression while justifying or distributing
+        // lines. Left, right and centered text retain the native advances.
+        compress = css.textAlign === "justify" && spacing && spacing !== "doNotCompress";
       if (!top && !overflow && !custom && !compress) continue;
       const raw = paragraph.textContent;
       if (
@@ -325,6 +429,7 @@ export function wordPunctuationLayout(
             language: lang,
             grid: snapped,
             fontSize,
+            fullWidth: style.fontVariantEastAsian.includes("full-width"),
             prior,
           };
           if (prior) prior.next = glyph;
@@ -387,7 +492,7 @@ export function wordPunctuationLayout(
               glyph.prior &&
               lineRules[script].hang.includes(base),
           ),
-          mark = fullWidth.test(base) && /[\p{P}\p{Zs}]/u.test(base),
+          mark = (glyph.fullWidth || fullWidth.test(base)) && /[\p{P}\p{Zs}]/u.test(base),
           leading = Boolean(script && top && /\p{P}/u.test(base)),
           trim = Boolean(script && compress && mark && !glyph.grid),
           proportional =
@@ -446,7 +551,7 @@ export function wordPunctuationLayout(
         glyph.node = piece.node;
         glyph.offset -= piece.offset;
       }
-      fitPunctuation(punctuation.reverse(), css.writingMode, range, step);
+      fitPunctuation(punctuation.reverse(), glyphs, paragraph, css, range, step);
     }
   }
   return { reset, measure };

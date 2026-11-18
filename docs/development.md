@@ -17,7 +17,7 @@ Playground 通过公开入口打开 DOCX/文档包、选择文字／对象／区
 
 项目名称为 `doffi`，内部 workspace 使用 `@doffi/core`、`@doffi/editor`、`@doffi/office`、`@doffi/render` 和 `@doffi/node`；Playground 为 `@doffi/playground`，Node CLI 为 `doffi`。版本均为 `0.0.0`，包均设为 `private`；公开许可字段为 `AGPL-3.0-only`，版权署名为 RobotSe7en，也可另行洽谈[商业授权](../COMMERCIAL-LICENSE.md)。npm scope 归属和正式发布仍按发布计划确认。
 
-运行时环境变量统一使用 `DOFFI_*` 前缀，验收使用 `DOFFI_SOURCE_HEAD` 和 `DOFFI_WORKBOOK_*`。Playground 转换路由为 `/__doffi/convert`，请求头为 `X-Doffi-Dev: 1`，浏览器渲染桥为 `window.__doffiRender`，显示设置使用 `doffi:layout`，Word 编辑模式偏好使用 `doffi:editing`，文档列表开关使用 `doffi:library`，标尺开关使用 `doffi:rulers`。
+运行时环境变量统一使用 `DOFFI_*` 前缀，验收使用 `DOFFI_SOURCE_HEAD` 和 `DOFFI_WORKBOOK_*`。Playground 转换路由为 `/__doffi/convert`，请求头为 `X-Doffi-Dev: 1`，浏览器渲染桥为 `window.__doffiRender`，显示设置使用 `doffi:layout`，Word 编辑模式偏好使用 `doffi:editing`，文档列表开关使用 `doffi:library`。
 
 V1 文档包使用 `format: "doffi"`、`urn:doffi:contract:*` Schema 标识及 `doffi/workbook-read/1` Worker 协议标识。本次更名按用户决定不保留旧名称的兼容入口。独立原生样例、实际字体环境路径和历史验收证据保留原始内容。
 

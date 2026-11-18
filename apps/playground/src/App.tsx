@@ -92,13 +92,6 @@ export function App() {
   const workbookEditor = useRef<WorkbookRemoteEditorView>(undefined);
   const [changingMode, setChangingMode] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [rulers, setRulers] = useState(() => {
-    try {
-      return localStorage.getItem("doffi:rulers") !== "hidden";
-    } catch {
-      return true;
-    }
-  });
   const [commentsVisible, setCommentsVisible] = useState(true);
   const [pageCount, setPageCount] = useState(0);
   const [files, setFiles] = useState(examples);
@@ -737,19 +730,8 @@ export function App() {
     };
   }, [snapshot, editing, layout, workbook, isPresentation]);
   useEffect(() => {
-    workbenchRef.current?.setRulers(rulers);
-  }, [rulers, model]);
-  useEffect(() => {
     presentationRef.current?.setReviewVisible(officeTab === "审阅");
   }, [officeTab, model]);
-  function changeRulers(visible: boolean): void {
-    setRulers(visible);
-    try {
-      localStorage.setItem("doffi:rulers", visible ? "visible" : "hidden");
-    } catch {
-      /* Optional preference. */
-    }
-  }
   function changeLayout(value: "pages" | "continuous"): void {
     setLayout(value);
     setZoom(1);
@@ -1315,8 +1297,6 @@ export function App() {
             onCommand={runNative}
             formatState={textFormat}
             onTextCommand={runTextCommand}
-            rulers={rulers}
-            onRulers={changeRulers}
             layout={layout}
             onLayout={changeLayout}
             zoom={zoom}
@@ -1534,7 +1514,6 @@ export function App() {
               workbenchRef.current = view;
               if (view) {
                 const captureId = docxCaptures.current.get(model), started = performance.now();
-                view.setRulers(rulers);
                 if (editing) void view.setEditing(true).catch((reason) => setError(reason.message));
                 void view.ready
                   .then(() => {

@@ -7,6 +7,10 @@ import { composeWordTextRuns } from "./word-text-runs.js";
 import { composeWordLanguages } from "./word-languages.js";
 import { composeWordTypography } from "./word-typography.js";
 import { wordPunctuationLayout } from "./word-punctuation.js";
+import { wordRunWidthLayout } from "./word-run-width.js";
+import { wordTabLayout } from "./word-tabs.js";
+import { composeWordNumbering } from "./word-numbering.js";
+import type { WordTabLayout } from "./word-tabs.js";
 import { retainFlowSelection } from "./flow-selection.js";
 import { composeWordTableLayout } from "./word-table-layout.js";
 import { composeWordContinuationCells } from "./word-continuation-cells.js";
@@ -69,46 +73,6 @@ export function packagePath(reference: string, entrypoint: string): string {
     else if (value !== ".") parts.push(value);
   }
   return parts.join("/");
-}
-function numeral(value: number, format: string): string {
-  if (format === "none") return "";
-  if (format === "upperLetter" || format === "lowerLetter") {
-    let result = "";
-    for (let n = value; n > 0; n = Math.floor((n - 1) / 26))
-      result = String.fromCharCode(65 + ((n - 1) % 26)) + result;
-    return format === "lowerLetter" ? result.toLowerCase() : result;
-  }
-  if (format === "upperRoman" || format === "lowerRoman") {
-    if (value > 1_000_000)
-      throw new DocumentError(
-        "ResourceLimitExceeded",
-        "A derived Roman numbering label exceeds the preview budget.",
-      );
-    let result = "",
-      n = value;
-    for (const [amount, letters] of [
-      [1000, "M"],
-      [900, "CM"],
-      [500, "D"],
-      [400, "CD"],
-      [100, "C"],
-      [90, "XC"],
-      [50, "L"],
-      [40, "XL"],
-      [10, "X"],
-      [9, "IX"],
-      [5, "V"],
-      [4, "IV"],
-      [1, "I"],
-    ] as const) {
-      while (n >= amount) {
-        result += letters;
-        n -= amount;
-      }
-    }
-    return format === "lowerRoman" ? result.toLowerCase() : result;
-  }
-  return String(value);
 }
 export function decorate(
   document: Document,
@@ -245,45 +209,6 @@ export function decorate(
       root.before(heading);
       root.classList.add("sdk-auxiliary");
     }
-    const counters = new Map<string, number[]>();
-    for (const paragraph of root.querySelectorAll<HTMLElement>("[data-word-numbering]")) {
-      const definition = word.numbering.find(
-        (item) => item.numberingId === paragraph.dataset.wordNumbering,
-      );
-      const level = Number(paragraph.dataset.wordLevel);
-      const rule = definition?.levels.find((item) => item.level === level);
-      if (!definition || !rule) continue;
-      const values = counters.get(definition.numberingId) ?? [];
-      values[level] = (values[level] ?? rule.start - 1) + 1;
-      for (const deeper of definition.levels)
-        if (
-          deeper.level > level &&
-          deeper.restart !== 0 &&
-          (deeper.restart === undefined || deeper.restart - 1 >= level)
-        )
-          values[deeper.level] = deeper.start - 1;
-      counters.set(definition.numberingId, values);
-      const marker = markViewNode(document.createElement("span"));
-      marker.className = "sdk-number-marker " + rule.cssClass;
-      marker.setAttribute("aria-hidden", "true");
-      marker.textContent = rule.text.replace(/%([1-9])/g, (_match, token: string) => {
-        const index = Number(token) - 1;
-        const format = definition.levels.find((item) => item.level === index);
-        return numeral(values[index] ?? format?.start ?? 1, format?.format ?? "decimal");
-      });
-      if (rule.suffix === "space") marker.textContent += " ";
-      const computed = document.defaultView!.getComputedStyle(paragraph);
-      const hanging = Math.abs(parseFloat(computed.textIndent) || 24);
-      paragraph.style.position = "relative";
-      paragraph.style.textIndent = "0";
-      marker.style.cssText +=
-        ";position:absolute;left:-" +
-        hanging +
-        "px;width:" +
-        hanging +
-        "px;margin:0;padding:0;text-indent:0;white-space:pre";
-      paragraph.prepend(marker);
-    }
   }
   for (const field of word.fields) {
     for (const nested of field.instructionFields ?? []) {
@@ -295,55 +220,6 @@ export function decorate(
           node.style.display = "none";
         }
       }
-    }
-  }
-  for (const definition of word.tabs) {
-    const paragraph = byId.get(definition.paragraphNodeId);
-    if (!paragraph) continue;
-    // Word tab stops are relative to the text margin, before paragraph indent.
-    const indent = parseFloat(document.defaultView!.getComputedStyle(paragraph).marginLeft) || 0;
-    for (const tab of paragraph.querySelectorAll<HTMLElement>("[data-word-tab]")) {
-      if (tab.closest("[hidden]")) continue;
-      const start = paragraph.getBoundingClientRect();
-      const box = tab.getBoundingClientRect();
-      const cursor = ((box.left - start.left + indent) * 72) / 96;
-      const stop = [...definition.stops]
-        .filter((item) => item.alignment !== "clear" && item.position > cursor)
-        .sort((a, b) => a.position - b.position)[0];
-      const target =
-        stop?.position ??
-        (Math.floor(cursor / definition.defaultInterval) + 1) * definition.defaultInterval;
-      let followingWidth = 0,
-        decimalWidth = 0;
-      const range = document.createRange();
-      range.setStartAfter(tab);
-      range.setEnd(paragraph, paragraph.childNodes.length);
-      const following = range.cloneContents().textContent?.split("\t")[0] ?? "";
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d")!;
-      context.font = document.defaultView!.getComputedStyle(tab).font;
-      followingWidth = (context.measureText(following).width * 72) / 96;
-      decimalWidth = (context.measureText(following.split(/[.,]/)[0] ?? "").width * 72) / 96;
-      const adjustment =
-        stop?.alignment === "right"
-          ? followingWidth
-          : stop?.alignment === "center"
-            ? followingWidth / 2
-            : stop?.alignment === "decimal"
-              ? decimalWidth
-              : 0;
-      const width = Math.max(0, target - cursor - adjustment);
-      tab.textContent = "";
-      tab.style.display = "inline-block";
-      tab.style.width = width + "pt";
-      tab.style.whiteSpace = "nowrap";
-      tab.style.overflow = "hidden";
-      tab.style.verticalAlign = "bottom";
-      const leader = stop?.leader;
-      if (leader && leader !== "none")
-        tab.textContent = (
-          leader === "dot" ? "." : leader === "hyphen" ? "-" : leader === "middleDot" ? "·" : "_"
-        ).repeat(Math.min(2000, Math.ceil(width)));
     }
   }
 }
@@ -377,7 +253,7 @@ function prepareDocument(input: ContentDocumentModel): {
   parsed.head.append(style);
   const frameStyle = parsed.createElement("style");
   const setup = snapshot.metadata.pageSetup;
-  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-sdk-word-text-review="insert"]{color:#006400!important;text-decoration-line:var(--sdk-word-authored-insert-decoration,underline)!important}[data-sdk-word-text-review="delete"]{color:#a00000!important;text-decoration-line:var(--sdk-word-authored-delete-decoration,line-through)!important}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}[data-word-native-boundary]{display:none!important}`;
+  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-size:inherit;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-sdk-word-text-review="insert"]{color:#006400!important;text-decoration-line:var(--sdk-word-authored-insert-decoration,underline)!important}[data-sdk-word-text-review="delete"]{color:#a00000!important;text-decoration-line:var(--sdk-word-authored-delete-decoration,line-through)!important}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}[data-word-native-boundary]{display:none!important}`;
   parsed.head.insertBefore(frameStyle, style);
   const byId = new Map(
     [...parsed.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => [
@@ -512,6 +388,8 @@ export function mountPreview(
     fonts: [],
   });
   let continuousPunctuation: ReturnType<typeof wordPunctuationLayout> | undefined;
+  let runWidths: ReturnType<typeof wordRunWidthLayout> | undefined;
+  let tabs: WordTabLayout | undefined;
   let hostedFonts: ReadonlyMap<string, string> | undefined;
   let resolveReady: () => void = () => {},
     rejectReady: (reason: unknown) => void = () => {};
@@ -528,6 +406,7 @@ export function mountPreview(
     // invalidate the operating system's composition target.
     if (composing) return;
     const restoreSelection = retainFlowSelection(source.root, projection?.ignored);
+    runWidths?.reset();
     composeWordContextualSpacing(iframe.contentDocument!, model);
     composeWordTypography(iframe.contentDocument!, model, limits);
     centeredWrap?.reset();
@@ -535,6 +414,8 @@ export function mountPreview(
     if (continuousPunctuation) {
       continuousPunctuation.reset();
       continuousPunctuation.measure(source.root, false);
+      runWidths?.measure(source.root);
+      tabs?.measure(source.root);
     }
     if (centeredWrap?.active || continuousPunctuation) source.reindex();
     const placeFloats = (
@@ -624,6 +505,9 @@ export function mountPreview(
         "Document layout did not converge within the render pass budget.",
       );
     fields?.repeat(pages);
+    if (tabs && fields)
+      for (const story of iframe.contentDocument!.querySelectorAll(".sdk-page-story,.sdk-repeat-header"))
+        tabs.measure(story);
     if (iframe.contentDocument!.querySelector(".sdk-page-story-paint")) {
       for (let pass = 0; pass < limits.maxLayoutPasses; pass++) {
         placeFloats(pages, source.root, true);
@@ -662,6 +546,7 @@ export function mountPreview(
   }
   function render(): void {
     const frame = iframe.contentDocument!;
+    runWidths?.reset();
     notes?.dispose();
     notes = undefined;
     pagination?.dispose();
@@ -669,6 +554,10 @@ export function mountPreview(
     fields = undefined;
     source = undefined;
     const snapshot = model.snapshot();
+    runWidths = snapshot.html.includes("--word-run-native-w") ||
+      snapshot.styles.some(({ css }) => css.includes("--word-run-native-w"))
+      ? wordRunWidthLayout(frame, limits)
+      : undefined;
     composeWordTextRuns(frame, model, limits);
     composeWordParagraphMarks(frame, model);
     composeWordLanguages(frame, model, limits);
@@ -678,13 +567,23 @@ export function mountPreview(
     composeWordTypography(frame, model, limits);
     const sourceFonts = hostedResolution ?? resolvePreviewFonts(frame, fontSelector);
     source = new PreviewSource(frame, model);
-    // Empty native runs still need a real line box in preview and editing.
-    // A derived break provides it without adding a source newline/identity.
-    for (const paragraph of source.root.querySelectorAll("p,h1,h2,h3,h4,h5,h6")) {
+    // Empty paragraphs reserve a line in the main story and repeated headers
+    // and footers. A blank line in a bottom-anchored footer raises the preceding
+    // text. The derived break carries no source newline or identity.
+    for (const paragraph of [
+      ...source.root.querySelectorAll("p,h1,h2,h3,h4,h5,h6"),
+      ...frame.querySelectorAll(
+        ':is([data-office-story="header"],[data-office-story="footer"]) :is(p,h1,h2,h3,h4,h5,h6)',
+      ),
+    ]) {
       if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]"))
         paragraph.append(markViewNode(frame.createElement("br")));
     }
-    decorate(frame, snapshot.metadata.word);
+    const word = snapshot.metadata.word;
+    const numberingFonts = composeWordNumbering(frame, word, hostedFonts);
+    decorate(frame, word);
+    tabs = word?.tabs.length ? wordTabLayout(frame, word) : undefined;
+    tabs?.measure(frame);
     composeWordTableSpacing(frame, model);
     const rowSpacing = composeWordRowSpacing(frame, model, limits);
     composeWordRowExceptions(frame, model, limits);
@@ -695,14 +594,15 @@ export function mountPreview(
     composeWordNative(frame, model, prepared.nativeUrls, limits);
     composeWordControls(frame, model);
     composeWordMath(frame, model, limits);
+    if ((options.layout ?? "pages") === "pages")
+      fields = layoutFields(frame, source, snapshot.metadata.word);
     drawings = composeWordDrawings(frame, model, limits, source);
     centeredWrap = wordCenterWrap(frame, model, limits);
     notes = composeWordNotes(frame, model, source, limits, (index) =>
       pagination?.contentBottom(index),
     );
     if ((options.layout ?? "pages") === "pages") {
-      fields = layoutFields(frame, source, snapshot.metadata.word);
-      pagination = paginate(frame, source, snapshot.metadata, limits, notes);
+      pagination = paginate(frame, source, snapshot.metadata, limits, notes, runWidths, tabs);
       continuousPunctuation = undefined;
     } else
       continuousPunctuation = wordPunctuationLayout(
@@ -713,9 +613,10 @@ export function mountPreview(
       );
     baseFonts = Object.freeze([
       ...sourceFonts,
+      ...numberingFonts,
       ...resolvePreviewFonts(
         frame,
-        ".sdk-number-marker,.sdk-word-equation-view,.sdk-word-equation-view *,[data-sdk-word-chart] text,[data-sdk-word-chart] tspan",
+        ".sdk-word-equation-view,.sdk-word-equation-view *,[data-sdk-word-chart] text,[data-sdk-word-chart] tspan",
         hostedFonts,
       ),
     ]);

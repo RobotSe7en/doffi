@@ -5,7 +5,7 @@ import { readWordEmptyContinuation } from "./docx-table-continuation.js";
 import { bindWordGridInsertion } from "./docx-grid-revision.js";
 import { readWordRowGapCount, readWordRowGapWidths } from "./docx-row-gaps.js";
 import { measurePoints } from "./ooxml/measure.js";
-import { wordCompatibilityNames } from "./ooxml/word-compatibility.js";
+import { wordCompatibilityKey, wordCompatibilityNames } from "./ooxml/word-compatibility.js";
 import { readWordTypography } from "./ooxml/word-typography.js";
 import { bindWordConditionalFormat, readWordConditionalFormat } from "./docx-conditional-format.js";
 import {
@@ -204,8 +204,15 @@ class Importer {
     this.word.mirrorMargins = on(child(this.settings, "mirrorMargins"));
     this.word.bordersDoNotSurroundHeader = on(child(this.settings, "bordersDoNotSurroundHeader"));
     this.word.bordersDoNotSurroundFooter = on(child(this.settings, "bordersDoNotSurroundFooter"));
+    const compat = child(this.settings, "compat");
+    const mode = elements(compat).find((option) => wordCompatibilityKey(option) === "compatibilityMode");
+    const modeValue = attr(mode, "val")?.trim();
+    if (modeValue && /^\d+$/.test(modeValue)) {
+      const parsed = Number(modeValue);
+      if (parsed >= 1 && parsed <= 2147483647) this.word.compatibilityMode = parsed;
+    }
     for (const name of wordCompatibilityNames) {
-      const flag = child(child(this.settings, "compat"), name);
+      const flag = child(compat, name);
       if (flag) this.word[name] = on(flag);
     }
     this.word.automaticHyphenation = on(child(this.settings, "autoHyphenation"));
@@ -654,33 +661,26 @@ class Importer {
       /^\d+(?:\.\d+)?$/.test(effectiveParagraph["line-height"])
     )
       paragraph.attrs["data-word-line-rule"] = "auto";
-    const tabs = child(properties, "tabs");
-    const stops = mergeTabs(style.tabs ?? this.styles.defaults.tabs, tabs);
-    if (stops.length || tabs || this.hasTab(source))
+    const numbering = this.styles.paragraphNumbering(source, properties, styleId),
+      numbered = numbering !== undefined && numbering.id !== "0",
+      tabs = child(properties, "tabs"),
+      stops = mergeTabs(
+        mergeTabs(style.tabs ?? this.styles.defaults.tabs, numbering?.tabs),
+        tabs,
+      );
+    if (numbered || stops.length || tabs || this.hasTab(source))
       this.word.tabs.push({
         paragraphNodeId: this.id(paragraph),
         defaultInterval: this.defaultTab,
         stops,
       });
-    const numPr = child(properties, "numPr");
-    const id = attr(child(numPr, "numId"), "val") ?? style.numbering?.id;
-    if (id === "0") paragraph.attrs["data-word-numbering-off"] = "true";
-    if (id && id !== "0") {
-      const numberLevel = number(
-        attr(child(numPr, "ilvl"), "val"),
-        numPr ?? source,
-        style.numbering?.level ?? 0,
-      );
-      const definition = this.word.numbering
-        .find((item) => item.numberingId === id)
-        ?.levels.find((item) => item.level === numberLevel);
-      if (!definition) fail(source, "A paragraph refers to missing numbering.");
-      paragraph.attrs["data-word-numbering"] = id;
-      paragraph.attrs["data-word-level"] = String(numberLevel);
+    if (numbering?.id === "0") paragraph.attrs["data-word-numbering-off"] = "true";
+    if (numbered) {
+      paragraph.attrs["data-word-numbering"] = numbering.id;
+      paragraph.attrs["data-word-level"] = String(numbering.level);
       paragraph.attrs.style = declarations({
+        ...numbering.paragraph,
         ...css,
-        ...this.styles.numberingParagraph(id, numberLevel),
-        ...this.styles.paragraph(properties),
       });
     }
     for (const change of elements(child(properties, "rPr")).filter(

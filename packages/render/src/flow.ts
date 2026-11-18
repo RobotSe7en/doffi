@@ -1,4 +1,4 @@
-import { wordTableRepeatHeader } from "./word-table-layout.js";
+import { wordRowVisibleRect, wordTableRepeatHeader } from "./word-table-layout.js";
 import { continuationHeader } from "./repeated-header.js";
 import { DocumentError } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
@@ -9,7 +9,6 @@ import {
   ownViewStyle,
   viewNodeRole,
 } from "./view-nodes.js";
-import { wordRowVisibleRect } from "./word-table-layout.js";
 
 export interface PageFlow {
   reset(): void;
@@ -41,6 +40,13 @@ export function pageFlow(
 ): PageFlow {
   const view = document.defaultView!,
     gaps: HTMLElement[] = [],
+    tableEdges: HTMLElement[] = [],
+    tableGaps = new Map<HTMLTableElement, { row: HTMLTableRowElement; spanning: boolean }[]>(),
+    tableFragmentBreaks = new Map<HTMLTableElement, Set<number>>(),
+    alignedCells = new Map<
+      HTMLTableCellElement,
+      { content: HTMLElement; value: string; priority: string }
+    >(),
     blanks = new Set<number>();
   const excluded = (node: Node): boolean => {
     for (let item: Node | null = node; item && item !== flow; item = item.parentNode)
@@ -107,26 +113,25 @@ export function pageFlow(
     );
   function rowGap(
     table: HTMLTableElement,
-    row: HTMLTableRowElement,
+    rows: readonly HTMLTableRowElement[],
+    ordinal: number,
     targetPage: number,
     inset: number,
   ): void {
     ensure(targetPage);
-    const rows = [...table.rows].filter(
-        (item) =>
-          viewNodeRole(item) !== "remove" &&
-          view.getComputedStyle(item).display !== "none" &&
-          view.getComputedStyle(item).visibility !== "collapse",
-      ),
-      ordinal = rows.indexOf(row);
-    for (const [index, previous] of rows.entries())
-      for (const cell of previous.cells) {
+    const spanningCells: HTMLTableCellElement[] = [];
+    for (let index = 0; index < ordinal; index++)
+      for (const cell of rows[index]!.cells) {
         const span = canonicalSpans.get(cell) ?? cell.rowSpan;
         canonicalSpans.set(cell, span);
-        if (span && index < ordinal && index + span > ordinal) {
-          ownViewAttribute(cell, "rowspan");
-          cell.rowSpan++;
-        }
+        if (!span || index + span > ordinal) spanningCells.push(cell);
+      }
+    const firstFragmentEnd = rows[ordinal]!.getBoundingClientRect().top;
+    fixCellAlignment(spanningCells, firstFragmentEnd);
+    for (const cell of spanningCells)
+      if (cell.rowSpan) {
+        ownViewAttribute(cell, "rowspan");
+        cell.rowSpan++;
       }
     const gap = markViewNode(document.createElement("tr"));
     gap.className = "sdk-page-gap";
@@ -139,11 +144,95 @@ export function pageFlow(
     );
     cell.style.cssText = "padding:0;border:0;line-height:0;font-size:0";
     gap.append(cell);
-    row.before(gap);
+    rows[ordinal]!.before(gap);
     gaps.push(gap);
+    const spanning = spanningCells.length > 0;
+    if (!spanning && view.getComputedStyle(table).borderCollapse === "collapse")
+      cell.style.borderTop = view.getComputedStyle(table).borderBottom;
+    if (!spanning || spanningCells.every((cell) =>
+      visualLines(cell).every(({ rect }) => rect.bottom <= firstFragmentEnd + 0.5),
+    )) {
+      const tableRows = tableGaps.get(table) ?? [];
+      tableRows.push({ row: gap, spanning });
+      tableGaps.set(table, tableRows);
+    }
     const height = Math.max(0, start(targetPage) + inset - gap.getBoundingClientRect().top);
     gap.style.height = height + "px";
     cell.style.height = height + "px";
+  }
+  function clipTableGaps(): void {
+    for (const [table, rows] of tableGaps) {
+      const box = table.getBoundingClientRect(),
+        parts: string[] = [];
+      // A single table stays in flow. Its spacer rows occupy space but should
+      // never extend the table's perimeter or background into that space.
+      let top = -1;
+      const append = (bottom: number): void => {
+        if (bottom > top)
+          parts.push(`M -1 ${top} h ${box.width + 2} v ${bottom - top} h ${-box.width - 2} Z`);
+      };
+      const border = view.getComputedStyle(table).borderBottom;
+      for (const { row, spanning } of rows) {
+        const gap = row.getBoundingClientRect(),
+          closingBorder = (parseFloat(row.cells[0]!.style.borderTopWidth) || 0) / 2;
+        append(gap.top - box.top + closingBorder);
+        top = gap.bottom - box.top - 0.5;
+        if (spanning && parseFloat(border) > 0)
+          paintTableEdge("bottom", box, gap.top - parseFloat(border), border);
+      }
+      append(box.height + 1);
+      ownViewStyle(table, "clip-path");
+      table.style.clipPath = `path("${parts.join(" ")}")`;
+    }
+  }
+  function markTableBreak(table: HTMLTableElement, next: number): void {
+    const breaks = tableFragmentBreaks.get(table) ?? new Set<number>();
+    breaks.add(next);
+    tableFragmentBreaks.set(table, breaks);
+  }
+  function finishRow(table: HTMLTableElement, top: number, bottom: number): void {
+    const end = page(Math.max(top, bottom - 0.5));
+    ensure(end, bottom);
+    const first = page(top);
+    if (first === end || pitch <= area || table.closest(".sdk-word-floating-table")) return;
+    for (let next = first + 1; next <= end; next++) markTableBreak(table, next);
+  }
+  function paintTableEdge(
+    side: "top" | "bottom", rect: DOMRect, y: number, border: string,
+  ): void {
+    if (document.getElementsByTagName("*").length >= limits.maxNodes)
+      throw new DocumentError(
+        "ResourceLimitExceeded",
+        "Table fragment borders exceed the rendering node budget.",
+      );
+    const bounds = flow.getBoundingClientRect(),
+      edge = markViewNode(document.createElement("div"));
+    edge.className = "sdk-table-fragment-edge";
+    edge.dataset.sdkTableEdge = side;
+    edge.setAttribute("aria-hidden", "true");
+    edge.contentEditable = "false";
+    edge.style.cssText =
+      `position:absolute;pointer-events:none;left:${rect.left - bounds.left}px;top:${y - bounds.top}px;width:${rect.width}px;height:0;border-top:${border}`;
+    flow.append(edge);
+    tableEdges.push(edge);
+  }
+  function paintSplitTableEdges(): void {
+    for (const [table, breaks] of tableFragmentBreaks) {
+      const rect = table.getBoundingClientRect(),
+        style = view.getComputedStyle(table),
+        topWidth = parseFloat(style.borderTopWidth) || 0,
+        bottomWidth = parseFloat(style.borderBottomWidth) || 0,
+        repeatedHeader = headerRows(table).length > 0;
+      for (const next of breaks) {
+        const previous = next - 1;
+        // The shared page clip ends at the printable bottom. Draw the stroke
+        // inward so its full width survives the clip and print projection.
+        if (bottomWidth > 0 && !blanks.has(previous))
+          paintTableEdge("bottom", rect, start(previous) + available(previous) - bottomWidth, style.borderBottom);
+        if (topWidth > 0 && !repeatedHeader && !blanks.has(next) && rect.bottom > start(next))
+          paintTableEdge("top", rect, start(next), style.borderTop);
+      }
+    }
   }
   interface Line {
     readonly node: Text | HTMLElement;
@@ -151,11 +240,17 @@ export function pageFlow(
     readonly offset?: number;
     readonly targetPage?: number;
   }
+  const scaledPiece = (owner: HTMLElement): HTMLElement | null => {
+    const piece = owner.closest<HTMLElement>(".sdk-word-run-width");
+    return piece && viewNodeRole(piece) === "unwrap" ? piece : null;
+  };
   function visualLines(element: HTMLElement): Line[] {
     const result: Line[] = [],
       walker = document.createTreeWalker(element, 5);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const owner = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement!;
+      const scaled = scaledPiece(owner);
+      if (scaled && scaled !== node) continue;
       if (
         owner.closest("[data-word-drawing]") &&
         (!owner.hasAttribute("data-word-drawing") || node.nodeType === 3)
@@ -173,15 +268,15 @@ export function pageFlow(
         continue;
       if (excluded(owner) || view.getComputedStyle(owner).visibility === "hidden") continue;
       if (
-        node.nodeType !== 3 &&
+        node.nodeType !== 3 && !scaled &&
         !owner.matches(
           "img,[data-word-tab],[data-word-drawing],[data-word-note-reference],[data-word-equation]",
         )
       )
         continue;
       const range = document.createRange();
-      range.selectNodeContents(node);
-      for (const rect of node.nodeType === 3 ? range.getClientRects() : owner.getClientRects()) {
+      range.selectNodeContents(scaled?.firstChild?.firstChild ?? node);
+      for (const rect of node.nodeType === 3 || scaled ? range.getClientRects() : owner.getClientRects()) {
         if (!wordRowVisibleRect(owner, rect)) continue;
         if (rect.width < 0.01 || rect.height < 0.1) continue;
         const previous = result.at(-1);
@@ -212,10 +307,26 @@ export function pageFlow(
     }
     return result;
   }
-  function overflow(element: HTMLElement, inset: number): Line | undefined {
+  function overflow(
+    element: HTMLElement,
+    inset: number,
+    exactHeight: number,
+    fragmentGaps: readonly HTMLElement[],
+  ): Line | undefined {
+    const fragmentStarts: number[] = [];
+    if (exactHeight) {
+      const css = view.getComputedStyle(element);
+      fragmentStarts.push(
+        element.getBoundingClientRect().top + parseFloat(css.paddingTop) + parseFloat(css.borderTopWidth),
+        ...fragmentGaps.map((gap) => gap.getBoundingClientRect().bottom),
+      );
+      fragmentStarts.reverse();
+    }
     const walker = document.createTreeWalker(element, 5 /* ELEMENT | TEXT */);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const owner = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement!;
+      const scaled = scaledPiece(owner);
+      if (scaled && scaled !== node) continue;
       if (
         owner.closest("[data-word-drawing]") &&
         (!owner.hasAttribute("data-word-drawing") || node.nodeType === 3)
@@ -233,7 +344,7 @@ export function pageFlow(
           if (owner.style.display === "none") continue;
           return { node: owner, rect: owner.getBoundingClientRect() };
         }
-        if (
+        if (!scaled &&
           !owner.matches(
             "img,[data-word-tab],[data-word-drawing],[data-word-note-reference],[data-word-equation]",
           )
@@ -241,9 +352,9 @@ export function pageFlow(
           continue;
       }
       const range = document.createRange();
-      range.selectNodeContents(node);
+      range.selectNodeContents(scaled?.firstChild?.firstChild ?? node);
       const rectangles =
-        node.nodeType === 3
+        node.nodeType === 3 || scaled
           ? [...range.getClientRects()]
           : [...(node as Element).getClientRects()].map((rect) => {
               // A floating frame rotates around its centre. Its paint bounds are
@@ -265,21 +376,31 @@ export function pageFlow(
       for (const rect of rectangles) {
         if (!wordRowVisibleRect(owner, rect)) continue;
         if (rect.height < 0.1 || rect.width < 0.01) continue;
-        const current = page(rect.top + rect.height / 2),
+        const middle = rect.top + rect.height / 2,
+          origin = fragmentStarts.find((top) => top <= middle) ?? fragmentStarts.at(-1),
+          // For exact spacing, the page needs room for the entire line box.
+          // Glyph ink can finish before the bottom of the paragraph strut.
+          lineTop = origin === undefined
+            ? rect.top
+            : origin + Math.max(0, Math.floor((middle - origin) / exactHeight)) * exactHeight,
+          current = page(origin === undefined ? middle : lineTop + exactHeight / 2),
           end = start(current) + available(current),
           minimum = constraints?.minimumPage(node);
         if (minimum !== undefined && current < minimum)
           return { node: node as HTMLElement, rect, targetPage: minimum };
         // Glyph rectangles can extend beyond a line box by sub-pixel rounding.
-        const height = Math.max(
+        const height = exactHeight || Math.max(
           rect.height,
           parseFloat(view.getComputedStyle(owner).lineHeight) || rect.height,
-        );
+        ),
+          lineBottom = origin === undefined
+            ? rect.bottom + Math.max(0, height - rect.height) / 2
+            : lineTop + exactHeight;
         if (
-          rect.top >= start(current) + inset - 5 &&
-          rect.bottom + Math.max(0, height - rect.height) / 2 <= end + 0.5
+          lineTop >= start(current) + inset - 5 &&
+          lineBottom <= end + 0.5
         ) {
-          ensure(current, rect.bottom + Math.max(0, height - rect.height) / 2);
+          ensure(current, lineBottom);
           continue;
         }
         if (height > area - inset + 0.5)
@@ -307,11 +428,19 @@ export function pageFlow(
     }
     return;
   }
-  function paragraph(element: HTMLElement, inset: number): void {
+  function paragraph(element: HTMLElement, inset: number, splitRow = false): void {
     const style = view.getComputedStyle(element),
       box = element.getBoundingClientRect(),
-      current = page(box.top);
+      current = page(box.top),
+      exactHeight =
+        style.writingMode === "horizontal-tb" && !element.closest("td,th") &&
+        (element.dataset.wordLineRule ?? style.getPropertyValue("--word-line-rule").trim()) === "exact" &&
+        !element.querySelector("img,[data-word-drawing],[data-word-native-object],[data-word-equation]")
+          ? parseFloat(style.lineHeight) || 0
+          : 0,
+      fragmentGaps: HTMLElement[] = [];
     if (
+      !splitRow &&
       (style.breakInside.startsWith("avoid") || style.pageBreakInside === "avoid") &&
       box.height <= area - inset &&
       box.bottom > start(current) + available(current) + 0.5
@@ -320,8 +449,13 @@ export function pageFlow(
       while (target < limits.maxPages && box.height > available(target) - inset) target++;
       before(element, target, inset);
     }
-    for (let line = overflow(element, inset); line; line = overflow(element, inset)) {
+    for (
+      let line = overflow(element, inset, exactHeight, fragmentGaps);
+      line;
+      line = overflow(element, inset, exactHeight, fragmentGaps)
+    ) {
       if (
+        !splitRow &&
         line.targetPage === undefined &&
         !(line.node.nodeType === 1 && (line.node as Element).matches("br[data-word-break]"))
       ) {
@@ -364,17 +498,29 @@ export function pageFlow(
         // in the source index and is restored by SourceProjection on every save.
         ownViewStyle(breaker, "display");
         breaker.style.display = "none";
-        spacer(breaker.parentNode!, breaker, start(next) + inset);
+        fragmentGaps.push(spacer(breaker.parentNode!, breaker, start(next) + inset));
       } else {
         const node = line.node;
         const tail =
           node.nodeType === 3 && line.offset ? (node as Text).splitText(line.offset) : node;
-        const gap = spacer(tail.parentNode!, tail, start(next) + inset);
-        if (gap.getBoundingClientRect().height < 0.1)
+        const target = start(next) + inset,
+          gap = spacer(tail.parentNode!, tail, target),
+          gapHeight = gap.getBoundingClientRect().height;
+        fragmentGaps.push(gap);
+        if (gapHeight < 0.1)
           throw new DocumentError(
             "UnsupportedFeature",
             "This inline structure cannot be fragmented safely.",
           );
+        if (inset) {
+          // Negative font leading can lift the first glyph above the block
+          // spacer and into the repeated header. Reserve the measured overhang.
+          const range = document.createRange();
+          range.selectNodeContents(tail);
+          const first = (tail.nodeType === 3 ? range : (tail as HTMLElement)).getClientRects()[0];
+          if (first && first.top < target - 0.25)
+            gap.style.height = gapHeight + target - first.top + "px";
+        }
       }
     }
     const after = element.getBoundingClientRect();
@@ -383,9 +529,70 @@ export function pageFlow(
       after.bottom + Math.max(0, parseFloat(style.marginBottom) || 0),
     );
   }
+  function cellBlocks(cell: HTMLTableCellElement): HTMLElement[] {
+    const blocks = [...cell.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")].filter(
+      (node) => !node.querySelector("p,h1,h2,h3,h4,h5,h6,li"),
+    );
+    return blocks.length ? blocks : [cell];
+  }
+  function canStartRow(blocks: readonly HTMLElement[][], end: number): boolean {
+    return blocks.some(([block]) => {
+      if (!block) return false;
+      const style = view.getComputedStyle(block),
+        box = block.getBoundingClientRect();
+      if (box.height <= 0.1 || box.top >= end - 0.5) return false;
+      if (box.bottom <= end + 0.5) return true;
+      const line = visualLines(block)[0];
+      if (!line) return false;
+      const descent = Math.max(0, (parseFloat(style.lineHeight) || 0) - line.rect.height) / 2;
+      return line.rect.bottom + descent <= end + 0.5;
+    });
+  }
+  function fixCellAlignment(cells: HTMLTableCellElement[], fragmentEnd?: number): void {
+    const aligned = cells
+      .filter((cell) => !alignedCells.has(cell))
+      .map((cell) => {
+        const alignment = view.getComputedStyle(cell).verticalAlign,
+          inset = fragmentEnd === undefined || alignment === "top"
+            ? 0
+            : Math.max(0, cell.getBoundingClientRect().bottom - fragmentEnd) *
+              (alignment === "middle" ? 0.5 : 1);
+        return { cell, alignment, inset };
+      })
+      .filter(({ alignment }) => alignment === "middle" || alignment === "bottom")
+      .map(({ cell, inset }) => {
+        const content = markViewNode(document.createElement("div"), "unwrap");
+        content.style.display = "flow-root";
+        content.append(...cell.childNodes);
+        cell.append(content);
+        alignedCells.set(cell, {
+          content,
+          value: cell.style.getPropertyValue("vertical-align"),
+          priority: cell.style.getPropertyPriority("vertical-align"),
+        });
+        return { cell, content, inset };
+      });
+    // Freeze the unbroken alignment before synthetic page spacers enlarge the
+    // row. Otherwise browsers recenter short cells into the page gutter.
+    const tops = aligned.map(({ content }) => content.getBoundingClientRect().top);
+    for (const { cell } of aligned) {
+      ownViewStyle(cell, "vertical-align");
+      cell.style.setProperty("vertical-align", "top", "important");
+    }
+    const offsets = aligned.map(
+      ({ content, inset }, index) => tops[index]! - content.getBoundingClientRect().top - inset,
+    );
+    aligned.forEach(({ content }, index) => {
+      if (offsets[index]! > 0.1) content.style.paddingTop = offsets[index]! + "px";
+    });
+  }
   function table(element: HTMLTableElement): void {
     const header = headerRows(element),
-      height = headerHeight(element);
+      height = headerHeight(element),
+      tableStyle = view.getComputedStyle(element),
+      collapsedStroke = tableStyle.borderCollapse === "collapse" &&
+        (parseFloat(tableStyle.borderBottomWidth) > 0 ||
+          parseFloat(tableStyle.getPropertyValue("--word-border-inside-h")) > 0);
     if (height >= area)
       throw new DocumentError(
         "UnsupportedFeature",
@@ -397,24 +604,59 @@ export function pageFlow(
         view.getComputedStyle(row).display !== "none" &&
         view.getComputedStyle(row).visibility !== "collapse",
     );
-    for (const row of rows) {
+    let mergeEnd = 0;
+    for (const [ordinal, row] of rows.entries()) {
       let box = row.getBoundingClientRect(),
         current = page(box.top);
+      const inMergedRow = mergeEnd > ordinal;
+      for (const cell of row.cells)
+        mergeEnd = Math.max(mergeEnd, ordinal + (cell.rowSpan || rows.length - ordinal));
+      const repeated = header.includes(row),
+        inset = current > topPage(element) ? height : 0,
+        end = start(current) + available(current),
+        style = view.getComputedStyle(row),
+        canSplit = !repeated && !inMergedRow && mergeEnd <= ordinal + 1 &&
+          !style.breakInside.startsWith("avoid") &&
+          style.pageBreakInside !== "avoid" &&
+          style.getPropertyValue("--word-row-height-rule").trim() !== "exact" &&
+          !row.querySelector("table") &&
+          !element.closest(".sdk-word-floating-table"),
+        pastEdge = box.bottom > end + 0.5,
+        // A browser can round a collapsed border outward by up to one CSS
+        // pixel. Keep the row only if its contents are inside the page.
+        strokeClipped = collapsedStroke && pastEdge && box.bottom <= end + 1.5 &&
+            [...row.cells].every((cell) =>
+              visualLines(cell).every(({ rect }) => rect.bottom <= end + 0.5),
+          ),
+        overflows = pastEdge && !strokeClipped;
+      const blocks = box.top >= start(current) + inset - 0.5 && overflows && canSplit
+        ? [...row.cells].map(cellBlocks)
+        : undefined;
+      if (blocks && canStartRow(blocks, end)) {
+        fixCellAlignment([...row.cells]);
+        // Word splits breakable rows at the available cell line, even when a
+        // cell paragraph requests widow/orphan control or keep-lines.
+        for (const cell of blocks)
+          for (const block of cell) paragraph(block, height, true);
+        finishRow(element, box.top, row.getBoundingClientRect().bottom);
+        continue;
+      }
       if (
-        !header.includes(row) &&
+        !repeated &&
         box.height <= available(current) - height &&
-        (box.bottom > start(current) + available(current) + 0.5 ||
-          box.top < start(current) + (current > topPage(element) ? height : 0) - 0.5)
+        (overflows || box.top < start(current) + inset - 0.5)
       ) {
         const next = box.top < start(current) + height - 0.5 ? current : current + 1;
-        rowGap(element, row, next, height);
+        if (ordinal === 0) before(element, next);
+        else rowGap(element, rows, ordinal, next, height);
         box = row.getBoundingClientRect();
         current = page(box.top);
       }
       if (box.height <= area - height && box.height > available(current) - height) {
         let target = current + 1;
         while (target < limits.maxPages && box.height > available(target) - height) target++;
-        rowGap(element, row, target, height);
+        if (ordinal === 0) before(element, target);
+        else rowGap(element, rows, ordinal, target, height);
         box = row.getBoundingClientRect();
         current = page(box.top);
       }
@@ -425,16 +667,13 @@ export function pageFlow(
               "UnsupportedFeature",
               "Splitting a non-top-aligned table cell across pages is not supported.",
             );
-          const blocks = [...cell.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")].filter(
-            (node) => !node.querySelector("p,h1,h2,h3,h4,h5,h6,li"),
-          );
-          for (const block of blocks.length ? blocks : [cell]) paragraph(block, height);
+          for (const block of cellBlocks(cell)) paragraph(block, height, canSplit);
         }
       }
-      ensure(
-        page(Math.max(box.top, row.getBoundingClientRect().bottom - 0.5)),
-        row.getBoundingClientRect().bottom,
-      );
+      const bottom = row.getBoundingClientRect().bottom;
+      if (strokeClipped && bottom > end + 0.5 && bottom <= end + 1.5)
+        markTableBreak(element, current + 1);
+      finishRow(element, box.top, bottom);
     }
   }
   function walk(element: HTMLElement): void {
@@ -541,7 +780,17 @@ export function pageFlow(
   return {
     reset() {
       for (const gap of gaps.splice(0)) gap.remove();
+      for (const edge of tableEdges.splice(0)) edge.remove();
+      tableFragmentBreaks.clear();
       for (const [cell, span] of canonicalSpans) cell.rowSpan = span;
+      canonicalSpans.clear();
+      for (const [cell, { content, value, priority }] of alignedCells) {
+        content.replaceWith(...content.childNodes);
+        cell.style.setProperty("vertical-align", value, priority);
+      }
+      alignedCells.clear();
+      for (const table of tableGaps.keys()) table.style.removeProperty("clip-path");
+      tableGaps.clear();
       for (const breaker of flow.querySelectorAll<HTMLElement>("br[data-word-break]"))
         breaker.style.removeProperty("display");
       flow.style.minHeight = "0";
@@ -582,5 +831,11 @@ export function pageFlow(
     pageAt: topPage,
     headerHeight,
     bottom: (index) => bottoms.get(index) ?? 0,
+    project() {
+      if (pitch > area) {
+        clipTableGaps();
+        paintSplitTableEdges();
+      }
+    },
   };
 }

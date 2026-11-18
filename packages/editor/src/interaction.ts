@@ -1,4 +1,3 @@
-import { createWordViewport, mountWordRulers } from "./word-ruler.js";
 import { createWordCommentControls } from "./word-comment-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
@@ -44,7 +43,6 @@ export interface DocumentInteractionView {
   layout(): DocumentRenderReport | undefined;
   setMode(mode: DocumentInteractionMode): void;
   setZoom(zoom: number): void;
-  setRulers(visible: boolean): void;
   focusAnnotation(annotationId: string): void;
   startAnnotation(selection?: DocumentSelection): void;
   /** Releases only this view; the supplied session remains owned by the host. */
@@ -131,7 +129,6 @@ export function mountDocumentInteraction(
   const plane = document.createElement("div");
   plane.style.cssText = "position:relative;margin-inline:auto;min-width:0";
   stage.append(plane);
-  const viewport = createWordViewport(stage);
   const panel = document.createElement("section");
   panel.className = "panel";
   panel.setAttribute("aria-label", "文档批注");
@@ -159,9 +156,9 @@ export function mountDocumentInteraction(
   if (workspace) {
     const body = document.createElement("div");
     body.className = "workspace-body";
-    body.append(viewport, panel);
+    body.append(stage, panel);
     shadow.append(style, toolbar, body);
-  } else shadow.append(style, toolbar, viewport, panel);
+  } else shadow.append(style, toolbar, stage, panel);
   container.append(element);
 
   let disposed = false,
@@ -626,8 +623,6 @@ export function mountDocumentInteraction(
     resizePlane(anchor);
     highlight();
   }
-  let rulers: ReturnType<typeof mountWordRulers> | undefined,
-    rulerVisible = false;
   function resizePlane(
     anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom),
   ): void {
@@ -651,7 +646,6 @@ export function mountDocumentInteraction(
     plane.style.width = preview.element.offsetWidth * zoom + "px";
     plane.style.height = preview.element.offsetHeight * zoom + "px";
     restoreZoomAnchor(stage, plane, zoom, anchor);
-    rulers?.refresh();
   }
 
   function invalidateRegions(): void {
@@ -684,20 +678,6 @@ export function mountDocumentInteraction(
     const frame = preview!.element.contentDocument!,
       view = frame.defaultView!;
     source = preview!.source()!;
-    rulers?.dispose();
-    rulers = mountWordRulers(
-      stage,
-      preview!.element,
-      () => source?.root,
-      () => preview?.layout(),
-      () => {
-        const metadata = session.snapshot().metadata;
-        if (metadata.presentation)
-          throw new DocumentError("UnsupportedFormat", "Word rulers require Word metadata.");
-        return metadata.pageSetup;
-      },
-    );
-    rulers.setVisible(rulerVisible);
     layoutKey = source.layoutKey();
     source.root.style.userSelect = mode === "text" ? "text" : "none";
     const listeners = new AbortController();
@@ -1006,12 +986,6 @@ export function mountDocumentInteraction(
     layout: () => (needsVisibleRender ? undefined : preview?.layout()),
     setMode,
     setZoom,
-    setRulers(visible) {
-      const anchor = captureZoomAnchor(stage, plane, zoom);
-      rulerVisible = visible;
-      rulers?.setVisible(visible);
-      resizePlane(anchor);
-    },
     focusAnnotation,
     startAnnotation(chosen) {
       if (chosen) {
@@ -1027,7 +1001,6 @@ export function mountDocumentInteraction(
     dispose: () => {
       if (disposed) return;
       disposed = true;
-      rulers?.dispose();
       generation++;
       unsubscribe();
       controls.abort();

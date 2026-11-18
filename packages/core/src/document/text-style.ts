@@ -51,7 +51,7 @@ export function styleSourceText(
       !/^(?:color|background-color|font-(?:family|size|weight|style|variant)|text-transform|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(
         property,
       ) &&
-      !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs)|bold-cs|italic-cs|kerning-threshold|run-(?:snap-to-grid|shading)|language-(?:val|eastAsia|bidi))$/.test(
+      !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs|hint)|bold-cs|italic-cs|kerning-threshold|run-(?:snap-to-grid|shading|native-w)|language-(?:val|eastAsia|bidi))$/.test(
         property,
       ) &&
       !(

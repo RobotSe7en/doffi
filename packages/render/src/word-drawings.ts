@@ -11,6 +11,7 @@ import { DocumentError, evaluatePresentationPreset } from "@doffi/core";
 import type { ContentDocumentModel, DeepReadonly, WordDrawing } from "@doffi/core";
 import type { RenderLimits, RenderedPage, LayoutDiagnostic } from "./contracts.js";
 import { createDrawingGeometryView } from "./drawing-geometry.js";
+import { cloneViewTree } from "./view-clone.js";
 import { markViewNode, ownViewAttribute, ownViewStyle } from "./view-nodes.js";
 import { numeric, property, resolvedColor } from "./presentation/appearance.js";
 
@@ -229,7 +230,7 @@ export function composeWordDrawings(
         text.style.fontSize = sourceStyle.fontSize;
         text.dataset.sdkWordBaseFont = originalFont;
         text.style.color = sourceStyle.color;
-        const clone = original.cloneNode(true) as HTMLElement;
+        const clone = cloneViewTree(original, limits.maxNodes);
         clone.classList.remove("sdk-auxiliary");
         clone.style.cssText += ";display:block;border:0;padding:0;margin:0";
         for (const child of [clone, ...clone.querySelectorAll<HTMLElement>("*")]) {
@@ -442,7 +443,23 @@ export function composeWordDrawings(
             continue;
           }
           const geometry = wordDrawingSize(item, page, sections.get(page.sectionId)),
-            position = wordDrawingPosition(
+            sizeToText = paper && item.kind === "textBox" && item.text?.autoFit === "shape" &&
+              item.text.wrap === false && !item.layout.relativeWidth,
+            text = sizeToText
+              ? frame.querySelector<HTMLElement>(":scope > .sdk-word-drawing-text > div")
+              : null;
+          if (text) {
+            const original = text.style.width;
+            text.style.width = "max-content";
+            const width = parseFloat(view.getComputedStyle(text).width);
+            text.style.width = original;
+            if (width > 0) {
+              const insets = view.getComputedStyle(text.parentElement!);
+              geometry.width =
+                (width + parseFloat(insets.paddingLeft) + parseFloat(insets.paddingRight)) * 0.75;
+            }
+          }
+          const position = wordDrawingPosition(
               { ...item, geometry },
               page,
               origin,

@@ -215,6 +215,7 @@ export const WordTypographySchema = z.strictObject({
 export type WordTypography = z.infer<typeof WordTypographySchema>;
 export const WordMetadataSchema = z.strictObject({
   conditionalFormats: z.array(WordConditionalFormatSchema).optional(),
+  compatibilityMode: z.number().int().min(1).max(2147483647).optional(),
   bordersDoNotSurroundHeader: z.boolean().optional(),
   bordersDoNotSurroundFooter: z.boolean().optional(),
   comments: z.array(WordCommentSchema).optional(),

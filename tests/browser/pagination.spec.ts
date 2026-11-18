@@ -23,6 +23,7 @@ import { rowExceptionFixture } from "../../packages/office/tests/row-exception-f
 import { rowSpacingFixture } from "../../packages/office/tests/row-spacing-fixture.js";
 import { tableSpacingFixture } from "../../packages/office/tests/table-spacing-fixture.js";
 import { tableBidiFixture } from "../../packages/office/tests/table-bidi-fixture.js";
+import { styleNumberingFixture } from "../../packages/office/tests/style-numbering-fixture.js";
 import { continuationCellFixture } from "../../packages/office/tests/continuation-cell-fixture.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
@@ -1890,6 +1891,96 @@ for (const layout of ["pages", "continuous"] as const)
     expect(width.fits).toBe(true);
     expect(new TextDecoder().decode(files.get("content.html"))).toContain("width:2835pt");
   });
+test("Word compatibility mode retains the centered auto table grid and seven fullwidth characters", async ({
+  page,
+}) => {
+  const cell = (width: number, text: string): string =>
+    '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="' + width + '"/></w:tcPr>' +
+    '<w:p><w:r><w:rPr><w:rFonts w:eastAsia="Noto Serif CJK SC"/><w:sz w:val="24"/></w:rPr><w:t>' +
+    text + "</w:t></w:r></w:p></w:tc>";
+  for (const mode of [14, 15]) {
+    const docx = mutateDocx("01-text-numbering.docx", {
+      "word/settings.xml": (source) => source.replace("</w:settings>",
+        '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="' +
+          mode + '"/></w:compat></w:settings>'),
+      "word/document.xml": (source) => nativeBody(source,
+        '<w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0"/><w:jc w:val="center"/>' +
+        '<w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/>' +
+        '<w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/>' +
+        '<w:insideV w:val="single" w:sz="4"/></w:tblBorders>' +
+        '<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>' +
+        '</w:tblPr><w:tblGrid><w:gridCol w:w="6320"/><w:gridCol w:w="1896"/></w:tblGrid>' +
+        "<w:tr>" + cell(6320, "LABEL") + cell(1896, "甲乙丙丁戊己庚辛壬") + "</w:tr></w:tbl>" +
+        '<w:sectPr><w:pgSz w:w="10000" w:h="12000"/>' +
+        '<w:pgMar w:top="1000" w:right="1000" w:bottom="1000" w:left="1000"/></w:sectPr>'),
+    });
+    const files = importDocx(docx, { documentId: "word-table-wrap-" + mode });
+    await mount(page, files, "preview");
+    const first = await bandTextBounds(page, "甲"),
+      seventh = await bandTextBounds(page, "庚"),
+      eighth = await bandTextBounds(page, "辛"),
+      geometry = await page.frameLocator("iframe").locator("table").evaluate((table) => {
+        const bounds = table.getBoundingClientRect();
+        const body = table.parentElement!.getBoundingClientRect();
+        return { width: bounds.width * 0.75, centerOffset: (bounds.left + bounds.right - body.left - body.right) / 2 };
+      });
+    expect(eighth.y).toBeGreaterThan(first.y + 10);
+    expect(geometry.centerOffset).toBeCloseTo(0, 1);
+    if (mode === 14) {
+      expect(seventh.y).toBeCloseTo(first.y);
+      expect(geometry.width).toBeGreaterThan(410.5);
+      expect(geometry.width).toBeLessThan(412);
+    } else {
+      expect(seventh.y).toBeGreaterThan(first.y + 10);
+      expect(geometry.width).toBeCloseTo(400, 0);
+    }
+  }
+});
+test("legacy AutoFit shares spare width with automatic cells and keeps the saved grid editable", async ({
+  page,
+}) => {
+  const grid = [640, 2840, 2200];
+  const cell = (width: number, text: string, automatic: boolean): string =>
+    '<w:tc><w:tcPr><w:tcW w:type="' + (automatic ? "auto" : "dxa") + '" w:w="' +
+    (automatic ? 0 : width) + '"/></w:tcPr><w:p><w:r><w:rPr><w:sz w:val="24"/></w:rPr>' +
+    '<w:t>' + text + "</w:t></w:r></w:p></w:tc>";
+  const row = (text: readonly string[], automatic = false): string =>
+    "<w:tr>" + grid.map((width, index) => cell(width, text[index]!, automatic)).join("") + "</w:tr>";
+  const table = (automatic: boolean): string =>
+    '<w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0"/><w:jc w:val="center"/>' +
+    '<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>' +
+    "</w:tblPr><w:tblGrid>" + grid.map((width) => '<w:gridCol w:w="' + width + '"/>').join("") +
+    "</w:tblGrid>" + row(["编号", "说明", "验收"]) +
+    row(["甲", "甲乙丙丁戊己庚辛壬癸甲乙丙丁戊己庚辛壬癸甲乙", "确认事项"], automatic) + "</w:tbl>";
+  const native = mutateDocx("01-text-numbering.docx", {
+    "word/settings.xml": (source) => source.replace(
+      "</w:settings>",
+      '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat></w:settings>',
+    ),
+    "word/document.xml": (source) => nativeBody(
+      source,
+      table(false) + "<w:p/>" + table(true) +
+        '<w:sectPr><w:pgSz w:w="7600" w:h="9800"/><w:pgMar w:top="960" w:right="960" w:bottom="960" w:left="960"/></w:sectPr>',
+    ),
+  });
+  const files = importDocx(native, { documentId: "word-autofit-mixed" }),
+    model = openWordDocument(files, { kind: "document" });
+  for (const table of model.snapshot().metadata.word!.tables)
+    expect(table.grid).toEqual(grid.map((width) => width / 20));
+  await mount(page, files);
+  const widths = await page.frameLocator("iframe").locator("article table").evaluateAll(
+    (tables) => tables.map((table) =>
+      [...(table as HTMLTableElement).rows[0]!.cells].map((cell) =>
+        cell.getBoundingClientRect().width * 0.75,
+      ),
+    ),
+  );
+  const [preferred, automatic] = widths.map((entry) => entry.map(Math.round));
+  expect(preferred).toEqual([32, 142, 110]);
+  expect(automatic![1]).toBeGreaterThan(170);
+  expect(automatic![2]).toBeLessThan(85);
+  expect(widths[1]!.reduce((total, width) => total + width, 0)).toBeCloseTo(284, 0);
+});
 function columnFiles(table = false): DocumentPackage {
   const session = createDocumentSession(
     openWordDocument(
@@ -2445,6 +2536,109 @@ test("footnotes reserve page space, display editable auxiliary stories and retai
   );
   expect(result.snapshot.html).not.toMatch(/sdk-page-notes|sdk-word-notes|contenteditable/);
   expect(result.errors).toEqual([]);
+});
+test("exact mixed-font lines and blank repeated story lines retain their physical height", async ({
+  page,
+}) => {
+  const documentId = "word-exact-story-layout",
+    session = createDocumentSession(
+      openWordDocument(
+        createWordDocument({
+          documentId,
+          pageSetup: {
+            unit: "pt",
+            width: 300,
+            height: 240,
+            margins: { top: 48, right: 24, bottom: 48, left: 24 },
+          },
+        }),
+        { kind: "document" },
+      ),
+    ),
+    storyLine = ' style="--word-line-rule:exact;line-height:12pt;font-size:10pt;margin:0"';
+  session.commit(session.prepare({
+    protocolVersion: 1,
+    documentId,
+    baseRevision: 0,
+    operations: [
+      {
+        op: "replaceFragment",
+        nodeId: "section-root-1",
+        html:
+          '<p class="exact-lines" style="--word-line-rule:exact;line-height:22pt;margin:0">' +
+          '<span style="font-size:18pt;font-family:sans-serif">EXACT-ONE</span> small<br>' +
+          '<span style="font-size:18pt;font-family:sans-serif">EXACT-TWO</span> small</p>' +
+          '<p style="break-before:page">SECOND PAGE</p>',
+      },
+      {
+        op: "setWordSection",
+        nodeId: "section-root-1",
+        changes: { headerDistance: 12, footerDistance: 12 },
+      },
+      {
+        op: "insertWordStory",
+        nodeId: "section-root-1",
+        kind: "header",
+        variant: "default",
+        html: "<p" + storyLine + "></p><p" + storyLine + ">HEADER</p>",
+      },
+      {
+        op: "insertWordStory",
+        nodeId: "section-root-1",
+        kind: "footer",
+        variant: "default",
+        html: "<p" + storyLine + ">FOOTER</p><p" + storyLine + "></p>",
+      },
+    ],
+  }));
+  await mount(page, session.serialize());
+  const frame = page.frameLocator("iframe"),
+    first = await bandTextBounds(page, "EXACT-ONE"),
+    second = await bandTextBounds(page, "EXACT-TWO");
+  expect(second.y - first.y).toBeCloseTo((22 * 4) / 3, 1);
+  expect(
+    await frame.locator(".exact-lines").evaluate((p) => p.getBoundingClientRect().height * 0.75),
+  ).toBeCloseTo(44, 1);
+  const stories = await frame.locator(".sdk-paper").evaluateAll((papers) =>
+    papers.map((paper) =>
+      [...paper.querySelectorAll(".sdk-page-story p")].map((p) => {
+        const rect = p.getBoundingClientRect();
+        return [(rect.top - paper.getBoundingClientRect().top) * 0.75, rect.height * 0.75];
+      }),
+    ),
+  );
+  expect(stories).toEqual(Array.from({ length: 2 }, () => [[12, 12], [24, 12], [204, 12], [216, 12]]));
+});
+test("a fixed line box moves to the next page even when its raised glyphs fit", async ({ page }) => {
+  const documentId = "word-exact-line-fit",
+    session = createDocumentSession(openWordDocument(createWordDocument({
+      documentId,
+      pageSetup: {
+        unit: "pt",
+        width: 300,
+        height: 151,
+        margins: { top: 48, right: 24, bottom: 48, left: 24 },
+      },
+    }), { kind: "document" }));
+  session.commit(session.prepare({
+    protocolVersion: 1,
+    documentId,
+    baseRevision: 0,
+    operations: [{
+      op: "replaceFragment",
+      nodeId: "section-root-1",
+      html: '<p style="--word-line-rule:exact;line-height:29pt;font-size:12pt;widows:1;orphans:1">' +
+        'FIRST<br><span style="vertical-align:super;font-size:8pt">SECOND</span></p>',
+    }],
+  }));
+  await mount(page, session.serialize());
+  const paper = page.frameLocator("iframe").locator(".sdk-paper");
+  await expect(paper).toHaveCount(2);
+  const first = await bandTextBounds(page, "FIRST"),
+    second = await bandTextBounds(page, "SECOND");
+  expect(first.y).toBeLessThan((await paper.nth(0).boundingBox())!.y + 100);
+  expect(second.y).toBeGreaterThan((await paper.nth(1).boundingBox())!.y);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
 test("footnote-only continuation pages share native page labels, header fields and physical paper surfaces", async ({
   page,
@@ -4383,22 +4577,293 @@ test("long table rows fragment while continued pages reserve repeated-header spa
         ),
         walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
       let item;
-      const bad: string[] = [];
+      const bad: { text: string; lineTop: number; headerBottom: number }[] = [];
       while ((item = walker.nextNode())) {
         if (!item.textContent) continue;
         const range = document.createRange();
         range.selectNodeContents(item);
-        for (const rect of range.getClientRects())
-          if (
-            headerRects.some(
-              (header) => rect.top < header.bottom - 0.5 && rect.bottom > header.top + 0.5,
-            )
-          )
-            bad.push(item.textContent);
+        for (const rect of range.getClientRects()) {
+          const overlap = headerRects.find(
+            (header) => rect.top < header.bottom - 0.5 && rect.bottom > header.top + 0.5,
+          );
+          if (overlap)
+            bad.push({ text: item.textContent, lineTop: rect.top, headerBottom: overlap.bottom });
+        }
       }
       return bad;
     });
   expect(overlaps).toEqual([]);
+});
+test("a breakable table row uses the remaining page and keeps source cell alignment editable", async ({
+  page,
+}) => {
+  const lines = Array.from({ length: 5 }, (_, index) => "SPLIT-" + index).join("<br>");
+  await mount(
+    page,
+    pagedFiles(
+      '<p data-node-id="lead" style="height:120pt">Lead</p>' +
+        '<table data-node-id="split-table" style="border:1pt solid black;border-bottom:2pt dashed #112233">' +
+        '<tr data-node-id="first-row"><td data-node-id="first-cell" colspan="2">First</td></tr>' +
+        '<tr data-node-id="split-row" style="break-inside:auto">' +
+        '<td data-node-id="center-cell" style="vertical-align:middle"><p data-node-id="center">CENTER</p></td>' +
+        '<td data-node-id="lines-cell" style="vertical-align:middle"><p data-node-id="lines">' +
+        lines +
+        "</p></td></tr></table>",
+    ),
+    "edit",
+  );
+  const frame = page.frameLocator("iframe");
+  const first = await bandTextBounds(page, "SPLIT-0"),
+    second = await bandTextBounds(page, "SPLIT-1"),
+    last = await bandTextBounds(page, "SPLIT-4"),
+    center = await bandTextBounds(page, "CENTER");
+  expect(second.y - first.y).toBeLessThan(24);
+  expect(last.y - first.y).toBeGreaterThan(140);
+  expect(center.y - first.y).toBeLessThan(60);
+  const report = await page.evaluate(() => window.paginationHost.layout());
+  expect(report.pages).toHaveLength(2);
+  await expect(frame.locator("tr.sdk-page-gap")).toHaveCount(0);
+  const edges = await frame.locator('[data-node-id="split-table"]').evaluate((table) => {
+    const flow = table.closest(".sdk-page-flow")!,
+      start = flow.getBoundingClientRect().top,
+      bounds = table.getBoundingClientRect();
+    return [...flow.querySelectorAll<HTMLElement>(".sdk-table-fragment-edge")].map((edge) => {
+      const rect = edge.getBoundingClientRect(), css = getComputedStyle(edge);
+      return {
+        side: edge.dataset.sdkTableEdge,
+        top: rect.top - start,
+        bottom: rect.bottom - start,
+        leftOffset: rect.left - bounds.left,
+        widthDifference: rect.width - bounds.width,
+        borderStyle: css.borderTopStyle,
+        borderColor: css.borderTopColor,
+      };
+    });
+  });
+  expect(edges).toHaveLength(2);
+  const [bottom, top] = edges;
+  expect(bottom).toMatchObject({ side: "bottom", borderStyle: "dashed", borderColor: "rgb(17, 34, 51)" });
+  expect(top).toMatchObject({ side: "top", borderStyle: "solid", borderColor: "rgb(0, 0, 0)" });
+  const [firstPage, secondPage] = report.pages;
+  expect(bottom!.bottom).toBeCloseTo(
+    ((firstPage!.setup.height - firstPage!.setup.margins.top - firstPage!.setup.margins.bottom) * 4) / 3,
+  );
+  expect(top!.top).toBeCloseTo(((secondPage!.rect.y - firstPage!.rect.y) * 4) / 3);
+  for (const edge of edges) {
+    expect(edge.leftOffset).toBeCloseTo(0, 1);
+    expect(edge.widthDifference).toBeCloseTo(0, 1);
+  }
+  await atStart(page, "lines");
+  await page.keyboard.insertText("X");
+  const edited = await page.evaluate(() => ({
+    html: window.paginationHost.session!.snapshot().html,
+    errors: window.paginationHost.errors,
+  }));
+  expect(edited.html).toContain("XSPLIT-0");
+  expect(edited.html).toContain("vertical-align:middle");
+  expect(edited.html).not.toMatch(/sdk-page-gap|sdk-table-fragment-edge|padding-top|flow-root/);
+  expect(edited.errors).toEqual([]);
+  const entries = await page.evaluate(() =>
+    [...window.paginationHost.session!.serialize()].map(
+      ([path, bytes]) => [path, [...bytes]] as [string, number[]],
+    ),
+  );
+  await page.evaluate((files) => window.paginationHost.mount(files, "preview"), entries);
+  const printEdges = await page.evaluate(() => {
+    const output = (
+      window.paginationHost.view as import("@doffi/editor").DocumentPreview
+    ).printDocument();
+    return [...output.querySelectorAll(".sdk-print-page")].map(
+      (page) => page.querySelectorAll(".sdk-table-fragment-edge").length,
+    );
+  });
+  expect(printEdges).toEqual([2, 2]);
+});
+test("Word rows that allow breaks can leave a single cell line on the next page", async ({
+  page,
+}) => {
+  for (const keepRow of [false, true]) {
+    const native = mutateDocx("01-text-numbering.docx", {
+      "word/document.xml": (source) => nativeBody(
+        source,
+        '<w:p><w:pPr><w:spacing w:line="2400" w:lineRule="exact"/></w:pPr><w:r><w:t>LEAD</w:t></w:r></w:p>' +
+          '<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+          '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr>' +
+          (keepRow ? "<w:trPr><w:cantSplit/></w:trPr>" : "") +
+          '<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>' +
+          '<w:p><w:pPr><w:keepLines/><w:widowControl/><w:spacing w:line="440" w:lineRule="exact"/></w:pPr>' +
+          '<w:r><w:t>ROW-A</w:t><w:br/><w:t>ROW-B</w:t><w:br/><w:t>ROW-C</w:t><w:br/><w:t>ROW-D</w:t></w:r>' +
+          '</w:p></w:tc></w:tr></w:tbl><w:sectPr><w:pgSz w:w="6000" w:h="4800"/>' +
+          '<w:pgMar w:top="480" w:right="480" w:bottom="480" w:left="480"/></w:sectPr>',
+      ),
+    });
+    await mount(page, importDocx(native, { documentId: "word-table-widow-" + keepRow }));
+    const paper = page.frameLocator("iframe").locator(".sdk-paper");
+    await expect(paper).toHaveCount(2);
+    await expect.poll(() => paper.nth(1).evaluate((p) => p.getBoundingClientRect().top))
+      .toBeGreaterThan(0);
+    const next = await paper.nth(1).evaluate((p) => p.getBoundingClientRect().top);
+    const third = await bandTextBounds(page, "ROW-C"),
+      last = await bandTextBounds(page, "ROW-D");
+    expect(last.y).toBeGreaterThan(next);
+    if (keepRow) expect(third.y).toBeGreaterThan(next);
+    else expect(third.y).toBeLessThan(next);
+  }
+});
+test("a thin collapsed border keeps the fitting Word row on the preceding page", async ({ page }) => {
+  const paragraph = (lines: string[], lineHeight = 320): string =>
+    '<w:p><w:pPr><w:spacing w:line="' + lineHeight + '" w:lineRule="exact"/></w:pPr>' +
+    '<w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="24"/></w:rPr>' +
+    lines.map((text) => '<w:t>' + text + '</w:t>').join('<w:br/>') + '</w:r></w:p>';
+  const rows = [1, 1, 2, 4, 3, 2].map((count, row) =>
+    '<w:tr>' + (row === 0 ? '<w:trPr><w:tblHeader/></w:trPr>' :
+      row === 4 ? '<w:trPr><w:cantSplit/></w:trPr>' : '') +
+    '<w:tc><w:tcPr><w:tcW w:w="5320" w:type="dxa"/></w:tcPr>' +
+    paragraph(Array.from({ length: count }, (_, index) => 'ROW-' + row + '-LINE-' + index)) +
+    '</w:tc></w:tr>',
+  ).join('');
+  const borders = ["top", "left", "bottom", "right", "insideH", "insideV"].map(
+    (side) => '<w:' + side + ' w:val="single" w:sz="4" w:color="000000"/>',
+  ).join('');
+  const native = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => nativeBody(source,
+      paragraph(["TABLE START"], 500) +
+      '<w:tbl><w:tblPr><w:tblW w:w="5320" w:type="dxa"/><w:jc w:val="center"/>' +
+      '<w:tblBorders>' + borders + '</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="5320"/></w:tblGrid>' + rows + '</w:tbl>' +
+      '<w:sectPr><w:pgSz w:w="6800" w:h="6400"/>' +
+      '<w:pgMar w:top="800" w:right="640" w:bottom="800" w:left="640"/></w:sectPr>',
+    ),
+  });
+  await mount(page, importDocx(native, { documentId: "thin-collapsed-fragment-border" }));
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator(".sdk-repeat-header")).toHaveCount(1);
+  const gap = frame.locator("tr.sdk-page-gap");
+  await expect(gap).toHaveCount(1);
+  expect(await gap.evaluate((row) => [
+    row.previousElementSibling?.textContent,
+    row.nextElementSibling?.textContent,
+  ])).toEqual(["ROW-4-LINE-0ROW-4-LINE-1ROW-4-LINE-2", "ROW-5-LINE-0ROW-5-LINE-1"]);
+  await expect(frame.locator('.sdk-table-fragment-edge[data-sdk-table-edge="bottom"]'))
+    .toHaveCount(1);
+});
+test("an intact continued row leaves the area after the preceding table fragment unpainted", async ({
+  page,
+}) => {
+  await mount(
+    page,
+    pagedFiles(
+      '<p data-node-id="lead" style="height:128pt">Lead</p>' +
+        '<table data-node-id="solid-table" style="border:2pt solid black;background-color:#ffeeaa">' +
+        '<tr data-node-id="first-row"><td data-node-id="first-cell">First</td></tr>' +
+        '<tr data-node-id="kept-row"><td data-node-id="kept-cell">NEXT-0<br>NEXT-1<br>NEXT-2<br>NEXT-3<br>NEXT-4</td></tr></table>',
+    ),
+  );
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator("tr.sdk-page-gap")).toHaveCount(1);
+  const hit = await frame.locator("tr.sdk-page-gap td").evaluate((cell) => {
+    const gap = cell.getBoundingClientRect(),
+      x = gap.left + 5,
+      y = gap.top + 12;
+    return document.elementsFromPoint(x, y).some((element) => element.closest("table"));
+  });
+  expect(hit).toBe(false);
+  const secondPageTop = await frame.locator(".sdk-paper").nth(1).evaluate(
+    (paper) => paper.getBoundingClientRect().top,
+  );
+  expect((await bandTextBounds(page, "NEXT-0")).y).toBeGreaterThanOrEqual(secondPageTop + 31);
+});
+test("an overwide centered Word table closes the first fragment of a vertical merge", async ({ page }) => {
+  const rows = [0, 1, 2].map((row) =>
+    '<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="1400" w:hRule="atLeast"/></w:trPr>' +
+    '<w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/>' +
+    (row === 0 ? '<w:vMerge w:val="restart"/>' : '<w:vMerge/>') +
+    '<w:vAlign w:val="center"/></w:tcPr>' +
+    (row === 0 ? '<w:p><w:r><w:t>MERGED</w:t></w:r></w:p>' : '<w:p/>') +
+    '</w:tc><w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/></w:tcPr>' +
+    '<w:p><w:r><w:t>ROW' + (row + 1) + '</w:t></w:r></w:p></w:tc></w:tr>',
+  ).join("");
+  const native = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => nativeBody(source,
+      '<w:tbl><w:tblPr><w:tblW w:w="3600" w:type="dxa"/><w:jc w:val="center"/>' +
+      '<w:tblBorders><w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/></w:tblBorders>' +
+      '<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1800"/><w:gridCol w:w="1800"/></w:tblGrid>' +
+      rows + '</w:tbl><w:sectPr><w:pgSz w:w="4400" w:h="4280"/>' +
+      '<w:pgMar w:top="640" w:right="640" w:bottom="640" w:left="640"/></w:sectPr>',
+    ),
+  });
+  await mount(page, importDocx(native, { documentId: "wide-merged-table", unsupportedContent: "reject" }), "edit");
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator(".sdk-paper")).toHaveCount(2);
+  await expect(frame.locator('.sdk-table-fragment-edge[data-sdk-table-edge="bottom"]')).toHaveCount(1);
+  const geometry = await frame.locator("table").evaluate((table) => {
+    const paper = document.querySelector(".sdk-paper")!.getBoundingClientRect(),
+      box = table.getBoundingClientRect(),
+      row = table.querySelector("tr")!.getBoundingClientRect(),
+      gap = table.querySelector(".sdk-page-gap")!.getBoundingClientRect(),
+      paragraph = table.querySelector("td > div > p")!,
+      merge = paragraph.getBoundingClientRect(),
+      css = getComputedStyle(paragraph);
+    return {
+      centered: Math.abs((paper.left + paper.right - box.left - box.right) / 2),
+      aligned: Math.abs((row.top + gap.top -
+        (merge.top - parseFloat(css.marginTop)) - (merge.bottom + parseFloat(css.marginBottom))) / 2),
+      clipped: getComputedStyle(table).clipPath !== "none",
+    };
+  });
+  expect(geometry.centered).toBeLessThan(1);
+  expect(geometry.aligned).toBeLessThan(2);
+  expect(geometry.clipped).toBe(true);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html))
+    .toContain('rowspan="3"');
+});
+test("floating Word footer text boxes display and center each physical page field", async ({ page }) => {
+  const native = mutateDocx("04-styles-sections.docx", {
+    "word/footer1.xml": () => String.raw`<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+      xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+      xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"
+      xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+      xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wp14">
+      <w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
+        <wp:anchor simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1" wp14:anchorId="1234ABCD" wp14:editId="1234ABCE">
+          <wp:simplePos x="0" y="0"/>
+          <wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>
+          <wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>
+          <wp:extent cx="1828800" cy="1828800"/><wp:wrapNone/><wp:docPr id="1" name="Footer label"/>
+          <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+            <wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>
+              <wps:style><a:lnRef idx="0"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="dk1"/></a:fontRef></wps:style>
+              <wps:txbx><w:txbxContent><w:p><w:fldSimple w:instr="PAGE \* MERGEFORMAT"><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p></w:txbxContent></wps:txbx>
+              <wps:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" compatLnSpc="1"><a:spAutoFit/></wps:bodyPr>
+            </wps:wsp>
+          </a:graphicData></a:graphic>
+        </wp:anchor>
+      </w:drawing></mc:Choice><mc:Fallback/></mc:AlternateContent></w:r></w:p>
+    </w:ftr>`,
+  });
+  const files = importDocx(native, { documentId: "boxed-page-field", unsupportedContent: "reject" }),
+    exported = exportDocx(openWordDocument(files, { kind: "document" })).bytes,
+    reopened = openWordDocument(
+      importDocx(exported, { documentId: "boxed-page-field-reopened", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+  expect(reopened.snapshot().metadata.word?.drawings?.[0]).toMatchObject({
+    kind: "textBox",
+    text: { autoFit: "shape", wrap: false },
+  });
+  expect(reopened.snapshot().metadata.word?.fields.some((field) => /\bPAGE\b/.test(field.instruction)))
+    .toBe(true);
+  await mount(page, files);
+  const frame = page.frameLocator("iframe");
+  const fields = frame.locator(".sdk-page-story-paint .sdk-field-display");
+  await expect(fields).toHaveText(["1", "2"]);
+  const offsets = await fields.evaluateAll((nodes) => nodes.map((node) => {
+    const page = node.closest(".sdk-paper")!.getBoundingClientRect(),
+      text = node.getBoundingClientRect();
+    return Math.abs((page.left + page.right - text.left - text.right) / 2);
+  }));
+  expect(offsets.every((offset) => offset < 1)).toBe(true);
 });
 test("mixed container inline text remains visible and authored copy excludes page furniture", async ({
   page,
@@ -5343,62 +5808,140 @@ test("tracked table rows display both review states and reject with the shared g
   expect(html).not.toContain("data-sdk-word-inserted");
 });
 
-test("page margin rulers drag and use keyboard increments through section transactions and undo", async ({
+test("style-linked list levels keep their labels, inherited size and tab positions in both views", async ({
   page,
 }) => {
-  await mount(page, createWordDocument({ documentId: "margin-rulers" }), "edit");
-  await page.frameLocator("iframe").locator('[data-node-id="paragraph-1"]').click();
-  await page.evaluate(() =>
-    (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).setRulers(true),
-  );
-  const left = page.getByRole("slider", { name: "页面左边距", exact: true });
-  await expect(left).toBeVisible();
-  await left.focus();
-  await left.press("ArrowRight");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          window.paginationHost.session!.snapshot().metadata.sections![0]!.pageSetup!.margins.left,
+  const files = importDocx(styleNumberingFixture(), {
+    documentId: "heading-numbering",
+    unsupportedContent: "reject",
+  });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    const headings = page.frameLocator("iframe").locator(".sdk-page-flow :is(h1,h2,h3)"),
+      details = await headings.evaluateAll((nodes) => nodes.map((heading) => {
+        const marker = heading.querySelector<HTMLElement>(".sdk-number-marker"),
+          doc = heading.ownerDocument,
+          range = doc.createRange(),
+          text = doc.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+        let leaf = text.nextNode();
+        while (leaf?.parentElement?.closest(".sdk-number-marker,.sdk-page-gap"))
+          leaf = text.nextNode();
+        range.selectNodeContents(leaf!);
+        const firstPage = doc.querySelector(".sdk-paper")!.getBoundingClientRect(),
+          glyph = range.getBoundingClientRect(),
+          css = getComputedStyle(heading);
+        return {
+          label: marker?.dataset.sdkNumberText ?? marker?.textContent ?? "",
+          markerX: marker ? (marker.getBoundingClientRect().left - firstPage.left) * 0.75 : null,
+          textX: (glyph.left - firstPage.left) * 0.75,
+          size: Number.parseFloat(css.fontSize) * 0.75,
+          weight: css.fontWeight,
+        };
+      }));
+    expect(details.map(({ label }) => label)).toEqual(
+      ["1", "1.1", "1.1.1", "1.1.2", "", "1.2", "1.2.1", "2", "2.1"],
+    );
+    expect(details.slice(0, 3).map(({ size }) => Math.round(size))).toEqual([14, 15, 15]);
+    expect(details.every(({ weight }) => weight === "700")).toBe(true);
+    for (const [index, distance] of [24, 30, 60].entries()) {
+      const item = details[index]!;
+      expect(item.textX - item.markerX!).toBeCloseTo(distance, 0);
+    }
+  }
+});
+
+test("right tab leaders use the formatted text and current field width in both Word views", async ({
+  page,
+}) => {
+  const text = (value: string, size: number, font = "Times New Roman") =>
+    '<w:r><w:rPr><w:rFonts w:ascii="' + font + '" w:hAnsi="' + font + '"/>' +
+    '<w:sz w:val="' + size + '"/></w:rPr><w:t>' + value + "</w:t></w:r>";
+  const row = (suffix: string, indent: number) =>
+    '<w:p><w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="4560"/></w:tabs>' +
+    '<w:ind w:left="' + indent + '"/></w:pPr>' +
+    text("Entry", 24) + '<w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:tab/></w:r>' +
+    suffix + "</w:p>";
+  const bytes = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) =>
+      nativeBody(
+        source,
+        row(text("9", 28), 0) +
+        row(text("12", 28), 480) +
+        row(text("1", 28, "Courier New") + text("23", 32), 360) +
+        row('<w:fldSimple w:instr="PAGE">' + text("1", 28) + "</w:fldSimple>", 0) +
+        '<w:sectPr><w:pgSz w:w="6000" w:h="8000"/><w:pgMar w:left="720" w:right="720" ' +
+        'w:top="720" w:bottom="720"/><w:pgNumType w:start="123"/></w:sectPr>',
       ),
-    )
-    .toBe(73);
-  const box = (await left.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + 8, box.y + box.height / 2);
-  await page.mouse.up();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          window.paginationHost.session!.snapshot().metadata.sections![0]!.pageSetup!.margins.left,
+  });
+  const files = importDocx(bytes, { documentId: "right-tab-text-width", unsupportedContent: "reject" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    const rows = page.frameLocator("iframe").locator(".sdk-page-flow p").filter({ hasText: "Entry" });
+    await expect(rows).toHaveCount(4);
+    await expect(rows.last().locator(".sdk-field-display")).toHaveText("123");
+    const measured = await rows.evaluateAll((paragraphs) =>
+      paragraphs.map((p) => {
+        const tab = p.querySelector("[data-word-tab]")!,
+          field = p.querySelector(".sdk-field-display"),
+          range = document.createRange();
+        if (field) range.selectNodeContents(field);
+        else {
+          range.setStartAfter(tab);
+          range.setEnd(p, p.childNodes.length);
+        }
+        const suffix = range.getBoundingClientRect(),
+          leader = tab.getBoundingClientRect();
+        return {
+          text: range.toString(),
+          gap: p.getBoundingClientRect().right - suffix.right,
+          baseline: Math.abs(suffix.bottom - leader.bottom),
+          dots: tab.textContent!.startsWith("."),
+        };
+      }),
+    );
+    expect(measured.map(({ text }) => text)).toEqual(["9", "12", "123", "123"]);
+    for (const { gap, baseline, dots } of measured) {
+      expect(Math.abs(gap)).toBeLessThan(0.5);
+      expect(baseline).toBeLessThan(12);
+      expect(dots).toBe(true);
+    }
+  }
+});
+
+test("center and decimal tab stops align their own following runs", async ({ page }) => {
+  const bytes = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) =>
+      nativeBody(
+        source,
+        '<w:p><w:pPr><w:tabs><w:tab w:val="center" w:pos="1440"/>' +
+        '<w:tab w:val="decimal" w:pos="2880"/></w:tabs></w:pPr>' +
+        '<w:r><w:t>Item</w:t><w:tab/></w:r><w:r><w:rPr><w:sz w:val="30"/></w:rPr>' +
+        '<w:t>Wide</w:t></w:r><w:r><w:tab/><w:t>17</w:t></w:r>' +
+        '<w:r><w:rPr><w:b/></w:rPr><w:t>.25</w:t></w:r></w:p>',
       ),
-    )
-    .toBe(79);
-  await page.evaluate(() => window.paginationHost.session!.undo());
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          window.paginationHost.session!.snapshot().metadata.sections![0]!.pageSetup!.margins.left,
-      ),
-    )
-    .toBe(73);
-  const top = page.getByRole("slider", { name: "页面上边距", exact: true });
-  await top.focus();
-  await top.press("ArrowDown");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          window.paginationHost.session!.snapshot().metadata.sections![0]!.pageSetup!.margins.top,
-      ),
-    )
-    .toBe(73);
-  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).not.toContain(
-    "data-ruler-margin",
-  );
+  });
+  await mount(page, importDocx(bytes, { documentId: "aligned-tabs", unsupportedContent: "reject" }));
+  const paragraph = page.frameLocator("iframe").locator(".sdk-page-flow p").filter({ hasText: "Item" });
+  const [center, decimal] = await paragraph.evaluate((p) => {
+    const tab = [...p.querySelectorAll("[data-word-tab]")],
+      range = document.createRange(),
+      left = p.getBoundingClientRect().left;
+    range.setStartAfter(tab[0]!);
+    range.setEndBefore(tab[1]!);
+    const centered = range.getBoundingClientRect();
+    const walker = document.createTreeWalker(p, 4);
+    let point = NaN;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent!.startsWith(".25")) continue;
+      range.setStart(node, 0);
+      range.setEnd(node, 1);
+      point = range.getBoundingClientRect().left - left;
+      break;
+    }
+    return [(centered.left + centered.right) / 2 - left, point];
+  });
+  expect(center).toBeCloseTo(96, 0);
+  expect(decimal).toBeCloseTo(192, 0);
 });
 
 test("mirrored physical pages swap text, header and gutter margins independently of printed page labels", async ({
@@ -5489,27 +6032,6 @@ test("mirrored physical pages swap text, header and gutter margins independently
   expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).not.toContain(
     "sdk-column",
   );
-  await page.evaluate(() =>
-    (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).setRulers(true),
-  );
-  const left = page.getByRole("slider", { name: "页面左边距", exact: true });
-  await expect(left).toHaveAttribute("aria-valuenow", "80");
-  await left.focus();
-  await left.press("ArrowRight");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          window.paginationHost.session!.snapshot().metadata.sections![0]!.pageSetup!.margins.right,
-      ),
-    )
-    .toBe(81);
-  expect(
-    await page.evaluate(
-      () =>
-        window.paginationHost.session!.snapshot().metadata.sections![0]!.pageSetup!.margins.left,
-    ),
-  ).toBe(40);
 });
 
 test("font controls apply script roles, complex size and language in one tracked undoable source change", async ({

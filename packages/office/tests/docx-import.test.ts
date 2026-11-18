@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import type { WordDocumentMetadata } from "@doffi/core";
 import { DocumentError } from "@doffi/core";
-import { importDocx as importNativeDocx, readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { exportDocx, importDocx as importNativeDocx, readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { styleNumberingFixture } from "./style-numbering-fixture.js";
 // These historical rejection cases exercise the explicitly retained strict policy.
 const importDocx: typeof importNativeDocx = (bytes, options) =>
   importNativeDocx(bytes, { ...options, unsupportedContent: "reject" });
@@ -41,6 +42,24 @@ for (const item of cases) {
     expect(importDocx(input, { documentId: "import-test" })).toEqual(files);
   });
 }
+
+test("resolves inherited list instances, style-linked levels and direct numbering overrides", () => {
+  const read = (bytes: Uint8Array) => openDocument(importDocx(bytes, { documentId: "style-numbering" }));
+  const model = read(styleNumberingFixture());
+  for (const current of [model, read(exportDocx(model).bytes)]) {
+    const snapshot = current.snapshot(),
+      section = current.getNode(snapshot.metadata.sections![0]!.rootNodeId)!,
+      paragraphs = section.childNodeIds.map((id) => current.getNode(id)!);
+    expect(paragraphs.map(({ attributes }) => attributes["data-word-level"] ?? null)).toEqual(
+      ["0", "1", "2", "2", null, "1", "2", "0", "1"],
+    );
+    expect(paragraphs[4]!.attributes["data-word-numbering-off"]).toBe("true");
+    expect(paragraphs[0]!.attributes.style).toContain("text-indent:-24pt");
+    expect(paragraphs[1]!.attributes.style).toContain("text-indent:0pt");
+    expect(paragraphs[2]!.attributes.style).toContain("text-indent:0pt");
+    expect(snapshot.metadata.word!.tabs.every(({ defaultInterval }) => defaultInterval === 30)).toBe(true);
+  }
+});
 
 test("preserves style inheritance, direct overrides, sections and shared stories", () => {
   const snapshot = openDocument(

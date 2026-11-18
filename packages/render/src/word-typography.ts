@@ -80,6 +80,26 @@ export function composeWordTypography(
     const css = view.getComputedStyle(paragraph),
       de = css.getPropertyValue("--word-auto-space-de").trim() !== "0",
       dn = css.getPropertyValue("--word-auto-space-dn").trim() !== "0";
+    if (
+      (paragraph.dataset.wordLineRule ?? css.getPropertyValue("--word-line-rule").trim()) === "exact"
+    ) {
+      ownViewStyle(paragraph, "min-height");
+      paragraph.style.minHeight = "0";
+      // Inline boxes with different font metrics can add their ascent and
+      // descent to the paragraph's strut. Exact Word line spacing uses only
+      // the paragraph's fixed line box for ordinary text.
+      const runs = [
+        ...paragraph.querySelectorAll<HTMLElement>("span,a,b,strong,i,em,u,s,sub,sup,ins,del"),
+      ].filter(
+        (run) =>
+          !run.closest("[data-word-drawing],[data-word-native-object],[data-word-equation]") &&
+          view.getComputedStyle(run).display === "inline",
+      );
+      for (const run of runs) {
+        ownViewStyle(run, "line-height");
+        run.style.lineHeight = "0";
+      }
+    }
     ownViewStyle(paragraph, "text-autospace", "line-break", "word-break");
     paragraph.style.setProperty("text-autospace", "no-autospace");
     const kinsoku = css.getPropertyValue("--word-kinsoku").trim() !== "0",

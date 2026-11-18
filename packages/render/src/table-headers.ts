@@ -3,7 +3,7 @@ import { continuationHeader } from "./repeated-header.js";
 import { cloneViewTree } from "./view-clone.js";
 import { DocumentError } from "@doffi/core";
 import type { RenderedPage, RenderLimits } from "./contracts.js";
-import { markViewNode, viewNodeRole } from "./view-nodes.js";
+import { markViewNode, ownedViewStyle, viewNodeRole } from "./view-nodes.js";
 import type { PreviewSource } from "./source-index.js";
 
 export interface RepeatedHeaders {
@@ -50,6 +50,7 @@ export function repeatTableHeaders(
         );
         for (const page of containing.slice(1)) {
           const header = markViewNode(table.cloneNode(false) as HTMLTableElement);
+          if (ownedViewStyle(table, "clip-path")) header.style.removeProperty("clip-path");
           header.classList.add("sdk-repeat-header");
           header.contentEditable = "false";
           header.setAttribute("aria-hidden", "true");

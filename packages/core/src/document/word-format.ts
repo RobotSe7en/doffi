@@ -86,6 +86,8 @@ export function wordTextDefaults(
   for (const [key, value] of Object.entries({
     "--word-run-snap-to-grid": "1",
     "--word-run-shading": "transparent",
+    "--word-run-native-w": "100",
+    "--word-font-hint": "default",
   }))
     properties[key] = css[key] ?? value;
   properties["--word-font-size-cs"] = css["--word-font-size-cs"] ?? properties["font-size"]!;

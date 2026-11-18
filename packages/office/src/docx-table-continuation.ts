@@ -12,6 +12,18 @@ import { paragraphProperties, runProperties } from "./export/properties.js";
 import { empty, orderedProperties, value } from "./export/xml.js";
 import { nativeInteger } from "./export/values.js";
 
+const w14 = "http://schemas.microsoft.com/office/word/2010/wordml";
+const paragraphIdentities = new Set([
+  W + " rsidR", W + " rsidRPr", W + " rsidRDefault", W + " rsidP", W + " rsidDel",
+  w14 + " paraId", w14 + " textId",
+]);
+const runIdentities = new Set([W + " rsidR", W + " rsidRPr", W + " rsidDel"]);
+const hasUnmappedAttributes = (node?: XmlNode, identities?: ReadonlySet<string>): boolean =>
+  node !== undefined &&
+  [...node.attrs.keys()].some((key) =>
+    !key.startsWith("http://www.w3.org/2000/xmlns/ ") && !identities?.has(key),
+  );
+
 /** Preserve empty continuation formatting without inventing source text,
  * editable cells or a second native document tree. Nonempty content must still
  * use the normal compatibility recovery path. */
@@ -28,7 +40,9 @@ export function readWordEmptyContinuation(
     if (paragraph.uri !== W || paragraph.name !== "p")
       unsupported(paragraph, "A vertical merge continuation has independent content.");
     const properties = child(paragraph, "pPr");
-    if (paragraph.attrs.size || properties?.attrs.size)
+    // Save-session and text identities do not change the appearance or
+    // semantics of the empty merge continuation regenerated on export.
+    if (hasUnmappedAttributes(paragraph, paragraphIdentities) || hasUnmappedAttributes(properties))
       unsupported(paragraph, "An empty continuation paragraph has unmapped attributes.");
     for (const name of ["pPrChange", "sectPr"])
       if (child(properties, name))
@@ -88,7 +102,7 @@ export function readWordEmptyContinuation(
       if (source.uri !== W || source.name !== "r")
         unsupported(source, "A vertical merge continuation has independent content.");
       const runProperties = child(source, "rPr");
-      if (source.attrs.size || runProperties?.attrs.size)
+      if (hasUnmappedAttributes(source, runIdentities) || hasUnmappedAttributes(runProperties))
         unsupported(source, "An empty continuation run has unmapped attributes.");
       if (child(runProperties, "rPrChange"))
         unsupported(

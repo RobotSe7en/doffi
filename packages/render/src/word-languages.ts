@@ -2,6 +2,12 @@ import { DocumentError, wordScriptRole } from "@doffi/core";
 import type { ContentDocumentModel, WordScriptRole } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
 import { ownViewAttribute, markViewNode, viewNodeRole } from "./view-nodes.js";
+// General punctuation, symbols and ambiguous alphabetic blocks selected by
+// the East Asian hint in the Word run-font table (MS-OI29500 §2.1.88).
+const eastAsianHint =
+  /[\u00a1\u00a4\u00a7-\u00a8\u00aa\u00ad\u00af-\u00b4\u00b6-\u00ba\u00bc-\u00bf\u00d7\u00f7\u02b0-\u04ff\u2000-\u27bf\ue000-\uf8ff\ufb00-\ufb1c]/u;
+const chineseHint =
+  /[\u00e0-\u00e1\u00e8-\u00ea\u00ec-\u00ed\u00f2-\u00f3\u00f9-\u00fa\u00fc\u0100-\u02af\u1e00-\u1eff]/u;
 /** Font/language role wrappers belong to the view and retain exact source text. */
 export function composeWordLanguages(
   document: Document,
@@ -30,6 +36,15 @@ export function composeWordLanguages(
     const preserveWords =
       css.getPropertyValue("--word-kinsoku").trim() === "0" &&
       css.getPropertyValue("--word-word-wrap").trim() !== "0";
+    const hinted = css.getPropertyValue("--word-font-hint").trim() === "eastAsia",
+      eastAsianLanguage = css.getPropertyValue("--word-language-eastAsia").trim(),
+      chinese = /^["']?zh(?:[-"']|$)/i.test(eastAsianLanguage),
+      eastAsianFamily = css.getPropertyValue("--word-font-eastAsia").trim(),
+      // When both roles name the Chinese face, a substitute may expose
+      // separate proportional and full-width forms of the same punctuation.
+      sameChineseFamily =
+        chinese && eastAsianFamily !== "" &&
+        eastAsianFamily === css.getPropertyValue("--word-font-hAnsi").trim();
     if (
       !preserveWords &&
       !["ascii", "hAnsi", "eastAsia", "cs"].some((role) =>
@@ -41,6 +56,7 @@ export function composeWordLanguages(
     )
       continue;
     let role: WordScriptRole | undefined,
+      fullWidth = false,
       part = "";
     const fragment = document.createDocumentFragment();
     const append = (): void => {
@@ -54,6 +70,7 @@ export function composeWordLanguages(
       span.dataset.sdkWordScriptView = "";
       span.dataset.wordScript = role;
       span.style.fontFamily = "var(--word-font-" + role + ",var(--word-font-ascii,inherit))";
+      if (fullWidth) span.style.fontVariantEastAsian = "full-width";
       if (role === "cs") {
         const size = css.getPropertyValue("--word-font-size-cs").trim(),
           bold = css.getPropertyValue("--word-bold-cs").trim(),
@@ -68,10 +85,18 @@ export function composeWordLanguages(
       part = "";
     };
     for (const character of text.data) {
-      const next = wordScriptRole(character, role);
-      if (next !== role) {
+      const base = wordScriptRole(character, role),
+        useHint =
+          hinted && base === "hAnsi" &&
+          (eastAsianHint.test(character) || (chinese && chineseHint.test(character))),
+        next = useHint ? "eastAsia" : base,
+        width =
+          (useHint || (sameChineseFamily && base === "hAnsi")) &&
+          /[\u2000-\u206f]/u.test(character) && /\p{P}/u.test(character);
+      if (next !== role || width !== fullWidth) {
         append();
         role = next;
+        fullWidth = width;
       }
       part += character;
     }

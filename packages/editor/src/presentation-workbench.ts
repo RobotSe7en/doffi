@@ -29,7 +29,7 @@ export interface PresentationWorkbenchOptions extends PresentationEditorOptions 
     readonly proposalResources?: TransactionPrepareOptions;
     readonly onEvent?: (event: PresentationWorkbenchEvent) => void;
 }
-export interface PresentationWorkbenchView extends Omit<DocumentInteractionView, "setRulers" | "settled"> {
+export interface PresentationWorkbenchView extends Omit<DocumentInteractionView, "settled"> {
     readonly editor: PresentationEditorView;
     setReviewVisible(visible: boolean): void;
     request(): PresentationInteractionRequest | undefined;

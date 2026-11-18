@@ -15,6 +15,36 @@ import {
   readDocumentZip,
   writeDocumentZip,
 } from "@doffi/office";
+import { body, mutateDocx, styles } from "./regression-fixtures.js";
+
+test("run width and an East Asian font hint survive strict import and native reopen", () => {
+  const bytes = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) =>
+      body(source,
+        '<w:p><w:r><w:rPr><w:w w:val="66"/></w:rPr><w:t>缩放</w:t></w:r>' +
+        '<w:r><w:rPr><w:rFonts w:hint="default"/><w:w w:val="100"/></w:rPr><w:t>还原</w:t></w:r></w:p>',
+      ),
+    "word/styles.xml": () =>
+      styles('<w:style w:type="paragraph" w:styleId="Normal" w:default="1">' +
+        '<w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Courier New" w:eastAsia="SimSun" w:hint="eastAsia"/>' +
+        '<w:w w:val="125"/></w:rPr></w:style>'),
+  });
+  const read = (bytes: Uint8Array) =>
+    openDocument(importDocx(bytes, { documentId: "width-and-hint", unsupportedContent: "reject" }), {
+      kind: "document",
+    });
+  let model = read(bytes);
+  for (let pass = 0; pass < 2; pass++) {
+    const { html, styles } = model.snapshot();
+    expect(html).toMatch(/--word-run-native-w:\s*66/);
+    expect(html).toMatch(/--word-run-native-w:\s*100/);
+    expect(html).toMatch(/--word-font-hint:\s*default/);
+    expect(styles.some(({ css }) => /--word-run-native-w:\s*125/.test(css))).toBe(true);
+    expect(styles.some(({ css }) => /--word-font-hint:\s*eastAsia/.test(css))).toBe(true);
+    model = read(exportDocx(model).bytes);
+  }
+});
+
 const base = () =>
   unzipSync(
     new Uint8Array(
@@ -474,7 +504,7 @@ test("more than 1024 unsupported native content nodes are accepted within normal
   expect(model.snapshot().metadata.word!.nativeContent!.fragments).toHaveLength(1025);
 });
 
-test("track settings and unmodeled native compatibility flags survive repeated native export", () => {
+test("layout compatibility mode and unmodeled native settings survive repeated native export", () => {
   const session = createDocumentSession(
       openDocument(createWordDocument({ documentId: "settings-native" }), { kind: "document" }),
     ),
@@ -484,7 +514,10 @@ test("track settings and unmodeled native compatibility flags survive repeated n
       .replace(/<w:trackRevisions[^>]*\/>/, "")
       .replace(
         "</w:settings>",
-        '<w:trackRevisions/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>',
+        '<w:trackRevisions/><w:compat><w:noColumnBalance/>' +
+          '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/>' +
+          '<w:compatSetting w:name="doNotFlipMirrorIndents" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/>' +
+          '</w:compat></w:settings>',
       ),
   );
   let bytes: Uint8Array = zipSync(files);
@@ -494,11 +527,13 @@ test("track settings and unmodeled native compatibility flags survive repeated n
       { kind: "document" },
     );
     expect(model.snapshot().metadata.word!.trackChanges).toBe(true);
+    expect(model.snapshot().metadata.word!.compatibilityMode).toBe(14);
+    expect(model.snapshot().metadata.word!.noColumnBalance).toBe(true);
     bytes = exportDocx(model).bytes;
     const settings = strFromU8(unzipSync(bytes)["word/settings.xml"]!);
     expect(settings).toMatch(/:trackRevisions\b/);
-    expect(settings).toContain("compatibilityMode");
-    expect(settings).toContain("15");
+    expect(settings.match(/compatibilityMode/g)).toHaveLength(1);
+    expect(settings.match(/doNotFlipMirrorIndents/g)).toHaveLength(1);
   }
 });
 

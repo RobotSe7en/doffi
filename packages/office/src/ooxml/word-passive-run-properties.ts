@@ -13,5 +13,5 @@ export const passiveWordRunBooleans = [
   "cs",
   "specVanish",
 ] as const;
-export const passiveWordRunValues = ["w", "position", "em", "effect"] as const;
+export const passiveWordRunValues = ["position", "em", "effect"] as const;
 export const passiveWordRunCss = (name: string): string => "--word-run-native-" + name;

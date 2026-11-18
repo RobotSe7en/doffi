@@ -278,14 +278,7 @@ function mountContentWorkbench(
         }),
   });
   let edit: HTMLButtonElement | undefined,
-    zoom = 1,
-    rulerVisible = false;
-  function setRulers(visible: boolean): void {
-    ensureActive();
-    rulerVisible = visible;
-    interaction.setRulers(visible);
-    textEditor?.setRulers(visible);
-  }
+    zoom = 1;
   function setZoom(value: number): void {
     ensureActive();
     if (textEditor) textEditor.setZoom(value);
@@ -317,7 +310,6 @@ function mountContentWorkbench(
         onError: report,
       });
       textEditor.setZoom(zoom);
-      textEditor.setRulers(rulerVisible);
       editingHost.hidden = false;
       interactionHost.hidden = !workspace;
       element.dataset.editing = "true";
@@ -700,7 +692,6 @@ function mountContentWorkbench(
     layout: () => textEditor?.layout() ?? interaction.layout(),
     setMode: interaction.setMode,
     setZoom,
-    setRulers,
     focusAnnotation: interaction.focusAnnotation,
     startAnnotation: interaction.startAnnotation,
     request: () => activeRequest,

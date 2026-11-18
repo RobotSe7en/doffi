@@ -130,8 +130,6 @@ export interface OfficeRibbonProps {
   onCommand(id: string): void;
   formatState: TextFormatState;
   onTextCommand(command: DocumentTextCommand): void | Promise<void>;
-  rulers: boolean;
-  onRulers(visible: boolean): void;
   layout: "pages" | "continuous";
   onLayout(value: "pages" | "continuous"): void;
   zoom: number;
@@ -154,8 +152,6 @@ export function OfficeRibbon({
   onLayout,
   zoom,
   onZoom,
-  rulers,
-  onRulers,
 }: OfficeRibbonProps): ReactElement {
   const id = useId(),
     panelId = id + "-panel";
@@ -1277,15 +1273,6 @@ export function OfficeRibbon({
         </Group>
         <Group title="显示">
           <div className="ribbon-tool-stack">
-            <label>
-              <input
-                type="checkbox"
-                checked={kind === "document" && rulers}
-                disabled={kind !== "document" || busy}
-                onChange={(event) => onRulers(event.currentTarget.checked)}
-              />
-              标尺
-            </label>
             <label>
               <input type="checkbox" disabled />
               网格线

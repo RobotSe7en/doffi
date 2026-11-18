@@ -404,7 +404,7 @@ test('partial underline removal preserves surrounding text through history and n
   expect(await underlines(reopened)).toEqual(expected);
 });
 
-test('Word rulers track the paper and the left selection bar selects wrapped visual lines', async ({ page }) => {
+test('Word left margin selects wrapped visual lines in editing and preview', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto('/');
   await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click();
   const paragraph = page.frameLocator('iframe[title="正文编辑"]').locator('[data-node-id="n-summary"]');
@@ -415,14 +415,14 @@ test('Word rulers track the paper and the left selection bar selects wrapped vis
   for (const preview of [false, true]) {
     if (preview) await page.getByRole('button', { name: '返回预览与批注', exact: true }).click();
     const title = preview ? '文档只读预览' : '正文编辑', frame = page.frameLocator(`iframe[title="${title}"]`), paragraph = frame.locator('[data-node-id="n-summary"]');
-    const horizontal = page.getByRole('img', { name: '水平标尺（厘米）', exact: true }), vertical = page.getByRole('img', { name: '垂直标尺（厘米）', exact: true });
-    await expect(horizontal).toBeVisible(); await expect(vertical).toBeVisible();
+    await page.getByRole('tab', { name: '视图', exact: true }).click();
+    await expect(page.getByRole('checkbox', { name: '标尺', exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-doffi-ruler-rail], [data-doffi-ruler]')).toHaveCount(0);
+    if (!preview) await page.getByRole('tab', { name: '开始', exact: true }).click();
     for (const zoom of [1, 1.25]) {
       if (zoom > 1) await page.getByRole('button', { name: '放大', exact: true }).click();
       const frameBox = (await page.locator(`iframe[title="${title}"]`).boundingBox())!;
-      const localPaper = await frame.locator('.sdk-paper').first().evaluate(node => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width }; });
-      const paper = { x: frameBox.x + localPaper.x * zoom, width: localPaper.width * zoom }, ruler = await horizontal.evaluate(node => { const rect = node.getBoundingClientRect(); return { x: rect.x, width: rect.width }; });
-      expect(Math.abs(paper.x - ruler.x)).toBeLessThan(1); expect(Math.abs(paper.width - ruler.width)).toBeLessThan(1);
+      const paperX = frameBox.x + await frame.locator('.sdk-paper').first().evaluate(node => node.getBoundingClientRect().left) * zoom;
       const line = await paragraph.evaluate(root => {
         const all = document.createRange(); all.selectNodeContents(root); const rects = [...all.getClientRects()].filter(rect => rect.width && rect.height);
         const top = rects.map(rect => rect.top).filter((top, index, values) => values.findIndex(value => Math.abs(value - top) < 2) === index).sort((a, b) => a - b)[1]!;
@@ -433,28 +433,27 @@ test('Word rulers track the paper and the left selection bar selects wrapped vis
         const later = rects.find(rect => Math.abs(rect.top - laterTop) < 2)!;
         return { y, expected, laterY: (later.top + later.bottom) / 2 };
       });
-      await page.mouse.click(paper.x + 12 * zoom, frameBox.y + line.y * zoom);
+      await page.mouse.click(paperX + 12 * zoom, frameBox.y + line.y * zoom);
       expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(line.expected); expect(line.expected.length).toBeGreaterThan(5); expect(line.expected.length).toBeLessThan(text.length);
       await expect(page.locator('.office-app')).toHaveAttribute('data-revision', revision!);
       if (zoom === 1) {
-        await page.mouse.move(paper.x + 12, frameBox.y + line.y); await page.mouse.down(); await page.mouse.move(paper.x + 12, frameBox.y + line.laterY, { steps: 4 }); await page.mouse.up();
+        await page.mouse.move(paperX + 12, frameBox.y + line.y); await page.mouse.down(); await page.mouse.move(paperX + 12, frameBox.y + line.laterY, { steps: 4 }); await page.mouse.up();
         const selected = await paragraph.evaluate(() => document.getSelection()!.toString()); expect(selected).toContain(line.expected); expect(selected.length).toBeGreaterThan(line.expected.length); expect(selected.length).toBeLessThan(text.length);
       }
       if (!preview && zoom > 1) {
         await page.getByRole('button', { name: '加粗', exact: true }).click();
         expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(line.expected);
         await page.getByRole('button', { name: '撤销', exact: true }).click(); revision = await page.locator('.office-app').getAttribute('data-revision');
-        await page.mouse.dblclick(paper.x + 12 * zoom, frameBox.y + line.y * zoom); expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(text);
-        await page.mouse.click(paper.x + 12 * zoom, frameBox.y + line.y * zoom, { clickCount: 3 }); expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toContain('项目实施报告');
+        await page.mouse.dblclick(paperX + 12 * zoom, frameBox.y + line.y * zoom); expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(text);
+        await page.mouse.click(paperX + 12 * zoom, frameBox.y + line.y * zoom, { clickCount: 3 }); expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toContain('项目实施报告');
       }
       if (zoom > 1) await page.getByRole('button', { name: '缩小', exact: true }).click();
     }
   }
-  await page.getByRole('tab', { name: '视图', exact: true }).click(); await page.getByRole('checkbox', { name: '标尺', exact: true }).uncheck();
-  await expect(page.getByRole('img', { name: '水平标尺（厘米）', exact: true })).toBeHidden();
-  await page.getByRole('checkbox', { name: '标尺', exact: true }).check(); await expect(page.getByRole('img', { name: '水平标尺（厘米）', exact: true })).toBeVisible();
   await page.getByRole('tabpanel', { name: '视图', exact: true }).getByRole('button', { name: '连续视图', exact: true }).click();
-  await expect(page.getByRole('img', { name: '水平标尺（厘米）', exact: true })).toBeVisible(); await expect(page.getByRole('img', { name: '垂直标尺（厘米）', exact: true })).toBeHidden();
+  const continuous = page.frameLocator('iframe[title="文档只读预览"]');
+  await expect(continuous.locator('[data-node-id="n-summary"]')).toHaveText(text);
+  await expect(continuous.locator('.sdk-paper')).toHaveCount(0);
 });
 
 test('Office audit: native DOCX fonts change visible glyphs and survive export/reopen', async ({ page }, info) => {
@@ -502,15 +501,10 @@ test('Office audit: pending typing format follows its caret and Word keyboard co
   for (const [key, alignment] of [['e', 'center'], ['l', 'left'], ['r', 'right']]) { await page.keyboard.press('Control+' + key); await expect(paragraph).toHaveCSS('text-align', alignment!); }
 });
 
-test('Office audit: ruler rails stay outside the paper and selection cursor reverses only in the margin', async ({ page }) => {
+test('Office audit: selection cursor reverses only in the paper margin', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto('/'); await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click();
   const frame = page.frameLocator('iframe[title="正文编辑"]'), paragraph = frame.locator('[data-node-id="n-summary"]'); await expect(paragraph).toBeVisible();
-  const geometry = () => page.locator('iframe[title="正文编辑"]').evaluate(iframe => { const root = iframe.getRootNode() as ShadowRoot, stage = root.querySelector<HTMLElement>('.stage')!, h = root.querySelector<SVGSVGElement>('[data-doffi-ruler=horizontal]')!, v = root.querySelector<SVGSVGElement>('[data-doffi-ruler=vertical]')!, vr = v.parentElement!.getBoundingClientRect(), hr = h.parentElement!.getBoundingClientRect(), s = stage.getBoundingClientRect(), horizontal = h.getBoundingClientRect(); return { inside: stage.contains(h) || stage.contains(v), verticalX: vr.x, stageX: s.x, horizontalY: hr.y, stageY: s.y, horizontalX: horizontal.x }; });
-  const initial = await geometry(); expect(initial.inside).toBe(false); expect(initial.verticalX).toBeLessThan(initial.stageX); expect(initial.horizontalY).toBeLessThan(initial.stageY);
-  await page.getByRole('button', { name: '放大', exact: true }).click(); const before = await geometry();
-  await page.locator('.stage').filter({ visible: true }).evaluate(stage => { stage.scrollTop = 120; stage.scrollLeft += 50; });
-  await expect.poll(async () => (await geometry()).horizontalX).toBeCloseTo(before.horizontalX - 50, 0);
-  const after = await geometry(); expect(after.verticalX).toBe(before.verticalX); expect(after.horizontalY).toBe(before.horizontalY);
+  await page.getByRole('button', { name: '放大', exact: true }).click();
   const coords = await paragraph.evaluate(root => { const rect = root.getBoundingClientRect(), paper = document.querySelector('.sdk-paper')!.getBoundingClientRect(); return { y: rect.y + rect.height / 2, x: paper.left + 12, textX: rect.left + 20 }; });
   const box = (await page.locator('iframe[title="正文编辑"]').boundingBox())!;
   await page.mouse.move(box.x + coords.x * 1.25, box.y + coords.y * 1.25);

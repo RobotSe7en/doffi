@@ -3,6 +3,8 @@ import { sectionFlow } from "./section-flow.js";
 import { sameColumnGeometry } from "./column-regions.js";
 import { cloneViewTree } from "./view-clone.js";
 import { wordPunctuationLayout } from "./word-punctuation.js";
+import type { WordRunWidthLayout } from "./word-run-width.js";
+import type { WordTabLayout } from "./word-tabs.js";
 import { DocumentError } from "@doffi/core";
 import type {
   DeepReadonly,
@@ -92,6 +94,8 @@ export function paginate(
   metadata: DeepReadonly<ContentDocumentMetadata>,
   limits: Readonly<RenderLimits>,
   notes?: WordNoteLayout,
+  runWidths?: WordRunWidthLayout,
+  tabs?: WordTabLayout,
 ): Pagination {
   if (metadata.presentation !== undefined)
     throw new DocumentError(
@@ -408,9 +412,14 @@ export function paginate(
     source.clearInstances();
     repeated.clear();
     for (const group of groups) group.paginator.reset();
+    runWidths?.reset();
     punctuation.reset();
     for (const grid of grids) grid.measure();
-    for (const group of groups) punctuation.measure(group.flow);
+    for (const group of groups) {
+      punctuation.measure(group.flow);
+      runWidths?.measure(group.flow);
+      tabs?.measure(group.flow);
+    }
     let physical = 0;
     for (const group of groups) {
       group.startIndex = physical;
@@ -577,6 +586,8 @@ export function paginate(
           paper.append(story);
           story.style.zIndex = "1";
           punctuation.measure(story, false);
+          runWidths?.measure(story);
+          tabs?.measure(story);
           source.registerInstances(story);
           for (const object of [...story.querySelectorAll<HTMLElement>("[data-sdk-word-object]")]) {
             const definition = metadata.word?.drawings?.find(
