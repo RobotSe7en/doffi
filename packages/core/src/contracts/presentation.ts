@@ -1,32 +1,73 @@
 import { ChartAppearanceSchema } from "./chart.js";
 import { z } from "zod";
 import { IdentifierSchema } from "./primitives.js";
-import { DrawingPresetSchema, DrawingTextPropertiesSchema } from "./drawing.js";
+import {
+  DrawingPresetSchema,
+  DrawingTextPropertiesSchema,
+  DrawingGeometrySchema,
+} from "./drawing.js";
 
-export const PresentationSizeSchema = z.strictObject({ unit: z.literal("pt"), width: z.number().positive(), height: z.number().positive() });
-export type PresentationSize = z.infer<typeof PresentationSizeSchema>;
-export const PresentationGeometrySchema = z.strictObject({
-  x: z.number(), y: z.number(), width: z.number().min(0), height: z.number().min(0),
-  rotation: z.number(), flipH: z.boolean(), flipV: z.boolean(),
+export const PresentationSizeSchema = z.strictObject({
+  unit: z.literal("pt"),
+  width: z.number().positive(),
+  height: z.number().positive(),
 });
+export type PresentationSize = z.infer<typeof PresentationSizeSchema>;
+export const PresentationGeometrySchema = DrawingGeometrySchema;
 export type PresentationGeometry = z.infer<typeof PresentationGeometrySchema>;
 export const PresentationPresetSchema = DrawingPresetSchema;
 const placeholder = z.strictObject({
-  type: z.enum(["title", "body", "ctrTitle", "subTitle", "dt", "sldNum", "ftr", "hdr", "obj", "chart", "tbl", "clipArt", "dgm", "media", "sldImg", "pic"]),
+  type: z.enum([
+    "title",
+    "body",
+    "ctrTitle",
+    "subTitle",
+    "dt",
+    "sldNum",
+    "ftr",
+    "hdr",
+    "obj",
+    "chart",
+    "tbl",
+    "clipArt",
+    "dgm",
+    "media",
+    "sldImg",
+    "pic",
+  ]),
   index: z.number().int().min(0),
 });
 const objectBase = {
-  nodeId: IdentifierSchema, name: z.string().optional(), nativeId: IdentifierSchema.optional(), creationId: IdentifierSchema.optional(),
+  nodeId: IdentifierSchema,
+  name: z.string().optional(),
+  nativeId: IdentifierSchema.optional(),
+  creationId: IdentifierSchema.optional(),
   placeholder: placeholder.optional(),
 };
 const textProperties = DrawingTextPropertiesSchema;
 export const PresentationObjectSchema = z.discriminatedUnion("kind", [
   z.strictObject({ ...objectBase, kind: z.literal("text"), text: textProperties.optional() }),
   z.strictObject({ ...objectBase, kind: z.literal("image") }),
-  z.strictObject({ ...objectBase, kind: z.literal("geometry"), preset: PresentationPresetSchema, text: textProperties.optional() }),
-  z.strictObject({ ...objectBase, kind: z.literal("connector"), routing: z.enum(["straight", "elbow"]),
-    startNodeId: IdentifierSchema.optional(), endNodeId: IdentifierSchema.optional(), startSite: z.number().int().min(0).optional(), endSite: z.number().int().min(0).optional() }),
-  z.strictObject({ ...objectBase, kind: z.literal("table"), grid: z.array(z.number().positive()).min(1) }),
+  z.strictObject({
+    ...objectBase,
+    kind: z.literal("geometry"),
+    preset: PresentationPresetSchema,
+    text: textProperties.optional(),
+  }),
+  z.strictObject({
+    ...objectBase,
+    kind: z.literal("connector"),
+    routing: z.enum(["straight", "elbow"]),
+    startNodeId: IdentifierSchema.optional(),
+    endNodeId: IdentifierSchema.optional(),
+    startSite: z.number().int().min(0).optional(),
+    endSite: z.number().int().min(0).optional(),
+  }),
+  z.strictObject({
+    ...objectBase,
+    kind: z.literal("table"),
+    grid: z.array(z.number().positive()).min(1),
+  }),
   z.strictObject({ ...objectBase, kind: z.literal("chart"), chartId: IdentifierSchema }),
   z.strictObject({ ...objectBase, kind: z.literal("group") }),
 ]);
@@ -34,43 +75,131 @@ export type PresentationObject = z.infer<typeof PresentationObjectSchema>;
 export const PresentationDataSetSchema = z.strictObject({
   dataSetId: IdentifierSchema,
   categories: z.array(z.string()),
-  series: z.array(z.strictObject({ seriesId: IdentifierSchema, name: z.string(), values: z.array(z.union([z.number(), z.null()])) })).min(1),
+  series: z
+    .array(
+      z.strictObject({
+        seriesId: IdentifierSchema,
+        name: z.string(),
+        values: z.array(z.union([z.number(), z.null()])),
+      }),
+    )
+    .min(1),
 });
 export type PresentationDataSet = z.infer<typeof PresentationDataSetSchema>;
-export const PresentationChartSchema = ChartAppearanceSchema.extend({ chartId: IdentifierSchema, nodeId: IdentifierSchema, dataSetId: IdentifierSchema });
+export const PresentationChartSchema = ChartAppearanceSchema.extend({
+  chartId: IdentifierSchema,
+  nodeId: IdentifierSchema,
+  dataSetId: IdentifierSchema,
+});
 export type PresentationChart = z.infer<typeof PresentationChartSchema>;
 export const PresentationMetadataSchema = z.strictObject({
   size: PresentationSizeSchema,
   notesSize: PresentationSizeSchema.optional(),
   commentFormat: z.enum(["classic", "modern"]),
-  slides: z.array(z.strictObject({
-    slideId: IdentifierSchema, rootNodeId: IdentifierSchema, layoutId: IdentifierSchema,
-    name: z.string().optional(), hidden: z.boolean().optional(), showMasterShapes: z.boolean().optional(),
-  })).min(1),
+  slides: z
+    .array(
+      z.strictObject({
+        slideId: IdentifierSchema,
+        rootNodeId: IdentifierSchema,
+        layoutId: IdentifierSchema,
+        name: z.string().optional(),
+        hidden: z.boolean().optional(),
+        showMasterShapes: z.boolean().optional(),
+      }),
+    )
+    .min(1),
   themes: z.array(z.strictObject({ themeId: IdentifierSchema, cssClass: IdentifierSchema })).min(1),
-  masters: z.array(z.strictObject({ masterId: IdentifierSchema, rootNodeId: IdentifierSchema, themeId: IdentifierSchema,
-    titleStyle: IdentifierSchema.optional(), bodyStyle: IdentifierSchema.optional(), otherStyle: IdentifierSchema.optional() })).min(1),
-  layouts: z.array(z.strictObject({ layoutId: IdentifierSchema, rootNodeId: IdentifierSchema, masterId: IdentifierSchema,
-    name: z.string().optional(), showMasterShapes: z.boolean().optional() })).min(1),
-  notesMasters: z.array(z.strictObject({ notesMasterId: IdentifierSchema, rootNodeId: IdentifierSchema, themeId: IdentifierSchema, textStyle: IdentifierSchema.optional() })),
-  stories: z.array(z.discriminatedUnion("kind", [
-    z.strictObject({ storyId: IdentifierSchema, rootNodeId: IdentifierSchema, kind: z.literal("notes"), slideId: IdentifierSchema, notesMasterId: IdentifierSchema.optional(), bodyNodeId: IdentifierSchema.optional() }),
-    z.strictObject({ storyId: IdentifierSchema, rootNodeId: IdentifierSchema, kind: z.literal("comment"), slideId: IdentifierSchema.optional() }),
-  ])),
+  masters: z
+    .array(
+      z.strictObject({
+        masterId: IdentifierSchema,
+        rootNodeId: IdentifierSchema,
+        themeId: IdentifierSchema,
+        titleStyle: IdentifierSchema.optional(),
+        bodyStyle: IdentifierSchema.optional(),
+        otherStyle: IdentifierSchema.optional(),
+      }),
+    )
+    .min(1),
+  layouts: z
+    .array(
+      z.strictObject({
+        layoutId: IdentifierSchema,
+        rootNodeId: IdentifierSchema,
+        masterId: IdentifierSchema,
+        name: z.string().optional(),
+        showMasterShapes: z.boolean().optional(),
+      }),
+    )
+    .min(1),
+  notesMasters: z.array(
+    z.strictObject({
+      notesMasterId: IdentifierSchema,
+      rootNodeId: IdentifierSchema,
+      themeId: IdentifierSchema,
+      textStyle: IdentifierSchema.optional(),
+    }),
+  ),
+  stories: z.array(
+    z.discriminatedUnion("kind", [
+      z.strictObject({
+        storyId: IdentifierSchema,
+        rootNodeId: IdentifierSchema,
+        kind: z.literal("notes"),
+        slideId: IdentifierSchema,
+        notesMasterId: IdentifierSchema.optional(),
+        bodyNodeId: IdentifierSchema.optional(),
+      }),
+      z.strictObject({
+        storyId: IdentifierSchema,
+        rootNodeId: IdentifierSchema,
+        kind: z.literal("comment"),
+        slideId: IdentifierSchema.optional(),
+      }),
+    ]),
+  ),
   objects: z.array(PresentationObjectSchema),
   charts: z.array(PresentationChartSchema),
   dataSets: z.array(PresentationDataSetSchema),
-  commentAuthors: z.array(z.strictObject({ authorId: IdentifierSchema, format: z.enum(["classic", "modern"]), nativeId: IdentifierSchema,
-    userId: z.string().optional(), providerId: z.string().optional() })).optional(),
-  comments: z.array(z.strictObject({ annotationId: IdentifierSchema, format: z.enum(["classic", "modern"]), authorId: IdentifierSchema.optional(),
-    recoveryStatus: z.enum(["open", "resolved", "closed"]).optional(),
-    replyAuthors: z.array(z.strictObject({ replyId: IdentifierSchema, authorId: IdentifierSchema })).optional() })),
-  hyperlinks: z.array(z.strictObject({ nodeId: IdentifierSchema, target: z.string().min(1).optional(), slideId: IdentifierSchema.optional() })),
+  commentAuthors: z
+    .array(
+      z.strictObject({
+        authorId: IdentifierSchema,
+        format: z.enum(["classic", "modern"]),
+        nativeId: IdentifierSchema,
+        userId: z.string().optional(),
+        providerId: z.string().optional(),
+      }),
+    )
+    .optional(),
+  comments: z.array(
+    z.strictObject({
+      annotationId: IdentifierSchema,
+      format: z.enum(["classic", "modern"]),
+      authorId: IdentifierSchema.optional(),
+      recoveryStatus: z.enum(["open", "resolved", "closed"]).optional(),
+      replyAuthors: z
+        .array(z.strictObject({ replyId: IdentifierSchema, authorId: IdentifierSchema }))
+        .optional(),
+    }),
+  ),
+  hyperlinks: z.array(
+    z.strictObject({
+      nodeId: IdentifierSchema,
+      target: z.string().min(1).optional(),
+      slideId: IdentifierSchema.optional(),
+    }),
+  ),
 });
 export type PresentationMetadata = z.infer<typeof PresentationMetadataSchema>;
 export const PresentationDocumentMetadataSchema = z.strictObject({
-  title: z.string().optional(), locale: IdentifierSchema.optional(), presentation: PresentationMetadataSchema,
+  title: z.string().optional(),
+  locale: IdentifierSchema.optional(),
+  presentation: PresentationMetadataSchema,
 });
 export type PresentationDocumentMetadata = z.infer<typeof PresentationDocumentMetadataSchema> & {
-  readonly word?: never; readonly workbook?: never; readonly pageSetup?: never; readonly sections?: never;
+  readonly word?: never;
+  readonly workbook?: never;
+  readonly pageSetup?: never;
+  readonly sections?: never;
 };

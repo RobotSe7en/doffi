@@ -1,0 +1,218 @@
+import { DocumentError } from "@doffi/core";
+import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
+export interface WordReferenceRange {
+  paragraphId: string;
+  endNodeId?: string;
+  from: number;
+  to: number;
+  text: string;
+}
+export function createWordLinkControls(
+  parent: ShadowRoot,
+  before: HTMLElement,
+  session: DocumentEditingSession,
+  selection: () => WordReferenceRange | undefined,
+  focus: (nodeId: string) => void,
+  onError: (error: unknown) => void,
+): { open(kind: "link" | "bookmark" | "reference" | "caption"): void; dispose(): void } {
+  const document = before.ownerDocument;
+  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  const close = (): void => {
+    controller?.abort();
+    panel?.remove();
+    panel = undefined;
+  };
+  function open(kind: "link" | "bookmark" | "reference" | "caption"): void {
+    close();
+    const range = selection();
+    if (!range) throw new DocumentError("InvalidOperation", "请先在段落中选择文字或放置光标。");
+    controller = new AbortController();
+    const signal = controller.signal;
+    panel = document.createElement("section");
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", "链接和引用");
+    panel.style.cssText =
+      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
+    parent.insertBefore(panel, before);
+    const apply = (operations: DocumentOperation[]): void => {
+      const snapshot = session.snapshot();
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: snapshot.manifest.documentId,
+          baseRevision: snapshot.manifest.revision,
+          operations,
+        }),
+      );
+    };
+    const button = (name: string, run: () => void): void => {
+      const node = document.createElement("button");
+      node.type = "button";
+      node.textContent = name;
+      node.addEventListener(
+        "click",
+        () => {
+          try {
+            run();
+          } catch (error) {
+            onError(error);
+          }
+        },
+        { signal },
+      );
+      panel!.append(node);
+    };
+    const field = (name: string, value = ""): HTMLInputElement => {
+      const label = document.createElement("label"),
+        input = document.createElement("input");
+      label.textContent = name;
+      input.setAttribute("aria-label", name);
+      input.value = value;
+      label.append(input);
+      panel!.append(label);
+      return input;
+    };
+    const choose = (
+      name: string,
+      options: readonly (readonly [string, string])[],
+      value = "",
+    ): HTMLSelectElement => {
+      const label = document.createElement("label"),
+        input = document.createElement("select");
+      label.textContent = name;
+      input.setAttribute("aria-label", name);
+      for (const [key, text] of options) {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = text;
+        input.append(option);
+      }
+      input.value = value;
+      label.append(input);
+      panel!.append(label);
+      return input;
+    };
+    button("关闭链接和引用", close);
+    const word = session.snapshot().metadata.word!,
+      bookmarks = word.bookmarks;
+    if (kind === "bookmark") {
+      const name = field("书签名称");
+      button("添加书签", () => {
+        apply([
+          {
+            op: "insertWordBookmark",
+            nodeId: range.paragraphId,
+            from: range.from,
+            to: range.to,
+            expectedText: range.text,
+            name: name.value,
+            ...(range.endNodeId ? { endNodeId: range.endNodeId } : {}),
+          },
+        ]);
+        close();
+      });
+      for (const bookmark of bookmarks) {
+        button("重定义书签 " + bookmark.name, () => {
+          apply([
+            {
+              op: "setWordBookmark",
+              bookmarkId: bookmark.bookmarkId,
+              nodeId: range.paragraphId,
+              endNodeId: range.endNodeId,
+              from: range.from,
+              to: range.to,
+              expectedText: range.text,
+              name: name.value || bookmark.name,
+            },
+          ]);
+          close();
+        });
+        button("定位书签 " + bookmark.name, () => focus(bookmark.startNodeId));
+        button("删除书签 " + bookmark.name, () => {
+          const root = new DOMParser()
+            .parseFromString(session.snapshot().html, "text/html")
+            .querySelector<HTMLElement>('[data-office-kind="document"]')!.dataset.nodeId!;
+          apply([{ op: "removeWordBookmark", nodeId: root, bookmarkId: bookmark.bookmarkId }]);
+          open("bookmark");
+        });
+      }
+      return;
+    }
+    if (kind === "reference") {
+      if (!bookmarks.length) throw new DocumentError("InvalidOperation", "请先添加一个书签。");
+      const name = choose(
+          "引用书签",
+          bookmarks.map((bookmark) => [bookmark.name, bookmark.name]),
+          bookmarks[0]!.name,
+        ),
+        type = choose(
+          "引用内容",
+          [
+            ["REF", "书签文字"],
+            ["PAGEREF", "书签页码"],
+            ["NOTEREF", "注释编号"],
+          ],
+          "REF",
+        );
+      button("插入交叉引用", () => {
+        apply([
+          {
+            op: "insertWordField",
+            nodeId: range.paragraphId,
+            offset: range.from,
+            instruction: type.value + " " + name.value + " \\h",
+            cachedText: "1",
+          },
+        ]);
+        close();
+      });
+      return;
+    }
+    if (kind === "caption") {
+      const name = field("题注标签", "图");
+      button("插入题注编号", () => {
+        apply([
+          {
+            op: "insertWordField",
+            nodeId: range.paragraphId,
+            offset: range.from,
+            instruction: 'SEQ "' + name.value.replaceAll('"', "") + '" \\* Arabic',
+            cachedText: "1",
+          },
+        ]);
+        close();
+      });
+      return;
+    }
+    const target = field("链接地址", "https://"),
+      bookmark = choose("链接到书签", [
+        ["", "外部链接"],
+        ...bookmarks.map((bookmark) => [bookmark.name, bookmark.name] as const),
+      ]);
+    button("插入链接", () => {
+      if (range.endNodeId && range.endNodeId !== range.paragraphId)
+        throw new DocumentError("InvalidOperation", "链接文字请限定在同一段落。");
+      if (range.from === range.to)
+        throw new DocumentError("InvalidOperation", "请先选择要添加链接的文字。");
+      apply([
+        {
+          op: "insertWordLink",
+          nodeId: range.paragraphId,
+          from: range.from,
+          to: range.to,
+          expectedText: range.text,
+          ...(bookmark.value ? { bookmark: bookmark.value } : { target: target.value }),
+        },
+      ]);
+      close();
+    });
+    for (const link of word.hyperlinks) {
+      button("定位链接 " + (link.target ?? link.bookmark), () => focus(link.nodeId));
+      button("删除链接 " + (link.target ?? link.bookmark), () => {
+        apply([{ op: "removeWordLink", nodeId: link.nodeId }]);
+        close();
+      });
+    }
+  }
+  return { open, dispose: close };
+}

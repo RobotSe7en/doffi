@@ -1,4 +1,13 @@
-import { hiddenFromViewSelection, ownedViewAttribute, ownedViewStyle, viewNodeRole, viewStyleSource } from "./view-nodes.js";
+import {
+  hiddenFromViewSelection,
+  ownViewAttribute,
+  ownViewStyle,
+  ownedViewAttribute,
+  ownedViewStyle,
+  viewNodeRole,
+  viewStyleSource,
+} from "./view-nodes.js";
+import { clipboardNodeText } from "./clipboard-node-text.js";
 /** Reversible projection: layout, font fallback, assets and labels never become source. */
 export class SourceProjection {
   private readonly originals = new WeakMap<Element, Element>();
@@ -7,10 +16,10 @@ export class SourceProjection {
   private readonly wrappers = new WeakSet<Node>();
   private readonly identities = new Map<string, { original: Element; rendered: Element }>();
   private readonly fields = new WeakMap<Element, { original: Element; display: Element }>();
-  private readonly editableRoots=new WeakSet<Node>();
+  private readonly editableRoots = new WeakSet<Node>();
   readonly ignored = (node: Node): boolean => {
     for (let item: Node | null = node; item; item = item.parentNode) {
-      if(this.editableRoots.has(item))return false;
+      if (this.editableRoots.has(item)) return false;
       if (this.derived.has(item) || viewNodeRole(item) === "remove") return true;
     }
     return false;
@@ -19,28 +28,61 @@ export class SourceProjection {
   /** An explicit editing command may replace a projected property (notably
    * a substituted font). Keep that intent until the same DOM batch serializes. */
   readonly setStyles = (element: HTMLElement, properties: ReadonlyMap<string, string>): boolean => {
-    if (this.ignored(element) || this.wrappers.has(element) || viewNodeRole(element) === "unwrap") return false;
-    const id = element.dataset.nodeId, identity = id ? this.identities.get(id) : undefined;
-    const original = this.originals.get(element) ?? identity?.original, authored = original?.cloneNode(true) as HTMLElement | undefined;
-    for (const [property, value] of properties) { element.style.setProperty(property, value); authored?.style.setProperty(property, value); }
+    if (this.ignored(element) || this.wrappers.has(element) || viewNodeRole(element) === "unwrap")
+      return false;
+    const id = element.dataset.nodeId,
+      identity = id ? this.identities.get(id) : undefined;
+    const original = this.originals.get(element) ?? identity?.original,
+      authored = original?.cloneNode(true) as HTMLElement | undefined;
+    for (const [property, value] of properties) {
+      element.style.setProperty(property, value);
+      authored?.style.setProperty(property, value);
+    }
     if (authored) {
       this.originals.set(element, authored);
-      if (id && identity) this.identities.set(id, { original: authored, rendered: identity.rendered });
+      if (id && identity)
+        this.identities.set(id, { original: authored, rendered: identity.rendered });
     }
     return true;
   };
 
-  markDerived(node: Node): void { this.derived.add(node); }
+  markDerived(node: Node): void {
+    this.derived.add(node);
+  }
+  markWrapper(node: Node): void {
+    this.wrappers.add(node);
+  }
+  setViewAttribute(element: Element, name: string, value: string | null): void {
+    ownViewAttribute(element, name);
+    if (value === null) element.removeAttribute(name);
+    else element.setAttribute(name, value);
+  }
+  setViewStyles(element: HTMLElement, properties: Readonly<Record<string, string>>): void {
+    for (const [name, value] of Object.entries(properties)) {
+      ownViewStyle(element, name);
+      element.style.setProperty(name, value);
+    }
+  }
   /** An editor may bind one live notes/comment instance to its exact source root.
    * Ownership is local to this projection; the global read-only view remains derived. */
-  captureInstance(root:HTMLElement,source:HTMLElement):void {
-    if(!root.dataset.nodeId||root.dataset.nodeId!==source.dataset.nodeId)throw new Error("An editable instance must match its source identity.");
-    this.editableRoots.add(root);this.capture(root,source);
+  captureInstance(root: HTMLElement, source: HTMLElement): void {
+    if (!root.dataset.nodeId || root.dataset.nodeId !== source.dataset.nodeId)
+      throw new Error("An editable instance must match its source identity.");
+    this.editableRoots.add(root);
+    this.capture(root, source);
   }
   capture(root: HTMLElement, source: HTMLElement): void {
-    const originals = new Map([source, ...source.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => [node.dataset.nodeId, node]));
+    const originals = new Map(
+      [source, ...source.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => [
+        node.dataset.nodeId,
+        node,
+      ]),
+    );
     for (const node of [root, ...root.querySelectorAll<HTMLElement>("*")]) {
-      if (this.ignored(node)) { this.derived.add(node); continue; }
+      if (this.ignored(node)) {
+        this.derived.add(node);
+        continue;
+      }
       const original = originals.get(node.dataset.nodeId);
       if (!original) {
         // HTML parsers may introduce an identity-free tbody. It is source structure,
@@ -49,10 +91,17 @@ export class SourceProjection {
         if (viewNodeRole(node) === "unwrap") this.wrappers.add(node);
         continue;
       }
-      const display = [...node.children].find((child) => viewNodeRole(child) === "remove" && child.classList.contains("sdk-field-display"));
-      const authored = original.cloneNode(original.hasAttribute("data-word-tab") || Boolean(display)) as Element, view = node.cloneNode(false) as Element;
+      const display = [...node.children].find(
+        (child) =>
+          viewNodeRole(child) === "remove" && child.classList.contains("sdk-field-display"),
+      );
+      const authored = original.cloneNode(
+          original.hasAttribute("data-word-tab") || Boolean(display),
+        ) as Element,
+        view = node.cloneNode(false) as Element;
       if (display) this.fields.set(node, { original: authored, display });
-      this.originals.set(node, authored); this.rendered.set(node, view);
+      this.originals.set(node, authored);
+      this.rendered.set(node, view);
       this.identities.set(node.dataset.nodeId!, { original: authored, rendered: view });
     }
   }
@@ -60,93 +109,273 @@ export class SourceProjection {
     return this.project(root) as HTMLElement;
   }
   shell(element: Element): Element | undefined {
-    if (this.ignored(element) || !this.editableRoots.has(element) && (this.wrappers.has(element) || viewNodeRole(element) === "unwrap")) return;
+    if (
+      this.ignored(element) ||
+      (!this.editableRoots.has(element) &&
+        (this.wrappers.has(element) || viewNodeRole(element) === "unwrap"))
+    )
+      return;
     return this.project(element, undefined, true) as Element;
   }
   /** Clone from live provenance, rather than guessing the origin of cloneContents nodes. */
+  completeClipboardNodes(range: Range): ReadonlySet<string> {
+    const complete = new Set<string>(),
+      nodes = new Set<Element>();
+    let root = range.commonAncestorContainer;
+    if (root.nodeType !== 1) root = root.parentNode!;
+    if (root.nodeType === 1) {
+      nodes.add(root as Element);
+      for (const child of (root as Element).querySelectorAll("[data-node-id]")) nodes.add(child);
+    }
+    for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.add(parent);
+    // A drag can end at Text.length while selectNodeContents ends immediately
+    // after that text node. Canonicalize equivalent DOM edges before comparing.
+    const edge = (node: Node, offset: number, end: boolean): [Node, number] => {
+      for (;;) {
+        const length = node.nodeType === 3 ? node.textContent!.length : node.childNodes.length;
+        if (!node.parentNode || (offset !== 0 && offset !== length)) return [node, offset];
+        const parent = node.parentNode,
+          index = [...parent.childNodes].indexOf(node as ChildNode);
+        offset = index + (offset === length && (length > 0 || end) ? 1 : 0);
+        node = parent;
+      }
+    };
+    const selected = range.cloneRange();
+    selected.setStart(...edge(range.startContainer, range.startOffset, false));
+    selected.setEnd(...edge(range.endContainer, range.endOffset, true));
+    const covers = (node: Node): boolean => {
+      const contents = node.ownerDocument!.createRange();
+      contents.setStart(...edge(node, 0, false));
+      contents.setEnd(...edge(node, node.childNodes.length, true));
+      return (
+        selected.compareBoundaryPoints(0, contents) <= 0 &&
+        selected.compareBoundaryPoints(2, contents) >= 0
+      );
+    };
+    for (const node of nodes) {
+      if (!this.originals.has(node)) continue;
+      const id = node.getAttribute("data-node-id");
+      if (id && covers(node)) complete.add(id);
+      const field = this.fields.get(node);
+      if (field && covers(field.display)) {
+        const owner = (field.display as HTMLElement).dataset.sdkFieldNodeId;
+        if (owner) complete.add(owner);
+        if (id) complete.add(id);
+      }
+    }
+    return complete;
+  }
+  /** Exact provenance of a selected source slice, including text before hidden
+   * revisions. Equal words elsewhere in the source are never searched. */
+  clipboardSourceRanges(
+    range: Range,
+  ): ReadonlyMap<string, { from: number; to: number; inexact?: boolean }> {
+    const result = new Map<string, { from: number; to: number; inexact?: boolean }>();
+    let root = range.commonAncestorContainer;
+    if (root.nodeType !== 1) root = root.parentNode!;
+    const nodes = new Set<Element>([
+      root as Element,
+      ...(root as Element).querySelectorAll("[data-node-id]"),
+    ]);
+    for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.add(parent);
+    for (const node of nodes) {
+      const id = node.getAttribute("data-node-id");
+      if (!id || !this.originals.has(node) || this.ignored(node) || !range.intersectsNode(node))
+        continue;
+      const selected = node.ownerDocument.createRange();
+      selected.selectNodeContents(node);
+      if (range.compareBoundaryPoints(0, selected) > 0)
+        selected.setStart(range.startContainer, range.startOffset);
+      if (range.compareBoundaryPoints(2, selected) < 0)
+        selected.setEnd(range.endContainer, range.endOffset);
+      let inexact = false;
+      const offset = (end: boolean): number => {
+        const prefix = node.ownerDocument.createRange();
+        prefix.selectNodeContents(node);
+        prefix.setEnd(
+          end ? selected.endContainer : selected.startContainer,
+          end ? selected.endOffset : selected.startOffset,
+        );
+        const boundary = { end, inexact: false };
+        const projected = this.project(node, prefix, false, true, boundary);
+        inexact ||= boundary.inexact;
+        return projected ? clipboardNodeText(projected).length : 0;
+      };
+      const from = offset(false),
+        to = offset(true);
+      result.set(id, { from, to, ...(inexact ? { inexact } : {}) });
+    }
+    return result;
+  }
   serializeRange(range: Range): DocumentFragment {
     let node = range.commonAncestorContainer;
-    for (let parent = node.parentElement; parent; parent = parent.parentElement) if (this.fields.has(parent)) { node = parent; break; }
-    const result = this.project(node, range), fragment = node.ownerDocument!.createDocumentFragment();
+    for (let parent = node.parentElement; parent; parent = parent.parentElement)
+      if (this.fields.has(parent)) {
+        node = parent;
+        break;
+      }
+    const result = this.project(node, range),
+      fragment = node.ownerDocument!.createDocumentFragment();
     if (result?.nodeType === 1 || result?.nodeType === 11) fragment.append(...result.childNodes);
     else if (result) fragment.append(result);
     return fragment;
   }
-  private project(root: Node, range?: Range, shell = false): Node | undefined {
+  private project(
+    root: Node,
+    range?: Range,
+    shell = false,
+    includeHidden = false,
+    boundary?: { end: boolean; inexact: boolean },
+  ): Node | undefined {
     const seen = new Set<string>();
     const clone = (node: Node): Node | undefined => {
       if (this.ignored(node)) return;
-      if (range && hiddenFromViewSelection(node)) return;
+      if (range && !includeHidden && hiddenFromViewSelection(node)) return;
       if (range && node !== root && !range.intersectsNode(node)) return;
       // Pagination can add owned wrappers after capture (e.g. a later resize).
       // Resolve live ownership as well as the initial projection snapshot.
-      if (!this.editableRoots.has(node) && (this.wrappers.has(node) || viewNodeRole(node) === "unwrap")) {
+      if (
+        !this.editableRoots.has(node) &&
+        (this.wrappers.has(node) || viewNodeRole(node) === "unwrap")
+      ) {
         const fragment = node.ownerDocument!.createDocumentFragment();
-        for (const child of node.childNodes) { const value = clone(child); if (value) fragment.append(value); }
+        for (const child of node.childNodes) {
+          const value = clone(child);
+          if (value) fragment.append(value);
+        }
         return fragment;
       }
       if (node.nodeType === 3) {
-        const from = range?.startContainer === node ? range.startOffset : 0, to = range?.endContainer === node ? range.endOffset : node.textContent!.length;
+        const from = range?.startContainer === node ? range.startOffset : 0,
+          to = range?.endContainer === node ? range.endOffset : node.textContent!.length;
         return node.ownerDocument!.createTextNode(node.textContent!.slice(from, to));
       }
       if (node.nodeType !== 1) return node.cloneNode(false);
-      const element = node as Element, result = element.cloneNode(false) as HTMLElement;
+      const element = node as Element,
+        result = element.cloneNode(false) as HTMLElement;
       // Range.extractContents clones partially selected ancestors; their attributes
       // still come from the same source identity and need the same reversal.
       const identity = this.identities.get(element.getAttribute("data-node-id") ?? "");
-      const original = this.originals.get(element) ?? identity?.original, rendered = this.rendered.get(element) ?? identity?.rendered;
+      const original = this.originals.get(element) ?? identity?.original,
+        rendered = this.rendered.get(element) ?? identity?.rendered;
       if (original && rendered) {
-        for (const name of new Set([...element.attributes, ...rendered.attributes, ...original.attributes].map((item) => item.name))) {
+        for (const name of new Set(
+          [...element.attributes, ...rendered.attributes, ...original.attributes].map(
+            (item) => item.name,
+          ),
+        )) {
           if (name === "style") continue;
-          if (!ownedViewAttribute(element, name) && element.getAttribute(name) !== rendered.getAttribute(name)) continue;
+          if (
+            !ownedViewAttribute(element, name) &&
+            element.getAttribute(name) !== rendered.getAttribute(name)
+          )
+            continue;
           const value = original.getAttribute(name);
-          if (value === null) result.removeAttribute(name); else result.setAttribute(name, value);
+          if (value === null) result.removeAttribute(name);
+          else result.setAttribute(name, value);
         }
-        const before = (original as HTMLElement).style, view = (rendered as HTMLElement).style;
+        const before = (original as HTMLElement).style,
+          view = (rendered as HTMLElement).style;
         // CSSOM expands shorthands and exposes empty longhands for var(...).
         // Restoring an unchanged style as text preserves those source declarations.
         if (element.getAttribute("style") === rendered.getAttribute("style")) {
           const value = original.getAttribute("style");
-          if (value === null) result.removeAttribute("style"); else result.setAttribute("style", value);
+          if (value === null) result.removeAttribute("style");
+          else result.setAttribute("style", value);
         } else {
           const current = (element as HTMLElement).style;
           const value = original.getAttribute("style");
-          if (value === null) result.removeAttribute("style"); else result.setAttribute("style", value);
+          if (value === null) result.removeAttribute("style");
+          else result.setAttribute("style", value);
           for (const property of new Set([...current, ...view])) {
-            if (ownedViewStyle(element, property) || before.getPropertyValue(property) !== view.getPropertyValue(property)
-              || before.getPropertyPriority(property) !== view.getPropertyPriority(property)) continue;
-            if (current.getPropertyValue(property) === view.getPropertyValue(property) && current.getPropertyPriority(property) === view.getPropertyPriority(property)) continue;
+            if (
+              ownedViewStyle(element, property) ||
+              before.getPropertyValue(property) !== view.getPropertyValue(property) ||
+              before.getPropertyPriority(property) !== view.getPropertyPriority(property)
+            )
+              continue;
+            if (
+              current.getPropertyValue(property) === view.getPropertyValue(property) &&
+              current.getPropertyPriority(property) === view.getPropertyPriority(property)
+            )
+              continue;
             const authored = current.getPropertyValue(property);
-            if (authored) result.style.setProperty(property, authored, current.getPropertyPriority(property)); else result.style.removeProperty(property);
+            if (authored)
+              result.style.setProperty(property, authored, current.getPropertyPriority(property));
+            else result.style.removeProperty(property);
           }
           if (!result.style.length) {
-            if (original.hasAttribute("style")) result.setAttribute("style", ""); else result.removeAttribute("style");
+            if (original.hasAttribute("style")) result.setAttribute("style", "");
+            else result.removeAttribute("style");
           }
         }
       }
       if (!original) {
         const source = viewStyleSource(element) as HTMLElement | undefined;
         if (source) {
-          for (const property of [...result.style]) if (ownedViewStyle(element, property)) {
-            const value = source.style.getPropertyValue(property);
-            if (value) result.style.setProperty(property, value, source.style.getPropertyPriority(property)); else result.style.removeProperty(property);
-          }
-          if (!result.style.length && !source.hasAttribute("style")) result.removeAttribute("style");
+          for (const property of [...result.style])
+            if (ownedViewStyle(element, property)) {
+              const value = source.style.getPropertyValue(property);
+              if (value)
+                result.style.setProperty(
+                  property,
+                  value,
+                  source.style.getPropertyPriority(property),
+                );
+              else result.style.removeProperty(property);
+            }
+          if (!result.style.length && !source.hasAttribute("style"))
+            result.removeAttribute("style");
         }
       }
       const id = result.getAttribute("data-node-id");
-      if (id) { if (seen.has(id)) { result.removeAttribute("data-node-id"); result.removeAttribute("id"); } else seen.add(id); }
+      if (id) {
+        if (seen.has(id)) {
+          result.removeAttribute("data-node-id");
+          result.removeAttribute("id");
+        } else seen.add(id);
+      }
       if (shell && node === root) return result;
       const field = this.fields.get(element);
       if (field && range?.intersectsNode(field.display)) {
-        const selected = node.ownerDocument!.createRange(); selected.selectNodeContents(field.display);
-        if (range.compareBoundaryPoints(0, selected) > 0) selected.setStart(range.startContainer, range.startOffset);
-        if (range.compareBoundaryPoints(2, selected) < 0) selected.setEnd(range.endContainer, range.endOffset);
-        result.append(result.ownerDocument.createTextNode(selected.toString())); return result;
+        const selected = node.ownerDocument!.createRange();
+        selected.selectNodeContents(field.display);
+        if (
+          includeHidden &&
+          range.compareBoundaryPoints(0, selected) <= 0 &&
+          range.compareBoundaryPoints(2, selected) >= 0
+        ) {
+          result.append(...[...field.original.childNodes].map((child) => child.cloneNode(true)));
+          return result;
+        }
+        if (range.compareBoundaryPoints(0, selected) > 0)
+          selected.setStart(range.startContainer, range.startOffset);
+        if (range.compareBoundaryPoints(2, selected) < 0)
+          selected.setEnd(range.endContainer, range.endOffset);
+        if (
+          includeHidden &&
+          boundary &&
+          clipboardNodeText(field.original) !== field.display.textContent &&
+          selected.toString()
+        ) {
+          // A changed computed field has no character correspondence inside its
+          // old cache. Use its exact source envelope for intersection only;
+          // the comment mapper explicitly invalidates ambiguous inner anchors.
+          boundary.inexact = true;
+          if (boundary.end)
+            result.append(...[...field.original.childNodes].map((child) => child.cloneNode(true)));
+          return result;
+        }
+        result.append(result.ownerDocument.createTextNode(selected.toString()));
+        return result;
       }
       if (original && element.hasAttribute("data-word-tab")) {
         result.append(...[...original.childNodes].map((child) => child.cloneNode(true)));
-      } else for (const child of node.childNodes) { const value = clone(child); if (value) result.append(value); }
+      } else
+        for (const child of node.childNodes) {
+          const value = clone(child);
+          if (value) result.append(value);
+        }
       return result;
     };
     return clone(root);

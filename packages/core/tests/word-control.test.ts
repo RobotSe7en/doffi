@@ -1,0 +1,125 @@
+import { expect, test } from "vitest";
+import { createDocumentSession, createWordDocument, openDocument } from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+function setup() {
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "controls" }), { kind: "document" }),
+  );
+  return {
+    session,
+    apply: (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "controls",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      ),
+  };
+}
+test("control values, dropdown choices, civil dates, locks and undo use one transaction boundary", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "insertWordControl",
+      nodeId: "paragraph-1",
+      control: { kind: "checkBox", level: "inline", checked: true, checkedFont: "Segoe UI Symbol" },
+    },
+  ]);
+  const check = session.snapshot().metadata.word!.controls![0]!;
+  expect(session.getNode(check.nodeId)!.text).toBe("☒");
+  apply([{ op: "setWordControlValue", nodeId: check.nodeId, value: false }]);
+  expect(session.getNode(check.nodeId)!.text).toBe("☐");
+  session.undo();
+  expect(session.snapshot().metadata.word!.controls![0]!.checked).toBe(true);
+  apply([{ op: "setWordControl", nodeId: check.nodeId, changes: { lock: "sdtContentLocked" } }]);
+  expect(() => apply([{ op: "setWordControlValue", nodeId: check.nodeId, value: false }])).toThrow(
+    /locked/,
+  );
+  expect(() => apply([{ op: "removeWordControl", nodeId: check.nodeId }])).toThrow(/locked/);
+  apply([
+    { op: "setWordControl", nodeId: check.nodeId, changes: { lock: "unlocked" } },
+    { op: "setWordControlValue", nodeId: check.nodeId, value: false },
+  ]);
+  apply([
+    {
+      op: "insertWordControl",
+      nodeId: "paragraph-1",
+      control: {
+        kind: "dropDown",
+        level: "inline",
+        items: [
+          { displayText: "甲", value: "a" },
+          { displayText: "乙", value: "b" },
+        ],
+      },
+    },
+  ]);
+  const drop = session.snapshot().metadata.word!.controls![1]!;
+  apply([{ op: "setWordControlValue", nodeId: drop.nodeId, value: "b" }]);
+  expect(session.getNode(drop.nodeId)!.text).toBe("乙");
+  expect(() => apply([{ op: "setWordControlValue", nodeId: drop.nodeId, value: "c" }])).toThrow(
+    /declared/,
+  );
+  apply([
+    {
+      op: "insertWordControl",
+      nodeId: "paragraph-1",
+      control: {
+        kind: "date",
+        level: "inline",
+        fullDate: "2028-02-29",
+        dateFormat: "dddd, MMMM d, yyyy",
+        locale: "en-US",
+      },
+    },
+  ]);
+  const date = session.snapshot().metadata.word!.controls![2]!;
+  expect(session.getNode(date.nodeId)!.text).toBe("Tuesday, February 29, 2028");
+  expect(() =>
+    apply([{ op: "setWordControlValue", nodeId: date.nodeId, value: "2027-02-29" }]),
+  ).toThrow(/valid ISO/);
+});
+test("container locks permit content input, and content locks reject generic descendant edits atomically", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "insertWordControl",
+      nodeId: "paragraph-1",
+      control: { kind: "richText", level: "block", lock: "sdtLocked" },
+      text: "原始",
+    },
+  ]);
+  const control = session.snapshot().metadata.word!.controls![0]!,
+    child = session.getNode(control.nodeId)!.childNodeIds[0]!;
+  apply([{ op: "replaceText", nodeId: child, from: 0, to: 2, expectedText: "原始", text: "编辑" }]);
+  expect(session.getNode(control.nodeId)!.text).toBe("编辑");
+  expect(() => apply([{ op: "removeWordControl", nodeId: control.nodeId }])).toThrow(/locked/);
+  apply([{ op: "setWordControl", nodeId: control.nodeId, changes: { lock: "contentLocked" } }]);
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      { op: "replaceText", nodeId: child, from: 0, to: 2, expectedText: "编辑", text: "非法" },
+    ]),
+  ).toThrow(/locked/);
+  expect(session.snapshot()).toEqual(before);
+});
+test("temporary controls unwrap on first content edit and history restores their complete definition", () => {
+  const { session, apply } = setup();
+  apply([
+    {
+      op: "insertWordControl",
+      nodeId: "paragraph-1",
+      control: { kind: "text", level: "inline", temporary: true },
+      text: "初始",
+    },
+  ]);
+  const control = session.snapshot().metadata.word!.controls![0]!;
+  apply([{ op: "setWordControlValue", nodeId: control.nodeId, value: "修改" }]);
+  expect(session.snapshot().metadata.word!.controls).toHaveLength(0);
+  expect(session.getNode("paragraph-1")!.text).toBe("修改");
+  session.undo();
+  expect(session.snapshot().metadata.word!.controls![0]!.temporary).toBe(true);
+  expect(session.getNode(control.nodeId)!.text).toBe("初始");
+});

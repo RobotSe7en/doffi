@@ -1,0 +1,269 @@
+import { NativeXmlResources, indexLegacyNativeResources } from "./word-native-xml.js";
+import { WordNativeFragmentCollectionSchema } from "../contracts/word.js";
+import type { WordNativeContent, WordMetadata } from "../contracts/word.js";
+import type { ParsedHtml } from "../document/html.js";
+import type { DeepReadonly, DocumentReadLimits } from "../runtime.js";
+import { assetDigest } from "../document/assets.js";
+import { readJson, encode, resolveReference } from "../document/package.js";
+import { parseContract } from "../schema-registry.js";
+import { checkLimit, invalid } from "../document/validation.js";
+/** Chart templates are owned by the selected native chart graph, including
+ * resources arriving through the clipboard. Deletion releases the old closure. */
+export function pruneRemovedWordChartResources(
+  word: WordMetadata,
+  previous: DeepReadonly<WordMetadata> | undefined,
+  files: Map<string, Uint8Array>,
+  source: ParsedHtml,
+  entrypoint: string,
+): void {
+  const owned = new Set(
+    (previous?.drawings ?? []).flatMap((d) =>
+      d.kind === "chart" ? (d.chart.native?.parts.map((p) => p.assetPath) ?? []) : [],
+    ),
+  );
+  if (!owned.size) return;
+  const used = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === "string" && owned.has(value)) used.add(value);
+    else if (Array.isArray(value)) for (const child of value) visit(child);
+    else if (value && typeof value === "object")
+      for (const child of Object.values(value)) visit(child);
+  };
+  visit(word);
+  for (const id of source.nodeIds()) {
+    const node = source.peekNode(id)!;
+    if (node.tagName === "img") used.add(resolveReference(node.attributes.src!, entrypoint));
+  }
+  const removed = new Set([...owned].filter((path) => !used.has(path)));
+  if (!removed.size) return;
+  const manifest = parseContract("document-manifest", readJson(files, "manifest.json"));
+  manifest.assets = manifest.assets.filter((asset) => !removed.has(asset.path));
+  for (const path of removed) files.delete(path);
+  files.set("manifest.json", encode(JSON.stringify(manifest)));
+}
+/** Remove resources formerly owned by source images once neither source nor
+ * current Word semantics uses them. Unreferenced host-supplied assets stay put. */
+export function pruneRemovedWordImages(
+  word: WordMetadata,
+  files: Map<string, Uint8Array>,
+  before: ParsedHtml,
+  after: ParsedHtml,
+  entrypoint: string,
+): void {
+  const images = (source: ParsedHtml): Set<string> =>
+      new Set(
+        source.nodeIds().flatMap((id) => {
+          const node = source.peekNode(id)!;
+          return node.tagName === "img" ? [resolveReference(node.attributes.src!, entrypoint)] : [];
+        }),
+      ),
+    owned = images(before),
+    used = images(after);
+  if ([...owned].every((path) => used.has(path))) return;
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      if (owned.has(value)) used.add(value);
+    } else if (Array.isArray(value)) for (const item of value) visit(item);
+    else if (value && typeof value === "object")
+      for (const item of Object.values(value)) visit(item);
+  };
+  visit(word);
+  const removed = new Set([...owned].filter((path) => !used.has(path)));
+  if (!removed.size) return;
+  const manifest = parseContract("document-manifest", readJson(files, "manifest.json"));
+  manifest.assets = manifest.assets.filter((asset) => !removed.has(asset.path));
+  for (const path of removed) files.delete(path);
+  files.set("manifest.json", encode(JSON.stringify(manifest)));
+}
+/** The native graph owns opaque resources. Core follows declared edges and
+ * safely indexes legacy XML collection/OPC envelopes without interpreting Word
+ * properties or fetching relationships. Unknown envelopes retain their closure. */
+export function pruneWordNativeResources(
+  word: WordMetadata,
+  previous: DeepReadonly<WordNativeContent> | undefined,
+  files: Map<string, Uint8Array>,
+  source: ParsedHtml,
+  entrypoint: string,
+  limits: DocumentReadLimits,
+): void {
+  const native = word.nativeContent;
+  if (!native || JSON.stringify(native) === JSON.stringify(previous)) return;
+  const definitions = new Map(
+      native.fragments.filter((f) => f.numberingKind).map((f) => [f.nativeId, f]),
+    ),
+    usedDefinitions = new Set<string>(),
+    definitionQueue = native.fragments.filter((f) => !f.numberingKind);
+  for (let at = 0; at < definitionQueue.length; at++)
+    for (const id of Object.values(definitionQueue[at]!.numberingReferences ?? {})) {
+      const definition = definitions.get(id);
+      if (definition && !usedDefinitions.has(id)) {
+        usedDefinitions.add(id);
+        definitionQueue.push(definition);
+      }
+    }
+  native.fragments = native.fragments.filter(
+    (f) => !f.numberingKind || usedDefinitions.has(f.nativeId),
+  );
+  const owned = new Set([
+    ...(previous?.fragments ?? []).flatMap((fragment) => [
+      fragment.assetPath,
+      ...(fragment.preview ? [fragment.preview.assetPath] : []),
+    ]),
+    ...(previous?.parts ?? []).map((part) => part.assetPath),
+    ...native.fragments.flatMap((fragment) => [
+      fragment.assetPath,
+      ...(fragment.preview ? [fragment.preview.assetPath] : []),
+    ]),
+    ...native.parts.map((part) => part.assetPath),
+  ]);
+  const xml = new NativeXmlResources(files, limits),
+    former = indexLegacyNativeResources(native, previous, xml);
+  // Old imports marked every unknown main-part relationship as a root, even
+  // when a source fragment was its sole owner. Persist the recovered ownership.
+  for (const relation of native.relationships)
+    if (
+      relation.root &&
+      (former.relationships.has(relation.sourcePart + "\n" + relation.id) ||
+        (!relation.external && former.parts.has(relation.target)))
+    )
+      relation.root = false;
+  const selected = new Set<string>(),
+    keepParts = new Set<string>(),
+    parts = new Map(native.parts.map((part) => [part.sourcePart, part])),
+    relations = new Map<string, typeof native.relationships>();
+  for (const relation of native.relationships) {
+    const entries = relations.get(relation.sourcePart) ?? [];
+    entries.push(relation);
+    relations.set(relation.sourcePart, entries);
+  }
+  const byId = new Map(
+      native.relationships.map((relation) => [relation.sourcePart + "\n" + relation.id, relation]),
+    ),
+    wildcards = new Set<string>();
+  const pending: string[] = [];
+  const selectPart = (path: string): void => {
+    if (!parts.has(path)) invalid("An indirect native dependency is missing.");
+    if (!keepParts.has(path)) {
+      keepParts.add(path);
+      pending.push(path);
+    }
+  };
+  const select = (relation: (typeof native.relationships)[number]): void => {
+    const key = relation.sourcePart + "\n" + relation.id;
+    if (selected.has(key)) return;
+    selected.add(key);
+    if (!relation.external && parts.has(relation.target) && !keepParts.has(relation.target)) {
+      keepParts.add(relation.target);
+      pending.push(relation.target);
+    }
+  };
+  for (const relation of native.relationships) if (relation.root) select(relation);
+  for (const fragment of native.fragments) {
+    for (const path of fragment.dependencyParts ?? []) selectPart(path);
+    if (parts.has(fragment.sourcePart) && !keepParts.has(fragment.sourcePart)) {
+      keepParts.add(fragment.sourcePart);
+      pending.push(fragment.sourcePart);
+    }
+    if (fragment.relationshipIds === undefined) wildcards.add(fragment.sourcePart);
+    else
+      for (const id of fragment.relationshipIds) {
+        const relation = byId.get(fragment.sourcePart + "\n" + id);
+        if (!relation) invalid("The native fragment dependency is missing.");
+        select(relation);
+      }
+  }
+  for (const part of wildcards) for (const relation of relations.get(part) ?? []) select(relation);
+  for (let index = 0; index < pending.length; index++)
+    for (const relation of relations.get(pending[index]!) ?? []) select(relation);
+  native.parts = native.parts.filter((part) => keepParts.has(part.sourcePart));
+  native.relationships = native.relationships.filter((relation) =>
+    selected.has(relation.sourcePart + "\n" + relation.id),
+  );
+  const manifest = parseContract("document-manifest", readJson(files, "manifest.json")),
+    collections = new Map<string, { format: "json" | "xml"; keys: Set<string> }>();
+  for (const fragment of native.fragments)
+    if (fragment.fragmentKey) {
+      const format = fragment.fragmentFormat === "json" ? "json" : "xml",
+        selection = collections.get(fragment.assetPath) ?? { format, keys: new Set<string>() };
+      if (selection.format !== format) invalid("A native collection cannot mix encodings.");
+      selection.keys.add(fragment.fragmentKey);
+      collections.set(fragment.assetPath, selection);
+    } else if (fragment.fragmentFormat === "json")
+      invalid("A native JSON fragment requires its collection key.");
+  const wholeAssets = new Set(
+    native.fragments.filter((f) => !f.fragmentKey).map((f) => f.assetPath),
+  );
+  for (const [path, { format, keys }] of collections) {
+    if (wholeAssets.has(path)) continue;
+    let content: string | undefined;
+    if (format === "xml") content = xml.slice(path, keys);
+    else {
+      const parsed = WordNativeFragmentCollectionSchema.safeParse(readJson(files, path));
+      if (!parsed.success) invalid("The native fragment collection is invalid.");
+      checkLimit(Object.keys(parsed.data.fragments).length, limits.maxNodes);
+      const entries = [...keys].map((key) => {
+        const value = Object.hasOwn(parsed.data.fragments, key)
+          ? parsed.data.fragments[key]
+          : undefined;
+        if (value === undefined) invalid("The native fragment collection entry is missing.");
+        return [key, value] as const;
+      });
+      if (entries.length !== Object.keys(parsed.data.fragments).length)
+        content = JSON.stringify({ ...parsed.data, fragments: Object.fromEntries(entries) });
+    }
+    if (content === undefined) continue;
+    if (content.startsWith("<?xml")) {
+      const end = content.indexOf("?>");
+      content =
+        content.slice(0, end).replace(/encoding\s*=\s*["'][^"']*["']/i, 'encoding="UTF-8"') +
+        content.slice(end);
+    }
+    const bytes = encode(content);
+    checkLimit(bytes.byteLength, limits.maxFileBytes);
+    const sha256 = assetDigest(bytes),
+      next = "assets/native-fragments-" + sha256 + "." + format,
+      existing = files.get(next);
+    if (existing && assetDigest(existing) !== sha256)
+      invalid("A native collection resource path is already occupied.");
+    files.set(next, bytes);
+    if (!manifest.assets.some((asset) => asset.path === next))
+      manifest.assets.push({
+        path: next,
+        mimeType: format === "json" ? "application/json" : "application/xml",
+        sha256,
+      });
+    for (const fragment of native.fragments)
+      if (
+        fragment.assetPath === path &&
+        (fragment.fragmentFormat === "json" ? "json" : "xml") === format
+      )
+        fragment.assetPath = next;
+    owned.add(path);
+  }
+  const used = new Set(
+    native.fragments
+      .flatMap((fragment) => [
+        fragment.assetPath,
+        ...(fragment.preview ? [fragment.preview.assetPath] : []),
+      ])
+      .concat(native.parts.map((part) => part.assetPath)),
+  );
+  for (const id of source.nodeIds()) {
+    const node = source.peekNode(id)!;
+    if (node.tagName === "img") used.add(resolveReference(node.attributes.src!, entrypoint));
+  }
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      if (owned.has(value)) used.add(value);
+    } else if (Array.isArray(value)) for (const item of value) visit(item);
+    else if (value && typeof value === "object")
+      for (const [key, item] of Object.entries(value)) if (key !== "nativeContent") visit(item);
+  };
+  visit(word);
+  const removed = new Set([...owned].filter((path) => !used.has(path)));
+  for (const path of removed) files.delete(path);
+  manifest.assets = manifest.assets.filter((asset) => !removed.has(asset.path));
+  if (!native.fragments.length && !native.parts.length && !native.relationships.length)
+    delete word.nativeContent;
+  files.set("manifest.json", encode(JSON.stringify(manifest)));
+}

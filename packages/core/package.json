@@ -46,6 +46,7 @@
     "@noble/hashes": "2.4.0",
     "css-tree": "3.2.1",
     "parse5": "8.0.1",
+    "saxes": "6.0.0",
     "zod": "4.1.12"
   },
   "devDependencies": {

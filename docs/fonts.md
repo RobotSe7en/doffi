@@ -24,3 +24,15 @@ Linux Office CI 通过独立[验收脚本](../scripts/install-acceptance-fonts.m
 这些是预览替代，不承诺与微软或华文字体相同的字形、字宽或断行。已有正版字体可由宿主安装后使用；当前未从第三方下载或安装微软宋体、仿宋、楷体等专有字体。
 
 浏览器用固定字体用例验证 FandolSong/FandolFang/FandolKai/LXGW WenKai 实际可选，以及仿宋、楷体名称的显式替代、中西文分工和缺字诊断。测量诊断仍受[DOCX 读取说明](docx-import.md#中文字体)所列边界约束。
+
+Word 的字体替代提示只报告文档指定字体的实际替换。使用预览默认字体的文字仍参与缺字检测。
+
+## Playground 的 Word Web 字体
+
+内部测试构建可从本机的 Microsoft Word 字体目录生成完整的 WOFF 字体。安装 FontTools 后运行 `python3 scripts/prepare-word-test-fonts.py`，也可以通过 `--font-dir` 指定字体目录。生成的本地字体和来源清单位于 `apps/playground/src/assets/word-fonts/internal/`，Playground 在开发服务和构建中自动接入，Git 和 SDK 包不收录这些文件。
+
+打开首份 Word 文档时由宿主从同一站点加载 Web 字体，预览和编辑复用缓存字节。内部包支持宋体、新宋体、黑体、仿宋、楷体、等线、微软雅黑及 Times New Roman，并注册现有的独立字重及斜体。中文名和英文名指向同一字体时视为命中原字体。原字体和系统字体均不可用时，才使用随 Playground 提供的替代字体并记录诊断。文档源与原生导出均保留请求的字体名。
+
+替代字体覆盖 GB 2312 常用汉字和常见中西文标点。较罕见的字形按字体列表回退，缺少独立字重及斜体时可由浏览器合成。替代字体的 SIL OFL 1.1 许可、发行来源、版本及摘要见[字体清单](../apps/playground/src/assets/word-fonts/sources.json)。
+
+Word 预览、批注、正文编辑和提案比较共用 `wordWebFonts` 宿主选项。浏览器宿主先读取已授权的字节，Word 预览在隔离文档里注册字体，再开始测量。预览内的 CSP 继续阻止从文档内容发起字体请求。服务端 PDF／PNG 使用服务端渲染环境的字体。

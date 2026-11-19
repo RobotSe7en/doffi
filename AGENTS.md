@@ -12,6 +12,8 @@
 
 ## Current implementation order
 
+- On 2026-11-14 the user prioritized the DOCX complete-document plan on `feat/docx-complete`. The eight stages and fixed R01～R19 checklist are complete as of 2026-11-18. See [the DOCX handoff](docs/docx-complete-handoff.md) for scope and verification. Compatible import preserves unmodeled native content for native export and supplies usable previews or explicit placeholders. Strict import remains available, and malformed, unsafe or over-budget inputs fail. The declared layout targets Word and eight common chart families are editable. Cloud services, realtime collaboration, VBA, mail merge and intelligent proofing are excluded. Use targeted related tests and local stage commits, and push only when requested. The user owns the PR and review. Independent agent reviews, A/B tests and remote full CI are outside this DOCX handoff. Existing R3 stage gates apply when that work resumes.
+
 - When resuming iteration 3, read [the execution handoff](docs/workbook-reading-handoff.md) for the current branch/PR, completed checks and remaining reading work. Keep it consistent with [iteration 3](docs/iteration-3.md); the handoff does not relax any stage gate.
 - R3-09～16 implementation and exactly two independent reviews/rechecks are recorded on `feat/workbook-editing`; read [the editing handoff](docs/workbook-editing-handoff.md) and [PR #31](https://github.com/RobotSe7en/doffi/pull/31) for final-head daily/capacity acceptance and merge status. Start R3-17～20 only after the editing stage passes and merges. No editing-stage task is complete merely because its foundation APIs exist.
 - Follow [iteration 3](docs/iteration-3.md): R3-01 through R3-08 are implemented, including independent XLSX reading acceptance, the public grid/Worker preview and fixed-resource evidence; R3-09 through R3-16 implementation and review are recorded in the editing handoff; their stage gate remains final-head daily/capacity acceptance and merge in PR #31. R3-17 through R3-20 remain outstanding. The user chose unified openDocument with kind-specific snapshots and queries. Sorting keeps outside formulas at their addresses; cut references follow moved data with exact fragments. Complete the full declared XLSX reading gate R3-08 before official editing. Formula parsing, reference rewriting, dependency calculation, grid input and OOXML are first-party implementations; do not introduce Univer or another formula engine.
@@ -66,5 +68,7 @@
 ## Verification
 
 Use the narrowest meaningful checks. Changes to editing need transaction, undo and conflict tests; Office changes need import, editable export and reopen checks; host changes need ownership and concurrent-save coverage. Layout changes need relevant visual fixtures with fixed fonts and viewport.
+
+Every change that restores Word formatting or layout must add or extend an automated regression test for the general rule being fixed. Use a synthetic DOCX or public fixture that reproduces the difference and assert the affected formatting or geometry through the shared renderer. Exercise both preview and editing when the change spans both surfaces.
 
 For design-only work, check Markdown links, JSON examples, example consistency and `git diff --check`. Do not claim planned capabilities as implemented behavior.

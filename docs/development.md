@@ -17,7 +17,7 @@ Playground 通过公开入口打开 DOCX/文档包、选择文字／对象／区
 
 项目名称为 `doffi`，内部 workspace 使用 `@doffi/core`、`@doffi/editor`、`@doffi/office`、`@doffi/render` 和 `@doffi/node`；Playground 为 `@doffi/playground`，Node CLI 为 `doffi`。版本均为 `0.0.0`，包均设为 `private`；公开许可字段为 `AGPL-3.0-only`，版权署名为 RobotSe7en，也可另行洽谈[商业授权](../COMMERCIAL-LICENSE.md)。npm scope 归属和正式发布仍按发布计划确认。
 
-运行时环境变量统一使用 `DOFFI_*` 前缀，验收使用 `DOFFI_SOURCE_HEAD` 和 `DOFFI_WORKBOOK_*`。Playground 转换路由为 `/__doffi/convert`，请求头为 `X-Doffi-Dev: 1`，浏览器渲染桥为 `window.__doffiRender`，显示设置使用 `doffi:layout`，Word 编辑模式偏好使用 `doffi:editing`，文档列表开关使用 `doffi:library`，标尺开关使用 `doffi:rulers`。
+运行时环境变量统一使用 `DOFFI_*` 前缀，验收使用 `DOFFI_SOURCE_HEAD` 和 `DOFFI_WORKBOOK_*`。Playground 转换路由为 `/__doffi/convert`，请求头为 `X-Doffi-Dev: 1`，浏览器渲染桥为 `window.__doffiRender`，显示设置使用 `doffi:layout`，Word 编辑模式偏好使用 `doffi:editing`，文档列表开关使用 `doffi:library`。
 
 V1 文档包使用 `format: "doffi"`、`urn:doffi:contract:*` Schema 标识及 `doffi/workbook-read/1` Worker 协议标识。本次更名按用户决定不保留旧名称的兼容入口。独立原生样例、实际字体环境路径和历史验收证据保留原始内容。
 
@@ -96,6 +96,8 @@ pnpm pack:packages
 修改后运行相应的窄范围检查与 `git diff --check`。只有验证所覆盖的能力才可在 README 标为已实现，产品范围和宿主边界以[总体架构](architecture.md)及[交互协议](editing-protocol.md)为准。
 
 R1-12 的浏览器 CI 使用 Ubuntu 24.04、固定 Playwright 引擎、Poppler 和宿主 Noto 字体；另校验官方归档后安装 Chromium 109，并在 macOS 15 使用真实 SafariDriver。Safari 输出实际版本及验收结果，不能用 Linux WebKit 结果冒充 Safari。PDF 开发中间件默认只接受本机连接；远程访问可将 Vite 绑定 `0.0.0.0` 并显式配置确切同源开发地址，见 [Word 闭环](word-closure.md#远程开发访问)。正式转换认证由宿主管理。
+
+需要重现远程 DOCX 导入问题时，可在测试环境用 `DOFFI_DEV_DOCX_DIAGNOSTICS=1 pnpm --filter @doffi/playground dev --port 5174 --strictPort` 启用诊断。选择本地 DOCX 后，服务端先把原始字节写入私有临时目录，再由浏览器导入。Vite 日志用诊断编号关联临时文件、导入及预览结果，导入失败时页面也显示该编号。副本最多保留一小时，服务关闭时清理。
 
 PPT 的独立 ZIP/XML 样例与参考环境见 [PPTX 样例](../examples/pptx/README.md)。`pnpm check:pptx-fixtures` 不需要 Office；`pnpm check:pptx-reference` 需要 Impress、Calc、Poppler 和上述字体，会实际打开、重存并重开。环境不同只运行内容检查并明确记录未比较像素，不自动刷新基线。
 

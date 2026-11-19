@@ -1,0 +1,674 @@
+import { test, expect } from "vitest";
+import { createWordDocument, openDocument, createDocumentSession } from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+import { importDocx, exportDocx } from "@doffi/office";
+import { unzipSync, strFromU8, zipSync, strToU8 } from "fflate";
+function editor() {
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "word-layout" }), { kind: "document" }),
+  );
+  return {
+    session,
+    apply: (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "word-layout",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      ),
+  };
+}
+test("section watermarks localize inherited headers, keep their text editable and reopen natively before reversible removal", () => {
+  const { session, apply } = editor();
+  apply([
+    {
+      op: "insertWordStory",
+      nodeId: "section-root-1",
+      kind: "header",
+      variant: "default",
+      html: "<p>原页眉</p>",
+    },
+    { op: "splitWordSection", nodeId: "paragraph-1", breakType: "nextPage" },
+  ]);
+  const second = session.snapshot().metadata.sections![1]!.rootNodeId,
+    originalHeader = session.snapshot().metadata.sections![0]!.headers!.default;
+  apply([
+    {
+      op: "setWordWatermark",
+      nodeId: second,
+      watermark: {
+        kind: "text",
+        text: "机密 CONFIDENTIAL",
+        fontFamily: "Noto Sans CJK SC",
+        fontSize: 48,
+        color: "#cccccc",
+        rotation: -45,
+      },
+    },
+  ]);
+  const snapshot = session.snapshot();
+  expect(snapshot.metadata.sections![0]!.headers!.default).toBe(originalHeader);
+  expect(snapshot.metadata.sections![1]!.headers!.default).not.toBe(originalHeader);
+  expect(snapshot.metadata.word!.drawings!.filter((drawing) => drawing.watermark)).toHaveLength(1);
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+        importDocx(bytes, { documentId: "watermark-native", unsupportedContent: "reject" }),
+        { kind: "document" },
+      ),
+      watermark = model.snapshot().metadata.word!.drawings!.find((drawing) => drawing.watermark)!;
+    expect(watermark.kind).toBe("textBox");
+    expect(watermark.layout).toMatchObject({
+      mode: "floating",
+      horizontal: "page",
+      vertical: "page",
+      alignH: "center",
+      alignV: "center",
+      behindText: true,
+    });
+    expect(
+      model.getNode(
+        model
+          .snapshot()
+          .metadata.word!.stories.find(
+            (story) =>
+              story.storyId === (watermark.kind === "textBox" ? watermark.textStoryId : ""),
+          )!.rootNodeId,
+      )!.text,
+    ).toBe("机密 CONFIDENTIAL");
+    bytes = exportDocx(model).bytes;
+  }
+  apply([{ op: "setWordWatermark", nodeId: second, watermark: null }]);
+  expect(
+    session.snapshot().metadata.word!.drawings!.filter((drawing) => drawing.watermark),
+  ).toHaveLength(0);
+  expect(
+    session.snapshot().metadata.word!.stories.filter((story) => story.kind === "textBox"),
+  ).toHaveLength(0);
+  expect(
+    session.getNode(
+      session
+        .snapshot()
+        .metadata.word!.stories.find(
+          (story) => story.storyId === session.snapshot().metadata.sections![0]!.headers!.default,
+        )!.rootNodeId,
+    )!.text,
+  ).toBe("原页眉");
+  session.undo();
+  expect(
+    session.snapshot().metadata.word!.drawings!.filter((drawing) => drawing.watermark),
+  ).toHaveLength(1);
+});
+test.each(["auto", "atLeast", "exact"] as const)(
+  "native %s row height remains editable through reopens and rejects a new rule",
+  (rule) => {
+    const { session, apply } = editor();
+    apply([
+      {
+        op: "insertWordTable",
+        nodeId: "paragraph-1",
+        position: "after",
+        rows: 2,
+        columns: 2,
+        width: 240,
+      },
+    ]);
+    const table = session.snapshot().metadata.word!.tables[0]!.nodeId;
+    apply([
+      { op: "editWordTable", nodeId: table, change: { kind: "resize", rowHeights: [24, 24] } },
+      { op: "formatWordTable", nodeId: table, rowHeightRule: rule },
+    ]);
+    let bytes = exportDocx(session).bytes;
+    for (let pass = 0; pass < 2; pass++) {
+      expect(strFromU8(unzipSync(bytes)["word/document.xml"]!)).toContain('w:hRule="' + rule + '"');
+      const model = openDocument(
+        importDocx(bytes, { documentId: "row-rule", unsupportedContent: "reject" }),
+        { kind: "document" },
+      );
+      expect(model.snapshot().html).toContain("--word-row-height-rule:" + rule);
+      bytes = exportDocx(model).bytes;
+    }
+    apply([
+      { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+      {
+        op: "formatWordTable",
+        nodeId: table,
+        rowHeightRule: rule === "exact" ? "atLeast" : "exact",
+      },
+      { op: "reviewWordRevisions", nodeId: "document-root", decision: "reject" },
+    ]);
+    expect(strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!)).toContain(
+      'w:hRule="' + rule + '"',
+    );
+  },
+);
+test("unequal native columns retain individual widths and spaces through tracked changes and two editable reopens", () => {
+  const { session, apply } = editor(),
+    columns = { count: 3, gap: 24, separator: true, widths: [80, 150, 170], spaces: [12, 18, 0] };
+  apply([{ op: "setWordSection", nodeId: "section-root-1", changes: { columns } }]);
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+      importDocx(bytes, { documentId: "unequal-native", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(model.snapshot().metadata.sections![0]!.columns).toEqual(columns);
+    bytes = exportDocx(model).bytes;
+  }
+  const before = session.snapshot();
+  expect(() =>
+    apply([
+      {
+        op: "setWordSection",
+        nodeId: "section-root-1",
+        changes: { columns: { ...columns, widths: [80, 150] } },
+      },
+    ]),
+  ).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: { columns: { ...columns, widths: [100, 130, 170] } },
+    },
+    { op: "reviewWordRevisions", nodeId: "document-root", decision: "reject" },
+  ]);
+  expect(session.snapshot().metadata.sections![0]!.columns).toEqual(columns);
+});
+test("tracked section and grid size histories preserve their first geometry through repeat edits, native reopens and rejection", () => {
+  const { session, apply } = editor(),
+    original = session.snapshot().metadata.sections![0]!;
+  apply([{ op: "insertWordTable", nodeId: "paragraph-1", position: "after", rows: 2, columns: 2 }]);
+  const table = session.snapshot().metadata.word!.tables[0]!,
+    grid = [...table.grid];
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "甲" },
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: { gutter: 12, columns: { count: 2, gap: 24 }, pageNumberStart: 5 },
+    },
+    {
+      op: "editWordTable",
+      nodeId: table.nodeId,
+      change: { kind: "resize", grid: [150, 200], rowHeights: [30, 40] },
+    },
+  ]);
+  apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "乙" },
+    { op: "setWordSection", nodeId: "section-root-1", changes: { gutter: 18 } },
+  ]);
+  expect(
+    session.snapshot().metadata.word!.revisions.find((item) => item.property === "section")!.author,
+  ).toBe("乙");
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+      importDocx(bytes, { documentId: "geometry-history", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(
+      model.snapshot().metadata.word!.revisions.some((item) => item.property === "section"),
+    ).toBe(true);
+    expect(
+      model.snapshot().metadata.word!.revisions.some((item) => item.property === "tableGrid"),
+    ).toBe(true);
+    bytes = exportDocx(model).bytes;
+  }
+  const reopened = createDocumentSession(
+      openDocument(
+        importDocx(bytes, { documentId: "geometry-history", unsupportedContent: "reject" }),
+        { kind: "document" },
+      ),
+    ),
+    root = reopened.getNode(
+      reopened.snapshot().metadata.word!.stories[0]!.rootNodeId,
+    )!.parentNodeId!;
+  reopened.commit(
+    reopened.prepare({
+      protocolVersion: 1,
+      documentId: "geometry-history",
+      baseRevision: 0,
+      operations: [{ op: "reviewWordRevisions", nodeId: root, decision: "reject" }],
+    }),
+  );
+  const setup = original.pageSetup ?? session.snapshot().metadata.pageSetup!;
+  expect(reopened.snapshot().metadata.sections![0]!.pageSetup).toMatchObject({
+    width: Math.round(setup.width * 20) / 20,
+    height: Math.round(setup.height * 20) / 20,
+    margins: setup.margins,
+  });
+  expect(reopened.snapshot().metadata.sections![0]!.gutter).toBe(0);
+  expect(reopened.snapshot().metadata.sections![0]!.columns?.count).toBeUndefined();
+  expect(reopened.snapshot().metadata.word!.tables[0]!.grid).toEqual(
+    grid.map((width) => Math.round(width * 20) / 20),
+  );
+  expect(strFromU8(unzipSync(exportDocx(reopened).bytes)["word/document.xml"]!)).not.toContain(
+    "PrChange",
+  );
+  expect(() =>
+    importDocx(exportDocx(reopened).bytes, {
+      documentId: "geometry-reviewed",
+      unsupportedContent: "reject",
+    }),
+  ).not.toThrow();
+  apply([{ op: "reviewWordRevisions", nodeId: "document-root", decision: "reject" }]);
+  expect(session.snapshot().metadata.sections![0]).toEqual(original);
+  expect(session.snapshot().metadata.word!.tables[0]!.grid).toEqual(grid);
+  session.undo();
+  expect(
+    session.snapshot().metadata.word!.revisions.some((item) => item.property === "section"),
+  ).toBe(true);
+});
+test("section page borders keep offsets, page scope, effects and theme references through editable native reopens", () => {
+  const { session, apply } = editor(),
+    pageBorders = {
+      offsetFrom: "text" as const,
+      display: "notFirstPage" as const,
+      zOrder: "back" as const,
+      top: {
+        style: "double" as const,
+        width: 1.5,
+        space: 12,
+        color: "112233",
+        themeColor: "accent1" as const,
+        themeTint: "80",
+        shadow: true,
+        frame: true,
+      },
+      left: { style: "dashed" as const, width: 0.5, space: 9, color: "auto" },
+    };
+  apply([
+    { op: "setWordSection", nodeId: "section-root-1", changes: { pageBorders } },
+    {
+      op: "setWordOptions",
+      nodeId: "document-root",
+      bordersDoNotSurroundHeader: true,
+      bordersDoNotSurroundFooter: true,
+    },
+  ]);
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+      importDocx(bytes, { documentId: "borders-reopen", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(model.snapshot().metadata.sections![0]!.pageBorders).toEqual(pageBorders);
+    expect(model.snapshot().metadata.word).toMatchObject({
+      bordersDoNotSurroundHeader: true,
+      bordersDoNotSurroundFooter: true,
+    });
+    bytes = exportDocx(model).bytes;
+  }
+  session.undo();
+  expect(session.snapshot().metadata.sections![0]!.pageBorders).toBeUndefined();
+});
+test("unmapped art page borders retain their complete native properties until explicitly replaced", () => {
+  const { session } = editor(),
+    parts = unzipSync(exportDocx(session).bytes);
+  parts["word/document.xml"] = strToU8(
+    strFromU8(parts["word/document.xml"]!).replace(
+      "<w:titlePg",
+      '<w:pgBorders w:offsetFrom="page" w:display="firstPage"><w:top w:val="apples" w:sz="20" w:space="24"/></w:pgBorders><w:titlePg',
+    ),
+  );
+  const editing = createDocumentSession(
+    openDocument(importDocx(zipSync(parts), { documentId: "art-borders" }), { kind: "document" }),
+  );
+  expect(strFromU8(unzipSync(exportDocx(editing).bytes)["word/document.xml"]!)).toContain(
+    'w:val="apples"',
+  );
+  editing.commit(
+    editing.prepare({
+      protocolVersion: 1,
+      documentId: "art-borders",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "setWordSection",
+          nodeId: editing.snapshot().metadata.sections![0]!.rootNodeId,
+          changes: {
+            pageBorders: {
+              offsetFrom: "page",
+              display: "allPages",
+              zOrder: "front",
+              top: { style: "single", color: "000000", width: 1, space: 24 },
+            },
+          },
+        },
+      ],
+    }),
+  );
+  const xml = strFromU8(unzipSync(exportDocx(editing).bytes)["word/document.xml"]!);
+  expect(xml).not.toContain("apples");
+  expect(xml.match(/<w:pgBorders[\s>]/g)).toHaveLength(1);
+  expect(() =>
+    importDocx(exportDocx(editing).bytes, {
+      documentId: "replaced-border",
+      unsupportedContent: "reject",
+    }),
+  ).not.toThrow();
+});
+test("rejecting a tracked replacement restores an opaque art border from the previous native section", () => {
+  const { session } = editor(),
+    parts = unzipSync(exportDocx(session).bytes);
+  parts["word/document.xml"] = strToU8(
+    strFromU8(parts["word/document.xml"]!).replace(
+      "<w:titlePg",
+      '<w:pgBorders w:offsetFrom="page"><w:top w:val="apples" w:sz="20" w:space="24"/></w:pgBorders><w:titlePg',
+    ),
+  );
+  const editing = createDocumentSession(
+      openDocument(importDocx(zipSync(parts), { documentId: "art-history" }), { kind: "document" }),
+    ),
+    section = editing.snapshot().metadata.sections![0]!,
+    root = editing.getNode(editing.snapshot().metadata.word!.stories[0]!.rootNodeId)!.parentNodeId!;
+  editing.commit(
+    editing.prepare({
+      protocolVersion: 1,
+      documentId: "art-history",
+      baseRevision: 0,
+      operations: [
+        { op: "setWordReview", nodeId: root, trackChanges: true, author: "甲" },
+        {
+          op: "setWordSection",
+          nodeId: section.rootNodeId,
+          changes: {
+            pageBorders: {
+              offsetFrom: "page",
+              display: "allPages",
+              zOrder: "front",
+              top: { style: "single", color: "000000", width: 1, space: 24 },
+            },
+          },
+        },
+      ],
+    }),
+  );
+  const output = exportDocx(editing).bytes;
+  expect(strFromU8(unzipSync(output)["word/document.xml"]!)).toMatch(/sectPrChange[\s\S]*apples/);
+  const reopened = createDocumentSession(
+      openDocument(importDocx(output, { documentId: "art-history-reopen" }), { kind: "document" }),
+    ),
+    revision = reopened
+      .snapshot()
+      .metadata.word!.revisions.find((item) => item.property === "section")!;
+  reopened.commit(
+    reopened.prepare({
+      protocolVersion: 1,
+      documentId: "art-history-reopen",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevision",
+          nodeId: revision.nodeId,
+          revisionId: revision.revisionId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  const xml = strFromU8(unzipSync(exportDocx(reopened).bytes)["word/document.xml"]!);
+  expect(xml).toContain("apples");
+  expect(xml).not.toContain("PrChange");
+  expect(xml.match(/<w:pgBorders[\s>]/g)).toHaveLength(1);
+});
+test("native page geometry, grid, gutter, separate headers, fields and tab stops reopen after edits", () => {
+  const { session, apply } = editor();
+  apply([
+    {
+      op: "setWordSection",
+      nodeId: "section-root-1",
+      changes: {
+        gutter: 18,
+        gutterPosition: "right",
+        grid: { type: "linesAndChars", linePitch: 24, characterSpacing: 4096 },
+      },
+    },
+    {
+      op: "setWordParagraph",
+      nodeId: "paragraph-1",
+      properties: { "--word-paragraph-snap-to-grid": "0" },
+    },
+    {
+      op: "setWordTabs",
+      nodeId: "paragraph-1",
+      defaultInterval: 36,
+      stops: [{ position: 72, alignment: "decimal", leader: "dot" }],
+    },
+    {
+      op: "insertWordStory",
+      nodeId: "section-root-1",
+      kind: "footer",
+      variant: "default",
+      html: "<p>页码：</p>",
+    },
+  ]);
+  const story = session.snapshot().metadata.word!.stories.find((story) => story.kind === "footer")!;
+  apply([
+    {
+      op: "insertWordField",
+      nodeId: session.getNode(story.rootNodeId)!.childNodeIds[0]!,
+      instruction: "PAGE",
+    },
+    { op: "splitWordSection", nodeId: "paragraph-1", breakType: "nextPage" },
+  ]);
+  apply([
+    {
+      op: "cloneWordStory",
+      nodeId: session.snapshot().metadata.sections![1]!.rootNodeId,
+      storyId: story.storyId,
+      variant: "default",
+    },
+  ]);
+  const result = exportDocx(session),
+    parts = unzipSync(result.bytes),
+    source = strFromU8(parts["word/document.xml"]!);
+  expect(source).toContain('w:charSpace="4096"');
+  expect(source).toContain('w:linePitch="480"');
+  expect(source).toContain('w:gutter="360"');
+  expect(source).toContain("rtlGutter");
+  expect(source).toContain("snapToGrid");
+  const restored = openDocument(
+      importDocx(result.bytes, { documentId: "reopened-layout", unsupportedContent: "reject" }),
+      { kind: "document" },
+    ),
+    word = restored.snapshot().metadata.word!;
+  expect(restored.snapshot().metadata.sections![0]!.grid).toEqual({
+    type: "linesAndChars",
+    linePitch: 24,
+    characterSpacing: 4096,
+  });
+  expect(word.fields).toHaveLength(2);
+  expect(word.tabs[0]!.stops[0]).toEqual({ position: 72, alignment: "decimal", leader: "dot" });
+  expect(word.stories.filter((story) => story.kind === "footer")).toHaveLength(2);
+});
+test("a preserved object in a copied header retains its own relationships in both native parts", () => {
+  const { session, apply } = editor();
+  apply([
+    {
+      op: "insertWordStory",
+      nodeId: "section-root-1",
+      kind: "header",
+      variant: "default",
+      html: "<p>保留对象</p>",
+    },
+  ]);
+  const files = unzipSync(exportDocx(session).bytes),
+    part = Object.keys(files).find((name) => /^word\/header\d+\.xml$/.test(name))!;
+  files[part] = strToU8(
+    strFromU8(files[part]!).replace(
+      "</w:p>",
+      '<x:widget xmlns:x="urn:example" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="widget"/></w:p>',
+    ),
+  );
+  files["word/_rels/" + part.slice(5) + ".rels"] = strToU8(
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="widget" Type="urn:example:widget" Target="https://example.com/native" TargetMode="External"/></Relationships>',
+  );
+  const model = openDocument(importDocx(zipSync(files), { documentId: "clone-native" }), {
+      kind: "document",
+    }),
+    editing = createDocumentSession(model),
+    before = model.snapshot(),
+    story = before.metadata.word!.stories.find((story) => story.kind === "header")!,
+    paragraph = model.getNode(before.metadata.sections![0]!.rootNodeId)!.childNodeIds[0]!;
+  editing.commit(
+    editing.prepare({
+      protocolVersion: 1,
+      documentId: "clone-native",
+      baseRevision: 0,
+      operations: [{ op: "splitWordSection", nodeId: paragraph, breakType: "nextPage" }],
+    }),
+  );
+  editing.commit(
+    editing.prepare({
+      protocolVersion: 1,
+      documentId: "clone-native",
+      baseRevision: 1,
+      operations: [
+        {
+          op: "cloneWordStory",
+          nodeId: editing.snapshot().metadata.sections![1]!.rootNodeId,
+          storyId: story.storyId,
+          variant: "default",
+        },
+      ],
+    }),
+  );
+  const exported = unzipSync(exportDocx(editing).bytes),
+    headers = Object.keys(exported).filter((name) => /^word\/header\d+\.xml$/.test(name));
+  expect(headers).toHaveLength(2);
+  for (const header of headers) {
+    expect(strFromU8(exported[header]!)).toContain("widget");
+    expect(strFromU8(exported["word/_rels/" + header.slice(5) + ".rels"]!)).toContain(
+      "https://example.com/native",
+    );
+  }
+  expect(() =>
+    openDocument(importDocx(exportDocx(editing).bytes, { documentId: "copy-reopen" }), {
+      kind: "document",
+    }),
+  ).not.toThrow();
+});
+test("arbitrary table subdivisions export as an editable rectangular native grid", () => {
+  const { session, apply } = editor();
+  apply([{ op: "insertWordTable", nodeId: "paragraph-1", position: "after", rows: 3, columns: 3 }]);
+  const table = session.snapshot().metadata.word!.tables[0]!.nodeId;
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: table,
+      change: {
+        kind: "setCells",
+        row: 0,
+        column: 0,
+        values: [
+          ["A", "B", "C"],
+          ["D", "E", "F"],
+          ["G", "H", "I"],
+        ],
+      },
+    },
+    {
+      op: "editWordTable",
+      nodeId: table,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 2 },
+    },
+    {
+      op: "editWordTable",
+      nodeId: table,
+      change: { kind: "splitCell", row: 0, column: 0, rows: 3, columns: 3 },
+    },
+  ]);
+  const text = session.getNode(table)!.text;
+  const model = openDocument(
+      importDocx(exportDocx(session).bytes, {
+        documentId: "split-native",
+        unsupportedContent: "reject",
+      }),
+      { kind: "document" },
+    ),
+    info = model.snapshot().metadata.word!.tables[0]!;
+  expect(info.grid).toHaveLength(5);
+  expect(model.getNode(info.nodeId)!.text).toBe(text);
+  expect(() =>
+    importDocx(exportDocx(model).bytes, {
+      documentId: "split-again",
+      unsupportedContent: "reject",
+    }),
+  ).not.toThrow();
+});
+test("minimum paragraph spacing, distributed alignment and native borders remain editable on reopen", () => {
+  const { session, apply } = editor();
+  apply([
+    {
+      op: "replaceText",
+      nodeId: "paragraph-1",
+      from: 0,
+      to: 0,
+      expectedText: "",
+      text: "分散对齐 ABC",
+    },
+    {
+      op: "setWordParagraph",
+      nodeId: "paragraph-1",
+      properties: {
+        "text-align": "justify",
+        "--word-distributed": "1",
+        "line-height": "12pt",
+        "--word-line-rule": "atLeast",
+        "border-bottom": "1pt double #224466",
+        "break-after": "avoid",
+        widows: "2",
+        orphans: "2",
+      },
+    },
+  ]);
+  const bytes = exportDocx(session).bytes,
+    xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+  expect(xml).toContain('w:lineRule="atLeast"');
+  expect(xml).toContain('w:val="distribute"');
+  expect(xml).toContain("pBdr");
+  expect(xml).toContain("keepNext");
+  const restored = openDocument(
+    importDocx(bytes, { documentId: "paragraph-native", unsupportedContent: "reject" }),
+    { kind: "document" },
+  );
+  expect(restored.snapshot().html).toContain("--word-distributed:1");
+  expect(restored.snapshot().html).toContain("--word-line-rule:atLeast");
+  expect(() =>
+    importDocx(exportDocx(restored).bytes, {
+      documentId: "paragraph-again",
+      unsupportedContent: "reject",
+    }),
+  ).not.toThrow();
+});
+
+test("mirror margins remain an editable document option through native saves and undo", () => {
+  const session = createDocumentSession(
+    openDocument(createWordDocument({ documentId: "mirrors" }), { kind: "document" }),
+  );
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "mirrors",
+      baseRevision: 0,
+      operations: [{ op: "setWordOptions", nodeId: "document-root", mirrorMargins: true }],
+    }),
+  );
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+      importDocx(bytes, { documentId: "mirror-reopen", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(model.snapshot().metadata.word!.mirrorMargins).toBe(true);
+    bytes = exportDocx(model).bytes;
+  }
+  session.undo();
+  expect(session.snapshot().metadata.word!.mirrorMargins).toBeUndefined();
+});

@@ -33,10 +33,10 @@ export function validatePackage(input: DocumentPackage, limits: DocumentReadLimi
     if (!PackagePathSchema.safeParse(path).success || files.has(path) || !(bytes instanceof Uint8Array)) {
       invalid("Package files must have unique canonical paths and byte contents.");
     }
-    checkLimit(files.size + 1, limits.maxFiles);
-    checkLimit(bytes.byteLength, limits.maxFileBytes);
+    checkLimit(files.size + 1, limits.maxFiles, "maxFiles", "the package");
+    checkLimit(bytes.byteLength, limits.maxFileBytes, "maxFileBytes", path);
     total += bytes.byteLength;
-    checkLimit(total, limits.maxPackageBytes);
+    checkLimit(total, limits.maxPackageBytes, "maxPackageBytes", "the package");
     files.set(path, bytes);
   }
   // A trailing slash groups a file with its descendants even when sibling names

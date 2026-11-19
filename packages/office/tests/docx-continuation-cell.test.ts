@@ -1,0 +1,138 @@
+import { expect, test } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
+import {
+  createDocumentSession,
+  openDocument,
+  SourceStyleResolver,
+  DEFAULT_DOCUMENT_READ_LIMITS,
+} from "@doffi/core";
+import type { ContentDocumentModel, DocumentOperation, SourceStyleNode } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+import { continuationCellFixture } from "./continuation-cell-fixture.js";
+function setup() {
+  const session = createDocumentSession(
+      openDocument(
+        importDocx(continuationCellFixture(), {
+          documentId: "continuation-cell",
+          unsupportedContent: "reject",
+        }),
+        { kind: "document" },
+      ),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "continuation-cell",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  return { session, apply };
+}
+function appearance(model: ContentDocumentModel, id: string) {
+  const resolver = new SourceStyleResolver(
+      model.snapshot().styles.map((sheet) => sheet.css),
+      DEFAULT_DOCUMENT_READ_LIMITS,
+    ),
+    project = (id: string): SourceStyleNode => {
+      const node = model.getNode(id)!;
+      return {
+        tag: node.tagName,
+        attrs: node.attributes,
+        parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
+      };
+    };
+  return resolver.get(project(id));
+}
+test("independent continuation borders, shading, margins and direction stay editable through two native reopens", () => {
+  const { session } = setup();
+  expect(session.snapshot().metadata.word!.nativeContent?.fragments ?? []).toEqual([]);
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+        importDocx(bytes, { documentId: "continuation-cell-native", unsupportedContent: "reject" }),
+        { kind: "document" },
+      ),
+      entry = model.snapshot().metadata.word!.tables[0]!.continuationFormats![0]!;
+    expect(entry).toMatchObject({ row: 1, column: 0, textDirection: "tbRl" });
+    expect(entry.cellCssClass).toBeTruthy();
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    expect(xml).toMatch(/<w:bottom[^>]*w:val="double"[^>]*w:color="880000"/);
+    expect(xml).toMatch(/<w:left[^>]*w:w="180"/);
+    expect(xml.toLowerCase()).toContain("ffff88");
+    bytes = exportDocx(model).bytes;
+  }
+});
+test("unmerging materializes the physical continuation cell format, mark font and editable text with one undo", () => {
+  const { session, apply } = setup(),
+    before = session.snapshot(),
+    table = before.metadata.word!.tables[0]!;
+  apply([
+    { op: "editWordTable", nodeId: table.nodeId, change: { kind: "splitCell", row: 0, column: 0 } },
+  ]);
+  const secondRow = session.getNode(table.nodeId)!.childNodeIds[1]!,
+    cell = session.getNode(secondRow)!.childNodeIds[0]!,
+    paragraph = session.getNode(cell)!.childNodeIds[0]!;
+  expect(session.getNode(cell)!.attributes["data-word-text-direction"]).toBe("tbRl");
+  expect(appearance(session, cell)).toMatchObject({
+    "background-color": "#ffff88",
+    "border-left-style": "double",
+    "border-bottom-color": "#880000",
+    "padding-left": "9pt",
+    "vertical-align": "bottom",
+  });
+  apply([{ op: "replaceText", nodeId: paragraph, from: 0, to: 0, expectedText: "", text: "NEW" }]);
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(
+      importDocx(bytes, { documentId: "split-physical", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    expect(model.getNode(model.snapshot().metadata.word!.tables[0]!.nodeId)!.text).toContain("NEW");
+    expect(strFromU8(unzipSync(bytes)["word/document.xml"]!)).toContain('w:sz w:val="28"');
+    bytes = exportDocx(model).bytes;
+  }
+  session.undo();
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
+});
+test("editing and shifting a merged source retains the continuation cell format at its new grid slot", () => {
+  const { session, apply } = setup(),
+    table = session.snapshot().metadata.word!.tables[0]!,
+    row = session.getNode(table.nodeId)!.childNodeIds[0]!,
+    cell = session.getNode(row)!.childNodeIds[0]!,
+    paragraph = session.getNode(cell)!.childNodeIds[0]!;
+  apply([
+    { op: "replaceText", nodeId: paragraph, from: 0, to: 0, expectedText: "", text: "EDIT" },
+    { op: "editWordTable", nodeId: table.nodeId, change: { kind: "insertRows", at: 0, count: 1 } },
+    {
+      op: "editWordTable",
+      nodeId: table.nodeId,
+      change: { kind: "insertColumns", at: 0, count: 1 },
+    },
+  ]);
+  expect(session.snapshot().metadata.word!.tables[0]!.continuationFormats![0]).toMatchObject({
+    row: 2,
+    column: 1,
+    textDirection: "tbRl",
+  });
+  const model = openDocument(
+    importDocx(exportDocx(session).bytes, {
+      documentId: "shift-physical",
+      unsupportedContent: "reject",
+    }),
+    { kind: "document" },
+  );
+  expect(model.getNode(model.snapshot().metadata.word!.tables[0]!.nodeId)!.text).toContain(
+    "EDITMERGED",
+  );
+  expect(
+    model
+      .snapshot()
+      .metadata.word!.tables[0]!.continuationFormats!.some(
+        (entry) => entry.textDirection === "tbRl",
+      ),
+  ).toBe(true);
+});

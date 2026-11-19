@@ -1,0 +1,257 @@
+import { DocumentError } from "@doffi/core";
+import type { DeepReadonly, WordMathNode, WordMathTree } from "@doffi/core";
+/** Structural controls edit the same local math tree as linear input. Surviving
+ * arguments keep their identities and text; removed arguments are pruned. */
+export function wordMathComponents(
+  panel: HTMLElement,
+  math: DeepReadonly<WordMathTree>,
+  apply: (tree: WordMathTree) => void,
+  onError: (error: unknown) => void,
+): void {
+  const document = panel.ownerDocument,
+    components = math.nodes.filter(
+      (node) =>
+        "children" in node &&
+        node.kind !== "row" &&
+        node.kind !== "matrixRow" &&
+        node.kind !== "equationGroup",
+    );
+  if (!components.length) return;
+  const target = document.createElement("select"),
+    fields = document.createElement("div");
+  target.setAttribute("aria-label", "公式结构组件");
+  for (const node of components) {
+    const option = document.createElement("option");
+    option.value = node.mathId;
+    option.textContent = node.kind + " · " + node.mathId;
+    target.append(option);
+  }
+  panel.append(target, fields);
+  function show(): void {
+    fields.replaceChildren();
+    const original = components.find((node) => node.mathId === target.value)!;
+    const input = (name: string, value: string): HTMLInputElement => {
+      const label = document.createElement("label"),
+        control = document.createElement("input");
+      label.textContent = name;
+      control.setAttribute("aria-label", name);
+      control.value = value;
+      label.append(control);
+      fields.append(label);
+      return control;
+    };
+    const choose = (name: string, values: readonly string[], value: string): HTMLSelectElement => {
+      const label = document.createElement("label"),
+        control = document.createElement("select");
+      label.textContent = name;
+      control.setAttribute("aria-label", name);
+      for (const key of values) {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key;
+        control.append(option);
+      }
+      control.value = value;
+      label.append(control);
+      fields.append(label);
+      return control;
+    };
+    const check = (name: string, value: boolean): HTMLInputElement => {
+      const control = input(name, "");
+      control.type = "checkbox";
+      control.checked = value;
+      return control;
+    };
+    const changes: ((
+      node: WordMathNode,
+      nodes: WordMathNode[],
+      add: (node: WordMathNode) => string,
+    ) => void)[] = [];
+    if (original.kind === "fraction") {
+      const value = choose(
+        "分式形式",
+        ["bar", "noBar", "skewed", "linear"],
+        original.mode ?? "bar",
+      );
+      changes.push((node) => {
+        if (node.kind === "fraction") node.mode = value.value as typeof node.mode;
+      });
+    }
+    if (original.kind === "radical") {
+      const value = check("隐藏根指数", original.hideDegree ?? original.children.length === 1);
+      changes.push((node) => {
+        if (node.kind === "radical") node.hideDegree = value.checked;
+      });
+    }
+    if (original.kind === "fence") {
+      const open = input("左定界符", original.open ?? "("),
+        close = input("右定界符", original.close ?? ")"),
+        separator = input("公式组分隔符", original.separator ?? "|"),
+        grow = check("定界符随内容增大", original.grow ?? true);
+      changes.push((node) => {
+        if (node.kind === "fence")
+          Object.assign(node, {
+            open: open.value,
+            close: close.value,
+            separator: separator.value,
+            grow: grow.checked,
+          });
+      });
+    }
+    if (original.kind === "nary") {
+      const operator = input("大型运算符", original.operator),
+        limits = choose(
+          "大型运算上下限",
+          ["aboveBelow", "subSup"],
+          original.limits ?? "aboveBelow",
+        ),
+        lower = check("隐藏运算下限", original.hideLower ?? false),
+        upper = check("隐藏运算上限", original.hideUpper ?? false);
+      changes.push((node) => {
+        if (node.kind === "nary")
+          Object.assign(node, {
+            operator: operator.value,
+            limits: limits.value,
+            hideLower: lower.checked,
+            hideUpper: upper.checked,
+          });
+      });
+    }
+    if (original.kind === "accent") {
+      const value = input("公式重音符", original.symbol);
+      changes.push((node) => {
+        if (node.kind === "accent") node.symbol = value.value;
+      });
+    }
+    if (original.kind === "bar" || original.kind === "limit") {
+      const values = original.kind === "bar" ? ["top", "bottom"] : ["lower", "upper"],
+        value = choose("公式横线或极限位置", values, original.position);
+      changes.push((node) => {
+        if (node.kind === "bar" || node.kind === "limit")
+          node.position = value.value as typeof node.position;
+      });
+    }
+    if (original.kind === "script") {
+      const value = choose("上下标形式", ["sub", "sup", "subsup", "pre"], original.mode);
+      changes.push((node, _nodes, add) => {
+        if (node.kind !== "script") return;
+        node.mode = value.value as typeof node.mode;
+        const count = ["sub", "sup"].includes(node.mode) ? 2 : 3;
+        while (node.children.length < count)
+          node.children.push(
+            add({
+              mathId: "",
+              kind: "row",
+              children: [add({ mathId: "", kind: "text", text: "□" })],
+            }),
+          );
+        node.children = node.children.slice(0, count);
+      });
+    }
+    if (original.kind === "matrix" || original.kind === "equationArray") {
+      const byId = new Map(math.nodes.map((node) => [node.mathId, node])),
+        first = byId.get(original.children[0]!)!,
+        rows = input("公式矩阵或数组行数", String(original.children.length)),
+        columns =
+          original.kind === "matrix"
+            ? input("公式矩阵列数", String("children" in first ? first.children.length : 1))
+            : undefined,
+        align =
+          original.kind === "matrix"
+            ? input("公式矩阵各列对齐", original.columnAlignments?.join(",") ?? "")
+            : undefined,
+        vertical =
+          original.kind === "matrix"
+            ? choose(
+                "公式矩阵垂直对齐",
+                ["top", "center", "bottom"],
+                original.verticalAlignment ?? "center",
+              )
+            : undefined;
+      changes.push((node, nodes, add) => {
+        if (node.kind !== "matrix" && node.kind !== "equationArray") return;
+        const height = Number(rows.value),
+          width = columns ? Number(columns.value) : 1;
+        if (
+          !Number.isInteger(height) ||
+          !Number.isInteger(width) ||
+          height < 1 ||
+          width < 1 ||
+          height * width > 10000
+        )
+          throw new DocumentError("InvalidOperation", "公式行列必须是正整数，最多 10000 个单元。");
+        const row = (): string =>
+          add({
+            mathId: "",
+            kind: "row",
+            children: [add({ mathId: "", kind: "text", text: "□" })],
+          });
+        while (node.children.length < height)
+          node.children.push(
+            node.kind === "matrix" ? add({ mathId: "", kind: "matrixRow", children: [] }) : row(),
+          );
+        node.children = node.children.slice(0, height);
+        if (node.kind === "matrix") {
+          for (const id of node.children) {
+            const matrixRow = nodes.find((node) => node.mathId === id)!;
+            if (matrixRow.kind !== "matrixRow")
+              throw new DocumentError("InvalidOperation", "矩阵行结构无效。");
+            while (matrixRow.children.length < width) matrixRow.children.push(row());
+            matrixRow.children = matrixRow.children.slice(0, width);
+          }
+          const values = align!.value.trim()
+            ? align!.value.split(",").map((value) => value.trim())
+            : [];
+          if (
+            values.length > width ||
+            values.some((value) => !["left", "center", "right"].includes(value))
+          )
+            throw new DocumentError(
+              "InvalidOperation",
+              "矩阵列对齐使用 left、center、right，以逗号分隔。",
+            );
+          node.columnAlignments = values as NonNullable<typeof node.columnAlignments>;
+          node.verticalAlignment = vertical!.value as typeof node.verticalAlignment;
+        }
+      });
+    }
+    if (!changes.length) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "应用公式组件结构";
+    button.addEventListener("click", () => {
+      try {
+        const nodes = JSON.parse(JSON.stringify(math.nodes)) as WordMathNode[],
+          node = nodes.find((node) => node.mathId === original.mathId)!,
+          ids = new Set(nodes.map((node) => node.mathId));
+        let serial = 0;
+        const add = (node: WordMathNode): string => {
+          while (ids.has("component-" + ++serial));
+          node.mathId = "component-" + serial;
+          ids.add(node.mathId);
+          nodes.push(node);
+          return node.mathId;
+        };
+        changes.forEach((change) => change(node, nodes, add));
+        const used = new Set<string>(),
+          byId = new Map(nodes.map((node) => [node.mathId, node])),
+          visit = (id: string): void => {
+            if (used.has(id)) return;
+            used.add(id);
+            const node = byId.get(id);
+            if (node && "children" in node) node.children.forEach(visit);
+          };
+        visit(math.rootMathId);
+        apply({
+          rootMathId: math.rootMathId,
+          nodes: nodes.filter((node) => used.has(node.mathId)),
+        });
+      } catch (error) {
+        onError(error);
+      }
+    });
+    fields.append(button);
+  }
+  target.addEventListener("change", show);
+  show();
+}

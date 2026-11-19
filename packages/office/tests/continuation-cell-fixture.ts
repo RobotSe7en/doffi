@@ -1,0 +1,12 @@
+import { body, mutateDocx, styles } from "./regression-fixtures.js";
+export function continuationCellFixture(): Uint8Array {
+  return mutateDocx("02-table-merges.docx", {
+    "word/styles.xml": () =>
+      styles('<w:style w:type="paragraph" w:styleId="Normal" w:default="1"/>'),
+    "word/document.xml": (source) =>
+      body(
+        source,
+        '<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:vMerge w:val="restart"/><w:tcBorders><w:left w:val="single" w:sz="16" w:color="000088"/><w:bottom w:val="single" w:sz="16" w:color="000088"/></w:tcBorders><w:shd w:val="clear" w:fill="DDEEFF"/></w:tcPr><w:p><w:r><w:t>MERGED</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>RIGHT1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:trHeight w:val="800" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:vMerge/><w:tcBorders><w:left w:val="double" w:sz="16" w:color="880000"/><w:bottom w:val="double" w:sz="16" w:color="880000"/></w:tcBorders><w:shd w:val="clear" w:fill="FFFF88"/><w:tcMar><w:left w:w="180" w:type="dxa"/></w:tcMar><w:textDirection w:val="tbRl"/><w:vAlign w:val="bottom"/></w:tcPr><w:p><w:pPr><w:rPr><w:sz w:val="28"/></w:rPr></w:pPr></w:p></w:tc><w:tc><w:p><w:r><w:t>RIGHT2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+      ),
+  });
+}

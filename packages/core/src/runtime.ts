@@ -1,16 +1,44 @@
 import type { Annotation, Anchor } from "./contracts/annotations.js";
-import type { AssetDescriptor, ContentDocumentManifest, ContentDocumentMetadata, WorkbookManifest } from "./contracts/document.js";
-import type { WorkbookDocumentMetadata, WorkbookValue, WorkbookFormulaSource, WorkbookCoordinate } from "./contracts/workbook.js";
+import type {
+  AssetDescriptor,
+  ContentDocumentManifest,
+  ContentDocumentMetadata,
+  WorkbookManifest,
+} from "./contracts/document.js";
+import type {
+  WorkbookDocumentMetadata,
+  WorkbookValue,
+  WorkbookFormulaSource,
+  WorkbookCoordinate,
+} from "./contracts/workbook.js";
 import type { DocumentEvent } from "./contracts/events.js";
-import type { ContextStyle, DocumentInteractionRequest, EditProposal } from "./contracts/interaction.js";
+import type {
+  ContextStyle,
+  DocumentInteractionRequest,
+  EditProposal,
+} from "./contracts/interaction.js";
 import type { ContentOperationName, DocumentTransaction } from "./contracts/operations.js";
-import type { PresentationInteractionRequest,PresentationEditProposal,PresentationOperationName } from "./contracts/presentation-interaction.js";
+import type {
+  PresentationInteractionRequest,
+  PresentationEditProposal,
+  PresentationOperationName,
+} from "./contracts/presentation-interaction.js";
 import type { WorkbookReferenceLocation, WorkbookReferenceResult } from "./workbook/reference.js";
-import type { WorkbookEditProposal, WorkbookInteractionLimits, WorkbookInteractionRange, WorkbookInteractionRequest, WorkbookInteractionScope, WorkbookProposalOperationName, WorkbookProposalReview } from "./contracts/workbook-interaction.js";
+import type {
+  WorkbookEditProposal,
+  WorkbookInteractionLimits,
+  WorkbookInteractionRange,
+  WorkbookInteractionRequest,
+  WorkbookInteractionScope,
+  WorkbookProposalOperationName,
+  WorkbookProposalReview,
+} from "./contracts/workbook-interaction.js";
 
 export type DeepReadonly<Value> = Value extends readonly (infer Item)[]
   ? readonly DeepReadonly<Item>[]
-  : Value extends object ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> } : Value;
+  : Value extends object
+    ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> }
+    : Value;
 
 /** Virtual package files; manifest.json is contained here, never duplicated as authority. */
 export type DocumentPackage = ReadonlyMap<string, Uint8Array>;
@@ -46,11 +74,16 @@ export interface WorkbookCell extends WorkbookCoordinate {
   readonly formatId?: string;
 }
 export interface WorkbookWindow extends WorkbookCoordinate {
-  readonly sheetId: string; readonly rows: number; readonly columns: number;
+  readonly sheetId: string;
+  readonly rows: number;
+  readonly columns: number;
 }
 export interface WorkbookReadLimits {
-  readonly maxCells: number; readonly maxFormulas: number; readonly maxWindowCells: number;
-  readonly maxFormulaTemplates: number; readonly maxFormulaKeyCodeUnits: number;
+  readonly maxCells: number;
+  readonly maxFormulas: number;
+  readonly maxWindowCells: number;
+  readonly maxFormulaTemplates: number;
+  readonly maxFormulaKeyCodeUnits: number;
 }
 
 export interface DocumentReadLimits {
@@ -85,6 +118,9 @@ export interface ContentDocumentModel {
   readonly kind: "document" | "presentation";
   snapshot(): ContentDocumentSnapshot;
   getNode(nodeId: string): DocumentNode | undefined;
+  /** Copy a declared asset without serializing the complete package.
+   * Optional for compatibility with host-owned model implementations. */
+  getAsset?(path: string, maxBytes?: number): Uint8Array | undefined;
   serialize(): DocumentPackage;
 }
 export interface WorkbookModel {
@@ -119,14 +155,16 @@ export interface InteractionRequestInput {
 }
 /** Explicit PPT dispatch preserves the existing V1 Word request contract. */
 export interface PresentationInteractionRequestInput {
-  readonly kind:"presentation";
-  readonly annotationIds:readonly string[];
-  readonly scope?:"slides"|"global";
-  readonly supportedOperations?:readonly PresentationOperationName[];
-  readonly assets?:readonly DeepReadonly<AssetDescriptor>[];
-  readonly limits?:InteractionRequestInput["limits"];
+  readonly kind: "presentation";
+  readonly annotationIds: readonly string[];
+  readonly scope?: "slides" | "global";
+  readonly supportedOperations?: readonly PresentationOperationName[];
+  readonly assets?: readonly DeepReadonly<AssetDescriptor>[];
+  readonly limits?: InteractionRequestInput["limits"];
 }
-export type PresentationAnnotationSubmissionHandler=(request:DeepReadonly<PresentationInteractionRequest>)=>void|PresentationEditProposal|Promise<void|PresentationEditProposal>;
+export type PresentationAnnotationSubmissionHandler = (
+  request: DeepReadonly<PresentationInteractionRequest>,
+) => void | PresentationEditProposal | Promise<void | PresentationEditProposal>;
 export interface WorkbookInteractionRequestInput {
   readonly kind: "workbook";
   readonly annotationIds: readonly string[];
@@ -174,7 +212,9 @@ export interface DocumentSessionLimits {
 
 export interface DocumentSessionOptions extends OpenDocumentOptions {
   readonly sessionLimits?: Partial<DocumentSessionLimits>;
-  readonly calculationLimits?: Partial<import("./workbook/calculation.js").WorkbookCalculationLimits>;
+  readonly calculationLimits?: Partial<
+    import("./workbook/calculation.js").WorkbookCalculationLimits
+  >;
 }
 
 export interface DocumentHistoryState {
@@ -193,15 +233,45 @@ export interface TextOffsetMapping {
 export interface ChangeMapping {
   readonly nodes: ReadonlyMap<string, string | null>;
   readonly textEdits: readonly TextOffsetMapping[];
+  /** Exact source fragments moved after `at` preceding text splices. */
+  readonly textTransfers?: readonly TextRangeTransfer[];
   /** Ordered structural steps; each step maps the preceding source state. */
   readonly workbook?: readonly WorkbookStructureMapping[];
 }
 
-export interface WorkbookRangeChange { readonly sheetId: string; readonly range: DeepReadonly<import("./contracts/workbook.js").WorkbookRange> }
+export interface TextRangeTransfer {
+  readonly nodeId: string;
+  readonly from: number;
+  readonly to: number;
+  readonly targetNodeId: string;
+  readonly targetOffset: number;
+  readonly at: number;
+}
+
+export interface WorkbookRangeChange {
+  readonly sheetId: string;
+  readonly range: DeepReadonly<import("./contracts/workbook.js").WorkbookRange>;
+}
 export type WorkbookStructureMapping =
-  | { readonly kind: "axis"; readonly sheetId: string; readonly axis: "row" | "column"; readonly action: "insert" | "delete"; readonly index: number; readonly count: number }
-  | { readonly kind: "move"; readonly source: WorkbookRangeChange; readonly target: WorkbookRangeChange }
-  | { readonly kind: "sort"; readonly sheetId: string; readonly range: DeepReadonly<import("./contracts/workbook.js").WorkbookRange>; readonly rows: readonly number[] }
+  | {
+      readonly kind: "axis";
+      readonly sheetId: string;
+      readonly axis: "row" | "column";
+      readonly action: "insert" | "delete";
+      readonly index: number;
+      readonly count: number;
+    }
+  | {
+      readonly kind: "move";
+      readonly source: WorkbookRangeChange;
+      readonly target: WorkbookRangeChange;
+    }
+  | {
+      readonly kind: "sort";
+      readonly sheetId: string;
+      readonly range: DeepReadonly<import("./contracts/workbook.js").WorkbookRange>;
+      readonly rows: readonly number[];
+    }
   | { readonly kind: "deleteSheet"; readonly sheetId: string }
   | { readonly kind: "restoreSheet"; readonly sheetId: string };
 
@@ -217,7 +287,9 @@ export interface TransactionReceipt {
 }
 
 export type DocumentEventListener = (event: DeepReadonly<DocumentEvent>) => void;
-export type AnnotationSubmissionHandler = (request: DeepReadonly<DocumentInteractionRequest>) => void | Promise<void>;
+export type AnnotationSubmissionHandler = (
+  request: DeepReadonly<DocumentInteractionRequest>,
+) => void | Promise<void>;
 
 /** A private, read-only candidate, bound to its exact source and revision. */
 export interface WorkbookLayoutRequest {
@@ -233,11 +305,19 @@ export interface WorkbookLayoutMeasurement {
   readonly fontEnvironment: string;
   readonly sheets: readonly {
     readonly sheetId: string;
-    readonly rows: { readonly defaultSizePt: number; readonly overrides: readonly import("./workbook/axis-dimensions.js").AxisOverride[] };
-    readonly columns: { readonly defaultSizePt: number; readonly overrides: readonly import("./workbook/axis-dimensions.js").AxisOverride[] };
+    readonly rows: {
+      readonly defaultSizePt: number;
+      readonly overrides: readonly import("./workbook/axis-dimensions.js").AxisOverride[];
+    };
+    readonly columns: {
+      readonly defaultSizePt: number;
+      readonly overrides: readonly import("./workbook/axis-dimensions.js").AxisOverride[];
+    };
   }[];
 }
-export type WorkbookLayoutMeasurer = (request: WorkbookLayoutRequest) => WorkbookLayoutMeasurement | Promise<WorkbookLayoutMeasurement>;
+export type WorkbookLayoutMeasurer = (
+  request: WorkbookLayoutRequest,
+) => WorkbookLayoutMeasurement | Promise<WorkbookLayoutMeasurement>;
 
 /** Host-authorized immutable resources staged with the same isolated candidate. */
 export interface TransactionPrepareOptions {
@@ -277,24 +357,58 @@ export interface SessionLifecycle<Candidate extends CandidateChange<DocumentMode
   subscribe(listener: DocumentEventListener): () => void;
   dispose(): void;
 }
-export interface DocumentEditingSession extends ContentDocumentModel, SessionLifecycle<CandidateChange> {}
+export interface DocumentEditingSession
+  extends ContentDocumentModel,
+    SessionLifecycle<CandidateChange> {}
 export type WorkbookCandidateChange = CandidateChange<WorkbookModel>;
 export interface WorkbookSession extends WorkbookModel, SessionLifecycle<WorkbookCandidateChange> {
   buildInteractionRequest(input: WorkbookInteractionRequestInput): WorkbookInteractionRequest;
-  buildInteractionRequestAsync(input: WorkbookInteractionRequestInput, execution?: TransactionPreparationExecution): Promise<WorkbookInteractionRequest>;
-  prepareProposal(request: WorkbookInteractionRequest, proposal: WorkbookEditProposal, options?: TransactionPrepareOptions): WorkbookCandidateChange;
-  prepareProposalAsync(request: WorkbookInteractionRequest, proposal: WorkbookEditProposal, options?: TransactionPrepareOptions, execution?: TransactionPreparationExecution): Promise<WorkbookCandidateChange>;
-  getProposalReview(candidate: WorkbookCandidateChange): DeepReadonly<WorkbookProposalReview> | undefined;
-  prepareAsync(transaction: DocumentTransaction, options?: TransactionPrepareOptions, execution?: TransactionPreparationExecution): Promise<WorkbookCandidateChange>;
-  calculate(options?: import("./workbook/calculation.js").WorkbookCalculationOptions): Promise<import("./workbook/calculation.js").WorkbookCalculationResult>;
-  calculateSync(options?: Omit<import("./workbook/calculation.js").WorkbookCalculationOptions, "yield">): import("./workbook/calculation.js").WorkbookCalculationResult;
-  getCalculatedCell(sheetId: string, row: number, column: number): import("./workbook/calculation.js").WorkbookCalculatedCell;
+  buildInteractionRequestAsync(
+    input: WorkbookInteractionRequestInput,
+    execution?: TransactionPreparationExecution,
+  ): Promise<WorkbookInteractionRequest>;
+  prepareProposal(
+    request: WorkbookInteractionRequest,
+    proposal: WorkbookEditProposal,
+    options?: TransactionPrepareOptions,
+  ): WorkbookCandidateChange;
+  prepareProposalAsync(
+    request: WorkbookInteractionRequest,
+    proposal: WorkbookEditProposal,
+    options?: TransactionPrepareOptions,
+    execution?: TransactionPreparationExecution,
+  ): Promise<WorkbookCandidateChange>;
+  getProposalReview(
+    candidate: WorkbookCandidateChange,
+  ): DeepReadonly<WorkbookProposalReview> | undefined;
+  prepareAsync(
+    transaction: DocumentTransaction,
+    options?: TransactionPrepareOptions,
+    execution?: TransactionPreparationExecution,
+  ): Promise<WorkbookCandidateChange>;
+  calculate(
+    options?: import("./workbook/calculation.js").WorkbookCalculationOptions,
+  ): Promise<import("./workbook/calculation.js").WorkbookCalculationResult>;
+  calculateSync(
+    options?: Omit<import("./workbook/calculation.js").WorkbookCalculationOptions, "yield">,
+  ): import("./workbook/calculation.js").WorkbookCalculationResult;
+  getCalculatedCell(
+    sheetId: string,
+    row: number,
+    column: number,
+  ): import("./workbook/calculation.js").WorkbookCalculatedCell;
 }
 
 /** Revision-bound collaboration on the same transaction boundary. */
 export interface DocumentSession extends DocumentEditingSession {
-  buildInteractionRequest(input:PresentationInteractionRequestInput):PresentationInteractionRequest;
+  buildInteractionRequest(
+    input: PresentationInteractionRequestInput,
+  ): PresentationInteractionRequest;
   buildInteractionRequest(input: InteractionRequestInput): DocumentInteractionRequest;
-  prepareProposal(request:PresentationInteractionRequest,proposal:PresentationEditProposal,options?:TransactionPrepareOptions):CandidateChange;
+  prepareProposal(
+    request: PresentationInteractionRequest,
+    proposal: PresentationEditProposal,
+    options?: TransactionPrepareOptions,
+  ): CandidateChange;
   prepareProposal(request: DocumentInteractionRequest, proposal: EditProposal): CandidateChange;
 }

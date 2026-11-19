@@ -1,16 +1,49 @@
 import { z } from "zod";
 import { AnchorSchema, AnnotationSchema, AnnotationsSchema } from "./contracts/annotations.js";
-import { AssetDescriptorSchema, DocumentManifestSchema, DocumentMetadataSchema } from "./contracts/document.js";
+import {
+  AssetDescriptorSchema,
+  DocumentManifestSchema,
+  DocumentMetadataSchema,
+} from "./contracts/document.js";
 import { DocumentErrorDataSchema, DocumentEventSchema } from "./contracts/events.js";
 import type { DocumentErrorCode } from "./contracts/events.js";
 import { DocumentInteractionRequestSchema, EditProposalSchema } from "./contracts/interaction.js";
-import { PresentationInteractionRequestSchema,PresentationEditProposalSchema } from "./contracts/presentation-interaction.js";
-import { WorkbookInteractionRequestSchema, WorkbookEditProposalSchema } from "./contracts/workbook-interaction.js";
-import { DocumentContentOperationSchema, DocumentOperationSchema, DocumentTransactionSchema } from "./contracts/operations.js";
+import {
+  PresentationInteractionRequestSchema,
+  PresentationEditProposalSchema,
+} from "./contracts/presentation-interaction.js";
+import {
+  WorkbookInteractionRequestSchema,
+  WorkbookEditProposalSchema,
+} from "./contracts/workbook-interaction.js";
+import {
+  DocumentContentOperationSchema,
+  DocumentOperationSchema,
+  DocumentTransactionSchema,
+} from "./contracts/operations.js";
 import { FORMAT_VERSION, PROTOCOL_VERSION } from "./contracts/primitives.js";
 import { DocumentError, summarizeIssues } from "./errors.js";
 
-export const contractSchemas = Object.freeze({
+export interface ContractSchemas {
+  readonly "asset-descriptor": typeof AssetDescriptorSchema;
+  readonly "document-manifest": typeof DocumentManifestSchema;
+  readonly "document-metadata": typeof DocumentMetadataSchema;
+  readonly anchor: typeof AnchorSchema;
+  readonly annotation: typeof AnnotationSchema;
+  readonly annotations: typeof AnnotationsSchema;
+  readonly "content-operation": typeof DocumentContentOperationSchema;
+  readonly "document-operation": typeof DocumentOperationSchema;
+  readonly "document-transaction": typeof DocumentTransactionSchema;
+  readonly "interaction-request": typeof DocumentInteractionRequestSchema;
+  readonly "edit-proposal": typeof EditProposalSchema;
+  readonly "presentation-interaction-request": typeof PresentationInteractionRequestSchema;
+  readonly "presentation-edit-proposal": typeof PresentationEditProposalSchema;
+  readonly "workbook-interaction-request": typeof WorkbookInteractionRequestSchema;
+  readonly "workbook-edit-proposal": typeof WorkbookEditProposalSchema;
+  readonly "document-error": typeof DocumentErrorDataSchema;
+  readonly "document-event": typeof DocumentEventSchema;
+}
+export const contractSchemas: Readonly<ContractSchemas> = Object.freeze({
   "asset-descriptor": AssetDescriptorSchema,
   "document-manifest": DocumentManifestSchema,
   "document-metadata": DocumentMetadataSchema,
@@ -22,8 +55,8 @@ export const contractSchemas = Object.freeze({
   "document-transaction": DocumentTransactionSchema,
   "interaction-request": DocumentInteractionRequestSchema,
   "edit-proposal": EditProposalSchema,
-  "presentation-interaction-request":PresentationInteractionRequestSchema,
-  "presentation-edit-proposal":PresentationEditProposalSchema,
+  "presentation-interaction-request": PresentationInteractionRequestSchema,
+  "presentation-edit-proposal": PresentationEditProposalSchema,
   "workbook-interaction-request": WorkbookInteractionRequestSchema,
   "workbook-edit-proposal": WorkbookEditProposalSchema,
   "document-error": DocumentErrorDataSchema,
@@ -35,7 +68,12 @@ export const CONTRACT_NAMES: readonly ContractName[] = Object.freeze(
   Object.keys(contractSchemas) as ContractName[],
 );
 const formatContracts: ReadonlySet<ContractName> = new Set([
-  "asset-descriptor", "document-manifest", "document-metadata", "anchor", "annotation", "annotations",
+  "asset-descriptor",
+  "document-manifest",
+  "document-metadata",
+  "anchor",
+  "annotation",
+  "annotations",
 ]);
 
 export interface ContractJsonSchema {
@@ -53,7 +91,8 @@ function schemaFor<Name extends ContractName>(name: Name): (typeof contractSchem
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown> : undefined;
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function checkVersion(value: unknown, supported: number): void {
@@ -71,7 +110,18 @@ function checkEnvelope(name: ContractName, input: unknown): void {
     }
     checkVersion(data.formatVersion, FORMAT_VERSION);
   }
-  if (["document-transaction", "interaction-request", "edit-proposal", "presentation-interaction-request","presentation-edit-proposal", "workbook-interaction-request", "workbook-edit-proposal", "document-event"].includes(name)) {
+  if (
+    [
+      "document-transaction",
+      "interaction-request",
+      "edit-proposal",
+      "presentation-interaction-request",
+      "presentation-edit-proposal",
+      "workbook-interaction-request",
+      "workbook-edit-proposal",
+      "document-event",
+    ].includes(name)
+  ) {
     checkVersion(data.protocolVersion, PROTOCOL_VERSION);
   }
   if (name === "interaction-request") {
@@ -79,11 +129,17 @@ function checkEnvelope(name: ContractName, input: unknown): void {
     if (context) {
       checkVersion(context.formatVersion, FORMAT_VERSION);
       if (context.kind === "presentation" || context.kind === "workbook") {
-        throw new DocumentError("UnsupportedFeature", "This interaction context is not implemented yet.");
+        throw new DocumentError(
+          "UnsupportedFeature",
+          "This interaction context is not implemented yet.",
+        );
       }
     }
   }
-  if(name==="presentation-interaction-request" || name === "workbook-interaction-request"){const context=object(data.context);if(context)checkVersion(context.formatVersion,FORMAT_VERSION);}
+  if (name === "presentation-interaction-request" || name === "workbook-interaction-request") {
+    const context = object(data.context);
+    if (context) checkVersion(context.formatVersion, FORMAT_VERSION);
+  }
 }
 
 // Zod collects every array item's issues before returning. Preflight arrays one
@@ -94,13 +150,24 @@ function checkEnvelope(name: ContractName, input: unknown): void {
 // scalar cell unions need no repeated discriminator-error construction.
 const arrayPaths = new WeakMap<z.core.$ZodType, boolean>();
 function hasArrayPath(schema: z.core.$ZodType): boolean {
-  const known = arrayPaths.get(schema); if (known !== undefined) return known;
-  const found = schema instanceof z.ZodArray || schema instanceof z.ZodOptional && hasArrayPath(schema.unwrap())
-    || (schema instanceof z.ZodDiscriminatedUnion || schema instanceof z.ZodUnion) && schema.options.some(option => hasArrayPath(option))
-    || schema instanceof z.ZodObject && Object.values(schema.shape).some(child => hasArrayPath(child as z.core.$ZodType));
-  arrayPaths.set(schema, found); return found;
+  const known = arrayPaths.get(schema);
+  if (known !== undefined) return known;
+  const found =
+    schema instanceof z.ZodArray ||
+    (schema instanceof z.ZodOptional && hasArrayPath(schema.unwrap())) ||
+    ((schema instanceof z.ZodDiscriminatedUnion || schema instanceof z.ZodUnion) &&
+      schema.options.some((option) => hasArrayPath(option))) ||
+    (schema instanceof z.ZodObject &&
+      Object.values(schema.shape).some((child) => hasArrayPath(child as z.core.$ZodType)));
+  arrayPaths.set(schema, found);
+  return found;
 }
-function checkArrayItems(schema: z.core.$ZodType, input: unknown, path: PropertyKey[], fail: (issues: z.ZodIssue[]) => never): void {
+function checkArrayItems(
+  schema: z.core.$ZodType,
+  input: unknown,
+  path: PropertyKey[],
+  fail: (issues: z.ZodIssue[]) => never,
+): void {
   if (!hasArrayPath(schema)) return;
   if (schema instanceof z.ZodOptional) {
     if (input !== undefined) checkArrayItems(schema.unwrap(), input, path, fail);
@@ -109,7 +176,10 @@ function checkArrayItems(schema: z.core.$ZodType, input: unknown, path: Property
     if (!data) return;
     const discriminator = schema.def.discriminator;
     for (const option of schema.options) {
-      if (option instanceof z.ZodObject && option.shape[discriminator].safeParse(data[discriminator]).success) {
+      if (
+        option instanceof z.ZodObject &&
+        option.shape[discriminator].safeParse(data[discriminator]).success
+      ) {
         checkArrayItems(option, input, path, fail);
         break;
       }
@@ -130,19 +200,30 @@ function checkArrayItems(schema: z.core.$ZodType, input: unknown, path: Property
       checkArrayItems(schema.element, input[index], itemPath, fail);
       const result = z.safeParse(schema.element, input[index]);
       if (!result.success) {
-        fail(result.error.issues.map((issue) => ({ ...issue, path: [...itemPath, ...issue.path] })));
+        fail(
+          result.error.issues.map((issue) => ({ ...issue, path: [...itemPath, ...issue.path] })),
+        );
       }
     }
   }
 }
 
 /** Structural validation only; it does not open a package or execute an operation. */
-export function parseContract<Name extends ContractName>(name: Name, input: unknown): ContractValue<Name> {
+export function parseContract<Name extends ContractName>(
+  name: Name,
+  input: unknown,
+): ContractValue<Name> {
   const schema = schemaFor(name);
   checkEnvelope(name, input);
-  const code: DocumentErrorCode = ["edit-proposal","presentation-edit-proposal", "workbook-edit-proposal"].includes(name) ? "InvalidProposal"
+  const code: DocumentErrorCode = [
+    "edit-proposal",
+    "presentation-edit-proposal",
+    "workbook-edit-proposal",
+  ].includes(name)
+    ? "InvalidProposal"
     : ["content-operation", "document-operation", "document-transaction"].includes(name)
-      ? "InvalidOperation" : "InvalidDocument";
+      ? "InvalidOperation"
+      : "InvalidDocument";
   const fail = (issues: z.ZodIssue[]): never => {
     throw new DocumentError(code, "Invalid " + name + " data.", summarizeIssues(issues));
   };
@@ -167,7 +248,10 @@ export function getContractJsonSchema(name: ContractName): ContractJsonSchema {
   return {
     ...schema,
     $schema: "https://json-schema.org/draft/2020-12/schema",
-    $id: "urn:doffi:contract:" + name + ":"
-      + (formatContracts.has(name) ? FORMAT_VERSION : PROTOCOL_VERSION),
+    $id:
+      "urn:doffi:contract:" +
+      name +
+      ":" +
+      (formatContracts.has(name) ? FORMAT_VERSION : PROTOCOL_VERSION),
   };
 }

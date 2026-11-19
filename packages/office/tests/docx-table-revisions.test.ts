@@ -1,0 +1,227 @@
+import { expect, test } from "vitest";
+import { createDocumentSession, createWordDocument, openDocument } from "@doffi/core";
+import type { DocumentOperation } from "@doffi/core";
+import { importDocx, exportDocx } from "@doffi/office";
+import { strFromU8, unzipSync } from "fflate";
+function current(tracking = false) {
+  const session = createDocumentSession(
+      openDocument(createWordDocument({ documentId: "table-review" }), { kind: "document" }),
+    ),
+    apply = (operations: DocumentOperation[]) =>
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: "table-review",
+          baseRevision: session.snapshot().manifest.revision,
+          operations,
+        }),
+      );
+  if (tracking)
+    apply([{ op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "A" }]);
+  apply([
+    {
+      op: "insertWordTable",
+      nodeId: "paragraph-1",
+      position: "after",
+      rows: 2,
+      columns: 2,
+      width: 216,
+    },
+  ]);
+  const table = session.snapshot().metadata.word!.tables[0]!.nodeId;
+  apply([
+    {
+      op: "editWordTable",
+      nodeId: table,
+      change: {
+        kind: "setCells",
+        row: 0,
+        column: 0,
+        values: [
+          ["A", "B"],
+          ["C", "D"],
+        ],
+      },
+    },
+  ]);
+  return { session, apply, table };
+}
+function reopen(session: ReturnType<typeof current>["session"]) {
+  let model = openDocument(
+    importDocx(exportDocx(session).bytes, {
+      documentId: "table-native",
+      unsupportedContent: "reject",
+    }),
+    { kind: "document" },
+  );
+  for (let pass = 0; pass < 2; pass++)
+    model = openDocument(
+      importDocx(exportDocx(model).bytes, {
+        documentId: "table-native",
+        unsupportedContent: "reject",
+      }),
+      { kind: "document" },
+    );
+  return model;
+}
+for (const decision of ["accept", "reject"] as const)
+  test(
+    "whole table insertion " +
+      decision +
+      " uses native row marks and can be reviewed after strict reopens",
+    () => {
+      const { session, apply, table } = current(true);
+      expect(session.snapshot().metadata.word!.revisions.map((item) => item.kind)).toEqual([
+        "rowInsert",
+        "rowInsert",
+      ]);
+      const native = createDocumentSession(reopen(session)),
+        root = native.getNode(
+          native.snapshot().metadata.word!.stories[0]!.rootNodeId,
+        )!.parentNodeId!;
+      native.commit(
+        native.prepare({
+          protocolVersion: 1,
+          documentId: "table-native",
+          baseRevision: 0,
+          operations: [{ op: "reviewWordRevisions", nodeId: root, decision }],
+        }),
+      );
+      expect(native.snapshot().metadata.word!.tables).toHaveLength(decision === "accept" ? 1 : 0);
+      expect(native.snapshot().metadata.word!.revisions).toEqual([]);
+      reopen(native);
+      const before = session.snapshot(),
+        revision = before.metadata.word!.revisions[0]!;
+      apply([
+        {
+          op: "reviewWordRevision",
+          nodeId: revision.nodeId,
+          revisionId: revision.revisionId!,
+          decision,
+        },
+      ]);
+      expect(!!session.getNode(table)).toBe(decision === "accept");
+      session.undo();
+      expect(session.snapshot().html).toBe(before.html);
+      expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
+    },
+  );
+for (const generic of [false, true])
+  for (const decision of ["accept", "reject"] as const)
+    test(
+      "whole merged table deletion " +
+        decision +
+        " " +
+        (generic ? "generic" : "typed") +
+        " remains pending and retains content until review",
+      () => {
+        const { session, apply, table } = current();
+        apply([
+          {
+            op: "editWordTable",
+            nodeId: table,
+            change: { kind: "mergeCells", row: 0, column: 0, rows: 2, columns: 1 },
+          },
+          { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "B" },
+        ]);
+        const before = session.snapshot();
+        apply([{ op: generic ? "removeNode" : "deleteWordTable", nodeId: table }]);
+        expect(session.getNode(table)!.text).toBe("ACBD");
+        expect(session.snapshot().metadata.word!.revisions.map((item) => item.kind)).toEqual([
+          "rowDelete",
+          "rowDelete",
+        ]);
+        const native = createDocumentSession(reopen(session)),
+          root = native.getNode(
+            native.snapshot().metadata.word!.stories[0]!.rootNodeId,
+          )!.parentNodeId!;
+        native.commit(
+          native.prepare({
+            protocolVersion: 1,
+            documentId: "table-native",
+            baseRevision: 0,
+            operations: [{ op: "reviewWordRevisions", nodeId: root, decision }],
+          }),
+        );
+        expect(native.snapshot().metadata.word!.tables).toHaveLength(decision === "accept" ? 0 : 1);
+        expect(native.snapshot().metadata.word!.revisions).toEqual([]);
+        reopen(native);
+        session.undo();
+        expect(session.snapshot().html).toBe(before.html);
+        expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
+      },
+    );
+test("deleting the current author pending inserted table cancels the insertion in one reversible step", () => {
+  const { session, apply, table } = current(true),
+    before = session.snapshot();
+  apply([{ op: "deleteWordTable", nodeId: table }]);
+  expect(session.getNode(table)).toBeUndefined();
+  expect(session.snapshot().metadata.word!.tables).toEqual([]);
+  expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+  reopen(session);
+  session.undo();
+  expect(session.snapshot().html).toBe(before.html);
+  expect(session.snapshot().metadata.word).toEqual(before.metadata.word);
+});
+test("untracked table deletion removes its grid, and invalid targets or stale prepared deletions remain atomic", () => {
+  const { session, apply, table } = current(),
+    before = session.snapshot();
+  expect(() => apply([{ op: "deleteWordTable", nodeId: "paragraph-1" }])).toThrow();
+  expect(session.snapshot()).toEqual(before);
+  const pending = session.prepare({
+    protocolVersion: 1,
+    documentId: "table-review",
+    baseRevision: session.snapshot().manifest.revision,
+    operations: [{ op: "deleteWordTable", nodeId: table }],
+  });
+  apply([
+    { op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "EDIT" },
+  ]);
+  expect(() => session.commit(pending)).toThrowError(
+    expect.objectContaining({ code: "RevisionConflict" }),
+  );
+  expect(session.getNode(table)).toBeDefined();
+  apply([{ op: "deleteWordTable", nodeId: table }]);
+  expect(session.snapshot().metadata.word!.tables).toEqual([]);
+  expect(strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!)).not.toContain(
+    "<w:tbl>",
+  );
+  reopen(session);
+});
+
+test("merging a pending newly inserted table keeps its native insertion review while unrelated cell formatting remains independently reviewable", () => {
+  const fresh = current(true);
+  fresh.apply([
+    {
+      op: "editWordTable",
+      nodeId: fresh.table,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 1, columns: 2 },
+    },
+  ]);
+  expect(fresh.session.snapshot().metadata.word!.revisions.map((item) => item.kind)).toEqual([
+    "rowInsert",
+    "rowInsert",
+  ]);
+  reopen(fresh.session);
+  const existing = current(),
+    row = existing.session
+      .getNode(existing.table)!
+      .childNodeIds.flatMap((id) =>
+        existing.session.getNode(id)!.tagName === "tr"
+          ? [id]
+          : existing.session.getNode(id)!.childNodeIds,
+      )[1]!,
+    outside = existing.session.getNode(row)!.childNodeIds[1]!;
+  existing.apply([
+    { op: "setWordReview", nodeId: "document-root", trackChanges: true, author: "A" },
+    { op: "formatWordCell", nodeId: outside, properties: { "background-color": "#00ff00" } },
+    {
+      op: "editWordTable",
+      nodeId: existing.table,
+      change: { kind: "mergeCells", row: 0, column: 0, rows: 1, columns: 2 },
+    },
+  ]);
+  const model = reopen(existing.session);
+  expect(model.snapshot().metadata.word!.revisions).toHaveLength(1);
+  expect(model.snapshot().html).toContain('colspan="2"');
+});

@@ -1,0 +1,47 @@
+import { body, mutateDocx, styles } from "./regression-fixtures.js";
+export function rowSpacingFixture(count = 3, styleSpacing = ""): Uint8Array {
+  return mutateDocx("02-table-merges.docx", {
+    "word/styles.xml": () =>
+      styles(
+        '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"/><w:style w:type="table" w:styleId="Rows">' +
+          (styleSpacing
+            ? '<w:trPr><w:tblCellSpacing w:w="' + styleSpacing + '" w:type="dxa"/></w:trPr>'
+            : "") +
+          "</w:style>",
+      ),
+    "word/document.xml": (source) =>
+      body(
+        source,
+        '<w:tbl><w:tblPr><w:tblStyle w:val="Rows"/><w:tblW w:w="4000" w:type="dxa"/><w:tblCellSpacing w:w="120" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1600"/><w:gridCol w:w="2400"/></w:tblGrid>' +
+          Array.from(
+            { length: count },
+            (_, row) =>
+              "<w:tr>" +
+              (row < 2
+                ? '<w:trPr><w:tblCellSpacing w:w="' +
+                  (row === 0 ? 0 : 240) +
+                  '" w:type="dxa"/></w:trPr>'
+                : "") +
+              ["A", "B"]
+                .map(
+                  (name) =>
+                    "<w:tc><w:tcPr><w:tcBorders>" +
+                    ["top", "left", "bottom", "right"]
+                      .map((side) => "<w:" + side + ' w:val="single" w:sz="4" w:color="224466"/>')
+                      .join("") +
+                    '</w:tcBorders><w:shd w:val="clear" w:fill="DDEEFF"/><w:tcMar>' +
+                    ["top", "left", "bottom", "right"]
+                      .map((side) => "<w:" + side + ' w:w="60" w:type="dxa"/>')
+                      .join("") +
+                    "</w:tcMar></w:tcPr><w:p><w:r><w:t>" +
+                    name +
+                    row +
+                    "</w:t></w:r></w:p></w:tc>",
+                )
+                .join("") +
+              "</w:tr>",
+          ).join("") +
+          "</w:tbl>",
+      ),
+  });
+}

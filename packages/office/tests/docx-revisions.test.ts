@@ -1,0 +1,452 @@
+import { expect, test } from "vitest";
+import { strToU8, strFromU8, zipSync, unzipSync } from "fflate";
+import { createDocumentSession, openDocument } from "@doffi/core";
+import { exportDocx, importDocx } from "@doffi/office";
+const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+function fixture(body: string): Uint8Array {
+  return zipSync({
+    "[Content_Types].xml": strToU8(
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+    ),
+    "_rels/.rels": strToU8(
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="main" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+    ),
+    "word/document.xml": strToU8(
+      '<w:document xmlns:w="' +
+        W +
+        '" xmlns:x="urn:future"><w:body>' +
+        body +
+        "</w:body></w:document>",
+    ),
+  });
+}
+function formatting() {
+  return fixture(
+    '<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="8" w:author="甲"><w:pPr><w:jc w:val="right"/></w:pPr></w:pPrChange></w:pPr><w:r><w:rPr><w:b/><x:after/><w:rPrChange w:id="9" w:author="甲"><w:rPr><w:i/><x:before/></w:rPr></w:rPrChange></w:rPr><w:t>文字漢\u{e0100}</w:t></w:r></w:p>',
+  );
+}
+test("overlapping an imported history splits its current and previous native properties without losing either side", () => {
+  const session = createDocumentSession(
+      openDocument(importDocx(formatting(), { documentId: "imported-overlap" }), {
+        kind: "document",
+      }),
+    ),
+    story = session.snapshot().metadata.word!.stories[0]!,
+    paragraph = session.getNode(story.rootNodeId)!.childNodeIds[0]!,
+    root = session.getNode(story.rootNodeId)!.parentNodeId!;
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "imported-overlap",
+      baseRevision: 0,
+      operations: [
+        { op: "setWordReview", nodeId: root, trackChanges: true, author: "乙" },
+        {
+          op: "formatWordText",
+          nodeId: paragraph,
+          from: 1,
+          to: 2,
+          expectedText: "字",
+          properties: { color: "#cc0000" },
+        },
+      ],
+    }),
+  );
+  expect(
+    session.snapshot().metadata.word!.revisions.filter((item) => item.property === "run"),
+  ).toHaveLength(3);
+  const reopened = createDocumentSession(
+      openDocument(importDocx(exportDocx(session).bytes, { documentId: "imported-split" }), {
+        kind: "document",
+      }),
+    ),
+    main = reopened.snapshot().metadata.word!.stories[0]!;
+  reopened.commit(
+    reopened.prepare({
+      protocolVersion: 1,
+      documentId: "imported-split",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevisions",
+          nodeId: reopened.getNode(main.rootNodeId)!.parentNodeId!,
+          decision: "reject",
+        },
+      ],
+    }),
+  );
+  const xml = strFromU8(unzipSync(exportDocx(reopened).bytes)["word/document.xml"]!);
+  expect(xml).not.toContain("PrChange");
+  expect(xml).not.toMatch(/<(?:[\w.-]+:)?after(?:\s|\/|>)/);
+  expect(xml.match(/<(?:[\w.-]+:)?before(?:\s|\/|>)/g)).toHaveLength(3);
+  expect(reopened.getNode(main.rootNodeId)!.text).toBe("文字漢\u{e0100}");
+});
+test("native format revisions preserve previous properties and unrelated residuals across native reopens", () => {
+  let bytes = formatting();
+  for (let pass = 0; pass < 2; pass++) {
+    const model = openDocument(importDocx(bytes, { documentId: "format" }), { kind: "document" });
+    expect(model.snapshot().metadata.word!.revisions.map((item) => item.property)).toEqual([
+      "run",
+      "paragraph",
+    ]);
+    const next = unzipSync(exportDocx(model).bytes);
+    expect(strFromU8(next["word/document.xml"]!)).toContain("rPrChange");
+    expect(strFromU8(next["word/document.xml"]!)).toContain("pPrChange");
+    expect(strFromU8(next["word/document.xml"]!)).toContain("before");
+    bytes = exportDocx(model).bytes;
+  }
+});
+test.each(["accept", "reject"] as const)(
+  "reviewing %s restores or removes the correct known and unknown formatting, then reopens",
+  (decision) => {
+    const session = createDocumentSession(
+        openDocument(importDocx(formatting(), { documentId: "format" }), { kind: "document" }),
+      ),
+      root = session.snapshot().metadata.word!.stories.find((story) => story.kind === "main")!;
+    let article = root.rootNodeId;
+    while (session.getNode(article)!.parentNodeId)
+      article = session.getNode(article)!.parentNodeId!;
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "format",
+        baseRevision: 0,
+        operations: [{ op: "reviewWordRevisions", nodeId: article, decision }],
+      }),
+    );
+    const xml = strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!);
+    expect(xml).not.toContain("PrChange");
+    expect(/<(?:[\w.-]+:)?before(?:\s|\/|>)/.test(xml)).toBe(decision === "reject");
+    expect(/<(?:[\w.-]+:)?after(?:\s|\/|>)/.test(xml)).toBe(decision === "accept");
+    expect(xml).toContain('w:val="' + (decision === "reject" ? "right" : "center") + '"');
+    const model = openDocument(importDocx(exportDocx(session).bytes, { documentId: "again" }), {
+      kind: "document",
+    });
+    expect(model.snapshot().metadata.word!.revisions).toEqual([]);
+    session.undo();
+    expect(session.snapshot().metadata.word!.revisions).toHaveLength(2);
+  },
+);
+
+test.each(["accept", "reject"] as const)(
+  "named moves %s both ends and retain complete native ranges before review",
+  (decision) => {
+    const input = fixture(
+      '<w:p><w:moveFromRangeStart w:id="0" w:name="moveA" w:author="甲" w:date="2026-11-14T00:00:00Z"/><w:moveFrom w:id="1" w:author="甲"><w:r><w:delText>移动😀</w:delText></w:r></w:moveFrom><w:moveFromRangeEnd w:id="0"/><w:r><w:t>中间</w:t></w:r><w:moveToRangeStart w:id="2" w:name="moveA" w:author="甲" w:date="2026-11-14T00:00:00Z"/><w:moveTo w:id="3" w:author="甲"><w:r><w:t>移动😀</w:t></w:r></w:moveTo><w:moveToRangeEnd w:id="2"/></w:p>',
+    );
+    let model = openDocument(
+      importDocx(input, { documentId: "move", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    for (let pass = 0; pass < 2; pass++) {
+      expect(model.snapshot().metadata.word!.moves).toHaveLength(2);
+      expect(model.snapshot().metadata.word!.revisions.map((revision) => revision.kind)).toEqual([
+        "moveFrom",
+        "moveTo",
+      ]);
+      const output = exportDocx(model).bytes;
+      expect(strFromU8(unzipSync(output)["word/document.xml"]!)).toContain("<w:moveFrom ");
+      model = openDocument(
+        importDocx(output, { documentId: "move", unsupportedContent: "reject" }),
+        { kind: "document" },
+      );
+    }
+    const session = createDocumentSession(model),
+      revision = session.snapshot().metadata.word!.revisions[0]!,
+      paragraph = session.getNode(revision.nodeId)!.parentNodeId!;
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "move",
+        baseRevision: 0,
+        operations: [
+          {
+            op: "reviewWordRevision",
+            nodeId: revision.nodeId,
+            revisionId: revision.revisionId ?? revision.nodeId,
+            decision,
+          },
+        ],
+      }),
+    );
+    expect(session.getNode(paragraph)!.text).toBe(
+      decision === "accept" ? "中间移动😀" : "移动😀中间",
+    );
+    expect(session.snapshot().metadata.word!.moves).toEqual([]);
+    expect(strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!)).not.toContain(
+      "moveFrom",
+    );
+    session.undo();
+    expect(session.snapshot().metadata.word!.moves).toHaveLength(2);
+  },
+);
+
+test("deleting a paragraph mark merges its content into the following paragraph while retaining text and undo", () => {
+  const model = openDocument(
+      importDocx(
+        fixture(
+          '<w:p><w:pPr><w:rPr><w:del w:id="4" w:author="甲"/></w:rPr></w:pPr><w:r><w:t>第一段</w:t></w:r></w:p><w:p><w:r><w:t>第二段</w:t></w:r></w:p>',
+        ),
+        { documentId: "paragraph-mark", unsupportedContent: "reject" },
+      ),
+      { kind: "document" },
+    ),
+    session = createDocumentSession(model),
+    revision = session.snapshot().metadata.word!.revisions[0]!;
+  expect(revision.kind).toBe("paragraphDelete");
+  const before = exportDocx(session).bytes;
+  expect(strFromU8(unzipSync(before)["word/document.xml"]!)).toMatch(/<w:rPr><w:del\b/);
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "paragraph-mark",
+      baseRevision: 0,
+      operations: [
+        {
+          op: "reviewWordRevision",
+          nodeId: revision.nodeId,
+          revisionId: revision.revisionId!,
+          decision: "accept",
+        },
+      ],
+    }),
+  );
+  const output = openDocument(
+    importDocx(exportDocx(session).bytes, { documentId: "joined", unsupportedContent: "reject" }),
+    { kind: "document" },
+  );
+  expect(output.snapshot().metadata.word!.revisions).toEqual([]);
+  expect(output.snapshot().html.match(/<p\b/g)).toHaveLength(1);
+  expect(output.getNode(output.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text).toBe(
+    "第一段第二段",
+  );
+  session.undo();
+  expect(session.getNode(revision.nodeId)!.text).toBe("第一段");
+});
+
+test.each(["accept", "reject"] as const)(
+  "paragraph moves across block markers %s both content and paragraph marks without adding empty native paragraphs",
+  (decision) => {
+    const marker = (kind: string, id: number, edge: string) =>
+      "<w:move" +
+      kind +
+      "Range" +
+      edge +
+      ' w:id="' +
+      id +
+      '"' +
+      (edge === "Start"
+        ? ' w:name="paragraphMove" w:author="甲" w:date="2026-11-14T00:00:00Z"'
+        : "") +
+      "/>";
+    const paragraph = (kind: string, id: number) =>
+      "<w:p><w:pPr><w:rPr><w:move" +
+      kind +
+      ' w:id="' +
+      id +
+      '" w:author="甲"/></w:rPr></w:pPr><w:move' +
+      kind +
+      ' w:id="' +
+      (id + 1) +
+      '" w:author="甲"><w:r><w:' +
+      (kind === "From" ? "delText" : "t") +
+      ">移动段落</w:" +
+      (kind === "From" ? "delText" : "t") +
+      "></w:r></w:move" +
+      kind +
+      "></w:p>";
+    const bytes = fixture(
+        marker("From", 0, "Start") +
+          paragraph("From", 1) +
+          marker("From", 0, "End") +
+          marker("To", 3, "Start") +
+          paragraph("To", 4) +
+          marker("To", 3, "End") +
+          "<w:p><w:r><w:t>末段</w:t></w:r></w:p>",
+      ),
+      session = createDocumentSession(
+        openDocument(
+          importDocx(bytes, { documentId: "block-move", unsupportedContent: "reject" }),
+          { kind: "document" },
+        ),
+      );
+    expect(session.snapshot().metadata.word!.revisions).toHaveLength(4);
+    expect(
+      strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!).match(/<w:p[\s>]/g),
+    ).toHaveLength(3);
+    const first = session.snapshot().metadata.word!.revisions[0]!;
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "block-move",
+        baseRevision: 0,
+        operations: [
+          {
+            op: "reviewWordRevision",
+            nodeId: first.nodeId,
+            revisionId: first.revisionId ?? first.nodeId,
+            decision,
+          },
+        ],
+      }),
+    );
+    const output = openDocument(
+      importDocx(exportDocx(session).bytes, {
+        documentId: "reviewed",
+        unsupportedContent: "reject",
+      }),
+      { kind: "document" },
+    );
+    expect(output.snapshot().html.match(/<p\b/g)).toHaveLength(2);
+    expect(output.getNode(output.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text).toBe(
+      "移动段落末段",
+    );
+    session.undo();
+    expect(session.snapshot().metadata.word!.revisions).toHaveLength(4);
+  },
+);
+
+test("author-filtered review includes both ends of a named move even when the native authors differ", () => {
+  const bytes = fixture(
+      '<w:p><w:moveFromRangeStart w:id="0" w:name="paired" w:author="甲" w:date="2026-11-14T00:00:00Z"/><w:moveFrom w:id="1" w:author="甲"><w:r><w:delText>甲</w:delText></w:r></w:moveFrom><w:moveFromRangeEnd w:id="0"/><w:moveToRangeStart w:id="2" w:name="paired" w:author="乙" w:date="2026-11-14T00:00:00Z"/><w:moveTo w:id="3" w:author="乙"><w:r><w:t>甲</w:t></w:r></w:moveTo><w:moveToRangeEnd w:id="2"/></w:p>',
+    ),
+    session = createDocumentSession(
+      openDocument(
+        importDocx(bytes, { documentId: "paired-authors", unsupportedContent: "reject" }),
+        { kind: "document" },
+      ),
+    );
+  const story = session.snapshot().metadata.word!.stories.find((story) => story.kind === "main")!,
+    root = session.getNode(story.rootNodeId)!.parentNodeId!;
+  session.commit(
+    session.prepare({
+      protocolVersion: 1,
+      documentId: "paired-authors",
+      baseRevision: 0,
+      operations: [{ op: "reviewWordRevisions", nodeId: root, author: "甲", decision: "accept" }],
+    }),
+  );
+  expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+  expect(session.snapshot().metadata.word!.moves).toEqual([]);
+});
+
+test.each(["accept", "reject"] as const)(
+  "new tracked run formatting %s retains native properties in current and previous runs",
+  (decision) => {
+    const session = createDocumentSession(
+      openDocument(
+        importDocx(
+          fixture(
+            '<w:p><w:r><w:rPr><x:kept x:value="opaque"/></w:rPr><w:t>前格式后</w:t></w:r></w:p>',
+          ),
+          { documentId: "tracked-format" },
+        ),
+        { kind: "document" },
+      ),
+    );
+    const story = session.snapshot().metadata.word!.stories[0]!,
+      paragraph = session.getNode(story.rootNodeId)!.childNodeIds[0]!,
+      root = session.getNode(story.rootNodeId)!.parentNodeId!;
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "tracked-format",
+        baseRevision: 0,
+        operations: [
+          { op: "setWordReview", nodeId: root, trackChanges: true, author: "甲" },
+          {
+            op: "formatWordText",
+            nodeId: paragraph,
+            from: 1,
+            to: 3,
+            expectedText: "格式",
+            properties: { "font-weight": "700" },
+          },
+        ],
+      }),
+    );
+    const xml = strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!);
+    expect(xml).toContain("rPrChange");
+    expect(xml).not.toContain("before-source");
+    expect(xml.match(/value="opaque"/g)!.length).toBeGreaterThanOrEqual(2);
+    const reopened = createDocumentSession(
+      openDocument(importDocx(exportDocx(session).bytes, { documentId: "format-review" }), {
+        kind: "document",
+      }),
+    );
+    const revision = reopened.snapshot().metadata.word!.revisions[0]!;
+    reopened.commit(
+      reopened.prepare({
+        protocolVersion: 1,
+        documentId: "format-review",
+        baseRevision: 0,
+        operations: [
+          {
+            op: "reviewWordRevision",
+            nodeId: revision.nodeId,
+            revisionId: revision.revisionId ?? revision.nodeId,
+            decision,
+          },
+        ],
+      }),
+    );
+    const reviewed = strFromU8(unzipSync(exportDocx(reopened).bytes)["word/document.xml"]!);
+    expect(reviewed).not.toContain("PrChange");
+    expect(reviewed).toContain("opaque");
+    expect(reviewed.includes("<w:b ")).toBe(decision === "accept");
+    session.undo();
+    expect(session.snapshot().metadata.word!.revisions).toEqual([]);
+  },
+);
+
+test.each(["rowInsert", "rowDelete"] as const)(
+  "native %s marks remain editable across reopens and removing their rows uses the grid boundary",
+  (kind) => {
+    let bytes = fixture(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:' +
+        (kind === "rowInsert" ? "ins" : "del") +
+        ' w:id="5" w:author="甲"/></w:trPr><w:tc><w:p><w:r><w:t>修订行</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>保留行</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+    );
+    let model = openDocument(
+      importDocx(bytes, { documentId: "native-rows", unsupportedContent: "reject" }),
+      { kind: "document" },
+    );
+    for (let pass = 0; pass < 2; pass++) {
+      expect(model.snapshot().metadata.word!.revisions[0]!.kind).toBe(kind);
+      bytes = exportDocx(model).bytes;
+      model = openDocument(
+        importDocx(bytes, { documentId: "native-rows", unsupportedContent: "reject" }),
+        { kind: "document" },
+      );
+    }
+    const session = createDocumentSession(model),
+      revision = session.snapshot().metadata.word!.revisions[0]!;
+    session.commit(
+      session.prepare({
+        protocolVersion: 1,
+        documentId: "native-rows",
+        baseRevision: 0,
+        operations: [
+          {
+            op: "reviewWordRevision",
+            nodeId: revision.nodeId,
+            revisionId: revision.revisionId!,
+            decision: kind === "rowInsert" ? "reject" : "accept",
+          },
+        ],
+      }),
+    );
+    const output = openDocument(
+      importDocx(exportDocx(session).bytes, {
+        documentId: "reviewed-rows",
+        unsupportedContent: "reject",
+      }),
+      { kind: "document" },
+    );
+    expect(output.snapshot().html).not.toContain("修订行");
+    expect(output.snapshot().html).toContain("保留行");
+    expect(output.snapshot().metadata.word!.revisions).toEqual([]);
+    session.undo();
+    expect(session.getNode(revision.nodeId)).toBeDefined();
+  },
+);

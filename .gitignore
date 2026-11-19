@@ -10,6 +10,7 @@ playwright-report/
 .env.*
 !.env.example
 fixtures/private/
+apps/playground/src/assets/word-fonts/internal/
 __pycache__/
 packages/*/LICENSE
 packages/*/NOTICE

@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { createDevelopmentConversionMiddleware } from "@doffi/node/dev";
+import { docxDiagnostics } from "./docx-diagnostics.js";
 
 function localConversion(): Plugin {
   const middleware = createDevelopmentConversionMiddleware({
@@ -25,6 +26,8 @@ function collaborationExamples(): Plugin {
     "presentation.proposal.json": readFileSync(new URL("../../examples/presentation.proposal.json",import.meta.url),"utf8"),
     "report.proposal.json": readFileSync(new URL("../../examples/report.proposal.json", import.meta.url), "utf8"),
   };
+  for (const name of ["NOTO-LICENSE.txt", "ZHUQUE-OFL.txt", "WENKAI-OFL.txt", "sources.json"])
+    assets["word-fonts/" + name] = readFileSync(new URL("./src/assets/word-fonts/" + name, import.meta.url), "utf8");
   for (const name of readdirSync(new URL("../../examples/pptx/", import.meta.url)).filter(name => name.endsWith(".pptx"))) assets["pptx/"+name]=readFileSync(new URL("../../examples/pptx/"+name,import.meta.url));
   assets["xlsx/15-ten-thousand-rows.xlsx"] = readFileSync(new URL("../../examples/xlsx/15-ten-thousand-rows.xlsx", import.meta.url));
   return {
@@ -33,7 +36,8 @@ function collaborationExamples(): Plugin {
       server.middlewares.use((request, response, next) => {
         const source = assets[(request.url ?? "").split("?")[0]!.replace(/^\//, "")];
         if (source === undefined) { next(); return; }
-        response.setHeader("Content-Type", request.url?.split("?")[0]?.endsWith(".svg") ? "image/svg+xml" : typeof source === "string" ? "application/json; charset=utf-8" : request.url?.split("?")[0]?.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.presentationml.presentation"); response.end(source);
+        const path = request.url?.split("?")[0];
+        response.setHeader("Content-Type", path?.endsWith(".txt") ? "text/plain; charset=utf-8" : path?.endsWith(".svg") ? "image/svg+xml" : typeof source === "string" ? "application/json; charset=utf-8" : path?.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.presentationml.presentation"); response.end(source);
       });
     },
     generateBundle() {
@@ -43,7 +47,8 @@ function collaborationExamples(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), collaborationExamples(), localConversion()],
+  plugins: [react(), collaborationExamples(), localConversion(),
+    process.env.DOFFI_DEV_DOCX_DIAGNOSTICS === "1" && docxDiagnostics()],
   publicDir: fileURLToPath(new URL("../../examples/docx/", import.meta.url)),
   build: { target: "es2022", rolldownOptions: { output: { banner: "/*! @license\n" + ["../../NOTICE", "../../packages/core/ECMA-376-GEOMETRY-LICENSE.txt"].map(path => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n") + "\n*/", comments: { legal: true } } } },
 });
