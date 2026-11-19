@@ -45,6 +45,45 @@ test("run width and an East Asian font hint survive strict import and native reo
   }
 });
 
+test("native paragraph-spacing attributes preserve the independent line rule and point spacing", () => {
+  const bytes = mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => body(source,
+      '<w:p><w:pPr><w:spacing w:afterLines="100" w:beforeAutospacing="true" ' +
+      'w:after="240" w:line="360" w:lineRule="auto"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p>',
+    ),
+    "word/styles.xml": () => styles(
+      '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/>' +
+      '<w:pPr><w:spacing w:line="360" w:lineRule="exact"/></w:pPr></w:style>',
+    ),
+  });
+  const read = (input: Uint8Array) => openDocument(
+    importDocx(input, { documentId: "native-paragraph-spacing" }), { kind: "document" },
+  );
+  const model = read(bytes);
+  const html = model.snapshot().html;
+  expect(html).toContain('data-word-line-rule="auto"');
+  expect(html).toContain("line-height:1.5");
+  expect(html).toContain("margin-bottom:12pt");
+  const nodeId = html.match(/<p data-node-id="([^"]+)"/)![1]!;
+  const session = createDocumentSession(model);
+  session.commit(session.prepare({
+    protocolVersion: 1,
+    documentId: "native-paragraph-spacing",
+    baseRevision: 0,
+    operations: [{ op: "setStyle", nodeId, property: "line-height", value: "1.25" }],
+  }));
+  const output = exportDocx(session).bytes;
+  const xml = strFromU8(unzipSync(output)["word/document.xml"]!);
+  const spacing = xml.match(/<w:spacing\b[^>]*\bw:afterLines="100"[^>]*>/)?.[0];
+  expect(spacing).toContain('w:beforeAutospacing="true"');
+  expect(spacing).toContain('w:after="240"');
+  expect(spacing).toContain('w:line="300"');
+  expect(spacing).toContain('w:lineRule="auto"');
+  const reopened = read(output).snapshot().html;
+  expect(reopened).toContain('data-word-line-rule="auto"');
+  expect(reopened).toContain("line-height:1.25");
+});
+
 const base = () =>
   unzipSync(
     new Uint8Array(

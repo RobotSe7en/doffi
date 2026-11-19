@@ -524,6 +524,44 @@ test("native auto line spacing retains fractional grid pitches and fixed spacing
     }
   }
 });
+test("an independent native paragraph-spacing attribute cannot clip a page-start title", async ({ page }) => {
+  const font = '<w:rPr><w:b/><w:sz w:val="44"/></w:rPr>';
+  const files = importDocx(mutateDocx("01-text-numbering.docx", {
+    "word/styles.xml": () => nativeStyles(
+      '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/>' +
+      '<w:pPr><w:spacing w:line="360" w:lineRule="exact"/></w:pPr>' +
+      '<w:rPr><w:rFonts w:ascii="sans-serif" w:eastAsia="sans-serif"/><w:sz w:val="28"/></w:rPr></w:style>',
+    ),
+    "word/document.xml": (source) => nativeBody(source,
+      '<w:p><w:pPr><w:spacing w:afterLines="100" w:after="240" w:line="360" w:lineRule="auto"/>' +
+      '<w:jc w:val="center"/>' + font + '</w:pPr><w:r>' + font + '<w:t>样例标题</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>后续段落</w:t></w:r></w:p>',
+    ),
+  }), { documentId: "page-start-title-spacing" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    const frame = page.frameLocator("iframe");
+    const title = frame.locator("p").filter({ hasText: "样例标题" });
+    const geometry = await title.evaluate((node) => {
+      const document = node.ownerDocument;
+      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+      const range = document.createRange();
+      range.selectNodeContents(walker.nextNode()!);
+      return {
+        inkTop: range.getBoundingClientRect().top,
+        clipTop: node.closest(".sdk-page-flow")!.getBoundingClientRect().top,
+        height: node.getBoundingClientRect().height,
+        after: parseFloat(getComputedStyle(node).marginBottom),
+      };
+    });
+    await expect(title).toHaveAttribute("data-word-line-rule", "auto");
+    expect(geometry.inkTop).toBeGreaterThanOrEqual(geometry.clipTop - 0.5);
+    expect(geometry.height).toBeGreaterThan(44);
+    expect(geometry.after).toBeCloseTo(16);
+    const body = frame.locator("p").filter({ hasText: "后续段落" });
+    await expect(body).toHaveCSS("line-height", "24px");
+  }
+});
 test("automatic spacing without a grid uses run metrics and preserves the paragraph mark font", async ({ page }) => {
   const fonts = (size: number) =>
     '<w:rFonts w:ascii="serif" w:hAnsi="serif" w:eastAsia="serif"/><w:sz w:val="' + size + '"/>';

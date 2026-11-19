@@ -821,13 +821,14 @@ export class DocxStyles {
         const value = attr(spacing, name!);
         if (value !== undefined) css[property!] = pt(number(value, spacing) / 20);
       }
-      if (
-        attr(spacing, "beforeLines") ||
-        attr(spacing, "afterLines") ||
-        attr(spacing, "beforeAutospacing") === "1" ||
-        attr(spacing, "afterAutospacing") === "1"
-      )
-        unsupported(spacing, "Automatic paragraph spacing is not supported.");
+      // Keep the rest of w:spacing in the compatible view. Its line rule
+      // can independently override an inherited fixed line height.
+      for (const name of ["beforeLines", "afterLines"])
+        if (attr(spacing, name) !== undefined)
+          unsupported(spacing, "Line-based paragraph spacing remains native.", W + " " + name);
+      for (const name of ["beforeAutospacing", "afterAutospacing"])
+        if (["1", "true", "on"].includes(attr(spacing, name) ?? ""))
+          unsupported(spacing, "Automatic paragraph spacing remains native.", W + " " + name);
       const line = attr(spacing, "line");
       if (line) {
         const rule = attr(spacing, "lineRule") ?? "auto";
