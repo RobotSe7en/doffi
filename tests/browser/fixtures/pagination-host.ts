@@ -6,6 +6,9 @@ import { createLayoutFieldTransaction, mountDocumentInteraction, mountDocumentPr
 import type { DocumentInteractionView, DocumentPreview, DocumentPreviewOptions, DocumentRenderReport, DocumentTextEditor } from "@doffi/editor";
 import { SourceProjection as ProjectionUnderTest } from '../../../packages/render/src/projection.js';
 import { markViewNode } from '../../../packages/render/src/view-nodes.js';
+import type { WordWebFont } from "@doffi/render";
+
+type TestWebFont = Omit<WordWebFont, "load"> & { url: string };
 
 export interface PaginationHost {
   model: DocumentModel | undefined;
@@ -13,7 +16,7 @@ export interface PaginationHost {
   view: DocumentPreview | DocumentInteractionView | DocumentTextEditor | undefined;
   interaction: DocumentInteractionView | undefined;
   errors: string[];
-  mount(files: TestPackage, mode?: "preview" | "edit" | "interaction", options?: DocumentPreviewOptions): Promise<void>;
+  mount(files: TestPackage, mode?: "preview" | "edit" | "interaction", options?: DocumentPreviewOptions, fonts?: readonly TestWebFont[]): Promise<void>;
   layout(): DocumentRenderReport;
   updateFields(): Promise<void>;
   lateProjection(): { original: string; html: string; copy: string; shellMissing: boolean; unowned: string; instance: string };
@@ -22,9 +25,16 @@ declare global { interface Window { paginationHost: PaginationHost } }
 const container = document.createElement("div"); container.style.cssText = "width:1050px;margin:20px"; document.body.replaceChildren(container);
 window.paginationHost = {
   model: undefined, session: undefined, view: undefined, interaction: undefined, errors: [],
-  async mount(files, mode = "preview", options = {}) {
+  async mount(files, mode = "preview", options = {}, fonts) {
     this.view?.dispose(); this.session?.dispose(); this.session = undefined; this.interaction = undefined; this.errors = [];
     this.model = openDocument(decodeTestPackage(files));
+    if (fonts) options = {
+      ...options,
+      wordWebFonts: fonts.map(({ url, ...definition }) => ({
+        ...definition,
+        load: async () => (await fetch(url)).arrayBuffer(),
+      })),
+    };
     if (mode === "preview") this.view = mountDocumentPreview(container, this.model, options);
     else {
       this.session = createDocumentSession(this.model);

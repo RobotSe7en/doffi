@@ -21,8 +21,8 @@ import { composeWordParagraphMarks } from "./word-paragraph-marks.js";
 import { composeWordNative } from "./word-native.js";
 import { composeWordControls } from "./word-controls.js";
 import { DocumentError, openDocument } from "@doffi/core";
-import { loadWordWebFonts, resolvePreviewFonts } from "./fonts.js";
-import type { FontResolution, WordWebFont } from "./fonts.js";
+import { loadWordWebFonts, resolvePreviewDefaultFont, resolvePreviewFonts } from "./fonts.js";
+import type { FontResolution, HostedWordFonts, WordWebFont } from "./fonts.js";
 import type { DeepReadonly, ContentDocumentModel, WordMetadata } from "@doffi/core";
 import { PreviewSource } from "./source-index.js";
 import { renderLimits } from "./contracts.js";
@@ -38,6 +38,7 @@ import { composeWordMath } from "./word-math.js";
 import type { LayoutFields } from "./fields.js";
 import { SourceProjection } from "./projection.js";
 import { copyPreviewSelection } from "./clipboard.js";
+import { composeWordAutoLineSpacing } from "./word-line-spacing.js";
 import { mountPresentationPreview } from "./presentation/preview.js";
 import { mountWorkbookPreview } from "./workbook/preview.js";
 import type {
@@ -133,48 +134,7 @@ export function decorate(
           ? "auto"
           : "manual";
   }
-  for (const paragraph of scope.querySelectorAll<HTMLElement>('[data-word-line-rule="auto"]')) {
-    const typed = paragraph as HTMLElement & {
-      computedStyleMap?: () => {
-        get: (name: string) => { unit?: string; value?: number } | undefined;
-      };
-    };
-    const line = typed.computedStyleMap?.().get("line-height") as
-      | { unit?: string; value?: number }
-      | undefined;
-    let multiplier =
-      line?.unit === "number" ? (line.value ?? 0) : Number(paragraph.style.lineHeight);
-    const computed = document.defaultView!.getComputedStyle(paragraph);
-    if ((!Number.isFinite(multiplier) || multiplier <= 0) && !line) {
-      // Firefox/WebKit expose resolved pixels rather than Typed OM numbers.
-      // A temporary font-size probe distinguishes a unitless inherited rule
-      // from an authored absolute line height, without reimplementing cascade.
-      const size = parseFloat(computed.fontSize),
-        height = parseFloat(computed.lineHeight);
-      if (Number.isFinite(size) && size > 0 && Number.isFinite(height)) {
-        const value = paragraph.style.getPropertyValue("font-size"),
-          priority = paragraph.style.getPropertyPriority("font-size");
-        paragraph.style.setProperty("font-size", size * 2 + "px", "important");
-        const doubled = parseFloat(document.defaultView!.getComputedStyle(paragraph).lineHeight);
-        if (value) paragraph.style.setProperty("font-size", value, priority);
-        else paragraph.style.removeProperty("font-size");
-        if (Math.abs(doubled - height * 2) < 0.2) multiplier = height / size;
-      }
-    }
-    if (!Number.isFinite(multiplier) || multiplier <= 0) continue;
-    const probe = document.createElement("span");
-    probe.style.cssText =
-      "position:absolute;visibility:hidden;display:block;line-height:normal;white-space:pre";
-    probe.style.fontFamily = computed.fontFamily;
-    probe.style.fontSize = computed.fontSize;
-    probe.style.fontWeight = computed.fontWeight;
-    probe.style.fontStyle = computed.fontStyle;
-    probe.textContent = "汉M";
-    document.body.append(probe);
-    const height = probe.getBoundingClientRect().height;
-    probe.remove();
-    paragraph.style.lineHeight = height * multiplier + "px";
-  }
+  composeWordAutoLineSpacing(document, scope);
   for (const table of word.tables) {
     const element = byId.get(table.nodeId);
     if (!element) continue;
@@ -224,6 +184,8 @@ export function decorate(
   }
 }
 
+const wordFrameFont = '"Noto Sans CJK SC",serif';
+
 function prepareDocument(input: ContentDocumentModel): {
   model: ContentDocumentModel;
   document: Document;
@@ -242,6 +204,10 @@ function prepareDocument(input: ContentDocumentModel): {
   policy.content =
     "default-src 'none'; img-src blob:; style-src 'unsafe-inline'; font-src 'none'; base-uri 'none'; form-action 'none'";
   parsed.head.prepend(policy);
+  const frameFont = parsed.createElement("style");
+  frameFont.setAttribute("data-sdk-word-frame-font", "");
+  frameFont.textContent = "body{font-family:" + wordFrameFont + "}";
+  policy.after(frameFont);
   const style = parsed.createElement("style");
   style.setAttribute("data-sdk-source-styles", "");
   // outerHTML leaves raw style text intact. Escape the slash in HTML end tags
@@ -253,7 +219,7 @@ function prepareDocument(input: ContentDocumentModel): {
   parsed.head.append(style);
   const frameStyle = parsed.createElement("style");
   const setup = snapshot.metadata.pageSetup;
-  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',serif;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-size:inherit;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-sdk-word-text-review="insert"]{color:#006400!important;text-decoration-line:var(--sdk-word-authored-insert-decoration,underline)!important}[data-sdk-word-text-review="delete"]{color:#a00000!important;text-decoration-line:var(--sdk-word-authored-delete-decoration,line-through)!important}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}[data-word-native-boundary]{display:none!important}`;
+  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-size:inherit;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-sdk-word-text-review="insert"]{color:#006400!important;text-decoration-line:var(--sdk-word-authored-insert-decoration,underline)!important}[data-sdk-word-text-review="delete"]{color:#a00000!important;text-decoration-line:var(--sdk-word-authored-delete-decoration,line-through)!important}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}[data-word-native-boundary]{display:none!important}`;
   parsed.head.insertBefore(frameStyle, style);
   const byId = new Map(
     [...parsed.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => [
@@ -390,7 +356,16 @@ export function mountPreview(
   let continuousPunctuation: ReturnType<typeof wordPunctuationLayout> | undefined;
   let runWidths: ReturnType<typeof wordRunWidthLayout> | undefined;
   let tabs: WordTabLayout | undefined;
-  let hostedFonts: ReadonlyMap<string, string> | undefined;
+  let hostedFonts: HostedWordFonts | undefined;
+  const defaultFonts = new Map<string, string>();
+  function defaultFont(stack: string): string {
+    let resolved = defaultFonts.get(stack);
+    if (resolved === undefined) {
+      resolved = resolvePreviewDefaultFont(iframe.contentDocument!, stack, hostedFonts);
+      defaultFonts.set(stack, resolved);
+    }
+    return resolved;
+  }
   let resolveReady: () => void = () => {},
     rejectReady: (reason: unknown) => void = () => {};
   const ready = new Promise<void>((resolve, reject) => {
@@ -546,6 +521,8 @@ export function mountPreview(
   }
   function render(): void {
     const frame = iframe.contentDocument!;
+    const frameFont = frame.head.querySelector<HTMLStyleElement>("style[data-sdk-word-frame-font]")!;
+    frameFont.textContent = "body{font-family:" + defaultFont(wordFrameFont) + "}";
     runWidths?.reset();
     notes?.dispose();
     notes = undefined;
@@ -607,7 +584,7 @@ export function mountPreview(
     floatingTables = composeWordFloatingTables(frame, model, limits);
     composeWordNative(frame, model, prepared.nativeUrls, limits);
     composeWordControls(frame, model);
-    composeWordMath(frame, model, limits);
+    composeWordMath(frame, model, limits, defaultFont);
     if ((options.layout ?? "pages") === "pages")
       fields = layoutFields(frame, source, snapshot.metadata.word);
     drawings = composeWordDrawings(frame, model, limits, source);
@@ -686,7 +663,7 @@ export function mountPreview(
             "。"
           : "") +
         (fontReport.some((item) => !item.glyphAuditComplete) ? "部分字形未核验。" : "") +
-        "断行和版式可能与原字体不同。";
+        (substitutions.length ? "断行和版式可能与原字体不同。" : "");
       frame.body.append(note);
     }
     for (const image of frame.images) image.addEventListener("load", measure, { once: true });

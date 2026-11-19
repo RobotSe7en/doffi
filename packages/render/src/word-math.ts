@@ -10,6 +10,7 @@ export function composeWordMath(
   document: Document,
   model: ContentDocumentModel,
   limits: Readonly<RenderLimits>,
+  defaultFont: (stack: string) => string,
 ): void {
   let count = document.querySelectorAll("*").length;
   const make = (
@@ -231,7 +232,7 @@ export function composeWordMath(
     math.setAttribute(
       "style",
       "font-family:" +
-        JSON.stringify(equation.fontFamily ?? "Cambria Math") +
+        (equation.fontFamily ? JSON.stringify(equation.fontFamily) : defaultFont('"Cambria Math"')) +
         ";font-size:" +
         size +
         ";line-height:normal;color:" +

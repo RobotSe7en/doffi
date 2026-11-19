@@ -16,10 +16,12 @@ export function createSourceStyleResolver(
       ...document.head.querySelectorAll<HTMLStyleElement>(
         "style[data-office-source-styles],style[data-sdk-source-styles]",
       ),
-    ],
-    css = sheets.map((sheet) => sheet.textContent ?? "");
+    ];
   if (!sheets.length)
     throw new DocumentError("InvalidOperation", "Text styles require their owning source styles.");
+  const defaultFont = document.head.querySelector<HTMLStyleElement>("style[data-sdk-word-frame-font]");
+  if (defaultFont) sheets.unshift(defaultFont);
+  const css = sheets.map((sheet) => sheet.textContent ?? "");
   // These styles have already passed their package/surface admission budgets.
   // Bound this second, mask-only parse by those captured input strings, rather
   // than imposing a smaller package limit on a host's admitted source.

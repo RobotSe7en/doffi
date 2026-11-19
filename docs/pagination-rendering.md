@@ -40,6 +40,8 @@ const report = await view.settled();
 
 `DocumentRenderReport` 绑定文档 ID 和修订，包含物理页、打印页码、pt 几何、源节点页映射、字段结果、字体报告及诊断。区域批注仍使用主故事坐标；整个矩形位于一张纸内时增加实际 `pageId`，布局变化仍要求显式重定位。
 
+启用 Word 行网格时，自动行距的倍数以节的网格行距为基数，可以保留小数倍。较大字号可以在所在行占用更多格。无行网格时，自动行距根据所用字体和文字角色确定单倍行高，东亚文字的度量包含 Word 的行间留白。段落标记和正文各用自己的字号及字体参与行高计算。固定值和最小值行距按各自的段落规则测量。[Microsoft 自动行距定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.spacingbetweenlines.line?view=openxml-3.0.1)
+
 ## 东亚标点和禁则
 
 正文段落启用行尾悬挂时，预览按文字语言选取可悬挂字符，并在实际换行处测量能否让一个标点随前一行排出行尾。字符网格兼容选项可禁止这个溢出。表格单元格内保留禁则换行，标点留在单元格文字范围内。行首压缩按当前可见行首和字形宽度计算。普通两端对齐时，预览按行测量放入下一个可合法换行的东亚字符所需的标点间距；分散对齐使用标点压缩后的间距分配。日文假名可以使用字体提供的比例宽度，字网格使用固定节距。[Microsoft 悬挂标点规则](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/879a1ee2-5d6c-4181-8fd5-7b4b1b55949f)

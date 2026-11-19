@@ -69,4 +69,6 @@
 
 Use the narrowest meaningful checks. Changes to editing need transaction, undo and conflict tests; Office changes need import, editable export and reopen checks; host changes need ownership and concurrent-save coverage. Layout changes need relevant visual fixtures with fixed fonts and viewport.
 
+Every change that restores Word formatting or layout must add or extend an automated regression test for the general rule being fixed. Use a synthetic DOCX or public fixture that reproduces the difference and assert the affected formatting or geometry through the shared renderer. Exercise both preview and editing when the change spans both surfaces.
+
 For design-only work, check Markdown links, JSON examples, example consistency and `git diff --check`. Do not claim planned capabilities as implemented behavior.

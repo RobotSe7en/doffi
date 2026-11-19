@@ -1,6 +1,7 @@
 import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, WordMetadata } from "@doffi/core";
 import { resolvePreviewFonts } from "./fonts.js";
+import type { HostedWordFonts } from "./fonts.js";
 import type { FontResolution } from "./fonts.js";
 import { markViewNode, ownViewStyle } from "./view-nodes.js";
 
@@ -50,7 +51,7 @@ function numeral(value: number, format: string): string {
 export function composeWordNumbering(
   document: Document,
   word: DeepReadonly<WordMetadata> | undefined,
-  hostedFonts: ReadonlyMap<string, string> | undefined,
+  hostedFonts: HostedWordFonts | undefined,
 ): readonly FontResolution[] {
   if (!word?.numbering.length) return [];
   const view = document.defaultView!,

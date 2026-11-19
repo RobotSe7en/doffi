@@ -483,6 +483,171 @@ test("mixed font sizes reserve line-grid multiples only on the lines containing 
   expect(geometry.last - geometry.first).toBeCloseTo(96, 0);
   expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
+test("native auto line spacing retains fractional grid pitches and fixed spacing skips the grid", async ({ page }) => {
+  const cases = [
+    { text: "SINGLE", spacing: 240, rule: "auto", points: 15.6 },
+    { text: "FRACTION", spacing: 276, rule: "auto", points: 17.94 },
+    { text: "MULTIPLE", spacing: 360, rule: "auto", points: 23.4 },
+    { text: "TIGHT", spacing: 192, rule: "auto", points: 15.6 },
+    { text: "FIXED", spacing: 420, rule: "exact", points: 21 },
+    { text: "MINIMUM", spacing: 420, rule: "atLeast", points: 21 },
+  ];
+  const files = importDocx(mutateDocx("01-text-numbering.docx", {
+    "word/styles.xml": () => nativeStyles('<w:docDefaults><w:rPrDefault><w:rPr>' +
+      '<w:rFonts w:ascii="serif" w:eastAsia="serif"/><w:sz w:val="20"/>' +
+      '</w:rPr></w:rPrDefault></w:docDefaults>'),
+    "word/document.xml": (source) => nativeBody(source, cases.map(({ text, spacing, rule }) =>
+      '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="' + spacing + '" w:lineRule="' + rule + '"/></w:pPr>' +
+      '<w:r><w:t>' + text + '</w:t><w:br/><w:t>LINE</w:t></w:r></w:p>',
+    ).join("") + '<w:sectPr><w:docGrid w:type="lines" w:linePitch="312"/></w:sectPr>'),
+  }), { documentId: "grid-line-spacing" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    const paragraphs = page.frameLocator("iframe").locator("p[data-node-id]");
+    for (const { text, points } of cases) {
+      const geometry = await paragraphs.filter({ hasText: text }).evaluate((node, label) => {
+        const positions: number[] = [];
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        for (let run = walker.nextNode(); run; run = walker.nextNode()) {
+          if (run.textContent !== label && run.textContent !== "LINE") continue;
+          const range = document.createRange();
+          range.selectNodeContents(run);
+          positions.push(range.getBoundingClientRect().top);
+        }
+        return {
+          lineHeight: parseFloat(getComputedStyle(node).lineHeight) * 3 / 4,
+          lineDistance: (positions[1]! - positions[0]!) * 3 / 4,
+        };
+      }, text);
+      expect(geometry.lineHeight).toBeCloseTo(points, 1);
+      expect(geometry.lineDistance).toBeCloseTo(points, 0);
+    }
+  }
+});
+test("automatic spacing without a grid uses run metrics and preserves the paragraph mark font", async ({ page }) => {
+  const fonts = (size: number) =>
+    '<w:rFonts w:ascii="serif" w:hAnsi="serif" w:eastAsia="serif"/><w:sz w:val="' + size + '"/>';
+  const paragraph = (first: string, second: string, markSize: number) =>
+    '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="276" w:lineRule="auto"/>' +
+    '<w:rPr>' + fonts(markSize) + '</w:rPr></w:pPr><w:r><w:rPr>' + fonts(28) + '</w:rPr><w:t>' + first +
+    '</w:t></w:r><w:r><w:br/></w:r><w:r><w:rPr>' + fonts(28) + '</w:rPr><w:t>' + second + '</w:t></w:r></w:p>';
+  const files = importDocx(mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => nativeBody(source, paragraph("中文甲", "中文乙", 20) +
+      paragraph("LINE A", "LINE B", 28) + '<w:sectPr><w:docGrid w:type="default" w:linePitch="312"/></w:sectPr>'),
+  }), { documentId: "ungridded-native-leading" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    const frame = page.frameLocator("iframe");
+    const metrics = await frame.locator("p").filter({ hasText: "中文甲" }).evaluate((paragraph) => {
+      const text: Node[] = [];
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+      for (let run = walker.nextNode(); run; run = walker.nextNode())
+        if (/^中文[甲乙]$/.test(run.textContent ?? "")) text.push(run);
+      const css = getComputedStyle(text[0]!.parentElement!);
+      const canvas = document.createElement("canvas").getContext("2d")!;
+      canvas.font = `256px ${css.fontFamily}`;
+      const font = canvas.measureText("汉");
+      const emHeight = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 256;
+      const y = text.map((run) => {
+        const range = document.createRange();
+        range.selectNodeContents(run);
+        return range.getBoundingClientRect().top;
+      });
+      return {
+        height: parseFloat(css.lineHeight),
+        expected: emHeight * parseFloat(css.fontSize) * 1.3 * 1.15,
+        distance: y[1]! - y[0]!,
+        runSize: parseFloat(css.fontSize) * 3 / 4,
+        markSize: parseFloat(getComputedStyle(paragraph).fontSize) * 3 / 4,
+        breakLineHeight: getComputedStyle(paragraph.querySelector("br")!.parentElement!).lineHeight,
+      };
+    });
+    expect(metrics.height).toBeCloseTo(metrics.expected, 1);
+    expect(metrics.distance).toBeCloseTo(metrics.expected, 0);
+    expect(metrics.runSize).toBeCloseTo(14);
+    expect(metrics.markSize).toBeCloseTo(10);
+    expect(metrics.breakLineHeight).toBe("0px");
+    const latin = await frame.locator("p").filter({ hasText: "LINE A" }).evaluate((node) =>
+      parseFloat(getComputedStyle(node).lineHeight),
+    );
+    expect(latin).toBeLessThan(metrics.height);
+  }
+});
+test("a hosted native alias has precedence over a substitute and retains source font identity", async ({ page }) => {
+  const nativeAlias = "Fixture East Asian Alias",
+    missingFamily = "Fixture Missing East Asian Family",
+    nativeFamily = "Doffi Serif SC",
+    fallbackFamily = "Doffi Sans SC";
+  for (const basename of ["serif", "sans"]) {
+    await page.route("**/font-" + basename + ".woff2", (route) => route.fulfill({
+      path: fileURLToPath(new URL("../../apps/playground/src/assets/word-fonts/" + basename + "-regular.woff2", import.meta.url)),
+      contentType: "font/woff2",
+    }));
+  }
+  const files = importDocx(mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => nativeBody(source, [nativeAlias, missingFamily].map((family) =>
+      '<w:p><w:r><w:rPr><w:rFonts w:eastAsia="' + family + '"/></w:rPr><w:t>中文</w:t></w:r></w:p>',
+    ).join("")),
+  }), { documentId: "native-font-alias" });
+  await openSdkHost(page);
+  await page.addScriptTag({ type: "module", content: code });
+  await page.waitForFunction(() => !!window.paginationHost);
+  const fonts = [
+    { family: nativeFamily, aliases: [nativeAlias], equivalentAliases: true, url: "/font-serif.woff2" },
+    { family: fallbackFamily, aliases: [nativeAlias, missingFamily], fallbackOnly: true, url: "/font-sans.woff2" },
+  ];
+  const entries = [...files].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]);
+  const result = await page.evaluate(async ({ entries, fonts }) => {
+    await window.paginationHost.mount(entries, "preview", {}, fonts);
+    return {
+      fonts: window.paginationHost.layout().fonts,
+      source: window.paginationHost.model!.snapshot().html,
+    };
+  }, { entries, fonts });
+  expect(result.fonts).toEqual(expect.arrayContaining([
+    expect.objectContaining({ requestedFamily: nativeAlias, selectedFamily: nativeFamily, substituted: false }),
+    expect.objectContaining({ requestedFamily: missingFamily, selectedFamily: fallbackFamily, substituted: true }),
+  ]));
+  expect(result.source).toContain(nativeAlias);
+  expect(result.source).toContain(missingFamily);
+  expect(result.source).not.toContain(nativeFamily);
+});
+test("Word only warns about document font substitutions and still reports missing glyphs", async ({ page }) => {
+  const requested = "Noto Sans CJK SC",
+    fallback = "Doffi Sans SC",
+    missing = "\u{3fffd}",
+    path = "/font-warning.woff2";
+  await page.route("**" + path, (route) => route.fulfill({
+    path: fileURLToPath(new URL("../../apps/playground/src/assets/word-fonts/sans-regular.woff2", import.meta.url)),
+    contentType: "font/woff2",
+  }));
+  const fonts = [{ family: fallback, aliases: [requested, "Cambria Math"], url: path }];
+  const math = '<w:p><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></w:p>';
+  const files = (text: string, family?: string) => importDocx(mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": (source) => nativeBody(source.replace(
+      "<w:document ", '<w:document xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
+    ), '<w:p><w:r><w:rPr>' + (family ? '<w:rFonts w:eastAsia="' + family + '"/>' : "") +
+      '<w:lang w:eastAsia="zh-CN"/></w:rPr><w:t>' + text + '</w:t></w:r></w:p>' + math),
+    "word/styles.xml": () => nativeStyles(""),
+  }), { documentId: "word-font-warnings" });
+
+  for (const mode of ["preview", "edit"] as const) {
+    const frame = page.frameLocator("iframe");
+    const note = frame.getByRole("note");
+    await mount(page, files("默认字体"), mode, {}, fonts);
+    await expect(frame.getByText("默认字体", { exact: true }).last()).toHaveCSS("font-family", /^"?Doffi Sans SC/);
+    await expect(frame.locator("math")).toHaveCount(1);
+    await expect(note).toHaveCount(0);
+
+    await mount(page, files("缺字" + missing), mode, {}, fonts);
+    await expect(note).toContainText("缺少字形：U+3FFFD");
+    await expect(note).not.toContainText("字体替代");
+    await expect(note).not.toContainText("断行和版式");
+
+    await mount(page, files("显式字体", requested), mode, {}, fonts);
+    await expect(note).toHaveText("字体替代：" + requested + " → " + fallback + "。断行和版式可能与原字体不同。");
+  }
+});
 test("literal newlines terminate grid blocks without moving end padding onto the next line", async ({
   page,
 }) => {
@@ -1852,16 +2017,18 @@ async function mount(
   files: DocumentPackage,
   mode: "preview" | "edit" | "interaction" = "preview",
   options: DocumentPreviewOptions = {},
+  fonts?: Parameters<PaginationHost["mount"]>[3],
 ): Promise<void> {
   await openSdkHost(page);
   await page.addScriptTag({ type: "module", content: code });
   await page.waitForFunction(() => !!window.paginationHost);
   await page.evaluate(
-    ({ entries, mode, options }) => window.paginationHost.mount(entries, mode, options),
+    ({ entries, mode, options, fonts }) => window.paginationHost.mount(entries, mode, options, fonts),
     {
       entries: [...files].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]),
       mode,
       options,
+      fonts,
     },
   );
 }

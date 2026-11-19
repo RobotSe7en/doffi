@@ -2,6 +2,7 @@ import type { DeepReadonly, DocumentSection, PageSetup, WordMetadata } from "@do
 import type { RenderLimits } from "./contracts.js";
 import { ownViewStyle, viewNodeRole, isMeasuredViewContent } from "./view-nodes.js";
 import { wordCharacterGrid } from "./word-character-grid.js";
+import { wordAutoLineMultipliers } from "./word-line-spacing.js";
 
 /** Native margins exclude the binding gutter. Keep the effective box derived. */
 export function wordPageSetup(
@@ -38,40 +39,65 @@ export function applyWordGrid(
   const grid = section.grid;
   if (!grid || grid.type === "default") return;
   const view = document.defaultView!,
+    pitch = ((grid.linePitch ?? 0) * 4) / 3,
     lines = new Map<HTMLElement, number>(),
     paragraphs = [...root.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")].filter(
       (paragraph) => !paragraph.closest("[data-sdk-word-endnotes]"),
     );
-  const natural = (element: HTMLElement): number => {
-    const css = view.getComputedStyle(element),
-      font = parseFloat(css.fontSize) || 0;
-    return Math.max(font, parseFloat(css.lineHeight) || font * 1.2);
+  const normalHeights = new Map<string, number>();
+  const probe = document.createElement("span");
+  probe.style.cssText =
+    "position:absolute;visibility:hidden;display:block;line-height:normal;white-space:pre";
+  const singleLine = (css: CSSStyleDeclaration, eastAsian: boolean): number => {
+    const { fontFamily, fontSize, fontWeight, fontStyle } = css,
+      sample = eastAsian ? "汉" : "M",
+      key = JSON.stringify([fontFamily, fontSize, fontWeight, fontStyle, sample]),
+      known = normalHeights.get(key);
+    if (known !== undefined) return known;
+    if (!probe.isConnected) document.body.append(probe);
+    Object.assign(probe.style, { fontFamily, fontSize, fontWeight, fontStyle });
+    probe.textContent = sample;
+    const height = probe.getBoundingClientRect().height;
+    normalHeights.set(key, height);
+    return height;
   };
   // Capture all run metrics before changing the paragraph strut. A large run
   // reserves a multiple of the pitch on its own line, leaving other lines small.
   for (const paragraph of paragraphs) {
-    const css = view.getComputedStyle(paragraph);
+    const css = view.getComputedStyle(paragraph),
+      rule = paragraph.dataset.wordLineRule ?? css.getPropertyValue("--word-line-rule").trim();
     if (
-      !grid.linePitch ||
+      !pitch ||
       css.getPropertyValue("--word-paragraph-snap-to-grid").trim() === "0" ||
       (!word?.adjustLineHeightInTable && paragraph.closest("td,th")) ||
-      (paragraph.dataset.wordLineRule ?? css.getPropertyValue("--word-line-rule").trim()) ===
-        "exact"
+      rule === "exact" ||
+      rule === "atLeast"
     )
       continue;
+    const multiple = wordAutoLineMultipliers.get(paragraph);
     for (const node of [
       paragraph,
       ...paragraph.querySelectorAll<HTMLElement>("span,strong,em,u,s,sub,sup,ins,del"),
     ]) {
+      const run = view.getComputedStyle(node),
+        font = parseFloat(run.fontSize);
       if (
         node.closest("[data-word-drawing],[data-word-native-object],[data-word-equation]") ||
         (viewNodeRole(node) === "remove" && !isMeasuredViewContent(node)) ||
-        parseFloat(view.getComputedStyle(node).fontSize) < 0.01
+        font < 0.01
       )
         continue;
-      lines.set(node, natural(node));
+      const height = parseFloat(run.lineHeight),
+        single = multiple
+          ? Math.max(font, singleLine(run, node.closest('[data-word-script="eastAsia"]') !== null))
+          : Math.max(font, height || font * 1.2);
+      // Measure script roles separately so fallback glyphs from another script
+      // do not expand the strut. Large runs can still require more grid rows.
+      const snapped = Math.ceil((single - 0.01) / pitch);
+      lines.set(node, Math.max(1, multiple ?? 1, snapped) * pitch);
     }
   }
+  probe.remove();
   let characters: ReturnType<typeof wordCharacterGrid> | undefined;
   if (grid.type === "snapToChars" || grid.type === "linesAndChars") {
     const probe = document.createElement("span"),
@@ -106,15 +132,11 @@ export function applyWordGrid(
   }
   return {
     measure() {
-      if (grid.linePitch)
-        for (const [node, line] of lines)
-          if (node.isConnected) {
-            ownViewStyle(node, "line-height");
-            node.style.lineHeight =
-              Math.max(1, Math.ceil((line - 0.01) / ((grid.linePitch * 4) / 3))) *
-                ((grid.linePitch * 4) / 3) +
-              "px";
-          }
+      for (const [node, line] of lines)
+        if (node.isConnected) {
+          ownViewStyle(node, "line-height");
+          node.style.lineHeight = line + "px";
+        }
       characters?.measure();
     },
     dispose() {

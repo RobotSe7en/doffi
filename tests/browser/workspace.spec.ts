@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { expect, test } from "@playwright/test";
@@ -29,15 +29,23 @@ async function selectText(page: Page, from = 2, to = 8): Promise<void> {
 }
 
 test("Word preview and editing load Playground web fonts and keep the native font names", async ({ page }, info) => {
-  const families = [
+  const manifest = new URL("../../apps/playground/src/assets/word-fonts/internal/sources.json", import.meta.url);
+  const internal = existsSync(manifest);
+  const families = internal ? [
+    ["宋体", "SimSun"],
+    ["黑体", "SimHei"],
+    ["仿宋", "FangSong"],
+    ["楷体", "KaiTi"],
+  ] as const : [
     ["宋体", "Doffi Serif SC"],
     ["黑体", "Doffi Sans SC"],
     ["仿宋_GB2312", "Doffi Fangsong SC"],
     ["楷体", "Doffi Kai SC"],
   ] as const;
+  const expectedRequests = 4 + (internal ? JSON.parse(readFileSync(manifest, "utf8")).fonts.length : 0);
   const fontRequests: string[] = [];
   page.on("request", (request) => {
-    if (request.resourceType() === "fetch" && new URL(request.url()).pathname.endsWith(".woff2"))
+    if (request.resourceType() === "fetch" && /\.woff2?$/.test(new URL(request.url()).pathname))
       fontRequests.push(request.url());
   });
   await page.addInitScript(() => localStorage.setItem("doffi:editing", "preview"));
@@ -46,7 +54,7 @@ test("Word preview and editing load Playground web fonts and keep the native fon
   const name = "word-web-fonts.docx";
   const bytes = mutateDocx("01-text-numbering.docx", {
     "word/document.xml": (source) => nativeBody(source, families.map(([family], index) =>
-      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Liberation Serif" w:eastAsia="' + family + '"/></w:rPr>' +
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="' + family + '"/><w:i/></w:rPr>' +
       '<w:t>汉字测试' + index + 'ABC</w:t></w:r></w:p>',
     ).join("")),
   });
@@ -55,19 +63,31 @@ test("Word preview and editing load Playground web fonts and keep the native fon
   });
   async function checkFonts(title: string): Promise<void> {
     const frame = page.frameLocator(`iframe[title="${title}"]`);
-    for (const [index, [, family]] of families.entries()) {
+    await expect(frame.locator("[data-page-id]").first()).toBeAttached();
+    for (const [index, [requested, family]] of families.entries()) {
       const paragraph = frame.locator("p").filter({ hasText: new RegExp("汉字测试\\s*" + index + "ABC") }).first();
       const cjk = paragraph.getByText("汉字测试", { exact: true });
-      await expect(cjk).toHaveCSS("font-family", new RegExp('^"?' + family));
-      expect(await cjk.evaluate((node, name) => [...node.ownerDocument.fonts].some((face) => face.family === name && face.status === "loaded"), family)).toBe(true);
-      await expect(paragraph.getByText(index + "ABC", { exact: true })).toHaveCSS("font-family", /Liberation Serif/);
+      const selection = await cjk.evaluate((node) => ({
+        family: getComputedStyle(node).fontFamily.split(",")[0]!.replace(/^["']|["']$/g, ""),
+        loaded: [...node.ownerDocument.fonts].filter((face) => face.status === "loaded")
+          .map((face) => [face.family, face.style]),
+      }));
+      if (internal || selection.family !== requested) {
+        expect(selection.family).toBe(family);
+        expect(selection.loaded).toContainEqual([family, "normal"]);
+      }
+      if (internal) {
+        await expect(paragraph.getByText(index + "ABC", { exact: true })).toHaveCSS("font-family", /Times New Roman/);
+        expect(selection.loaded).toContainEqual(["Times New Roman", "italic"]);
+      }
     }
   }
   await checkFonts("文档只读预览");
-  expect(fontRequests).toHaveLength(4);
+  expect(fontRequests).toHaveLength(expectedRequests);
+  expect(fontRequests.every((url) => new URL(url).origin === new URL(page.url()).origin)).toBe(true);
   await page.getByRole("button", { name: "编辑正文", exact: true }).click();
   await checkFonts("正文编辑");
-  expect(fontRequests).toHaveLength(4);
+  expect(fontRequests).toHaveLength(expectedRequests);
   const target = page.frameLocator('iframe[title="正文编辑"]').locator("p").filter({ hasText: /汉字测试\s*0ABC/ }).first();
   await target.click();
   await target.evaluate((node) => {
