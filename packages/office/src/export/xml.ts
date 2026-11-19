@@ -122,6 +122,7 @@ const propertyOrder: Readonly<Record<string, readonly string[]>> = {
     "tcMar",
     "textDirection",
     "vAlign",
+    "hideMark",
     "cellIns",
     "cellDel",
     "tcPrChange",

@@ -1865,6 +1865,37 @@ async function mount(
     },
   );
 }
+test("hidden end-of-cell marks do not size empty cells or hide their visible text", async ({ page }) => {
+  const cell = (hideMark: string, text = "") =>
+      "<w:tc><w:tcPr>" + hideMark + "</w:tcPr><w:p>" +
+      '<w:pPr><w:rPr><w:sz w:val="64"/></w:rPr></w:pPr>' +
+      (text ? '<w:r><w:rPr><w:sz w:val="64"/></w:rPr><w:t>' + text + "</w:t></w:r>" : "") +
+      "</w:p></w:tc>",
+    small =
+      '<w:tc><w:p><w:pPr><w:spacing w:line="240" w:lineRule="exact"/></w:pPr>' +
+      '<w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>SMALL</w:t></w:r></w:p></w:tc>',
+    native = mutateDocx("01-text-numbering.docx", {
+      "word/document.xml": (source) => nativeBody(source,
+        '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1800"/><w:gridCol w:w="1800"/></w:tblGrid>' +
+        "<w:tr>" + cell("<w:hideMark/>") + small + "</w:tr>" +
+        "<w:tr>" + cell('<w:hideMark w:val="0"/>') + small + "</w:tr>" +
+        "<w:tr>" + cell("<w:hideMark/>", "TEXT") + small + "</w:tr></w:tbl>",
+      ),
+    }),
+    files = importDocx(native, { documentId: "hidden-cell-mark", unsupportedContent: "reject" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    const frame = page.frameLocator("iframe"),
+      rows = frame.locator("table tr[data-node-id]");
+    await expect(rows).toHaveCount(3);
+    const [hidden, shown, content] = await rows.evaluateAll((elements) =>
+      elements.map((row) => row.getBoundingClientRect().height),
+    );
+    expect(hidden!).toBeLessThan(shown! - 12);
+    expect(content!).toBeGreaterThan(hidden! + 12);
+    await expect(rows.nth(2)).toContainText("TEXT");
+  }
+});
 for (const layout of ["pages", "continuous"] as const)
   test(`native point indent and out-of-range table width fit the Word ${layout} view`, async ({ page }) => {
     const docx = mutateDocx("01-text-numbering.docx", {
@@ -4710,6 +4741,54 @@ test("Word rows that allow breaks can leave a single cell line on the next page"
     else expect(third.y).toBeLessThan(next);
   }
 });
+test("a continued vertical merge allows the other cells in its row to split", async ({ page }) => {
+  const paragraph = (lines: string[], spacing = 400) =>
+      '<w:p><w:pPr><w:spacing w:line="' + spacing + '" w:lineRule="exact"/></w:pPr>' +
+      '<w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="24"/></w:rPr>' +
+      lines.map((line) => "<w:t>" + line + "</w:t>").join("<w:br/>") + "</w:r></w:p>",
+    cell = (properties: string, content: string) =>
+      "<w:tc><w:tcPr>" + properties + "</w:tcPr>" + content + "</w:tc>";
+  for (const keepRow of [false, true]) {
+    const docx = mutateDocx("01-text-numbering.docx", {
+      "word/document.xml": (source) => nativeBody(source,
+        paragraph(["LEAD"], 2000) +
+        '<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/>' +
+        '<w:tblBorders><w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/></w:tblBorders>' +
+        '<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1400"/><w:gridCol w:w="2600"/></w:tblGrid>' +
+        "<w:tr><w:trPr><w:tblHeader/></w:trPr>" + cell("", paragraph(["HEAD A"])) +
+        cell("", paragraph(["HEAD B"])) + "</w:tr>" +
+        '<w:tr>' + cell('<w:vMerge w:val="restart"/>', paragraph(["MERGED"])) +
+        cell("", paragraph(["PREVIOUS"])) + "</w:tr>" +
+        "<w:tr>" + (keepRow ? "<w:trPr><w:cantSplit/></w:trPr>" : "") +
+        cell("<w:vMerge/><w:hideMark/>", "<w:p/>") +
+        cell("", paragraph(["LINE A", "LINE B", "LINE C", "LINE D"])) + "</w:tr>" +
+        "<w:tr>" + cell("<w:vMerge/><w:hideMark/>", "<w:p/>") +
+        cell("", paragraph(["TAIL"])) + "</w:tr></w:tbl>" +
+        '<w:sectPr><w:pgSz w:w="6000" w:h="4800"/>' +
+        '<w:pgMar w:top="480" w:right="480" w:bottom="480" w:left="480"/></w:sectPr>',
+      ),
+    });
+    await mount(page, importDocx(docx, {
+      documentId: "continued-merge-" + keepRow,
+      unsupportedContent: "reject",
+    }));
+    const frame = page.frameLocator("iframe"),
+      papers = frame.locator(".sdk-paper");
+    await expect(papers).toHaveCount(2);
+    await expect(frame.locator(".sdk-repeat-header")).toHaveCount(1);
+    await expect.poll(() => papers.nth(1).evaluate((paper) => paper.getBoundingClientRect().top))
+      .toBeGreaterThan(0);
+    const secondPageTop = await papers.nth(1).evaluate((paper) => paper.getBoundingClientRect().top);
+    expect((await bandTextBounds(page, "MERGED")).y).toBeLessThan(secondPageTop);
+    expect((await bandTextBounds(page, "LINE D")).y).toBeGreaterThan(secondPageTop);
+    const firstLine = (await bandTextBounds(page, "LINE A")).y;
+    if (keepRow) expect(firstLine).toBeGreaterThan(secondPageTop);
+    else {
+      expect(firstLine).toBeLessThan(secondPageTop);
+      await expect(frame.locator('.sdk-table-fragment-edge[data-sdk-table-edge="bottom"]')).toHaveCount(1);
+    }
+  }
+});
 test("a thin collapsed border keeps the fitting Word row on the preceding page", async ({ page }) => {
   const paragraph = (lines: string[], lineHeight = 320): string =>
     '<w:p><w:pPr><w:spacing w:line="' + lineHeight + '" w:lineRule="exact"/></w:pPr>' +
@@ -4739,11 +4818,10 @@ test("a thin collapsed border keeps the fitting Word row on the preceding page",
   const frame = page.frameLocator("iframe");
   await expect(frame.locator(".sdk-repeat-header")).toHaveCount(1);
   const gap = frame.locator("tr.sdk-page-gap");
-  await expect(gap).toHaveCount(1);
-  expect(await gap.evaluate((row) => [
+  await expect.poll(() => gap.evaluateAll((rows) => rows.map((row) => [
     row.previousElementSibling?.textContent,
     row.nextElementSibling?.textContent,
-  ])).toEqual(["ROW-4-LINE-0ROW-4-LINE-1ROW-4-LINE-2", "ROW-5-LINE-0ROW-5-LINE-1"]);
+  ]))).toEqual([["ROW-4-LINE-0ROW-4-LINE-1ROW-4-LINE-2", "ROW-5-LINE-0ROW-5-LINE-1"]]);
   await expect(frame.locator('.sdk-table-fragment-edge[data-sdk-table-edge="bottom"]'))
     .toHaveCount(1);
 });

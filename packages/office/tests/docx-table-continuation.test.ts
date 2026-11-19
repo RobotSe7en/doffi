@@ -28,6 +28,7 @@ function fixture(properties: string, content = "<w:p/>"): Uint8Array {
 test.each([
   ["shading", '<w:shd w:fill="ABC123"/>', "<w:p/>", "ABC123"],
   ["width", '<w:tcW w:w="1440" w:type="dxa"/>', "<w:p/>", "1440"],
+  ["hidden cell mark", "<w:hideMark/>", "<w:p/>", '<w:hideMark w:val="1"/>'],
   [
     "border",
     '<w:tcBorders><w:bottom w:val="double" w:sz="12" w:color="123ABC"/></w:tcBorders>',

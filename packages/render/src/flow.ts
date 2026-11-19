@@ -111,6 +111,18 @@ export function pageFlow(
       (sum, row) => sum + continuationHeader(row).getBoundingClientRect().height,
       0,
     );
+  function spanningCellsBefore(
+    rows: readonly HTMLTableRowElement[],
+    ordinal: number,
+  ): HTMLTableCellElement[] {
+    const spanningCells: HTMLTableCellElement[] = [];
+    for (let index = 0; index < ordinal; index++)
+      for (const cell of rows[index]!.cells) {
+        const span = canonicalSpans.get(cell) ?? cell.rowSpan;
+        if (!span || index + span > ordinal) spanningCells.push(cell);
+      }
+    return spanningCells;
+  }
   function rowGap(
     table: HTMLTableElement,
     rows: readonly HTMLTableRowElement[],
@@ -119,17 +131,12 @@ export function pageFlow(
     inset: number,
   ): void {
     ensure(targetPage);
-    const spanningCells: HTMLTableCellElement[] = [];
-    for (let index = 0; index < ordinal; index++)
-      for (const cell of rows[index]!.cells) {
-        const span = canonicalSpans.get(cell) ?? cell.rowSpan;
-        canonicalSpans.set(cell, span);
-        if (!span || index + span > ordinal) spanningCells.push(cell);
-      }
+    const spanningCells = spanningCellsBefore(rows, ordinal);
     const firstFragmentEnd = rows[ordinal]!.getBoundingClientRect().top;
     fixCellAlignment(spanningCells, firstFragmentEnd);
     for (const cell of spanningCells)
       if (cell.rowSpan) {
+        if (!canonicalSpans.has(cell)) canonicalSpans.set(cell, cell.rowSpan);
         ownViewAttribute(cell, "rowspan");
         cell.rowSpan++;
       }
@@ -608,14 +615,18 @@ export function pageFlow(
     for (const [ordinal, row] of rows.entries()) {
       let box = row.getBoundingClientRect(),
         current = page(box.top);
-      const inMergedRow = mergeEnd > ordinal;
-      for (const cell of row.cells)
-        mergeEnd = Math.max(mergeEnd, ordinal + (cell.rowSpan || rows.length - ordinal));
+      const continuesMerge = mergeEnd > ordinal,
+        cells = [...row.cells],
+        rowSpan = cells.reduce(
+          (span, cell) => Math.max(span, cell.rowSpan || rows.length - ordinal),
+          1,
+        );
+      mergeEnd = Math.max(mergeEnd, ordinal + rowSpan);
       const repeated = header.includes(row),
         inset = current > topPage(element) ? height : 0,
         end = start(current) + available(current),
         style = view.getComputedStyle(row),
-        canSplit = !repeated && !inMergedRow && mergeEnd <= ordinal + 1 &&
+        canSplit = !repeated && rowSpan === 1 &&
           !style.breakInside.startsWith("avoid") &&
           style.pageBreakInside !== "avoid" &&
           style.getPropertyValue("--word-row-height-rule").trim() !== "exact" &&
@@ -630,16 +641,25 @@ export function pageFlow(
           ),
         overflows = pastEdge && !strokeClipped;
       const blocks = box.top >= start(current) + inset - 0.5 && overflows && canSplit
-        ? [...row.cells].map(cellBlocks)
+        ? cells.map(cellBlocks)
         : undefined;
       if (blocks && canStartRow(blocks, end)) {
-        fixCellAlignment([...row.cells]);
-        // Word splits breakable rows at the available cell line, even when a
-        // cell paragraph requests widow/orphan control or keep-lines.
-        for (const cell of blocks)
-          for (const block of cell) paragraph(block, height, true);
-        finishRow(element, box.top, row.getBoundingClientRect().bottom);
-        continue;
+        const continuing = continuesMerge ? spanningCellsBefore(rows, ordinal) : [];
+        // A continuing merge can stay on the preceding fragment while the
+        // cells owned by this row split at the available line.
+        if (
+          continuing.every((cell) =>
+            visualLines(cell).every(({ rect }) => rect.bottom <= end + 0.5),
+          )
+        ) {
+          fixCellAlignment(continuing, end);
+          fixCellAlignment(cells);
+          // The row break rule takes precedence over paragraph keep-lines.
+          for (const cell of blocks)
+            for (const block of cell) paragraph(block, height, true);
+          finishRow(element, box.top, row.getBoundingClientRect().bottom);
+          continue;
+        }
       }
       if (
         !repeated &&
@@ -667,7 +687,8 @@ export function pageFlow(
               "UnsupportedFeature",
               "Splitting a non-top-aligned table cell across pages is not supported.",
             );
-          for (const block of cellBlocks(cell)) paragraph(block, height, canSplit);
+          for (const block of cellBlocks(cell))
+            paragraph(block, height, canSplit && !continuesMerge);
         }
       }
       const bottom = row.getBoundingClientRect().bottom;

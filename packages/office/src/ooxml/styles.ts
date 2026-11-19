@@ -1171,6 +1171,8 @@ export class DocxStyles {
       result["vertical-align"] = align === "center" ? "middle" : align;
     }
     if (on(child(properties, "noWrap"))) result["white-space"] = "nowrap";
+    const hideMark = child(properties, "hideMark");
+    if (hideMark) result["--word-cell-hide-mark"] = on(hideMark) ? "1" : "0";
     const direction = val(child(properties, "textDirection"));
     if (direction) {
       if (!["lrTb", "tbRl", "btLr"].includes(direction)) unsupported(properties!);

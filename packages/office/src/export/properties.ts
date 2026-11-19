@@ -567,5 +567,7 @@ export function cellProperties(css: Css): string {
   out += cellMargins(css, "tcMar");
   if (css["vertical-align"] !== undefined)
     out += value("vAlign", css["vertical-align"] === "middle" ? "center" : css["vertical-align"]);
+  const hideMark = css["--word-cell-hide-mark"];
+  if (hideMark !== undefined) out += toggle("hideMark", hideMark === "1");
   return orderedProperties("tcPr", out);
 }

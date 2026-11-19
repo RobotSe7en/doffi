@@ -30,7 +30,7 @@ import type { DocumentRenderReport, RenderLimits } from "./contracts.js";
 import { paginate } from "./pagination.js";
 import type { Pagination } from "./pagination.js";
 import { createPrintDocument } from "./print.js";
-import { markViewNode } from "./view-nodes.js";
+import { markViewNode, ownViewStyle } from "./view-nodes.js";
 import { layoutFields } from "./fields.js";
 import { composeWordDrawings } from "./word-drawings.js";
 import { composeWordNotes } from "./word-notes.js";
@@ -571,13 +571,27 @@ export function mountPreview(
     // and footers. A blank line in a bottom-anchored footer raises the preceding
     // text. The derived break carries no source newline or identity.
     for (const paragraph of [
-      ...source.root.querySelectorAll("p,h1,h2,h3,h4,h5,h6"),
-      ...frame.querySelectorAll(
+      ...source.root.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6"),
+      ...frame.querySelectorAll<HTMLElement>(
         ':is([data-office-story="header"],[data-office-story="footer"]) :is(p,h1,h2,h3,h4,h5,h6)',
       ),
     ]) {
-      if (!paragraph.textContent && !paragraph.querySelector("br,img,[data-word-tab]"))
-        paragraph.append(markViewNode(frame.createElement("br")));
+      if (paragraph.textContent || paragraph.querySelector("br,img,[data-word-tab]")) continue;
+      const cell = paragraph.parentElement;
+      if (
+        cell?.matches("td,th") &&
+        cell.lastElementChild === paragraph &&
+        cell.style.getPropertyValue("--word-cell-hide-mark").trim() === "1" &&
+        !paragraph.querySelector(
+          "[data-word-drawing],[data-word-equation],[data-word-field],[data-word-note-reference],[data-word-native-object]:not([data-word-native-boundary])",
+        )
+      ) {
+        // An empty final paragraph represents Word's end-of-cell marker.
+        // Keep its source identity and formatting available for input.
+        ownViewStyle(paragraph, "min-height", "line-height");
+        paragraph.style.minHeight = "0";
+        paragraph.style.lineHeight = "0";
+      } else paragraph.append(markViewNode(frame.createElement("br")));
     }
     const word = snapshot.metadata.word;
     const numberingFonts = composeWordNumbering(frame, word, hostedFonts);

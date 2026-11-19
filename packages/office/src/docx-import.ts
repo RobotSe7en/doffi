@@ -1748,11 +1748,7 @@ class Importer {
     });
   }
   private validateMergeContinuation(cell: XmlNode): WordTableEmptyParagraph[] {
-    if (
-      cell.attrs.size ||
-      child(child(cell, "tcPr"), "hideMark") ||
-      child(child(cell, "tcPr"), "tcFitText")
-    )
+    if (cell.attrs.size || child(child(cell, "tcPr"), "tcFitText"))
       unsupported(cell, "A vertical merge continuation retains independent native properties.");
     const cellChange = child(child(cell, "tcPr"), "tcPrChange");
     if (cellChange)
