@@ -88,6 +88,7 @@ function printPresentation(
     throw new DocumentError("ResourceLimitExceeded", "Print projection exceeds its node budget.");
   const output = document.implementation.createHTMLDocument("");
   copyHead(document, output);
+  output.head.querySelector("[data-sdk-slide-visibility]")?.remove();
   const article = output.importNode(root, false);
   article.style.cssText = "margin:0;padding:0;width:auto";
   output.body.replaceChildren(article);

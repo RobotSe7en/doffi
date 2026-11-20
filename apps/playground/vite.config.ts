@@ -1,16 +1,47 @@
 import { fileURLToPath } from "node:url";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import type { NodeWebFont } from "@doffi/node";
 import { createDevelopmentConversionMiddleware } from "@doffi/node/dev";
 import { docxDiagnostics } from "./docx-diagnostics.js";
+
+function playgroundNodeWebFonts(): readonly NodeWebFont[] {
+  const asset = (relative: string): string => fileURLToPath(new URL("./src/assets/word-fonts/" + relative, import.meta.url));
+  const fonts: NodeWebFont[] = [
+    { family: "Doffi Serif SC", aliases: ["宋体", "新宋体", "SimSun", "NSimSun", "宋体-简", "Songti SC", "华文宋体", "STSong", "Noto Serif CJK SC", "Noto Serif SC", "思源宋体", "Source Han Serif SC"], fallbackOnly: true, path: asset("serif-regular.woff2") },
+    { family: "Doffi Sans SC", aliases: ["黑体", "SimHei", "黑体-简", "Heiti SC", "STHeiti", "微软雅黑", "Microsoft YaHei", "Microsoft YaHei UI", "等线", "DengXian", "苹方-简", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "思源黑体", "Source Han Sans SC"], fallbackOnly: true, path: asset("sans-regular.woff2") },
+    { family: "Doffi Fangsong SC", aliases: ["仿宋", "仿宋_GB2312", "FangSong", "FangSong_GB2312", "华文仿宋", "STFangsong", "朱雀仿宋", "Zhuque Fangsong"], fallbackOnly: true, path: asset("fangsong-regular.woff2") },
+    { family: "Doffi Kai SC", aliases: ["楷体", "楷体_GB2312", "KaiTi", "KaiTi_GB2312", "SimKai", "楷体-简", "Kaiti SC", "华文楷体", "STKaiti", "LXGW WenKai", "霞鹜文楷"], fallbackOnly: true, path: asset("kai-regular.woff2") },
+  ];
+  const manifestPath = asset("internal/sources.json");
+  if (existsSync(manifestPath)) {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      fonts?: readonly { family: string; aliases?: readonly string[]; weight?: string; style?: string; file: string }[];
+    };
+    for (const entry of manifest.fonts ?? []) {
+      const path = asset("internal/" + entry.file);
+      if (!existsSync(path)) continue;
+      fonts.push({
+        family: entry.family,
+        aliases: entry.aliases ?? [],
+        ...(entry.weight !== undefined ? { weight: entry.weight } : {}),
+        ...(entry.style !== undefined ? { style: entry.style } : {}),
+        equivalentAliases: true,
+        path,
+      });
+    }
+  }
+  return fonts;
+}
 
 function localConversion(): Plugin {
   const middleware = createDevelopmentConversionMiddleware({
     browserCacheDirectory: fileURLToPath(new URL("../../.playwright/", import.meta.url)),
     ...(process.env.DOFFI_CHROMIUM_EXECUTABLE ? { browserExecutable: process.env.DOFFI_CHROMIUM_EXECUTABLE } : {}),
-    maxMessageBytes: 16 * 1024 * 1024,
+    webFonts: playgroundNodeWebFonts(),
+    maxMessageBytes: 32 * 1024 * 1024,
     allowedOrigins: (process.env.DOFFI_DEV_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),
   });
   return { name: "local-office-conversion", configureServer(server) { server.middlewares.use(middleware); }, configurePreviewServer(server) { server.middlewares.use(middleware); } };

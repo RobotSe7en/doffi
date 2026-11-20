@@ -20,6 +20,9 @@ export function exportPptx(document: ContentDocumentModel, options: PptxExportOp
     const model = openDocument(document.serialize(), { ...options, kind: "presentation" }), limits = { ...DEFAULT_DOCUMENT_READ_LIMITS, ...options.limits };
     if (model.snapshot().manifest.kind !== "presentation")
         throw new DocumentError("UnsupportedFormat", "PPTX export requires a presentation package.");
+    const retained = model.snapshot().metadata.presentation?.nativePreview;
+    if (retained?.length)
+        throw new DocumentError("UnsupportedFeature", "Native PPTX export would lose preserved preview-only definitions.", retained.map(({ part, feature }) => ({ code: "UnsupportedFeature", path: [part, feature], message: "This native fragment is retained in the document package." })));
     const ctx = new PresentationExportContext(model, limits, options), text = new PresentationTextWriter(ctx), charts = new PresentationChartWriter(ctx, text), drawings = new PresentationDrawingWriter(ctx, text, (object, node, surface) => charts.write(object, node, surface)), comments = new PresentationCommentWriter(ctx, text);
     const content = new Map(ctx.surfaces.map(surface => { const fill = background(ctx, surface); ctx.checkGenerated(fill); return [surface.part, fill + drawings.tree(surface)] as const; }));
     comments.write();

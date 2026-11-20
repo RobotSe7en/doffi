@@ -4,8 +4,20 @@ import type { Browser, BrowserContext } from "playwright-core";
 import { DocumentError, openDocument } from "@doffi/core";
 import type { DocumentErrorCode, ContentDocumentModel } from "@doffi/core";
 import { DEFAULT_RENDER_LIMITS, renderLimits } from "@doffi/render/contracts";
-import type { BrowserRenderBridge, BrowserRenderResult, DocumentRenderReport, RenderLimits } from "@doffi/render/contracts";
+import type { BridgeWebFont, BrowserRenderBridge, BrowserRenderResult, DocumentRenderReport, RenderLimits } from "@doffi/render/contracts";
 import { conversionEnvironment } from "./environment.js";
+
+/** Host-authorized font asset for Node PDF/PNG rendering. Never supplied by untrusted conversion requests. */
+export interface NodeWebFont {
+  readonly family: string;
+  readonly aliases?: readonly string[];
+  readonly weight?: string;
+  readonly style?: string;
+  readonly equivalentAliases?: boolean;
+  readonly fallbackOnly?: boolean;
+  readonly path?: string;
+  readonly load?: () => Promise<Uint8Array | ArrayBuffer> | Uint8Array | ArrayBuffer;
+}
 
 export type ConversionErrorCode = DocumentErrorCode | "Cancelled" | "Timeout" | "Busy" | "InvalidRequest";
 export class ConversionError extends Error {
@@ -17,6 +29,7 @@ export interface ConverterOptions {
   /** Host configuration, never a path supplied by an untrusted conversion request. */
   readonly browserExecutable?: string;
   readonly browserChannel?: string;
+  readonly webFonts?: readonly NodeWebFont[];
   readonly maxConcurrency?: number;
   readonly timeoutMs?: number;
   readonly maxInputBytes?: number;
@@ -42,9 +55,25 @@ export interface DocumentConverter {
   /** Cancels outstanding jobs and closes every context and the owned browser. */
   close(): Promise<void>;
 }
-export const DEFAULT_CONVERTER_LIMITS: Readonly<Required<Omit<ConverterOptions, "browserExecutable" | "browserChannel" | "limits">>> = Object.freeze({
+export const DEFAULT_CONVERTER_LIMITS: Readonly<Required<Omit<ConverterOptions, "browserExecutable" | "browserChannel" | "limits" | "webFonts">>> = Object.freeze({
   maxConcurrency: 2, timeoutMs: 30_000, maxInputBytes: 64 * 1024 * 1024, maxOutputBytes: 64 * 1024 * 1024, maxPixels: 16 * 1024 * 1024,
 });
+const FONT_ROUTE_PREFIX = "https://fonts.doffi.invalid/";
+function validateWebFonts(entries: readonly NodeWebFont[] | undefined): readonly NodeWebFont[] {
+  if (!entries?.length) return [];
+  if (entries.length > 256) throw new ConversionError("InvalidRequest", "Configured web fonts exceed the host limit.");
+  for (const entry of entries) {
+    if (!entry.family || (!entry.path && !entry.load))
+      throw new ConversionError("InvalidRequest", "Each configured web font requires a family and a path or byte loader.");
+  }
+  return entries;
+}
+function fontMimeType(path: string | undefined): string {
+  if (path?.endsWith(".woff2")) return "font/woff2";
+  if (path?.endsWith(".woff")) return "font/woff";
+  if (path?.endsWith(".otf")) return "font/otf";
+  return "font/ttf";
+}
 function positive(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) throw new ConversionError("InvalidRequest", name + " must be a positive safe integer."); return value;
 }
@@ -59,6 +88,18 @@ function check(result: BrowserRenderResult): DocumentRenderReport {
 /** Every job owns a fresh browser/context and only authorized package bytes. */
 export function createDocumentConverter(options: ConverterOptions = {}): DocumentConverter {
   const quota = { ...DEFAULT_CONVERTER_LIMITS, ...options }, globalLimits = renderLimits(options.limits ?? DEFAULT_RENDER_LIMITS);
+  const hostFonts = validateWebFonts(options.webFonts);
+  const bridgeFonts: readonly BridgeWebFont[] | undefined = hostFonts.length
+    ? hostFonts.map((font, index) => ({
+      family: font.family,
+      aliases: font.aliases ?? [],
+      url: FONT_ROUTE_PREFIX + index,
+      ...(font.weight !== undefined ? { weight: font.weight } : {}),
+      ...(font.style !== undefined ? { style: font.style } : {}),
+      ...(font.equivalentAliases !== undefined ? { equivalentAliases: font.equivalentAliases } : {}),
+      ...(font.fallbackOnly !== undefined ? { fallbackOnly: font.fallbackOnly } : {}),
+    }))
+    : undefined;
   for (const key of ["maxConcurrency", "timeoutMs", "maxInputBytes", "maxOutputBytes", "maxPixels"] as const) positive(quota[key], key);
   let script: Promise<string> | undefined, closing: Promise<void> | undefined, closed = false, cleanupFailed = false;
   const jobs = new Set<{ controller: AbortController; completion: Promise<unknown> }>();
@@ -101,16 +142,35 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
       const created = await current.newContext({ viewport: { width: viewportWidth, height: Math.min(900, Math.max(200, Math.floor(quota.maxPixels / viewportWidth))) },
         deviceScaleFactor: format === "png" ? scale : 1, locale: "zh-CN", colorScheme: "light", reducedMotion: "reduce", serviceWorkers: "block", acceptDownloads: false });
       if (signal.aborted) { await created.close(); throw abortError(signal); } context = created;
-      await context.route("**/*", (route) => {
-        const url = route.request().url(); return url.startsWith("blob:") || url === "about:blank" ? route.continue() : route.abort("blockedbyclient");
+      await context.route("**/*", async (route) => {
+        const url = route.request().url();
+        if (url.startsWith("blob:") || url === "about:blank") return route.continue();
+        if (hostFonts.length && url.startsWith(FONT_ROUTE_PREFIX)) {
+          const index = Number(url.slice(FONT_ROUTE_PREFIX.length));
+          const font = Number.isSafeInteger(index) && index >= 0 && index < hostFonts.length ? hostFonts[index] : undefined;
+          if (!font) return route.abort("blockedbyclient");
+          try {
+            const raw = font.load ? await font.load() : await readFile(font.path!);
+            const body = raw instanceof Uint8Array ? Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength) : Buffer.from(raw);
+            return route.fulfill({
+              status: 200,
+              contentType: fontMimeType(font.path),
+              headers: { "Access-Control-Allow-Origin": "*" },
+              body,
+            });
+          } catch {
+            return route.abort("failed");
+          }
+        }
+        return route.abort("blockedbyclient");
       });
       const page = await context.newPage(); page.setDefaultTimeout(timeout); await page.emulateMedia({ media: "screen" });
       script ??= readFile(new URL(import.meta.resolve("@doffi/render/browser-script")), "utf8");
       await page.addScriptTag({ content: await script });
-      const result = await page.evaluate(async ({ entries, bounds }) => {
+      const result = await page.evaluate(async ({ entries, bounds, webFonts }) => {
         const bridge = (globalThis as unknown as { __doffiRender: BrowserRenderBridge }).__doffiRender;
-        return bridge.mount(entries, { layout: "pages", limits: bounds });
-      }, { entries: [...files].map(([path, bytes]) => [path, Buffer.from(bytes).toString("base64")] as const), bounds: limits });
+        return bridge.mount(entries, { layout: "pages", limits: bounds, ...(webFonts ? { webFonts } : {}) });
+      }, { entries: [...files].map(([path, bytes]) => [path, Buffer.from(bytes).toString("base64")] as const), bounds: limits, webFonts: bridgeFonts });
       let report = check(result), bytes: Uint8Array;
       if (format === "pdf") {
         report = check(await page.evaluate(() => (globalThis as unknown as { __doffiRender: BrowserRenderBridge }).__doffiRender.preparePrint()));

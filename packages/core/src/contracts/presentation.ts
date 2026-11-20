@@ -45,13 +45,29 @@ const objectBase = {
   placeholder: placeholder.optional(),
 };
 const textProperties = DrawingTextPropertiesSchema;
+const geometryToken = z.string().regex(/^-?\d{1,15}$|^[A-Za-z_][A-Za-z0-9_]{0,63}$/);
+const geometryPoint = { x: geometryToken, y: geometryToken };
+export const PresentationCustomGeometrySchema = z.strictObject({
+  guides: z.array(z.strictObject({ name: geometryToken, operator: z.enum(["val", "*/", "+-"]), args: z.array(geometryToken).min(1).max(3) })).max(128),
+  connections: z.array(z.strictObject({ angle: geometryToken, ...geometryPoint })).max(64),
+  textRect: z.strictObject({ left: geometryToken, top: geometryToken, right: geometryToken, bottom: geometryToken }).optional(),
+  paths: z.array(z.strictObject({
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+    fill: z.boolean(),
+    stroke: z.boolean(),
+    commands: z.array(z.union([z.strictObject({ kind: z.enum(["move", "line"]), ...geometryPoint }), z.strictObject({ kind: z.literal("close") })])).min(1).max(512),
+  })).min(1).max(16),
+});
+export type PresentationCustomGeometry = z.infer<typeof PresentationCustomGeometrySchema>;
 export const PresentationObjectSchema = z.discriminatedUnion("kind", [
   z.strictObject({ ...objectBase, kind: z.literal("text"), text: textProperties.optional() }),
-  z.strictObject({ ...objectBase, kind: z.literal("image") }),
+  z.strictObject({ ...objectBase, kind: z.literal("image"), customGeometry: PresentationCustomGeometrySchema.optional() }),
   z.strictObject({
     ...objectBase,
     kind: z.literal("geometry"),
     preset: PresentationPresetSchema,
+    customGeometry: PresentationCustomGeometrySchema.optional(),
     text: textProperties.optional(),
   }),
   z.strictObject({
@@ -96,6 +112,12 @@ export const PresentationMetadataSchema = z.strictObject({
   size: PresentationSizeSchema,
   notesSize: PresentationSizeSchema.optional(),
   commentFormat: z.enum(["classic", "modern"]),
+  nativePreview: z.array(z.strictObject({
+    feature: z.enum(["theme-defaults", "animation", "tags"]),
+    part: z.string().min(1),
+    ownerId: IdentifierSchema,
+    xml: z.string().min(1),
+  })).optional(),
   slides: z
     .array(
       z.strictObject({

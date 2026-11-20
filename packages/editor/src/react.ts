@@ -49,7 +49,7 @@ export function PresentationWorkbench(props:PresentationWorkbenchProps):ReactEle
   useEffect(()=>{
     if(!container.current)return;
     const view=mountPresentationWorkbench(container.current,props.session,{
-      ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),...(props.presentationSurfaceId?{presentationSurfaceId:props.presentationSurfaceId}:{}),...(props.appearance?{appearance:props.appearance}:{}),...(props.annotationTrigger?{annotationTrigger:props.annotationTrigger}:{}),
+      ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),...(props.wordWebFonts?{wordWebFonts:props.wordWebFonts}:{}),...(props.presentationSurfaceId?{presentationSurfaceId:props.presentationSurfaceId}:{}),...(props.appearance?{appearance:props.appearance}:{}),...(props.annotationTrigger?{annotationTrigger:props.annotationTrigger}:{}),
       ...(props.supportedOperations?{supportedOperations:props.supportedOperations}:{}),...(props.contextLimits?{contextLimits:props.contextLimits}:{}),...(props.proposalResources?{proposalResources:props.proposalResources}:{}),
       ...(hasSubmission?{onSubmitAnnotations:request=>latest.current.onSubmitAnnotations!(request)}:{}),
       onCommandStateChange:commands=>latest.current.onCommandStateChange?.(commands),onFormatStateChange:state=>latest.current.onFormatStateChange?.(state),onSelectionChange:selection=>latest.current.onSelectionChange?.(selection),onError:error=>latest.current.onError?.(error),onInputRecovery:text=>latest.current.onInputRecovery?.(text),onEvent:event=>latest.current.onEvent?.(event),
@@ -57,7 +57,7 @@ export function PresentationWorkbench(props:PresentationWorkbenchProps):ReactEle
     try{latest.current.onViewChange?.(view);}catch(error){view.dispose();throw error;}
     void view.ready.catch(()=>{/* The JS workbench reports rendering failures. */});
     return()=>{view.dispose();latest.current.onViewChange?.(undefined);};
-  },[props.session,props.title,props.layout,props.limits,props.presentationSurfaceId,props.supportedOperations,props.contextLimits,props.proposalResources,props.appearance,props.annotationTrigger,hasSubmission]);
+  },[props.session,props.title,props.layout,props.limits,props.wordWebFonts,props.presentationSurfaceId,props.supportedOperations,props.contextLimits,props.proposalResources,props.appearance,props.annotationTrigger,hasSubmission]);
   return createElement("div",{ref:container,className:props.className});
 }
 
@@ -71,7 +71,7 @@ export function PresentationEditor(props:PresentationEditorProps):ReactElement {
   useEffect(()=>{
     if(!container.current)return;
     const view=mountPresentationEditor(container.current,props.session,{
-      ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),
+      ...(props.title?{title:props.title}:{}),...(props.layout?{layout:props.layout}:{}),...(props.limits?{limits:props.limits}:{}),...(props.wordWebFonts?{wordWebFonts:props.wordWebFonts}:{}),
       onCommandStateChange:commands=>latest.current.onCommandStateChange?.(commands),onFormatStateChange:state=>latest.current.onFormatStateChange?.(state),onSelectionChange:selection=>latest.current.onSelectionChange?.(selection),onError:error=>latest.current.onError?.(error),onInputRecovery:text=>latest.current.onInputRecovery?.(text),
       ...(props.presentationSurfaceId?{presentationSurfaceId:props.presentationSurfaceId}:{}),
       ...(props.appearance?{appearance:props.appearance}:{}),...(props.annotationTrigger?{annotationTrigger:props.annotationTrigger}:{}),
@@ -79,7 +79,7 @@ export function PresentationEditor(props:PresentationEditorProps):ReactElement {
     try{latest.current.onViewChange?.(view);}catch(error){view.dispose();throw error;}
     void view.ready.catch(()=>{/* The mounted editor forwards rendering errors through onError. */});
     return()=>{view.dispose();latest.current.onViewChange?.(undefined);};
-  },[props.session,props.title,props.layout,props.limits,props.presentationSurfaceId,props.appearance]);
+  },[props.session,props.title,props.layout,props.limits,props.wordWebFonts,props.presentationSurfaceId,props.appearance]);
   return createElement("div",{ref:container,className:props.className});
 }
 

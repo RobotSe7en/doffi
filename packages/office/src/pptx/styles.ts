@@ -33,7 +33,8 @@ export function importTheme(context: Context, path: string): string {
       if (name === undefined) fail(parent, "A theme font name is missing.");
       // An empty East Asian font uses the declared Hans supplemental role.
       const supplement = elements(parent, "font", A).find(n => value(n, "script") === (role === "east-asia" ? "Hans" : "Arab"));
-      css["--office-" + kind + "-" + role] = fontName(name || (supplement && value(supplement, "typeface")) || "sans-serif");
+      const resolved = name || (supplement && value(supplement, "typeface"));
+      css["--office-" + kind + "-" + role] = resolved ? fontName(resolved) : "sans-serif";
       if (role === "ascii") css["--office-" + kind + "-h-ansi"] = css["--office-" + kind + "-" + role]!;
     }
     for (const item of elements(parent, "font", A)) {
@@ -58,9 +59,18 @@ export function importTheme(context: Context, path: string): string {
       context.rule(id + "-" + prefix + "-" + (index + 1), css);
     });
   }
-  // Object defaults affect visible source and cannot be silently discarded.
   const defaults = child(source, "objectDefaults", A);
-  if (defaults && elements(defaults, undefined, A).length) unsupported(defaults, "Theme object defaults are not yet supported.");
+  check(defaults, ["spDef", "lnDef", "txDef", "extLst"], A);
+  if (defaults && elements(defaults, undefined, A).length) {
+    for (const kind of ["spDef", "lnDef", "txDef"]) {
+      const definition = child(defaults, kind, A);
+      if (!definition) continue;
+      check(definition, ["spPr", "bodyPr", "lstStyle", "style", "extLst"], A);
+      for (const required of ["spPr", "bodyPr", "lstStyle"])
+        if (!child(definition, required, A)) fail(definition, "A theme object default is incomplete.");
+    }
+    context.retainPreview("theme-defaults", id, defaults, "Theme object defaults require compatible preview.");
+  }
   context.metadata.themes.push({ themeId: id, cssClass: id });
   context.surfaces.set(path, { id, root: { tag: "div", attrs: {}, children: [] }, source, themeId: id });
   return id;

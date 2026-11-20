@@ -94,7 +94,7 @@ export function editPresentationChart(ctx: PresentationEditContext, operation: P
         const properties = { ...operation.properties };
         for (const prefix of ["--office-fill", "--office-line", "--office-text"])
             if (properties[prefix + "-color"] !== undefined)
-                for (const [name, value] of Object.entries({ source: "direct", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" }))
+                for (const [name, value] of Object.entries({ source: "direct", "color-transforms": "none", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" }))
                     if (properties[prefix + "-" + name] === undefined)
                         properties[prefix + "-" + name] = value;
         ctx.styles.setClass(cssClass, properties);

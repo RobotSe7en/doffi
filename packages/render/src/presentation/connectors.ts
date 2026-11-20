@@ -1,4 +1,4 @@
-import { evaluatePresentationPreset, readPresentationGeometry } from "@doffi/core";
+import { evaluatePresentationCustomGeometry, evaluatePresentationPreset, readPresentationGeometry } from "@doffi/core";
 import type { DeepReadonly, PresentationObject } from "@doffi/core";
 import { markViewNode } from "../view-nodes.js";
 import { svgElement } from "./svg.js";
@@ -15,7 +15,8 @@ export function resolveConnector(node: HTMLElement, definition: Connector, objec
     const computed = document.defaultView!.getComputedStyle(element), geometry = { width: parseFloat(computed.width) * 0.75, height: parseFloat(computed.height) * 0.75 };
     const object = objects.get(id)!, preset = object.kind === "geometry" ? object.preset : "rect", adjustments: Record<string, number> = {};
     for (const attr of element.attributes) if (attr.name.startsWith("data-office-adjust-")) adjustments[attr.name.slice(19)] = Number(attr.value);
-    const site = evaluatePresentationPreset(preset, geometry.width, geometry.height, adjustments).connections[index ?? 0]; if (!site) return;
+    const custom = object.kind === "geometry" || object.kind === "image" ? object.customGeometry : undefined;
+    const site = (custom ? evaluatePresentationCustomGeometry(custom, geometry.width, geometry.height) : evaluatePresentationPreset(preset, geometry.width, geometry.height, adjustments)).connections[index ?? 0]; if (!site) return;
     const probe = markViewNode(svgElement(document, "svg", { width: geometry.width, height: geometry.height, viewBox: `0 0 ${geometry.width} ${geometry.height}` })); probe.style.cssText = "position:absolute;left:0;top:0;visibility:hidden"; probe.style.width = geometry.width + "pt"; probe.style.height = geometry.height + "pt"; element.append(probe);
     const matrix = probe.getScreenCTM(); probe.remove();
     const local = svg.getScreenCTM(); if (!matrix || !local) return;

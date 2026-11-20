@@ -19,9 +19,110 @@ export interface WordWebFont {
 type HostedWordFont = Pick<WordWebFont, "family" | "equivalentAliases" | "fallbackOnly">;
 export type HostedWordFonts = ReadonlyMap<string, string | HostedWordFont>;
 
-export async function loadWordWebFonts(document: Document, fonts: readonly WordWebFont[]): Promise<HostedWordFonts> {
-  const aliases = new Map<string, HostedWordFont>();
-  const loaded = await Promise.allSettled(fonts.map(async (definition) => {
+const loadedDefinitions = new WeakMap<Document, Set<WordWebFont>>();
+const loadedAliases = new WeakMap<Document, Map<string, HostedWordFont>>();
+
+function extractCssFontNames(css: string, into: Set<string>): void {
+  const decl = /(?:font-family|--word-font-(?:ascii|hAnsi|eastAsia|cs)|--office-(?:(?:major|minor|font)-(?:ascii|h-ansi|east-asia|complex-script|symbol|script-[A-Za-z]{4})|bullet-font))\s*:\s*([^;{}<>]+)/gi;
+  for (const match of css.matchAll(decl)) {
+    for (const part of families(match[1]!)) {
+      const lower = part.toLowerCase();
+      if (!lower || lower.startsWith("var(") || generic.has(lower) || lower === "inherit" || lower === "initial" || lower === "unset") continue;
+      into.add(lower);
+    }
+  }
+}
+
+/** Collect lowercased font family names referenced by a document snapshot. */
+export function collectDocumentFontNames(snapshot: {
+  readonly html: string;
+  readonly styles: readonly { readonly css: string }[];
+  readonly metadata?: unknown;
+}): Set<string> {
+  const names = new Set<string>();
+  for (const sheet of snapshot.styles) extractCssFontNames(sheet.css, names);
+  for (const match of snapshot.html.matchAll(/\bstyle="([^"]*)"/gi)) {
+    const raw = match[1]!.replaceAll("&quot;", '"').replaceAll("&#34;", '"').replaceAll("&#39;", "'").replaceAll("&apos;", "'");
+    extractCssFontNames(raw, names);
+  }
+  const meta = snapshot.metadata as { word?: { numbering?: readonly { levels?: readonly { font?: string }[] }[]; charts?: readonly { textStyle?: { fonts?: Record<string, string | undefined> } }[]; equations?: readonly unknown[] } } | undefined;
+  if (meta?.word) {
+    for (const def of meta.word.numbering ?? []) {
+      for (const level of def.levels ?? []) if (level.font) for (const part of families(level.font)) names.add(part.toLowerCase());
+    }
+    for (const chart of meta.word.charts ?? []) {
+      for (const face of Object.values(chart.textStyle?.fonts ?? {})) if (face) names.add(face.toLowerCase());
+    }
+    if (meta.word.equations?.length) { names.add("cambria"); names.add("times new roman"); }
+  }
+  return names;
+}
+
+function selectWordWebFonts(fonts: readonly WordWebFont[], requested?: ReadonlySet<string>): readonly WordWebFont[] {
+  if (!requested || !requested.size) return fonts;
+  const byName = new Map<string, WordWebFont[]>();
+  for (const definition of fonts) {
+    for (const name of [definition.family, ...definition.aliases]) {
+      const key = name.toLowerCase();
+      const list = byName.get(key) ?? [];
+      list.push(definition);
+      byName.set(key, list);
+    }
+  }
+  const chosen = new Set<WordWebFont>();
+  const addDirect = (key: string): boolean => {
+    const hits = byName.get(key);
+    if (!hits?.length) return false;
+    const primary = hits.filter((item) => !item.fallbackOnly);
+    for (const item of primary.length ? primary : hits) chosen.add(item);
+    return true;
+  };
+  let needFangsong = false, needKai = false, needSerif = false, needSans = false;
+  for (const name of requested) {
+    if (addDirect(name)) continue;
+    if (/仿宋|fangsong/i.test(name)) needFangsong = true;
+    else if (/楷|kaiti|simkai/i.test(name)) needKai = true;
+    else if (/宋|明|simsun|nsimsun|ming|mincho|serif/i.test(name)) needSerif = true;
+    else needSans = true;
+  }
+  const addCategory = (preferred: readonly string[], fallback: string): void => {
+    for (const name of preferred) {
+      const hits = byName.get(name)?.filter((item) => !item.fallbackOnly);
+      if (hits?.length) { for (const item of hits) chosen.add(item); return; }
+    }
+    addDirect(fallback);
+  };
+  if (needFangsong) addCategory(["fangsong"], "doffi fangsong sc");
+  if (needKai) addCategory(["kaiti"], "doffi kai sc");
+  if (needSerif) addCategory(["simsun"], "doffi serif sc");
+  if (needSans) {
+    addCategory(["microsoft yahei", "dengxian"], "doffi sans sc");
+    addCategory(["calibri", "aptos"], "doffi sans sc");
+  }
+  return [...chosen];
+}
+
+export function hasUnloadedWordWebFonts(
+  document: Document,
+  fonts: readonly WordWebFont[],
+  requested?: ReadonlySet<string>,
+): boolean {
+  const seen = loadedDefinitions.get(document);
+  const selected = selectWordWebFonts(fonts, requested);
+  return selected.some((definition) => !seen?.has(definition));
+}
+
+export async function loadWordWebFonts(
+  document: Document,
+  fonts: readonly WordWebFont[],
+  requested?: ReadonlySet<string>,
+): Promise<HostedWordFonts> {
+  let seen = loadedDefinitions.get(document);
+  if (!seen) { seen = new Set(); loadedDefinitions.set(document, seen); }
+  let aliases = loadedAliases.get(document);
+  if (!aliases) { aliases = new Map(); loadedAliases.set(document, aliases); }
+  const pending = selectWordWebFonts(fonts, requested).filter((definition) => !seen!.has(definition));
+  const loaded = await Promise.allSettled(pending.map(async (definition) => {
     const face = new document.defaultView!.FontFace(definition.family, await definition.load(), {
       weight: definition.weight ?? "normal",
       style: definition.style ?? "normal",
@@ -32,6 +133,7 @@ export async function loadWordWebFonts(document: Document, fonts: readonly WordW
   for (const result of loaded) {
     if (result.status !== "fulfilled") continue;
     const { definition, face } = result.value;
+    seen.add(definition);
     document.fonts.add(face);
     for (const name of [definition.family, ...definition.aliases]) {
       const key = name.toLowerCase();
@@ -140,18 +242,47 @@ export function resolvePreviewFontsInScope(document: Document, scope: ParentNode
     const preferred = configured?.fallbackOnly && available(first) ? undefined : configured;
     let rendered = preferred?.family ?? requested.find(available);
     if (!rendered) {
-      const candidates = /仿宋|FangSong/i.test(first)
-        ? ["FandolFang", "Noto Serif CJK SC", "serif"]
-        : /楷|KaiTi|SimKai/i.test(first)
-          ? ["FandolKai", "LXGW WenKai", "Noto Serif CJK SC", "serif"]
-          : /宋|明|SimSun|NSimSun|Ming|Mincho|Serif/i.test(first)
-            ? ["Noto Serif CJK SC", "FandolSong", "Noto Sans CJK SC", "serif"]
-            : ["Noto Sans CJK SC", "Noto Serif CJK SC", "sans-serif"];
-      rendered = candidates.find(available)!;
+      const hostedFallback = (names: readonly string[]): string | undefined => {
+        if (!hosted) return undefined;
+        for (const name of names) {
+          const entry = hosted.get(name.toLowerCase());
+          const item = typeof entry === "string" ? { family: entry } : entry;
+          if (item && !item.fallbackOnly) return item.family;
+        }
+        return undefined;
+      };
+      const isFangsong = /仿宋|FangSong/i.test(first),
+        isKai = /楷|KaiTi|SimKai/i.test(first),
+        isSerif = /宋|明|SimSun|NSimSun|Ming|Mincho|Serif/i.test(first),
+        isLatinScript = (node.dataset.officeScript === "ascii"
+          || node.dataset.officeScript === "h-ansi"
+          || node.dataset.wordScript === "ascii"
+          || node.dataset.wordScript === "hAnsi")
+          && !node.parentElement?.querySelector('[data-office-script="east-asia"],[data-word-script="eastAsia"]');
+      const candidates = isFangsong
+        ? ["FandolFang", "STFangsong", "Noto Serif CJK SC", "serif"]
+        : isKai
+          ? ["FandolKai", "LXGW WenKai", "Kaiti SC", "STKaiti", "Noto Serif CJK SC", "serif"]
+          : isSerif
+            ? ["Noto Serif CJK SC", "FandolSong", "Songti SC", "STSong", "Noto Sans CJK SC", "serif"]
+            : ["Noto Sans CJK SC", "PingFang SC", "Noto Serif CJK SC", "sans-serif"];
+      rendered =
+        hostedFallback(
+          isFangsong
+            ? ["FangSong"]
+            : isKai
+              ? ["KaiTi"]
+              : isSerif
+                ? ["SimSun"]
+                : isLatinScript
+                  ? ["Calibri", "Aptos", "Arial", "Microsoft YaHei", "DengXian"]
+                  : ["Microsoft YaHei", "DengXian"],
+        ) ?? candidates.find(available)!;
     }
     if (rendered !== first) {
       if (preferred) ownViewStyle(node, "font-family");
-      node.style.fontFamily = JSON.stringify(rendered) + (preferred ? "," + sourceFamily : "");
+      const cssFamily = generic.has(rendered.toLowerCase()) ? rendered : JSON.stringify(rendered);
+      node.style.fontFamily = cssFamily + (preferred ? "," + sourceFamily : "");
     }
     selected.set(node, first);
     if (!resolutions.has(first))

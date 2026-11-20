@@ -21,7 +21,7 @@ export interface DrawingTextContext {
 export function runProperties(node: XmlNode | undefined): Css {
   const css: Css = {};
   if (!node) return css;
-  check(node, ["ln", "noFill", "solidFill", "effectLst", "latin", "ea", "cs", "sym", "hlinkClick", "hlinkMouseOver", "uLnTx", "uFillTx", "extLst"], A);
+  check(node, ["ln", "noFill", "solidFill", "effectLst", "highlight", "latin", "ea", "cs", "sym", "hlinkClick", "hlinkMouseOver", "uLnTx", "uFillTx", "extLst"], A);
   for (const name of ["b", "i"]) if (value(node, name) !== undefined) css[name === "b" ? "font-weight" : "font-style"] = bool(node, name) ? name === "b" ? "bold" : "italic" : "normal";
   if (value(node, "sz") !== undefined) {
     const size = integer(node, "sz") / 100;
@@ -56,7 +56,14 @@ export function runProperties(node: XmlNode | undefined): Css {
     if (font) css["--office-font-" + role] = font;
     if (font && role === "ascii") { css["--office-font-h-ansi"] = font; css["font-family"] = font + ",var(--office-font-east-asia,var(--office-minor-east-asia))"; }
   }
-  if (child(node, "sym", A)) unsupported(node, "Symbol-font remapping is not supported.");
+  const symbol = fontCss(child(node, "sym", A), "ascii");
+  if (symbol) css["--office-font-symbol"] = symbol;
+  const highlight = child(node, "highlight", A);
+  if (highlight) {
+    const color = onlyColor(highlight);
+    if (Object.keys(color).length !== 1) unsupported(highlight, "Transformed text highlight colors are not supported.");
+    css["--office-highlight-color"] = color.css;
+  }
   const outline = child(node, "ln", A), effects = child(node, "effectLst", A);
   if (outline && !(child(outline, "noFill", A)) || effects && elements(effects, undefined, A).length) unsupported(node, "Text outlines and text effects are not supported.");
   if (child(node, "hlinkMouseOver", A)) unsupported(node, "Hover actions are not supported.");
@@ -96,6 +103,7 @@ export function paragraphProperties(node: XmlNode | undefined, listDefaults = fa
     if (n < 0) fail(parent, "Paragraph spacing cannot be negative.");
     // Before/after percentage spacing depends on the inherited font size.
     css[property!] = percent ? property === "line-height" ? String(n) : n + "em" : n + "pt";
+    if (property === "line-height") css["--office-line-spacing-rule"] = percent ? "proportional" : "exact";
   }
   const tabs = child(node, "tabLst", A);
   if (tabs && elements(tabs, undefined, A).length) {
@@ -110,6 +118,9 @@ export function paragraphProperties(node: XmlNode | undefined, listDefaults = fa
     if (size <= 0) fail(node, "A default tab interval must be positive.");
     css["tab-size"] = size + "pt";
   }
+  if (value(node, "eaLnBrk") !== undefined) css["--office-ea-line-break"] = bool(node, "eaLnBrk") ? "true" : "false";
+  if (value(node, "latinLnBrk") !== undefined) css["--office-latin-line-break"] = bool(node, "latinLnBrk") ? "true" : "false";
+  if (value(node, "hangingPunct") !== undefined) css["--office-hanging-punctuation"] = bool(node, "hangingPunct") ? "allow-end" : "none";
   const bulletColor = child(node, "buClr", A);
   if (bulletColor) paint(css, "--office-bullet", onlyColor(bulletColor));
   const bulletFont = child(node, "buFont", A);
@@ -224,7 +235,7 @@ export function importText(context: DrawingTextContext, body: XmlNode, target: H
         context.field(sourceRun, run);
       }
       const t = child(sourceRun, "t", A);
-      if (!t) fail(sourceRun, "A text run is missing its text value.");
+      if (!t && !field) fail(sourceRun, "A text run is missing its text value.");
       context.content(run, text(t));
       nativeText += text(t);
       context.hyperlink(child(rPr, "hlinkClick", A), run, part);

@@ -2,7 +2,7 @@ import { DocumentError } from "@doffi/core";
 import { markViewNode, ownViewAttribute } from "../view-nodes.js";
 
 const ordinary = ["font-family", "font-size", "font-weight", "font-style", "color", "line-height", "letter-spacing", "text-align", "text-indent", "margin-left", "margin-right", "margin-top", "margin-bottom", "padding-top", "padding-right", "padding-bottom", "padding-left", "tab-size", "text-transform", "font-variant"];
-function inheritedLeading(node: HTMLElement, computed: CSSStyleDeclaration): string {
+export function inheritedLeading(node: HTMLElement, computed: CSSStyleDeclaration): string {
   const raw = computed.lineHeight, size = parseFloat(computed.fontSize), height = parseFloat(raw);
   if (!Number.isFinite(height) || !Number.isFinite(size) || size <= 0) return raw;
   const typed = node as HTMLElement & { computedStyleMap?: () => { get(name: string): { unit?: string; value?: number } | undefined } };
@@ -44,11 +44,12 @@ export class PresentationInheritance {
       if (prototype.hasAttribute("data-office-kind")) probe.setAttribute("data-office-kind", prototype.getAttribute("data-office-kind")!);
       probe.setAttribute("data-sdk-probe", ""); node.parentElement!.append(probe);
       this.rule(probe, values);
-      this.work += this.names.length;
+      const names = new Set([...this.names, ...values.keys(), ...[...probe.style].filter(name => name.startsWith("--office-"))]);
+      this.work += names.size;
       if (this.work > this.budget * 256) throw new DocumentError("ResourceLimitExceeded", "Presentation inheritance exceeds its work budget.");
       const computed = this.document.defaultView!.getComputedStyle(probe);
       const leading = inheritedLeading(probe, computed);
-      for (const key of this.names) {
+      for (const key of names) {
         const value = key === "line-height" ? leading : computed.getPropertyValue(key).trim(); if (value) values.set(key, value);
       }
       probe.remove();

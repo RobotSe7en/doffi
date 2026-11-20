@@ -108,7 +108,9 @@ export function runProperties(css: Css, own: Css, raw: Css = own, extra: {
         const hasNative = css["--office-text-color"] !== undefined, paint = hasNative ? css : { ...css, "--office-text-color": css.color ?? "#000000" }, rawPaint = hasNative ? raw : { ...raw, "--office-text-color": raw.color ?? css.color ?? "#000000" };
         contents += "<a:solidFill>" + colorXml(paint, "--office-text", rawPaint) + "</a:solidFill>";
     }
-    const roles = [["ascii", "latin"], ["east-asia", "ea"], ["complex-script", "cs"]] as const;
+    if (own["--office-highlight-color"] !== undefined)
+        contents += "<a:highlight>" + colorXml(css, "--office-highlight", raw) + "</a:highlight>";
+    const roles = [["ascii", "latin"], ["east-asia", "ea"], ["complex-script", "cs"], ["symbol", "sym"]] as const;
     for (const [role, tag] of roles) {
         let name = font(css, own, role);
         if (role === "ascii" && own["font-family"] !== undefined && own["--office-font-ascii"] === undefined)
@@ -140,6 +142,12 @@ export function paragraphProperties(css: Css, own: Css, raw: Css = own, node?: S
             attrs[name!] = emu(points(css[key!], css), -2147483648, 2147483647);
     if (own["tab-size"] !== undefined && css["tab-size"] && !/^\d+(?:\.\d+)?$/.test(css["tab-size"]!))
         attrs.defTabSz = emu(points(css["tab-size"], css), 1, 2147483647);
+    if (own["--office-ea-line-break"] !== undefined)
+        attrs.eaLnBrk = css["--office-ea-line-break"] === "true" ? 1 : 0;
+    if (own["--office-latin-line-break"] !== undefined)
+        attrs.latinLnBrk = css["--office-latin-line-break"] === "true" ? 1 : 0;
+    if (own["--office-hanging-punctuation"] !== undefined)
+        attrs.hangingPunct = css["--office-hanging-punctuation"] === "allow-end" ? 1 : 0;
     for (const [key, tag] of [["line-height", "lnSpc"], ["margin-top", "spcBef"], ["margin-bottom", "spcAft"]])
         if (own[key!] !== undefined)
             contents += spacing(css, key!, tag!);

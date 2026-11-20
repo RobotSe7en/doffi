@@ -13,14 +13,14 @@ import { importTheme } from "./pptx/styles.js";
 import { importTextStyle } from "./pptx/text.js";
 import { Comments } from "./pptx/comments.js";
 
-export interface PptxImportOptions extends DocumentZipOptions { readonly documentId: string }
+export interface PptxImportOptions extends DocumentZipOptions { readonly documentId: string; readonly mode?: "strict" | "compatible" }
 
 class Importer {
   readonly context: Context;
   readonly drawings: Drawings;
   readonly roots: Html[] = [];
   constructor(readonly main: string, readonly options: PptxImportOptions, opc: OpcPackage) {
-    this.context = new Context(opc); this.context.bytes(options.documentId.length * 6); this.drawings = new Drawings(this.context);
+    this.context = new Context(opc, options.mode === "compatible"); this.context.bytes(options.documentId.length * 6); this.drawings = new Drawings(this.context);
   }
   createSurface(path: string, kind: "master" | "layout" | "slide" | "notes-master" | "notes", id: string, themeId: string, source: XmlNode): Surface {
     const root = this.context.make("section", { "data-office-kind": kind, "data-office-story": kind, class: themeId });
@@ -109,11 +109,12 @@ class Importer {
       if (!layout || !metadata.layouts.some(item => item.layoutId === layout.id)) fail(source, "A slide refers to a layout outside its declared masters.");
       const slideSource = context.part(path, "presentationml.slide", "sld", P);
       this.validateSurface(slideSource, ["transition", "timing"]);
-      if (child(slideSource, "timing", P)) unsupported(slideSource, "Animation is not supported.");
       const slide = this.createSurface(path, "slide", id, layout.themeId, slideSource), name = value(child(slideSource, "cSld", P), "name");
       slide.layoutId = layout.id;
       metadata.slides.push({ slideId: id, rootNodeId: slide.root.attrs["data-node-id"]!, layoutId: layout.id, ...(name !== undefined ? { name } : {}), hidden: !bool(slideSource, "show", true), showMasterShapes: bool(slideSource, "showMasterSp", true) });
       this.drawings.surface(slide);
+      const timing = child(slideSource, "timing", P);
+      if (timing) this.drawings.retainAnimation(slide, timing);
       const notesPath = context.related(path, "notesSlide", false);
       if (notesPath) {
         if (context.surfaces.has(notesPath) || context.related(notesPath, "slide") !== path) fail(slideSource, "A notes part has duplicate or conflicting slide ownership.");
@@ -155,6 +156,7 @@ class Importer {
 /** Map authorized PPTX bytes into the one persistent HTML/CSS source. */
 export function importPptx(bytes: Uint8Array, options: PptxImportOptions): DocumentPackage {
   if (!options || typeof options.documentId !== "string" || !options.documentId) throw new DocumentError("InvalidDocument", "PPTX import requires a document identity supplied by its host.");
+  if (options.mode !== undefined && options.mode !== "strict" && options.mode !== "compatible") throw new DocumentError("InvalidOperation", "Unknown PPTX import mode.");
   const opc = openOpc(bytes, options), main = new Context(opc).related("", "officeDocument", false);
   if (!main || opc.contentType(main) !== "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml") throw new DocumentError("UnsupportedFormat", "The input is not a supported PPTX presentation.");
   try { return new Importer(main, options, opc).import(); }
