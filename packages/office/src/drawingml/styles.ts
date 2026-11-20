@@ -1,10 +1,11 @@
+import { DocumentError, drawingColorTransformNames, drawingColorTransformMaximum, maxDrawingColorTransforms } from "@doffi/core";
 import { A, check, child, elements, fail, unsupported } from "../ooxml/xml.js";
 import type { XmlNode } from "../ooxml/xml.js";
 import type { Css } from "../ooxml/styles.js";
 import { bool, fontName, integer, points, value } from "./values.js";
 
 export const themeColorRoles: readonly string[] = ["dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"];
-export interface Color { css: string; alpha?: number; lumMod?: number; lumOff?: number; tint?: number; shade?: number }
+export interface Color { css: string; alpha?: number; lumMod?: number; lumOff?: number; tint?: number; shade?: number; transforms?: string }
 export function color(node: XmlNode): Color {
   let css: string;
   const v = value(node);
@@ -17,16 +18,31 @@ export function color(node: XmlNode): Color {
     if (!v || ![...themeColorRoles, "bg1", "bg2", "tx1", "tx2", "phClr"].includes(v)) fail(node, "A theme color role is invalid.");
     css = v === "phClr" ? "var(--office-placeholder-color,var(--office-theme-dk1))" : "var(--office-theme-" + v + ")";
   } else return unsupported(node, "This DrawingML color representation is not supported.");
-  check(node, ["alpha", "lumMod", "lumOff", "tint", "shade"], A);
+  check(node, ["alpha", ...drawingColorTransformNames], A);
   const result: Color = { css };
-  for (const name of ["alpha", "lumMod", "lumOff", "tint", "shade"] as const) {
-    const property = child(node, name, A);
-    if (property) {
-      const amount = integer(property, "val") / 100000;
-      if (amount < 0 || amount > 1) fail(property, "A color transform is outside its supported range.");
-      result[name] = amount;
+  const sequence: string[] = [];
+  let requiresSequence = false, repeatedLegacyTransform = false;
+  for (const property of elements(node, undefined, A)) {
+    const name = drawingColorTransformNames.find(candidate => candidate === property.name);
+    const amount = integer(property, "val");
+    check(property, [], A);
+    if (amount < 0 || amount > (name ? drawingColorTransformMaximum(name) : 100000)) fail(property, "A color transform is outside its supported range.");
+    if (!name) {
+      if (result.alpha !== undefined) fail(node, "An OOXML singleton is repeated.");
+      result.alpha = amount / 100000;
+    } else {
+      sequence.push(`${name} ${amount}`);
+      if (name === "satMod" || (name === "lumMod" && amount > 100000)) requiresSequence = true;
+      else if (result[name] !== undefined) repeatedLegacyTransform = true;
+      else result[name] = amount / 100000;
     }
   }
+  if (requiresSequence) {
+    if (sequence.length > maxDrawingColorTransforms) throw new DocumentError("ResourceLimitExceeded", "A DrawingML color exceeds its transform budget.");
+    const { alpha } = result;
+    return { css, ...(alpha === undefined ? {} : { alpha }), transforms: sequence.join(" ") };
+  }
+  if (repeatedLegacyTransform) fail(node, "An OOXML singleton is repeated.");
   return result;
 }
 export function onlyColor(node: XmlNode): Color {
@@ -37,6 +53,7 @@ export function onlyColor(node: XmlNode): Color {
 export function paint(css: Css, prefix: string, source: Color): void {
   css[prefix + "-color"] = source.css;
   css[prefix + "-source"] = source.css.includes("--office-placeholder-color") ? "placeholder" : "direct";
+  css[prefix + "-color-transforms"] = source.transforms ?? "none";
   for (const key of ["alpha", "lumMod", "lumOff", "tint", "shade"] as const)
     css[prefix + "-" + key.replace(/[A-Z]/g, c => "-" + c.toLowerCase())] = String(source[key] ?? (key === "alpha" || key === "lumMod" || key === "shade" ? 1 : 0));
 }
@@ -77,7 +94,7 @@ export function fill(source: XmlNode | undefined, prefix = "--office-fill"): Css
 }
 export function outline(source: XmlNode | undefined, prefix = "--office-line"): Css {
   if (!source) return {};
-  check(source, ["noFill", "solidFill", "prstDash", "round", "bevel", "miter", "headEnd", "tailEnd"], A);
+  check(source, ["noFill", "solidFill", "gradFill", "prstDash", "round", "bevel", "miter", "headEnd", "tailEnd"], A);
   const css = fill(source, prefix);
   if (value(source, "w") !== undefined) {
     const width = points(source, "w");

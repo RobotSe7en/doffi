@@ -1,4 +1,4 @@
-import { DocumentError } from "@doffi/core";
+import { DocumentError, parseDrawingColorTransforms } from "@doffi/core";
 import { svgElement } from "./svg.js";
 import { drawingGradientLine } from "../drawing-gradient.js";
 import type { DrawingGradientBounds, DrawingGradientOrientation } from "../drawing-gradient.js";
@@ -13,6 +13,22 @@ export const numeric = (style: Pick<DrawingPaintStyle, "getPropertyValue">, name
   const raw = property(style, name); const value = Number.parseFloat(raw); return Number.isFinite(value) ? value : fallback;
 };
 const colorContexts = new WeakMap<Document, CanvasRenderingContext2D>();
+const unit = (value: number): number => Math.max(0, Math.min(1, value));
+const linearChannel = (value: number): number => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+const srgbChannel = (value: number): number => value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055;
+
+function transformHsl(rgb: readonly number[], lumMod: number, lumOff: number, satMod: number): number[] {
+  const [red = 0, green = 0, blue = 0] = rgb, max = Math.max(red, green, blue), min = Math.min(red, green, blue), delta = max - min;
+  const light = (max + min) / 2;
+  let hue = 0;
+  if (delta) { hue = max === red ? ((green - blue) / delta) % 6 : max === green ? (blue - red) / delta + 2 : (red - green) / delta + 4; hue = (hue / 6 + 1) % 1; }
+  const saturation = delta ? unit(delta / (1 - Math.abs(2 * light - 1)) * satMod) : 0;
+  const lum = unit(light * lumMod + lumOff);
+  const chroma = (1 - Math.abs(2 * lum - 1)) * saturation, middle = chroma * (1 - Math.abs((hue * 6) % 2 - 1)), offset = lum - chroma / 2;
+  const channels = hue < 1 / 6 ? [chroma, middle, 0] : hue < 2 / 6 ? [middle, chroma, 0] : hue < 3 / 6 ? [0, chroma, middle] : hue < 4 / 6 ? [0, middle, chroma] : hue < 5 / 6 ? [middle, 0, chroma] : [chroma, 0, middle];
+  return channels.map(channel => channel + offset);
+}
+
 export function resolvedColor(document: Document, style: DrawingPaintStyle, prefix: string, fallback = "#000000", depth = 0): string {
   if (depth > 4) throw new DocumentError("InvalidDocument", "A presentation color reference is cyclic.");
   let context = colorContexts.get(document); if (!context) { context = document.createElement("canvas").getContext("2d")!; colorContexts.set(document, context); }
@@ -28,17 +44,25 @@ export function resolvedColor(document: Document, style: DrawingPaintStyle, pref
   const nativeAlpha = raw.startsWith("#") ? raw.length === 9 ? parseInt(raw.slice(7, 9), 16) / 255 : 1 : Number((raw.match(/[\d.]+/g) ?? [])[3] ?? 1);
   const rgb = raw.startsWith("#") ? [1, 3, 5].map(n => parseInt(raw.slice(n, n + 2), 16) / 255) : (raw.match(/[\d.]+/g) ?? []).slice(0, 3).map(v => Number(v) / 255);
   if (rgb.length !== 3 || rgb.some(n => !Number.isFinite(n))) return raw;
-  const [r = 0, g = 0, b = 0] = rgb, max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
-  const light = (max + min) / 2;
-  let hue = 0;
-  if (delta) { hue = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4; hue = (hue / 6 + 1) % 1; }
-  const saturation = delta ? delta / (1 - Math.abs(2 * light - 1)) : 0;
-  const lum = Math.max(0, Math.min(1, light * numeric(style, prefix + "-lum-mod", 1) + numeric(style, prefix + "-lum-off", 0)));
-  const chroma = (1 - Math.abs(2 * lum - 1)) * saturation, x = chroma * (1 - Math.abs((hue * 6) % 2 - 1)), m = lum - chroma / 2;
-  const channels = hue < 1 / 6 ? [chroma, x, 0] : hue < 2 / 6 ? [x, chroma, 0] : hue < 3 / 6 ? [0, chroma, x] : hue < 4 / 6 ? [0, x, chroma] : hue < 5 / 6 ? [x, 0, chroma] : [chroma, 0, x];
-  const tint = numeric(style, prefix + "-tint", 0), shade = numeric(style, prefix + "-shade", 1);
-  const values = channels.map(c => Math.round(Math.max(0, Math.min(1, ((c + m) * shade) * (1 - tint) + tint)) * 255));
-  const alpha = Math.max(0, Math.min(1, nativeAlpha * numeric(style, prefix + "-alpha", 1)));
+  const sequence = parseDrawingColorTransforms(property(style, prefix + "-color-transforms"));
+  let channels = rgb;
+  if (sequence.length) {
+    for (const [name, amount] of sequence) {
+      const factor = amount / 100000;
+      if (name === "tint" || name === "shade") {
+        const white = name === "tint" ? 1 - factor : 0;
+        channels = channels.map(channel => srgbChannel(unit(linearChannel(channel) * factor + white)));
+      } else {
+        channels = transformHsl(channels, name === "lumMod" ? factor : 1, name === "lumOff" ? factor : 0, name === "satMod" ? factor : 1);
+      }
+    }
+  } else {
+    const tint = numeric(style, prefix + "-tint", 0), shade = numeric(style, prefix + "-shade", 1);
+    channels = transformHsl(rgb, numeric(style, prefix + "-lum-mod", 1), numeric(style, prefix + "-lum-off", 0), 1)
+      .map(channel => channel * shade * (1 - tint) + tint);
+  }
+  const values = channels.map(channel => Math.round(unit(channel) * 255));
+  const alpha = unit(nativeAlpha * numeric(style, prefix + "-alpha", 1));
   return `rgba(${values.join(",")},${alpha})`;
 }
 export function svgFill(document: Document, style: DrawingPaintStyle, svg: SVGSVGElement, id: string, bounds: DrawingGradientBounds, prefix = "--office-fill", fallback = "none", account?: (amount: number) => void, orientation?: DrawingGradientOrientation): string {

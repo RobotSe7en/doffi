@@ -21,7 +21,7 @@ import { composeWordParagraphMarks } from "./word-paragraph-marks.js";
 import { composeWordNative } from "./word-native.js";
 import { composeWordControls } from "./word-controls.js";
 import { DocumentError, openDocument } from "@doffi/core";
-import { loadWordWebFonts, resolvePreviewDefaultFont, resolvePreviewFonts } from "./fonts.js";
+import { collectDocumentFontNames, hasUnloadedWordWebFonts, loadWordWebFonts, resolvePreviewDefaultFont, resolvePreviewFonts } from "./fonts.js";
 import type { FontResolution, HostedWordFonts, WordWebFont } from "./fonts.js";
 import type { DeepReadonly, ContentDocumentModel, WordMetadata } from "@doffi/core";
 import { PreviewSource } from "./source-index.js";
@@ -685,7 +685,7 @@ export function mountPreview(
     void frame.fonts.ready
       .then(async () => {
         if (options.wordWebFonts?.length && !disposed)
-          hostedFonts = await loadWordWebFonts(frame, options.wordWebFonts);
+          hostedFonts = await loadWordWebFonts(frame, options.wordWebFonts, collectDocumentFontNames(model.snapshot()));
         if (!disposed) {
           loaded = true;
           iframe.contentDocument!.addEventListener(
@@ -742,6 +742,27 @@ export function mountPreview(
       frame.body.replaceWith(frame.importNode(incoming.document.body, true));
       for (const url of previous.urls) URL.revokeObjectURL(url);
       render();
+      if (options.wordWebFonts?.length) {
+        const requested = collectDocumentFontNames(model.snapshot());
+        if (hasUnloadedWordWebFonts(frame, options.wordWebFonts, requested)) {
+          const expected = generation;
+          void loadWordWebFonts(frame, options.wordWebFonts, requested)
+            .then((resolved) => {
+              if (disposed || expected !== generation) return;
+              hostedFonts = resolved;
+              defaultFonts.clear();
+              observer?.disconnect();
+              notes?.dispose();
+              notes = undefined;
+              pagination?.dispose();
+              pagination = undefined;
+              frame.head.replaceWith(frame.importNode(prepared.document.head, true));
+              frame.body.replaceWith(frame.importNode(prepared.document.body, true));
+              render();
+            })
+            .catch(() => {});
+        }
+      }
     },
     async settled() {
       const expected = generation;

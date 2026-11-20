@@ -19,7 +19,7 @@ export function captureChartRolePaint(style: CSSStyleDeclaration, accountText: (
   for (let depth = 0; depth < 5; depth++) {
     const prefixes = [...values].filter(([name, value]) => name.endsWith("-source") && value === "reference").map(([name]) => take(name.slice(0, -7) + "-reference-prefix"));
     let added = false;
-    for (const prefix of prefixes) if (references.includes(prefix)) for (const suffix of ["color", "source", "reference-prefix", "alpha", "lum-mod", "lum-off", "tint", "shade"]) { const key = prefix + "-" + suffix; if (!values.has(key)) { take(key); added = true; } }
+    for (const prefix of prefixes) if (references.includes(prefix)) for (const suffix of ["color", "source", "reference-prefix", "color-transforms", "alpha", "lum-mod", "lum-off", "tint", "shade"]) { const key = prefix + "-" + suffix; if (!values.has(key)) { take(key); added = true; } }
     if (!added) break;
   }
   const fill = values.get("--office-fill-kind"), line = values.get("--office-line-kind");

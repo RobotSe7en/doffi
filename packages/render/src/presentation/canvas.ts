@@ -1,4 +1,4 @@
-import { DocumentError, evaluatePresentationPreset, readPresentationGeometry } from "@doffi/core";
+import { DocumentError, evaluatePresentationCustomGeometry, evaluatePresentationPreset, readPresentationGeometry } from "@doffi/core";
 import type { DeepReadonly, ContentDocumentModel, PresentationGeometry, PresentationMetadata, PresentationObject } from "@doffi/core";
 import type { DocumentRenderReport, LayoutDiagnostic, LayoutFieldResult, RenderedPage, RenderLimits } from "../contracts.js";
 import { PreviewSource } from "../source-index.js";
@@ -8,10 +8,12 @@ import { renderChart } from "./chart.js";
 import type { BasicChartScene } from "../chart.js";
 import { prepareChartTextDecorations } from "../chart-text-decoration.js";
 import { prepareChartLabelFrames } from "../chart-label-frame.js";
-import { PresentationInheritance } from "./inheritance.js";
-import { svgElement } from "./svg.js";
+import { inheritedLeading, PresentationInheritance } from "./inheritance.js";
+import { svgElement, svgPath } from "./svg.js";
 import { decorateLists, textTransform } from "./text.js";
 import { resolveConnector } from "./connectors.js";
+import { applyPresentationHangingPunctuation, hangingPunctuationOverhang } from "./hanging-punctuation.js";
+import { PresentationTypography } from "./typography.js";
 import { officeFontSegments } from "../font-scripts.js";
 import { createDrawingGeometryView } from "../drawing-geometry.js";
 
@@ -20,7 +22,7 @@ const attributes = (node: Element): Record<string, string> => Object.fromEntries
 const styleView = (node: HTMLElement, values: Readonly<Record<string, string>>): void => {
   ownViewStyle(node, ...Object.keys(values)); for (const [name, value] of Object.entries(values)) node.style.setProperty(name, value);
 };
-const frameCss = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',sans-serif}article[data-office-kind=presentation]{margin:0 auto;position:relative}p,h1,h2,h3,h4,h5,h6{margin:0;line-height:1.2;font-weight:inherit}p{min-height:1em}table{border-spacing:0}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}body>article>[data-office-kind]:not([data-office-kind=slide]){display:none}body>article>[data-office-kind=slide]{position:relative;box-sizing:border-box;overflow:hidden;margin:0 0 18pt;isolation:isolate;background:white}div:where([data-office-kind=text],[data-office-kind=geometry]){padding:3.6pt 7.2pt}div:where([data-office-kind=chart]){font-size:10pt}:where([data-office-kind=text],[data-office-kind=geometry],[data-office-kind=image],[data-office-kind=group],[data-office-kind=connector],[data-office-kind=table],[data-office-kind=chart]){--office-fill-kind:initial;--office-fill-color:initial;--office-line-kind:initial;--office-line-color:initial;--office-shadow-kind:initial;--office-text-anchor:initial}.sdk-ppt-notes,.sdk-ppt-comments{font:14px sans-serif;white-space:pre-wrap;background:#fff;padding:12px;margin:12px 0}.sdk-ppt-notes summary{font-weight:bold;cursor:pointer}.sdk-ppt-text{box-sizing:border-box;display:flex;flex-direction:column;position:absolute;white-space:pre-wrap;overflow-wrap:normal}.sdk-ppt-text>p{flex:none}span:where([data-sdk-hyperlink]){color:var(--office-theme-hlink);text-decoration:underline}div:where([data-sdk-chart-title]){font-weight:bold}.sdk-ppt-marker{position:absolute;pointer-events:none;white-space:pre}.sdk-ppt-hidden-label{position:absolute;right:8pt;top:4pt;font:10px sans-serif;background:#fff;color:#666;z-index:2147483647}`;
+const frameCss = `html{background:#eceef1}body{margin:0;padding:24px;font-family:'Noto Sans CJK SC',sans-serif}article[data-office-kind=presentation]{margin:0 auto;position:relative}p,h1,h2,h3,h4,h5,h6{margin:0;line-height:1.2;font-weight:inherit}p{min-height:1em}table{border-spacing:0}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}body>article>[data-office-kind]:not([data-office-kind=slide]){display:none}body>article>[data-office-kind=slide]{position:relative;box-sizing:border-box;overflow:hidden;margin:0 0 18pt;isolation:isolate;background:white}div:where([data-office-kind=text],[data-office-kind=geometry]){padding:3.6pt 7.2pt}div:where([data-office-kind=chart]){font-size:10pt}:where([data-office-kind=text],[data-office-kind=geometry],[data-office-kind=image],[data-office-kind=group],[data-office-kind=connector],[data-office-kind=table],[data-office-kind=chart]){--office-fill-kind:initial;--office-fill-color:initial;--office-line-kind:initial;--office-line-color:initial;--office-shadow-kind:initial;--office-text-anchor:initial}.sdk-ppt-notes,.sdk-ppt-comments{font:14px sans-serif;white-space:pre-wrap;background:#fff;padding:12px;margin:12px 0}.sdk-ppt-notes summary{font-weight:bold;cursor:pointer}.sdk-ppt-text{box-sizing:border-box;display:flex;flex-direction:column;position:absolute;white-space:pre-wrap;overflow-wrap:normal}.sdk-ppt-text>p{flex:none}.sdk-ppt-text>p:first-child,td>p:first-child,th>p:first-child{margin-top:0!important}.sdk-ppt-text>p:last-child,td>p:last-child,th>p:last-child{margin-bottom:0!important}span:where([data-sdk-hyperlink]){color:var(--office-theme-hlink);text-decoration:underline}div:where([data-sdk-chart-title]){font-weight:bold}.sdk-ppt-marker{position:absolute;pointer-events:none;white-space:pre}.sdk-ppt-hidden-label{position:absolute;right:8pt;top:4pt;font:10px sans-serif;background:#fff;color:#666;z-index:2147483647}`;
 
 export interface PresentationCanvas {
   readonly source: PreviewSource;
@@ -42,7 +44,14 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   const byId = new Map([...source.elements].map(([id, entry]) => [id, entry.element]));
   const objects = new Map(metadata.objects.map(o => [o.nodeId, o])), layouts = new Map(metadata.layouts.map(l => [l.layoutId, l])), masters = new Map(metadata.masters.map(m => [m.masterId, m]));
   const inheritance = new PresentationInheritance(document, snapshot.styles.map(s => s.css).join("\n"), limits.maxNodes);
-  const fields: LayoutFieldResult[] = [], diagnostics: LayoutDiagnostic[] = [], textBoxes: { node: HTMLElement; content: HTMLElement; fit: string; scale: number; lineReduction: number; fonts: readonly { node: HTMLElement; size: number; line: number }[]; resize(width: number, height: number): void; width: number; height: number }[] = [];
+  const fields: LayoutFieldResult[] = [], diagnostics: LayoutDiagnostic[] = [], typography = new PresentationTypography(), textBoxes: { node: HTMLElement; content: HTMLElement; anchor: string; fit: string; scale: number; lineReduction: number; rotated: boolean; fonts: readonly { node: HTMLElement; size: number; line: number }[]; resize(width: number, height: number): void; width: number; height: number }[] = [];
+  const retainedBySlide = new Set(metadata.nativePreview?.filter(item => item.feature === "animation").map(item => item.ownerId));
+  for (const slide of metadata.slides) if (retainedBySlide.has(slide.slideId))
+    diagnostics.push({ code: "NativeFormatting", nodeId: slide.rootNodeId, message: "Animation is preserved in the package but is not played in static preview." });
+  if (metadata.nativePreview?.some(item => item.feature === "theme-defaults"))
+    diagnostics.push({ code: "NativeFormatting", message: "Theme insertion defaults are preserved but are not applied when creating objects in the editor." });
+  if (metadata.nativePreview?.some(item => item.feature === "tags"))
+    diagnostics.push({ code: "NativeFormatting", message: "Presentation tags are retained as native metadata and do not affect the static canvas." });
   const connectors: { node: HTMLElement; definition: DeepReadonly<Extract<PresentationObject, { kind: "connector" }>> }[] = [];
   const chartScenes: { scene: BasicChartScene; geometry: PresentationGeometry }[] = [];
   const surfaceLayout=metadata.layouts.find(l=>l.rootNodeId===surfaceId),surfaceMaster=metadata.masters.find(m=>m.rootNodeId===surfaceId),surfaceNotesMaster=metadata.notesMasters.find(m=>m.rootNodeId===surfaceId);
@@ -60,6 +69,34 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   const geometry = (nodes: readonly HTMLElement[]): PresentationGeometry => {
     for (let i = nodes.length - 1; i >= 0; i--) { const result = readPresentationGeometry(attributes(nodes[i]!)); if (result) return result; }
     throw new DocumentError("InvalidDocument", "A presentation object has no resolved geometry.");
+  };
+  const applyParagraphTypography = (paragraph: HTMLElement): void => {
+    const style = document.defaultView!.getComputedStyle(paragraph);
+    if (property(style, "--office-hanging-punctuation") === "allow-end") styleView(paragraph, { "hanging-punctuation": "allow-end" });
+    if (property(style, "--office-ea-line-break") === "false") styleView(paragraph, { "line-break": "anywhere" });
+    if (property(style, "--office-line-spacing-rule") !== "proportional") return;
+    const leading = inheritedLeading(paragraph, style);
+    if (!/^\d+(?:\.\d+)?$/.test(leading)) return;
+    const scaled = Number(leading) * 1.2;
+    if (scaled > 0) styleView(paragraph, { "line-height": String(Math.round(scaled * 10000) / 10000) });
+  };
+  const textBoxOverflow = (content: HTMLElement): { contentHeight: number; availableHeight: number; contentWidth: number; availableWidth: number } => {
+    const view = document.defaultView!, style = view.getComputedStyle(content);
+    const padTop = parseFloat(style.paddingTop) || 0, padBottom = parseFloat(style.paddingBottom) || 0;
+    const padLeft = parseFloat(style.paddingLeft) || 0, padRight = parseFloat(style.paddingRight) || 0;
+    const availableHeight = Math.max(0, content.clientHeight - padTop - padBottom);
+    const availableWidth = Math.max(0, content.clientWidth - padLeft - padRight);
+    const blocks = [...content.children].filter((child): child is HTMLElement => child instanceof view.HTMLElement);
+    const contentHeight = blocks.reduce((sum, block) => {
+      const blockStyle = view.getComputedStyle(block);
+      const rawHeight = parseFloat(blockStyle.height);
+      const boxHeight = Number.isFinite(rawHeight)
+        ? rawHeight + (blockStyle.boxSizing === "border-box" ? 0 : (parseFloat(blockStyle.paddingTop) || 0) + (parseFloat(blockStyle.paddingBottom) || 0) + (parseFloat(blockStyle.borderTopWidth) || 0) + (parseFloat(blockStyle.borderBottomWidth) || 0))
+        : block.offsetHeight;
+      return sum + boxHeight + (parseFloat(blockStyle.marginTop) || 0) + (parseFloat(blockStyle.marginBottom) || 0);
+    }, 0);
+    const contentWidth = Math.max(0, content.scrollWidth - padLeft - padRight - hangingPunctuationOverhang(content));
+    return { contentHeight, availableHeight, contentWidth, availableWidth };
   };
   const instancesBySlide = new Map<string, Set<string>>();
   const process = (node: HTMLElement, definition: ObjectDefinition, prototypes: readonly HTMLElement[], slideIndex: number, master: DeepReadonly<PresentationMetadata>["masters"][number], instance = false): void => {
@@ -86,8 +123,13 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     } else if (definition.kind === "geometry" || definition.kind === "connector" || definition.kind === "text") {
       const adjustments: Record<string, number> = {};
       for (const prototype of chain) for (const attr of prototype.attributes) if (attr.name.startsWith("data-office-adjust-")) adjustments[attr.name.slice(19)] = Number(attr.value);
-      const preset = definition.kind === "geometry" ? definition.preset : definition.kind === "connector" ? node.dataset.officeConnectorPreset ?? (definition.routing === "straight" ? "straightConnector1" : "bentConnector3") : "rect";
-      const evaluated = evaluatePresentationPreset(preset, g.width, g.height, adjustments);
+      const inheritedShape = definition.kind === "text" && definition.placeholder
+        ? [...prototypes].reverse().map(prototype => objects.get(prototype.dataset.nodeId!)).find((entry): entry is Extract<ObjectDefinition, { kind: "geometry" }> => entry?.kind === "geometry")
+        : undefined;
+      const preset = definition.kind === "geometry" ? definition.preset : definition.kind === "connector" ? node.dataset.officeConnectorPreset ?? (definition.routing === "straight" ? "straightConnector1" : "bentConnector3") : inheritedShape?.preset ?? "rect";
+      const custom = definition.kind === "geometry" ? definition.customGeometry : inheritedShape?.customGeometry;
+      const evaluate = (width: number, height: number) => custom ? evaluatePresentationCustomGeometry(custom, width, height) : evaluatePresentationPreset(preset, width, height, adjustments);
+      const evaluated = evaluate(g.width, g.height);
       const boxColor=computed.backgroundColor,boxPaint=definition.kind!=="connector"&&preset!=="line"&&boxColor!=="transparent"&&!/rgba\([^)]*,\s*0\)$/.test(boxColor)?boxColor:undefined;
       const svg = createDrawingGeometryView(document, computed, { preset, geometry: evaluated, widthPt: g.width, heightPt: g.height, id, orientation: { rotationDegrees: g.rotation, flipH: g.flipH, flipV: g.flipV },
         fillFallback: boxPaint ?? (definition.kind === "geometry" && preset !== "line" ? "#4472c4" : "none"),
@@ -106,16 +148,19 @@ export function composePresentation(document: Document, model: ContentDocumentMo
         content.style.whiteSpace = text.wrap === false ? "pre" : "pre-wrap";
         ownViewAttribute(node,"data-sdk-text-auto-fit");node.setAttribute("data-sdk-text-auto-fit",text.autoFit??"none");
         const role = definition.placeholder?.type, textStyle = role === "title" || role === "ctrTitle" ? master.titleStyle : role === "body" ? master.bodyStyle : master.otherStyle;
+        const hasDefaultTextStyle = root.classList.contains("presentation-default");
         for (const p of content.querySelectorAll<HTMLElement>("p")) {
           const level = p.dataset.officeLevel ?? "0", base = document.createElement("p"); base.className = textStyle ? textStyle + " " + textStyle + "-level-" + level : "";
+          const defaultBase = hasDefaultTextStyle ? Object.assign(document.createElement("p"), { className: "presentation-default presentation-default-level-" + level }) : undefined;
           const ancestors = prototypes.flatMap(prototype => [...prototype.querySelectorAll<HTMLElement>("p")].filter(candidate => (candidate.dataset.officeLevel ?? "0") === level).slice(0, 1));
-          inheritance.apply(p, [base, ...ancestors]);
+          inheritance.apply(p, [...(defaultBase ? [defaultBase] : []), base, ...ancestors]);
+          applyParagraphTypography(p);
         }
         const fonts = [...content.querySelectorAll<HTMLElement>("p,span")].map(node => { const style = document.defaultView!.getComputedStyle(node); return { node, size: parseFloat(style.fontSize), line: parseFloat(style.lineHeight) }; });
-        textBoxes.push({ node, content, fit: text.autoFit ?? "none", scale: text.fontScale ?? 1, lineReduction: text.lineSpacingReduction ?? 0, fonts, width: g.width, height: g.height,
+        textBoxes.push({ node, content, anchor, fit: text.autoFit ?? "none", scale: text.fontScale ?? 1, lineReduction: text.lineSpacingReduction ?? 0, rotated: g.rotation !== 0 || g.flipH || g.flipV, fonts, width: g.width, height: g.height,
           resize(width, height) {
             if (width > 1_000_000 || height > 1_000_000) throw new DocumentError("ResourceLimitExceeded", "Text auto-fit exceeds its geometry budget.");
-            const resolved = evaluatePresentationPreset(preset, width, height, adjustments), rect = resolved.textRect;
+            const resolved = evaluate(width, height), rect = resolved.textRect;
             const previousNodes = svg.querySelectorAll("*").length + 1;
             const replacement = createDrawingGeometryView(document, computed, { preset, geometry: resolved, widthPt: width, heightPt: height, id, orientation: { rotationDegrees: g.rotation, flipH: g.flipH, flipV: g.flipV },
               fillFallback: boxPaint ?? (definition.kind === "geometry" && preset !== "line" ? "#4472c4" : "none"),
@@ -133,14 +178,20 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       }
     } else if (definition.kind === "image") {
       const image = node.tagName === "IMG" ? node as HTMLImageElement : node.querySelector("img")!;
+      if (node.dataset.officeImageOpacity !== undefined) styleView(image, { opacity: node.dataset.officeImageOpacity });
+      const custom = definition.customGeometry, mask = custom && evaluatePresentationCustomGeometry(custom, g.width, g.height).paths[0]!;
+      const clip = mask ? `path("${svgPath({ ...mask, commands: mask.commands.map(command =>
+        command.kind === "move" || command.kind === "line" ? { ...command, x: command.x / .75, y: command.y / .75 } : command) })}")` : undefined;
       const l = Number(node.dataset.officeCropLeft ?? 0), r = Number(node.dataset.officeCropRight ?? 0), t = Number(node.dataset.officeCropTop ?? 0), b = Number(node.dataset.officeCropBottom ?? 0);
       if (image === node) {
         // Imported image objects use an outer div. This branch also supports the
         // contract's direct image node without introducing a new source identity.
         const wrapper = markViewNode(document.createElement("div"), "unwrap");
         node.before(wrapper); wrapper.append(node); wrapper.style.cssText = node.style.cssText; wrapper.style.overflow = "hidden";
+        if (clip) wrapper.style.clipPath = clip;
         styleView(image, { left: -l / (1 - l - r) * 100 + "%", top: -t / (1 - t - b) * 100 + "%", width: 100 / (1 - l - r) + "%", height: 100 / (1 - t - b) + "%", transform: "none", filter: "none" });
       } else { styleView(node, { overflow: "hidden" }); styleView(image, { position: "absolute", left: -l / (1 - l - r) * 100 + "%", top: -t / (1 - t - b) * 100 + "%", width: 100 / (1 - l - r) + "%", height: 100 / (1 - t - b) + "%" }); }
+      if (clip && image !== node) styleView(node, { "clip-path": clip });
     } else if (definition.kind === "table") {
       const table = node.querySelector("table")!, columns = markViewNode(document.createElement("colgroup")), total = definition.grid.reduce((sum, n) => sum + n, 0);
       for (const width of definition.grid) { const col = document.createElement("col"); col.style.width = width / total * 100 + "%"; columns.append(col); }
@@ -149,6 +200,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       for (const cell of table.querySelectorAll<HTMLElement>("td,th")) {
         const s = document.defaultView!.getComputedStyle(cell); if (property(s, "--office-cell-fill-kind") === "solid") styleView(cell, { "background-color": resolvedColor(document, s, "--office-cell-fill") });
         for (const side of ["top", "right", "bottom", "left"]) if (property(s, "--office-cell-border-" + side + "-color")) styleView(cell, { ["border-" + side + "-color"]: resolvedColor(document, s, "--office-cell-border-" + side) });
+        for (const p of cell.querySelectorAll<HTMLElement>("p")) applyParagraphTypography(p);
       }
     } else if (definition.kind === "chart") {
       const chart = metadata.charts.find(c => c.chartId === definition.chartId)!, data = metadata.dataSets.find(d => d.dataSetId === chart.dataSetId)!;
@@ -188,7 +240,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
           const keys: Readonly<Record<string, string>> = { ftr: "footer", hdr: "header", dt: "date", sldNum: "slide-number" };
           const key = keys[ph.type]!;
           const setting = slide.getAttribute("data-office-show-" + key) ?? layoutRoot.getAttribute("data-office-show-" + key) ?? masterRoot.getAttribute("data-office-show-" + key);
-          if (setting === "false" || surfaceObjects(slide).some(o => objects.get(o.dataset.nodeId!)?.placeholder?.type === ph.type)) continue;
+          if (setting === "false" || (!surfaceId && setting !== "true") || surfaceObjects(slide).some(o => objects.get(o.dataset.nodeId!)?.placeholder?.type === ph.type)) continue;
           if (template.parentElement === masterRoot && surfaceObjects(layoutRoot).some(o => objects.get(o.dataset.nodeId!)?.placeholder?.type === ph.type)) continue;
         }
         account(template.querySelectorAll("*").length + 1);
@@ -199,6 +251,10 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     const first = surfaceObjects(slide)[0]; for (const clone of inherited) { slide.insertBefore(clone, first ?? null); const definition = objects.get(clone.dataset.nodeId!)!; process(clone, definition, [], index, master, true); source.registerInstances(clone); }
     for (const objectNode of surfaceObjects(slide).filter(node => !inherited.includes(node))) {
       const definition = objects.get(objectNode.dataset.nodeId!)!;
+      if (surfaceNotesMaster && definition.placeholder && !readPresentationGeometry(attributes(objectNode))) {
+        diagnostics.push({ code: "NativeFormatting", nodeId: definition.nodeId, message: "The notes placeholder has no authored print geometry and is not positioned on the definition canvas." });
+        styleView(objectNode, { display: "none" }); continue;
+      }
       const prototypes = definition.placeholder ? [masterRoot!==objectNode.parentElement?placeholder(masterRoot, definition):undefined,layoutRoot!==objectNode.parentElement?placeholder(layoutRoot, definition):undefined].filter((n): n is HTMLElement => !!n) : [];
       process(objectNode, definition, prototypes, index, master);
     }
@@ -207,6 +263,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     if (note && note.kind === "notes") {
       const body = byId.get(note.bodyNodeId ?? note.rootNodeId)!, panel = markViewNode(document.createElement("details")), heading = document.createElement("summary");
       panel.className = "sdk-ppt-notes"; heading.textContent = "演讲者备注"; panel.append(heading);
+      panel.dataset.sdkNotesSlide = entry.rootNodeId;
       const noteRoot = byId.get(note.rootNodeId)!, noteMaster = metadata.notesMasters.find(m => m.notesMasterId === note.notesMasterId), noteMasterRoot = noteMaster && byId.get(noteMaster.rootNodeId);
       if (noteMaster && noteMasterRoot) {
         const theme = metadata.themes.find(theme => theme.themeId === noteMaster.themeId)!;
@@ -220,8 +277,11 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       inheritance.apply(content, [...(noteMasterRoot ? [noteMasterRoot] : []), noteRoot]);
       const appearance = document.defaultView!.getComputedStyle(content);
       if (property(appearance, "--office-fill-kind") === "solid") content.style.backgroundColor = resolvedColor(document, appearance, "--office-fill");
-      if (noteMaster?.textStyle) for (const p of clone.querySelectorAll<HTMLElement>("p")) {
-        const prototype = document.createElement("p"); prototype.className = noteMaster.textStyle + " " + noteMaster.textStyle + "-level-" + (p.dataset.officeLevel ?? "0"); inheritance.apply(p, [prototype]);
+      for (const p of clone.querySelectorAll<HTMLElement>("p")) {
+        if (noteMaster?.textStyle) {
+          const prototype = document.createElement("p"); prototype.className = noteMaster.textStyle + " " + noteMaster.textStyle + "-level-" + (p.dataset.officeLevel ?? "0"); inheritance.apply(p, [prototype]);
+        }
+        applyParagraphTypography(p);
       }
       account(panel.querySelectorAll("*").length + 1); source.registerInstances(clone);
     }
@@ -264,10 +324,14 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   for (let n = walker.nextNode(); n; n = walker.nextNode()) if (!n.parentElement?.closest("svg,.sdk-field-display")) texts.push(n as Text);
   for (const text of texts) {
     const parent = text.parentElement!; if (!text.textContent) continue;
-    const chunks = officeFontSegments(text.data);
+    const paint = document.defaultView!.getComputedStyle(parent), highlight = property(paint, "--office-highlight-color");
+    const hasCjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]/u.test(text.data);
+    const nearestLang = parent.closest<HTMLElement>("[lang]")?.getAttribute("lang") ?? "";
+    const chunks = officeFontSegments(text.data, "ascii", !!property(paint, "--office-font-symbol"), hasCjk || /^(?:zh|ja|ko)\b/i.test(nearestLang));
     account(chunks.length); const fragment = document.createDocumentFragment();
     for (const chunk of chunks) {
       const span = markViewNode(document.createElement("span"), "unwrap"); span.dataset.officeScript = chunk.role; span.style.fontFamily = `var(--office-font-${chunk.role},var(--office-minor-${chunk.role},${document.defaultView!.getComputedStyle(parent).fontFamily}))`;
+      if (highlight) span.style.backgroundColor = highlight;
       span.textContent = chunk.text; fragment.append(span);
     }
     text.replaceWith(fragment);
@@ -275,22 +339,36 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   decorateLists(root, account);
   source.reindex(); account(0);
   return { source, fields, finalizeCharts() { for (const { scene, geometry } of chartScenes) { prepareChartTextDecorations(scene, account); prepareChartLabelFrames(scene, account, { rotationDegrees: geometry.rotation, flipH: geometry.flipH, flipV: geometry.flipV }); } chartScenes.length = 0; }, measure() {
+    let hangingChanged = false;
     for (const box of textBoxes) {
       const apply = (scale: number): void => { for (const { node, size, line } of box.fonts) styleView(node, { "font-size": size * scale + "px", ...(Number.isFinite(line) ? { "line-height": line * scale * (1 - box.lineReduction) + "px" } : {}) }); };
+      const applyHanging = (): void => { if (!box.rotated && applyPresentationHangingPunctuation(box.content)) hangingChanged = true; };
       if (box.fit === "normal") {
-        let scale = box.scale; apply(scale);
-        for (let pass = 0; pass < limits.maxLayoutPasses && box.content.clientHeight > 0 && (box.content.scrollHeight > box.content.clientHeight + 1 || box.content.scrollWidth > box.content.clientWidth + 1); pass++) {
-          scale *= Math.min(0.95, Math.sqrt(box.content.clientHeight / box.content.scrollHeight), box.content.clientWidth / box.content.scrollWidth); scale = Math.max(0.01, scale); apply(scale);
+        let scale = box.scale; apply(scale); applyHanging();
+        for (let pass = 0; pass < limits.maxLayoutPasses && box.content.clientHeight > 0; pass++) {
+          const { contentHeight, availableHeight, contentWidth, availableWidth } = textBoxOverflow(box.content);
+          if (contentHeight <= availableHeight + 1 && contentWidth <= availableWidth + 1) break;
+          const heightRatio = contentHeight > availableHeight + 1 && availableHeight > 0 ? Math.sqrt(availableHeight / contentHeight) : 1;
+          const widthRatio = contentWidth > availableWidth + 1 && availableWidth > 0 ? availableWidth / contentWidth : 1;
+          scale *= Math.min(0.95, heightRatio, widthRatio); scale = Math.max(0.01, scale); apply(scale); applyHanging();
         }
-      } else if (box.scale !== 1) apply(box.scale);
+      } else {
+        if (box.scale !== 1) apply(box.scale);
+        applyHanging();
+      }
       if (box.fit === "shape" && box.content.clientHeight > 0) {
         for (let pass = 0; pass < limits.maxLayoutPasses; pass++) {
-          const extraHeight = Math.max(0, box.content.scrollHeight - box.content.clientHeight), extraWidth = Math.max(0, box.content.scrollWidth - box.content.clientWidth);
+          const { contentHeight, availableHeight, contentWidth, availableWidth } = textBoxOverflow(box.content);
+          const extraHeight = Math.max(0, contentHeight - availableHeight, box.content.scrollHeight - box.content.clientHeight);
+          const extraWidth = Math.max(0, contentWidth - availableWidth, box.content.scrollWidth - box.content.clientWidth);
           if (extraHeight <= 1 && extraWidth <= 1) break;
-          box.width += extraWidth * 0.75; box.height += extraHeight * 0.75; box.resize(box.width, box.height);
+          box.width += extraWidth * 0.75; box.height += extraHeight * 0.75; box.resize(box.width, box.height); applyHanging();
         }
       }
+      typography.alignTextBox(box.content, box.anchor, box.rotated);
     }
+    typography.applySyntheticBold(root);
+    if (hangingChanged) source.reindex();
     for (const { node, definition } of connectors) resolveConnector(node, definition, objects);
     const origin = root.getBoundingClientRect(), pages: RenderedPage[] = [], nodePages: Record<string, string[]> = {};
     for (const [index, node] of slides.entries()) {
@@ -298,7 +376,11 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       pages.push({ pageId, index: index + 1, sectionId: slide.slideId, number: index + 1, label: String(index + 1), rect: { x: (rect.left - origin.left) * 0.75, y: (rect.top - origin.top) * 0.75, width: size.width, height: size.height }, setup: { unit: "pt", width: size.width, height: size.height, margins: { top: 0, right: 0, bottom: 0, left: 0 } }, blank: false });
       for (const id of [node.dataset.nodeId!, ...[...node.querySelectorAll<HTMLElement>("[data-node-id]")].map(n => n.dataset.nodeId!), ...instancesBySlide.get(node.dataset.nodeId!) ?? []]) { const entries = nodePages[id] ??= []; if (!entries.includes(pageId)) entries.push(pageId); }
     }
-    const overflow = textBoxes.filter(({ content }) => content.offsetWidth && (content.scrollHeight > content.clientHeight + 1 || content.scrollWidth > content.clientWidth + 1)).map(({ node }) => ({ code: "ContentOverflow" as const, nodeId: node.dataset.nodeId!, message: "Slide text exceeds its resolved text rectangle with the selected fonts." }));
+    const overflow = textBoxes.filter(({ content }) => {
+      if (!content.offsetWidth) return false;
+      const { contentHeight, availableHeight, contentWidth, availableWidth } = textBoxOverflow(content);
+      return contentHeight > availableHeight + 1 || contentWidth > availableWidth + 1;
+    }).map(({ node }) => ({ code: "ContentOverflow" as const, nodeId: node.dataset.nodeId!, message: "Slide text exceeds its resolved text rectangle with the selected fonts." }));
     source.setPages(pages); return { pages, nodePages, diagnostics: [...diagnostics, ...overflow] };
   } };
 }

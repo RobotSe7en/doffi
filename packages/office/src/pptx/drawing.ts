@@ -9,6 +9,7 @@ import { colorMap, effects, fill, onlyColor, outline, paint } from "./styles.js"
 import { importHyperlink, importText } from "./text.js";
 import { importTable } from "./table.js";
 import { importChart } from "./chart.js";
+import { customGeometry } from "./custom-geometry.js";
 
 /** Select markup compatibility by namespace support, never prefix spelling. */
 export function compatible(source: XmlNode): XmlNode[] {
@@ -87,10 +88,43 @@ export class Drawings {
   private readonly objects: Map<string, PresentationObject> = new Map();
   private readonly placeholders: Map<string, Map<number, PresentationObject[]>> = new Map();
   constructor(readonly context: Context) {}
+  private retainTags(owner: XmlNode | undefined, ownerId: string): void {
+    const source = child(owner, "custDataLst", P);
+    if (!source || !this.context.compatiblePreview) return;
+    check(source, ["tags"], P);
+    const tags = child(source, "tags", P);
+    if (!tags) return;
+    check(tags, [], P);
+    const path = this.context.relation(tags.part, attr(tags, "id", R), "tags").target;
+    const data = this.context.part(path, "presentationml.tags", "tagLst", P);
+    check(data, ["tag"], P);
+    for (const tag of elements(data, "tag", P)) {
+      check(tag, [], P);
+      if (value(tag, "name") === undefined || value(tag) === undefined) fail(tag, "A presentation tag requires a name and value.");
+    }
+    this.context.retainPreview("tags", ownerId, data, "Presentation tags require compatible preview.");
+  }
+  retainAnimation(surface: Surface, timing: XmlNode): void {
+    const supported = "anim animEffect attrName attrNameLst bldLst bldP cBhvr cTn childTnLst cond nextCondLst pRg par prevCondLst seq set sldTgt spTgt stCondLst strVal tav tavLst tgtEl timing tn tnLst to txEl val".split(" ");
+    const identities = this.context.nativeNodes.get(surface.id)!;
+    const visit = (node: XmlNode): void => {
+      if (node.uri !== P || !supported.includes(node.name) || [...node.attrs.keys()].some(key => key.startsWith(R + " ")))
+        unsupported(node, "Only relationship-free slide object animations can be retained in static preview.");
+      if (value(node, "spid") !== undefined && !identities.has(String(unsigned(node, "spid")))) fail(node, "An animation has a missing slide object target.");
+      for (const item of node.content) {
+        if (typeof item !== "string") visit(item);
+        else if (item.trim() && node.name !== "attrName") fail(node, "An animation node contains unexpected text.");
+      }
+    };
+    if (!this.context.compatiblePreview) unsupported(timing, "Animation is not supported in strict import.");
+    visit(timing);
+    this.context.retainPreview("animation", surface.id, timing, "Animation requires compatible preview.");
+  }
   surface(surface: Surface): void {
     const { context } = this, source = surface.source;
     const content = child(source, "cSld", P), tree = child(content, "spTree", P);
     if (!content || !tree) fail(source, "A presentation drawing tree is missing.");
+    this.retainTags(content, surface.root.attrs["data-node-id"]!);
     check(content, ["spTree", "bg", "custDataLst", "controls", "extLst"], P);
     if (child(content, "controls", P)) unsupported(content, "Embedded controls are not supported.");
     const map = child(source, "clrMap", P), override = child(source, "clrMapOvr", P);
@@ -157,6 +191,7 @@ export class Drawings {
     importHyperlink(context, child(native, "hlinkClick", A), target, source.part);
     const applicationProperties = child(nv, "nvPr", P);
     check(applicationProperties, ["ph", "extLst", "custDataLst"], P);
+    this.retainTags(applicationProperties, nodeId);
     identities.set(id, nodeId);
     const base: { nodeId: string; nativeId: string; name?: string; creationId?: string; placeholder?: NonNullable<PresentationObject["placeholder"]> } = { nodeId, nativeId: id };
     if (value(native, "name") !== undefined) base.name = value(native, "name")!;
@@ -178,7 +213,7 @@ export class Drawings {
       base.placeholder = { type: (type ?? "obj") as NonNullable<PresentationObject["placeholder"]>["type"], index };
     }
     const properties = child(source, n === "grpSp" ? "grpSpPr" : "spPr", P);
-    if (properties) check(properties, ["xfrm", "prstGeom", "noFill", "solidFill", "gradFill", "ln", "effectLst", "extLst"], A);
+    if (properties) check(properties, ["xfrm", "prstGeom", ...(["sp", "pic"].includes(n) ? ["custGeom"] : []), "noFill", "solidFill", "gradFill", "ln", "effectLst", "extLst"], A);
     transform(n === "graphicFrame" ? child(source, "xfrm", P) : child(properties, "xfrm", A), target, n === "grpSp");
     objectStyle(context, child(source, "style", P), properties, surface.themeId, target);
     let object: PresentationObject;
@@ -186,10 +221,12 @@ export class Drawings {
       object = { ...base, kind: "group" };
       for (const childNode of compatible(source)) if (![nvName, "grpSpPr", "extLst"].includes(childNode.name) || childNode.uri !== P) target.children.push(this.object(childNode, surface, false));
     } else if (n === "sp" || n === "cxnSp") {
-      const geometry = child(properties, "prstGeom", A), preset = geometry && value(geometry, "prst");
-      if (!geometry || !preset) unsupported(source, "Custom or missing shape geometry is not supported.");
+      const geometry = child(properties, "prstGeom", A), custom = child(properties, "custGeom", A), textBox = bool(child(nv, "cNvSpPr", P) ?? native, "txBox");
+      if (geometry && custom) fail(properties!, "A shape cannot use both preset and custom geometry.");
+      const preset = geometry ? value(geometry, "prst") : custom || (n === "sp" && (ph || textBox)) ? "rect" : undefined;
+      if (!preset) unsupported(source, "A shape geometry is missing.");
       if (n === "cxnSp") {
-        if (!["line", "straightConnector1", "bentConnector2", "bentConnector3", "bentConnector4", "bentConnector5"].includes(preset)) unsupported(geometry, "Only straight and elbow connector presets are supported.");
+        if (!["line", "straightConnector1", "bentConnector2", "bentConnector3", "bentConnector4", "bentConnector5"].includes(preset)) unsupported(geometry ?? source, "Only straight and elbow connector presets are supported.");
         object = { ...base, kind: "connector", routing: preset === "line" || preset === "straightConnector1" ? "straight" : "elbow" };
         target.attrs["data-office-connector-preset"] = preset;
         const c = child(nv, "cNvCxnSpPr", P), start = child(c, "stCxn", A), end = child(c, "endCxn", A);
@@ -198,8 +235,8 @@ export class Drawings {
         this.connections.push({ object, surface: surface.id, ...(start ? { start: String(unsigned(start, "id")) } : {}), ...(end ? { end: String(unsigned(end, "id")) } : {}) });
       } else {
         const parsed = PresentationPresetSchema.safeParse(preset);
-        if (!parsed.success) unsupported(geometry, "This preset geometry is not supported.");
-        object = bool(child(nv, "cNvSpPr", P) ?? native, "txBox") && preset === "rect" ? { ...base, kind: "text" } : { ...base, kind: "geometry", preset: parsed.data };
+        if (!parsed.success) unsupported(geometry ?? source, "This preset geometry is not supported.");
+        object = !custom && (textBox || !geometry) && preset === "rect" ? { ...base, kind: "text" } : { ...base, kind: "geometry", preset: parsed.data, ...(custom ? { customGeometry: customGeometry(custom) } : {}) };
         const text = child(source, "txBody", P);
         if (text) object.text = importText(context, text, target, source.part);
       }
@@ -212,15 +249,23 @@ export class Drawings {
         target.attrs["data-office-adjust-" + name.toLowerCase()] = formula.slice(4);
       }
     } else if (n === "pic") {
-      object = { ...base, kind: "image" };
-      const geometry = child(properties, "prstGeom", A);
+      const geometry = child(properties, "prstGeom", A), custom = child(properties, "custGeom", A);
+      if (geometry && custom) fail(properties!, "A picture cannot use both preset and custom geometry.");
+      object = { ...base, kind: "image", ...(custom ? { customGeometry: customGeometry(custom) } : {}) };
       if (geometry && value(geometry, "prst") !== "rect") unsupported(geometry, "Only rectangular picture geometry is supported.");
       const blipFill = child(source, "blipFill", P), blip = child(blipFill, "blip", A);
       if (!blipFill || !blip) fail(source, "A picture source is missing.");
       check(blipFill, ["blip", "srcRect", "stretch"], A);
       if (attr(blip, "link", R)) unsupported(blip, "External picture references are not supported.");
       const src = context.image(source.part, attr(blip, "embed", R));
-      check(blip, ["extLst"], A);
+      check(blip, ["alphaModFix", "extLst"], A);
+      const alpha = child(blip, "alphaModFix", A);
+      if (alpha) {
+        check(alpha, [], A);
+        const amount = integer(alpha, "amt", 100000);
+        if (amount < 0 || amount > 100000) unsupported(alpha, "Picture alpha modulation above 100% is not supported.");
+        target.attrs["data-office-image-opacity"] = String(amount / 100000);
+      }
       const crop = child(blipFill, "srcRect", A);
       if (crop) for (const [tag, name] of [["l", "left"], ["t", "top"], ["r", "right"], ["b", "bottom"]]) target.attrs["data-office-crop-" + name] = String(integer(crop, tag!, 0) / 100000);
       const stretch = child(blipFill, "stretch", A), rectangle = child(stretch, "fillRect", A);

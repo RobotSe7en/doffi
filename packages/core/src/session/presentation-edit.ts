@@ -95,6 +95,10 @@ function following(ctx: PresentationEditContext, nodeId: string): string | undef
 }
 export function registerCopies(ctx: PresentationEditContext, identities: ReadonlyMap<string, string>, detachPlaceholders: boolean, slides?: ReadonlyMap<string, string>): void {
     const html = ctx.parse();
+    for (const item of [...ctx.p.nativePreview ?? []]) {
+        const ownerId = identities.get(item.ownerId);
+        if (item.feature === "tags" && ownerId) ctx.p.nativePreview!.push({ ...item, ownerId });
+    }
     const copiedTransforms = presentationTransforms(ctx.p, html);
     for (const original of [...ctx.p.objects]) {
         const id = identities.get(original.nodeId);
@@ -384,7 +388,7 @@ function ungroupObject(ctx: PresentationEditContext, id: string): void {
                 throw new DocumentError("UnsupportedFeature", "Scaled object appearance cannot be flattened by this geometry operation.");
             // A painted outline/shadow is anisotropic under a nonuniform group, and
             // requires an explicit style edit before it can share native dimensions.
-            if (scaledPaintRequiresMaterialization(ctx, childId) || object.kind === "geometry" && object.preset === "line")
+            if (scaledPaintRequiresMaterialization(ctx, childId) || object.kind === "geometry" && (object.preset === "line" || object.customGeometry))
                 throw new DocumentError("UnsupportedFeature", "Scaled strokes and shadows require explicit appearance materialization.");
             const preset = object.kind === "geometry" ? object.preset : "rect", adjustments = Object.fromEntries(Object.entries(html.peekNode(childId)!.attributes).filter(([key]) => key.startsWith("data-office-adjust-")).map(([key, value]) => [key.slice(19), Number(value)]));
             const old = evaluatePresentationPreset(preset, before.width, before.height, adjustments), next = evaluatePresentationPreset(preset, geometry.width, geometry.height, adjustments);
@@ -461,6 +465,8 @@ export function applyPresentationOperation(ctx: PresentationEditContext, operati
         }
         case "duplicateSlide": {
             const original = slide(ctx, operation.slideId), after = operation.afterSlideId ? slide(ctx, operation.afterSlideId) : original;
+            if (p.nativePreview?.some(item => item.feature === "animation" && item.ownerId === original.slideId))
+                throw new DocumentError("UnsupportedFeature", "Duplicating a slide with preserved animation would lose its native object bindings.");
             const cloned = edit.cloneSource(original.rootNodeId, root(ctx), following(ctx, after.rootNodeId));
             const entry = { ...copy(original), slideId: ctx.allocate(), rootNodeId: cloned.rootNodeIds[0]! };
             p.slides.push(entry);
@@ -487,6 +493,7 @@ export function applyPresentationOperation(ctx: PresentationEditContext, operati
                         delete story.slideId;
                 }
             p.stories = p.stories.filter(s => s.kind !== "notes" || s.slideId !== entry.slideId);
+            if (p.nativePreview) p.nativePreview = p.nativePreview.filter(item => item.feature !== "animation" || item.ownerId !== entry.slideId);
             p.slides = p.slides.filter(s => s !== entry);
             p.hyperlinks = p.hyperlinks.filter(link => link.slideId !== entry.slideId);
             return;
@@ -523,8 +530,9 @@ export function applyPresentationOperation(ctx: PresentationEditContext, operati
             const object = p.objects.find(o => o.nodeId === operation.nodeId);
             if (object?.kind !== "geometry")
                 invalid("Preset operations require a geometry object.");
-            if (object.preset === operation.preset)
+            if (object.preset === operation.preset && !object.customGeometry)
                 return;
+            delete object.customGeometry;
             object.preset = operation.preset;
             const original = ctx.base.snapshot.metadata.presentation!.objects.find(o => o.nodeId === operation.nodeId);
             const restored = original?.kind === "geometry" && original.preset === operation.preset ? Object.fromEntries(Object.entries(ctx.base.html.peekNode(operation.nodeId)!.attributes).filter(([key]) => key.startsWith("data-office-adjust-"))) : {};

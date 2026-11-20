@@ -109,6 +109,10 @@ export { resolveWorkbookCellFormat } from "./workbook/cell-format.js";
 export type { WorkbookCellFormat } from "./workbook/cell-format.js";
 export { isTextBoundary as isDocumentTextBoundary } from "./document/text.js";
 export { SourceStyleResolver, resolveSourceCssVariables } from "./document/source-css.js";
+export { drawingColorTransformNames, drawingColorTransformMaximum, maxDrawingColorTransforms, parseDrawingColorTransforms } from "./document/drawing-color-transforms.js";
+export { evaluatePresentationCustomGeometry } from "./presentation-custom-geometry.js";
+export { PresentationCustomGeometrySchema } from "./contracts/presentation.js";
+export type { PresentationCustomGeometry } from "./contracts/presentation.js";
 export type {
   SourceStyleMap,
   SourceStyleNode,

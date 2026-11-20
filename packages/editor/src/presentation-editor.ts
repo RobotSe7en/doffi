@@ -23,7 +23,7 @@ import type {
   TransactionPrepareOptions,
   TransactionReceipt,
 } from "@doffi/core";
-import { mountPreview } from "@doffi/render";
+import { collectDocumentFontNames, loadWordWebFonts, mountPreview } from "@doffi/render";
 import type { DocumentPreviewOptions, DocumentRenderReport, FontResolution } from "@doffi/render";
 import { bindObjectGestures } from "./presentation/gestures.js";
 import type { ObjectGestures } from "./presentation/gestures.js";
@@ -51,6 +51,7 @@ export interface PresentationEditorOptions extends DocumentPreviewOptions {
   readonly onInputRecovery?: (text: string) => void;
 }
 export interface PresentationEditorView extends EditorCommandTarget {
+  zoom(): number;
   executeTextCommand(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
   clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
@@ -149,6 +150,15 @@ export function mountPresentationEditor(
       @media(max-width:1100px){.body{grid-template-columns:105px minmax(0,1fr) var(--doffi-presentation-comments-width,210px)}.tools{padding:8px 12px;gap:4px}.tools button{font-size:9px;padding:5px}.comments-pane{padding:12px 8px}}
       @media(max-width:800px){.body{grid-template-columns:100px minmax(0,1fr)}.comments-pane{grid-column:1/-1;max-height:280px;border-top:1px solid #e0e6f0;border-left:0}.stage{min-height:330px}.tools{max-height:130px;overflow:auto}}
     `;
+  style.textContent += `
+    .slide-list button{position:relative;display:grid;gap:5px;padding:6px;border:1px solid #c5ceda;border-radius:5px;background:#f8faff}
+    .slide-list button[aria-pressed=true]{background:#deebff;border-color:#245aa5;box-shadow:0 0 0 1px #245aa5}
+    .slide-thumb{display:block;position:relative;width:100%;overflow:hidden;background:#fff;box-shadow:0 0 0 1px #ccd3dc}
+    .slide-thumb iframe{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none}
+    .stage{display:flex;flex-direction:column}.stage .plane{flex:none;margin-block:auto}
+    .slide-label{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .object-list button{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  `;
   const toolbar = document.createElement("div");
   toolbar.className = "tools";
   toolbar.setAttribute("role", "toolbar");
@@ -173,6 +183,8 @@ export function mountPresentationEditor(
   body.className = "body";
   nav.className = "nav";
   nav.setAttribute("aria-label", "幻灯片与对象导航");
+  slideList.className = "slide-list";
+  objectList.className = "object-list";
   stage.className = "stage";
   plane.className = "plane";
   plane.style.cssText = "min-width:0;margin-inline:auto";
@@ -450,7 +462,7 @@ export function mountPresentationEditor(
         if (requested.has(parent)) return false;
       return true;
     });
-    if (selected.length && !definitionSurface) active = ownedSlide(selected[0]!)!;
+    if (selected.length && !definitionSurface) activateCanvas(ownedSlide(selected[0]!)!);
     gestures?.paint();
     regions?.paint();
     renderControls();
@@ -481,7 +493,7 @@ export function mountPresentationEditor(
     const slide = p().slides.find((s) => s.slideId === slideId);
     if (!slide) throw new DocumentError("InvalidOperation", "幻灯片不存在。");
     finishInput();
-    active = slideId;
+    activateCanvas(slideId);
     selected = [];
     const anchor = preview.source()!.slideRegion(slide.rootNodeId, rect);
     if (anchor.kind !== "region") throw new DocumentError("InvalidOperation", "区域选择失败。");
@@ -500,7 +512,10 @@ export function mountPresentationEditor(
     const slide = p().slides.find((s) => s.slideId === slideId);
     if (!slide || !current())
       throw new DocumentError("InvalidOperation", "请等待幻灯片画布就绪后检查区域布局。");
-    return preview.source()!.layoutKey(slide.rootNodeId);
+    if (slide.slideId === active || !slideVisibility) return preview.source()!.layoutKey(slide.rootNodeId);
+    slideVisibility.disabled = true;
+    try { return preview.source()!.layoutKey(slide.rootNodeId); }
+    finally { slideVisibility.disabled = false; }
   }
   const regionTool = button("框选区域", () => {
     finishInput();
@@ -918,6 +933,90 @@ export function mountPresentationEditor(
     attempt,
   });
   let preview = mountPreview(previewHost, session, options);
+  preview.element.dataset.sdkPresentationCanvas = "";
+  let slideVisibility: HTMLStyleElement | undefined, thumbnailObserver: IntersectionObserver | undefined;
+  const thumbFrames = new Map<string, HTMLIFrameElement>();
+  const slideButtons = new Map<string, HTMLButtonElement>();
+  let slideListKey = "";
+  const previewResize = new ResizeObserver(() => {
+    if (!disposed && previewLoaded) plane.style.height = preview.element.offsetHeight * zoom + "px";
+  });
+  previewResize.observe(preview.element);
+  function showCurrentSlide(resetScroll = false): void {
+    const frame = preview.element.contentDocument;
+    if (previewLoaded && frame && currentSlide()) {
+      if (slideVisibility?.ownerDocument !== frame || !slideVisibility.isConnected) {
+        slideVisibility = frame.createElement("style");
+        slideVisibility.dataset.sdkSlideVisibility = "";
+        frame.head.append(slideVisibility);
+      }
+      const id = CSS.escape(currentSlide().rootNodeId);
+      slideVisibility.textContent = definitionSurface ? "" :
+        `article>[data-office-kind="slide"]:not([data-node-id="${id}"]),.sdk-ppt-notes:not([data-sdk-notes-slide="${id}"]){display:none!important}`;
+      const scrollbar = Math.max(0, preview.element.clientHeight - frame.documentElement.clientHeight);
+      const height = Math.ceil(Math.max(200, frame.body.scrollHeight) + scrollbar) + "px";
+      if (preview.element.style.height !== height) preview.element.style.height = height;
+    }
+    if (resetScroll) { stage.scrollTop = 0; stage.scrollLeft = 0; }
+  }
+  function activateCanvas(slideId: string): void {
+    if (active === slideId) return;
+    active = slideId;
+    showCurrentSlide(true);
+    if (previewLoaded) setZoom(zoom);
+  }
+  const thumbnailResize = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const frame = entry.target.querySelector("iframe");
+      if (frame) frame.style.transform = `scale(${entry.contentRect.width / (p().size.width * 4 / 3)})`;
+    }
+  });
+  function refreshThumbnails(): void {
+    thumbnailObserver?.disconnect();
+    thumbnailResize.disconnect();
+    thumbFrames.clear();
+    for (const node of slideButtons.values()) node.firstElementChild!.replaceChildren();
+    if (definitionSurface || !previewLoaded) return;
+    const print = preview.printDocument();
+    const style = print.createElement("style");
+    style.textContent = "html,body{width:100%;height:100%;overflow:hidden}article{margin:0!important}";
+    print.head.append(style);
+    const slides = new Map([...print.querySelectorAll<HTMLElement>('article>[data-office-kind="slide"]')].map(slide => [slide.dataset.nodeId!, slide]));
+    const head = print.head.outerHTML;
+    const requestedFonts = options.wordWebFonts?.length ? collectDocumentFontNames(session.snapshot()) : undefined;
+    thumbnailObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (disposed || !entry.target.isConnected) continue;
+        const button = entry.target as HTMLButtonElement, id = button.dataset.slideId!;
+        const slide = p().slides.find(slide => slide.slideId === id);
+        const source = slide && slides.get(slide.rootNodeId);
+        if (!entry.isIntersecting) {
+          thumbFrames.get(id)?.remove(); thumbFrames.delete(id);
+          thumbnailResize.unobserve(button.firstElementChild!);
+          continue;
+        }
+        if (!source || thumbFrames.has(id)) continue;
+        const thumb = button.firstElementChild!, thumbnail = document.createElement("iframe");
+        thumbnail.setAttribute("sandbox", "allow-same-origin");
+        thumbnail.setAttribute("aria-hidden", "true");
+        thumbnail.tabIndex = -1;
+        thumbnail.title = "幻灯片缩略图";
+        const width = p().size.width * 4 / 3, height = p().size.height * 4 / 3;
+        thumbnail.style.cssText = `width:${width}px;height:${height}px;transform-origin:0 0;transform:scale(${thumb.getBoundingClientRect().width / width})`;
+        if (options.wordWebFonts?.length) {
+          thumbnail.addEventListener("load", () => {
+            if (!disposed && thumbnail.isConnected && thumbnail.contentDocument)
+              void loadWordWebFonts(thumbnail.contentDocument, options.wordWebFonts!, requestedFonts).catch(() => {});
+          }, { once: true });
+        }
+        thumbnail.srcdoc = "<!doctype html><html>" + head + '<body><article data-office-kind="presentation">' + source.outerHTML + "</article></body></html>";
+        thumbFrames.set(id, thumbnail);
+        thumb.append(thumbnail);
+        thumbnailResize.observe(thumb);
+      }
+    }, { root: nav, rootMargin: "160px 0px" });
+    for (const node of slideButtons.values()) thumbnailObserver.observe(node);
+  }
   const definitions = createDefinitionControls(document, inspector, {
     session,
     activeSlide: () => active,
@@ -980,9 +1079,24 @@ export function mountPresentationEditor(
       event.preventDefault();
       return;
     }
-    const target = event.target as Element | null;
+    const rawTarget = (event.composedPath?.()[0] ?? event.target) as Node | null;
+    const target = rawTarget && rawTarget.nodeType === 1 ? (rawTarget as Element) : rawTarget?.parentElement ?? null;
     if (target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
     const command = event.ctrlKey || event.metaKey;
+    const inNavigation = !!target?.closest?.(".slide-list");
+    const inCanvas = target === element || !!target?.closest?.(".stage") || target?.ownerDocument === preview.element.contentDocument;
+    const canArrowFlip = inNavigation || (inCanvas && !selected.length);
+    const directionKey = event.key === "PageDown" || (canArrowFlip && ["ArrowDown", "ArrowRight"].includes(event.key)) ? 1 :
+      event.key === "PageUp" || (canArrowFlip && ["ArrowUp", "ArrowLeft"].includes(event.key)) ? -1 : 0;
+    if (!definitionSurface && !inputScope && !command && !event.altKey && (directionKey || (canArrowFlip && ["Home", "End"].includes(event.key)))) {
+      event.preventDefault();
+      const slides = orderedSlides(), index = slides.findIndex(slide => slide.slideId === active);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? slides.length - 1 : Math.max(0, Math.min(index + directionKey, slides.length - 1));
+      const id = slides[next]!.slideId;
+      if (id !== active) attempt(() => setActiveSlide(id));
+      if (inNavigation) slideButtons.get(id)?.focus({ preventScroll: true });
+      return;
+    }
     if (event.key === "Escape") {
       gestures?.cancel();
       selectObjects([]);
@@ -1073,7 +1187,10 @@ export function mountPresentationEditor(
   function renderControls(): void {
     if (disposed) return;
     const slides = orderedSlides();
-    if (!p().slides.some((slide) => slide.slideId === active)) active = slides[0]!.slideId;
+    if (!p().slides.some((slide) => slide.slideId === active)) {
+      const previousIndex = [...slideButtons.keys()].indexOf(active);
+      active = slides[Math.max(0, Math.min(previousIndex, slides.length - 1))]!.slideId;
+    }
     regionTool.disabled = !!definitionSurface;
     regionTool.setAttribute("aria-pressed", String(regionMode));
     textControls.refresh();
@@ -1131,17 +1248,30 @@ export function mountPresentationEditor(
     status.textContent = `第 ${slides.findIndex((slide) => slide.slideId === active) + 1} / ${slides.length} 页 · ${selected.length ? "已选 " + selected.length + " 个对象" : "未选择对象"}${busy ? " · 正在更新画布" : ""}`;
     navControls.abort();
     navControls = new AbortController();
-    slideList.replaceChildren();
     objectList.replaceChildren();
-    for (const [index, slide] of slides.entries()) {
-      const node = button(
-        `${index + 1}. ${slide.name ?? "幻灯片"}${slide.hidden ? "（隐藏）" : ""}`,
-        () => setActiveSlide(slide.slideId),
-        slideList,
-        navControls.signal,
-      );
-      node.setAttribute("aria-pressed", String(slide.slideId === active));
+    const key = JSON.stringify([p().size, slides.map(({ slideId, name, hidden }) => [slideId, name, hidden])]);
+    if (key !== slideListKey) {
+      slideListKey = key;
+      thumbnailObserver?.disconnect();
+      thumbFrames.clear();
+      slideButtons.clear();
+      slideList.replaceChildren();
+      for (const [index, slide] of slides.entries()) {
+        const label = `${index + 1}. ${slide.name ?? "幻灯片"}${slide.hidden ? "（隐藏）" : ""}`;
+        const node = button(label, () => setActiveSlide(slide.slideId), slideList);
+        node.setAttribute("aria-label", label);
+        node.dataset.slideId = slide.slideId;
+        const thumb = document.createElement("span"), caption = document.createElement("span");
+        thumb.className = "slide-thumb";
+        thumb.setAttribute("aria-hidden", "true");
+        thumb.style.aspectRatio = p().size.width + " / " + p().size.height;
+        caption.className = "slide-label";
+        caption.textContent = label;
+        node.replaceChildren(thumb, caption);
+        slideButtons.set(slide.slideId, node);
+      }
     }
+    for (const [id, node] of slideButtons) node.setAttribute("aria-pressed", String(id === active && !definitionSurface));
     for (const object of p().objects.filter((o) =>
       definitionSurface
         ? surfaceRoot(o.nodeId) === definitionSurface
@@ -1165,23 +1295,13 @@ export function mountPresentationEditor(
     if (definitionSurface) setDefinitionSurface();
     if (!p().slides.some((slide) => slide.slideId === slideId))
       throw new DocumentError("InvalidOperation", "The requested slide is missing.");
-    active = slideId;
+    activateCanvas(slideId);
     selectObjects([]);
-    const version = generation;
-    void ready
-      .then(() => {
-        if (disposed || active !== slideId || version !== generation) return;
-        const node = preview.source()?.elements.get(currentSurface())?.element;
-        if (node)
-          stage.scrollTop +=
-            preview.element.getBoundingClientRect().top +
-            node.getBoundingClientRect().top * zoom -
-            stage.getBoundingClientRect().top -
-            12;
-      })
-      .catch((reason) => {
-        if (version === generation) report(reason);
-      });
+    const navigation = slideButtons.get(slideId), top = navigation?.getBoundingClientRect().top, bounds = nav.getBoundingClientRect();
+    if (top !== undefined && navigation) {
+      if (top < bounds.top) nav.scrollTop += top - bounds.top;
+      else if (navigation.getBoundingClientRect().bottom > bounds.bottom) nav.scrollTop += navigation.getBoundingClientRect().bottom - bounds.bottom;
+    }
   }
   function setZoom(value: number): void {
     ensure();
@@ -1256,15 +1376,16 @@ export function mountPresentationEditor(
         root?.closest<HTMLDetailsElement>("details")?.setAttribute("open", "");
       } else {
         newNotesSlideId = scope.slideId;
+        const slide = p().slides.find((s) => s.slideId === newNotesSlideId)!;
         const panel = frame.createElement("details"),
           heading = frame.createElement("summary");
         panel.className = "sdk-ppt-notes";
+        panel.dataset.sdkNotesSlide = slide.rootNodeId;
         panel.open = true;
         heading.textContent = "演讲者备注";
         root = frame.createElement("div");
         canonical = frame.createElement("div");
         editable = root;
-        const slide = p().slides.find((s) => s.slideId === newNotesSlideId)!;
         source.elements.get(slide.rootNodeId)!.element.after(panel);
         panel.append(heading, root);
         draftNotes = panel;
@@ -1359,7 +1480,7 @@ export function mountPresentationEditor(
     finishInput();
     regionSelection = undefined;
     selected = [nodeId];
-    if (!definitionSurface) active = ownedSlide(nodeId)!;
+    if (!definitionSurface) activateCanvas(ownedSlide(nodeId)!);
     inputScope = { kind: "text", nodeId };
     gestures?.cancel();
     gestures?.paint();
@@ -1374,7 +1495,7 @@ export function mountPresentationEditor(
     if (!p().slides.some((s) => s.slideId === slideId))
       throw new DocumentError("InvalidOperation", "备注必须属于现有幻灯片。");
     finishInput();
-    active = slideId;
+    activateCanvas(slideId);
     inputScope = { kind: "notes", slideId };
     selected = [];
     gestures?.cancel();
@@ -1415,8 +1536,13 @@ export function mountPresentationEditor(
     const annotation = session.getAnnotations().find((a) => a.annotationId === annotationId);
     if (!annotation || annotation.status === "needs_reanchor")
       throw new DocumentError("InvalidOperation", "此批注需要重新定位。");
-    focusedAnnotation = annotationId;
     if (definitionSurface) setDefinitionSurface();
+    const anchor = annotation.anchor;
+    const id = anchor.kind === "region" ? anchor.surfaceId : anchor.kind === "node" || anchor.kind === "text" ? anchor.nodeId :
+      anchor.kind === "node-set" ? anchor.nodeIds[0] : anchor.kind === "text-set" ? anchor.ranges[0]?.nodeId : undefined;
+    const target = id && ownedSlide(id);
+    if (target && target !== active) setActiveSlide(target);
+    focusedAnnotation = annotationId;
     const version = generation;
     void ready
       .then(() => {
@@ -1521,6 +1647,9 @@ export function mountPresentationEditor(
     });
     bindInput();
     renderControls();
+    refreshThumbnails();
+    showCurrentSlide();
+    preview.layout();
     gestures.paint();
     setZoom(zoom);
   };
@@ -1578,8 +1707,12 @@ export function mountPresentationEditor(
       previewLoaded = true;
       if (preview.layout().revision !== session.snapshot().manifest.revision)
         preview.update(session);
-      if (workspace && version === 0)
-        zoom = stage.clientWidth >= ((p().size.width * 4) / 3) * 0.8 ? 0.75 : 0.5;
+      if (workspace && version === 0) {
+        const fitWidth = stage.clientWidth / ((p().size.width * 4) / 3 + 48);
+        const fitHeight =
+          stage.clientHeight > 0 ? stage.clientHeight / ((p().size.height * 4) / 3 + 48) : fitWidth;
+        zoom = Math.max(0.5, Math.min(1, Math.floor(Math.min(fitWidth, fitHeight) * 20) / 20));
+      }
       bind();
       return preview.settled().then(() => {
         if (!disposed && version === generation) setZoom(zoom);
@@ -1603,6 +1736,7 @@ export function mountPresentationEditor(
     regionSelection = undefined;
     regionMode = false;
     frameControls?.abort();
+    previewResize.disconnect();
     preview.dispose();
     definitionSurface = rootNodeId;
     selected = [];
@@ -1614,6 +1748,8 @@ export function mountPresentationEditor(
       ...previewOptions,
       ...(rootNodeId ? { presentationSurfaceId: rootNodeId } : {}),
     });
+    preview.element.dataset.sdkPresentationCanvas = "";
+    previewResize.observe(preview.element);
     ready = loadPreview(version);
     void ready.catch((reason) => {
       if (version === generation) report(reason);
@@ -1734,6 +1870,7 @@ export function mountPresentationEditor(
       ensure();
       return preview.fonts();
     },
+    zoom: () => { ensure(); return zoom; },
     setZoom,
     setMode,
     focusAnnotation,
@@ -1746,6 +1883,9 @@ export function mountPresentationEditor(
       controller.abort();
       navControls.abort();
       frameControls?.abort();
+      thumbnailObserver?.disconnect();
+      thumbnailResize.disconnect();
+      previewResize.disconnect();
       gestures?.dispose();
       regions?.dispose();
       disposeInput();

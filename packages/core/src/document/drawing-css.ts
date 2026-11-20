@@ -34,7 +34,7 @@ export function setDrawingInlineStyle(source: string, property: string, value: s
   };
   if (prefix) {
     if (!retain(prefix + "-color")) style = setInlineStyle(style, prefix + "-color", value, limits);
-    for (const [name, value] of Object.entries({ source: "direct", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" })) style = setInlineStyle(style, prefix + "-" + name, value, limits);
+    for (const [name, value] of Object.entries({ source: "direct", "color-transforms": "none", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" })) style = setInlineStyle(style, prefix + "-" + name, value, limits);
     if (name === "background-color") style = setInlineStyle(style, "--office-fill-kind", "solid", limits);
   }
   if (name === "font-family") for (const role of ["ascii", "h-ansi", "east-asia", "complex-script"]) if (!retain("--office-font-" + role)) style = setInlineStyle(style, "--office-font-" + role, value, limits);

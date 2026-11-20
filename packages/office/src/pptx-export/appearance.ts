@@ -87,10 +87,13 @@ export function objectAppearance(
         shapeKind === "geometry" && preset !== "line" ? "#4472c4" : "none",
       );
   }
-  const lineReference =
+  const lineReference = (
     css["--office-line-kind"] || css["--office-line-color"]
       ? refPrefix(css, "--office-line")
-      : undefined;
+      : undefined) ??
+    Array.from({ length: Math.min(1024, amount(css, "--office-line-stop-count", 0)) }, (_, index) =>
+      refPrefix(css, "--office-line-stop-" + index),
+    ).find(Boolean);
   if (!placeholder || has("--office-line")) {
     if (lineReference) {
       const index = context.format(

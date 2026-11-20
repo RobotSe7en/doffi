@@ -89,6 +89,7 @@ export function buildPresentationRequest(state: DocumentState, input: Presentati
         }
     }
     source.objects = source.objects.filter(o => nodes.has(o.nodeId));
+    delete source.nativePreview;
     const chartIds = new Set(source.objects.flatMap(o => o.kind === "chart" ? [o.chartId] : []));
     source.charts = source.charts.filter(c => chartIds.has(c.chartId));
     const dataIds = new Set(source.charts.map(c => c.dataSetId));

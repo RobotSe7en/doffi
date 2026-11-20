@@ -83,10 +83,21 @@ export interface PresentationRenderReport extends RenderReport {
 }
 export type DocumentRenderReport = WordRenderReport | PresentationRenderReport;
 
+export interface BridgeWebFont {
+  readonly family: string;
+  readonly aliases: readonly string[];
+  readonly url: string;
+  readonly weight?: string;
+  readonly style?: string;
+  readonly equivalentAliases?: boolean;
+  readonly fallbackOnly?: boolean;
+}
+
 export interface RenderOptions {
   readonly title?: string;
   readonly layout?: "pages" | "continuous";
   readonly limits?: Partial<RenderLimits>;
+  readonly webFonts?: readonly BridgeWebFont[];
 }
 export type BrowserRenderResult =
   | { readonly ok: true; readonly report: DocumentRenderReport }

@@ -5,6 +5,7 @@ import { PresentationGeometrySchema } from "../contracts/presentation.js";
 import type { ParsedHtml } from "./html.js";
 import type { DeepReadonly,DocumentReadLimits } from "../runtime.js";
 import { checkLimit, invalid } from "./validation.js";
+import { evaluatePresentationCustomGeometry } from "../presentation-custom-geometry.js";
 
 const geometryNames = ["x", "y", "width", "height"] as const;
 const numeric = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
@@ -64,6 +65,10 @@ export function validatePresentation(presentation: PresentationMetadata, annotat
   const masters = unique(presentation.masters, (item) => item.masterId);
   const layouts = unique(presentation.layouts, (item) => item.layoutId);
   const slides = unique(presentation.slides, (item) => item.slideId);
+  for (const item of unique(presentation.nativePreview ?? [], item => item.feature + ":" + item.ownerId).values()) {
+    if (item.feature === "theme-defaults" && !themes.has(item.ownerId) || item.feature === "animation" && !slides.has(item.ownerId) ||
+        item.feature === "tags" && !html.hasNode(item.ownerId)) invalid("A preserved PPTX fragment must have a current owner.");
+  }
   const objects = unique(presentation.objects, (item) => item.nodeId);
   const charts = unique(presentation.charts, (item) => item.chartId);
   const dataSets = unique(presentation.dataSets, (item) => item.dataSetId);
@@ -142,7 +147,17 @@ export function validatePresentation(presentation: PresentationMetadata, annotat
     }
     transforms.set(object.nodeId, transform);
     if (!transform && (!object.placeholder || parent !== surface)) invalid("Positioned objects require a local transform; only surface placeholders may inherit one.");
-    if (transform && object.kind !== "connector" && !(object.kind === "geometry" && object.preset === "line") && (!transform.width || !transform.height)) invalid("Two-dimensional objects require positive dimensions.");
+    if (transform && object.kind !== "connector" && !(object.kind === "geometry" && object.preset === "line") && (!transform.width || !transform.height) &&
+        !(value.attributes["data-office-hidden"] === "true" && (object.kind === "text" || object.kind === "geometry"))) invalid("Visible two-dimensional objects require positive dimensions.");
+    if ((object.kind === "geometry" || object.kind === "image") && object.customGeometry) {
+      if (!transform || (object.kind === "geometry" && object.preset !== "rect")) invalid("Custom geometry requires a local transform and its base geometry slot.");
+      if (object.kind === "image" && (object.customGeometry.paths.length !== 1 || object.customGeometry.paths[0]!.commands.at(-1)?.kind !== "close"))
+        invalid("A custom picture mask requires one closed path.");
+      for (const path of object.customGeometry.paths) { work += path.commands.length; checkLimit(work, limits.maxNodes); }
+      evaluatePresentationCustomGeometry(object.customGeometry, transform.width, transform.height);
+    }
+    const opacity = value.attributes["data-office-image-opacity"];
+    if (opacity !== undefined && (object.kind !== "image" || number(opacity) < 0 || number(opacity) > 1)) invalid("Picture opacity must be an image alpha factor in [0, 1].");
     if (object.nativeId !== undefined) {
       const ids = nativeIds.get(surface) ?? new Set<string>();
       if (ids.has(object.nativeId)) invalid("Native object identities must be unique within their surface.");
@@ -210,6 +225,7 @@ export function validatePresentation(presentation: PresentationMetadata, annotat
     const slide = slidesByRoot.get(surface);
     const layout = slide ? layouts.get(slide.layoutId) : layoutsByRoot.get(surface);
     const notes = notesByRoot.get(surface);
+    if (object.placeholder && (notes || roots.get(surface) === "notes-master")) continue;
     const parents = layout ? [layout.rootNodeId, masters.get(layout.masterId)!.rootNodeId].filter((id) => id !== surface)
       : notes?.notesMasterId ? [notesMasters.get(notes.notesMasterId)!.rootNodeId] : [];
     const keys=placeholderReferenceKeys(object.placeholder!);

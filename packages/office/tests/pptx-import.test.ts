@@ -2,7 +2,7 @@ import { openContentFixture as openDocument } from "../../../tests/content-fixtu
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { createDocumentSession, DocumentError, readPresentationGeometry } from "@doffi/core";
-import { importPptx, readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { exportPptx, importPptx, readDocumentZip, writeDocumentZip } from "@doffi/office";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 const directory = new URL("../../../examples/pptx/", import.meta.url);
@@ -184,6 +184,88 @@ test("preserves the reference color and transforms for a theme background", () =
   expect(snapshot.styles[0]!.css).toContain("var(--office-background-reference-color");
 });
 
+test("compatible PPTX retains theme insertion defaults and static animation without losing the slide", () => {
+  const files = unzipSync(mutate("01-rich-text.pptx", "ppt/theme/theme1.xml", xml => xml.replace(/<a:objectDefaults\s*\/>|<a:objectDefaults><\/a:objectDefaults>|(?=<\/a:theme>)/,
+    '<a:objectDefaults><a:spDef><a:spPr><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></a:spPr><a:bodyPr/><a:lstStyle/></a:spDef></a:objectDefaults>')));
+  const slide = "ppt/slides/slide1.xml", original = strFromU8(files[slide]!);
+  const timing = '<p:timing><p:tnLst><p:par><p:cTn id="1"><p:childTnLst><p:set><p:cBhvr><p:cTn id="2"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>';
+  files[slide] = strToU8(original.replace("</p:sld>", timing + "</p:sld>"));
+  const bytes = zipSync(files), options = { documentId: "static", mode: "compatible" as const };
+  expect(() => importPptx(bytes, { documentId: "static" })).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+  const model = openDocument(importPptx(bytes, options)), metadata = model.snapshot().metadata.presentation!;
+  expect(metadata.nativePreview).toEqual([
+    expect.objectContaining({ feature: "theme-defaults", ownerId: metadata.themes[0]!.themeId, xml: expect.stringContaining('val="00FF00"') }),
+    expect.objectContaining({ feature: "animation", ownerId: metadata.slides[0]!.slideId, xml: expect.stringContaining('spid="2"') }),
+  ]);
+  expect(model.snapshot().styles[0]!.css).not.toContain("#00ff00");
+  expect(model.getNode(metadata.slides[0]!.rootNodeId)!.text).toBe(load().getNode(load().snapshot().metadata.presentation!.slides[0]!.rootNodeId)!.text);
+  expect(openDocument(readDocumentZip(writeDocumentZip(model.serialize()))).snapshot()).toEqual(model.snapshot());
+  expect(() => exportPptx(model)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+  files[slide] = strToU8(original.replace("</p:sld>", timing.replace('spid="2"', 'spid="99999"') + "</p:sld>"));
+  expect(() => importPptx(zipSync(files), options)).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+  files[slide] = strToU8(original.replace("</p:sld>", timing.replace("<p:set>", "<p:audio/><p:set>") + "</p:sld>"));
+  expect(() => importPptx(zipSync(files), options)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+});
+
+test("round trips native picture modulation and a custom nonrectangular mask without changing its image bytes", () => {
+  const custom = '<a:custGeom><a:gdLst><a:gd name="center" fmla="*/ 1 w 2"/></a:gdLst><a:cxnLst><a:cxn ang="0"><a:pos x="center" y="b"/></a:cxn></a:cxnLst><a:pathLst><a:path w="400" h="200"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="400" y="0"/></a:lnTo><a:lnTo><a:pt x="200" y="200"/></a:lnTo><a:close/></a:path></a:pathLst></a:custGeom>';
+  const bytes = mutate("07-images.pptx", "ppt/slides/slide1.xml", xml => xml.replace(/<p:pic>[\s\S]*?<\/p:pic>/, picture =>
+    picture.replace(/<a:blip ([^>]+)\/>/, '<a:blip $1><a:alphaModFix amt="45000"/></a:blip>').replace(/<a:prstGeom[^>]*>[\s\S]*?<\/a:prstGeom>/, custom)));
+  const model = openDocument(importPptx(bytes, { documentId: "mask" }));
+  const reopened = openDocument(importPptx(exportPptx(model).bytes, { documentId: "mask" }));
+  const shape = (doc: typeof model) => doc.snapshot().metadata.presentation!.objects.find(item => item.kind === "image")!;
+  expect(shape(reopened)).toMatchObject({ kind: "image", customGeometry: { connections: [{ x: "center", y: "b", angle: "0" }] } });
+  expect(shape(reopened)).toMatchObject({ customGeometry: (shape(model) as Extract<ReturnType<typeof shape>, { kind: "image" }>).customGeometry });
+  expect(reopened.getNode(shape(reopened).nodeId)!.attributes["data-office-image-opacity"]).toBe("0.45");
+  expect(reopened.snapshot().manifest.assets.map(asset => asset.sha256)).toEqual(model.snapshot().manifest.assets.map(asset => asset.sha256));
+});
+
+test("compatible import retains opaque object tags by relationship and removes them only with their owner", () => {
+  const files = unzipSync(fixture()), slidePath = "ppt/slides/slide1.xml", relsPath = "ppt/slides/_rels/slide1.xml.rels";
+  const tagPath = "ppt/sample-attributes/attributes.xml";
+  files[relsPath] = strToU8(strFromU8(files[relsPath]!).replace("</Relationships>", '<Relationship Id="opaque-tags" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags" Target="../sample-attributes/attributes.xml"/></Relationships>'));
+  files["[Content_Types].xml"] = strToU8(strFromU8(files["[Content_Types].xml"]!).replace("</Types>", '<Override PartName="/ppt/sample-attributes/attributes.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tags+xml"/></Types>'));
+  files[tagPath] = strToU8('<p:tagLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:tag name="opaque" val="original"/></p:tagLst>');
+  files[slidePath] = strToU8(strFromU8(files[slidePath]!).replace(/<p:nvSpPr>.*?<\/p:nvSpPr>/s, xml => xml.replace(/<p:nvPr\s*\/>|<p:nvPr><\/p:nvPr>/, '<p:nvPr><p:custDataLst><p:tags r:id="opaque-tags"/></p:custDataLst></p:nvPr>')));
+  const model = openDocument(importPptx(zipSync(files), { documentId: "tagged", mode: "compatible" })), session = createDocumentSession(model);
+  const tags = model.snapshot().metadata.presentation!.nativePreview!;
+  expect(tags).toEqual([expect.objectContaining({ feature: "tags", part: tagPath, xml: expect.stringContaining('name="opaque" val="original"') })]);
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "tagged", baseRevision: 0, operations: [{ op: "removeNode", nodeId: tags[0]!.ownerId }] }));
+  expect(session.snapshot().metadata.presentation!.nativePreview).toEqual([]);
+  session.undo();
+  expect(session.snapshot().metadata.presentation!.nativePreview).toEqual(tags);
+});
+
+test("keeps compound theme gradient transforms in source order through native export and reopen", () => {
+  const first = '<a:tint val="67000"/><a:lumMod val="110000"/><a:satMod val="105000"/>',
+    second = '<a:satMod val="250000"/><a:satMod val="50000"/><a:shade val="78000"/>';
+  const files = unzipSync(mutate("01-rich-text.pptx", "ppt/theme/theme1.xml", source => source.replace(
+    /(<a:bgFillStyleLst>)<a:solidFill>.*?<\/a:solidFill>/s,
+    `$1<a:gradFill><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr">${first}</a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr">${second}</a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill>`,
+  )));
+  const slide = "ppt/slides/slide1.xml";
+  files[slide] = strToU8(strFromU8(files[slide]!).replace("<p:spTree>", '<p:bg><p:bgRef idx="1001"><a:srgbClr val="6699CC"/></p:bgRef></p:bg><p:spTree>'));
+  const verify = (bytes: Uint8Array) => {
+    const model = openDocument(importPptx(bytes, { documentId: "compound-gradient" }));
+    const css = model.snapshot().styles[0]!.css;
+    expect(css).toContain("--office-fill-stop-0-color-transforms:tint 67000 lumMod 110000 satMod 105000");
+    expect(css).toContain("--office-fill-stop-1-color-transforms:satMod 250000 satMod 50000 shade 78000");
+    return model;
+  };
+  const output = exportPptx(verify(zipSync(files))).bytes;
+  const theme = strFromU8(unzipSync(output)["ppt/theme/theme1.xml"]!);
+  expect(theme).toContain(first);
+  expect(theme).toContain(second);
+  verify(output);
+  const themePath = "ppt/theme/theme1.xml", source = strFromU8(files[themePath]!);
+  for (const val of ["-1", "2147483648", "foo"]) {
+    const invalid = { ...files, [themePath]: strToU8(source.replace('<a:satMod val="105000"/>', `<a:satMod val="${val}"/>`)) };
+    expect(() => importPptx(zipSync(invalid), { documentId: "invalid-transform" })).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+  }
+  const repeated = { ...files, [themePath]: strToU8(source.replace(first, '<a:satMod val="100000"/>'.repeat(65))) };
+  expect(() => importPptx(zipSync(repeated), { documentId: "oversized-transform" })).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
+});
+
 test("preserves absent text-body overrides for placeholder inheritance instead of manufacturing defaults", () => {
   const input = mutate("02-theme-placeholders.pptx", "ppt/slides/slide1.xml", source => source.replace(/<a:bodyPr[^>]*>[\s\S]*?<\/a:bodyPr>/g, "<a:bodyPr/>"));
   const model = openDocument(importPptx(input, { documentId: "body-inheritance" }));
@@ -198,4 +280,47 @@ test("native classic comment points keep their slide position during visual edit
   const commit=(operations:Parameters<typeof s.prepare>[0]["operations"]):void=>{s.commit(s.prepare({protocolVersion:1,documentId:s.snapshot().manifest.documentId,baseRevision:s.snapshot().manifest.revision,operations}));};
   commit([{op:"setStyle",nodeId:original.rootNodeId,property:"background-color",value:"#123456"}]);expect(s.getAnnotations()[0]!.status).toBe("open");expect(s.getAnnotations()[0]!.anchor).toEqual(before.anchor);
   commit([{op:"insertSlide",layoutId:p.layouts[0]!.layoutId}]);commit([{op:"removeSlide",slideId:original.slideId}]);expect(s.getAnnotations()[0]!.status).toBe("needs_reanchor");expect(openDocument(s.serialize()).snapshot().annotations[0]!.anchor).toEqual(before.anchor);
+});
+
+test("records DrawingML proportional and exact line-spacing rules while round-tripping native spcPct and spcPts", () => {
+  let count = 0;
+  const input = mutate("01-rich-text.pptx", "ppt/slides/slide1.xml", source => source.replace(/<a:pPr([^>]*)>/g, (match) => {
+    count++;
+    if (count === 1) return match + '<a:lnSpc><a:spcPct val="150000"/></a:lnSpc>';
+    if (count === 2) return match + '<a:lnSpc><a:spcPts val="3600"/></a:lnSpc>';
+    return match;
+  }));
+  const model = openDocument(importPptx(input, { documentId: "lnspc-rules" }));
+  const html = model.snapshot().html;
+  expect(html).toContain("line-height:1.5;--office-line-spacing-rule:proportional");
+  expect(html).toContain("line-height:36pt;--office-line-spacing-rule:exact");
+  const exported = exportPptx(model).bytes;
+  const slideXml = strFromU8(unzipSync(exported)["ppt/slides/slide1.xml"]!);
+  expect(slideXml).toContain('<a:spcPct val="150000"/>');
+  expect(slideXml).toContain('<a:spcPts val="3600"/>');
+});
+
+test("preserves DrawingML hangingPunct/eaLnBrk/latinLnBrk on import/export and leaves empty theme fallback unquoted", () => {
+  const files = unzipSync(fixture("01-rich-text.pptx"));
+  const slideXml = strFromU8(files["ppt/slides/slide1.xml"]!).replace(
+    "<a:pPr>",
+    '<a:pPr eaLnBrk="1" latinLnBrk="0" hangingPunct="1">',
+  );
+  const themePath = Object.keys(files).find(name => name.startsWith("ppt/theme/theme") && name.endsWith(".xml"))!;
+  const themeXml = strFromU8(files[themePath]!)
+    .replace(/<a:ea typeface="[^"]*"\/>/g, '<a:ea typeface=""/>')
+    .replace(/<a:font script="Hans"[^>]*\/>/g, "");
+  const mutated = zipSync({ ...files, "ppt/slides/slide1.xml": strToU8(slideXml), [themePath]: strToU8(themeXml) });
+  const model = openDocument(importPptx(mutated, { documentId: "hanging-and-theme-fallback" }));
+  const snapshot = model.snapshot();
+  expect(snapshot.html).toContain("--office-ea-line-break:true");
+  expect(snapshot.html).toContain("--office-latin-line-break:false");
+  expect(snapshot.html).toContain("--office-hanging-punctuation:allow-end");
+  const css = snapshot.styles.map(sheet => sheet.css).join("\n");
+  expect(css).toContain("--office-minor-east-asia:sans-serif");
+  expect(css).not.toContain('--office-minor-east-asia:"sans-serif"');
+  const exportedSlide = strFromU8(unzipSync(exportPptx(model).bytes)["ppt/slides/slide1.xml"]!);
+  expect(exportedSlide).toMatch(/eaLnBrk="1"/);
+  expect(exportedSlide).toMatch(/latinLnBrk="0"/);
+  expect(exportedSlide).toMatch(/hangingPunct="1"/);
 });

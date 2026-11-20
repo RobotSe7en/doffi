@@ -34,6 +34,20 @@ export class PresentationDrawingWriter {
                 result += empty("a:gd", { name: key.slice(19), fmla: "val " + integer(Number(value), 1, -2147483648, 2147483647) });
         return result + "</a:avLst></a:prstGeom>";
     }
+    private shapeGeometry(node: SourceElement, object: DeepReadonly<Extract<PresentationObject, { kind: "geometry" | "image" }>>, preset: string): string {
+        const custom = object.customGeometry;
+        if (!custom) return this.geometry(node, preset);
+        const guides = custom.guides.map(({ name, operator, args }) => empty("a:gd", { name, fmla: [operator, ...args].join(" ") })).join(""),
+            sites = custom.connections.map(({ angle, x, y }) => "<a:cxn" + attributes({ ang: angle }) + ">" + empty("a:pos", { x, y }) + "</a:cxn>").join(""),
+            rect = custom.textRect ? empty("a:rect", { l: custom.textRect.left, t: custom.textRect.top, r: custom.textRect.right, b: custom.textRect.bottom }) : "",
+            paths = custom.paths.map(path => "<a:path" + attributes({ w: path.width, h: path.height, fill: path.fill ? "norm" : "none", stroke: path.stroke ? 1 : 0 }) + ">" +
+                path.commands.map(command => {
+                    if (command.kind === "close") return "<a:close/>";
+                    const tag = command.kind === "move" ? "a:moveTo" : "a:lnTo";
+                    return "<" + tag + ">" + empty("a:pt", { x: command.x, y: command.y }) + "</" + tag + ">";
+                }).join("") + "</a:path>").join("");
+        return "<a:custGeom><a:gdLst>" + guides + "</a:gdLst><a:cxnLst>" + sites + "</a:cxnLst>" + rect + "<a:pathLst>" + paths + "</a:pathLst></a:custGeom>";
+    }
     object(node: SourceElement, surface: NativeSurface): string {
         const result = this.compileObject(node, surface);
         if (this.ctx.objects.get(node.attrs["data-node-id"]!)?.kind !== "group")
@@ -54,7 +68,7 @@ export class PresentationDrawingWriter {
         }
         if (object.kind === "text" || object.kind === "geometry") {
             const preset = object.kind === "text" ? "rect" : object.preset, appearance = objectAppearance(this.ctx, node, surface, object.kind, preset);
-            return "<p:sp>" + this.identity(object, node, surface, "nvSpPr", empty("p:cNvSpPr", { txBox: object.kind === "text" ? 1 : undefined })) + "<p:spPr>" + transform + this.geometry(node, preset) + appearance.properties + "</p:spPr>" + appearance.style + this.text.body(node, surface, "p:txBody", surface.part, object) + "</p:sp>";
+            return "<p:sp>" + this.identity(object, node, surface, "nvSpPr", empty("p:cNvSpPr", { txBox: object.kind === "text" ? 1 : undefined })) + "<p:spPr>" + transform + (object.kind === "geometry" ? this.shapeGeometry(node, object, preset) : this.geometry(node, preset)) + appearance.properties + "</p:spPr>" + appearance.style + this.text.body(node, surface, "p:txBody", surface.part, object) + "</p:sp>";
         }
         if (object.kind === "connector") {
             const appearance = objectAppearance(this.ctx, node, surface, "connector"), connection = (side: "start" | "end"): string => { const target = object[side + "NodeId" as "startNodeId" | "endNodeId"]; return target ? empty(side === "start" ? "a:stCxn" : "a:endCxn", { id: this.ctx.nativeIds.get(target)!, idx: object[side + "Site" as "startSite" | "endSite"] ?? 0 }) : ""; };
@@ -69,7 +83,9 @@ export class PresentationDrawingWriter {
                 if (node.attrs["data-office-crop-" + side] !== undefined)
                     crop[native!] = integer(Number(node.attrs["data-office-crop-" + side]), 100000, -2147483648, 2147483647);
             const appearance = objectAppearance(this.ctx, node, surface, "text");
-            return "<p:pic>" + this.identity(object, node, surface, "nvPicPr", "<p:cNvPicPr/>") + "<p:blipFill>" + empty("a:blip", { "r:embed": relation }) + (Object.keys(crop).length ? empty("a:srcRect", crop) : "") + "<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>" + transform + this.geometry(node, "rect") + appearance.properties + "</p:spPr>" + appearance.style + "</p:pic>";
+            const opacity = node.attrs["data-office-image-opacity"], blip = opacity === undefined ? empty("a:blip", { "r:embed": relation }) :
+                "<a:blip" + attributes({ "r:embed": relation }) + ">" + empty("a:alphaModFix", { amt: integer(Number(opacity), 100000, 0, 100000) }) + "</a:blip>";
+            return "<p:pic>" + this.identity(object, node, surface, "nvPicPr", "<p:cNvPicPr/>") + "<p:blipFill>" + blip + (Object.keys(crop).length ? empty("a:srcRect", crop) : "") + "<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>" + transform + this.shapeGeometry(node, object, "rect") + appearance.properties + "</p:spPr>" + appearance.style + "</p:pic>";
         }
         const graphic = object.kind === "table" ? this.table(object, node, surface) : this.chart(object, node, surface), uri = object.kind === "table" ? "http://schemas.openxmlformats.org/drawingml/2006/table" : "http://schemas.openxmlformats.org/drawingml/2006/chart";
         return "<p:graphicFrame>" + this.identity(object, node, surface, "nvGraphicFramePr", "<p:cNvGraphicFramePr/>") + this.transform(node, false, "p:xfrm") + "<a:graphic><a:graphicData" + attributes({ uri }) + ">" + graphic + "</a:graphicData></a:graphic></p:graphicFrame>";

@@ -42,7 +42,7 @@ function characterStyle(property: string, value: string): ReadonlyMap<string, st
     if (property === "--office-font-ascii")
         result.set("--office-font-h-ansi", value);
     if (property === "color")
-        for (const [name, part] of Object.entries({ color: value, source: "direct", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" }))
+        for (const [name, part] of Object.entries({ color: value, source: "direct", "color-transforms": "none", alpha: "1", "lum-mod": "1", "lum-off": "0", tint: "0", shade: "1" }))
             result.set("--office-text-" + name, part);
     return result;
 }

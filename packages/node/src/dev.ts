@@ -23,8 +23,20 @@ export async function runConversionProcess(input: ConversionRequestV1, options: 
   if (options.browserExecutable) env.DOFFI_CHROMIUM_EXECUTABLE = options.browserExecutable;
   if (options.browserCacheDirectory) env.PLAYWRIGHT_BROWSERS_PATH = options.browserCacheDirectory;
   env.DOFFI_CONVERSION_TIMEOUT = String(timeout);
+  const serializableFonts = options.webFonts
+    ?.filter((font) => typeof font.path === "string" && font.path.length > 0)
+    .map(({ family, aliases, weight, style, equivalentAliases, fallbackOnly, path }) => ({
+      family,
+      ...(aliases ? { aliases } : {}),
+      ...(weight !== undefined ? { weight } : {}),
+      ...(style !== undefined ? { style } : {}),
+      ...(equivalentAliases !== undefined ? { equivalentAliases } : {}),
+      ...(fallbackOnly !== undefined ? { fallbackOnly } : {}),
+      path,
+    }));
   env.DOFFI_CONVERSION_CONFIG = JSON.stringify({ converter: {
     ...(options.browserChannel ? { browserChannel: options.browserChannel } : {}),
+    ...(serializableFonts?.length ? { webFonts: serializableFonts } : {}),
     ...(options.maxInputBytes !== undefined ? { maxInputBytes: options.maxInputBytes } : {}),
     ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
     ...(options.maxPixels !== undefined ? { maxPixels: options.maxPixels } : {}),

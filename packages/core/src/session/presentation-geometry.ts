@@ -5,6 +5,7 @@ import type { ParsedHtml } from "../document/html.js";
 import type { DocumentEdit } from "../document/edit.js";
 import { readPresentationGeometry,placeholderReferenceKeys } from "../document/presentation.js";
 import { evaluatePresentationPreset } from "../presentation-geometry.js";
+import { evaluatePresentationCustomGeometry } from "../presentation-custom-geometry.js";
 import { invalid } from "../document/validation.js";
 
 export type Matrix = readonly [number, number, number, number, number, number];
@@ -78,7 +79,9 @@ export function presentationTransforms(p: DeepReadonly<PresentationMetadata>, ht
   const endpoint = (id: string, site: number): { x: number; y: number } => {
     const object = objects.get(id); if (!object) return invalid("A connector target is missing.");
     const g = geometry(id), adjustments = Object.fromEntries(Object.entries(html.peekNode(id)!.attributes).filter(([key]) => key.startsWith("data-office-adjust-")).map(([key, value]) => [key.slice(19), Number(value)]));
-    const connection = evaluatePresentationPreset(object.kind === "geometry" ? object.preset : "rect", g.width, g.height, object.kind === "geometry" ? adjustments : {}).connections[site];
+    const custom = object.kind === "geometry" || object.kind === "image" ? object.customGeometry : undefined;
+    const connection = (custom ? evaluatePresentationCustomGeometry(custom, g.width, g.height) :
+      evaluatePresentationPreset(object.kind === "geometry" ? object.preset : "rect", g.width, g.height, object.kind === "geometry" ? adjustments : {})).connections[site];
     if (!connection) return invalid("A connector site does not exist on its target preset.");
     return point(world(id), connection);
   };

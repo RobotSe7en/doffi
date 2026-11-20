@@ -129,6 +129,8 @@ export function editPresentationDefinition(ctx: PresentationEditContext, operati
             const original = p.themes.find(t => t.themeId === (operation.copyFromId ?? p.themes[0]!.themeId)) ?? invalid("The source theme is missing."), cssClass = allocatePresentationClass(ctx, "theme-");
             ctx.styles.cloneClass(original.cssClass, cssClass);
             p.themes.push({ themeId: id, cssClass });
+            const defaults = p.nativePreview?.find(item => item.feature === "theme-defaults" && item.ownerId === original.themeId);
+            if (defaults) p.nativePreview!.push({ ...defaults, ownerId: id });
             return;
         }
         const originals = kind === "master" ? p.masters : kind === "layout" ? p.layouts : p.notesMasters;
@@ -190,6 +192,7 @@ export function editPresentationDefinition(ctx: PresentationEditContext, operati
                     edit.attributes(nodeId, { class: classes.flatMap(name => name === theme.cssClass ? target ? [target] : [] : [name]).join(" ") || undefined });
             }
             p.themes = p.themes.filter(t => t !== theme);
+            if (p.nativePreview) p.nativePreview = p.nativePreview.filter(item => item.feature !== "theme-defaults" || item.ownerId !== id);
             return;
         }
         let removedRoot: string;

@@ -35,7 +35,7 @@ export function importText(context: Context, body: XmlNode, target: Html, part: 
     projection: (nodeId, paragraphs) => { context.paragraphs.set(nodeId, paragraphs); },
     field(source, node) {
       const type = value(source, "type");
-      if (!type || !/^(slidenum|datetime(?:[1-9]|1[0-3])?)$/.test(type)) unsupported(source, "This presentation field type is not supported.");
+      if (!type || !/^(slidenum|datetime(?:FigureOut|[1-9]|1[0-3])?)$/.test(type)) unsupported(source, "This presentation field type is not supported.");
       node.attrs["data-office-field"] = type;
       if (value(source, "id")) node.attrs["data-office-field-id"] = value(source, "id")!;
     },

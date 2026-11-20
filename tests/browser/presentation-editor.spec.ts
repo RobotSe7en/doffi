@@ -6,11 +6,13 @@ import { expect,test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { createPresentation,openDocument } from "@doffi/core";
 import type { DocumentPackage } from "@doffi/core";
+import { renderDocumentPdf } from "@doffi/node";
 import { importPptx,readDocumentZip } from "@doffi/office";
 import {writeOpcZip} from "../../packages/office/src/document-zip.js";
 import type { PresentationEditorHost } from "./fixtures/presentation-editor-host.js";
 declare global{interface Window{presentationEditorHost:PresentationEditorHost}}
 let code:string;
+const selectAll="ControlOrMeta+a",jumpToEnd=process.platform==="darwin"?"Meta+ArrowDown":"Control+End";
 test.beforeEach(async({page})=>{await page.setViewportSize({width:1600,height:1000});});
 test.beforeAll(async()=>{
   const result=await build({configFile:false,logLevel:"silent",build:{write:false,target:"es2022",lib:{entry:fileURLToPath(new URL("./fixtures/presentation-editor-host.ts",import.meta.url)),formats:["es"]}}});
@@ -19,14 +21,62 @@ test.beforeAll(async()=>{
 function example():DocumentPackage{return new Map([...readdirSync("examples/presentation").filter(name=>/\.(json|html|css)$/.test(name)),"assets/sample.png"].map(path=>[path,new Uint8Array(readFileSync("examples/presentation/"+path))]));}
 async function mount(page:Page,files:DocumentPackage=createPresentation({documentId:"editor"})):Promise<void>{await openSdkHost(page);await page.addScriptTag({type:"module",content:code});await page.waitForFunction(()=>!!window.presentationEditorHost);await page.evaluate(files=>window.presentationEditorHost.mount(files),[...files].map(([path,bytes])=>[path,[...bytes]] as [string,number[]]));}
 async function settled(page:Page):Promise<void>{await page.evaluate(()=>window.presentationEditorHost.view!.ready);}
-const frame=(page:Page)=>page.frameLocator("iframe");
+const frame=(page:Page)=>page.frameLocator("iframe[data-sdk-presentation-canvas]");
+
+test("normal view switches one canvas with live thumbnails and keyboard navigation without editing the document", async ({ page, browserName }) => {
+  const files = importPptx(new Uint8Array(readFileSync("examples/pptx/13-multi-slide.pptx")), { documentId: "normal-view" });
+  await mount(page, files);
+  const nav = page.getByRole("navigation", { name: "幻灯片与对象导航" });
+  const cards = nav.locator(".slide-list button");
+  const slides = frame(page).locator('article > [data-office-kind="slide"]');
+  const slideCount = await cards.count();
+  expect(slideCount).toBeGreaterThan(2);
+  await expect(slides.filter({ visible: true })).toHaveCount(1);
+  await expect(cards.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(cards.first().frameLocator("iframe").locator('[data-office-kind="slide"]')).toBeVisible();
+  const canvasBox = await page.locator("iframe[data-sdk-presentation-canvas]").boundingBox();
+  const firstSlideBox = await slides.first().boundingBox();
+  expect(canvasBox!.height).toBeLessThan(firstSlideBox!.height * 2);
+  const before = await page.evaluate(() => window.presentationEditorHost.session!.snapshot());
+  await cards.nth(1).click();
+  await expect(slides.nth(1)).toBeVisible();
+  await expect(slides.first()).toBeHidden();
+  await cards.nth(1).press("End");
+  await expect(cards.last()).toBeFocused();
+  await expect(slides.last()).toBeVisible();
+  await cards.last().press("PageUp");
+  await expect(slides.nth(slideCount - 2)).toBeVisible();
+  await cards.nth(slideCount - 2).press("Home");
+  await expect(cards.first()).toBeFocused();
+  await expect(slides.first()).toBeVisible();
+  await slides.first().click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press("ArrowRight");
+  await expect(slides.nth(1)).toBeVisible();
+  await page.keyboard.press("PageDown");
+  await expect(slides.nth(2)).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
+  await expect(slides.nth(1)).toBeVisible();
+  await expect(slides.filter({ visible: true })).toHaveCount(1);
+  const report = await page.evaluate(() => window.presentationEditorHost.view!.layout());
+  expect(report.pages).toHaveLength(slideCount);
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.snapshot())).toEqual(before);
+  if (browserName === "chromium") {
+    const serialized = await page.evaluate(() => [...window.presentationEditorHost.session!.serialize()].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]));
+    const pdf = await renderDocumentPdf(openDocument(new Map(serialized.map(([path, bytes]) => [path, new Uint8Array(bytes)])), { kind: "presentation" }), {
+      ...(process.env.DOFFI_BROWSER_EXECUTABLE ? { browserExecutable: process.env.DOFFI_BROWSER_EXECUTABLE } : {}),
+      ...(process.env.DOFFI_BROWSER_CHANNEL ? { browserChannel: process.env.DOFFI_BROWSER_CHANNEL } : {}),
+    });
+    expect(pdf.report.pages).toHaveLength(slideCount);
+    expect(Buffer.from(pdf.bytes).toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(slideCount);
+  }
+});
 
 test("native PPT text typing, paragraphs, formatting and empty shapes keep source identities and history",async({page})=>{
   await mount(page);await page.getByRole("button",{name:"文本框",exact:true}).click();await settled(page);
   await page.getByRole("button",{name:"编辑文字",exact:true}).click();
-  const input=frame(page).getByRole("textbox",{name:"幻灯片文字输入"});await input.press("Control+a");await input.pressSequentially("中文ABC");await input.press("Enter");await input.pressSequentially("第二段");await settled(page);
+  const input=frame(page).getByRole("textbox",{name:"幻灯片文字输入"});await input.press(selectAll);await input.pressSequentially("中文ABC");await input.press("Enter");await input.pressSequentially("第二段");await settled(page);
   expect(await page.evaluate(()=>{const h=window.presentationEditorHost,id=h.session!.snapshot().metadata.presentation!.objects.find(o=>o.kind==="text"&&h.session!.getNode(o.nodeId)!.parentNodeId==="slide-root-1")!.nodeId;return h.session!.getNode(id)!.text;})).toBe("中文ABC第二段");
-  await input.press("Control+a");await page.getByRole("button",{name:"加粗",exact:true}).click();await settled(page);
+  await input.press(selectAll);await page.getByRole("button",{name:"加粗",exact:true}).click();await settled(page);
   expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).toContain("font-weight:700");
   await page.getByRole("button",{name:"完成输入",exact:true}).click();await page.getByRole("button",{name:"形状",exact:true}).click();await settled(page);await page.getByRole("button",{name:"编辑文字",exact:true}).click();await frame(page).getByRole("textbox").pressSequentially("空形状");await settled(page);
   expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).toContain("空形状");expect(await page.evaluate(()=>window.presentationEditorHost.errors)).toEqual([]);
@@ -39,12 +89,12 @@ test("new and imported notes edit the registered story through the same undo bou
   expect(await page.evaluate(()=>{const s=window.presentationEditorHost.session!,note=s.snapshot().metadata.presentation!.stories.find(s=>s.kind==="notes")!;return s.getNode(note.rootNodeId)!.text;})).toBe("讲者中文");
   await page.getByRole("button",{name:"完成输入",exact:true}).click();await page.getByRole("button",{name:"撤销",exact:true}).click();await settled(page);
   expect(await page.evaluate(()=>{const s=window.presentationEditorHost.session!,note=s.snapshot().metadata.presentation!.stories.find(s=>s.kind==="notes")!;return s.getNode(note.rootNodeId)!.text;})).toBe("讲者中");
-  await mount(page,example());await page.getByRole("button",{name:"编辑备注",exact:true}).click();const input=frame(page).getByRole("textbox",{name:"演讲者备注输入"});await input.press("Control+End");await input.pressSequentially("新增");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getNode("speaker-notes")?.text)).toContain("新增");expect(await page.evaluate(()=>window.presentationEditorHost.errors)).toEqual([]);
+  await mount(page,example());await page.getByRole("button",{name:"编辑备注",exact:true}).click();const input=frame(page).getByRole("textbox",{name:"演讲者备注输入"});await input.press(jumpToEnd);await input.pressSequentially("新增");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getNode("speaker-notes")?.text)).toContain("新增");expect(await page.evaluate(()=>window.presentationEditorHost.errors)).toEqual([]);
 });
 
 test("PPT real IME input commits once and rejects concurrent source changes",async({page,browserName})=>{
   test.skip(browserName!=="chromium","CDP composition is Chromium-specific; other engines cover native input and history.");
-  await mount(page);await page.getByRole("button",{name:"文本框",exact:true}).click();await settled(page);await page.getByRole("button",{name:"编辑文字",exact:true}).click();const input=frame(page).getByRole("textbox");await input.press("Control+a");
+  await mount(page);await page.getByRole("button",{name:"文本框",exact:true}).click();await settled(page);await page.getByRole("button",{name:"编辑文字",exact:true}).click();const input=frame(page).getByRole("textbox");await input.press(selectAll);
   const cdp=await page.context().newCDPSession(page);await cdp.send("Input.imeSetComposition",{text:"中",selectionStart:1,selectionEnd:1});expect(await page.evaluate(()=>window.presentationEditorHost.session!.history().undoSteps)).toBe(1);await cdp.send("Input.imeSetComposition",{text:"中文",selectionStart:2,selectionEnd:2});await cdp.send("Input.insertText",{text:"中文"});await settled(page);
   expect(await page.evaluate(()=>window.presentationEditorHost.session!.history().undoSteps)).toBe(2);expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).toContain("中文");
   await cdp.send("Input.imeSetComposition",{text:"迟到",selectionStart:2,selectionEnd:2});await page.evaluate(()=>window.presentationEditorHost.view!.perform([{op:"setSlideProperties",slideId:window.presentationEditorHost.view!.activeSlide(),changes:{name:"并发"}}]));await cdp.send("Input.insertText",{text:"迟到"});await settled(page);
@@ -84,7 +134,7 @@ test("chart data tools update native constants and first-party graphics through 
 
 for(const format of["classic","modern"])test(`${format} comment rich input, replies, status, location and deletion use the core history`,async({page})=>{
   await mount(page,example());await page.evaluate(()=>window.presentationEditorHost.view!.selectObjects(["heading"]));await page.getByLabel("新批注格式",{exact:true}).selectOption(format);await page.getByLabel("新批注正文",{exact:true}).fill("新增批注");await page.getByRole("button",{name:"添加批注",exact:true}).click();await settled(page);
-  const input=frame(page).getByRole("textbox",{name:"批注正文输入"});await input.press("Control+End");await input.pressSequentially("补充");await settled(page);const id=await page.evaluate(()=>window.presentationEditorHost.session!.getAnnotations().at(-1)!.annotationId);
+  const input=frame(page).getByRole("textbox",{name:"批注正文输入"});await input.press(jumpToEnd);await input.pressSequentially("补充");await settled(page);const id=await page.evaluate(()=>window.presentationEditorHost.session!.getAnnotations().at(-1)!.annotationId);
   expect(await page.evaluate(id=>{const s=window.presentationEditorHost.session!;return s.getNode(s.getAnnotations().find(a=>a.annotationId===id)!.bodyNodeId!)!.text;},id)).toBe("新增批注补充");await page.getByRole("button",{name:"完成输入",exact:true}).click();
   const thread=page.locator("fieldset section").filter({has:page.locator("p",{hasText:"新增批注补充"})});await thread.getByLabel("回复正文",{exact:true}).fill("新增回复");await thread.getByRole("button",{name:"添加回复",exact:true}).click();await settled(page);await frame(page).getByRole("textbox",{name:"批注正文输入"}).pressSequentially("追加");await settled(page);await page.getByRole("button",{name:"完成输入",exact:true}).click();
   await thread.getByRole("button",{name:"解决批注",exact:true}).click();await settled(page);expect(await page.evaluate(id=>window.presentationEditorHost.session!.getAnnotations().find(a=>a.annotationId===id)!.status,id)).toBe("resolved");await thread.getByRole("button",{name:"删除回复",exact:true}).click();await settled(page);await page.getByRole("button",{name:"撤销",exact:true}).click();await settled(page);expect(await page.evaluate(id=>window.presentationEditorHost.session!.getAnnotations().find(a=>a.annotationId===id)!.replies,id)).toHaveLength(1);expect(await page.evaluate(()=>window.presentationEditorHost.errors)).toEqual([]);
@@ -113,8 +163,8 @@ test("PPT text keeps exact repeated-text anchors and deletes CJK variation seque
   await mount(page,example());await page.evaluate(()=>{const h=window.presentationEditorHost;h.view!.perform([{op:"replaceText",nodeId:"heading-p",from:0,to:4,expectedText:"项目进展",text:"甲甲甲甲甲甲甲甲"}]);h.view!.perform([{op:"addAnnotation",annotation:{annotationId:"exact-input",documentId:h.session!.snapshot().manifest.documentId,baseRevision:1,status:"open",instruction:"定位",anchor:{kind:"text",nodeId:"heading-p",from:4,to:6,quote:"甲甲"}}}]);h.view!.editText("heading");});await settled(page);
   const caret=async(offset:number):Promise<void>=>{await frame(page).locator('[contenteditable="true"] [data-node-id="heading-p"]').evaluate((root,offset)=>{const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node:Node|null,remaining=offset;while((node=walker.nextNode())){if(remaining<=node.textContent!.length){const range=document.createRange();range.setStart(node,remaining);range.collapse(true);const selection=document.getSelection()!;selection.removeAllRanges();selection.addRange(range);return;}remaining-=node.textContent!.length;}throw new Error("Caret target is missing.");},offset);};
   await caret(1);await page.keyboard.insertText("甲");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getAnnotations().find(a=>a.annotationId==="exact-input")!.anchor)).toMatchObject({kind:"text",from:5,to:7,quote:"甲甲"});
-  const input=frame(page).getByRole("textbox",{name:"幻灯片文字输入"});await input.press("Control+a");await page.keyboard.insertText("甲𠮷󠄀乙");await settled(page);const state=await page.evaluate(()=>({node:window.presentationEditorHost.session!.getNode("heading-p"),html:window.presentationEditorHost.session!.snapshot().html,errors:window.presentationEditorHost.errors}));await testInfo.attach("replaced-text-state",{body:JSON.stringify(state),contentType:"application/json"});expect(state.node,JSON.stringify({heading:state.html.match(/<div data-node-id="heading".*?<\/div>/)?.[0],errors:state.errors})).toBeDefined();await caret(5);await input.press("Backspace");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getNode("heading-p")!.text)).toBe("甲乙");
-  await input.press("Control+z");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getNode("heading-p")!.text)).toBe("甲𠮷󠄀乙");const revision=await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().manifest.revision);await caret(2);await input.evaluate(node=>node.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"X",bubbles:true,cancelable:true})));await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().manifest.revision)).toBe(revision);await expect(page.getByRole("alert")).toContainText("UTF-16");
+  const input=frame(page).getByRole("textbox",{name:"幻灯片文字输入"});await input.press(selectAll);await page.keyboard.insertText("甲𠮷󠄀乙");await settled(page);const state=await page.evaluate(()=>({node:window.presentationEditorHost.session!.getNode("heading-p"),html:window.presentationEditorHost.session!.snapshot().html,errors:window.presentationEditorHost.errors}));await testInfo.attach("replaced-text-state",{body:JSON.stringify(state),contentType:"application/json"});expect(state.node,JSON.stringify({heading:state.html.match(/<div data-node-id="heading".*?<\/div>/)?.[0],errors:state.errors})).toBeDefined();await caret(5);await input.press("Backspace");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getNode("heading-p")!.text)).toBe("甲乙");
+  await input.press("ControlOrMeta+z");await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.getNode("heading-p")!.text)).toBe("甲𠮷󠄀乙");const revision=await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().manifest.revision);await caret(2);await input.evaluate(node=>node.dispatchEvent(new InputEvent("beforeinput",{inputType:"insertText",data:"X",bubbles:true,cancelable:true})));await settled(page);expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().manifest.revision)).toBe(revision);await expect(page.getByRole("alert")).toContainText("UTF-16");
 });
 
 test("slide tools create inherited pages and preserve source order, properties and one-step history",async({page})=>{

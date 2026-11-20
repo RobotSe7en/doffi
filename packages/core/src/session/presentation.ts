@@ -24,6 +24,7 @@ export function updatePresentationMetadata(metadata: ContentDocumentMetadata, be
   const p = metadata.presentation;
   if (!p) return;
   p.objects = p.objects.filter(item => after.hasNode(item.nodeId));
+  if (p.nativePreview) p.nativePreview = p.nativePreview.filter(item => item.feature !== "tags" || after.hasNode(item.ownerId));
   const objects = new Set(p.objects.map(o => o.nodeId));
   for (const object of p.objects) if (object.kind === "connector") {
     if (object.startNodeId && !objects.has(object.startNodeId)) { delete object.startNodeId; delete object.startSite; }

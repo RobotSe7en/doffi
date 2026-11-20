@@ -1,3 +1,4 @@
+import { parseDrawingColorTransforms } from "@doffi/core";
 import type { Css } from "./css.js";
 import { attributes, empty } from "./xml.js";
 import { emu, integer, rgba, points, unsupported } from "./drawing-values.js";
@@ -44,6 +45,8 @@ export function colorXml(
     kind = isPlaceholder || (reference && roles.has(reference)) ? "schemeClr" : "srgbClr",
     val = isPlaceholder ? "phClr" : reference && roles.has(reference) ? reference : parsed.rgb;
   let result = "<a:" + kind + attributes({ val }) + ">";
+  const sequence = parseDrawingColorTransforms(css[prefix + "-color-transforms"] ?? "");
+  for (const [name, amount] of sequence) result += empty("a:" + name, { val: amount });
   for (const [name, key, defaultValue] of [
     ["lumMod", "lum-mod", 1],
     ["lumOff", "lum-off", 0],
@@ -51,6 +54,7 @@ export function colorXml(
     ["tint", "tint", 0],
     ["alpha", "alpha", 1],
   ] as const) {
+    if (sequence.length && name !== "alpha") continue;
     const value =
       drawingAmount(css, prefix + "-" + key, defaultValue) * (name === "alpha" ? parsed.alpha : 1);
     if (value < 0 || value > 1) unsupported("A color transform is outside the PPTX profile.");
@@ -123,7 +127,8 @@ export function lineXml(
       algn: css[prefix + "-algn"] ?? "ctr",
     }) +
     ">";
-  if (kind === "none" || (!kind && !color && fallback === "none")) result += "<a:noFill/>";
+  if (kind === "linear") result += fillXml(css, prefix, raw, placeholder);
+  else if (kind === "none" || (!kind && !color && fallback === "none")) result += "<a:noFill/>";
   else
     result +=
       "<a:solidFill>" +

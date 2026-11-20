@@ -3,7 +3,8 @@ import type { ContentDocumentModel } from "@doffi/core";
 import type { DocumentPreview, DocumentPreviewOptions } from "../preview.js";
 import { renderLimits } from "../contracts.js";
 import type { PresentationRenderReport, FontResolution } from "../contracts.js";
-import { resolvePreviewFonts } from "../fonts.js";
+import { collectDocumentFontNames, hasUnloadedWordWebFonts, loadWordWebFonts, resolvePreviewFonts } from "../fonts.js";
+import type { HostedWordFonts } from "../fonts.js";
 import { preparePreviewPackage } from "../preview-package.js";
 import { SourceProjection } from "../projection.js";
 import { copyPreviewSelection } from "../clipboard.js";
@@ -21,26 +22,37 @@ export function mountPresentationPreview(container: HTMLElement, input: ContentD
     if (result.model.snapshot().manifest.kind !== "presentation") { for (const url of result.urls) URL.revokeObjectURL(url); throw new DocumentError("UnsupportedFormat", "A presentation package is required."); }
     return result;
   };
-  let prepared = prepare(input), canvas: PresentationCanvas | undefined, projection: SourceProjection | undefined, fonts: readonly FontResolution[] = [];
+  let prepared = prepare(input), canvas: PresentationCanvas | undefined, projection: SourceProjection | undefined, fonts: readonly FontResolution[] = [], hostedFonts: HostedWordFonts | undefined;
   let disposed = false, loaded = false,composing=false, generation = 0, observer: ResizeObserver | undefined, scheduled: number | undefined;
   let report: PresentationRenderReport = { kind:"presentation",slides:[], documentId: prepared.model.snapshot().manifest.documentId, revision: prepared.model.snapshot().manifest.revision, layout: "pages", pages: [], nodePages: {}, fields: [], fonts: [], diagnostics: [] };
   let resolve: () => void = () => {}, reject: (reason: unknown) => void = () => {};
   const ready = new Promise<void>((r, j) => { resolve = r; reject = j; });
   frame.title = options.title ?? "幻灯片只读预览"; frame.setAttribute("sandbox", "allow-same-origin allow-scripts"); frame.style.cssText = "width:100%;height:480px;display:block;border:0";
-  function measure(): void {
+  function measure(syncHeight = true): void {
     if (disposed || !canvas || composing) return;
+    const document = frame.contentDocument!;
+    const visibility = document.head.querySelector<HTMLStyleElement>("[data-sdk-slide-visibility]");
+    const restoreVisibility = !!visibility && !visibility.disabled;
+    if (restoreVisibility) visibility.disabled = true;
     const snapshot = prepared.model.snapshot();
-    const measured=canvas.measure(),p=snapshot.metadata.presentation!;
+    let measured: ReturnType<PresentationCanvas["measure"]>;
+    try {
+      measured = canvas.measure();
+    } finally {
+      if (restoreVisibility) visibility.disabled = false;
+    }
+    const p = snapshot.metadata.presentation!;
     const slides=measured.pages.flatMap(page=>{const slide=p.slides.find(slide=>slide.slideId===page.pageId);return slide?[Object.freeze({slideId:slide.slideId,rootNodeId:slide.rootNodeId,index:page.index,hidden:slide.hidden??false,rect:page.rect})]:[];});
     report = Object.freeze({ kind:"presentation",slides:Object.freeze(slides), documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision, layout: "pages", ...measured, fields: canvas.fields, fonts });
-    const document = frame.contentDocument!, scrollbar = Math.max(0, frame.clientHeight - document.documentElement.clientHeight);
+    if (!syncHeight) return;
+    const scrollbar = Math.max(0, frame.clientHeight - document.documentElement.clientHeight);
     const height = Math.ceil(Math.max(200, document.body.scrollHeight) + scrollbar) + "px";
     if (frame.style.height !== height) frame.style.height = height;
   }
   function render(): void {
     observer?.disconnect();
     const document = frame.contentDocument!; canvas = composePresentation(document, prepared.model, limits,options.presentationSurfaceId);
-    fonts = resolvePreviewFonts(document, "[data-node-id],[data-office-script],.sdk-ppt-marker"); canvas.finalizeCharts(); canvas.source.reindex();
+    fonts = resolvePreviewFonts(document, "[data-node-id],[data-office-script],.sdk-ppt-marker", hostedFonts); canvas.finalizeCharts(); canvas.source.reindex();
     projection = new SourceProjection(); const raw = new DOMParser().parseFromString(prepared.model.snapshot().html, "text/html").querySelector<HTMLElement>('[data-office-kind="presentation"]')!;
     projection.capture(canvas.source.root, raw); measure();
     const substitutions = fonts.filter(f => f.substituted), missing = [...new Set(fonts.flatMap(f => [...f.missingCharacters]))];
@@ -55,7 +67,9 @@ export function mountPresentationPreview(container: HTMLElement, input: ContentD
   }
   const load = (): void => {
     if (disposed) return;
-    void frame.contentDocument!.fonts.ready.then(() => {
+    void frame.contentDocument!.fonts.ready.then(async () => {
+      if (options.wordWebFonts?.length && !disposed)
+        hostedFonts = await loadWordWebFonts(frame.contentDocument!, options.wordWebFonts, collectDocumentFontNames(prepared.model.snapshot()));
       if (disposed) return;
       render(); loaded = true;
       frame.contentDocument!.addEventListener("compositionstart",()=>{composing=true;},true);
@@ -76,13 +90,36 @@ export function mountPresentationPreview(container: HTMLElement, input: ContentD
       const replace = (value: typeof prepared): void => { prepared = value; document.head.replaceWith(document.importNode(value.document.head, true)); document.body.replaceWith(document.importNode(value.document.body, true)); render(); };
       try { replace(incoming); } catch (error) { for (const url of incoming.urls) URL.revokeObjectURL(url); replace(previous); throw error; }
       for (const url of previous.urls) URL.revokeObjectURL(url);
+      if (options.wordWebFonts?.length) {
+        const requested = collectDocumentFontNames(incoming.model.snapshot());
+        if (hasUnloadedWordWebFonts(document, options.wordWebFonts, requested)) {
+          const expected = generation;
+          void loadWordWebFonts(document, options.wordWebFonts, requested).then(next => {
+            if (disposed || expected !== generation) return;
+            hostedFonts = next;
+            replace(prepared);
+          }).catch(() => {});
+        }
+      }
     },
     async settled() {
       const expected = generation; const current = (): void => { if (disposed || expected !== generation) throw new DocumentError("InvalidOperation", "The pending render was disposed or replaced."); };
       await ready; current(); await frame.contentDocument!.fonts.ready; current();
       await Promise.all([...frame.contentDocument!.images].map(image => image.complete && image.naturalWidth ? Promise.resolve() : image.decode())); current(); measure(); return report;
     },
-    printDocument() { if (disposed || !loaded || !canvas) throw new DocumentError("InvalidOperation", "The presentation preview is not ready for printing."); measure(); return createPrintDocument(frame.contentDocument!, canvas.source.root, report.pages, limits); },
+    printDocument() {
+      if (disposed || !loaded || !canvas) throw new DocumentError("InvalidOperation", "The presentation preview is not ready for printing.");
+      measure(false);
+      const document = frame.contentDocument!;
+      const visibility = document.head.querySelector<HTMLStyleElement>("[data-sdk-slide-visibility]");
+      const restoreVisibility = !!visibility && !visibility.disabled;
+      if (restoreVisibility) visibility.disabled = true;
+      try {
+        return createPrintDocument(document, canvas.source.root, report.pages, limits);
+      } finally {
+        if (restoreVisibility) visibility.disabled = false;
+      }
+    },
     dispose() { if (disposed) return; disposed = true; generation++; observer?.disconnect(); if (scheduled !== undefined) host.defaultView!.cancelAnimationFrame(scheduled); canvas = undefined; projection = undefined; frame.removeEventListener("load", load); frame.remove(); frame.srcdoc = ""; for (const url of prepared.urls) URL.revokeObjectURL(url); resolve(); },
   };
 }

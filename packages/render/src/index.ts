@@ -42,7 +42,7 @@ export type {
   WorkbookReadTransportOptions,
 } from "./workbook/read-transport.js";
 export { transportConfig as resolveWorkbookReadTransportOptions } from "./workbook/read-transport.js";
-export { resolvePreviewFonts } from "./fonts.js";
+export { resolvePreviewFonts, collectDocumentFontNames, loadWordWebFonts } from "./fonts.js";
 export type { FontResolution, WordWebFont } from "./fonts.js";
 export { PreviewSource } from "./source-index.js";
 export { SourceProjection } from "./projection.js";

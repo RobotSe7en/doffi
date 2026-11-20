@@ -131,6 +131,8 @@ export function App() {
   const [exporting, setExporting] = useState<"pdf" | "png" | "docx" | "pptx">();
   const [pptxReport, setPptxReport] = useState<PptxExportReport>();
   const isPresentation = Boolean(snapshot?.metadata.presentation);
+  const pptxNativePreview = snapshot?.metadata.presentation?.nativePreview;
+  const animatedSlides = pptxNativePreview?.filter(item => item.feature === "animation").length ?? 0;
   const [docxReport, setDocxReport] = useState<DocxExportReport>();
   const exportRef = useRef<{
     controller: AbortController;
@@ -217,7 +219,8 @@ export function App() {
           if ("setEditing" in view) await view.setEditing(preferredEditing());
           else await view.ready;
           if (activeDocument.current !== next) return;
-          view.setZoom(1);
+          if ("editor" in view) setZoom(view.editor.zoom());
+          else view.setZoom(1);
           setPageCount(view.layout()?.pages.length ?? 0);
           setHasDocumentSelection(Boolean(view.selection()));
           if ("editor" in view) {
@@ -366,7 +369,7 @@ export function App() {
                 if (activeDocument.current === next) setError(error.message);
               },
             })
-          : openDocument(importPptx(value, { documentId: createOpaqueId() }), {
+          : openDocument(importPptx(value, { documentId: createOpaqueId(), mode: "compatible" }), {
               kind: "presentation",
             });
       }
@@ -1304,6 +1307,12 @@ export function App() {
           />
         </div>
         <div className="workspace-feedback">
+          {!!pptxNativePreview?.length && <p className="document-status" role="note">
+            {animatedSlides > 0 ? `${animatedSlides} 页含动画，当前显示静态内容。 ` : ""}
+            {pptxNativePreview.some(item => item.feature === "theme-defaults") ? "主题的新对象默认样式已保留，但不用于新建对象。 " : ""}
+            {pptxNativePreview.some(item => item.feature === "tags") ? "原生标签也已保留。 " : ""}
+            原生定义保存在文档包中；为避免丢失，当前不能导出 PPTX。
+          </p>}
           {docxDiagnosticsEnabled && <p className="document-status">{docxDiagnosticsNotice}</p>}
           {exporting && (
             <p role="status">
@@ -1472,6 +1481,7 @@ export function App() {
         {model && session && isPresentation && (
           <PresentationWorkbench
             session={session}
+            wordWebFonts={wordWebFonts}
             appearance="workspace"
             annotationTrigger="command"
             className="preview"
@@ -1487,7 +1497,7 @@ export function App() {
                 void view.ready
                   .then(() => {
                     if (presentationRef.current === view) {
-                      view.setZoom(1);
+                      setZoom(view.editor.zoom());
                       setPageCount(view.layout()?.pages.length ?? 0);
                     }
                   })

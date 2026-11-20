@@ -16,4 +16,14 @@ describe("shared Office font script segmentation", () => {
     expect(officeFontSegments('العربية')).toEqual([{ role: 'complex-script', text: 'العربية', from: 0, to: 7 }]);
     expect(officeFontSegments('')).toEqual([]);
   });
+  it("routes East Asian ambiguous punctuation and enclosed numbers to east-asia only in East Asian context", () => {
+    expect(officeFontSegments('“旗帜”—①', 'ascii', false, true)).toEqual([
+      { role: 'east-asia', text: '“旗帜”—①', from: 0, to: 6 },
+    ]);
+    expect(officeFontSegments('“quote”—', 'ascii', false, false)).toEqual([
+      { role: 'h-ansi', text: '“', from: 0, to: 1 },
+      { role: 'ascii', text: 'quote', from: 1, to: 6 },
+      { role: 'h-ansi', text: '”—', from: 6, to: 8 },
+    ]);
+  });
 });

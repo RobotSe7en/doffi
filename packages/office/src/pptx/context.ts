@@ -8,6 +8,7 @@ import { declarations } from "../ooxml/styles.js";
 import type { Css } from "../ooxml/styles.js";
 import type { Html } from "../drawingml/html.js";
 import { rootName } from "../drawingml/values.js";
+import { serializeXml } from "../ooxml/serialize.js";
 export * from "../drawingml/html.js";
 export * from "../drawingml/values.js";
 
@@ -31,7 +32,20 @@ export class Context {
   nestedFiles: number;
   readonly metadata: PresentationMetadata = { size: { unit: "pt", width: 960, height: 540 }, commentFormat: "modern",
     slides: [], themes: [], masters: [], layouts: [], notesMasters: [], stories: [], objects: [], charts: [], dataSets: [], comments: [], hyperlinks: [] };
-  constructor(readonly opc: OpcPackage) { this.nestedBytes = [...opc.files.values()].reduce((n, bytes) => n + bytes.length, 0); this.nestedFiles = opc.files.size; }
+  constructor(readonly opc: OpcPackage, readonly compatiblePreview = false) { this.nestedBytes = [...opc.files.values()].reduce((n, bytes) => n + bytes.length, 0); this.nestedFiles = opc.files.size; }
+  retainPreview(feature: NonNullable<PresentationMetadata["nativePreview"]>[number]["feature"], ownerId: string, source: XmlNode, message: string): void {
+    if (!this.compatiblePreview) unsupported(source, message);
+    const visit = (node: XmlNode): void => {
+      this.count();
+      if ([...node.attrs.keys()].some(key => key.startsWith(R + " ")))
+        unsupported(node, "A preserved PPTX preview fragment cannot have package relationships.");
+      for (const item of node.content) if (typeof item !== "string") visit(item);
+    };
+    visit(source);
+    const xml = serializeXml(source);
+    this.bytes(xml.length * 6);
+    (this.metadata.nativePreview ??= []).push({ feature, ownerId, part: source.part, xml });
+  }
   workbook(path: string): OpcPackage {
     const cached = this.workbooks.get(path);
     if (cached) return cached;
