@@ -1,4 +1,4 @@
-import { captureWorkbookModel, copyWorkbookScalarContext, createWorkbookCalculatedEvaluator, createWorkbookCalculator, DocumentError, openDocument } from "@doffi/core";
+import { captureWorkbookModel, collectWorkbookFilteredRows, copyWorkbookScalarContext, createWorkbookCalculatedEvaluator, createWorkbookCalculator, DocumentError, openDocument } from "@doffi/core";
 import type { WorkbookCalculationResult, WorkbookModel } from "@doffi/core";
 import { writeOpcZipAsync } from "./document-zip.js";
 import { OutputOpc } from "./export/opc.js";
@@ -7,7 +7,6 @@ import { xlsxLimits } from "./xlsx/options.js";
 import type { XlsxExportOptions, XlsxExportProgress, XlsxExportResult } from "./xlsx-export/options.js";
 import { WorkbookCommentsWriter } from "./xlsx-export/comments.js";
 import { WorkbookDrawingsWriter } from "./xlsx-export/drawings.js";
-import { filteredRows } from "./xlsx-export/filter-rows.js";
 import { cellKey, writeSheet } from "./xlsx-export/sheet.js";
 import { WorkbookStylesWriter } from "./xlsx-export/styles.js";
 import { writeWorkbook, writeWorkbookProperties, writeWorkbookTheme } from "./xlsx-export/workbook.js";
@@ -68,7 +67,8 @@ export async function exportXlsx(document: WorkbookModel, options: XlsxExportOpt
   for (const [index, sheet] of workbook.sheets.entries()) {
     await checkpoint({ phase: "worksheet", completed: index, total, sheetId: sheet.sheetId });
     const partName = "xl/worksheets/sheet" + (index + 1) + ".xml";
-    const filter = await filteredRows(supplied ? captured : model, sheet, calculation, calculationContext, checkpoint, signal);
+    const filter = await collectWorkbookFilteredRows(supplied ? captured : model, sheet.sheetId,
+      { ...(calculation ? { calculation } : { context: calculationContext }), yield: checkpoint, ...(signal ? { signal } : {}) });
     if (filter.unresolved)
       losses.push({ kind: "metadata", sheetId: sheet.sheetId, message: "Some native filter visibility could not be computed. The filter criteria are preserved." });
     await writeSheet({ model, sheet, ...(filter.rows ? { filteredRows: filter.rows } : {}), active: sheet.sheetId === workbook.activeSheetId, partName,

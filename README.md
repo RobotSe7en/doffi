@@ -28,7 +28,7 @@
 
 用户可以直接修改文档，也可以选中内容、添加批注，再由宿主智能体返回结构化提案。提案先在隔离候选中展示差异，确认后整批应用，并进入与人工编辑相同的撤销历史。达智是首个宿主；其他应用可通过普通 JavaScript、可选 React 包装或底层 API 接入。
 
-> **当前进度：** 独立 Word 与 PPT 的读取、编辑、原生输出及打包闭环已完成。Excel 已完成声明范围的读取，以及编辑与计算阶段（[PR #31](https://github.com/RobotSe7en/doffi/pull/31)）；SDK 已支持 XLSX 原生导出（[R3-17](docs/iteration-3.md#r3-17-原生-xlsx-导出)），工作簿 PDF/PNG 和输出闭环待 R3-18～20。项目尚未发布 npm 包。
+> **当前进度：** 独立 Word 与 PPT 的读取、编辑、原生输出及打包闭环已完成。Excel 已完成声明范围的读取，以及编辑与计算阶段（[PR #31](https://github.com/RobotSe7en/doffi/pull/31)）；SDK 已支持 XLSX 原生导出（[R3-17](docs/iteration-3.md#r3-17-原生-xlsx-导出)），SDK 已支持工作簿 PDF/PNG（[R3-18](docs/iteration-3.md#r3-18-工作簿打印与-pdfpng)），宿主入口及输出闭环待 R3-19～20。项目尚未发布 npm 包。
 
 ---
 
@@ -57,7 +57,7 @@ SDK 管理文档、选区、批注、候选和历史。宿主提供身份、授�
 | --- | --- | --- | --- |
 | Word / DOCX | 段落、样式、表格、图片、字段、经典批注与文字修订 | 富文本与中文输入、选择批注、提案差异、统一历史 | 可编辑 DOCX、PDF/PNG、JS/React/Node 打包与重开已完成 |
 | PPT / PPTX | 主题、母版、布局、对象、三类基础图表、备注与两类批注 | 对象、文字、表格、定义、图表、批注及页面／全局提案 | 可编辑 PPTX、PDF/PNG、外部编辑与独立打包已完成 |
-| Excel / XLSX | 样式、公式源、智能表、规则、图表、绘图、经典备注与现代线程 | 单元格、结构、排序筛选、表与规则、绘图、批注、提案及增量计算已完成 | SDK 可导出并重开可编辑 XLSX，文档包可保存重开。工作簿 PDF/PNG 和输出闭环待实施 |
+| Excel / XLSX | 样式、公式源、智能表、规则、图表、绘图、经典备注与现代线程 | 单元格、结构、排序筛选、表与规则、绘图、批注、提案及增量计算已完成 | SDK 可导出并重开可编辑 XLSX，可从打印布局生成 PDF/PNG，文档包可保存重开。宿主入口及输出闭环待实施 |
 
 Excel 编辑阶段已通过最终源的日常与容量验收，覆盖一万行、20 万实际单元格、2 万公式及固定资源下的四引擎读取／编辑。范围与证据见[读取验收](docs/workbook-reading-acceptance.md)、[编辑验收矩阵](docs/workbook-editing-acceptance.md)及 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。
 

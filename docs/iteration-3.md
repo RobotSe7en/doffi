@@ -1,6 +1,6 @@
 # 第三轮实施细则：Excel 编辑、自研计算与独立文件闭环
 
-**状态：R3-01～08 读取与 R3-09～16 编辑计算已合并。R3-17 已实现可编辑原生 XLSX 导出。R3-18～20 的 PDF/PNG、宿主入口及独立输出闭环待实施。** 编辑阶段最终日常与容量结果见 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。R1-15 达智接入继续延期，R1-16 的宿主验收仍未完成。
+**状态：R3-01～08 读取与 R3-09～16 编辑计算已合并。R3-17 已实现可编辑原生 XLSX 导出。R3-18 已实现工作簿打印分页与 SDK PDF/PNG 输出。R3-19～20 的宿主入口及独立输出闭环待实施。** 编辑阶段最终日常与容量结果见 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。R1-15 达智接入继续延期，R1-16 的宿主验收仍未完成。
 
 前置工作为工作台改版收尾及路线状态同步。整体路线见[实施计划](implementation-plan.md)，模块方向见[总体架构](architecture.md)，唯一来源见[数据模型](data-model.md)，事务与宿主边界见[交互协议](editing-protocol.md)。
 
@@ -145,7 +145,7 @@ R3-09～16 的实现与组合检查已逐项核对，见[编辑验收矩阵](wor
 | R3-15 | 已实现与复核；验收见 #31 | 两类批注、多区域映射、排序跟随与重定位 | R3-12/14；删除失效、历史恢复及线程语义 |
 | R3-16 | 已实现与复核；验收见 #31 | 工作台、请求、依赖、候选差异与提案 | R3-13/14/15；越界、冲突、迟到结果和影响验证 |
 | R3-17 | 已实现与验证 | 当前源原生 XLSX 导出及报告 | R3-16；SDK、结构检查、Calc 实际编辑重开 |
-| R3-18 | 待实施 | 打印布局与共享 PDF/PNG | R3-17；固定参考、结果状态及输出预算 |
+| R3-18 | 已实现与定向验证 | 打印布局与共享 PDF/PNG | 独立固定字体参考、计算结果状态、输出预算 |
 | R3-19 | 待实施 | Playground、Worker 生命周期、Node/CLI/字节协议 | R3-17/18；完整演示、取消、切换与释放 |
 | R3-20 | 待实施 | 独立打包、外部编辑、性能视觉及旧格式回归 | R3-19；最终 CI、能力矩阵和证据汇总 |
 
@@ -168,6 +168,33 @@ const { bytes, report } = await exportXlsx(workbookSession, { signal });
 原生输出包括智能表、筛选排序、条件格式、数据验证、打印设置、三类图表、图片、基础形状、文本框、经典备注和现代线程。图表引用的缓存随当前数据生成，字面量向量作为源保留。多区域批注定位到首个范围的起始单元格，正文附完整范围说明。同格冲突与原生表示损失写入导出报告。
 
 `pnpm check:xlsx-export` 校验独立来源与 Calc 生产者语料的 SDK 导出及重开、官方 Transitional XSD、OPC 关系和选定的现代批注结构。固定 LibreOffice 25.8.1.1 对导出文件实际修改单元格值、公式、智能表范围、图表标题和备注，再由 SDK 重开验证。日常模式使用 30 个小样例，完整模式还包括两个一万行、20 万实际单元格、2 万公式的来源。输出阶段最终审查、完整 CI 和容量合并门槛随 R3-20 完成，Excel 桌面版和 WPS 实机输出继续待验证。
+
+## R3-18 工作簿打印与 PDF/PNG
+
+使用 `@doffi/node` 的受管理转换器导出已打开的工作簿或当前编辑会话。PDF 包含整个打印作业；PNG 以零基序号选择其中一页。两者返回同一份修订绑定的分页报告，包含纸张尺寸、工作表、页码、区域、缩放、字体诊断和公式状态。
+
+```ts
+import { createDocumentConverter } from "@doffi/node";
+
+const converter = createDocumentConverter();
+try {
+  const pdf = await converter.renderWorkbookPdf(workbook, {
+    sheets: [{ sheetId: "sheet-1" }],
+    fileName: "预算.xlsx",
+  });
+  const png = await converter.renderWorkbookPage(workbook, { pageIndex: 0, scale: 2 });
+} finally {
+  await converter.close();
+}
+```
+
+默认依工作簿顺序打印可见表，优先使用保存的打印区域。宿主可为各表传入 `areas`，也可用 `sheets` 指定顺序。无保存区域时从实际单元格、合并和绘图范围推导边界。已设置的纸张、方向、边距、页序、缩放、标题行列、页眉页脚及打印网格线参与布局；纸张未指定时使用 Letter。手动分页横跨对应的工作表轴。适配页数模式忽略手动分页，缩放最多为 100%。[Excel 缩放说明](https://support.microsoft.com/en-au/excel/scale-a-worksheet) · [Office 分页符实现说明](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/77730f13-7af9-42e0-96c7-0b349853617e)
+
+打印复用网格的字体测量、单元格格式、合并、条件格式、图表与绘图，并应用当前筛选。打印页包含独立的纸面坐标，支持按保存设置选择首、奇、偶页眉页脚。文件名和路径字段取自宿主提供的文字；日期和时间使用同一作业的 `context.now`，缺省为作业启动时的 UTC 时间。可设置 `context.locale`。浏览器宿主也可通过 `@doffi/render` 的 `renderWorkbookPrint` 得到同一套纸面和报告，并在用完后调用 `dispose()`。
+
+默认重新计算当前源。打印单元格或其中图表引用的单元格公式无法求值时返回错误；合法的公式错误值可正常输出。显式设置 `formulaValues: "cached"` 使用已保存的导入或有效值，并在每页和报告中标明未重算。缺失或过期的缓存留空。打印页数、单页与累计节点数、累计纸面和图片像素、图片字节及 Node 输出字节均受限。PNG 还受宿主的单张像素预算约束。大区域超限时可选择较小的打印范围。
+
+定向验收使用独立的 `11-print-layout.xlsx` 和固定 LibreOffice 的 [A4 横向 PDF 参考](../examples/xlsx/reference/11-print-layout.pdf)。检查两页纸张尺寸、重复表头、页眉页脚、全部记录，以及 PNG 页尺寸和页眉页脚墨迹边界。该来源的 Calc 参考在第 23 行后按手动分页，SDK 在 Fit To 模式按可用高度自动分页。计算缓存、当前编辑源、图像和文本框、筛选、隐藏工作表及预算负例由同一验收入口验证。字体来源及哈希见 [固定字体清单](../scripts/fixtures/acceptance-fonts.json)。Playground、CLI、字节协议与最终输出阶段验收由 R3-19～20 完成。
 
 ## 验收与资源目标
 

@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
 import type { Browser, BrowserContext } from "playwright-core";
-import { DocumentError, openDocument } from "@doffi/core";
-import type { DocumentErrorCode, ContentDocumentModel } from "@doffi/core";
+import { captureWorkbookModel, DocumentError, openDocument } from "@doffi/core";
+import type { DocumentErrorCode, ContentDocumentModel, DocumentModel, WorkbookModel } from "@doffi/core";
 import { DEFAULT_RENDER_LIMITS, renderLimits } from "@doffi/render/contracts";
-import type { BridgeWebFont, BrowserRenderBridge, BrowserRenderResult, DocumentRenderReport, RenderLimits } from "@doffi/render/contracts";
+import type { BridgeWebFont, BrowserRenderBridge, BrowserRenderResult, DocumentRenderReport, PortableRenderReport, RenderLimits, WorkbookPrintReport, WorkbookPrintSettings } from "@doffi/render/contracts";
 import { conversionEnvironment } from "./environment.js";
 
 /** Host-authorized font asset for Node PDF/PNG rendering. Never supplied by untrusted conversion requests. */
@@ -43,10 +43,12 @@ export interface RenderOptions {
   readonly limits?: Partial<RenderLimits>;
 }
 export interface PageRenderOptions extends RenderOptions { readonly pageIndex?: number; readonly scale?: number }
-export interface RenderedOutput {
+export interface WorkbookRenderOptions extends RenderOptions, WorkbookPrintSettings {}
+export interface WorkbookPageRenderOptions extends PageRenderOptions, WorkbookPrintSettings {}
+export interface RenderedOutput<Report extends PortableRenderReport = DocumentRenderReport> {
   readonly bytes: Uint8Array;
   readonly mimeType: "application/pdf" | "image/png";
-  readonly report: DocumentRenderReport;
+  readonly report: Report;
   readonly engine: { readonly name: "chromium"; readonly version: string };
 }
 export interface DocumentConverter {
@@ -55,10 +57,15 @@ export interface DocumentConverter {
   /** Cancels outstanding jobs and closes every context and the owned browser. */
   close(): Promise<void>;
 }
+export interface WorkbookDocumentConverter extends DocumentConverter {
+  renderWorkbookPdf(model: WorkbookModel, options?: WorkbookRenderOptions): Promise<RenderedOutput<WorkbookPrintReport>>;
+  renderWorkbookPage(model: WorkbookModel, options?: WorkbookPageRenderOptions): Promise<RenderedOutput<WorkbookPrintReport>>;
+}
 export const DEFAULT_CONVERTER_LIMITS: Readonly<Required<Omit<ConverterOptions, "browserExecutable" | "browserChannel" | "limits" | "webFonts">>> = Object.freeze({
   maxConcurrency: 2, timeoutMs: 30_000, maxInputBytes: 64 * 1024 * 1024, maxOutputBytes: 64 * 1024 * 1024, maxPixels: 16 * 1024 * 1024,
 });
 const FONT_ROUTE_PREFIX = "https://fonts.doffi.invalid/";
+const WORKBOOK_RENDER_URL = "https://render.doffi.invalid/workbook";
 function validateWebFonts(entries: readonly NodeWebFont[] | undefined): readonly NodeWebFont[] {
   if (!entries?.length) return [];
   if (entries.length > 256) throw new ConversionError("InvalidRequest", "Configured web fonts exceed the host limit.");
@@ -81,12 +88,12 @@ function abortError(signal: AbortSignal): ConversionError {
   return new ConversionError(signal.reason instanceof Error && signal.reason.name === "TimeoutError" ? "Timeout" : "Cancelled",
     signal.reason instanceof Error && signal.reason.name === "TimeoutError" ? "Document rendering timed out." : "Document rendering was cancelled.");
 }
-function check(result: BrowserRenderResult): DocumentRenderReport {
+function check(result: BrowserRenderResult): PortableRenderReport {
   if (!result.ok) throw new DocumentError(result.error.code, result.error.message, result.error.details); return result.report;
 }
 
 /** Every job owns a fresh browser/context and only authorized package bytes. */
-export function createDocumentConverter(options: ConverterOptions = {}): DocumentConverter {
+export function createDocumentConverter(options: ConverterOptions = {}): WorkbookDocumentConverter {
   const quota = { ...DEFAULT_CONVERTER_LIMITS, ...options }, globalLimits = renderLimits(options.limits ?? DEFAULT_RENDER_LIMITS);
   const hostFonts = validateWebFonts(options.webFonts);
   const bridgeFonts: readonly BridgeWebFont[] | undefined = hostFonts.length
@@ -103,7 +110,7 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
   for (const key of ["maxConcurrency", "timeoutMs", "maxInputBytes", "maxOutputBytes", "maxPixels"] as const) positive(quota[key], key);
   let script: Promise<string> | undefined, closing: Promise<void> | undefined, closed = false, cleanupFailed = false;
   const jobs = new Set<{ controller: AbortController; completion: Promise<unknown> }>();
-  async function render(model: ContentDocumentModel, format: "pdf" | "png", settings: PageRenderOptions = {}): Promise<RenderedOutput> {
+  async function render(model: DocumentModel, format: "pdf" | "png", settings: PageRenderOptions = {}, workbook?: WorkbookPrintSettings): Promise<RenderedOutput<PortableRenderReport>> {
     if (closed) throw new ConversionError("InvalidOperation", "The converter has been closed.");
     if (settings.signal?.aborted) throw abortError(settings.signal);
     if (jobs.size >= quota.maxConcurrency) throw new ConversionError("Busy", "The converter is at its configured concurrency limit.");
@@ -111,13 +118,19 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
     if (timeout > quota.timeoutMs) throw new ConversionError("InvalidRequest", "Requested timeout exceeds the host quota.");
     const limits = renderLimits({ ...globalLimits, ...settings.limits });
     for (const key of Object.keys(globalLimits) as (keyof RenderLimits)[]) if (limits[key] > globalLimits[key]) throw new ConversionError("InvalidRequest", "Requested render limits exceed the host quota.");
-    const files = model.serialize(); let size = 0;
+    const captured = model.kind === "workbook" ? captureWorkbookModel(model) : model;
+    const files = captured.serialize(); let size = 0;
     for (const [path, value] of files) {
       size += new TextEncoder().encode(path).length + value.byteLength;
       if (size > quota.maxInputBytes) throw new ConversionError("ResourceLimitExceeded", "Document exceeds the conversion input byte budget.");
     }
-    const checked = openDocument(files, { kind: model.kind }), metadata = checked.snapshot().metadata;
-    const width = metadata.presentation ? metadata.presentation.size.width : Math.max(metadata.pageSetup.width, ...metadata.sections.map((section) => (section.pageSetup ?? metadata.pageSetup).width));
+    const checked = openDocument(files, { kind: model.kind });
+    let width = 0;
+    if (checked.kind !== "workbook") {
+      const metadata = checked.snapshot().metadata;
+      width = metadata.presentation ? metadata.presentation.size.width : metadata.sections.reduce((maximum, section) =>
+        Math.max(maximum, (section.pageSetup ?? metadata.pageSetup).width), metadata.pageSetup.width);
+    }
     if (width > 20_000) throw new ConversionError("UnsupportedFeature", "Page width exceeds the renderer size limit.");
     const scale = settings.scale ?? 1, pageIndex = settings.pageIndex ?? 0;
     if (!Number.isFinite(scale) || scale < 1 || scale > 4 || !Number.isSafeInteger(pageIndex) || pageIndex < 0) throw new ConversionError("InvalidRequest", "Page index or image scale is invalid.");
@@ -132,7 +145,7 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
     const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
     const onAbort = (): void => { rejectAbort(abortError(signal)); void stopBackend().catch(() => {}); };
     signal.addEventListener("abort", onAbort, { once: true });
-    const operation = (async (): Promise<RenderedOutput> => {
+    const operation = (async (): Promise<RenderedOutput<PortableRenderReport>> => {
       try {
       const current = await chromium.launch({ headless: true, timeout, env: conversionEnvironment(),
         ...(options.browserExecutable ? { executablePath: options.browserExecutable } : {}), ...(options.browserChannel ? { channel: options.browserChannel } : {}),
@@ -145,6 +158,10 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
       await context.route("**/*", async (route) => {
         const url = route.request().url();
         if (url.startsWith("blob:") || url === "about:blank") return route.continue();
+        // Web Crypto in the workbook asset painter requires a secure context.
+        // Serve its empty origin entirely inside this isolated browser job.
+        if (checked.kind === "workbook" && url === WORKBOOK_RENDER_URL && route.request().isNavigationRequest())
+          return route.fulfill({ contentType: "text/html", body: "<!doctype html><meta charset=utf-8><title>Workbook print</title>" });
         if (hostFonts.length && url.startsWith(FONT_ROUTE_PREFIX)) {
           const index = Number(url.slice(FONT_ROUTE_PREFIX.length));
           const font = Number.isSafeInteger(index) && index >= 0 && index < hostFonts.length ? hostFonts[index] : undefined;
@@ -165,12 +182,13 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
         return route.abort("blockedbyclient");
       });
       const page = await context.newPage(); page.setDefaultTimeout(timeout); await page.emulateMedia({ media: "screen" });
+      if (checked.kind === "workbook") await page.goto(WORKBOOK_RENDER_URL);
       script ??= readFile(new URL(import.meta.resolve("@doffi/render/browser-script")), "utf8");
       await page.addScriptTag({ content: await script });
-      const result = await page.evaluate(async ({ entries, bounds, webFonts }) => {
+      const result = await page.evaluate(async ({ entries, bounds, webFonts, workbook }) => {
         const bridge = (globalThis as unknown as { __doffiRender: BrowserRenderBridge }).__doffiRender;
-        return bridge.mount(entries, { layout: "pages", limits: bounds, ...(webFonts ? { webFonts } : {}) });
-      }, { entries: [...files].map(([path, bytes]) => [path, Buffer.from(bytes).toString("base64")] as const), bounds: limits, webFonts: bridgeFonts });
+        return bridge.mount(entries, { layout: "pages", limits: bounds, ...(webFonts ? { webFonts } : {}), ...(workbook ? { workbook } : {}) });
+      }, { entries: [...files].map(([path, bytes]) => [path, Buffer.from(bytes).toString("base64")] as const), bounds: limits, webFonts: bridgeFonts, workbook });
       let report = check(result), bytes: Uint8Array;
       if (format === "pdf") {
         report = check(await page.evaluate(() => (globalThis as unknown as { __doffiRender: BrowserRenderBridge }).__doffiRender.preparePrint()));
@@ -181,6 +199,8 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
         if (clip.width * clip.height * scale * scale > quota.maxPixels) throw new ConversionError("ResourceLimitExceeded", "Page image exceeds the pixel budget.");
         bytes = await page.screenshot({ type: "png", clip, fullPage: true });
       }
+      if (model.kind === "workbook" && captureWorkbookModel(model) !== captured)
+        throw new ConversionError("RevisionConflict", "The workbook changed during print rendering.");
       if (bytes.byteLength > quota.maxOutputBytes) throw new ConversionError("ResourceLimitExceeded", "Rendered output exceeds its byte budget.");
       return { bytes: new Uint8Array(bytes), mimeType: format === "pdf" ? "application/pdf" : "image/png", report, engine: { name: "chromium", version: current.version() } };
       } finally {
@@ -202,8 +222,24 @@ export function createDocumentConverter(options: ConverterOptions = {}): Documen
       signal.removeEventListener("abort", onAbort);
     }
   }
+  async function content(model: ContentDocumentModel, format: "pdf" | "png", settings?: PageRenderOptions): Promise<RenderedOutput> {
+    const { report, ...output } = await render(model, format, settings);
+    if (report.kind === "workbook") throw new ConversionError("UnsupportedFormat", "Use the workbook print entry point.");
+    return { ...output, report };
+  }
+  async function print(model: WorkbookModel, format: "pdf" | "png", input: WorkbookPageRenderOptions = {}): Promise<RenderedOutput<WorkbookPrintReport>> {
+    const { signal, timeoutMs, limits, pageIndex, scale, ...workbook } = input;
+    const settings = { ...(signal === undefined ? {} : { signal }), ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(limits === undefined ? {} : { limits }), ...(pageIndex === undefined ? {} : { pageIndex }), ...(scale === undefined ? {} : { scale }) };
+    const { report, ...output } = await render(model, format, settings, workbook);
+    if (report.kind !== "workbook") throw new ConversionError("UnsupportedFormat", "Workbook printing requires a workbook.");
+    return { ...output, report };
+  }
   return {
-    renderPdf: (model, settings) => render(model, "pdf", settings), renderPage: (model, settings) => render(model, "png", settings),
+    renderPdf: (model, settings) => content(model, "pdf", settings),
+    renderPage: (model, settings) => content(model, "png", settings),
+    renderWorkbookPdf: (model, input) => print(model, "pdf", input),
+    renderWorkbookPage: (model, input) => print(model, "png", input),
     close() {
       closing ??= (async () => {
         closed = true; for (const job of jobs) job.controller.abort();

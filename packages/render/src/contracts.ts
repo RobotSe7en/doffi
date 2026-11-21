@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { DocumentErrorData, PageSetup, Rectangle } from "@doffi/core";
+import type { DeepReadonly, DocumentErrorData, PageSetup, Rectangle, WorkbookRange, WorkbookScalarContext } from "@doffi/core";
 
 /** Font names stay in the source. This report describes only the current preview. */
 export interface FontResolution {
@@ -83,6 +83,36 @@ export interface PresentationRenderReport extends RenderReport {
 }
 export type DocumentRenderReport = WordRenderReport | PresentationRenderReport;
 
+export interface WorkbookPrintSelection {
+  readonly sheetId: string;
+  /** Overrides this sheet's saved print areas when supplied. */
+  readonly areas?: readonly DeepReadonly<WorkbookRange>[];
+}
+export interface WorkbookPrintSettings {
+  /** Defaults to all visible worksheets in workbook order. */
+  readonly sheets?: readonly WorkbookPrintSelection[];
+  readonly formulaValues?: "current" | "cached";
+  readonly context?: WorkbookScalarContext;
+  readonly fileName?: string;
+  readonly filePath?: string;
+  /** Cumulative paper area at 96 DPI before generating pages. */
+  readonly maxPaperPixels?: number;
+}
+export interface WorkbookPrintedPage extends RenderedPage {
+  readonly sheetId: string;
+  readonly areaIndex: number;
+  readonly range: DeepReadonly<WorkbookRange>;
+  readonly scale: number;
+}
+export interface WorkbookPrintReport extends RenderReport {
+  readonly kind: "workbook";
+  readonly layout: "pages";
+  readonly pages: readonly WorkbookPrintedPage[];
+  readonly formulaValues: "current" | "cached";
+  readonly formulaCells: Readonly<{ valid: number; imported: number; stale: number; unavailable: number }>;
+}
+export type PortableRenderReport = DocumentRenderReport | WorkbookPrintReport;
+
 export interface BridgeWebFont {
   readonly family: string;
   readonly aliases: readonly string[];
@@ -98,9 +128,10 @@ export interface RenderOptions {
   readonly layout?: "pages" | "continuous";
   readonly limits?: Partial<RenderLimits>;
   readonly webFonts?: readonly BridgeWebFont[];
+  readonly workbook?: WorkbookPrintSettings;
 }
 export type BrowserRenderResult =
-  | { readonly ok: true; readonly report: DocumentRenderReport }
+  | { readonly ok: true; readonly report: PortableRenderReport }
   | { readonly ok: false; readonly error: DocumentErrorData };
 export interface BrowserRenderBridge {
   mount(

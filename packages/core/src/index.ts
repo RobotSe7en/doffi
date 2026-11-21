@@ -146,8 +146,9 @@ export {
   DEFAULT_WORKBOOK_CALCULATION_LIMITS,
   WORKBOOK_CALCULATION_VERSION,
 } from "./workbook/calculation.js";
-export { createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
+export { createWorkbookCachedEvaluator, createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
 export {
+  collectWorkbookFilteredRows,
   readWorkbookRowVisibility,
   DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS,
 } from "./workbook/row-visibility.js";

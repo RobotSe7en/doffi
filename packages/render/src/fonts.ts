@@ -194,6 +194,7 @@ export function resolvePreviewFonts(
 /** Limit private probes/window diagnostics to their owning surface. A selector
  * in another mounted document must not participate in font substitution. */
 export function resolvePreviewFontsInScope(document: Document, scope: ParentNode, selector: string, probes?: FontProbeCache, hosted?: HostedWordFonts): readonly FontResolution[] {
+  hosted ??= loadedAliases.get(document);
   probes?.watch(document.fonts);
   let canvas: HTMLCanvasElement | undefined, context: CanvasRenderingContext2D | undefined, glyphPhase = false;
   const probe = (): CanvasRenderingContext2D => {

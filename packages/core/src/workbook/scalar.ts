@@ -80,7 +80,7 @@ const unavailable = (reason: WorkbookScalarUnavailable["reason"]): WorkbookScala
  * calculation. It never accepts imported caches as freshly evaluated values,
  * changes source/history, reads a clock or expands an entire sparse axis. */
 export interface ScalarRuntimeHooks {
-  cachedCell?(location: WorkbookReferenceLocation): ScalarResolved | undefined;
+  cachedCell?(location: WorkbookReferenceLocation, cell: SourceCell): ScalarResolved | undefined;
   step?(): void;
   account?(codeUnits: number): void;
   read?(location: WorkbookReferenceLocation): void;
@@ -160,7 +160,7 @@ export function createWorkbookScalarKernel(model: WorkbookModel, input: Partial<
       if (!sources.has(id)) remember(at, sourceModel!.getCell(at.sheetId, at.row, at.column));
       const cell = sources.get(id);
       if (!cell?.formula) { const value = cell?.value ?? scalarBlank; memo.set(id, value); return value; }
-      const evaluated = hooks.cachedCell?.(at);
+      const evaluated = hooks.cachedCell?.(at, cell);
       if (evaluated !== undefined) { if ("type" in evaluated && evaluated.type === "text") account(evaluated.value.length); memo.set(id, evaluated); return evaluated; }
       path.add(id);
       try {

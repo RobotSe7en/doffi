@@ -16,6 +16,8 @@ export type {
   WorkbookLayoutService,
   WorkbookLayoutSourceRequest,
 } from "./workbook/layout-measurement.js";
+export { renderWorkbookPrint } from "./workbook/print.js";
+export type { WorkbookPrintDocument, WorkbookPrintOptions } from "./workbook/print.js";
 export type { WorkbookViewport } from "./workbook/viewport.js";
 export type {
   WorkbookWindowSource,
@@ -53,6 +55,10 @@ export type {
   DocumentRenderReport,
   WordRenderReport,
   PresentationRenderReport,
+  WorkbookPrintReport,
+  WorkbookPrintSettings,
+  WorkbookPrintSelection,
+  WorkbookPrintedPage,
   RenderedSlide,
   LayoutDiagnostic,
   LayoutFieldResult,

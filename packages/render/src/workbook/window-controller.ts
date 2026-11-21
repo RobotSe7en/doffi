@@ -12,7 +12,7 @@ import { worksheetDimensions } from "./dimensions.js";
 import { layoutWorkbookDrawings } from "./drawing-layout.js";
 import type { WorkbookDrawingLayout, WorkbookDrawingLayoutLimits } from "./drawing-layout.js";
 import type { WorkbookSurface } from "./surface.js";
-import type { WorkbookViewport } from "./viewport.js";
+import type { WorkbookViewport, WorkbookViewportLayout } from "./viewport.js";
 import { layoutWorkbookWindow } from "./window-layout.js";
 import type { WorkbookWindowLayout, WorkbookWindowLayoutOptions } from "./window-layout.js";
 import { WorkbookWindowLoader } from "./window-loader.js";
@@ -156,9 +156,38 @@ export class WorkbookWindowController {
     if (this.deferred) { this.deferred = false; this.warm(state, undefined); }
   }
 
+  async measureSheet(sheetId: string, signal: AbortSignal): Promise<WorkbookSheetMetrics> {
+    const existing = this.sheets.get(sheetId);
+    if (existing) return existing;
+    const seed = this.measurements.get(sheetId); this.measurements.delete(sheetId);
+    const normal = measureWorkbookColumnFont(this.surface.source, this.snapshot.metadata.workbook, sheetId);
+    const state = this.surface.fontState?.();
+    const reuse = seed && state?.ready && state.epoch === seed.previous.fontEpoch && state.identity === seed.previous.fontSet
+      && normal.maximumDigitWidthPx === seed.previous.normal.maximumDigitWidthPx && normal.spaceWidthPx === seed.previous.normal.spaceWidthPx
+      ? { previous: seed.previous, rows: seed.rows, guard: () => {
+        const current = this.surface.fontState?.(); return !!current?.ready && current.epoch === state.epoch && current.identity === state.identity;
+      } } : undefined;
+    const measured = await measureWorkbookAutoRows(this.surface, this.providers.cells, sheetId, normal, this.formatter, signal, this.options.autoRows,
+      this.providers.rules ? { source: this.providers.rules, limits: this.ruleLimits } : undefined, reuse);
+    if (signal.aborted || this.disposed) throw new DocumentError("OperationCancelled", "Workbook measurement was cancelled.");
+    const metrics = { normal, ...measured, ...(state ? { fontEpoch: state.epoch, fontSet: state.identity } : {}) };
+    this.sheets.set(sheetId, metrics);
+    return metrics;
+  }
+
+  /** Transfer a detached page's drawing/image lease to the print job. */
+  takePrintWindow(): { readonly state: WorkbookRenderedWindow; readonly assets: WorkbookDrawingLayout["assets"]; dispose(): void } {
+    const active = this.active;
+    if (!active || !this.deferred || active.decoration)
+      throw new DocumentError("InvalidOperation", "A detached workbook print window is required.");
+    this.active = undefined;
+    const { state, drawings: { assets, dispose } } = active, element = state.element;
+    return { state, assets, dispose() { dispose(); element.replaceChildren(); } };
+  }
+
   /** False means superseded/disposed; genuine failures reject. A newer request
    * also settles an older request whose provider ignores its AbortSignal. */
-  async render(sheetId: string, input: WorkbookViewport): Promise<boolean> {
+  async render(sheetId: string, input: WorkbookViewport, print?: { readonly layout: WorkbookViewportLayout; readonly gridLines: boolean; readonly dimensions: WorkbookSheetMetrics["dimensions"] }): Promise<boolean> {
     if (this.disposed) throw new DocumentError("InvalidOperation", "This workbook window controller has been disposed.");
     const viewport = Object.freeze({ widthPt: input.widthPt, heightPt: input.heightPt, scrollLeftPt: input.scrollLeftPt, scrollTopPt: input.scrollTopPt });
     if (![viewport.widthPt, viewport.heightPt, viewport.scrollLeftPt, viewport.scrollTopPt].every(Number.isFinite)
@@ -176,23 +205,10 @@ export class WorkbookWindowController {
     let drawings: WorkbookDrawingLayout | undefined;
     let decoration: WorkbookWindowDecoration | undefined;
     try {
-      let metrics = this.sheets.get(sheetId);
-      if (!metrics) {
-        const seed = this.measurements.get(sheetId); this.measurements.delete(sheetId);
-        const normal = measureWorkbookColumnFont(this.surface.source, this.snapshot.metadata.workbook, sheetId);
-        const state = this.surface.fontState?.();
-        const reuse = seed && state?.ready && state.epoch === seed.previous.fontEpoch && state.identity === seed.previous.fontSet
-          && normal.maximumDigitWidthPx === seed.previous.normal.maximumDigitWidthPx && normal.spaceWidthPx === seed.previous.normal.spaceWidthPx
-          ? { previous: seed.previous, rows: seed.rows, guard: () => {
-            const current = this.surface.fontState?.(); return !!current?.ready && current.epoch === state.epoch && current.identity === state.identity;
-          } } : undefined;
-        const measured = await Promise.race([measureWorkbookAutoRows(this.surface, this.providers.cells, sheetId, normal, this.formatter, abort.signal, this.options.autoRows,
-          this.providers.rules ? { source: this.providers.rules, limits: this.ruleLimits } : undefined, reuse), cancelled]);
-        if (measured === false || !current()) return false;
-        metrics = { normal, ...measured, ...(state ? { fontEpoch: state.epoch, fontSet: state.identity } : {}) }; this.sheets.set(sheetId, metrics);
-      }
-      const { normal, dimensions } = metrics;
-      if (!await Promise.race([loader.load(sheetId, dimensions, viewport), cancelled]) || !current()) return false;
+      const metrics = await Promise.race([this.measureSheet(sheetId, abort.signal), cancelled]);
+      if (metrics === false || !current()) return false;
+      const { normal } = metrics, dimensions = print?.dimensions ?? metrics.dimensions;
+      if (!await Promise.race([loader.load(sheetId, dimensions, viewport, print?.layout), cancelled]) || !current()) return false;
       const frame = loader.frame!;
       let rules: WorkbookRuleReadResponse | undefined;
       if (sheet.conditionalRules?.length || sheet.dataValidations?.length || this.providers.rules?.currentValues) {
@@ -203,10 +219,10 @@ export class WorkbookWindowController {
         if (response === false || !current()) return false;
         rules = checkedWorkbookRules(response, request, this.snapshot);
       }
-      const annotations = projectWorkbookAnnotations(this.snapshot, frame, dimensions, this.options.annotations);
+      const annotations = print ? { visible: [], recovery: [] } : projectWorkbookAnnotations(this.snapshot, frame, dimensions, this.options.annotations);
       const prepared = this.takePreparedGrid(frame);
       const cells = prepared ?? layoutWorkbookWindow(this.surface, this.snapshot, frame, dimensions, this.formatter,
-        { ...this.options.cells, normalSpaceWidthPx: normal.spaceWidthPx, maxNodes: Math.min(this.maxNodes, this.options.cells?.maxNodes ?? this.maxNodes),
+        { ...this.options.cells, ...(print ? { printGridLines: print.gridLines } : {}), normalSpaceWidthPx: normal.spaceWidthPx, maxNodes: Math.min(this.maxNodes, this.options.cells?.maxNodes ?? this.maxNodes),
           maxCellFragments: Math.min(this.options.read?.maxCells ?? 5000, this.options.cells?.maxCellFragments ?? this.options.read?.maxCells ?? 5000) }, rules,
         this.classStyles && !sheet.tables?.length && !sheet.conditionalRules?.length ? this.textCache : undefined, this.textCache.probes);
       candidateCells = cells;
@@ -214,7 +230,7 @@ export class WorkbookWindowController {
       while (walker.nextNode()) if (++nodes >= this.maxNodes) throw new DocumentError("ResourceLimitExceeded", "The combined workbook window exceeds its node budget.");
       if (nodes >= this.maxNodes) throw new DocumentError("ResourceLimitExceeded", "The combined workbook window has no remaining object-layer budget.");
       drawings = await layoutWorkbookDrawings(this.surface, this.snapshot, frame, dimensions, this.content, this.providers.assets, this.providers.charts,
-        this.formatter, abort.signal, { ...this.options.drawings, maxNodes: Math.min(this.maxNodes - nodes, this.options.drawings?.maxNodes ?? this.maxNodes) });
+        this.formatter, abort.signal, { ...this.options.drawings, maxNodes: Math.min(this.maxNodes - nodes, this.options.drawings?.maxNodes ?? this.maxNodes) }, !print);
       if (!current()) return false;
       nodes += drawings.nodes; cells.element.append(drawings.element);
       const base: WorkbookRenderedWindow = Object.freeze({ frame, element: cells.element, nodes, dimensions, cells: cells.cells, objects: drawings.objects, notes: drawings.notes, annotations,
@@ -233,8 +249,10 @@ export class WorkbookWindowController {
         cells.element.style.removeProperty("visibility"); cells.element.style.removeProperty("pointer-events"); cells.element.removeAttribute("aria-hidden");
       } else if (!this.deferred) this.surface.view.replaceChildren(cells.element);
       candidateCells = undefined;
-      this.surface.frame.style.setProperty("width", viewport.widthPt + "pt", "important");
-      this.surface.frame.style.setProperty("height", viewport.heightPt + "pt", "important");
+      if (!print) {
+        this.surface.frame.style.setProperty("width", viewport.widthPt + "pt", "important");
+        this.surface.frame.style.setProperty("height", viewport.heightPt + "pt", "important");
+      }
       if (!this.deferred) { this.surface.activate?.(); this.surface.frame.style.setProperty("visibility", "visible", "important"); }
       this.active = { state, drawings, ...(decoration ? { decoration } : {}) }; drawings = undefined; decoration = undefined;
       previous?.decoration?.dispose(); previous?.drawings.dispose(); previous?.state.element.replaceChildren();

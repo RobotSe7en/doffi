@@ -1,5 +1,5 @@
 import { captureWorkbookModel, readWorkbookRules } from "@doffi/core";
-import type { WorkbookCalculationResult, WorkbookModel, WorkbookRuleIssue, WorkbookRuleReadRequest, WorkbookRuleReadResponse, WorkbookSnapshot } from "@doffi/core";
+import type { WorkbookCalculationResult, WorkbookModel, WorkbookRuleIssue, WorkbookRuleReadRequest, WorkbookRuleReadResponse, WorkbookScalarContext, WorkbookSnapshot } from "@doffi/core";
 
 export interface WorkbookRuleDiagnostic {
   readonly code: "rule-current-value-unavailable" | "conditional-rule-unavailable" | "conditional-formula-error" | "validation-unavailable" | "validation-invalid";
@@ -28,9 +28,9 @@ export interface WorkbookRuleSource {
 
 /** The host adapter supplies event-loop checkpoints. Core owns neither timers
  * nor the host's Worker lifetime, and reads remain bound to one revision. */
-export function modelRuleSource(model: WorkbookModel, calculation?: WorkbookCalculationResult): WorkbookRuleSource {
+export function modelRuleSource(model: WorkbookModel, calculation?: WorkbookCalculationResult, cachedValues?: WorkbookScalarContext): WorkbookRuleSource {
   model = captureWorkbookModel(model);
-  return Object.freeze({ snapshot: model.snapshot(), ...(calculation === undefined ? {} : { currentValues: true }), async read(request: WorkbookRuleReadRequest, signal: AbortSignal) {
+  return Object.freeze({ snapshot: model.snapshot(), ...(calculation !== undefined || cachedValues !== undefined ? { currentValues: true } : {}), async read(request: WorkbookRuleReadRequest, signal: AbortSignal) {
     // Retiring each task's ports prevents a repeatedly refilled queue from
     // starving cancellation traffic on another port. Port tasks also avoid
     // browser nesting delays, and no query retains another query's queue.
@@ -38,6 +38,6 @@ export function modelRuleSource(model: WorkbookModel, calculation?: WorkbookCalc
       const channel = new MessageChannel();
       channel.port1.onmessage = () => { channel.port1.close(); channel.port2.close(); resolve(); };
       channel.port2.postMessage(0);
-    }), ...(calculation === undefined ? {} : { calculation }) });
+    }), ...(calculation === undefined ? {} : { calculation }), ...(cachedValues === undefined ? {} : { cachedValues }) });
   } });
 }

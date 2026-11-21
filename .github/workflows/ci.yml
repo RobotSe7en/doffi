@@ -94,6 +94,11 @@ jobs:
       - run: node scripts/install-legacy-chromium.mjs
         if: matrix.browser == 'legacy-chromium'
       - run: node scripts/ci-browser.mjs --browser ${{ matrix.browser }} --suite ${{ matrix.suite }} --mode daily
+      - name: Check worksheet PDF and PNG with pinned fonts
+        if: matrix.browser == 'chromium' && matrix.suite == 'workbook'
+        run: |
+          node scripts/install-acceptance-fonts.mjs --system-fonts
+          FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" node scripts/playwright.mjs test tests/browser/workbook-print.spec.ts --project=chromium --output=.cache/ci-browser/chromium/workbook/print
       - uses: actions/upload-artifact@v4
         if: always()
         with:

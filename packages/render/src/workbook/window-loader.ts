@@ -45,12 +45,12 @@ export class WorkbookWindowLoader {
     this.sheets = new Map(this.snapshot.metadata.workbook.sheets.map(sheet => [sheet.sheetId, { sheet, merges: new WorkbookMergeIndex(sheet.merges) }]));
   }
   get frame(): WorkbookWindowFrame | undefined { return this.accepted; }
-  async load(sheetId: string, dimensions: { readonly rows: AxisDimensions; readonly columns: AxisDimensions }, viewport: WorkbookViewport): Promise<boolean> {
+  async load(sheetId: string, dimensions: { readonly rows: AxisDimensions; readonly columns: AxisDimensions }, viewport: WorkbookViewport, printLayout?: WorkbookViewportLayout): Promise<boolean> {
     if (this.disposed) throw new DocumentError("InvalidOperation", "This workbook window loader has been disposed.");
     this.controller?.abort(); const controller = new AbortController(); this.controller = controller;
     const entry = this.sheets.get(sheetId);
     if (!entry) throw new DocumentError("InvalidOperation", "The requested worksheet is not part of this workbook source.");
-    const layout = workbookViewport(dimensions, entry.sheet.frozen, viewport, this.limits.maxCells);
+    const layout = printLayout ?? workbookViewport(dimensions, entry.sheet.frozen, viewport, this.limits.maxCells);
     const projections = projectWorkbookCells(dimensions, layout, entry.merges, this.limits.maxCells);
     const skewColumns = workbookSkewColumns(this.snapshot, sheetId, layout, dimensions, this.skewCoefficient, this.maxSourceCells);
     const appearance = workbookAppearanceCoordinates(dimensions, layout, projections, entry.merges, this.maxSourceCells, new Map(skewColumns.map(item => [item.pane, item.columns])));

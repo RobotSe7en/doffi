@@ -1,5 +1,5 @@
-import { captureWorkbookModel, createWorkbookCalculatedEvaluator, createWorkbookScalarEvaluator, DocumentError } from "@doffi/core";
-import type { DeepReadonly, WorkbookCalculationResult, WorkbookChart, WorkbookChartLiteral, WorkbookChartVector, WorkbookFormulaSource, WorkbookModel, WorkbookReferenceArea, WorkbookReferenceResult, WorkbookScalarEvaluator, WorkbookScalarResult, WorkbookScalarUnavailable, WorkbookSheet, WorkbookSnapshot, WorkbookValue } from "@doffi/core";
+import { captureWorkbookModel, createWorkbookCachedEvaluator, createWorkbookCalculatedEvaluator, createWorkbookScalarEvaluator, DocumentError } from "@doffi/core";
+import type { DeepReadonly, WorkbookCalculationResult, WorkbookChart, WorkbookChartLiteral, WorkbookChartVector, WorkbookFormulaSource, WorkbookModel, WorkbookReferenceArea, WorkbookReferenceResult, WorkbookScalarContext, WorkbookScalarEvaluator, WorkbookScalarResult, WorkbookScalarUnavailable, WorkbookSheet, WorkbookSnapshot, WorkbookValue } from "@doffi/core";
 import { workbookCellFormat } from "./cell-format.js";
 
 export interface WorkbookChartReadLimits {
@@ -68,7 +68,7 @@ function references(chart: DeepReadonly<WorkbookChart>, add: (slot: WorkbookChar
  * admit the entire batch before its first cell read. Imported chart caches stay
  * in the snapshot; they never replace unresolved references or current cells.
  * The response is structured-cloneable for a host-owned Worker transport. */
-export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCalculationResult): WorkbookChartSource {
+export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCalculationResult, cachedValues?: WorkbookScalarContext, filteredRows?: ReadonlyMap<string, ReadonlySet<number>>): WorkbookChartSource {
   model = captureWorkbookModel(model);
   const snapshot = model.snapshot(), workbook = snapshot.metadata.workbook;
   const charts = new Map((workbook.charts ?? []).map(chart => [chart.chartId, chart]));
@@ -134,7 +134,8 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
       if (cached) return cached;
       if (steps >= budget.maxFormulaSteps) throw new DocumentError("ResourceLimitExceeded", "Chart formulas exceed their cumulative step budget.");
       const evaluatorLimits = { maxSteps: budget.maxFormulaSteps, maxCells: budget.maxFormulaCells, maxCodeUnits: budget.maxCodeUnits, maxWindowCells: 256 };
-      evaluator ??= calculation === undefined ? createWorkbookScalarEvaluator(model, evaluatorLimits) : createWorkbookCalculatedEvaluator(model, calculation, evaluatorLimits);
+      evaluator ??= calculation !== undefined ? createWorkbookCalculatedEvaluator(model, calculation, evaluatorLimits)
+        : cachedValues !== undefined ? createWorkbookCachedEvaluator(model, evaluatorLimits, cachedValues) : createWorkbookScalarEvaluator(model, evaluatorLimits);
       const result = evaluator.cell({ sheetId, row, column }, { signal, maxSteps: budget.maxFormulaSteps - steps, maxCodeUnits: budget.maxCodeUnits - units });
       account(result.codeUnits);
       steps += result.steps; readCells += result.readCells;
@@ -164,8 +165,8 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
                 const issue = result?.kind === "unavailable" ? Object.freeze({ reason: result.reason, ...(result.functionName ? { functionName: result.functionName } : {}) }) : undefined;
                 const numberFormatId = workbookCellFormat(sheet, { row: r, column: c }, cell).numberFormatId;
                 account((value.type === "text" || value.type === "error" ? value.value.length : 0) + (numberFormatId?.length ?? 0) + (issue?.reason.length ?? 0) + (issue?.functionName?.length ?? 0));
-                cells.push(Object.freeze({ row: r, column: c, value, state: result ? result.kind === "value" ? "valid" : "unavailable" : "constant", ...(issue ? { issue } : {}),
-                  ...(numberFormatId === undefined ? {} : { numberFormatId }), rowHidden: hidden(sheet.rowDimensions, r, sheet.defaultRowsHidden), columnHidden: hidden(sheet.columnDimensions, c) }));
+                cells.push(Object.freeze({ row: r, column: c, value, state: result ? result.kind === "value" ? cachedValues ? cell!.formula!.cacheState : "valid" : "unavailable" : "constant", ...(issue ? { issue } : {}),
+                  ...(numberFormatId === undefined ? {} : { numberFormatId }), rowHidden: filteredRows?.get(range.sheetId)?.has(r) || hidden(sheet.rowDimensions, r, sheet.defaultRowsHidden), columnHidden: hidden(sheet.columnDimensions, c) }));
                 if (performance.now() - checkpoint >= 8) { await new Promise<void>(resolve => setTimeout(resolve, 0)); checkpoint = performance.now(); cancelled(signal); }
               }
               visited += rows * columns;
