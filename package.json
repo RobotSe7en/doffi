@@ -27,6 +27,7 @@
     "fixtures:pptx": "python3 scripts/generate-pptx-fixtures.py",
     "fixtures:xlsx": "python3 scripts/generate-xlsx-fixtures.py",
     "check:xlsx-fixtures": "python3 scripts/check-xlsx-fixtures.py",
+    "check:xlsx-export": "node scripts/workbook-native.mjs scripts/check-workbook-xlsx-export.py",
     "check:xlsx-reference": "python3 scripts/xlsx-reference.py",
     "record:xlsx-reference": "python3 scripts/xlsx-reference.py --record",
     "check:pptx-fixtures": "python3 scripts/check-pptx-fixtures.py",

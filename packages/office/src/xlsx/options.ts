@@ -33,7 +33,7 @@ function limits<T extends object>(defaults: T, input: Partial<T> | undefined): T
     throw new DocumentError("InvalidOperation", "XLSX limits must be positive safe integers with supported names.");
   return Object.freeze({ ...defaults, ...input });
 }
-export function xlsxLimits(options: XlsxReadOptions): { source: DocumentReadLimits; workbook: WorkbookReadLimits; native: XlsxNativeLimits; xml: DocumentReadLimits } {
+export function xlsxLimits(options: Pick<XlsxReadOptions, "limits" | "workbookLimits" | "nativeLimits">): { source: DocumentReadLimits; workbook: WorkbookReadLimits; native: XlsxNativeLimits; xml: DocumentReadLimits } {
   const source = limits(DEFAULT_DOCUMENT_READ_LIMITS, options.limits), workbook = limits(DEFAULT_WORKBOOK_READ_LIMITS, options.workbookLimits), native = limits(DEFAULT_XLSX_NATIVE_LIMITS, options.nativeLimits);
   return { source, workbook, native, xml: { ...source, maxFiles: native.maxFiles, maxPackageBytes: native.maxPackageBytes, maxFileBytes: native.maxPartBytes, maxNodes: native.maxXmlNodes, maxDepth: native.maxXmlDepth } };
 }

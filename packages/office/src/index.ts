@@ -21,3 +21,5 @@ export type {
   PptxAnnotationLoss,
   UnexportedPptxAnnotation,
 } from "./pptx-export.js";
+export { exportXlsx } from "./xlsx-export.js";
+export type { XlsxExportOptions, XlsxExportProgress, XlsxExportReport, XlsxExportResult, XlsxExportLoss } from "./xlsx-export.js";

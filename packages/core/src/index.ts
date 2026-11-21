@@ -130,6 +130,7 @@ export type {
 } from "./workbook/reference.js";
 export { createWorkbookScalarEvaluator, copyWorkbookScalarContext } from "./workbook/scalar.js";
 export { captureWorkbookModel } from "./workbook/source.js";
+export { iterateWorkbookRows } from "./workbook/rows.js";
 export type {
   WorkbookScalarEvaluator,
   WorkbookScalarResult,
