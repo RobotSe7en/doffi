@@ -55,6 +55,8 @@ export { DEFAULT_WORKBOOK_READ_LIMITS } from "./workbook/model.js";
 export { resolveWorkbookCommentMention } from "./workbook/comment-mentions.js";
 export type { NumberDisplayPart as WorkbookNumberDisplayPart } from "./workbook/format-numeric.js";
 export { createWorkbookNumberFormatter } from "./workbook/number-formatter.js";
+export { workbookBuiltinNumberFormat } from "./workbook/builtin-number-format.js";
+export { resolveWorkbookDisplayLocale } from "./workbook/display-locale.js";
 export { AxisDimensions as WorkbookAxisDimensions } from "./workbook/axis-dimensions.js";
 export { WorkbookRegionIndex } from "./workbook/region-index.js";
 export type {

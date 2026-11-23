@@ -57,10 +57,10 @@ export async function exportXlsx(document: WorkbookModel, options: XlsxExportOpt
   }
   await checkpoint({ phase: "calculate", completed: 1, total: 1 });
   const cells = new Map(calculation?.cells.map(cell => [cellKey(cell.sheetId, cell.row, cell.column), cell]));
-  const opc = new OutputOpc(new XmlParts(limits.xml)), styles = new WorkbookStylesWriter(snapshot, limits.source);
+  const losses: XlsxExportResult["report"]["losses"][number][] = [];
+  const opc = new OutputOpc(new XmlParts(limits.xml)), styles = new WorkbookStylesWriter(snapshot, limits.source, losses);
   const caches = { written: 0, omitted: 0 }, total = workbook.sheets.length;
   const exportedAnnotationIds: string[] = [], unexportedAnnotations: XlsxExportResult["report"]["unexportedAnnotations"][number][] = [];
-  const losses: XlsxExportResult["report"]["losses"][number][] = [];
   const comments = new WorkbookCommentsWriter(model, opc, styles, { exportedAnnotationIds, unexportedAnnotations, losses });
   const drawings = new WorkbookDrawingsWriter(model, opc, styles, limits.source, cells, losses, limits.workbook.maxCells);
   let firstTable = 1;

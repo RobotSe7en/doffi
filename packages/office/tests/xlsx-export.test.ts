@@ -90,7 +90,7 @@ describe("editable native XLSX export", () => {
       const result = await exportXlsx(session);
       expect(result.report.exportedAnnotationIds).toEqual([first!.annotationId]);
       expect(result.report.unexportedAnnotations).toEqual([{ annotationId: second!.annotationId, reason: "representative_collision" }]);
-      expect(result.report.losses).toEqual([expect.objectContaining({ annotationId: first!.annotationId, kind: "anchor" })]);
+      expect(result.report.losses.filter(loss => loss.annotationId)).toEqual([expect.objectContaining({ annotationId: first!.annotationId, kind: "anchor" })]);
       const model = await open(result.bytes), [thread] = model.snapshot().annotations;
       expect(thread?.anchor).toEqual({ kind: "cells", sheetId: "sheet-1", ranges: [{ from: a, to: a }] });
       expect(model.getNode(thread!.bodyNodeId!)?.text).toContain("[doffi ranges: B2:D3, A5:B5]");
@@ -120,10 +120,11 @@ describe("editable native XLSX export", () => {
       commit(session, [
         { op: "setWorkbookCells", sheetId, cells: [
           { row: 0, column: 0, source: { kind: "value", value: { type: "text", value: "Amount" } } },
-          value(1, 0, 4), value(2, 0, 9),
+          value(1, 0, 4), value(2, 0, 9), value(3, 0, 2),
         ] },
+        { op: "updateWorkbookSheet", sheetId, changes: { rowDimensions: [{ from: 3, to: 3, hidden: true }] } },
         { op: "setWorkbookAutoFilter", sheetId, filter: {
-          range: { from: { row: 0, column: 0 }, to: { row: 2, column: 0 } },
+          range: { from: { row: 0, column: 0 }, to: { row: 3, column: 0 } },
           columns: [{ column: 0, hiddenButton: false, showButton: true,
             criterion: { kind: "custom", and: false, tests: [{ operator: "greaterThan", value: "5" }] } }],
         } },
@@ -131,10 +132,75 @@ describe("editable native XLSX export", () => {
       const { bytes } = await exportXlsx(session), xml = part(bytes, "xl/worksheets/sheet1.xml");
       expect(xml).toContain('<row r="2" hidden="1">');
       expect(xml).toContain('<row r="3">');
+      expect(xml).toContain('<row r="4" hidden="1">');
+      expect(xml.match(/<doffi:filterHidden\/>/g)).toHaveLength(1);
       const reopened = await open(bytes);
       expect(reopened.snapshot().metadata.workbook.sheets[0]!.autoFilter?.columns[0]!.criterion)
         .toEqual(session.snapshot().metadata.workbook.sheets[0]!.autoFilter!.columns[0]!.criterion);
+      expect(reopened.snapshot().metadata.workbook.sheets[0]!.rowDimensions).toEqual([{ from: 3, to: 3, hidden: true }]);
       expect(reopened.getCell(sheetId, 1, 0)?.value).toEqual({ type: "number", value: 4 });
+    } finally { session.dispose(); }
+  });
+
+  it("exports current font choices and produces valid native enums for CSS alignment and borders", async () => {
+    const session = createDocumentSession(await open(source("09-classic-notes")));
+    try {
+      const at = { row: 0, column: 0 }, sheetId = "sheet-1";
+      commit(session, [{ op: "formatWorkbookRanges", sheetId, ranges: [{ from: at, to: at }], properties: {
+        "--office-font-ascii": '"Courier New"', "--office-font-h-ansi": '"Courier New"', "--office-font-east-asia": '"SimHei"',
+      } }, { op: "updateWorkbookSheet", sheetId, changes: { defaultColumnWidthUnit: "baseCharacters", defaultColumnWidth: 8.5 } }]);
+      const { bytes, report } = await exportXlsx(session);
+      const model = await open(bytes), snapshot = model.snapshot();
+      expect(snapshot.metadata.workbook.sheets[0]!.defaultColumnWidth).toBe(9);
+      const resolver = new SourceStyleResolver(snapshot.styles.map(sheet => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS);
+      const properties = resolver.specifiedClass(model.getCell(sheetId, 0, 0)!.cssClass!);
+      expect(properties["--office-font-ascii"]).toBe('"Courier New"');
+      expect(report.losses.map(loss => loss.message)).toEqual(expect.arrayContaining([
+        expect.stringContaining("script-specific typefaces"), expect.stringContaining("base column width"),
+      ]));
+    } finally { session.dispose(); }
+    const authored = createDocumentSession(openDocument(createWorkbook({ documentId: "css-appearance" }), { kind: "workbook" }));
+    try {
+      const at = { row: 0, column: 0 }, sheetId = "sheet-1";
+      commit(authored, [{ op: "setWorkbookCells", sheetId, cells: [value(0, 0, 1)] },
+        { op: "formatWorkbookRanges", sheetId, ranges: [{ from: at, to: at }], properties: {
+          "text-align": "start", "border-bottom-style": "groove", "border-bottom-color": "#123456",
+        } }]);
+      const { bytes, report } = await exportXlsx(authored);
+      expect(part(bytes, "xl/styles.xml")).not.toMatch(/horizontal="start"|style="groove"/);
+      expect(report.losses.map(loss => loss.message)).toContainEqual(expect.stringContaining("groove"));
+      const reopened = await open(bytes);
+      const resolver = new SourceStyleResolver(reopened.snapshot().styles.map(sheet => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS);
+      expect(resolver.specifiedClass(reopened.getCell(sheetId, 0, 0)!.cssClass!)["--office-cell-border-bottom-kind"]).toBe("thin");
+    } finally { authored.dispose(); }
+  });
+
+  it("writes differential built-in formats with the required native format code", async () => {
+    const session = createDocumentSession(await open(source("06-rules-validation")));
+    try {
+      const sheet = session.snapshot().metadata.workbook.sheets[0]!;
+      const rule = sheet.conditionalRules!.find(rule => rule.kind === "cellIs")!;
+      commit(session, [{ op: "setWorkbookNumberFormat", format: { formatId: "percentage", builtinId: 10 } },
+        { op: "formatWorkbookConditionalRule", sheetId: sheet.sheetId, ruleId: rule.ruleId, properties: {}, numberFormatId: "percentage" }]);
+      const { bytes } = await exportXlsx(session);
+      const reopened = (await open(bytes)).snapshot().metadata.workbook;
+      const formatId = reopened.sheets[0]!.conditionalRules!.find(rule => rule.kind === "cellIs")!.numberFormatId;
+      expect(reopened.numberFormats.find(format => format.formatId === formatId)).toMatchObject({ code: "0.00%" });
+    } finally { session.dispose(); }
+  });
+
+  it.each([
+    ["vertical", "middle"], ["reading-order", "sideways"],
+    ["text-rotation", "220"], ["fill-kind", "stripe"],
+  ])("rejects a resolved invalid native %s before writing XLSX bytes", async (property, invalid) => {
+    const session = createDocumentSession(openDocument(createWorkbook({ documentId: "invalid-resolved-style" }), { kind: "workbook" }));
+    try {
+      const at = { row: 0, column: 0 }, sheetId = "sheet-1";
+      commit(session, [{ op: "setWorkbookCells", sheetId, cells: [value(0, 0, 1)] },
+        { op: "formatWorkbookRanges", sheetId, ranges: [{ from: at, to: at }], properties: {
+          [`--office-cell-${property}`]: `var(--absent, ${invalid})`,
+        } }]);
+      await expect(exportXlsx(session)).rejects.toMatchObject({ code: "UnsupportedFeature" });
     } finally { session.dispose(); }
   });
 

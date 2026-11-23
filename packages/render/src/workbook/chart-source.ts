@@ -68,7 +68,8 @@ function references(chart: DeepReadonly<WorkbookChart>, add: (slot: WorkbookChar
  * admit the entire batch before its first cell read. Imported chart caches stay
  * in the snapshot; they never replace unresolved references or current cells.
  * The response is structured-cloneable for a host-owned Worker transport. */
-export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCalculationResult, cachedValues?: WorkbookScalarContext, filteredRows?: ReadonlyMap<string, ReadonlySet<number>>): WorkbookChartSource {
+export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCalculationResult, cachedValues?: WorkbookScalarContext,
+  resolveFilteredRows?: (sheetId: string) => Promise<ReadonlySet<number> | undefined>): WorkbookChartSource {
   model = captureWorkbookModel(model);
   const snapshot = model.snapshot(), workbook = snapshot.metadata.workbook;
   const charts = new Map((workbook.charts ?? []).map(chart => [chart.chartId, chart]));
@@ -151,6 +152,7 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
           const areas: { range: DeepReadonly<WorkbookReferenceArea>; cells: readonly WorkbookChartCell[] }[] = [];
           for (const range of resolved.areas) {
             const sheet: DeepReadonly<WorkbookSheet> = sheets.get(range.sheetId)!;
+            const filteredRows = charts.get(chart.chartId)!.visibleCellsOnly !== false ? await resolveFilteredRows?.(range.sheetId) : undefined;
             const cells: WorkbookChartCell[] = [];
             // Wide ranges use one row per query; narrow ranges batch rows while
             // preserving row order. Each query contains at most 256 coordinates.
@@ -166,7 +168,7 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
                 const numberFormatId = workbookCellFormat(sheet, { row: r, column: c }, cell).numberFormatId;
                 account((value.type === "text" || value.type === "error" ? value.value.length : 0) + (numberFormatId?.length ?? 0) + (issue?.reason.length ?? 0) + (issue?.functionName?.length ?? 0));
                 cells.push(Object.freeze({ row: r, column: c, value, state: result ? result.kind === "value" ? cachedValues ? cell!.formula!.cacheState : "valid" : "unavailable" : "constant", ...(issue ? { issue } : {}),
-                  ...(numberFormatId === undefined ? {} : { numberFormatId }), rowHidden: filteredRows?.get(range.sheetId)?.has(r) || hidden(sheet.rowDimensions, r, sheet.defaultRowsHidden), columnHidden: hidden(sheet.columnDimensions, c) }));
+                  ...(numberFormatId === undefined ? {} : { numberFormatId }), rowHidden: filteredRows?.has(r) || hidden(sheet.rowDimensions, r, sheet.defaultRowsHidden), columnHidden: hidden(sheet.columnDimensions, c) }));
                 if (performance.now() - checkpoint >= 8) { await new Promise<void>(resolve => setTimeout(resolve, 0)); checkpoint = performance.now(); cancelled(signal); }
               }
               visited += rows * columns;

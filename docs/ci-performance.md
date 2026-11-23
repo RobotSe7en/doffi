@@ -48,7 +48,7 @@ gh workflow run ci.yml --ref <branch>
 
 阶段 PR 显式加上 `stage-acceptance` 标签，或手动运行 CI 并开启 `stage_acceptance`。最终 HEAD 必须同时通过全部日常检查和 `workbook-scale`，各分片必须实际成功。标签保留期间的新提交不自动重跑；集中修复完成后重新发起一次，旧 HEAD 的结果不能代替。
 
-专项运行完整原生 XLSX 参考、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
+专项运行完整原生 XLSX 参考与输出、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
 
 ```sh
 node scripts/install-acceptance-fonts.mjs --system-fonts

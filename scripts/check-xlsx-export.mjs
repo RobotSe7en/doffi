@@ -19,12 +19,14 @@ if (phase === "export") {
       if (process.env.DOFFI_CI_MODE === "daily" && name.startsWith("15-")) continue;
       const documentId = (producer ? "producer-" : "") + name;
       const document = await open(join(input, name), documentId);
-      const edit = !producer && ["05-native-table.xlsx", "07-three-charts.xlsx", "09-classic-notes.xlsx"].includes(name);
+      const edit = !producer && ["05-native-table.xlsx", "07-three-charts.xlsx", "09-classic-notes.xlsx", "12-multi-sheet-filter.xlsx"].includes(name);
       const session = edit ? createDocumentSession(document) : undefined;
       try {
         if (session) {
           const snapshot = session.snapshot(), sheetId = snapshot.metadata.workbook.sheets[0].sheetId;
-          const operations = name === "09-classic-notes.xlsx"
+          const operations = name === "12-multi-sheet-filter.xlsx"
+            ? [{ op: "updateWorkbookSheet", sheetId: snapshot.metadata.workbook.sheets[1].sheetId, changes: { rowDimensions: [] } }]
+            : name === "09-classic-notes.xlsx"
             ? [{ op: "setWorkbookCommentBody", annotationId: snapshot.annotations[0].annotationId, html: "<p>SDK source change 禰󠄀</p>" }]
             : [{ op: "setWorkbookCells", sheetId, cells: name === "05-native-table.xlsx"
               ? [cell(1, 1, 6), { row: 0, column: 7, source: { kind: "formula", expression: "=B2*2" } }]
@@ -41,6 +43,11 @@ if (phase === "export") {
         if (edit && name === "07-three-charts.xlsx") {
           const chart = output.snapshot().metadata.workbook.charts[0];
           assert(chart.series.some(item => item.values.cache?.points.some(point => point.value === 39)));
+        }
+        if (edit && name === "12-multi-sheet-filter.xlsx") {
+          const sheet = output.snapshot().metadata.workbook.sheets[1];
+          assert.equal(sheet.rowDimensions.some(row => row.hidden), false);
+          assert.deepEqual(sheet.autoFilter, document.snapshot().metadata.workbook.sheets[1].autoFilter);
         }
         if (name.startsWith("15-")) {
           assert.deepEqual(result.report.formulaCaches, { written: 20_000, omitted: 0 });

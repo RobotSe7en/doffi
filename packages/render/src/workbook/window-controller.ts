@@ -230,7 +230,7 @@ export class WorkbookWindowController {
       while (walker.nextNode()) if (++nodes >= this.maxNodes) throw new DocumentError("ResourceLimitExceeded", "The combined workbook window exceeds its node budget.");
       if (nodes >= this.maxNodes) throw new DocumentError("ResourceLimitExceeded", "The combined workbook window has no remaining object-layer budget.");
       drawings = await layoutWorkbookDrawings(this.surface, this.snapshot, frame, dimensions, this.content, this.providers.assets, this.providers.charts,
-        this.formatter, abort.signal, { ...this.options.drawings, maxNodes: Math.min(this.maxNodes - nodes, this.options.drawings?.maxNodes ?? this.maxNodes) }, !print);
+        this.formatter, abort.signal, { ...this.options.drawings, maxNodes: Math.min(this.maxNodes - nodes, this.options.drawings?.maxNodes ?? this.maxNodes) }, !!print);
       if (!current()) return false;
       nodes += drawings.nodes; cells.element.append(drawings.element);
       const base: WorkbookRenderedWindow = Object.freeze({ frame, element: cells.element, nodes, dimensions, cells: cells.cells, objects: drawings.objects, notes: drawings.notes, annotations,

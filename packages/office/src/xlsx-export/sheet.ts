@@ -9,6 +9,7 @@ import type { WorkbookStylesWriter } from "./styles.js";
 import { autoFilter, writeTable } from "./tables.js";
 import { richCellText } from "./text.js";
 import { address, bool, element, formulaText, rangeRef, sheetContentType, sheetNamespaces, textElement, xstring } from "./xml.js";
+import { FILTER_HIDDEN_NAMESPACE } from "../xlsx/row-filter-extension.js";
 
 type Sheet = DeepReadonly<WorkbookSheet>;
 type Scalar = DeepReadonly<WorkbookValue>;
@@ -75,16 +76,22 @@ function sheetHeader(sheet: Sheet, active: boolean, styles: WorkbookStylesWriter
     : sheet.tabColor ? colorTag("tabColor", {}, {}, "--office-tab", sheet.tabColor) : "";
   const properties = tabColor + (sheet.print?.scale.kind === "fit" ? empty("pageSetUpPr", { fitToPage: 1 }) : "");
   const standardWidth = sheet.defaultColumnWidthUnit !== "baseCharacters";
+  const baseWidth = Math.max(1, Math.round(sheet.defaultColumnWidth));
+  if (!standardWidth && baseWidth !== sheet.defaultColumnWidth)
+    styles.reportFormatLoss("A fractional base column width is rounded to a whole character in XLSX.");
   const format = empty("sheetFormatPr", { defaultRowHeight: sheet.defaultRowHeightPt,
     customHeight: bool(sheet.defaultRowHeightCustom), zeroHeight: bool(sheet.defaultRowsHidden),
-    baseColWidth: standardWidth ? undefined : sheet.defaultColumnWidth, defaultColWidth: standardWidth ? sheet.defaultColumnWidth : undefined });
+    baseColWidth: standardWidth ? undefined : baseWidth, defaultColWidth: standardWidth ? sheet.defaultColumnWidth : undefined });
   return (properties || filterMode ? element("sheetPr", properties, { filterMode: filterMode ? 1 : undefined }) : "") + sheetViews(sheet, active) + format;
 }
 
 export async function writeSheet(options: SheetWriteOptions): Promise<void> {
   const { sheet, opc, partName, styles } = options;
   const part = opc.part(partName, sheetContentType("worksheet"));
-  part.add(declaration + "<worksheet" + sheetNamespaces + ">" + sheetHeader(sheet, options.active, styles, !!options.filteredRows?.size));
+  const filtered = !!options.filteredRows?.size;
+  const extensions = filtered ? attributes({ "xmlns:doffi": FILTER_HIDDEN_NAMESPACE }) : "";
+  const filterHiddenRow = element("extLst", element("ext", "<doffi:filterHidden/>", { uri: FILTER_HIDDEN_NAMESPACE }));
+  part.add(declaration + "<worksheet" + sheetNamespaces + extensions + ">" + sheetHeader(sheet, options.active, styles, filtered));
   if (sheet.columnDimensions.length) {
     part.add("<cols>");
     for (const column of sheet.columnDimensions) part.add(empty("col", {
@@ -97,25 +104,26 @@ export async function writeSheet(options: SheetWriteOptions): Promise<void> {
   part.add("<sheetData>");
   const rows = iterateWorkbookRows(options.model, sheet.sheetId);
   let current = rows.next(), index = 0, rowsWritten = 0;
-  const filtered = [...options.filteredRows ?? []].sort((left, right) => left - right)[Symbol.iterator]();
-  let filteredRow = filtered.next();
+  const filteredRows = [...options.filteredRows ?? []].sort((left, right) => left - right)[Symbol.iterator]();
+  let filteredRow = filteredRows.next();
   let dimensionRow = sheet.rowDimensions[0]?.from ?? Infinity;
   while (!current.done || dimensionRow !== Infinity || !filteredRow.done) {
     const row = Math.min(current.done ? Infinity : current.value[0]!.row, dimensionRow, filteredRow.done ? Infinity : filteredRow.value);
     const hiddenByFilter = !filteredRow.done && row === filteredRow.value;
-    if (hiddenByFilter) filteredRow = filtered.next();
+    if (hiddenByFilter) filteredRow = filteredRows.next();
     const dimension = row === dimensionRow ? sheet.rowDimensions[index] : undefined;
     const format = dimension && (dimension.cssClass || dimension.numberFormatId)
       ? styles.cell(dimension.cssClass ?? sheet.defaultCssClass, dimension.numberFormatId ?? sheet.defaultNumberFormatId) : undefined;
     const rowAttributes = attributes({ r: row + 1, ht: dimension?.heightPt,
       customHeight: dimension?.heightPt !== undefined ? 1 : dimension?.autoHeight ? 0 : undefined,
       hidden: hiddenByFilter ? 1 : bool(dimension?.hidden), s: format, customFormat: format === undefined ? undefined : 1 });
+    const solelyFiltered = hiddenByFilter && !(dimension?.hidden ?? sheet.defaultRowsHidden) && dimension?.heightPt !== 0;
     if (!current.done && row === current.value[0]!.row) {
       part.add("<row" + rowAttributes + ">");
       for (const cell of current.value) part.add(cellXml(cell, options));
-      part.add("</row>");
+      part.add((solelyFiltered ? filterHiddenRow : "") + "</row>");
       current = rows.next();
-    } else part.add("<row" + rowAttributes + "/>");
+    } else part.add(solelyFiltered ? "<row" + rowAttributes + ">" + filterHiddenRow + "</row>" : "<row" + rowAttributes + "/>");
     if (dimension) dimensionRow = row < dimension.to ? row + 1 : sheet.rowDimensions[++index]?.from ?? Infinity;
     if (++rowsWritten % 256 === 0) await options.checkpoint();
   }
@@ -128,11 +136,12 @@ export async function writeSheet(options: SheetWriteOptions): Promise<void> {
   }
   for (const rule of sheet.conditionalRules ?? []) part.add(conditionalRule(rule, styles));
   const validations = sheet.dataValidations ?? [];
-  if (validations.length || sheet.disableValidationPrompts) {
+  if (validations.length) {
     part.add("<dataValidations" + attributes({ count: validations.length, disablePrompts: bool(sheet.disableValidationPrompts) }) + ">");
     for (const validation of validations) part.add(dataValidation(validation));
     part.add("</dataValidations>");
-  }
+  } else if (sheet.disableValidationPrompts)
+    styles.reportFormatLoss("XLSX cannot store the worksheet's validation prompt setting without any validation rules.");
   if (sheet.hyperlinks?.length) {
     part.add("<hyperlinks>");
     for (const link of sheet.hyperlinks) part.add(empty("hyperlink", {

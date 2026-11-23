@@ -1,9 +1,10 @@
-import { DocumentError, SourceStyleResolver } from "@doffi/core";
+import { DocumentError, resolveWorkbookDisplayLocale, SourceStyleResolver, workbookBuiltinNumberFormat } from "@doffi/core";
 import type { DeepReadonly, DocumentReadLimits, SourceStyleMap, SourceStyleNode, WorkbookSnapshot, WorkbookStyleApplication, WorkbookTableStyleReference } from "@doffi/core";
 import type { OutputOpc } from "../export/opc.js";
 import { declaration, empty } from "../export/xml.js";
 import { alignment, border, fill, flag, font, pattern } from "./style-values.js";
 import { bool, element, sheetContentType, sheetNamespaces, workbookPart, xstring } from "./xml.js";
+import type { XlsxExportLoss } from "./options.js";
 
 class StylesTable {
   readonly entries: string[] = [];
@@ -45,7 +46,15 @@ export class WorkbookStylesWriter {
   private readonly normalRaw: SourceStyleMap;
   private readonly normalCss: SourceStyleMap;
 
-  constructor(private readonly snapshot: WorkbookSnapshot, limits: DocumentReadLimits) {
+  private readonly reportedFormats = new Set<string>();
+  readonly reportFormatLoss = (message: string): void => {
+    if (!this.reportedFormats.has(message)) {
+      this.reportedFormats.add(message);
+      this.losses.push({ kind: "format", message });
+    }
+  };
+
+  constructor(private readonly snapshot: WorkbookSnapshot, limits: DocumentReadLimits, private readonly losses: XlsxExportLoss[]) {
     this.resolver = new SourceStyleResolver(snapshot.styles.map(style => style.css), limits);
     const { workbook } = snapshot.metadata;
     this.themeScope = { tag: "section", attrs: { class: workbook.themeCssClass ?? "" }, parent: undefined };
@@ -64,7 +73,7 @@ export class WorkbookStylesWriter {
     this.fills.add(pattern("none"));
     this.fills.add(pattern("gray125"));
     this.borders.add("<border/>");
-    this.fonts.add(font(this.normalRaw, this.normalCss, "cell"));
+    this.fonts.add(font(this.normalRaw, this.normalCss, "cell", this.reportFormatLoss));
     this.bindings = new Map(workbook.cellStyles?.bindings.map(binding => [binding.cssClass, binding]) ?? []);
     const named = definitions.map((definition, index) => {
       this.namedIds.set(definition.styleId, index);
@@ -96,10 +105,10 @@ export class WorkbookStylesWriter {
     return /\s/.test(cssClass) ? this.resolver.get(this.projection(cssClass)) : this.resolver.classStyle(cssClass, this.theme);
   }
   private format(raw: SourceStyleMap, css: SourceStyleMap, formatId?: string, parent?: number, apply?: DeepReadonly<WorkbookStyleApplication>): string {
-    return element("xf", alignment(css), {
+    return element("xf", alignment(css, this.reportFormatLoss), {
       numFmtId: this.numberFormats.get(formatId ?? "")?.id ?? 0,
-      fontId: this.fonts.add(font(raw, css, "cell")), fillId: this.fills.add(fill(raw, css) || pattern("none")),
-      borderId: this.borders.add(border(raw, css) || "<border/>"), xfId: parent,
+      fontId: this.fonts.add(font(raw, css, "cell", this.reportFormatLoss)), fillId: this.fills.add(fill(raw, css) || pattern("none")),
+      borderId: this.borders.add(border(raw, css, this.reportFormatLoss) || "<border/>"), xfId: parent,
       quotePrefix: flag(css["--office-cell-quote-prefix"]), ...application(apply),
     });
   }
@@ -123,9 +132,22 @@ export class WorkbookStylesWriter {
     // Differential appearance writes only declarations of the rule. Theme
     // variables participate in resolving values without becoming overrides.
     const css = Object.fromEntries(Object.keys(raw).map(name => [name, computed[name]]).filter(entry => entry[1] !== undefined)) as SourceStyleMap;
-    const format = formatId && this.numberFormats.get(formatId);
-    const fmt = format && format.code !== undefined ? empty("numFmt", { numFmtId: format.id, formatCode: xstring(format.code) }) : "";
-    const index = this.differentials.add(element("dxf", font(raw, css, "differential") + fmt + fill(raw, css) + alignment(css) + border(raw, css)));
+    const format = formatId ? this.numberFormats.get(formatId) : undefined;
+    let fmt = "";
+    if (format) {
+      let code = format.code;
+      if (code === undefined) {
+        try {
+          const documentLocale = this.snapshot.metadata.locale;
+          code = workbookBuiltinNumberFormat(format.id, resolveWorkbookDisplayLocale(documentLocale ? { documentLocale } : {}));
+        } catch (error) {
+          if (!(error instanceof DocumentError) || error.code !== "UnsupportedFeature") throw error;
+          this.reportFormatLoss("XLSX requires a format code for differential built-in number format " + format.id + ". No supported code is available for this workbook locale.");
+        }
+      }
+      if (code !== undefined) fmt = empty("numFmt", { numFmtId: format.id, formatCode: xstring(code) });
+    }
+    const index = this.differentials.add(element("dxf", font(raw, css, "differential", this.reportFormatLoss) + fmt + fill(raw, css) + alignment(css, this.reportFormatLoss) + border(raw, css, this.reportFormatLoss)));
     this.dxfIndices.set(key, index);
     return index;
   }

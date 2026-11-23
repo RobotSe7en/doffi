@@ -85,7 +85,7 @@ async function usedArea(model: WorkbookModel, sheet: Sheet, dimensions: PrintDim
   const index = (axis: PrintDimensions["rows"], point: number): number | undefined =>
     axis.hit(Math.min(axis.extentPt - Math.max(1e-7, axis.extentPt * Number.EPSILON), Math.max(0, point)));
   for (const object of model.snapshot().metadata.workbook.objects ?? []) {
-    if (object.sheetId !== sheet.sheetId) continue;
+    if (object.sheetId !== sheet.sheetId || object.printable === false || model.getNode(object.nodeId)?.attributes["data-office-hidden"] === "true") continue;
     const { x, y, width, height } = workbookDrawingRect(object.anchor, dimensions);
     if (x >= dimensions.columns.extentPt || y >= dimensions.rows.extentPt || x + width <= 0 || y + height <= 0) continue;
     const r = index(dimensions.rows, y), c = index(dimensions.columns, x);
@@ -247,20 +247,27 @@ export async function renderWorkbookPrint(container: HTMLElement, input: Workboo
       }
       await waitForWorkbookRead(Promise.all([document.fonts.ready, surface.document.fonts.ready]), signal);
     }
-    const filtered = new Map<string, ReadonlySet<number>>(), diagnostics: LayoutDiagnostic[] = [];
-    for (const { sheet } of selected) {
-      const result = await collectWorkbookFilteredRows(model, sheet.sheetId, { signal, yield: nextTask,
-        ...(calculation ? { calculation } : { context, cachedValues: true }) });
-      if (result.rows) filtered.set(sheet.sheetId, result.rows);
-      if (result.unresolved) {
-        if (mode === "current") throw new DocumentError("UnsupportedFeature", "A worksheet filter has no current formula result.");
-        diagnostics.push({ code: "NativeFormatting", message: `Worksheet ${sheet.name}: some filtered rows have no saved result.` });
-      }
-    }
+    const filtered = new Map<string, Promise<ReadonlySet<number> | undefined>>(), diagnostics: LayoutDiagnostic[] = [];
+    const rowsHiddenByFilter = (sheetId: string): Promise<ReadonlySet<number> | undefined> => {
+      const saved = filtered.get(sheetId);
+      if (saved) return saved;
+      const pending = collectWorkbookFilteredRows(model, sheetId, { signal, yield: nextTask,
+        ...(calculation ? { calculation } : { context, cachedValues: true }) }).then(result => {
+        if (result.unresolved) {
+          if (mode === "current") throw new DocumentError("UnsupportedFeature", "A worksheet filter has no current formula result.");
+          const sheet = snapshot.metadata.workbook.sheets.find(item => item.sheetId === sheetId)!;
+          diagnostics.push({ code: "NativeFormatting", message: `Worksheet ${sheet.name}: some filtered rows have no saved result.` });
+        }
+        return result.rows;
+      });
+      filtered.set(sheetId, pending);
+      return pending;
+    };
+    for (const { sheet } of selected) await rowsHiddenByFilter(sheet.sheetId);
     check();
     const base = createWorkbookPreviewSource(model, calculation), cached = mode === "cached" ? context : undefined;
     const providers = { ...base, ...(cached ? { rules: modelRuleSource(model, undefined, cached) } : {}),
-      charts: modelChartSource(model, calculation, cached, filtered) };
+      charts: modelChartSource(model, calculation, cached, rowsHiddenByFilter) };
     const cellBudget = Math.min(MAX_PAGE_CELLS, Math.floor(limits.maxPrintNodes / 2) || 1);
     controller = new WorkbookWindowController(surface, providers, formatter,
       { maxNodes: Math.min(limits.maxNodes, limits.maxPrintNodes), readAheadRows: 0, read: { maxCells: cellBudget } }, undefined, { deferPublication: true });
@@ -273,7 +280,7 @@ export async function renderWorkbookPrint(container: HTMLElement, input: Workboo
       for (const { sheet, areas } of selected) {
         check();
         const metrics = await controller.measureSheet(sheet.sheetId, signal);
-        const dimensions = applyFilteredRows(metrics.dimensions, filtered.get(sheet.sheetId));
+        const dimensions = applyFilteredRows(metrics.dimensions, await rowsHiddenByFilter(sheet.sheetId));
         const setup = workbookPaper(sheet.print), sourceAreas = areas?.length ? areas : [await usedArea(model, sheet, dimensions, signal)];
         const { scale, tiles } = planWorkbookPrintSheet(dimensions, sourceAreas, sheet.print, setup, limits.maxPages - plans.length);
         number = sheet.print?.firstPage ?? number;

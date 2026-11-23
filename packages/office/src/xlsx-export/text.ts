@@ -26,7 +26,7 @@ export function richCellText(source: string, plain: string, styles: WorkbookStyl
       const projection = { tag: node.tagName, attrs: Object.fromEntries(node.attrs.map(attr => [attr.name, attr.value])), parent };
       const raw = { ...previous, ...styles.resolver.specified(projection) }, computed = styles.resolver.get(projection);
       const css = Object.fromEntries(Object.keys(raw).map(key => [key, computed[key]]).filter(entry => entry[1] !== undefined));
-      const properties = font(raw, css, "run") || inherited;
+      const properties = font(raw, css, "run", styles.reportFormatLoss) || inherited;
       for (const child of node.childNodes) visit(child, projection, properties, raw);
     }
   };

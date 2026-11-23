@@ -1,6 +1,6 @@
 # 第三轮实施细则：Excel 编辑、自研计算与独立文件闭环
 
-**状态：R3-01～08 读取与 R3-09～16 编辑计算已合并。输出分支已实现 R3-17 可编辑 XLSX、R3-18 打印 PDF/PNG 和 R3-19 Playground、Worker 与 CLI 入口。R3-20 独立打包与阶段验收待完成。** 编辑阶段最终日常与容量结果见 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。R1-15 达智接入继续延期，R1-16 的宿主验收仍未完成。
+**状态：R3-01～08 读取与 R3-09～16 编辑计算已合并。输出分支已实现 R3-17 可编辑 XLSX、R3-18 打印 PDF/PNG、R3-19 Playground、Worker 与 CLI 入口，以及 R3-20 独立打包。输出阶段以最终审查和 CI 为准。** 编辑阶段最终日常与容量结果见 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。R1-15 达智接入继续延期，R1-16 的宿主验收仍未完成。
 
 前置工作为工作台改版收尾及路线状态同步。整体路线见[实施计划](implementation-plan.md)，模块方向见[总体架构](architecture.md)，唯一来源见[数据模型](data-model.md)，事务与宿主边界见[交互协议](editing-protocol.md)。
 
@@ -147,7 +147,7 @@ R3-09～16 的实现与组合检查已逐项核对，见[编辑验收矩阵](wor
 | R3-17 | 已实现与验证 | 当前源原生 XLSX 导出及报告 | R3-16；SDK、结构检查、Calc 实际编辑重开 |
 | R3-18 | 已实现与定向验证 | 打印布局与共享 PDF/PNG | 独立固定字体参考、计算结果状态、输出预算 |
 | R3-19 | 已实现与定向验证 | Playground、Worker 生命周期、Node/CLI/字节协议 | R3-17/18；当前修订导出、取消、切换与释放 |
-| R3-20 | 待实施 | 独立打包、外部编辑、性能视觉及旧格式回归 | R3-19；最终 CI、能力矩阵和证据汇总 |
+| R3-20 | 验收入口已实现 | 独立打包、外部编辑、性能视觉及旧格式回归 | R3-19；[能力矩阵与证据](workbook-output-acceptance.md)，阶段审查与最终 CI |
 
 **R3-08 读取门槛通过前不进入正式工作簿编辑。** 读取验收包含全部已选智能表、规则、图表、绘图及两类批注；少量单元格能打开不能替代门槛。
 
@@ -204,6 +204,10 @@ Playground 的「文件」选项卡可将当前修订保存为可编辑 XLSX 或
 
 Node 字节协议 V1 和 `doffi` CLI 支持从原生 XLSX 或工作簿文档包生成 PDF/PNG。原生输入需要宿主提供 `documentId`，文档包可断言已有身份。打印设置放在 `options.workbook`，包含选表、按零基坐标指定的范围、公式值模式和打印上下文。结果的 `report.kind` 为 `workbook`，并标明当前修订、页范围和公式值状态。参见 [字节协议](pagination-rendering.md#node-pdfpng-和字节协议)。
 
+## R3-20 独立打包与阶段验收
+
+`pnpm check:workbook-closure` 验证工作区外的普通 JavaScript、React、Node 和 `doffi` CLI。日常 Office 运行独立包检查及小样例原生输出，阶段容量补做完整原生输出。固定字体打印比较和既有 Word/PPT 回归继续由独立 CI 作业执行。 [输出能力与证据](workbook-output-acceptance.md)
+
 ## 验收与资源目标
 
 ### 独立样例
@@ -236,7 +240,7 @@ Node 字节协议 V1 和 `doffi` CLI 支持从原生 XLSX 或工作簿文档包�
 
 验证严格契约和同源 Schema、跨块引用及安全输入、公式类型和错误语义、原子事务和映射、真实 IME、三引擎和旧 Chromium/Safari、两类批注、提案作用域、打印、Worker/资源/子进程释放及独立打包。范围限额和性能目标分别验证。
 
-已提供 `fixtures:xlsx`、`check:xlsx-fixtures`、`check:xlsx-reference` 和单独的 `record:xlsx-reference`。编辑阶段已增加 `check:workbook-calculation` 与 `check:workbook-filter-calculation` 的独立原生来源／固定 Calc 复现；两项基础证据不代表 R3-10 完整验收。`check:workbook-function-boundaries` 另保留两种日期系统的 268 项独立预期与固定 Calc 原始观测，包含参数／错误、舍入、最大参数和旧版 UTF-16，六份文件经官方 XSD／OPC；Excel/WPS 实机仍未验证。`check:workbook-copy-sheet` 重做十组整表复制及官方 XSD／OPC，保留表公式和现代线程的生产者差异，安全拒绝的歧义名称组合仍须完成。`check:workbook-performance` 已接入固定资源的实际 Worker 编辑器、含混合响应绘图的大表、全量计算、100 次编辑／完整历史及万行排序／修改取消，`4ee0710` 本机四引擎编辑组成项已通过，记录见[容量证据](evidence/workbook-editing-budget.json)，后续源码的阶段最终验收仍待完成；`check:xlsx-export` 已覆盖原生输出，`check:workbook-closure` 尚未实现。普通检查不改参考基线。
+已提供 `fixtures:xlsx`、`check:xlsx-fixtures`、`check:xlsx-reference` 和单独的 `record:xlsx-reference`。编辑阶段已增加 `check:workbook-calculation` 与 `check:workbook-filter-calculation` 的独立原生来源／固定 Calc 复现；两项基础证据不代表 R3-10 完整验收。`check:workbook-function-boundaries` 另保留两种日期系统的 268 项独立预期与固定 Calc 原始观测，包含参数／错误、舍入、最大参数和旧版 UTF-16，六份文件经官方 XSD／OPC；Excel/WPS 实机仍未验证。`check:workbook-copy-sheet` 重做十组整表复制及官方 XSD／OPC，保留表公式和现代线程的生产者差异，安全拒绝的歧义名称组合仍须完成。`check:workbook-performance` 已接入固定资源的实际 Worker 编辑器、含混合响应绘图的大表、全量计算、100 次编辑／完整历史及万行排序／修改取消，`4ee0710` 本机四引擎编辑组成项已通过，记录见[容量证据](evidence/workbook-editing-budget.json)，后续源码的阶段最终验收仍待完成；`check:xlsx-export` 已覆盖原生输出，`check:workbook-closure` 覆盖独立打包消费。普通检查不改参考基线。
 
 原生链路必须包含独立来源导入、当前源修改、导出、结构检查、Calc 实际修改值/公式/表格/图表/备注后重存、SDK 重新导入。独立打包在工作区外安装五个 tarball，普通 JS 不安装 React，不使用源码私有路径。每阶段保留 Word/PPT 回归。
 

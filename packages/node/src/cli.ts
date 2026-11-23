@@ -23,5 +23,5 @@ async function run(): Promise<void> {
     if (!controller.signal.aborted) { process.stderr.write("Conversion process failed or exceeded its transport budget.\n"); process.exitCode = 1; }
   } finally { process.off("SIGTERM", stop); process.off("SIGINT", stop); await converter?.close(); }
 }
-if (process.argv.slice(2).includes("--help")) process.stdout.write("doffi converts DOCX, PPTX, XLSX or document-package ZIP bytes to PDF or PNG. Send one V1 JSON request per stdin line and read results on stdout.\n");
+if (process.argv.slice(2).includes("--help")) process.stdout.write("doffi: convert DOCX, PPTX, XLSX or document-package ZIP bytes to PDF or PNG. Send one V1 JSON request per stdin line and read byte results on stdout.\n");
 else await run();

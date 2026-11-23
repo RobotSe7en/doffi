@@ -61,7 +61,7 @@ interface PreparedDrawing {
 export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "source" | "view" | "fontProbes">, snapshot: WorkbookSnapshot,
   frame: WorkbookWindowFrame, dimensions: { readonly rows: AxisDimensions; readonly columns: AxisDimensions },
   sources: WorkbookContentSources, assetSource: WorkbookAssetSource, chartSource: WorkbookChartSource,
-  formatter: WorkbookNumberFormatter, signal: AbortSignal, input: WorkbookDrawingLayoutLimits = {}, showNotes = true): Promise<WorkbookDrawingLayout> {
+  formatter: WorkbookNumberFormatter, signal: AbortSignal, input: WorkbookDrawingLayoutLimits = {}, forPrint = false): Promise<WorkbookDrawingLayout> {
   const document = surface.source.ownerDocument, view = document.defaultView;
   const limits = { maxObjects: 128, maxNodes: 50_000, maxSourceNodes: 50_000, maxCodeUnits: 8 * 1024 * 1024,
     maxExtentPt: 1_000_000, maxShadowPixels: 64 * 1024 * 1024, maxObjectShadowPixels: 16 * 1024 * 1024, ...input };
@@ -75,7 +75,7 @@ export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "sou
   checkWindowIdentity(assetSource.snapshot.manifest, snapshot); checkWindowIdentity(chartSource.snapshot.manifest, snapshot);
   const sheet = snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === frame.sheetId);
   if (!sheet) throw new DocumentError("InvalidOperation", "Drawing composition requires its owning worksheet.");
-  const objects = (snapshot.metadata.workbook.objects ?? []).filter(object => object.sheetId === frame.sheetId);
+  const objects = (snapshot.metadata.workbook.objects ?? []).filter(object => object.sheetId === frame.sheetId && (!forPrint || object.printable !== false));
   const projection = sources.project(surface.source, objects.map(object => object.nodeId), limits.maxSourceNodes);
   const element = markViewNode(document.createElement("div")), images: HTMLImageElement[] = [], prepared: PreparedDrawing[] = [];
   element.dataset.officeView = "workbook-drawings"; element.style.cssText = `position:absolute;left:0;top:0;width:${frame.layout.widthPt}pt;height:${frame.layout.heightPt}pt;pointer-events:none`;
@@ -191,7 +191,7 @@ export async function layoutWorkbookDrawings(surface: Pick<WorkbookSurface, "sou
         element.append(fragment); displayed.push(Object.freeze({ nodeId: object.nodeId, projection: part, ...(text ? { text } : {}) }));
       }
     }
-    const nativeNotes = showNotes && snapshot.metadata.workbook.comments?.some(comment => comment.format === "classic" && comment.box?.visible) ? await layoutWorkbookNoteBoxes(surface, snapshot, frame, dimensions, sources, signal, {
+    const nativeNotes = !forPrint && snapshot.metadata.workbook.comments?.some(comment => comment.format === "classic" && comment.box?.visible) ? await layoutWorkbookNoteBoxes(surface, snapshot, frame, dimensions, sources, signal, {
       maxNodes: remaining(), maxSourceNodes: limits.maxSourceNodes, maxCodeUnits: Math.max(1, limits.maxCodeUnits - units), maxExtentPt: limits.maxExtentPt, maxObjects: Math.max(0, limits.maxObjects - prepared.length),
     }) : undefined;
     if (nativeNotes) { account(nativeNotes.nodes); units += nativeNotes.codeUnits; fonts.push(...nativeNotes.fonts); element.append(nativeNotes.element); }
