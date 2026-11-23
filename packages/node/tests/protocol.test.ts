@@ -1,11 +1,13 @@
 import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { createPresentation } from "@doffi/core";
+import { createPresentation, openDocument as openAnyDocument } from "@doffi/core";
 import type { ContentDocumentModel as DocumentModel } from "@doffi/core";
-import { writeDocumentZip, exportPptx } from "@doffi/office";
+import { writeDocumentZip, exportPptx, importXlsx } from "@doffi/office";
 import { createDocumentConverter, executeConversionRequest, parseConversionRequest, serveConversionProtocol } from "@doffi/node";
-import type { ConversionRequestV1, DocumentConverter, RenderedOutput } from "@doffi/node";
+import type { WorkbookModel } from "@doffi/core";
+import type { ConversionRequestV1, DocumentConverter, RenderedOutput, WorkbookDocumentConverter } from "@doffi/node";
+import type { WorkbookPrintReport } from "@doffi/render/contracts";
 
 const files = new Map(["manifest.json", "content.html", "styles.css", "metadata.json", "annotations.json"].map((path) => [path,
   new Uint8Array(readFileSync(new URL("../../../examples/report/" + path, import.meta.url))),
@@ -103,4 +105,69 @@ test("native PPTX bytes and PPT packages use the same bounded conversion boundar
     expect(result).toMatchObject({ok:true,output:{report:{documentId:"private-ppt"}}});expect(converter.calls).toEqual(["private-ppt"]);
   }
   expect(()=>parseConversionRequest({protocolVersion:1,taskId:"missing-id",format:"pdf",input:{format:"pptx",bytesBase64:"AA=="}})).toThrow();
+});
+
+const nativeWorkbook = readFileSync(new URL("../../../examples/xlsx/11-print-layout.xlsx", import.meta.url));
+const workbookRequest: ConversionRequestV1 = {
+  protocolVersion: 1, taskId: "print-book", format: "png",
+  input: { format: "xlsx", documentId: "print-source", bytesBase64: nativeWorkbook.toString("base64") },
+  options: { pageIndex: 1, workbook: { formulaValues: "cached", context: { locale: "zh-CN" } } },
+};
+test("workbook protocol routes native and package bytes with workbook-only settings and reports", async () => {
+  const files = await importXlsx(nativeWorkbook, { documentId: "print-source" });
+  const sheetId = openAnyDocument(files, { kind: "workbook" }).snapshot().metadata.workbook.sheets[0]!.sheetId;
+  const workbook = { ...workbookRequest.options!.workbook, sheets: [{ sheetId, areas: [{ from: { row: 0, column: 0 }, to: { row: 2, column: 2 } }] }] };
+  const methods: string[] = [];
+  function rendered(model: WorkbookModel, mimeType: RenderedOutput["mimeType"]): RenderedOutput<WorkbookPrintReport> {
+    const { documentId, revision } = model.snapshot().manifest;
+    return { bytes: new Uint8Array([1]), mimeType, engine: { name: "chromium", version: "fixture" },
+      report: { kind: "workbook", documentId, revision, layout: "pages", pages: [], nodePages: {}, fields: [], diagnostics: [], fonts: [],
+        formulaValues: "cached", formulaCells: { valid: 0, imported: 0, stale: 0, unavailable: 0 } } };
+  }
+  const converter: WorkbookDocumentConverter = {
+    ...fake(),
+    async renderWorkbookPdf(model, options) {
+      expect(options).toEqual(workbook);
+      methods.push("pdf");
+      return rendered(model, "application/pdf");
+    },
+    async renderWorkbookPage(model, options) {
+      expect(options).toEqual({ pageIndex: 1, ...workbook });
+      methods.push("png");
+      return rendered(model, "image/png");
+    },
+  };
+  const native = await executeConversionRequest(converter, { ...workbookRequest, options: { pageIndex: 1, workbook } });
+  const input = { format: "document-package-zip", documentId: "print-source", bytesBase64: Buffer.from(writeDocumentZip(files)).toString("base64") };
+  const packed = await executeConversionRequest(converter, { ...workbookRequest, input, format: "pdf", options: { workbook } });
+  expect(native).toMatchObject({ ok: true, taskId: "print-book", output: { mimeType: "image/png", report: { kind: "workbook", documentId: "print-source", formulaValues: "cached" } } });
+  expect(packed).toMatchObject({ ok: true, output: { mimeType: "application/pdf", report: { kind: "workbook", documentId: "print-source" } } });
+  expect(await executeConversionRequest(converter, { ...workbookRequest, input: { ...input, documentId: "other" } })).toMatchObject({ ok: false, error: { code: "InvalidDocument" } });
+  expect(await executeConversionRequest(converter, { ...request(), options: { workbook } })).toMatchObject({ ok: false, error: { code: "InvalidRequest" } });
+  expect(await executeConversionRequest(fake(), workbookRequest)).toMatchObject({ ok: false, error: { code: "UnsupportedFeature" } });
+  expect(methods).toEqual(["png", "pdf"]);
+});
+
+test.each([
+  { url: "https://example.com/data" },
+  { formulaValues: "auto" },
+  { context: { now: { unixMilliseconds: 0, utcOffsetMinutes: 1441 } } },
+  { fileName: "a".repeat(4097) },
+  { maxPaperPixels: 0 },
+  { sheets: [] },
+  { sheets: [{ sheetId: "x" }, { sheetId: "x" }] },
+  { sheets: [{ sheetId: "x", areas: [] }] },
+  { sheets: [{ sheetId: "x", areas: [{ from: { row: 3, column: 0 }, to: { row: 2, column: 0 } }] }] },
+  { sheets: [{ sheetId: "x", areas: Array.from({ length: 257 }, () => ({ from: { row: 0, column: 0 }, to: { row: 0, column: 0 } })) }] },
+])("validates nested workbook print settings before opening input", async workbook => {
+  const result = await executeConversionRequest(fake(), { ...workbookRequest, options: { workbook } }, { maxInputBytes: 1 });
+  expect(result).toMatchObject({ ok: false, taskId: "print-book", error: { code: "InvalidRequest" } });
+});
+
+test("native workbook conversion requires identity and can cancel before import finishes", async () => {
+  expect(() => parseConversionRequest({ ...workbookRequest, input: { format: "xlsx", bytesBase64: "AA==" } })).toThrow();
+  const controller = new AbortController();
+  const pending = executeConversionRequest(fake(), workbookRequest, {}, controller.signal);
+  controller.abort();
+  expect(await pending).toMatchObject({ ok: false, taskId: "print-book", error: { code: "Cancelled" } });
 });

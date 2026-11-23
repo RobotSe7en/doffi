@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
 import { createDocumentSession, openDocument } from "@doffi/core";
 import { createDocumentConverter } from "@doffi/node";
-import { importXlsx } from "@doffi/office";
+import { runConversionProcess } from "@doffi/node/dev";
+import { importXlsx, writeDocumentZip } from "@doffi/office";
 
 const exec = promisify(execFile);
 test.describe.configure({ timeout: 60_000 });
@@ -107,6 +108,64 @@ async function extractPdfPages(path: string, compact = true): Promise<string[]> 
   return (await exec("pdftotext", ["-layout", path, "-"])).stdout.split("\f")
     .map(text => compact ? text.replace(/\s/g, "") : text.trim()).filter(Boolean);
 }
+
+test("the CLI prints native XLSX and workbook package bytes with the same print settings", async ({}, info) => {
+  const model = await openXlsx("14-preserved-formulas"), documentId = model.snapshot().manifest.documentId;
+  const point = { row: 1, column: 1 }, workbook = {
+    sheets: [{ sheetId: "sheet-1", areas: [{ from: point, to: point }] }],
+    formulaValues: "cached", context: { locale: "en-US" },
+  } as const;
+  const result = await runConversionProcess({
+    protocolVersion: 1, taskId: "native-xlsx-print", format: "pdf",
+    input: { format: "xlsx", documentId, bytesBase64: readFileSync("examples/xlsx/14-preserved-formulas.xlsx").toString("base64") },
+    options: { workbook },
+  });
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw Error(result.error.message);
+  expect(result.output.report).toMatchObject({ kind: "workbook", documentId, revision: 0, formulaValues: "cached", formulaCells: { imported: 1 } });
+  const path = info.outputPath("workbook-cli.pdf");
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, Buffer.from(result.output.bytesBase64, "base64"));
+  expect(await extractPdfPages(path)).toEqual([expect.stringMatching(/24.*Notrecalculated.*cachedformulavalues/)]);
+  const png = await runConversionProcess({
+    protocolVersion: 1, taskId: "package-xlsx-print", format: "png",
+    input: { format: "document-package-zip", documentId, bytesBase64: Buffer.from(writeDocumentZip(model.serialize())).toString("base64") },
+    options: { workbook, pageIndex: 0 },
+  });
+  expect(png.ok).toBe(true);
+  if (!png.ok) throw Error(png.error.message);
+  expect(png.output.report).toEqual(result.output.report);
+  expect(Buffer.from(png.output.bytesBase64, "base64").subarray(1, 4).toString()).toBe("PNG");
+});
+
+test("Playground downloads real PDF and PNG from the edited workbook via the development converter", async ({ page }) => {
+  await page.addInitScript(() => {
+    const attach = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (options) { return attach.call(this, { ...options, mode: "open" }); };
+  });
+  await page.goto("/");
+  await page.getByLabel("打开文件", { exact: true }).filter({ visible: false }).setInputFiles("examples/xlsx/11-print-layout.xlsx");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0", { timeout: 30_000 });
+  const address = page.getByRole("textbox", { name: "选择单元格或区域", exact: true });
+  await address.fill("A2"); await address.press("Enter");
+  const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true });
+  await expect(input).toHaveValue("记录 2");
+  await input.fill("R3-19"); await input.press("Control+Enter");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
+  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  for (const format of ["PDF", "PNG"]) {
+    await page.getByRole("button", { name: "导出 " + format, exact: true }).click();
+    if (format === "PNG") await page.getByLabel("打印页码").fill("2");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "生成 " + format, exact: true }).click();
+    const output = await download, path = await output.path();
+    expect(output.suggestedFilename()).toBe("11-print-layout." + format.toLowerCase());
+    if (format === "PDF") expect((await extractPdfPages(path))[0]).toContain("R3-19");
+    else expect(readFileSync(path).subarray(1, 4).toString()).toBe("PNG");
+    await expect(page.getByRole("region", { name: "工作簿导出报告" })).toContainText("打印作业共 2 页");
+  }
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
+});
 
 test("workbook PDF retains drawings, and selected sheets reflect current filters", async () => {
   const drawings = await openXlsx("08-images-shapes");

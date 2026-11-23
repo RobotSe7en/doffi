@@ -2,9 +2,9 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
 import type { Browser, BrowserContext } from "playwright-core";
 import { captureWorkbookModel, DocumentError, openDocument } from "@doffi/core";
-import type { DocumentErrorCode, ContentDocumentModel, DocumentModel, WorkbookModel } from "@doffi/core";
+import type { ContentDocumentModel, DocumentModel, WorkbookModel } from "@doffi/core";
 import { DEFAULT_RENDER_LIMITS, renderLimits } from "@doffi/render/contracts";
-import type { BridgeWebFont, BrowserRenderBridge, BrowserRenderResult, DocumentRenderReport, PortableRenderReport, RenderLimits, WorkbookPrintReport, WorkbookPrintSettings } from "@doffi/render/contracts";
+import type { BridgeWebFont, BrowserRenderBridge, BrowserRenderResult, ConversionErrorCode, DocumentRenderReport, PortableRenderReport, RenderLimits, WorkbookPrintReport, WorkbookPrintSettings } from "@doffi/render/contracts";
 import { conversionEnvironment } from "./environment.js";
 
 /** Host-authorized font asset for Node PDF/PNG rendering. Never supplied by untrusted conversion requests. */
@@ -19,7 +19,7 @@ export interface NodeWebFont {
   readonly load?: () => Promise<Uint8Array | ArrayBuffer> | Uint8Array | ArrayBuffer;
 }
 
-export type ConversionErrorCode = DocumentErrorCode | "Cancelled" | "Timeout" | "Busy" | "InvalidRequest";
+export type { ConversionErrorCode } from "@doffi/render/contracts";
 export class ConversionError extends Error {
   readonly code: ConversionErrorCode;
   constructor(code: ConversionErrorCode, message: string) { super(message.slice(0, 256)); this.name = "ConversionError"; this.code = code; }

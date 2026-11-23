@@ -102,6 +102,10 @@ a { color: var(--accent); }
 .export-report { margin: 10px 18px; padding: 12px 16px; border: 1px solid #d4e1f8; border-radius: 5px; background: #f3f7ff; font-size: 12px; overflow-wrap: anywhere; }
 .export-report p { margin: 4px 0; }
 .export-report button { border-color: #d2def3; font-size: 11px; background: white; margin-top: 8px; }
+.workbook-print-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.workbook-print-options label { display: flex; align-items: center; gap: 6px; }
+.workbook-print-options input[type=number] { width: 5em; }
+.workbook-print-options button { margin-top: 0; }
 .preview { flex: 1; min-width: 0; background: #eceef1; }
 .workbook-pane { position: relative; min-width: 0; min-height: 660px; width: 100%; overflow: hidden; background: #eceef1; }
 .workbook-pane.preparing { position: absolute; transform: translateX(-200vw); opacity: 0; pointer-events: none; left: 0; top: 0; }

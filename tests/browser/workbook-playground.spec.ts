@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { importXlsx, writeDocumentZip } from '@doffi/office';
+import { openDocument } from '@doffi/core';
+import type { ConversionRequestV1 } from '@doffi/node';
+import { importXlsx, readDocumentZip, writeDocumentZip } from '@doffi/office';
 
 let workbookZip: Buffer, reportZip: Buffer;
 declare global {
@@ -42,6 +44,156 @@ test.beforeEach(async ({ page }) => {
 });
 const status = (page: Page) => page.locator('.office-app');
 const upload = (page: Page) => page.getByLabel('打开文件', { exact: true }).filter({ visible: false });
+const formulaInput = (page: Page) => page.getByRole('textbox', { name: '单元格或公式输入', exact: true });
+
+test('Playground exports the current revision as editable XLSX and a reopenable package from one Worker', async ({ page }) => {
+  await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx');
+  await expect(status(page)).toHaveAttribute('data-revision', '0', { timeout: 30_000 });
+  const input = formulaInput(page), address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  await address.fill('AG257'); await address.press('Enter');
+  await expect(input).toHaveValue('');
+  await input.fill('=7*3');
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  const exportNative = page.getByRole('button', { name: '导出 XLSX', exact: true });
+  await expect(exportNative).toBeDisabled();
+  await input.press('Control+Enter');
+  await expect(status(page)).toHaveAttribute('data-revision', '1');
+  await expect(exportNative).toBeEnabled();
+  const xlsx = page.waitForEvent('download');
+  await exportNative.click();
+  const native = await xlsx;
+  expect(native.suggestedFilename()).toBe('09-classic-notes.xlsx');
+  const reopened = openDocument(await importXlsx(readFileSync(await native.path()), { documentId: 'native-reopen' }), { kind: 'workbook' });
+  const sheetId = reopened.snapshot().metadata.workbook.sheets[0]!.sheetId;
+  expect(reopened.getCell(sheetId, 256, 32)).toMatchObject({ value: { type: 'number', value: 21 }, formula: { expression: '=7*3' } });
+  await expect(page.getByRole('region', { name: '工作簿导出报告' })).toContainText('原生批注');
+
+  const zip = page.waitForEvent('download');
+  await page.getByRole('button', { name: '另存为文档包', exact: true }).click();
+  const saved = await zip;
+  expect(saved.suggestedFilename()).toBe('09-classic-notes.zip');
+  const packageBytes = readFileSync(await saved.path());
+  const source = openDocument(readDocumentZip(packageBytes), { kind: 'workbook' });
+  expect(source.snapshot().manifest.revision).toBe(1);
+  expect(source.getCell(source.snapshot().metadata.workbook.sheets[0]!.sheetId, 256, 32)?.formula?.expression).toBe('=7*3');
+  expect(await page.evaluate(() => ({ created: window.workbookHostProbe.created, terminated: window.workbookHostProbe.terminated }))).toEqual({ created: 1, terminated: 0 });
+  await expect(status(page)).toHaveAttribute('data-revision', '1');
+
+  await upload(page).setInputFiles({ name: 'reopened-workbook.zip', mimeType: 'application/zip', buffer: packageBytes });
+  await expect(page.getByRole('heading', { name: 'reopened-workbook.zip' })).toBeVisible();
+  await expect(status(page)).toHaveAttribute('data-revision', '1');
+  await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeDisabled();
+});
+
+test('Playground cancels and retries native export of the ten-thousand-row sample', { tag: '@scale' }, async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.getByRole('button', { name: '打开一万行 XLSX 样例', exact: true }).click();
+  await expect(status(page)).toHaveAttribute('data-revision', '0', { timeout: 60_000 });
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  const action = page.getByRole('button', { name: '导出 XLSX', exact: true });
+  await action.click();
+  await expect(page.getByRole('status').filter({ hasText: '正在导出 XLSX' })).toContainText('计算公式', { timeout: 15_000 });
+  await page.getByRole('button', { name: '取消导出', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('已取消 XLSX 导出。');
+  await expect(action).toBeEnabled();
+  const download = page.waitForEvent('download', { timeout: 75_000 });
+  await action.click();
+  const output = await download;
+  expect(output.suggestedFilename()).toBe('一万行工作簿.xlsx');
+  const model = openDocument(await importXlsx(readFileSync(await output.path()), { documentId: 'large-output' }), { kind: 'workbook' });
+  const { manifest, metadata } = model.snapshot();
+  expect(manifest.chunks).toHaveLength(40);
+  expect(model.getCell(metadata.workbook.sheets[0]!.sheetId, 9999, 19)?.value).toEqual({ type: 'number', value: 3_400_152 });
+  await expect(status(page)).toHaveAttribute('data-revision', '0');
+  expect(await page.evaluate(() => ({ created: window.workbookHostProbe.created, terminated: window.workbookHostProbe.terminated }))).toEqual({ created: 1, terminated: 0 });
+});
+
+interface PrintCall { readonly route: Route; readonly request: ConversionRequestV1 }
+async function capturePrint(page: Page): Promise<PrintCall[]> {
+  const calls: PrintCall[] = [];
+  await page.context().route('**/__doffi/convert', route => {
+    calls.push({ route, request: route.request().postDataJSON() as ConversionRequestV1 });
+  });
+  return calls;
+}
+function replyPrint(call: PrintCall, revision: number): Promise<void> {
+  const { request, route } = call;
+  return route.fulfill({ json: { protocolVersion: 1, taskId: request.taskId, ok: true, output: {
+    mimeType: request.format === 'pdf' ? 'application/pdf' : 'image/png',
+    bytesBase64: Buffer.from('print result').toString('base64'),
+    report: { kind: 'workbook', documentId: request.input.documentId, revision, pages: [{}, {}],
+      formulaValues: request.options?.workbook?.formulaValues },
+  } } });
+}
+async function openPrint(page: Page, format: 'PDF' | 'PNG'): Promise<void> {
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '导出 ' + format, exact: true }).click();
+}
+
+test('Playground prints the selected cells with explicit saved values and a PNG page', async ({ page }) => {
+  const calls = await capturePrint(page);
+  await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx');
+  await expect(status(page)).toHaveAttribute('data-revision', '0', { timeout: 30_000 });
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  await address.fill('B2:D4'); await address.press('Enter');
+  await expect(address).toHaveValue('B2:D4');
+  await openPrint(page, 'PNG');
+  await page.getByLabel('打印范围').selectOption('selection');
+  await page.getByLabel('打印页码').fill('2');
+  await page.getByLabel('使用已保存的公式值').check();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '生成 PNG', exact: true }).click();
+  await expect.poll(() => calls.length).toBe(1);
+  const call = calls[0]!, source = openDocument(readDocumentZip(Buffer.from(call.request.input.bytesBase64, 'base64')), { kind: 'workbook' });
+  expect(call.request).toMatchObject({ format: 'png', input: { format: 'document-package-zip', documentId: source.snapshot().manifest.documentId },
+    options: { pageIndex: 1, workbook: { fileName: '09-classic-notes.xlsx', formulaValues: 'cached',
+      sheets: [{ sheetId: source.snapshot().metadata.workbook.sheets[0]!.sheetId, areas: [{ from: { row: 1, column: 1 }, to: { row: 3, column: 3 } }] }] } } });
+  await replyPrint(call, 0);
+  expect((await download).suggestedFilename()).toBe('09-classic-notes.png');
+  await expect(page.getByRole('region', { name: '工作簿导出报告' })).toContainText('已使用保存的公式值');
+});
+
+test('Playground cancels print on demand, on revision changes and on switching documents', async ({ page }) => {
+  const calls = await capturePrint(page), downloads: string[] = [];
+  page.on('download', result => downloads.push(result.suggestedFilename()));
+  await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx');
+  await expect(status(page)).toHaveAttribute('data-revision', '0', { timeout: 30_000 });
+  const start = async (count: number) => {
+    await openPrint(page, 'PDF');
+    await page.getByRole('button', { name: '生成 PDF', exact: true }).click();
+    await expect.poll(() => calls.length).toBe(count);
+  };
+  await start(1);
+  await page.getByRole('button', { name: '取消导出', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('已取消 PDF 导出。');
+  await replyPrint(calls[0]!, 0).catch(() => {});
+  await start(2);
+  const input = formulaInput(page);
+  await input.fill('=20+22'); await input.press('Control+Enter');
+  await expect(status(page)).toHaveAttribute('data-revision', '1');
+  await expect(page.getByRole('alert')).toContainText('工作簿已变化');
+  await replyPrint(calls[1]!, 0).catch(() => {});
+  await start(3);
+  await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '季度项目报告', exact: true })).toBeVisible();
+  await replyPrint(calls[2]!, 1).catch(() => {});
+  await expect(page.getByRole('button', { name: '取消导出', exact: true })).toHaveCount(0);
+  expect(downloads).toEqual([]);
+
+  await page.getByRole('button', { name: '打开 09-classic-notes.xlsx', exact: true }).click();
+  await expect(status(page)).toHaveAttribute('data-revision', '1');
+  await start(4);
+  const returned = page.waitForEvent('download');
+  await replyPrint(calls[3]!, 1);
+  expect((await returned).suggestedFilename()).toBe('09-classic-notes.pdf');
+  await start(5);
+  await page.getByRole('button', { name: '返回首页', exact: true }).click();
+  await expect(status(page)).toHaveClass(/is-home/);
+  await replyPrint(calls[4]!, 1).catch(() => {});
+  expect(downloads).toEqual(['09-classic-notes.pdf']);
+  expect(await page.evaluate(() => ({ created: window.workbookHostProbe.created, terminated: window.workbookHostProbe.terminated }))).toEqual({ created: 1, terminated: 0 });
+});
+
 test('Playground edits through its Worker, retains drafts on file switches and reopens the same history', async ({ page }) => {
   await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx'); await expect(status(page)).toHaveAttribute("data-revision", "0", { timeout: 30_000 });
   const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }), address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
@@ -105,7 +257,7 @@ for (const large of [false, true]) test(`Playground opens a ${large ? 'ten-thous
   expect(first.grids).toBe(1); expect(first.readonly).toBe(true); expect(first.cells).toBeGreaterThan(0); expect(first.cells).toBeLessThan(2000);
   await expect(page.getByRole('toolbar', { name: '文件与导出' })).toBeVisible();
   await page.getByRole('tab', { name: '文件', exact: true }).click();
-  await expect(page.getByRole('button', { name: '导出 XLSX', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '导出 XLSX', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: '导出 DOCX', exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('workbook-playground.png') });
   await page.setViewportSize({ width: 1000, height: 800 });

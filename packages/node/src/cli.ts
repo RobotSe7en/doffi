@@ -5,8 +5,9 @@ import { serveConversionProtocol } from "./protocol.js";
 import type { ProtocolLimits } from "./protocol.js";
 
 async function run(): Promise<void> {
-  let converter: DocumentConverter | undefined, stopping = false;
-  const stop = (): void => { stopping = true; process.stdin.destroy(); void converter?.close(); };
+  let converter: DocumentConverter | undefined;
+  const controller = new AbortController();
+  const stop = (): void => { controller.abort(); process.stdin.destroy(); };
   try {
     const raw = process.env.DOFFI_CONVERSION_CONFIG;
     const config = raw ? JSON.parse(raw) as { converter?: ConverterOptions; protocol?: ProtocolLimits } : {};
@@ -17,10 +18,10 @@ async function run(): Promise<void> {
     process.once("SIGTERM", stop); process.once("SIGINT", stop);
     await serveConversionProtocol(process.stdin, async (line) => {
       await new Promise<void>((resolve, reject) => process.stdout.write(line, (error) => error ? reject(error) : resolve()));
-    }, converter, config.protocol);
+    }, converter, config.protocol, controller.signal);
   } catch {
-    if (!stopping) { process.stderr.write("Conversion process failed or exceeded its transport budget.\n"); process.exitCode = 1; }
+    if (!controller.signal.aborted) { process.stderr.write("Conversion process failed or exceeded its transport budget.\n"); process.exitCode = 1; }
   } finally { process.off("SIGTERM", stop); process.off("SIGINT", stop); await converter?.close(); }
 }
-if (process.argv.slice(2).includes("--help")) process.stdout.write("doffi: one versioned conversion JSON request per stdin line; results on stdout. Input and output contain bytes, never file paths.\n");
+if (process.argv.slice(2).includes("--help")) process.stdout.write("doffi converts DOCX, PPTX, XLSX or document-package ZIP bytes to PDF or PNG. Send one V1 JSON request per stdin line and read results on stdout.\n");
 else await run();

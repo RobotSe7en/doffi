@@ -3,7 +3,7 @@ import { crc32, deflateRawSync } from "node:zlib";
 import { describe, expect, test } from "vitest";
 import { DocumentError, openDocument, parseContract } from "@doffi/core";
 import type { DocumentErrorCode } from "@doffi/core";
-import { DEFAULT_MAX_ZIP_BYTES, readDocumentZip, writeDocumentZip } from "@doffi/office";
+import { DEFAULT_MAX_ZIP_BYTES, readDocumentZip, writeDocumentZip, writeDocumentZipAsync } from "@doffi/office";
 
 const encoder = new TextEncoder();
 function files(): Map<string, Uint8Array> {
@@ -111,6 +111,21 @@ describe("document ZIP roundtrips", () => {
     const input = files();
     expect(writeDocumentZip(input)).toEqual(writeDocumentZip(new Map([...input].reverse())));
     expect(DEFAULT_MAX_ZIP_BYTES).toBe(64 * 1024 * 1024);
+  });
+
+  test("cooperative ZIP output preserves captured bytes and cancels without returning a partial archive", async () => {
+    const input = files();
+    input.set("sources/large.bin", new Uint8Array(2 * 1024 * 1024).fill(7));
+    const before = writeDocumentZip(input);
+    const pending = writeDocumentZipAsync(input);
+    input.get("sources/large.bin")!.fill(0);
+    expect(await pending).toEqual(before);
+
+    const controller = new AbortController();
+    const cancelled = writeDocumentZipAsync(input, { signal: controller.signal });
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ code: "OperationCancelled" });
+    expect(await writeDocumentZipAsync(input)).toEqual(writeDocumentZip(input));
   });
 
   test.each([0, 8])("reads independently compressed entries with method %i and literal Unicode paths", (method) => {

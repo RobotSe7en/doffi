@@ -118,12 +118,30 @@ export function readDocumentZip(input: Uint8Array, options: DocumentZipOptions =
 export function writeDocumentZip(input: DocumentPackage, options: DocumentZipOptions = {}): Uint8Array {
   return writeZip(input, options, true);
 }
+/** Write the same validated package with cooperative cancellation during compression. */
+export async function writeDocumentZipAsync(input: DocumentPackage, options: DocumentZipOptions & { readonly signal?: { readonly aborted: boolean } } = {}): Promise<Uint8Array> {
+  const { signal, ...zip } = options;
+  const scheduler = globalThis as unknown as { setTimeout(callback: () => void, delay: number): unknown };
+  const check = (): void => {
+    if (signal?.aborted) throw new DocumentError("OperationCancelled", "Document package export was cancelled.");
+  };
+  const checkpoint = async (): Promise<void> => {
+    await new Promise<void>(resolve => scheduler.setTimeout(resolve, 0));
+    check();
+  };
+  check();
+  const bytes = await compressZip(writeZipSteps(input, zip, true), checkpoint);
+  await checkpoint();
+  return bytes;
+}
 /** Internal OPC output primitive; shares all raw ZIP/path and byte limits. */
 export function writeOpcZip(input: DocumentPackage, options: DocumentZipOptions = {}): Uint8Array {
   return writeZip(input, options, false);
 }
-export async function writeOpcZipAsync(input: DocumentPackage, options: DocumentZipOptions, checkpoint: () => Promise<void>): Promise<Uint8Array> {
-  const steps = writeZipSteps(input, options, false);
+export function writeOpcZipAsync(input: DocumentPackage, options: DocumentZipOptions, checkpoint: () => Promise<void>): Promise<Uint8Array> {
+  return compressZip(writeZipSteps(input, options, false), checkpoint);
+}
+async function compressZip(steps: Generator<void, Uint8Array>, checkpoint: () => Promise<void>): Promise<Uint8Array> {
   try {
     for (let next = steps.next(); ; next = steps.next()) {
       if (next.done) return next.value;

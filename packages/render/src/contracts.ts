@@ -1,5 +1,5 @@
 import { DocumentError } from "@doffi/core";
-import type { DeepReadonly, DocumentErrorData, PageSetup, Rectangle, WorkbookRange, WorkbookScalarContext } from "@doffi/core";
+import type { DeepReadonly, DocumentErrorCode, DocumentErrorData, PageSetup, Rectangle, ValidationIssue, WorkbookRange, WorkbookScalarContext } from "@doffi/core";
 
 /** Font names stay in the source. This report describes only the current preview. */
 export interface FontResolution {
@@ -112,6 +112,34 @@ export interface WorkbookPrintReport extends RenderReport {
   readonly formulaCells: Readonly<{ valid: number; imported: number; stale: number; unavailable: number }>;
 }
 export type PortableRenderReport = DocumentRenderReport | WorkbookPrintReport;
+
+/** Byte conversion contracts shared by the host and its managed converter. */
+export type ConversionErrorCode = DocumentErrorCode | "Cancelled" | "Timeout" | "Busy" | "InvalidRequest";
+export interface ConversionRequestV1 {
+  readonly protocolVersion: 1;
+  readonly taskId: string;
+  readonly format: "pdf" | "png";
+  readonly input: {
+    readonly format: "document-package-zip" | "docx" | "pptx" | "xlsx";
+    readonly bytesBase64: string;
+    readonly documentId?: string;
+  };
+  readonly options?: {
+    readonly pageIndex?: number;
+    readonly scale?: number;
+    readonly timeoutMs?: number;
+    readonly limits?: Partial<RenderLimits>;
+    readonly workbook?: WorkbookPrintSettings;
+  };
+}
+export type ConversionResponseV1 = {
+  readonly protocolVersion: 1; readonly taskId: string; readonly ok: true;
+  readonly output: { readonly mimeType: "application/pdf" | "image/png"; readonly bytesBase64: string;
+    readonly report: PortableRenderReport; readonly engine: { readonly name: "chromium"; readonly version: string } };
+} | {
+  readonly protocolVersion: 1; readonly taskId: string | null; readonly ok: false;
+  readonly error: { readonly code: ConversionErrorCode; readonly message: string; readonly details?: readonly ValidationIssue[] };
+};
 
 export interface BridgeWebFont {
   readonly family: string;
