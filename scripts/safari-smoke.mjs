@@ -86,7 +86,7 @@ try {
   const editMount = await command("POST", `/session/${session}/execute/async`, { script: "const done=arguments[arguments.length-1];window.presentationEditorHost.mount(arguments[0]).then(()=>done({ok:true}),error=>done({error:String(error)}));", args: [pptFiles] });
   assert.equal(editMount.ok, true, JSON.stringify(editMount));
   await execute("window.presentationEditorHost.view.editText('heading')");
-  const pptIframe = await execute("return window.presentationEditorHost.view.element.shadowRoot.querySelector('iframe')");
+  const pptIframe = await execute("return window.presentationEditorHost.view.element.shadowRoot.querySelector('iframe[data-sdk-presentation-canvas]')");
   await command("POST", `/session/${session}/frame`, { id: pptIframe });
   await execute("const input=document.querySelector('[contenteditable=true]'),p=document.querySelector('[data-node-id=heading-p]');input.focus();const range=document.createRange();range.selectNodeContents(p);range.collapse(true);const selection=document.getSelection();selection.removeAllRanges();selection.addRange(range);");
   const pptInput = await command("POST", `/session/${session}/element`, { using: "css selector", value: "[contenteditable=true]" });

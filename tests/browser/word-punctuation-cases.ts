@@ -371,7 +371,11 @@ export function registerWordPunctuationTests(mount: Mount): void {
       }),
     );
     await expect(page.getByLabel("行首禁则语言", { exact: true })).toHaveValue("zh-CN");
-    await page.getByLabel("行首禁则字符", { exact: true }).fill("X");
+    const leadingCharacters = page.getByLabel("行首禁则字符", { exact: true });
+    await leadingCharacters.click();
+    await leadingCharacters.press("ControlOrMeta+a");
+    await leadingCharacters.pressSequentially("X");
+    await expect(leadingCharacters).toHaveValue("X");
     await page.getByLabel("自定义行尾禁则", { exact: true }).uncheck();
     await page.getByLabel("东亚字符压缩", { exact: true }).selectOption("compressPunctuation");
     await page.getByLabel("日文禁则", { exact: true }).selectOption("1");
