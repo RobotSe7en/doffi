@@ -70,6 +70,7 @@ export function composeWordAutoLineSpacing(document: Document, scope: ParentNode
   const view = document.defaultView!,
     context = document.createElement("canvas").getContext("2d"),
     probe = document.createElement("span"),
+    linux = view.navigator.platform.startsWith("Linux"),
     heights = new Map<string, number>();
   probe.style.cssText =
     "position:absolute;visibility:hidden;display:block;line-height:normal;white-space:pre";
@@ -83,14 +84,15 @@ export function composeWordAutoLineSpacing(document: Document, scope: ParentNode
 
     let height: number;
     if (eastAsian) {
-      // Word's East Asian single spacing uses the selected font's bounding
-      // height with 30% leading. Measure at a larger size to avoid pixel
-      // rounding before scaling to the run's authored point size.
+      // Measure at a larger size to avoid rounding before scaling to the
+      // authored size. Linux's Noto Sans CJK SC bounds already supply the
+      // leading measured in the fixed native reference.
       const sampleSize = 256;
       if (context) context.font = `${fontStyle} ${fontWeight} ${sampleSize}px ${fontFamily}`;
       const metrics = context?.measureText("汉"),
         measured = (metrics?.fontBoundingBoxAscent ?? 0) + (metrics?.fontBoundingBoxDescent ?? 0);
-      height = (measured > 0 ? measured / sampleSize : 1) * size * 1.3;
+      const includesLeading = linux && measured > 0 && /^"?Noto Sans CJK SC"?(?:,|$)/i.test(fontFamily);
+      height = (measured > 0 ? measured / sampleSize : 1) * size * (includesLeading ? 1 : 1.3);
     } else {
       if (!probe.isConnected) document.body.append(probe);
       Object.assign(probe.style, { fontFamily, fontSize, fontWeight, fontStyle });

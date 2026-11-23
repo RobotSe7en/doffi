@@ -635,8 +635,9 @@ test("automatic spacing without a grid uses run metrics and preserves the paragr
     });
     expect(metrics.height).toBeCloseTo(metrics.expected, 1);
     expect(metrics.distance).toBeCloseTo(metrics.expected, 0);
-    expect(metrics.runSize).toBeCloseTo(14);
-    expect(metrics.markSize).toBeCloseTo(10);
+    // Firefox quantizes computed font sizes in 1/60 CSS-pixel units.
+    expect(Math.abs(metrics.runSize - 14)).toBeLessThanOrEqual(0.75 / 60);
+    expect(Math.abs(metrics.markSize - 10)).toBeLessThanOrEqual(0.75 / 60);
     expect(metrics.breakLineHeight).toBe("0px");
     const latin = await frame.locator("p").filter({ hasText: "LINE A" }).evaluate((node) =>
       parseFloat(getComputedStyle(node).lineHeight),
@@ -644,6 +645,38 @@ test("automatic spacing without a grid uses run metrics and preserves the paragr
     expect(latin).toBeLessThan(metrics.height);
   }
 });
+for (const platform of ["Linux x86_64", "MacIntel"]) {
+  test("Noto Sans CJK SC automatic spacing preserves the platform metrics on " + platform, async ({ page }) => {
+    await page.addInitScript(platform => {
+      Object.defineProperty(Navigator.prototype, "platform", { configurable: true, get: () => platform });
+    }, platform);
+    const files = importDocx(mutateDocx("01-text-numbering.docx", {
+      "word/document.xml": source => nativeBody(source,
+        '<w:p><w:pPr><w:spacing w:line="300" w:lineRule="auto"/></w:pPr><w:r><w:rPr>' +
+        '<w:rFonts w:eastAsia="Noto Sans CJK SC"/><w:sz w:val="24"/></w:rPr><w:t>正文行距</w:t></w:r></w:p>'),
+    }), { documentId: "native-noto-leading" });
+    for (const mode of ["preview", "edit"] as const) {
+      await mount(page, files, mode);
+      const run = page.frameLocator("iframe").locator('[data-sdk-word-script-view][data-word-script="eastAsia"]')
+        .filter({ hasText: "正文行距" });
+      const geometry = await run.evaluate(node => {
+        const css = getComputedStyle(node);
+        const canvas = document.createElement("canvas").getContext("2d")!;
+        canvas.font = `${css.fontStyle} ${css.fontWeight} 256px ${css.fontFamily}`;
+        const font = canvas.measureText("汉");
+        const em = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 256;
+        return {
+          platform: navigator.platform, family: css.fontFamily,
+          runHeight: parseFloat(css.lineHeight), nativeHeight: em * parseFloat(css.fontSize) * 1.25,
+        };
+      });
+      expect(geometry.platform).toBe(platform);
+      expect(geometry.family).toContain("Noto Sans CJK SC");
+      expect(geometry.nativeHeight).toBeGreaterThan(0);
+      expect(geometry.runHeight).toBeCloseTo(geometry.nativeHeight * (platform.startsWith("Linux") ? 1 : 1.3), 1);
+    }
+  });
+}
 test("a hosted native alias has precedence over a substitute and retains source font identity", async ({ page }) => {
   const nativeAlias = "Fixture East Asian Alias",
     missingFamily = "Fixture Missing East Asian Family",
