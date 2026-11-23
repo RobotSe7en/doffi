@@ -15,7 +15,7 @@ export interface PresentationStyleSurface {
 }
 const inheritedNames = new Set(["font-family", "font-size", "font-weight", "font-style", "color", "line-height", "letter-spacing", "text-align", "text-indent", "margin-left", "margin-right", "margin-top", "margin-bottom", "padding-top", "padding-right", "padding-bottom", "padding-left", "tab-size", "text-transform", "font-variant"]);
 const objectDefaults: Css = { "--office-fill-kind": "initial", "--office-fill-color": "initial", "--office-line-kind": "initial", "--office-line-color": "initial", "--office-shadow-kind": "initial", "--office-text-anchor": "initial" };
-const defaults = 'p,h1,h2,h3,h4,h5,h6{margin:0;line-height:1.2;font-weight:inherit}table{border-spacing:0}td,th{font-weight:inherit;text-align:inherit;vertical-align:top}';
+const defaults = 'p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit}table{border-spacing:0}td,th{font-weight:inherit;text-align:inherit;vertical-align:top}';
 const compatible = (left: NonNullable<PresentationObject["placeholder"]>, right: NonNullable<PresentationObject["placeholder"]>): boolean => left.index === right.index && (left.type === right.type || [left.type, right.type].every(type => type === "title" || type === "ctrTitle"));
 function paragraphs(root: SourceElement): SourceElement[] {
     const result: SourceElement[] = [];

@@ -152,7 +152,8 @@ export function modelChartSource(model: WorkbookModel, calculation?: WorkbookCal
           const areas: { range: DeepReadonly<WorkbookReferenceArea>; cells: readonly WorkbookChartCell[] }[] = [];
           for (const range of resolved.areas) {
             const sheet: DeepReadonly<WorkbookSheet> = sheets.get(range.sheetId)!;
-            const filteredRows = charts.get(chart.chartId)!.visibleCellsOnly !== false ? await resolveFilteredRows?.(range.sheetId) : undefined;
+            const filteredRows = resolveFilteredRows && charts.get(chart.chartId)!.visibleCellsOnly !== false
+              ? await resolveFilteredRows(range.sheetId) : undefined;
             const cells: WorkbookChartCell[] = [];
             // Wide ranges use one row per query; narrow ranges batch rows while
             // preserving row order. Each query contains at most 256 coordinates.

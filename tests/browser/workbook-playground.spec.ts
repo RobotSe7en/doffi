@@ -340,13 +340,17 @@ test('Excel font fields commit through the Worker before moving keyboard focus',
 test('Excel ribbon formats through its Worker and double click edits while Escape cancels', async ({ page }) => {
   await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx'); await expect(status(page)).toHaveAttribute("data-revision", "0");
   const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }), address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
-  await address.fill('C3'); await address.press('Enter'); await input.fill('原值'); await input.press('Control+Enter'); await expect(status(page)).toHaveAttribute("data-revision", "1");
+  await address.fill('C3'); await address.press('Enter');
+  await expect(input).toBeFocused(); await expect(input).toHaveValue('');
+  await input.fill('原值'); await input.press('Control+Enter'); await expect(status(page)).toHaveAttribute("data-revision", "1");
+  const cell = page.frameLocator('iframe').getByRole('gridcell').filter({ hasText: '原值' });
+  await expect(cell).toHaveAttribute('aria-colindex', '3');
+  await expect(cell.locator('..')).toHaveAttribute('aria-rowindex', '3');
   const bold = page.getByRole('button', { name: '加粗', exact: true }); await expect(bold).toBeEnabled();
   await bold.click(); await expect(status(page)).toHaveAttribute("data-revision", "2"); await expect(bold).toHaveAttribute('aria-pressed', 'true');
   await bold.click(); await expect(status(page)).toHaveAttribute("data-revision", "3"); await expect(bold).toHaveAttribute('aria-pressed', 'false');
   await page.getByLabel('字号', { exact: true }).fill("18"); await page.getByLabel('字号', { exact: true }).press("Enter"); await expect(status(page)).toHaveAttribute("data-revision", "4"); await expect(page.getByLabel('字号', { exact: true })).toHaveValue('18');
   await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(status(page)).toHaveAttribute("data-revision", "5"); await expect(page.getByLabel('字号', { exact: true })).toHaveValue('11');
-  const cell = page.frameLocator('iframe').getByRole('gridcell').filter({ hasText: '原值' });
   await cell.dblclick(); await expect(page.getByRole('button', { name: '加粗', exact: true })).toBeDisabled(); await expect(input).toBeFocused(); await input.press('End'); await page.keyboard.insertText('追加'); await expect(input).toHaveValue('原值追加');
   await input.press('Escape'); await expect(input).toHaveValue('原值'); await expect(status(page)).toHaveAttribute("data-revision", "5");
   await input.press('F2'); await input.press('End'); await page.keyboard.insertText('追加'); await input.press('Enter');

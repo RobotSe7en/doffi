@@ -57,10 +57,13 @@ try {
   assert.equal(await execute("return window.paginationHost.session.getNode('a').text"), "XSTART");
   await execute("window.paginationHost.session.undo()");
   assert.equal(await execute("return window.paginationHost.session.getNode('a').text"), "START");
-  await mount('<p data-node-id="long">' + Array.from({ length: 40 }, (_, index) => "TEXT-" + index).join("<br>") + "</p>", "interaction");
+  const lines = Array.from({ length: 40 }, (_, index) => `TEXT-${index}😀`);
+  const longText = lines.join("\n");
+  await mount('<p data-node-id="long">' + lines.join("<br>") + "</p>", "interaction");
   await execute("const d=" + iframeExpression + ".contentDocument,r=d.createRange();r.selectNodeContents(d.querySelector('[data-node-id=long]'));d.getSelection().removeAllRanges();d.getSelection().addRange(r);d.dispatchEvent(new Event('selectionchange'));");
   for (let pass = 0; pass < 50 && !await execute("return !!window.paginationHost.interaction.selection()"); pass++) await pause();
-  const selected = await execute("return window.paginationHost.interaction.selection()?.anchor"); assert.equal(selected?.kind, "text"); assert.equal(selected?.nodeId, "long");
+  const selected = await execute("return window.paginationHost.interaction.selection()?.anchor");
+  assert.deepEqual(selected, { kind: "text", nodeId: "long", from: 0, to: longText.length, quote: longText });
   assert.ok(await execute("return window.paginationHost.layout().pages.length>1"));
   assert.deepEqual(await execute("return window.paginationHost.errors"), []);
   await execute("window.paginationHost.view.dispose();window.paginationHost.session?.dispose();");

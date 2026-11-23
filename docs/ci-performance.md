@@ -55,7 +55,7 @@ node scripts/install-acceptance-fonts.mjs --system-fonts
 FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-scale
 ```
 
-完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核），已超过原先整个 job 的 15 分钟；工作簿浏览器 job 的总时限设为 30 分钟，Word／PPT 保持 15 分钟。阶段容量现在串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限设为 60 分钟。它们仅是 CI 调度时限，不改变首屏、计算、编辑／交互 p95、CPU／内存、DOM 或取消的任何 SDK 性能门槛。
+完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核）。工作簿浏览器作业总时限为 30 分钟。Word 的旧版 Chromium 作业在 R3 输出验收耗尽 15 分钟后，单独延长到 30 分钟。其他 Word 和 PPT 浏览器作业仍为 15 分钟。阶段容量串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限为 60 分钟。首屏、计算、编辑／交互 p95、CPU／内存、DOM 和取消继续按各自的 SDK 性能门槛验收。
 
 前提为 Linux/systemd/cgroup v2、至少四个可用逻辑 CPU、已固定的四个浏览器、字体及 LibreOffice 环境。脚本需要无交互 sudo 创建临时受限服务；不更改持久系统服务。
 

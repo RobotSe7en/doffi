@@ -76,6 +76,21 @@ describe("editable native XLSX export", () => {
     } finally { session.dispose(); }
   });
 
+  it("retains an authored worksheet text box line height when reopening XLSX", async () => {
+    const session = createDocumentSession(openDocument(createWorkbook({ documentId: "drawing-line-height" }), { kind: "workbook" }));
+    try {
+      commit(session, [{
+        op: "insertWorkbookObject", sheetId: "sheet-1",
+        anchor: { kind: "absolute", xPt: 20, yPt: 20, widthPt: 240, heightPt: 100 },
+        object: { kind: "text", html: '<p style="font-size:18pt;line-height:1.8">Editable text</p>' },
+      }]);
+      const { bytes } = await exportXlsx(session);
+      expect(part(bytes, "xl/drawings/drawing1.xml")).toContain('<a:lnSpc><a:spcPct val="180000"/></a:lnSpc>');
+      const reopened = await open(bytes);
+      expect(reopened.snapshot().styles.map(style => style.css).join("\n")).toMatch(/line-height:\s*1\.8\b/);
+    } finally { session.dispose(); }
+  });
+
   it("exports a representative cell and reports an occupied cell without replacing its comment", async () => {
     const session = createDocumentSession(openDocument(createWorkbook({ documentId: "range-comments" }), { kind: "workbook" }));
     try {

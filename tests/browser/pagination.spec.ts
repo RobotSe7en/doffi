@@ -1511,12 +1511,12 @@ test("watermark controls repeat editable text behind every page, preserve source
   await page.getByLabel("水印字号（磅）", { exact: true }).fill("24");
   await page.getByRole("button", { name: "应用文字水印", exact: true }).click();
   const pages = (await page.evaluate(() => window.paginationHost.layout())).pages.length,
-    watermarks = frame.locator(".sdk-paper > [data-sdk-word-story-anchor]");
+    watermarks = frame.locator(".sdk-paper .sdk-page-story-paint [data-sdk-word-story-anchor]");
   await expect(watermarks).toHaveCount(pages);
   await expect(watermarks.first()).toContainText("CONFIDENTIAL");
   const positions = await frame.locator("body").evaluate((body) =>
-    [...body.querySelectorAll(".sdk-paper > [data-sdk-word-story-anchor]")].map((node) => {
-      const parent = node.parentElement!.getBoundingClientRect(),
+    [...body.querySelectorAll(".sdk-paper .sdk-page-story-paint [data-sdk-word-story-anchor]")].map((node) => {
+      const parent = node.closest(".sdk-paper")!.getBoundingClientRect(),
         rect = node.getBoundingClientRect();
       return {
         x: (rect.left + rect.width / 2 - parent.left) * 0.75,
@@ -4478,13 +4478,11 @@ test("read-only pagination requires no editing session and preserves the complet
 test("one paragraph spans pages and maps a cross-page selection to one canonical UTF-16 range", async ({
   page,
 }) => {
+  const lines = Array.from({ length: 40 }, (_, index) => "LINE-" + index + " 😀");
+  const quote = lines.join("\n");
   await mount(
     page,
-    pagedFiles(
-      '<p data-node-id="long">' +
-        Array.from({ length: 40 }, (_, index) => "LINE-" + index + " 😀").join("<br>") +
-        "</p>",
-    ),
+    pagedFiles('<p data-node-id="long">' + lines.join("<br>") + "</p>"),
     "interaction",
   );
   const frame = page.frameLocator("iframe");
@@ -4498,15 +4496,7 @@ test("one paragraph spans pages and maps a cross-page selection to one canonical
   });
   await expect
     .poll(() => page.evaluate(() => window.paginationHost.interaction!.selection()?.anchor))
-    .toEqual(
-      await page.evaluate(() => ({
-        kind: "text",
-        nodeId: "long",
-        from: 0,
-        to: window.paginationHost.session!.getNode("long")!.text.length,
-        quote: window.paginationHost.session!.getNode("long")!.text,
-      })),
-    );
+    .toEqual({ kind: "text", nodeId: "long", from: 0, to: quote.length, quote });
   expect(
     (await page.evaluate(() => window.paginationHost.layout().nodePages.long))!.length,
   ).toBeGreaterThan(1);
@@ -5485,7 +5475,9 @@ test("unitless inherited Word line spacing works without Typed OM and preserves 
     });
   });
   const files = pagedFiles(
-    '<p data-node-id="auto" data-word-line-rule="auto">AUTO</p><p data-node-id="absolute" data-word-line-rule="auto" style="line-height:30px">ABSOLUTE</p>',
+    '<p data-node-id="auto" data-word-line-rule="auto">AUTO</p>' +
+    '<p data-node-id="single" data-word-line-rule="auto" style="line-height:1">AUTO</p>' +
+    '<p data-node-id="absolute" data-word-line-rule="auto" style="line-height:30px">ABSOLUTE</p>',
   );
   const metadata = JSON.parse(new TextDecoder().decode(files.get("metadata.json")));
   metadata.word = {
@@ -5518,22 +5510,14 @@ test("unitless inherited Word line spacing works without Typed OM and preserves 
     ),
   );
   await mount(page, files);
-  const measured = await page
-    .frameLocator("iframe")
-    .locator('[data-node-id="auto"]')
-    .evaluate((node) => {
-      const probe = document.createElement("span");
-      probe.style.cssText =
-        "position:absolute;display:block;line-height:normal;white-space:pre;font:inherit";
-      probe.style.lineHeight = "normal";
-      probe.textContent = "汉M";
-      node.append(probe);
-      const normal = probe.getBoundingClientRect().height;
-      probe.remove();
-      return { line: parseFloat(getComputedStyle(node).lineHeight), normal };
-    });
-  expect(measured.line).toBeCloseTo(measured.normal * 1.5, 1);
-  await expect(page.frameLocator("iframe").locator('[data-node-id="absolute"]')).toHaveCSS(
+  const frame = page.frameLocator("iframe");
+  const lineHeight = (id: string) => frame.locator('[data-node-id="' + id + '"]').evaluate(
+    node => parseFloat(getComputedStyle(node).lineHeight),
+  );
+  const single = await lineHeight("single");
+  expect(single).toBeGreaterThan(16);
+  expect(await lineHeight("auto")).toBeCloseTo(single * 1.5, 1);
+  await expect(frame.locator('[data-node-id="absolute"]')).toHaveCSS(
     "line-height",
     "30px",
   );

@@ -480,7 +480,7 @@ test('Word left margin selects wrapped visual lines in editing and preview', asy
 
 test('Office audit: native DOCX fonts change visible glyphs and survive export/reopen', async ({ page }, info) => {
   await page.goto('/'); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles('examples/docx/09-chinese-fonts.docx');
-  const paragraph = page.frameLocator('iframe[title="正文编辑"]').locator('p').filter({ hasText: 'ABCxyz' }).first(); await expect(paragraph).toBeVisible();
+  const paragraph = page.frameLocator('iframe[title="正文编辑"]').locator('[data-office-editor] p').filter({ hasText: 'ABCxyz' }).first(); await expect(paragraph).toBeVisible();
   const font = page.getByRole('group', { name: '字体', exact: true }).getByRole('combobox', { name: '字体', exact: true });
   const size = page.getByRole('group', { name: '字体', exact: true }).getByRole('combobox', { name: '字号', exact: true });
   await paragraph.evaluate(root => {
@@ -489,22 +489,23 @@ test('Office audit: native DOCX fonts change visible glyphs and survive export/r
   await expect(font).toHaveValue('Liberation Serif');
   await paragraph.evaluate(root => { root.closest<HTMLElement>('[contenteditable]')!.focus(); const range = document.createRange(); range.selectNodeContents(root); const selected = document.getSelection()!; selected.removeAllRanges(); selected.addRange(range); document.dispatchEvent(new Event('selectionchange')); });
   const selected = await paragraph.textContent(), before = await paragraph.screenshot();
-  await page.getByRole('button', { name: '展开字体', exact: true }).click(); await page.getByRole('option', { name: 'FandolKai', exact: true }).click();
-  await expect(font).toHaveValue('FandolKai'); expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(selected);
+  const chosenFont = 'Noto Sans CJK SC';
+  await page.getByRole('button', { name: '展开字体', exact: true }).click(); await page.getByRole('option', { name: chosenFont, exact: true }).click();
+  await expect(font).toHaveValue(chosenFont); expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(selected);
   const applied = await paragraph.evaluate(root => { const walker = document.createTreeWalker(root, 4), values: string[] = []; let node: Node | null; while ((node = walker.nextNode())) if (node.textContent?.trim()) values.push(getComputedStyle(node.parentElement!).fontFamily); return values; });
-  expect(applied.every(font => font.includes('FandolKai'))).toBe(true); expect((await paragraph.screenshot()).equals(before)).toBe(false);
+  expect(applied.every(font => font.includes(chosenFont))).toBe(true); expect((await paragraph.screenshot()).equals(before)).toBe(false);
   const spanCount = await paragraph.locator('span').count();
-  for (const family of ['Noto Serif CJK SC', 'Calibri', 'Aptos', 'FandolKai', 'FandolSong', 'FandolKai']) { await font.fill(family); await font.press('Enter'); await expect(font).toHaveValue(family); }
+  for (const family of ['Noto Serif CJK SC', 'Calibri', 'Aptos', 'FandolKai', 'FandolSong', chosenFont]) { await font.fill(family); await font.press('Enter'); await expect(font).toHaveValue(family); }
   expect(await paragraph.locator('span').count()).toBeLessThanOrEqual(spanCount);
   await size.fill('10.5'); await size.press('Enter'); await expect(size).toHaveValue('10.5');
   await page.getByRole('tab', { name: '文件', exact: true }).click(); const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
   const path = info.outputPath('font-audit.docx'); await (await pending).saveAs(path); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles(path);
   await expect(page.getByRole('heading', { name: 'font-audit.docx', exact: true })).toBeVisible();
-  const reopened = page.frameLocator('iframe[title="正文编辑"]').locator('p').filter({ hasText: 'ABCxyz' }).first();
+  const reopened = page.frameLocator('iframe[title="正文编辑"]').locator('[data-office-editor] p').filter({ hasText: 'ABCxyz' }).first();
   await reopened.evaluate(root => { root.closest<HTMLElement>('[contenteditable]')!.focus(); const range = document.createRange(); range.selectNodeContents(root); const selected = document.getSelection()!; selected.removeAllRanges(); selected.addRange(range); document.dispatchEvent(new Event('selectionchange')); });
-  await expect(font).toHaveValue('FandolKai'); await expect(size).toHaveValue('10.5');
+  await expect(font).toHaveValue(chosenFont); await expect(size).toHaveValue('10.5');
   await font.fill('Calibri'); await font.press('Enter'); await expect(page.getByRole('status', { name: /本机没有.*Calibri/ })).toBeVisible();
-  await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(font).toHaveValue('FandolKai');
+  await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(font).toHaveValue(chosenFont);
 });
 
 test('Office audit: pending typing format follows its caret and Word keyboard commands use shared history', async ({ page }) => {

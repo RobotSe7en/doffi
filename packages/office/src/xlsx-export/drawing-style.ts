@@ -87,7 +87,7 @@ export class WorkbookDrawingStyles {
       return child.children.map(nested => inline(nested, combined, nextLink)).join("");
     };
     const end = this.classStyle(node.attrs["data-office-end-style"]);
-    return element("a:p", "<a:pPr" + paragraphProperties(css, raw, raw, node, nativeLevel === undefined ? undefined : Number(nativeLevel)) +
+    return element("a:p", "<a:pPr" + paragraphProperties("xlsx", css, raw, raw, node, nativeLevel === undefined ? undefined : Number(nativeLevel)) +
       "</a:pPr>" + node.children.map(child => inline(child)).join("") +
       (Object.keys(end.raw).length ? "<a:endParaRPr" + runProperties(end.css, end.raw) + "</a:endParaRPr>" : ""));
   }
@@ -97,7 +97,7 @@ export class WorkbookDrawingStyles {
     const style = [...levels].find(name => (node.attrs.class ?? "").split(/\s+/).includes(name!));
     const level = (name: string, className: string): string => {
       const value = this.classStyle(className);
-      return Object.keys(value.raw).length ? "<a:" + name + paragraphProperties(value.css, value.raw, value.raw) + "</a:" + name + ">" : "";
+      return Object.keys(value.raw).length ? "<a:" + name + paragraphProperties("xlsx", value.css, value.raw, value.raw) + "</a:" + name + ">" : "";
     };
     const list = style ? level("defPPr", style) +
       Array.from({ length: 9 }, (_, index) => level("lvl" + (index + 1) + "pPr", style + "-level-" + index)).join("") : "";
@@ -110,7 +110,7 @@ export class WorkbookDrawingStyles {
     if (!textKeys.length) return "";
     const selected = Object.fromEntries(textKeys.map(key => [key, raw[key]!]));
     return element("c:txPr", this.bodyProperties(css) + "<a:lstStyle/><a:p><a:pPr" +
-      paragraphProperties(css, selected, selected) + "</a:pPr></a:p>");
+      paragraphProperties("xlsx", css, selected, selected) + "</a:pPr></a:p>");
   }
 }
 

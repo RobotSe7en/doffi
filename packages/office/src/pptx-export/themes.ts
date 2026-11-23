@@ -36,7 +36,7 @@ export function textStyle(ctx: PresentationExportContext, surface: NativeSurface
     let result = "<" + tag + ">";
     for (let level = 0; level < 9; level++) {
         const { css, own } = ctx.styles.textDefaults(className, level, surface);
-        result += "<a:lvl" + (level + 1) + "pPr" + paragraphProperties(css, own, own) + "</a:lvl" + (level + 1) + "pPr>";
+        result += "<a:lvl" + (level + 1) + "pPr" + paragraphProperties("pptx", css, own, own) + "</a:lvl" + (level + 1) + "pPr>";
     }
     return result + "</" + tag + ">";
 }
