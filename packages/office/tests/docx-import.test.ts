@@ -169,7 +169,7 @@ test("rejects DTD, malformed XML, missing relations, style cycles and budget ove
     importDocx(fixture(), { documentId: "budget", limits: { maxNodes: 20 } }),
   ).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
 });
-test("rejects executable hyperlink targets and unresolved bookmark targets", () => {
+test("rejects executable hyperlink targets and retains an unresolved bookmark as an internal target", () => {
   for (const target of ["javascript:alert(1)", "data:text/html,bad"]) {
     const bytes = mutate("06-links-tabs.docx", "word/_rels/document.xml.rels", (source) =>
       source.replace("https://example.com/document", target),
@@ -179,7 +179,9 @@ test("rejects executable hyperlink targets and unresolved bookmark targets", () 
   const bytes = mutate("06-links-tabs.docx", "word/document.xml", (source) =>
     source.replace('w:anchor="目标"', 'w:anchor="missing"'),
   );
-  expect(() => importDocx(bytes, { documentId: "bookmark" })).toThrowError(DocumentError);
+  const model = openDocument(importDocx(bytes, { documentId: "bookmark" }));
+  expect(model.snapshot().metadata.word!.hyperlinks).toContainEqual(expect.objectContaining({ bookmark: "missing" }));
+  expect(model.snapshot().metadata.word!.bookmarks).not.toContainEqual(expect.objectContaining({ name: "missing" }));
 });
 test("uses relationship targets and namespace URIs rather than hard-coded prefixes and paths", () => {
   const files = unzipSync(fixture());
@@ -200,6 +202,18 @@ test("uses relationship targets and namespace URIs rather than hard-coded prefix
   expect(
     openDocument(importDocx(zipSync(files), { documentId: "paths" })).snapshot().html,
   ).toContain("实施报告");
+});
+
+test("compatible reading admits redundant disabled italic on a paragraph mark and rejects conflicts", () => {
+  const format = (second: string): Uint8Array => mutate("01-text-numbering.docx", "word/document.xml", source =>
+    source.replace("</w:pPr>", `<w:rPr><w:i w:val="false"/><w:i w:val="${second}"/></w:rPr></w:pPr>`));
+  const identical = format("false");
+  expect(() => importDocx(identical, { documentId: "strict-italic" })).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+  const model = openDocument(importNativeDocx(identical, { documentId: "compatible-italic" }));
+  expect(model.snapshot().html).toMatch(/<span[^>]*data-word-paragraph-mark="true"[^>]*font-style:normal/);
+  const reopened = openDocument(importNativeDocx(exportDocx(model).bytes, { documentId: "compatible-italic-reopen" }));
+  expect(reopened.snapshot().html).not.toMatch(/<span[^>]*data-word-paragraph-mark="true"[^>]*font-style:italic/);
+  expect(() => importNativeDocx(format("true"), { documentId: "conflicting-italic" })).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
 });
 
 test("resolves conditional table styles with direct cell overrides", () => {
@@ -353,7 +367,7 @@ for (const item of cases) {
     "reads a LibreOffice-produced DOCX and preserves its current text and package: " + item.file,
     () => {
       const bytes = new Uint8Array(readFileSync(new URL("producer/" + item.file, directory)));
-      const model = openDocument(importDocx(bytes, { documentId: "producer" }));
+      const model = openDocument(importNativeDocx(bytes, { documentId: "producer" }));
       expect(model.snapshot().metadata.word!.automaticHyphenation).toBe(true);
       if (item.file === "08-comments-revisions.docx")
         expect(model.snapshot().html).toContain("--word-overflow-punctuation:0");

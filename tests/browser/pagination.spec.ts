@@ -31,7 +31,7 @@ import {
   rowStylesFixture,
   conditionalFormatFixture,
 } from "../../packages/office/tests/table-style-fixture.js";
-import { importDocx, exportDocx } from "@doffi/office";
+import { importDocx, exportDocx, readDocumentZip } from "@doffi/office";
 import { openSdkHost } from "./sdk-host.js";
 import { rowGapFixture } from "../../packages/office/tests/row-gap-fixture.js";
 import {
@@ -58,6 +58,39 @@ declare global {
   }
 }
 let code: string;
+
+test("native style components preserve relative spacing in preview and editing after DOCX reopen", async ({ page }) => {
+  const model = openWordDocument(importDocx(mutateDocx("04-styles-sections.docx", {}), { documentId: "relative-paragraph-style" }), { kind: "document" });
+  const style = model.snapshot().metadata.word!.styles.find(item => item.styleId === "Derived")!;
+  const files = new Map(model.serialize()), selector = (name: string): string => ("." + name).repeat(5);
+  const source = new TextDecoder().decode(files.get("styles.css"));
+  files.set("styles.css", new TextEncoder().encode(source + "\n" + selector(style.components!.r!) + "{font-size:30pt}"
+    + selector(style.components!.p!) + "{margin-top:2em}"));
+  const native = exportDocx(openWordDocument(files, { kind: "document" }));
+  const nativeStyles = readDocumentZip(native.bytes).get("word/styles.xml")!;
+  const inherited = mutateDocx("04-styles-sections.docx", {
+    "word/styles.xml": () => new TextDecoder().decode(nativeStyles),
+    "word/document.xml": xml => nativeBody(xml, '<w:p><w:r><w:t>BEFORE</w:t></w:r></w:p>'
+      + '<w:p><w:pPr><w:pStyle w:val="Derived"/></w:pPr><w:r><w:t>继承样式</w:t></w:r></w:p>'),
+  });
+  const reopened = importDocx(inherited, { documentId: "relative-style-reopen" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, reopened, mode);
+    const paragraph = page.frameLocator("iframe").locator('[data-word-style="Derived"]').filter({ hasText: "继承样式" }).first();
+    await expect(paragraph).toHaveCSS("margin-top", "80px");
+  }
+});
+
+test("compatible paragraph marks project redundant disabled italic consistently", async ({ page }) => {
+  const native = mutateDocx("01-text-numbering.docx", { "word/document.xml": source => source.replace("</w:pPr>",
+    '<w:rPr><w:i w:val="false"/><w:i w:val="false"/></w:rPr></w:pPr>') });
+  const files = importDocx(native, { documentId: "duplicate-paragraph-italic" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    await expect(page.frameLocator("iframe").locator('[data-word-paragraph-mark="true"]').first()).toHaveCSS("font-style", "normal");
+  }
+});
+
 function continuousColumnsFiles(lines = 6, noBalance = false, hardBreak = false): DocumentPackage {
   const session = createDocumentSession(
       openWordDocument(

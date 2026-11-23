@@ -88,7 +88,7 @@ window.host = {titleId:title.nodeId,summaryId:summary.nodeId,session,preview,
     const { directory, url } = await consumer(kind), page = await browser.newPage(), errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(url); await page.waitForFunction(() => window.host?.ready());
-    const titleId = await page.evaluate(() => window.host.titleId);
+    const { titleId, summaryId } = await page.evaluate(() => ({ titleId: window.host.titleId, summaryId: window.host.summaryId }));
     const readonly = page.frameLocator('iframe[title="独立只读预览"]');
     await expect(readonly.locator('[contenteditable="true"]')).toHaveCount(0);
     await expect(readonly.locator(`[data-node-id="${titleId}"]`).first()).toHaveText("项目实施报告");
@@ -101,6 +101,7 @@ window.host = {titleId:title.nodeId,summaryId:summary.nodeId,session,preview,
     });
     await page.keyboard.insertText("（人工）");
     await expect.poll(() => page.evaluate(() => window.host.revision())).toBe(1);
+    await expect(input.locator(`[data-node-id="${titleId}"]`)).toHaveText("项目实施报告（人工）");
     await page.getByRole("button", { name: "返回预览与批注", exact: true }).click();
     await page.getByRole("button", { name: "统一提交批注", exact: true }).click();
     await page.waitForFunction(() => window.submitted?.baseRevision === 1);
@@ -129,8 +130,8 @@ import assert from 'node:assert/strict'; import {readFileSync,writeFileSync} fro
 import {openDocument} from '@doffi/core'; import {readDocumentZip,importDocx} from '@doffi/office'; import {runConversionProcess} from '@doffi/node/dev'; import {renderDocumentPdf} from '@doffi/node';
 const directory=${JSON.stringify(cache)}, kind=${JSON.stringify(kind)}, bytes=new Uint8Array(readFileSync(directory+'/'+kind+'.zip'));
 const model=openDocument(readDocumentZip(bytes));assert.equal(model.snapshot().manifest.revision,5);
-const text=model.snapshot().html;
-assert.ok(text.includes('项目实施报告（人工）'));assert.ok(text.includes('第四季度'));assert.ok(model.snapshot().annotations.every(a=>a.status==='resolved'));
+assert.equal(model.getNode(${JSON.stringify(titleId)}).text,'项目实施报告（人工）');
+assert.ok(model.getNode(${JSON.stringify(summaryId)}).text.includes('第四季度'));assert.ok(model.snapshot().annotations.every(a=>a.status==='resolved'));
 const docx=new Uint8Array(readFileSync(directory+'/'+kind+'.docx')), native=openDocument(importDocx(docx,{documentId:'packed-native'}));
 assert.equal(native.snapshot().annotations.length,2);assert.ok(native.snapshot().annotations.every(a=>a.status==='resolved'));
 const pdf=await renderDocumentPdf(model,{browserExecutable:${JSON.stringify(executable)}});writeFileSync(directory+'/'+kind+'.pdf',pdf.bytes);

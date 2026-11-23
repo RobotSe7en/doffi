@@ -221,8 +221,8 @@ export class ExportStyles {
   }
   private values(style: Style): Css {
     if (style.components) {
-      const p = style.components.p ? this.component(style.components.p) : {},
-        r = style.components.r ? this.component(style.components.r) : {};
+      const r = style.components.r ? this.component(style.components.r) : {},
+        p = style.components.p ? this.component(style.components.p, { ...this.defaults, ...r }) : {};
       return { ...p, ...r };
     }
     const result = this.css.classStyle(style.cssClass, this.defaults);
@@ -239,7 +239,8 @@ export class ExportStyles {
       : result;
   }
   private own(style: Style, kind: "p" | "r", css: Css, parent: Css): Css {
-    if (style.components?.[kind]) return this.component(style.components[kind]!);
+    if (style.components?.[kind]) return this.component(style.components[kind]!, kind === "p" && css["font-size"]
+      ? { ...this.defaults, "font-size": css["font-size"] } : this.defaults);
     const original = kind === "p" ? style.paragraphProperties : style.runProperties;
     const allowed = kind === "p" ? paragraphKeys : runKeys;
     const declared = new Set([

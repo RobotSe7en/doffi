@@ -10,7 +10,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 const directory = new URL("../../../examples/docx/", import.meta.url);
 const fixture = (name: string) => new Uint8Array(readFileSync(new URL(name, directory)));
 const model = (name: string) =>
-  openDocument(importDocx(fixture(name), { documentId: "export-test" }));
+  openDocument(importNativeDocx(fixture(name), { documentId: "export-test" }));
 const mainText = (document: ReturnType<typeof openDocument>) =>
   document
     .snapshot()
@@ -30,7 +30,9 @@ for (const producer of ["", "producer/"])
       expect(source.serialize()).toEqual(before);
       expect(Object.keys(native)).not.toContain("manifest.json");
       expect(strFromU8(native["word/document.xml"]!)).not.toContain("altChunk");
-      const reopened = openDocument(importDocx(result.bytes, { documentId: "reopened" }));
+      expect(strFromU8(native["[Content_Types].xml"]!)).toContain('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"');
+      expect(strFromU8(native["word/_rels/document.xml.rels"]!)).toContain('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"');
+      const reopened = openDocument(importNativeDocx(result.bytes, { documentId: "reopened" }));
       expect(mainText(reopened)).toBe(mainText(source));
       const actual = reopened.snapshot();
       expect(actual.metadata.sections).toHaveLength(snapshot.metadata.sections!.length);

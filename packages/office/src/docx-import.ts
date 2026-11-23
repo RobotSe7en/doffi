@@ -172,7 +172,7 @@ class Importer {
     private readonly native?: DocxNativeImport,
   ) {
     this.currentPart = main;
-    this.styles = new DocxStyles(opc, main);
+    this.styles = new DocxStyles(opc, main, !!native);
     this.word.evenAndOddHeaders = on(
       child(
         opc.related(main, "settings") ? opc.read(opc.related(main, "settings")!) : undefined,

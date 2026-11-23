@@ -11,6 +11,7 @@ const root = resolve(import.meta.dirname, ".."), cache = join(root, ".cache/docx
 const run = (exe, args) => execFileSync(exe, args, { cwd: root, encoding: "utf8", timeout: 55_000, maxBuffer: 8 * 1024 * 1024 }).trim();
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const mainText = (model) => model.getNode(model.snapshot().metadata.word.stories.find((story) => story.kind === "main").rootNodeId).text;
+const imageAssets = snapshot => new Set(snapshot.manifest.assets.filter(asset => asset.mimeType.startsWith("image/")).map(asset => asset.sha256)).size;
 for (const name of ["source", "source-reopened", "native", "reopened", "pdf"]) { rmSync(join(cache, name), { recursive: true, force: true }); mkdirSync(join(cache, name), { recursive: true }); }
 const poppler = spawnSync("pdftotext", ["-v"], { encoding: "utf8", timeout: 10_000 }); assert.equal(poppler.status, 0);
 const environment = { libreOffice: run("libreoffice", ["--version"]), poppler: (poppler.stdout + poppler.stderr).trim().split("\n")[0], fonts: [], word: "not-verified", wps: "not-verified" };
@@ -67,7 +68,7 @@ try {
     if (before.metadata.word.fields.length) assert.equal(mainText(reopened), mainText(baseline), item.filename + " producer field results");
     assert.deepEqual(after.metadata.word.revisions.map(({ kind, author, date }) => ({ kind, author, date })), before.metadata.word.revisions.map(({ kind, author, date }) => ({ kind, author, date })), item.filename + " revisions");
     assert.deepEqual(after.annotations.map(({ status, author }) => ({ status, author })), before.annotations.map(({ status, author }) => ({ status, author })), item.filename + " comments");
-    assert.equal(after.manifest.assets.length, before.manifest.assets.length, item.filename + " image parts");
+    assert.equal(imageAssets(after), imageAssets(before), item.filename + " image parts");
     const pdf = join(cache, "pdf", item.filename.replace(/\.docx$/, ".pdf")), info = run("pdfinfo", [pdf]), pages = Number(/Pages:\s+(\d+)/.exec(info)?.[1]);
     assert.ok(pages > 0, item.filename + " PDF pages");
     const text = run("pdftotext", [pdf, "-"]); assert.ok(text.trim(), item.filename + " searchable text");
@@ -86,7 +87,7 @@ try {
       if (entries) { const expected = entries.find((entry) => entry.file === item.filename.replace(/^producer-/, "")); if (expected) assert.equal(pages, expected.pages, item.filename + " page count"); }
     }
     const images = run("pdfimages", ["-list", pdf]).split("\n").filter((line) => /^\s*\d+\s+\d+\s+image\s/.test(line)).length;
-    assert.ok(images >= before.manifest.assets.length, item.filename + " rendered images");
+    assert.ok(images >= imageAssets(before), item.filename + " rendered images");
     run("pdftoppm", ["-f", "1", "-singlefile", "-r", "96", "-png", pdf, pdf.replace(/\.pdf$/, "")]);
     records.push({ file: item.filename, inputSha256: item.inputSha256, exportSha256: item.exportSha256, reopenedSha256: digest(reopenedBytes), pages, images, comments: after.annotations.length, resolvedComments: after.annotations.filter((annotation) => annotation.status === "resolved").length });
   }

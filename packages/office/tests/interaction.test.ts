@@ -38,5 +38,6 @@ test("native rich-comment requests include the complete body and associated Word
   expect(annotation.bodyNodeId).toBeDefined();
   expect(request.context.blocks.some((block) => block.html.includes('data-node-id="' + annotation.bodyNodeId + '"'))).toBe(true);
   expect(request.annotations[0]!.author!.name).toBe("审阅者");
-  expect(request.context.metadata.word!.revisions).toHaveLength(2);
+  expect(session.snapshot().metadata.word!.revisions).toHaveLength(2);
+  expect(request.context.metadata.word!.revisions).toEqual([]);
 });

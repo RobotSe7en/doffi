@@ -51,7 +51,7 @@ export function readWordEmptyContinuation(
           "An empty continuation paragraph has independent structure or history.",
         );
     const css = styles.paragraph(properties),
-      run = styles.run(child(properties, "rPr"));
+      run = styles.run(child(properties, "rPr"), {}, false, true, true);
     for (const marker of elements(child(properties, "rPr")))
       if (["ins", "del", "moveFrom", "moveTo", "rPrChange"].includes(marker.name))
         unsupported(marker, "An empty continuation paragraph has independent mark history.");
