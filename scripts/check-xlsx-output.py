@@ -29,6 +29,7 @@ CT = "http://schemas.openxmlformats.org/package/2006/content-types"
 TC = "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"
 XR = "http://schemas.microsoft.com/office/spreadsheetml/2014/revision"
 MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+ROW_VISIBILITY = "urn:doffi:xlsx:row-visibility:1"
 GUID = re.compile(r"\{[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\}")
 
 
@@ -175,7 +176,14 @@ def audit(file, standards):
         if root.tag == "{" + S + "}worksheet":
             seen = set()
             for row in root.findall("{" + S + "}sheetData/{" + S + "}row"):
-                for cell in row:
+                markers = list(row.iter("{" + ROW_VISIBILITY + "}filterHidden"))
+                if markers:
+                    assert len(markers) == 1 and row.get("hidden") in {"1", "true"}, "Invalid filter-only row provenance"
+                    marker = markers[0]
+                    extension = marker.getparent()
+                    assert extension.tag == "{" + S + "}ext" and extension.get("uri") == ROW_VISIBILITY
+                    assert not marker.attrib and not len(marker) and not (marker.text or "").strip()
+                for cell in row.findall("{" + S + "}c"):
                     address = cell.get("r"); r, _ = coordinate(address)
                     assert r == int(row.get("r")) and address not in seen, "Repeated or misplaced cell"
                     seen.add(address)

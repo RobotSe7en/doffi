@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
-  "description": "Bounded document ZIP adapters and native DOCX/PPTX import/export",
+  "description": "Bounded document ZIP adapters and native DOCX, PPTX and XLSX import/export",
   "files": [
     "dist",
     "LICENSE",

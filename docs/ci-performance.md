@@ -48,14 +48,14 @@ gh workflow run ci.yml --ref <branch>
 
 阶段 PR 显式加上 `stage-acceptance` 标签，或手动运行 CI 并开启 `stage_acceptance`。最终 HEAD 必须同时通过全部日常检查和 `workbook-scale`，各分片必须实际成功。标签保留期间的新提交不自动重跑；集中修复完成后重新发起一次，旧 HEAD 的结果不能代替。
 
-专项运行完整原生 XLSX 参考、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
+专项运行完整原生 XLSX 参考与输出、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
 
 ```sh
 node scripts/install-acceptance-fonts.mjs --system-fonts
 FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-scale
 ```
 
-完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核），已超过原先整个 job 的 15 分钟；工作簿浏览器 job 的总时限设为 30 分钟，Word／PPT 保持 15 分钟。阶段容量现在串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限设为 60 分钟。它们仅是 CI 调度时限，不改变首屏、计算、编辑／交互 p95、CPU／内存、DOM 或取消的任何 SDK 性能门槛。
+完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核）。工作簿浏览器作业总时限为 30 分钟。Word 的旧版 Chromium 作业在 R3 输出验收耗尽 15 分钟后，单独延长到 30 分钟。其他 Word 和 PPT 浏览器作业仍为 15 分钟。阶段容量串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限为 60 分钟。首屏、计算、编辑／交互 p95、CPU／内存、DOM 和取消继续按各自的 SDK 性能门槛验收。
 
 前提为 Linux/systemd/cgroup v2、至少四个可用逻辑 CPU、已固定的四个浏览器、字体及 LibreOffice 环境。脚本需要无交互 sudo 创建临时受限服务；不更改持久系统服务。
 

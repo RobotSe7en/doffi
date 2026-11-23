@@ -143,7 +143,7 @@ export class DocxStyles {
   readonly language: string | undefined;
 
   private readonly stylePart: string | undefined;
-  constructor(opc: OpcPackage, main: string) {
+  constructor(opc: OpcPackage, main: string, private readonly compatibleImport = false) {
     this.stylePart = opc.related(main, "styles");
     const stylePath = opc.related(main, "styles");
     const styleRoot = stylePath ? opc.read(stylePath) : undefined;
@@ -565,7 +565,12 @@ export class DocxStyles {
       ["caps", "text-transform", "uppercase", "none"],
       ["smallCaps", "font-variant", "small-caps", "normal"],
     ]) {
-      const item = child(properties, name!);
+      const italic = name === "i" && paragraphMark && this.compatibleImport ? elements(properties, "i") : [];
+      // LibreOffice repeats the same disabled italic flag on some table
+      // paragraph marks. Only the redundant, semantically identical case is safe.
+      const redundant = italic.length === 2 && italic.every(item => !item.content.length
+        && [...item.attrs.keys()].every(key => key === W + " val" || key.startsWith("http://www.w3.org/2000/xmlns/ ")) && !on(item));
+      const item = redundant ? italic[0] : child(properties, name!);
       if (item) {
         const enabled = on(item);
         if (toggle && !enabled) continue;

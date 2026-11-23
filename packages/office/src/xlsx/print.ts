@@ -35,6 +35,11 @@ const papers: Readonly<Record<number, { widthPt: number; heightPt: number }>> = 
   1: inch(8.5, 11), 2: inch(8.5, 11), 3: inch(11, 17), 4: inch(17, 11), 5: inch(8.5, 14), 6: inch(5.5, 8.5), 7: inch(7.25, 10.5),
   8: mm(297, 420), 9: mm(210, 297), 10: mm(210, 297), 11: mm(148, 210), 12: mm(250, 353), 13: mm(176, 250),
 };
+export function nativePaperSize(size: NonNullable<WorkbookPrint["paper"]>): number | undefined {
+  const match = Object.entries(papers).find(([, value]) => Math.abs(value.widthPt - size.widthPt) < 1e-8 && Math.abs(value.heightPt - size.heightPt) < 1e-8);
+  return match ? Number(match[0]) : undefined;
+}
+
 function paper(setup: XmlNode | undefined): WorkbookPrint["paper"] {
   if (!setup) return undefined;
   const width = value(setup, "paperWidth"), height = value(setup, "paperHeight");

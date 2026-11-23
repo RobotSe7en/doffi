@@ -13,7 +13,7 @@ import type {
   DocumentSnapshot,
 } from "@doffi/core";
 import { importDocx, importPptx, DEFAULT_MAX_ZIP_BYTES, writeDocumentZip } from "@doffi/office";
-import type { DocxExportReport, OfficeImportProgress, PptxExportReport } from "@doffi/office";
+import type { DocxExportReport, OfficeImportProgress, PptxExportReport, XlsxExportProgress } from "@doffi/office";
 import type {
   DocumentWorkbenchView,
   PresentationWorkbenchView,
@@ -33,6 +33,9 @@ import { Icon } from "./icons.js";
 import { openWorkbookFile } from "./open-workbook.js";
 import type { HostedWorkbook, OpenedWorkspaceDocument } from "./open-workbook.js";
 import { WorkbookPane } from "./WorkbookPane.js";
+import { WorkbookPrintOptions } from "./WorkbookPrintOptions.js";
+import type { WorkbookSelectedCells } from "./WorkbookPrintOptions.js";
+import type { WorkbookOutputOptions, WorkbookOutputResult } from "./workbook-output.js";
 import { WelcomeScreen } from "./WelcomeScreen.js";
 import { OfficeRibbon } from "@doffi/editor/react";
 import type { OfficeActions } from "@doffi/editor/react";
@@ -128,7 +131,13 @@ export function App() {
   const [session, setSession] = useState<DocumentSession>();
   const [submitted, setSubmitted] = useState(false);
   const generation = useRef(0);
-  const [exporting, setExporting] = useState<"pdf" | "png" | "docx" | "pptx">();
+  const [exporting, setExporting] = useState<"pdf" | "png" | "docx" | "pptx" | "xlsx" | "zip">();
+  const [exportProgress, setExportProgress] = useState<XlsxExportProgress>();
+  const [workbookPrint, setWorkbookPrint] = useState<{ format: "pdf" | "png"; revision: number; selection: WorkbookSelectedCells | undefined }>();
+  const [workbookReport, setWorkbookReport] = useState<{
+    name: string;
+    report: NonNullable<WorkbookOutputResult["report"]>;
+  }>();
   const [pptxReport, setPptxReport] = useState<PptxExportReport>();
   const isPresentation = Boolean(snapshot?.metadata.presentation);
   const pptxNativePreview = snapshot?.metadata.presentation?.nativePreview;
@@ -136,7 +145,7 @@ export function App() {
   const [docxReport, setDocxReport] = useState<DocxExportReport>();
   const exportRef = useRef<{
     controller: AbortController;
-    session: DocumentSession;
+    session: DocumentSession | HostedWorkbook;
     revision: number;
   }>(undefined);
   useEffect(() => {
@@ -249,15 +258,21 @@ export function App() {
     }
     return true;
   }
+  function leaveExport(): void {
+    exportRef.current?.controller.abort();
+    exportRef.current = undefined;
+    setExporting(undefined);
+    setExportProgress(undefined);
+    setWorkbookPrint(undefined);
+    setWorkbookReport(undefined);
+  }
   function beginLoad(): { current: number; controller: AbortController } | undefined {
     if (!canLeaveWorkbook()) return;
     const current = ++generation.current;
     loadRef.current?.abort();
     const controller = new AbortController();
     loadRef.current = controller;
-    exportRef.current?.controller.abort();
-    exportRef.current = undefined;
-    setExporting(undefined);
+    leaveExport();
     setLoading(true);
     setProgress(undefined);
     setError("");
@@ -466,9 +481,7 @@ export function App() {
       generation.current++;
       loadRef.current?.abort();
       loadRef.current = undefined;
-      exportRef.current?.controller.abort();
-      exportRef.current = undefined;
-      setExporting(undefined);
+      leaveExport();
       setError("");
       setLoading(false);
       activate(cached, file);
@@ -699,6 +712,48 @@ export function App() {
       }
     }
   }
+  function printWorkbook(format: "pdf" | "png"): void {
+    if (!workbook || workbook.disposed || workbook.pendingInput || exportRef.current) return;
+    setError("");
+    const selection = workbookEditor.current?.selection()?.anchor;
+    setWorkbookPrint({ format, revision: workbook.session.state().revision, selection: selection?.kind === "cells" ? selection : undefined });
+  }
+  async function downloadWorkbook(options: WorkbookOutputOptions): Promise<void> {
+    const active = workbook;
+    if (!active || activeDocument.current !== active || active.disposed || active.pendingInput || exportRef.current) return;
+    const { revision } = active.session.state(), current = generation.current;
+    const name = (activeFile?.name ?? "workbook").replace(/\.(?:xlsx|zip)$/i, "") + "." + options.format;
+    const label = options.format === "zip" ? "文档包" : options.format.toUpperCase();
+    const job = { controller: new AbortController(), session: active, revision };
+    exportRef.current = job;
+    setExporting(options.format);
+    setWorkbookPrint(undefined);
+    setWorkbookReport(undefined);
+    setError("");
+    try {
+      const result = await active.export(options, job.controller.signal, setExportProgress);
+      if (current !== generation.current || exportRef.current !== job) return;
+      job.controller.signal.throwIfAborted();
+      if (active.session.state().revision !== revision)
+        throw new DocumentError("RevisionConflict", "导出期间工作簿已变化，请重新导出。");
+      downloadBytes(result.bytes, name, result.mimeType);
+      if (result.report) setWorkbookReport({ name, report: result.report });
+    } catch (reason) {
+      if (current === generation.current && exportRef.current === job)
+        setError(job.controller.signal.aborted ? "已取消 " + label + " 导出。"
+          : reason instanceof Error ? reason.message : label + " 导出失败。");
+    } finally {
+      if (exportRef.current === job) {
+        exportRef.current = undefined;
+        setExporting(undefined);
+        setExportProgress(undefined);
+      }
+    }
+  }
+  const workbookOutputDisabled = !workbook || workbook.disposed || workbook.pendingInput || Boolean(exporting);
+  const visibleWorkbookReport = workbookReport && workbook && !workbook.disposed
+    && workbook.session.state().revision === workbookReport.report.revision ? workbookReport : undefined;
+  const workbookClock = () => ({ now: { unixMilliseconds: Date.now(), utcOffsetMinutes: -new Date().getTimezoneOffset() } });
   const activeFile = files.find((file) => file.id === activeId);
   const visibleFiles = files.filter(
     (file) =>
@@ -901,7 +956,12 @@ export function App() {
             disabled: !session,
           },
         }
-      : {}),
+      : {
+          package: { run: () => { void downloadWorkbook({ format: "zip" }); }, disabled: workbookOutputDisabled },
+          native: { run: () => { void downloadWorkbook({ format: "xlsx", context: workbookClock() }); }, disabled: workbookOutputDisabled },
+          pdf: { run: () => printWorkbook("pdf"), disabled: workbookOutputDisabled },
+          png: { run: () => printWorkbook("png"), disabled: workbookOutputDisabled },
+        }),
     undo: {
       run: () => {
         if (workbook || isPresentation) runNative("undo");
@@ -998,9 +1058,7 @@ export function App() {
   function newWordDocument(): void {
     if (!canLeaveWorkbook()) return;
     generation.current++;
-    exportRef.current?.controller.abort();
-    exportRef.current = undefined;
-    setExporting(undefined);
+    leaveExport();
     loadRef.current?.abort();
     loadRef.current = undefined;
     activate(
@@ -1012,9 +1070,7 @@ export function App() {
   function newPresentation(): void {
     if (!canLeaveWorkbook()) return;
     generation.current++;
-    exportRef.current?.controller.abort();
-    exportRef.current = undefined;
-    setExporting(undefined);
+    leaveExport();
     loadRef.current?.abort();
     loadRef.current = undefined;
     activate(
@@ -1178,6 +1234,7 @@ export function App() {
               title="返回首页"
               onClick={() => {
                 if (canLeaveWorkbook()) {
+                  leaveExport();
                   setHome(true);
                   window.scrollTo(0, 0);
                 }
@@ -1195,12 +1252,12 @@ export function App() {
             </button>
           </div>
           <div className="quick-access" role="toolbar" aria-label="快速访问">
-            {!workbook && (
+            {actions.package && (
               <button
                 title="下载文档包"
                 aria-label="下载文档包"
-                disabled={!session || loading}
-                onClick={download}
+                disabled={actions.package.disabled || loading}
+                onClick={actions.package.run}
               >
                 <Icon name="save" size={17} />
               </button>
@@ -1316,9 +1373,28 @@ export function App() {
           {docxDiagnosticsEnabled && <p className="document-status">{docxDiagnosticsNotice}</p>}
           {exporting && (
             <p role="status">
-              正在导出 {exporting.toUpperCase()}…{" "}
+              正在导出 {exporting === "zip" ? "文档包" : exporting.toUpperCase()}
+              {exportProgress && ` · ${{ calculate: "计算公式", worksheet: "写入工作表", package: "生成文件" }[exportProgress.phase]} ${exportProgress.completed} / ${exportProgress.total}`}…{" "}
               <button onClick={() => exportRef.current?.controller.abort()}>取消导出</button>
             </p>
+          )}
+          {workbook && workbookPrint && !workbookOutputDisabled && workbookPrint.revision === workbook.session.state().revision && (
+            <WorkbookPrintOptions key={workbookPrint.format} format={workbookPrint.format} selection={workbookPrint.selection} snapshot={workbook.snapshot()}
+              onClose={() => setWorkbookPrint(undefined)}
+              onSubmit={(print, pageIndex) => {
+                void downloadWorkbook({ format: workbookPrint.format,
+                  print: { ...print, context: workbookClock(), ...(activeFile ? { fileName: activeFile.name } : {}) },
+                  ...(pageIndex === undefined ? {} : { pageIndex }) });
+              }} />
+          )}
+          {visibleWorkbookReport && (
+            <section className="export-report" aria-label="工作簿导出报告">
+              <p>已生成 {visibleWorkbookReport.name}。{"formulaCaches" in visibleWorkbookReport.report
+                ? ` 原生批注 ${visibleWorkbookReport.report.exportedAnnotationIds.length} 条，导出损失 ${visibleWorkbookReport.report.losses.length} 项，未写入公式缓存 ${visibleWorkbookReport.report.formulaCaches.omitted} 项。`
+                : ` 打印作业共 ${visibleWorkbookReport.report.pages.length} 页。${visibleWorkbookReport.report.formulaValues === "cached" ? "已使用保存的公式值。" : ""}`}</p>
+              <button onClick={() => downloadBytes(new TextEncoder().encode(JSON.stringify(visibleWorkbookReport.report, null, 2)),
+                visibleWorkbookReport.name + ".export-report.json", "application/json")}>下载导出报告</button>
+            </section>
           )}
           {loading && (
             <p role="status">

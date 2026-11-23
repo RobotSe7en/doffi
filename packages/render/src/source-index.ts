@@ -208,7 +208,7 @@ export class PreviewSource {
     } else range.selectNode(token.node);
     return range;
   }
-  private visible(token: Token): boolean {
+  private visible(token: Token, includeLineBreaks = false): boolean {
     const element =
       this.fieldViews.get(token.node) ??
       (token.node.nodeType === 1 ? (token.node as HTMLElement) : token.node.parentElement!);
@@ -222,16 +222,19 @@ export class PreviewSource {
     return (
       token.node.isConnected &&
       style.visibility === "visible" &&
-      this.tokenRectangles(token).length > 0
+      this.tokenRectangles(token, 0, token.text.length, includeLineBreaks).length > 0
     );
   }
-  private tokenRectangles(token: Token, from = 0, to = token.text.length): DOMRect[] {
+  private tokenRectangles(token: Token, from = 0, to = token.text.length, includeLineBreaks = false): DOMRect[] {
     const owner =
       token.node.nodeType === 1 ? (token.node as HTMLElement) : token.node.parentElement!;
     if (owner.hasAttribute("data-word-drawing") && owner.dataset.nodeId)
       return this.elementRectangles(owner.dataset.nodeId);
+    // A rendered source break has height and zero width. It supplies one LF
+    // to the text selection, while still respecting an exact-height row clip.
+    const minimumWidth = includeLineBreaks && token.node === owner && owner.tagName === "BR" ? 0 : undefined;
     return [...this.tokenRange(token, from, to).getClientRects()].flatMap((rect) => {
-      const visible = wordRowVisibleRect(owner, rect);
+      const visible = wordRowVisibleRect(owner, rect, minimumWidth);
       return visible ? [visible] : [];
     });
   }
@@ -302,7 +305,7 @@ export class PreviewSource {
       const display = this.fieldViews.get(token.node);
       if (
         !this.contains(token.node) ||
-        !this.visible(token) ||
+        !this.visible(token, true) ||
         !range.intersectsNode(display ?? token.node)
       )
         continue;

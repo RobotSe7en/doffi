@@ -134,7 +134,7 @@ export function composeWordTableLayout(
   }
 }
 /** Exclude clipped geometry from pagination and source hit projections. */
-export function wordRowVisibleRect(owner: Element, rect: DOMRect): DOMRect | undefined {
+export function wordRowVisibleRect(owner: Element, rect: DOMRect, minimumWidth = 0.01): DOMRect | undefined {
   let left = rect.left,
     right = rect.right,
     top = rect.top,
@@ -149,7 +149,7 @@ export function wordRowVisibleRect(owner: Element, rect: DOMRect): DOMRect | und
       top = Math.max(top, clip.top);
       bottom = Math.min(bottom, clip.bottom);
     }
-  if (right - left < 0.01 || bottom - top < 0.1) return;
+  if (right - left < minimumWidth || bottom - top < 0.1) return;
   return clipped ? new DOMRect(left, top, right - left, bottom - top) : rect;
 }
 

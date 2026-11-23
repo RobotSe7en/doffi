@@ -5,6 +5,12 @@ import { attributes, boolean, integer, number, one, value } from "./values.js";
 import { colorDeclarations } from "./colors.js";
 import type { SpreadsheetColors } from "./colors.js";
 
+export const cellAlignmentChoices = {
+  horizontal: ["general", "left", "center", "right", "fill", "justify", "centerContinuous", "distributed"],
+  vertical: ["top", "center", "bottom", "justify", "distributed"],
+  readingOrder: ["context", "ltr", "rtl"],
+} as const;
+
 export function alignmentDeclarations(node: XmlNode | undefined, full: boolean): Css {
   const css: Css = {};
   if (node) {
@@ -14,8 +20,8 @@ export function alignmentDeclarations(node: XmlNode | undefined, full: boolean):
   }
   if (value(node, "textRotation") !== undefined || full) css["--office-cell-text-rotation"] = String(node ? integer(node, "textRotation", 0, 255, 0) : 0);
   for (const [key, choices, fallback] of [
-    ["horizontal", ["general", "left", "center", "right", "fill", "justify", "centerContinuous", "distributed"], "general"],
-    ["vertical", ["top", "center", "bottom", "justify", "distributed"], "bottom"],
+    ["horizontal", cellAlignmentChoices.horizontal, "general"],
+    ["vertical", cellAlignmentChoices.vertical, "bottom"],
   ] as const) {
     const setting = value(node, key);
     if (setting !== undefined && !choices.some(choice => choice === setting)) fail(node!, "A native cell alignment is invalid.");
@@ -26,11 +32,11 @@ export function alignmentDeclarations(node: XmlNode | undefined, full: boolean):
   }
   if (node && value(node, "indent") !== undefined || full) css["--office-cell-indent"] = node ? String(integer(node, "indent", 0, 255, 0)) : "0";
   if (node && value(node, "relativeIndent") !== undefined) css["--office-cell-relative-indent"] = String(integer(node, "relativeIndent", -15, 15));
-  if (node && value(node, "readingOrder") !== undefined || full) css["--office-cell-reading-order"] = ["context", "ltr", "rtl"][node ? integer(node, "readingOrder", 0, 2, 0) : 0]!;
+  if (node && value(node, "readingOrder") !== undefined || full) css["--office-cell-reading-order"] = cellAlignmentChoices.readingOrder[node ? integer(node, "readingOrder", 0, 2, 0) : 0]!;
   return css;
 }
 
-const patterns = new Set(["none", "solid", "mediumGray", "darkGray", "lightGray", "darkHorizontal", "darkVertical", "darkDown", "darkUp", "darkGrid", "darkTrellis", "lightHorizontal", "lightVertical", "lightDown", "lightUp", "lightGrid", "lightTrellis", "gray125", "gray0625"]);
+export const cellFillPatterns: ReadonlySet<string> = new Set(["none", "solid", "mediumGray", "darkGray", "lightGray", "darkHorizontal", "darkVertical", "darkDown", "darkUp", "darkGrid", "darkTrellis", "lightHorizontal", "lightVertical", "lightDown", "lightUp", "lightGrid", "lightTrellis", "gray125", "gray0625"]);
 function gradientDeclarations(node: XmlNode, colors: SpreadsheetColors): Css {
   attributes(node, ["type", "degree", "left", "right", "top", "bottom"]); check(node, ["stop"], S);
   const kind = value(node, "type") ?? "linear";
@@ -57,13 +63,13 @@ export function fillDeclarations(node: XmlNode, colors: SpreadsheetColors): Css 
   if (gradient) return gradientDeclarations(gradient, colors);
   attributes(pattern!, ["patternType"]); check(pattern, ["fgColor", "bgColor"], S);
   const kind = value(pattern, "patternType") ?? "none", foreground = one(pattern, "fgColor"), background = one(pattern, "bgColor"), css: Css = { "--office-cell-fill-kind": kind };
-  if (!patterns.has(kind)) fail(pattern!, "A native cell fill pattern is invalid.");
+  if (!cellFillPatterns.has(kind)) fail(pattern!, "A native cell fill pattern is invalid.");
   if (foreground) Object.assign(css, colorDeclarations("--office-cell-fill", colors.read(foreground)));
   if (background) Object.assign(css, colorDeclarations("--office-cell-fill-background", colors.read(background)));
   if (kind === "solid" && !foreground) fail(pattern!, "A solid cell fill requires a foreground color.");
   return css;
 }
-const borderKinds = new Set(["none", "thin", "medium", "dashed", "dotted", "thick", "double", "hair", "mediumDashed", "dashDot", "mediumDashDot", "dashDotDot", "mediumDashDotDot", "slantDashDot"]);
+export const cellBorderKinds: ReadonlySet<string> = new Set(["none", "thin", "medium", "dashed", "dotted", "thick", "double", "hair", "mediumDashed", "dashDot", "mediumDashDot", "dashDotDot", "mediumDashDotDot", "slantDashDot"]);
 export function borderDeclarations(node: XmlNode, colors: SpreadsheetColors, full: boolean): Css {
   attributes(node, ["diagonalUp", "diagonalDown", "outline"]); check(node, ["left", "right", "top", "bottom", "start", "end", "diagonal", "vertical", "horizontal"], S);
   const css: Css = {};
@@ -75,7 +81,7 @@ export function borderDeclarations(node: XmlNode, colors: SpreadsheetColors, ful
     if (!border) { if (full && ["left", "right", "top", "bottom", "diagonal"].includes(side)) css[`--office-cell-border-${side}-kind`] = "none"; continue; }
     attributes(border, ["style"]); check(border, ["color"], S);
     const kind = value(border, "style") ?? "none", color = one(border, "color");
-    if (!borderKinds.has(kind)) fail(border, "A native border style is invalid.");
+    if (!cellBorderKinds.has(kind)) fail(border, "A native border style is invalid.");
     if (full && ["vertical", "horizontal"].includes(side)) {
       if (kind !== "none") unsupported(border, "This internal cell border is not implemented.");
       if (color) colors.read(color); continue;

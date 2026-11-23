@@ -123,16 +123,20 @@ export function runProperties(css: Css, own: Css, raw: Css = own, extra: {
     contents += extra.hyperlink ?? "";
     return attributes(attrs) + ">" + contents;
 }
-function spacing(css: Css, name: string, tag: string): string {
+function spacing(css: Css, name: string, tag: string, format: "pptx" | "xlsx"): string {
     const value = css[name];
     if (value === undefined || value === "normal")
         return "";
     if (name !== "line-height" && value.includes("%"))
         unsupported("Percentage paragraph margins have no supported native PPTX representation.");
     const proportional = /^[-+.\d]+$/.test(value) || value.endsWith("em") || value.endsWith("%");
-    return "<a:" + tag + ">" + empty(proportional ? "a:spcPct" : "a:spcPts", { val: proportional ? integer(parseFloat(value) * (value.endsWith("%") ? .01 : 1), 100000, 0, 2147483647) : integer(points(value, css), 100, 0, 2147483647) }) + "</a:" + tag + ">";
+    // Native percentages scale PowerPoint's 1.2em base line box. CSS numbers
+    // already express a multiple of font size. Imported native ratios retain their units.
+    const base = format === "pptx" && name === "line-height" && css["--office-line-spacing-rule"] !== "proportional" ? 1.2 : 1;
+    const ratio = parseFloat(value) * (value.endsWith("%") ? .01 : 1) / base;
+    return "<a:" + tag + ">" + empty(proportional ? "a:spcPct" : "a:spcPts", { val: proportional ? integer(ratio, 100000, 0, 2147483647) : integer(points(value, css), 100, 0, 2147483647) }) + "</a:" + tag + ">";
 }
-export function paragraphProperties(css: Css, own: Css, raw: Css = own, node?: SourceElement, level?: number): string {
+export function paragraphProperties(format: "pptx" | "xlsx", css: Css, own: Css, raw: Css = own, node?: SourceElement, level?: number): string {
     const attrs: Record<string, string | number | undefined> = { lvl: level };
     let contents = "";
     if (present(own, "text-align"))
@@ -150,7 +154,7 @@ export function paragraphProperties(css: Css, own: Css, raw: Css = own, node?: S
         attrs.hangingPunct = css["--office-hanging-punctuation"] === "allow-end" ? 1 : 0;
     for (const [key, tag] of [["line-height", "lnSpc"], ["margin-top", "spcBef"], ["margin-bottom", "spcAft"]])
         if (own[key!] !== undefined)
-            contents += spacing(css, key!, tag!);
+            contents += spacing(css, key!, tag!, format);
     if (present(own, "--office-bullet-color"))
         contents += "<a:buClr>" + colorXml(css, "--office-bullet", raw) + "</a:buClr>";
     if (css["--office-bullet-size"] && own["--office-bullet-size"] !== undefined) {
@@ -193,7 +197,7 @@ export class PresentationTextWriter {
             attrs.anchorCtr = css["--office-text-anchor-center"] === "true" ? 1 : 0;
         let result = "<" + tag + "><a:bodyPr" + attributes(attrs) + ">", fit = object?.text?.autoFit;
         result += fit === "normal" ? empty("a:normAutofit", { fontScale: integer(object?.text?.fontScale ?? 1, 100000, 1, 100000), lnSpcReduction: integer(object?.text?.lineSpacingReduction ?? 0, 100000, 0, 100000) }) : fit === "shape" ? "<a:spAutoFit/>" : "<a:noAutofit/>";
-        result += "</a:bodyPr><a:lstStyle><a:defPPr" + paragraphProperties(css, ["td", "th"].includes(node.tag) ? Object.fromEntries(Object.entries(own).filter(([key]) => key !== "vertical-align")) : own, raw) + "</a:defPPr></a:lstStyle>";
+        result += "</a:bodyPr><a:lstStyle><a:defPPr" + paragraphProperties("pptx", css, ["td", "th"].includes(node.tag) ? Object.fromEntries(Object.entries(own).filter(([key]) => key !== "vertical-align")) : own, raw) + "</a:defPPr></a:lstStyle>";
         const paragraphs: {
             node: SourceElement;
             start: number;
@@ -213,7 +217,7 @@ export class PresentationTextWriter {
                         unsupported("Paragraph padding is outside the native PPTX text profile.");
             if (blocks.has(p.tag) && authored["background-color"] !== undefined && computed["background-color"] !== "transparent")
                 unsupported("Paragraph shading has no supported native PPTX representation.");
-            result += "<a:p><a:pPr" + paragraphProperties(computed, authored, refs, p, level) + "</a:pPr>";
+            result += "<a:p><a:pPr" + paragraphProperties("pptx", computed, authored, refs, p, level) + "</a:pPr>";
             let plain = "";
             const visit = (child: SourceNode, overrides: Css = {}, link = ""): void => {
                 if (!element(child)) {

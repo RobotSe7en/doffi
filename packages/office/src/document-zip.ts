@@ -118,11 +118,42 @@ export function readDocumentZip(input: Uint8Array, options: DocumentZipOptions =
 export function writeDocumentZip(input: DocumentPackage, options: DocumentZipOptions = {}): Uint8Array {
   return writeZip(input, options, true);
 }
+/** Write the same validated package with cooperative cancellation during compression. */
+export async function writeDocumentZipAsync(input: DocumentPackage, options: DocumentZipOptions & { readonly signal?: { readonly aborted: boolean } } = {}): Promise<Uint8Array> {
+  const { signal, ...zip } = options;
+  const scheduler = globalThis as unknown as { setTimeout(callback: () => void, delay: number): unknown };
+  const check = (): void => {
+    if (signal?.aborted) throw new DocumentError("OperationCancelled", "Document package export was cancelled.");
+  };
+  const checkpoint = async (): Promise<void> => {
+    await new Promise<void>(resolve => scheduler.setTimeout(resolve, 0));
+    check();
+  };
+  check();
+  const bytes = await compressZip(writeZipSteps(input, zip, true), checkpoint);
+  await checkpoint();
+  return bytes;
+}
 /** Internal OPC output primitive; shares all raw ZIP/path and byte limits. */
 export function writeOpcZip(input: DocumentPackage, options: DocumentZipOptions = {}): Uint8Array {
   return writeZip(input, options, false);
 }
+export function writeOpcZipAsync(input: DocumentPackage, options: DocumentZipOptions, checkpoint: () => Promise<void>): Promise<Uint8Array> {
+  return compressZip(writeZipSteps(input, options, false), checkpoint);
+}
+async function compressZip(steps: Generator<void, Uint8Array>, checkpoint: () => Promise<void>): Promise<Uint8Array> {
+  try {
+    for (let next = steps.next(); ; next = steps.next()) {
+      if (next.done) return next.value;
+      await checkpoint();
+    }
+  } finally { steps.return(new Uint8Array(0)); }
+}
 function writeZip(input: DocumentPackage, options: DocumentZipOptions, document: boolean): Uint8Array {
+  const steps = writeZipSteps(input, options, document);
+  for (let next = steps.next(); ; next = steps.next()) if (next.done) return next.value;
+}
+function* writeZipSteps(input: DocumentPackage, options: DocumentZipOptions, document: boolean): Generator<void, Uint8Array> {
   const { limits, maxZipBytes } = zipOptions(options);
   const files = new Map<string, Uint8Array>();
   let inputSize = 0;
@@ -146,6 +177,7 @@ function writeZip(input: DocumentPackage, options: DocumentZipOptions, document:
       zipLimit(length, maxZipBytes);
       chunks.push(chunk);
     });
+    let blocks = 0;
     for (const [path, bytes] of [...files].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
       const file = new ZipDeflate(path, { level: 6 });
       file.mtime = new Date(1980, 0, 1);
@@ -153,6 +185,7 @@ function writeZip(input: DocumentPackage, options: DocumentZipOptions, document:
       if (!bytes.length) file.push(bytes, true);
       for (let cursor = 0; cursor < bytes.length; cursor += 65536) {
         file.push(bytes.subarray(cursor, cursor + 65536), cursor + 65536 >= bytes.length);
+        if (++blocks % 16 === 0) yield;
       }
     }
     archive.end();

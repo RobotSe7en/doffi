@@ -55,6 +55,8 @@ export { DEFAULT_WORKBOOK_READ_LIMITS } from "./workbook/model.js";
 export { resolveWorkbookCommentMention } from "./workbook/comment-mentions.js";
 export type { NumberDisplayPart as WorkbookNumberDisplayPart } from "./workbook/format-numeric.js";
 export { createWorkbookNumberFormatter } from "./workbook/number-formatter.js";
+export { workbookBuiltinNumberFormat } from "./workbook/builtin-number-format.js";
+export { resolveWorkbookDisplayLocale } from "./workbook/display-locale.js";
 export { AxisDimensions as WorkbookAxisDimensions } from "./workbook/axis-dimensions.js";
 export { WorkbookRegionIndex } from "./workbook/region-index.js";
 export type {
@@ -130,6 +132,7 @@ export type {
 } from "./workbook/reference.js";
 export { createWorkbookScalarEvaluator, copyWorkbookScalarContext } from "./workbook/scalar.js";
 export { captureWorkbookModel } from "./workbook/source.js";
+export { iterateWorkbookRows } from "./workbook/rows.js";
 export type {
   WorkbookScalarEvaluator,
   WorkbookScalarResult,
@@ -145,8 +148,9 @@ export {
   DEFAULT_WORKBOOK_CALCULATION_LIMITS,
   WORKBOOK_CALCULATION_VERSION,
 } from "./workbook/calculation.js";
-export { createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
+export { createWorkbookCachedEvaluator, createWorkbookCalculatedEvaluator } from "./workbook/calculated-evaluator.js";
 export {
+  collectWorkbookFilteredRows,
   readWorkbookRowVisibility,
   DEFAULT_WORKBOOK_ROW_VISIBILITY_LIMITS,
 } from "./workbook/row-visibility.js";

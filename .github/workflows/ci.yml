@@ -53,7 +53,7 @@ jobs:
   browser-engine:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ matrix.suite == 'workbook' && 30 || 15 }}
+    timeout-minutes: ${{ (matrix.suite == 'workbook' || (matrix.suite == 'word' && matrix.browser == 'legacy-chromium')) && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +94,13 @@ jobs:
       - run: node scripts/install-legacy-chromium.mjs
         if: matrix.browser == 'legacy-chromium'
       - run: node scripts/ci-browser.mjs --browser ${{ matrix.browser }} --suite ${{ matrix.suite }} --mode daily
+      - name: Check worksheet PDF and PNG with pinned fonts
+        if: matrix.browser == 'chromium' && matrix.suite == 'workbook'
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: .cache/ci-browser/chromium/workbook/print-report.json
+        run: |
+          node scripts/install-acceptance-fonts.mjs --system-fonts
+          FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" node scripts/playwright.mjs test tests/browser/workbook-print.spec.ts --project=chromium --reporter=list,json --output=.cache/ci-browser/chromium/workbook/print
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -155,12 +162,10 @@ jobs:
       - run: node scripts/install-acceptance-office.mjs
       - run: node scripts/install-acceptance-fonts.mjs --system-fonts
       - uses: actions/cache@v4
-        if: matrix.suite != 'workbook'
         with:
           path: .playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}-chromium
       - run: node scripts/playwright.mjs install --with-deps chromium --only-shell
-        if: matrix.suite != 'workbook'
       - run: pnpm ci:office ${{ matrix.suite }}
       - uses: actions/upload-artifact@v4
         if: always()
@@ -174,6 +179,7 @@ jobs:
             .cache/xlsx-reference/result.json
             .cache/pptx-export-acceptance/
             .cache/presentation-closure-acceptance/
+            .cache/workbook-closure-acceptance/
             .cache/acceptance-office/environment.json
             .cache/acceptance-fonts/environment.json
             .cache/acceptance-fonts/fonts.conf
@@ -220,6 +226,7 @@ jobs:
           name: workbook-scale-acceptance
           path: |
             .cache/workbook-scale-acceptance/
+            .cache/ci-office/workbook/xlsx-export/
             .cache/workbook-reading-matrix-modern/
             .cache/workbook-reading-matrix-legacy/
             .cache/workbook-reading-budget/

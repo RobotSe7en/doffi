@@ -3,8 +3,11 @@ import type { BridgeWebFont, BrowserRenderBridge, BrowserRenderResult } from "./
 import { collectDocumentFontNames, loadWordWebFonts } from "./fonts.js";
 import type { WordWebFont } from "./fonts.js";
 import { mountPreview } from "./preview.js";
+import { renderWorkbookPrint } from "./workbook/print.js";
+import type { WorkbookPrintDocument } from "./workbook/print.js";
 
 declare global { interface Window { __doffiRender: BrowserRenderBridge } }
+let workbook: WorkbookPrintDocument | undefined;
 let renderer: ReturnType<typeof mountPreview> | undefined;
 let activeWebFonts: readonly WordWebFont[] | undefined;
 let activeRequestedFonts: ReadonlySet<string> | undefined;
@@ -40,13 +43,17 @@ function failure(reason: unknown): BrowserRenderResult {
 window.__doffiRender = {
   async mount(files, options) {
     try {
-      renderer?.dispose();
+      window.__doffiRender.dispose();
       const input = new Map(files.map(([path, base64]) => [path, Uint8Array.from(atob(base64), (value) => value.charCodeAt(0))]));
       document.body.style.margin = "0";
       const host = document.createElement("div"); document.body.replaceChildren(host);
       const model = openDocument(input);
-      if (model.kind === "workbook") throw new DocumentError("UnsupportedFeature", "Workbook rendering is not implemented yet.");
       activeWebFonts = toWordWebFonts(options?.webFonts);
+      if (model.kind === "workbook") {
+        workbook = await renderWorkbookPrint(host, model, { ...options?.workbook,
+          ...(options?.limits ? { limits: options.limits } : {}), ...(activeWebFonts ? { webFonts: activeWebFonts } : {}) });
+        return { ok: true, report: workbook.report };
+      }
       activeRequestedFonts = activeWebFonts?.length ? collectDocumentFontNames(model.snapshot()) : undefined;
       renderer = mountPreview(host, model, {
         ...options,
@@ -63,6 +70,7 @@ window.__doffiRender = {
   },
   async preparePrint() {
     try {
+      if (workbook) return { ok: true, report: workbook.report };
       if (!renderer) throw new DocumentError("InvalidOperation", "A document must be rendered before printing.");
       const report = await renderer.settled(), print = renderer.printDocument();
       if (activeWebFonts?.length) await loadWordWebFonts(document, activeWebFonts, activeRequestedFonts);
@@ -73,11 +81,18 @@ window.__doffiRender = {
     } catch (reason) { return failure(reason); }
   },
   pageClip(index) {
+    if (workbook) {
+      const selected = workbook.pages[index];
+      if (!selected) throw new DocumentError("InvalidOperation", "The requested page does not exist.");
+      for (const page of workbook.pages) page.style.display = page === selected ? "block" : "none";
+      const { x, y, width, height } = selected.getBoundingClientRect();
+      return { x, y, width, height };
+    }
     const page = renderer?.layout().pages[index], source = renderer?.source();
     if (!page || !source || !renderer) throw new DocumentError("InvalidOperation", "The requested page does not exist.");
     const outer = renderer.element.getBoundingClientRect(), inner = source.root.getBoundingClientRect();
     return { x: outer.left + inner.left + page.rect.x * 96 / 72, y: outer.top + inner.top + page.rect.y * 96 / 72,
       width: page.rect.width * 96 / 72, height: page.rect.height * 96 / 72 };
   },
-  dispose() { renderer?.dispose(); renderer = undefined; activeWebFonts = undefined; activeRequestedFonts = undefined; },
+  dispose() { workbook?.dispose(); workbook = undefined; renderer?.dispose(); renderer = undefined; activeWebFonts = undefined; activeRequestedFonts = undefined; },
 };

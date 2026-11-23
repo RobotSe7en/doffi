@@ -204,10 +204,11 @@ test("keeps JSON Schema contracts and cross-source references valid for the new 
   }
 });
 
-test("continues rejecting modern closed state in Word source packages", () => {
+test("preserves the closed annotation state in current Word source packages", () => {
   const source = readFileSync(new URL("../docx/08-comments-revisions.docx", directory));
   const files = new Map(importDocx(source, { documentId: "word-closed" }));
   const annotations = JSON.parse(strFromU8(files.get("annotations.json")!)) as Annotation[];
   annotations[0]!.status = "closed"; files.set("annotations.json", strToU8(JSON.stringify(annotations)));
-  expect(() => openDocument(files)).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+  const reopened = openDocument(files);
+  expect(openDocument(reopened.serialize()).snapshot().annotations[0]!.status).toBe("closed");
 });

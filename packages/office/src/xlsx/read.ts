@@ -91,7 +91,13 @@ export async function readXlsxRecords(bytes: Uint8Array, options: XlsxReadOption
         cellFormula(node, coordinate, shared, 0);
         if (one(node, "f")) calculationChain.formula(source.nativeId, coordinate);
       },
-      row(node, row) { const dimension = rowDimension(node, row, styles); if (dimension) appendRow(rows, dimension); },
+      row(node, row, filterHidden) {
+        const dimension = rowDimension(node, row, styles);
+        if (dimension) {
+          if (filterHidden) dimension.hidden = false;
+          appendRow(rows, dimension);
+        }
+      },
     });
     chunks.startSheet(source.sheetId);
     const root = await scanWorksheet(sheetBytes, source.part, { ...scan, pass: 1,

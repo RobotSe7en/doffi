@@ -827,11 +827,10 @@ test("disposing during initial rendering prevents a late view from reconnecting"
 test("Playground downloads annotation transactions and reopens them", async ({ page }, info) => {
   await page.goto("/");
   await page.getByRole("button", { name: "打开 DOCX 样例" }).click();
-  await expect(page.getByRole("status")).toContainText("已打开");
+  await page.getByRole("button", { name: "返回预览与批注", exact: true }).click();
   await page
-    .frameLocator("iframe")
-    .locator("p")
-    .first()
+    .frameLocator('iframe[title="文档只读预览"]')
+    .getByRole("heading", { name: "实施报告", exact: true })
     .evaluate((node) => {
       const range = document.createRange();
       range.selectNodeContents(node);
@@ -839,18 +838,24 @@ test("Playground downloads annotation transactions and reopens them", async ({ p
       window.getSelection()!.addRange(range);
       document.dispatchEvent(new Event("selectionchange"));
     });
-  await page.getByLabel("新批注内容").fill("保存并重开");
-  await page.getByRole("button", { name: "添加批注", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("修订 1 · 批注 1");
+  await page.getByRole("tab", { name: "审阅", exact: true }).click();
+  await page.getByRole("button", { name: "新建批注", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新建批注", exact: true });
+  await dialog.getByLabel("新批注内容").fill("保存并重开");
+  await dialog.getByRole("button", { name: "添加批注", exact: true }).click();
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "下载文档包" }).click();
+  await page.getByRole("button", { name: "下载文档包", exact: true }).click();
   const path = info.outputPath("annotations.zip");
   await (await download).saveAs(path);
-  expect(openDocument(readDocumentZip(readFileSync(path))).snapshot().annotations[0]).toMatchObject(
-    { instruction: "保存并重开" },
-  );
-  await page.getByLabel("打开文件").setInputFiles(path);
-  await expect(page.getByRole("status")).toContainText("修订 1 · 批注 1");
+  const saved = openDocument(readDocumentZip(readFileSync(path))).snapshot();
+  expect(saved.annotations).toHaveLength(1);
+  expect(saved.annotations[0]).toMatchObject({
+    instruction: "保存并重开", anchor: { kind: "text", from: 0, to: 4, quote: "实施报告" },
+  });
+  await page.getByLabel("打开文件", { exact: true }).filter({ visible: false }).setInputFiles(path);
+  await expect(page.getByRole("heading", { name: "annotations.zip", exact: true })).toBeVisible();
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   await expect(
     page
       .getByRole("region", { name: "文档批注", exact: true })

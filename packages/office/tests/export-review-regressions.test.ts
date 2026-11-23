@@ -56,13 +56,17 @@ test("currentColor inherits foreground and block decorations propagate through s
 test("new CSS style properties and relative paragraph dimensions reach native styles", () => {
   const source = openDocument(importDocx(new Uint8Array(readFileSync(new URL("../../../examples/docx/04-styles-sections.docx", import.meta.url))), { documentId: "styles" }));
   const derived = source.snapshot().metadata.word!.styles.find((style) => style.styleId === "Derived")!, files = new Map(source.serialize());
-  files.set("styles.css", encoder.encode(decoder.decode(files.get("styles.css")) + '\n' + ('.' + derived.cssClass).repeat(5) + '{font-size:30pt;margin-top:2em;color:#00ff00}'));
+  const selector = (name: string): string => ("." + name).repeat(5);
+  const original = decoder.decode(files.get("styles.css"));
+  files.set("styles.css", encoder.encode(original + "\n" + selector(derived.components!.r!) + "{font-size:30pt;color:#00ff00}"
+    + selector(derived.components!.p!) + "{margin-top:2em}"));
   const tree = native(openDocument(files), "word/styles.xml"), style = elements(tree, "style").find((style) => attr(style, "styleId") === "Derived")!;
   expect(attr(child(child(style, "rPr"), "sz"), "val")).toBe("60");
   expect(attr(child(child(style, "rPr"), "color"), "val")).toBe("00ff00");
   expect(attr(child(child(style, "pPr"), "spacing"), "before")).toBe("1200");
   const base = source.snapshot().metadata.word!.styles.find((style) => style.styleId === "Base")!;
-  files.set("styles.css", encoder.encode(decoder.decode(source.serialize().get("styles.css")) + '\n' + ('.' + base.cssClass).repeat(5) + '{font-size:20pt;margin-left:2em}'));
+  files.set("styles.css", encoder.encode(original + "\n" + selector(base.components!.r!) + "{font-size:20pt}"
+    + selector(base.components!.p!) + "{margin-left:2em}"));
   const baseStyle = elements(native(openDocument(files), "word/styles.xml"), "style").find((style) => attr(style, "styleId") === "Base")!;
   expect(attr(child(child(baseStyle, "pPr"), "ind"), "left")).toBe("800");
 });

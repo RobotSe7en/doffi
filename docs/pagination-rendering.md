@@ -42,6 +42,8 @@ const report = await view.settled();
 
 启用 Word 行网格时，自动行距的倍数以节的网格行距为基数，可以保留小数倍。较大字号可以在所在行占用更多格。无行网格时，自动行距根据所用字体和文字角色确定单倍行高，东亚文字的度量包含 Word 的行间留白。段落标记和正文各用自己的字号及字体参与行高计算。固定值和最小值行距按各自的段落规则测量。[Microsoft 自动行距定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.spacingbetweenlines.line?view=openxml-3.0.1)
 
+Linux 使用 Noto Sans CJK SC 的东亚文字以该字体测得的边界高度作为单倍行高。固定版 LibreOffice Writer 的长文档参考已包含这部分行间留白。共享预览和编辑画布按原生段落倍数计算，并在明确分页样例中校验三页及反复切换视图后的纸面几何。
+
 ## 东亚标点和禁则
 
 正文段落启用行尾悬挂时，预览按文字语言选取可悬挂字符，并在实际换行处测量能否让一个标点随前一行排出行尾。字符网格兼容选项可禁止这个溢出。表格单元格内保留禁则换行，标点留在单元格文字范围内。行首压缩按当前可见行首和字形宽度计算。普通两端对齐时，预览按行测量放入下一个可合法换行的东亚字符所需的标点间距；分散对齐使用标点压缩后的间距分配。日文假名可以使用字体提供的比例宽度，字网格使用固定节距。[Microsoft 悬挂标点规则](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/879a1ee2-5d6c-4181-8fd5-7b4b1b55949f)
@@ -104,17 +106,17 @@ try {
 }
 ```
 
-宿主安装／指定 Chromium，并准备本地字体。SDK 不下载浏览器或字体。每个任务启动独立浏览器和上下文，网络仅允许 Blob／空白页，不继承模型凭据，不缓存文档内容。取消、超时和关闭会终止各任务拥有的浏览器；尚未结束的后台启动／清理继续占用并发槽，`close()` 等待实际清理结束。
+宿主安装／指定 Chromium，并准备本地字体。SDK 不下载浏览器或字体。每个任务启动独立浏览器和上下文。授权图片使用 Blob，宿主可显式提供离线字体。工作簿从任务内部提供的空白安全页面启动。浏览器阻止其余网络请求，且任务不继承模型凭据或缓存文档内容。取消、超时和关闭会终止各任务拥有的浏览器；尚未结束的后台启动／清理继续占用并发槽，`close()` 等待实际清理结束。
 
 PDF 将测量画布按真实纸张裁切，保留可搜索文字；PNG 使用同一页报告和尺寸。默认并发 2、超时 30 秒、输入／输出各 64 MiB、PNG 16M 像素。请求不能提高宿主预算。输出包含 Chromium 实际版本；不同字体、引擎版本的视觉结果分别记录。
 
-`doffi` CLI 从 stdin 读取逐行 JSON V1，从 stdout 输出关联任务结果，支持授权 DOCX／文档包 ZIP 字节。无 URL 或本地文件输入路径：
+`doffi` CLI 从 stdin 读取逐行 JSON V1，从 stdout 输出关联任务结果。输入使用授权 DOCX、PPTX、XLSX 或文档包 ZIP 字节。
 
 ```json
 {"protocolVersion":1,"taskId":"host-task","format":"pdf","input":{"format":"docx","documentId":"host-document","bytesBase64":"UEs..."}}
 ```
 
-示意的 `bytesBase64` 需替换为真实规范 Base64。DOCX 必须由宿主提供文档 ID；包中已有身份可额外断言匹配。协议严格拒绝未知字段、版本、格式、超限帧和非规范 Base64，错误仍关联 `taskId`；结果字节位于 `output.bytesBase64`。宿主可调用 `executeConversionRequest` 或自行管理 CLI 进程。
+示意的 `bytesBase64` 需替换为真实规范 Base64。原生 Office 输入必须由宿主提供文档 ID，包中已有身份可额外断言匹配。协议严格拒绝未知字段、版本、格式、超限帧和非规范 Base64。任务错误关联 `taskId`，结果字节位于 `output.bytesBase64`。宿主可调用 `executeConversionRequest` 或自行管理 CLI 进程。
 
 `@doffi/node/dev` 的 `runConversionProcess` 提供有界单请求子进程，`createDevelopmentConversionMiddleware` 用于开发：默认检查实际 loopback socket，也允许宿主显式配置确切的 `allowedOrigins`；两种方式均检查 Host、实际监听端口、Origin、自定义请求头及上传期限，中间件不打开端口。Playground 的 PDF 按钮使用它；切换文档、修订变化、取消或卸载会丢弃迟到结果。远程 HTTP 的预览／编辑独立可用；远程开发转换的明确同源配置见 [Word 闭环](word-closure.md#远程开发访问)。正式远程转换服务的认证和部署由宿主提供。
 
@@ -125,3 +127,24 @@ Playwright 1.64.1 固定 Chromium 156.0.8078.4、Firefox 157.0、WebKit 27.2；�
 Linux WebKit 验证记录为引擎验收，不冒充实际 Safari。CI 另设 macOS 15 的 SafariDriver 验收，结果记录 Safari 实际版本；本机没有 Safari。Word／WPS 尚未验证。固定字体、视口、引擎和图片摘要见[分页参考记录](../examples/render-reference.json)。读取参考使用固定字体，分页、重复表头 PNG、真实 PDF 文字／页数、CLI、取消、资源预算、编辑撤销和三引擎交互均有独立回归。
 
 PPT 的固定画布与 Node PDF/PNG 已接入同一转换器；字节输入支持 `pptx`，报告提供 `kind: "presentation"` 和 `slides`，保留既有公共页面投影。输出包含全部逻辑幻灯片，隐藏页标签不进入 PDF/PNG。具体范围与验收见 [PPTX 导出与闭环](pptx-export.md)。
+
+工作簿可通过同一转换器的 `renderWorkbookPdf` 和 `renderWorkbookPage` 输出，默认按当前修订重算。字节协议接受 `input.format: "xlsx"` 或工作簿 `document-package-zip`，并使用以下形式为工作簿指定打印设置。
+
+```json
+{
+  "protocolVersion": 1,
+  "taskId": "workbook-print",
+  "format": "png",
+  "input": { "format": "xlsx", "documentId": "host-workbook", "bytesBase64": "UEs..." },
+  "options": {
+    "pageIndex": 0,
+    "workbook": {
+      "sheets": [{ "sheetId": "sheet-1", "areas": [{ "from": { "row": 0, "column": 0 }, "to": { "row": 7, "column": 3 } }] }],
+      "formulaValues": "cached",
+      "fileName": "预算.xlsx"
+    }
+  }
+}
+```
+
+`pageIndex` 与打印区域坐标均从 0 开始。选择工作表时使用模型返回的 `sheetId`。可省略 `sheets` 来打印全部可见工作表，并沿用已保存的打印区域。`fileName` 和 `filePath` 仅作为页眉页脚文字。响应报告以 `kind: "workbook"` 区分，包含页码、工作表、页范围、公式值模式与统计。分页和选表 API 见 [R3-18 工作簿打印与 PDF/PNG](iteration-3.md#r3-18-工作簿打印与-pdfpng)。

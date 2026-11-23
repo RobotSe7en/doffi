@@ -6,6 +6,7 @@ const XMLNS = "http://www.w3.org/2000/xmlns/";
 export function serializeXml(
   root: XmlNode,
   mapAttribute: (uri: string, name: string, value: string) => string = (_u, _n, v) => v,
+  defaultElementNamespace?: string,
 ): string {
   const prefixes = new Map<string, string>([[XML, "xml"]]),
     reserved = new Set<string>(["xml"]),
@@ -44,7 +45,7 @@ export function serializeXml(
     return value + ":";
   };
   const collect = (node: XmlNode): void => {
-    prefix(node.uri);
+    if (node.uri !== defaultElementNamespace) prefix(node.uri);
     for (const key of node.attrs.keys()) {
       const split = key.lastIndexOf(" ");
       const uri = key.slice(0, split);
@@ -59,7 +60,7 @@ export function serializeXml(
     inherited: ReadonlyMap<string, string> = new Map(),
   ): string => {
     const scope = new Map(inherited);
-    const name = prefix(node.uri) + node.name;
+    const name = (node.uri === defaultElementNamespace ? "" : prefix(node.uri)) + node.name;
     let out = "<" + name;
     if (top)
       for (const [uri, p] of prefixes)
@@ -67,7 +68,8 @@ export function serializeXml(
           out += " xmlns:" + p + '="' + escapeXml(uri) + '"';
           scope.set(p, uri);
         }
-    const defaultUri = node.namespaces[""];
+    const defaultUri = node.uri === defaultElementNamespace ? defaultElementNamespace
+      : defaultElementNamespace && !node.uri ? "" : node.namespaces[""];
     if (defaultUri !== undefined && scope.get("") !== defaultUri) {
       out += ' xmlns="' + escapeXml(defaultUri) + '"';
       scope.set("", defaultUri);

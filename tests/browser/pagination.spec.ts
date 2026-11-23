@@ -31,7 +31,7 @@ import {
   rowStylesFixture,
   conditionalFormatFixture,
 } from "../../packages/office/tests/table-style-fixture.js";
-import { importDocx, exportDocx } from "@doffi/office";
+import { importDocx, exportDocx, readDocumentZip } from "@doffi/office";
 import { openSdkHost } from "./sdk-host.js";
 import { rowGapFixture } from "../../packages/office/tests/row-gap-fixture.js";
 import {
@@ -58,6 +58,39 @@ declare global {
   }
 }
 let code: string;
+
+test("native style components preserve relative spacing in preview and editing after DOCX reopen", async ({ page }) => {
+  const model = openWordDocument(importDocx(mutateDocx("04-styles-sections.docx", {}), { documentId: "relative-paragraph-style" }), { kind: "document" });
+  const style = model.snapshot().metadata.word!.styles.find(item => item.styleId === "Derived")!;
+  const files = new Map(model.serialize()), selector = (name: string): string => ("." + name).repeat(5);
+  const source = new TextDecoder().decode(files.get("styles.css"));
+  files.set("styles.css", new TextEncoder().encode(source + "\n" + selector(style.components!.r!) + "{font-size:30pt}"
+    + selector(style.components!.p!) + "{margin-top:2em}"));
+  const native = exportDocx(openWordDocument(files, { kind: "document" }));
+  const nativeStyles = readDocumentZip(native.bytes).get("word/styles.xml")!;
+  const inherited = mutateDocx("04-styles-sections.docx", {
+    "word/styles.xml": () => new TextDecoder().decode(nativeStyles),
+    "word/document.xml": xml => nativeBody(xml, '<w:p><w:r><w:t>BEFORE</w:t></w:r></w:p>'
+      + '<w:p><w:pPr><w:pStyle w:val="Derived"/></w:pPr><w:r><w:t>继承样式</w:t></w:r></w:p>'),
+  });
+  const reopened = importDocx(inherited, { documentId: "relative-style-reopen" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, reopened, mode);
+    const paragraph = page.frameLocator("iframe").locator('[data-word-style="Derived"]').filter({ hasText: "继承样式" }).first();
+    await expect(paragraph).toHaveCSS("margin-top", "80px");
+  }
+});
+
+test("compatible paragraph marks project redundant disabled italic consistently", async ({ page }) => {
+  const native = mutateDocx("01-text-numbering.docx", { "word/document.xml": source => source.replace("</w:pPr>",
+    '<w:rPr><w:i w:val="false"/><w:i w:val="false"/></w:rPr></w:pPr>') });
+  const files = importDocx(native, { documentId: "duplicate-paragraph-italic" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, files, mode);
+    await expect(page.frameLocator("iframe").locator('[data-word-paragraph-mark="true"]').first()).toHaveCSS("font-style", "normal");
+  }
+});
+
 function continuousColumnsFiles(lines = 6, noBalance = false, hardBreak = false): DocumentPackage {
   const session = createDocumentSession(
       openWordDocument(
@@ -602,8 +635,9 @@ test("automatic spacing without a grid uses run metrics and preserves the paragr
     });
     expect(metrics.height).toBeCloseTo(metrics.expected, 1);
     expect(metrics.distance).toBeCloseTo(metrics.expected, 0);
-    expect(metrics.runSize).toBeCloseTo(14);
-    expect(metrics.markSize).toBeCloseTo(10);
+    // Firefox quantizes computed font sizes in 1/60 CSS-pixel units.
+    expect(Math.abs(metrics.runSize - 14)).toBeLessThanOrEqual(0.75 / 60);
+    expect(Math.abs(metrics.markSize - 10)).toBeLessThanOrEqual(0.75 / 60);
     expect(metrics.breakLineHeight).toBe("0px");
     const latin = await frame.locator("p").filter({ hasText: "LINE A" }).evaluate((node) =>
       parseFloat(getComputedStyle(node).lineHeight),
@@ -611,6 +645,38 @@ test("automatic spacing without a grid uses run metrics and preserves the paragr
     expect(latin).toBeLessThan(metrics.height);
   }
 });
+for (const platform of ["Linux x86_64", "MacIntel"]) {
+  test("Noto Sans CJK SC automatic spacing preserves the platform metrics on " + platform, async ({ page }) => {
+    await page.addInitScript(platform => {
+      Object.defineProperty(Navigator.prototype, "platform", { configurable: true, get: () => platform });
+    }, platform);
+    const files = importDocx(mutateDocx("01-text-numbering.docx", {
+      "word/document.xml": source => nativeBody(source,
+        '<w:p><w:pPr><w:spacing w:line="300" w:lineRule="auto"/></w:pPr><w:r><w:rPr>' +
+        '<w:rFonts w:eastAsia="Noto Sans CJK SC"/><w:sz w:val="24"/></w:rPr><w:t>正文行距</w:t></w:r></w:p>'),
+    }), { documentId: "native-noto-leading" });
+    for (const mode of ["preview", "edit"] as const) {
+      await mount(page, files, mode);
+      const run = page.frameLocator("iframe").locator('[data-sdk-word-script-view][data-word-script="eastAsia"]')
+        .filter({ hasText: "正文行距" });
+      const geometry = await run.evaluate(node => {
+        const css = getComputedStyle(node);
+        const canvas = document.createElement("canvas").getContext("2d")!;
+        canvas.font = `${css.fontStyle} ${css.fontWeight} 256px ${css.fontFamily}`;
+        const font = canvas.measureText("汉");
+        const em = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 256;
+        return {
+          platform: navigator.platform, family: css.fontFamily,
+          runHeight: parseFloat(css.lineHeight), nativeHeight: em * parseFloat(css.fontSize) * 1.25,
+        };
+      });
+      expect(geometry.platform).toBe(platform);
+      expect(geometry.family).toContain("Noto Sans CJK SC");
+      expect(geometry.nativeHeight).toBeGreaterThan(0);
+      expect(geometry.runHeight).toBeCloseTo(geometry.nativeHeight * (platform.startsWith("Linux") ? 1 : 1.3), 1);
+    }
+  });
+}
 test("a hosted native alias has precedence over a substitute and retains source font identity", async ({ page }) => {
   const nativeAlias = "Fixture East Asian Alias",
     missingFamily = "Fixture Missing East Asian Family",
@@ -1478,12 +1544,12 @@ test("watermark controls repeat editable text behind every page, preserve source
   await page.getByLabel("水印字号（磅）", { exact: true }).fill("24");
   await page.getByRole("button", { name: "应用文字水印", exact: true }).click();
   const pages = (await page.evaluate(() => window.paginationHost.layout())).pages.length,
-    watermarks = frame.locator(".sdk-paper > [data-sdk-word-story-anchor]");
+    watermarks = frame.locator(".sdk-paper .sdk-page-story-paint [data-sdk-word-story-anchor]");
   await expect(watermarks).toHaveCount(pages);
   await expect(watermarks.first()).toContainText("CONFIDENTIAL");
   const positions = await frame.locator("body").evaluate((body) =>
-    [...body.querySelectorAll(".sdk-paper > [data-sdk-word-story-anchor]")].map((node) => {
-      const parent = node.parentElement!.getBoundingClientRect(),
+    [...body.querySelectorAll(".sdk-paper .sdk-page-story-paint [data-sdk-word-story-anchor]")].map((node) => {
+      const parent = node.closest(".sdk-paper")!.getBoundingClientRect(),
         rect = node.getBoundingClientRect();
       return {
         x: (rect.left + rect.width / 2 - parent.left) * 0.75,
@@ -4445,13 +4511,11 @@ test("read-only pagination requires no editing session and preserves the complet
 test("one paragraph spans pages and maps a cross-page selection to one canonical UTF-16 range", async ({
   page,
 }) => {
+  const lines = Array.from({ length: 40 }, (_, index) => "LINE-" + index + " 😀");
+  const quote = lines.join("\n");
   await mount(
     page,
-    pagedFiles(
-      '<p data-node-id="long">' +
-        Array.from({ length: 40 }, (_, index) => "LINE-" + index + " 😀").join("<br>") +
-        "</p>",
-    ),
+    pagedFiles('<p data-node-id="long">' + lines.join("<br>") + "</p>"),
     "interaction",
   );
   const frame = page.frameLocator("iframe");
@@ -4465,15 +4529,7 @@ test("one paragraph spans pages and maps a cross-page selection to one canonical
   });
   await expect
     .poll(() => page.evaluate(() => window.paginationHost.interaction!.selection()?.anchor))
-    .toEqual(
-      await page.evaluate(() => ({
-        kind: "text",
-        nodeId: "long",
-        from: 0,
-        to: window.paginationHost.session!.getNode("long")!.text.length,
-        quote: window.paginationHost.session!.getNode("long")!.text,
-      })),
-    );
+    .toEqual({ kind: "text", nodeId: "long", from: 0, to: quote.length, quote });
   expect(
     (await page.evaluate(() => window.paginationHost.layout().nodePages.long))!.length,
   ).toBeGreaterThan(1);
@@ -5452,7 +5508,9 @@ test("unitless inherited Word line spacing works without Typed OM and preserves 
     });
   });
   const files = pagedFiles(
-    '<p data-node-id="auto" data-word-line-rule="auto">AUTO</p><p data-node-id="absolute" data-word-line-rule="auto" style="line-height:30px">ABSOLUTE</p>',
+    '<p data-node-id="auto" data-word-line-rule="auto">AUTO</p>' +
+    '<p data-node-id="single" data-word-line-rule="auto" style="line-height:1">AUTO</p>' +
+    '<p data-node-id="absolute" data-word-line-rule="auto" style="line-height:30px">ABSOLUTE</p>',
   );
   const metadata = JSON.parse(new TextDecoder().decode(files.get("metadata.json")));
   metadata.word = {
@@ -5485,22 +5543,14 @@ test("unitless inherited Word line spacing works without Typed OM and preserves 
     ),
   );
   await mount(page, files);
-  const measured = await page
-    .frameLocator("iframe")
-    .locator('[data-node-id="auto"]')
-    .evaluate((node) => {
-      const probe = document.createElement("span");
-      probe.style.cssText =
-        "position:absolute;display:block;line-height:normal;white-space:pre;font:inherit";
-      probe.style.lineHeight = "normal";
-      probe.textContent = "汉M";
-      node.append(probe);
-      const normal = probe.getBoundingClientRect().height;
-      probe.remove();
-      return { line: parseFloat(getComputedStyle(node).lineHeight), normal };
-    });
-  expect(measured.line).toBeCloseTo(measured.normal * 1.5, 1);
-  await expect(page.frameLocator("iframe").locator('[data-node-id="absolute"]')).toHaveCSS(
+  const frame = page.frameLocator("iframe");
+  const lineHeight = (id: string) => frame.locator('[data-node-id="' + id + '"]').evaluate(
+    node => parseFloat(getComputedStyle(node).lineHeight),
+  );
+  const single = await lineHeight("single");
+  expect(single).toBeGreaterThan(16);
+  expect(await lineHeight("auto")).toBeCloseTo(single * 1.5, 1);
+  await expect(frame.locator('[data-node-id="absolute"]')).toHaveCSS(
     "line-height",
     "30px",
   );

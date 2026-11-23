@@ -30,7 +30,7 @@ export function registerWordObjectClipboardTests(
           await mount(page, source.session.serialize(), tracked ? "edit" : "preview");
           const copied = await page
             .frameLocator("iframe")
-            .locator('[data-node-id="' + selected + '"]')
+            .locator('[data-node-id="' + selected + '"]:not(.sdk-word-floating-layer *)')
             .evaluate((node, partial) => {
               const range = document.createRange();
               if (partial) {
@@ -171,7 +171,7 @@ export function registerWordObjectClipboardTests(
           const story = word.stories.find((s) => s.storyId === shape.textStoryId)!;
           await page
             .frameLocator("iframe")
-            .locator('[data-node-id="' + shape.nodeId + '"]')
+            .locator('.sdk-word-floating-layer [data-node-id="' + shape.nodeId + '"]')
             .evaluate((node) => {
               node.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, altKey: true }));
               node.ownerDocument.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));

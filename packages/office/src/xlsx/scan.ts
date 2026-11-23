@@ -4,6 +4,7 @@ import type { XmlBudget, XmlNode } from "../ooxml/xml.js";
 import { streamXml } from "../ooxml/xml-stream.js";
 import type { ImportControl } from "../import-control.js";
 import { address, attributes, integer, value } from "./values.js";
+import { isFilterHiddenRow } from "./row-filter-extension.js";
 
 export interface WorksheetScanOptions {
   readonly limits: DocumentReadLimits;
@@ -13,7 +14,7 @@ export interface WorksheetScanOptions {
   readonly sheetId: string;
   readonly pass: 0 | 1;
   readonly cell: (node: XmlNode, coordinate: WorkbookCoordinate) => void;
-  readonly row?: (node: XmlNode, row: number) => void;
+  readonly row?: (node: XmlNode, row: number, filterHidden: boolean) => void;
 }
 
 /** One cell record at a time, including very wide sparse rows. Missing native
@@ -50,7 +51,12 @@ export async function scanWorksheet(bytes: Uint8Array, part: string, options: Wo
     complete(node, parent) {
       const coordinate = cells.get(node);
       if (coordinate) { options.cell(node, coordinate); return false; }
-      if (node === rowNode && parent === data) { check(node, [], S); options.row?.(node, row); rowNode = undefined; return false; }
+      if (node === rowNode && parent === data) {
+        const filterHidden = isFilterHiddenRow(node);
+        options.row?.(node, row, filterHidden);
+        rowNode = undefined;
+        return false;
+      }
       if (node === data) check(node, [], S);
       if (node === root && !data) fail(node, "A worksheet has no cell table.");
       return true;

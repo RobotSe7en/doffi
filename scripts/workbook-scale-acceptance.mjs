@@ -20,6 +20,7 @@ if (process.env.DOFFI_CI_MODE === 'daily') throw Error('Stage capacity acceptanc
 run(process.execPath, ['scripts/check-acceptance-fonts.mjs']);
 run(process.execPath, [pnpm, 'run', 'check:xlsx-fixtures']);
 run(process.execPath, [pnpm, 'run', 'check:xlsx-reference']);
+run(process.execPath, [pnpm, 'run', 'check:xlsx-export']);
 const unitReport = resolve(directory, 'unit-scale.json');
 run(process.execPath, [pnpm, 'exec', 'vitest', 'run', '--testNamePattern=@scale', '--reporter=default', '--reporter=json', '--outputFile=' + unitReport]);
 const unit = JSON.parse(readFileSync(unitReport, 'utf8'));
@@ -58,4 +59,4 @@ for (const browser of ['chromium', 'firefox', 'webkit', 'legacy-chromium']) {
 run(process.execPath, ['scripts/collect-workbook-reading-budget.mjs', '--output', resolve(directory, 'reading-budget.json')]);
 run(process.execPath, ['scripts/workbook-performance-acceptance.mjs']);
 writeFileSync(acceptance, JSON.stringify({ sourceHead: process.env.DOFFI_SOURCE_HEAD ?? execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  complete: true, fullNativeReferences: true, fixedResourceEditing: true, logicalCpus: selected, matrixCases: 128, cells: 200000, formulas: 20000, chunks: 40 }, null, 2) + '\n');
+  complete: true, fullNativeReferences: true, fullNativeExport: true, fixedResourceEditing: true, logicalCpus: selected, matrixCases: 128, cells: 200000, formulas: 20000, chunks: 40 }, null, 2) + '\n');

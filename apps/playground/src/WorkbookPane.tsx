@@ -50,7 +50,12 @@ export function WorkbookPane({ document: hosted, preparing, activation, onReady,
         onViewChange(snapshot) { if (mounted && (active.current === mounted || pending.current === mounted)) { hosted.acceptView(snapshot); if (active.current === mounted) callbacks.current.onUpdate(hosted); } },
         onCommandStateChange(commands) { if (mounted && active.current === mounted) callbacks.current.onCommands(hosted, commands); },
         onFormatStateChange(state) { if (mounted && active.current === mounted) callbacks.current.onFormat(hosted, state); },
-        onPendingChange(value) { if (mounted && (active.current === mounted || pending.current === mounted)) hosted.setPendingInput(value); },
+        onPendingChange(value) {
+          if (mounted && (active.current === mounted || pending.current === mounted)) {
+            hosted.setPendingInput(value);
+            if (active.current === mounted) callbacks.current.onUpdate(hosted);
+          }
+        },
         onError(error) { if (mounted && active.current === mounted && !changing.current) callbacks.current.onError(hosted, error); },
       });
       let released = false;

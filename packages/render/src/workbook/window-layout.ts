@@ -33,6 +33,7 @@ export interface WorkbookWindowLayoutOptions {
   readonly maxSourceNodes?: number;
   readonly maxTextCodeUnits?: number;
   readonly maxCellFragments?: number;
+  readonly printGridLines?: boolean;
 }
 export interface WorkbookWindowLayout {
   readonly element: HTMLElement;
@@ -54,7 +55,7 @@ export function layoutWorkbookWindow(surface: Pick<WorkbookSurface, "source" | "
   dimensions: { readonly rows: AxisDimensions; readonly columns: AxisDimensions }, formatter: WorkbookNumberFormatter,
   options: WorkbookWindowLayoutOptions, rules?: WorkbookRuleReadResponse, cache?: WorkbookCellTextCache, probes?: FontProbeCache): WorkbookWindowLayout {
   const maxNodes = options.maxNodes ?? 50_000, maxSourceNodes = options.maxSourceNodes ?? 50_000, maxTextUnits = options.maxTextCodeUnits ?? 8 * 1024 * 1024, maxCellFragments = options.maxCellFragments ?? 5000;
-  if (Object.keys(options).some(key => !["normalSpaceWidthPx", "maxNodes", "maxSourceNodes", "maxTextCodeUnits", "maxCellFragments"].includes(key))
+  if (Object.keys(options).some(key => !["normalSpaceWidthPx", "maxNodes", "maxSourceNodes", "maxTextCodeUnits", "maxCellFragments", "printGridLines"].includes(key))
     || ![maxNodes, maxSourceNodes, maxTextUnits, maxCellFragments].every(n => Number.isSafeInteger(n) && n > 0) || !Number.isFinite(options.normalSpaceWidthPx) || options.normalSpaceWidthPx < 0
     || surface.source.ownerDocument !== surface.view.ownerDocument || !surface.view.isConnected) throw new DocumentError("InvalidOperation", "Workbook window layout requires one connected surface and positive budgets.");
   const document = surface.source.ownerDocument, sheet = snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === frame.sheetId);
@@ -84,9 +85,11 @@ export function layoutWorkbookWindow(surface: Pick<WorkbookSurface, "source" | "
     };
     const merges = new WorkbookMergeIndex(sheet.merges), flow = new WorkbookTextFlow(frame, sheet, dimensions, merges, sources, style, Math.min(1_000_000, maxNodes * 8));
     const valueAt = (row: number, column: number) => {
-      const calculated = current.get(row * 16_384 + column); return calculated?.kind === "value" ? calculated.value : frame.getCell(row, column)?.value;
+      const calculated = current.get(row * 16_384 + column); if (calculated?.kind === "value") return calculated.value;
+      if (calculated && options.printGridLines !== undefined) return undefined;
+      return frame.getCell(row, column)?.value;
     };
-    const projections = [...frame.projections, ...flow.candidates(valueAt)], textRects = new Map<WorkbookGridCell, WorkbookRect>();
+    const projections = options.printGridLines === undefined ? [...frame.projections, ...flow.candidates(valueAt)] : frame.projections, textRects = new Map<WorkbookGridCell, WorkbookRect>();
     const textInputs = projections.map(projection => {
       const source = sources.get(projection.row, projection.column)!, cell = frame.getCell(projection.row, projection.column);
       const value = valueAt(projection.row, projection.column), rect = value && value.type !== "blank" ? flow.textRect(projection) : projection.rect;
@@ -139,7 +142,7 @@ export function layoutWorkbookWindow(surface: Pick<WorkbookSurface, "source" | "
     });
     const views = materialize([...projectedBorders, ...diagonals]);
     const gridPaint = WORKBOOK_GRID_PAINT;
-    const gridLines = sheet.showGridLines ? materialize(sheet.merges.length ? projectWorkbookBorders(dimensions, frame.layout, merges,
+    const gridLines = (options.printGridLines ?? sheet.showGridLines) ? materialize(sheet.merges.length ? projectWorkbookBorders(dimensions, frame.layout, merges,
       () => ({ before: gridPaint, after: gridPaint, top: gridPaint, bottom: gridPaint }), sheet.rightToLeft, maxNodes) : projectWorkbookGridLines(frame.layout, sheet.rightToLeft, maxNodes)) : [];
     for (const grid of gridLines) grid.dataset.officeView = "workbook-gridlines";
     const element = paintWorkbookWindow(document, frame, prepared, sheet.rightToLeft, views, maxNodes, gridLines, overflow);

@@ -1029,7 +1029,7 @@ export function restoreDocxNative(
     } else files.set(partMap.get(part.sourcePart)!, bytes);
   }
   for (const [part, root] of relationRoots)
-    files.set(relPath(part), encoder.encode(declaration + serializeXml(root)));
+    files.set(relPath(part), encoder.encode(declaration + serializeXml(root, undefined, PKG)));
   for (const fragment of native.fragments)
     if (
       !restored.has(fragment.nativeId) &&
@@ -1080,7 +1080,7 @@ export function restoreDocxNative(
       content: [],
       part: "[Content_Types].xml",
     });
-  files.set("[Content_Types].xml", encoder.encode(declaration + serializeXml(types)));
+  files.set("[Content_Types].xml", encoder.encode(declaration + serializeXml(types, undefined, CT)));
   let total = 0;
   for (const bytes of files.values()) {
     total += bytes.length;

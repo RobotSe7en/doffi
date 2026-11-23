@@ -32,7 +32,7 @@ export function sourceText(node: SourceNode): string {
 }
 /** Only validated, normalized source reaches this adapter. The second parse never
  * introduces DOM, browser layout, runtime font substitutions or an authority. */
-export function parseSource(html: string, limits: DocumentReadLimits, kind: "document" | "presentation" = "document"): SourceTree {
+export function parseSource(html: string, limits: DocumentReadLimits, kind: "document" | "presentation" | "workbook-content" = "document"): SourceTree {
   const byId = new Map<string, SourceElement>(), elements: SourceElement[] = [];
   let offset = 0, count = 0;
   function visit(node: Tree.Node, parent: SourceElement | undefined, depth: number): SourceNode | undefined {

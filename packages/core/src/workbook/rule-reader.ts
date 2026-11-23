@@ -4,9 +4,9 @@ import type { DeepReadonly, WorkbookModel } from "../runtime.js";
 import type { WorkbookConditionalRule, WorkbookCoordinate, WorkbookDataValidation, WorkbookRange } from "../contracts/workbook.js";
 import { checkLimit, freeze } from "../document/validation.js";
 import { createWorkbookScalarEvaluator } from "./scalar.js";
-import { createWorkbookCalculatedEvaluator } from "./calculated-evaluator.js";
+import { createWorkbookCachedEvaluator, createWorkbookCalculatedEvaluator } from "./calculated-evaluator.js";
 import type { WorkbookCalculationResult } from "./calculation.js";
-import type { WorkbookScalarResult, WorkbookScalarUnavailable } from "./scalar.js";
+import type { WorkbookScalarContext, WorkbookScalarResult, WorkbookScalarUnavailable } from "./scalar.js";
 import { scalarToNumber, scalarToText } from "./scalar-values.js";
 import type { ScalarValue } from "./scalar-values.js";
 import type { WorkbookReferenceLocation } from "./reference.js";
@@ -27,6 +27,7 @@ export interface WorkbookRuleReadOptions {
    * must run. Core owns no Worker, timer or event-loop implementation. */
   readonly yield?: () => Promise<void>;
   readonly calculation?: WorkbookCalculationResult;
+  readonly cachedValues?: WorkbookScalarContext;
 }
 export type WorkbookRuleValue = { readonly kind: "value"; readonly value: ScalarValue } | WorkbookScalarUnavailable;
 export type WorkbookRuleReason = WorkbookScalarUnavailable["reason"] | "formula-error" | "non-numeric-threshold" | "empty-scale" | "invalid-threshold-order" | "invalid-list-reference" | "type-mismatch";
@@ -76,7 +77,8 @@ export async function readWorkbookRules(model: WorkbookModel, input: WorkbookRul
   const snapshot = model.snapshot(), sheet = snapshot.metadata.workbook.sheets.find(sheet => sheet.sheetId === input.sheetId);
   if (input.documentId !== snapshot.manifest.documentId || input.revision !== snapshot.manifest.revision) throw new DocumentError("RevisionConflict", "Workbook rules belong to another source revision.");
   if (!sheet || input.includeCurrent !== undefined && typeof input.includeCurrent !== "boolean" || Object.keys(input).some(key => !["documentId", "revision", "sheetId", "coordinates", "includeCurrent", ...Object.keys(DEFAULT_WORKBOOK_RULE_LIMITS)].includes(key))
-    || Object.keys(options).some(key => !["signal", "yield", "calculation"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook rule query.");
+    || Object.keys(options).some(key => !["signal", "yield", "calculation", "cachedValues"].includes(key))
+    || options.calculation !== undefined && options.cachedValues !== undefined) throw new DocumentError("InvalidOperation", "Invalid workbook rule query.");
   const limits = Object.fromEntries(Object.keys(DEFAULT_WORKBOOK_RULE_LIMITS).map(key => [key, input[key as keyof WorkbookRuleReadLimits]])) as unknown as WorkbookRuleReadLimits;
   if (!Object.values(limits).every(value => Number.isSafeInteger(value) && value > 0) || !Array.isArray(input.coordinates)) throw new DocumentError("InvalidOperation", "Workbook rule queries require coordinates and positive safe-integer budgets.");
   checkLimit(input.coordinates.length, limits.maxCells);
@@ -109,7 +111,8 @@ export async function readWorkbookRules(model: WorkbookModel, input: WorkbookRul
     }
   }
   const evaluatorLimits = { maxSteps: limits.maxSteps, maxCells: limits.maxValues, maxCodeUnits: limits.maxCodeUnits };
-  const evaluator = calculation === undefined ? createWorkbookScalarEvaluator(model, evaluatorLimits) : createWorkbookCalculatedEvaluator(model, calculation, evaluatorLimits);
+  const evaluator = calculation !== undefined ? createWorkbookCalculatedEvaluator(model, calculation, evaluatorLimits)
+    : options.cachedValues !== undefined ? createWorkbookCachedEvaluator(model, evaluatorLimits, options.cachedValues) : createWorkbookScalarEvaluator(model, evaluatorLimits);
   const currentValues = new Map<string, WorkbookRuleValue>(), samples = new Map<string, Samples>();
   const location = (coordinate: WorkbookCoordinate): WorkbookReferenceLocation => ({ sheetId, row: coordinate.row, column: coordinate.column });
   function accept(result: WorkbookScalarResult): WorkbookRuleValue {

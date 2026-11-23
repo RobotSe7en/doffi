@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { build } from "vite";
-import { importPptx, readDocumentZip } from "@doffi/office";
+import { exportPptx, importPptx, readDocumentZip } from "@doffi/office";
 import { renderDocumentPdf } from "@doffi/node";
 import { writeOpcZip } from "../../packages/office/src/document-zip.js";
 import { createPresentation, readPresentationGeometry } from "@doffi/core";
@@ -348,7 +348,7 @@ test("DrawingML proportional line spacing scales by 1.2x, trims boundary spcBef/
     .replace(/<a:prstGeom[^>]*>[\s\S]*?<\/a:prstGeom>/, "")
     .replace(/<a:bodyPr[^>]*>[\s\S]*?<\/a:bodyPr>|<a:bodyPr[^>]*\/>/, "<a:bodyPr/>")
     .replace("<a:pPr></a:pPr>", '<a:pPr><a:lnSpc><a:spcPct val="150000"/></a:lnSpc><a:spcBef><a:spcPts val="2000"/></a:spcBef><a:spcAft><a:spcPts val="1200"/></a:spcAft></a:pPr>')
-    .replace('sz="2400"', 'sz="3600"'))));
+    .replaceAll('sz="2400"', 'sz="3600"'))));
   await mount(page, importPptx(writeOpcZip(source), { documentId: "ooxml-general-rules" }));
   const title = page.frameLocator("iframe").locator('article > [data-office-kind="slide"] [data-office-kind="text"]').first();
   // 1. Inherited roundRect produces curved SVG commands (Q/A/C) rather than a sharp 4-corner rect path.
@@ -365,8 +365,11 @@ test("DrawingML proportional line spacing scales by 1.2x, trims boundary spcBef/
   expect(metrics.marginTop).toBe(0);
   expect(metrics.marginBottom).toBe(0);
   // 3. Tight bottom-anchored normAutofit box with 100% proportional leading (1.2x) also avoids false descender-overhang shrinking.
-  source.set(layoutPart, encoder.encode(decoder.decode(source.get(layoutPart)).replace('cy="1143000"', 'cy="965200"'))); // 76pt -> roundRect textRect ~68.6pt (91.5px) > 54pt*1.2 (86.4px)
-  source.set(slidePart, encoder.encode(decoder.decode(source.get(slidePart)).replace('val="150000"', 'val="100000"').replace('sz="3600"', 'sz="5400"')));
+  // The 80pt roundRect leaves 96px for the line box. The fixed CJK font's
+  // line box fits, while its glyph overhang can still exceed the scroll box.
+  source.set(layoutPart, encoder.encode(decoder.decode(source.get(layoutPart)).replace('cy="1143000"', 'cy="1016000"')));
+  source.set(slidePart, encoder.encode(decoder.decode(source.get(slidePart)).replace('val="150000"', 'val="100000"')
+    .replaceAll('sz="3600"', 'sz="5400"').replace('</a:pPr>', '<a:defRPr sz="5400"/></a:pPr>')));
   await mount(page, importPptx(writeOpcZip(source), { documentId: "ooxml-bottom-anchor" }));
   const tight = await page.frameLocator("iframe").locator('article > [data-office-kind="slide"] [data-office-kind="text"] .sdk-ppt-text p span').first().evaluate(span => ({
     size: parseFloat(getComputedStyle(span).fontSize),
@@ -374,6 +377,24 @@ test("DrawingML proportional line spacing scales by 1.2x, trims boundary spcBef/
   }));
   expect(tight.size).toBeCloseTo(72, 0.5); // 54pt = 72px, unshrunk despite anchor="b"
   expect(tight.leading).toBeCloseTo(72 * 1.2, 1);
+});
+
+test("authored CSS line height keeps the same rendered ratio after native PPTX export and reopen", async ({ page }) => {
+  const files = new Map(["manifest.json", "content.html", "styles.css", "metadata.json", "annotations.json", "assets/sample.png"].map(path =>
+    [path, new Uint8Array(readFileSync("examples/presentation/" + path))] as const));
+  const original = new TextDecoder().decode(files.get("styles.css"));
+  files.set("styles.css", new TextEncoder().encode(original + '\np[data-node-id="heading-p"]{line-height:1.8}'));
+  const result = exportPptx(openDocument(files));
+  const reopened = importPptx(result.bytes, { documentId: "authored-line-height" });
+  for (const source of [files, reopened]) {
+    await mount(page, source);
+    const title = page.frameLocator("iframe").locator(".sdk-ppt-text p").filter({ hasText: "项目进展" }).first();
+    await expect(title).toBeVisible();
+    expect(await title.evaluate(node => {
+      const { lineHeight, fontSize } = getComputedStyle(node);
+      return parseFloat(lineHeight) / parseFloat(fontSize);
+    })).toBeCloseTo(1.8, 3);
+  }
 });
 
 test("generic font-family fallbacks remain unquoted CSS keywords", async ({ page }) => {
@@ -407,14 +428,13 @@ test("DrawingML hangingPunct hangs closing punctuation for explicit East Asian l
     const lh = parseFloat(getComputedStyle(p0).lineHeight);
     const lines = Math.round(p0.getBoundingClientRect().height / lh);
     const scripts = [...p1.querySelectorAll<HTMLElement>("[data-office-script]")].map(el => [el.dataset.officeScript, el.textContent]);
-    // Verify omitted-lang run broke between 十 (on line 1) and 。 (on line 2) via reversible <wbr>.
+    // Measure the omitted-language run with native hanging and the fallback.
     const range = document.createRange();
-    const textNodes: Text[] = [];
-    const walker = document.createTreeWalker(p2, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent) textNodes.push(n as Text);
-    const rectAt = (index: number) => {
+    const rectAt = (paragraph: Element, index: number) => {
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
       let seen = 0;
-      for (const node of textNodes) {
+      for (let next = walker.nextNode(); next; next = walker.nextNode()) {
+        const node = next as Text;
         if (index < seen + node.data.length) {
           range.setStart(node, index - seen); range.setEnd(node, index - seen + 1);
           return range.getBoundingClientRect();
@@ -423,11 +443,14 @@ test("DrawingML hangingPunct hangs closing punctuation for explicit East Asian l
       }
       return null;
     };
-    const rNine = rectAt(8)!, rTen = rectAt(9)!, rPeriod = rectAt(10)!;
+    const rNine = rectAt(p2, 8)!, rTen = rectAt(p2, 9)!, rPeriod = rectAt(p2, 10)!;
     return {
       lines,
       text: p0.textContent,
       hanging: p0.querySelectorAll("[data-sdk-hanging-punct]").length,
+      nativeHanging: CSS.supports("hanging-punctuation", "allow-end"),
+      hangingValue: getComputedStyle(p0).getPropertyValue("hanging-punctuation"),
+      closingPunctuationOnFirstLine: Math.abs(rectAt(p0, 10)!.top - rectAt(p0, 9)!.top) < 4,
       scripts,
       omittedText: p2.textContent,
       omittedBreaks: p2.querySelectorAll("[data-sdk-hanging-break]").length,
@@ -437,12 +460,14 @@ test("DrawingML hangingPunct hangs closing punctuation for explicit East Asian l
   });
   expect(result.text).toBe(sampleText);
   expect(result.lines).toBe(2);
-  expect(result.hanging).toBe(1);
+  expect(result.hanging).toBe(result.nativeHanging ? 0 : 1);
+  if (result.nativeHanging) expect(result.hangingValue).toBe("allow-end");
+  expect(result.closingPunctuationOnFirstLine).toBe(true);
   expect(result.scripts).toEqual([["east-asia", "“旗帜”—①"]]);
   expect(result.omittedText).toBe(omittedLangText);
-  expect(result.omittedBreaks).toBe(1);
+  expect(result.omittedBreaks).toBe(result.nativeHanging ? 0 : 1);
   expect(result.omittedSameLine9And10).toBe(true);
-  expect(result.omittedPeriodOnNextLine).toBe(true);
+  expect(result.omittedPeriodOnNextLine).toBe(!result.nativeHanging);
   const projected = await page.evaluate(() => window.presentationHost.projected());
   expect(projected).not.toMatch(/data-sdk-hanging-|<wbr/);
 });
