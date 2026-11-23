@@ -2359,12 +2359,21 @@ test("equation input and component editing use one source atom and reversible Ma
       action: "insertEquation",
     }),
   );
-  await page.getByLabel("线性公式", { exact: true }).fill("\\frac{a_1^2}{\\sqrt[3]{b}}");
+  const equationInput = page.getByLabel("线性公式", { exact: true });
+  const linearFormula = "\\frac{a_1^2}{\\sqrt[3]{b}}";
+  await equationInput.click();
+  await equationInput.press("ControlOrMeta+a");
+  await equationInput.pressSequentially(linearFormula);
+  await expect(equationInput).toHaveValue(linearFormula);
   await page.getByRole("button", { name: "插入公式", exact: true }).click();
   await expect(frame.locator("math")).toHaveCount(1);
   await expect(frame.locator("math mfrac")).toHaveCount(1);
   await expect(frame.locator("math mroot")).toHaveCount(1);
-  await page.getByLabel("公式组件文字", { exact: true }).fill("z");
+  const componentText = page.getByLabel("公式组件文字", { exact: true });
+  await componentText.click();
+  await componentText.press("ControlOrMeta+a");
+  await componentText.pressSequentially("z");
+  await expect(componentText).toHaveValue("z");
   await page.getByRole("button", { name: "更新公式文字组件", exact: true }).click();
   await expect(frame.locator("math")).toContainText("z");
   await page.getByRole("button", { name: "关闭公式编辑", exact: true }).click();
@@ -6219,8 +6228,17 @@ test("right tab leaders use the formatted text and current field width in both W
           range = document.createRange();
         if (field) range.selectNodeContents(field);
         else {
-          range.setStartAfter(tab);
-          range.setEnd(p, p.childNodes.length);
+          // Firefox can include the clipped leader in ranges bounded by elements.
+          const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          const following: Text[] = [];
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!tab.contains(node) && (tab.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+              following.push(node as Text);
+            }
+          }
+          const first = following[0]!, last = following.at(-1)!;
+          range.setStart(first, 0);
+          range.setEnd(last, last.length);
         }
         const suffix = range.getBoundingClientRect(),
           leader = tab.getBoundingClientRect();
@@ -8240,8 +8258,8 @@ test("nonzero table cell spacing separates borders, isolates nested tables and u
     second = row.locator(":scope > td").nth(1),
     inner = table.locator("table");
   await expect(table).toHaveCSS("border-collapse", "separate");
-  await expect(table).toHaveCSS("border-spacing", "8px");
-  await expect(inner).toHaveCSS("border-spacing", "0px");
+  await expect(table).toHaveCSS("border-spacing", /^8px(?: 8px)?$/);
+  await expect(inner).toHaveCSS("border-spacing", /^0px(?: 0px)?$/);
   const gap = async () => {
     const a = (await first.boundingBox())!,
       b = (await second.boundingBox())!;
@@ -8262,7 +8280,7 @@ test("nonzero table cell spacing separates borders, isolates nested tables and u
   );
   await page.getByLabel("表格单元格间距（磅）", { exact: true }).fill("3");
   await page.getByRole("button", { name: "应用表格间距", exact: true }).click();
-  await expect(table).toHaveCSS("border-spacing", "4px");
+  await expect(table).toHaveCSS("border-spacing", /^4px(?: 4px)?$/);
   expect(await gap()).toBeCloseTo(3, 1);
   await page.evaluate(() => window.paginationHost.session!.undo());
   expect(await gap()).toBeCloseTo(6, 1);
