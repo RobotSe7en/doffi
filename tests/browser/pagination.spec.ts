@@ -743,10 +743,8 @@ test("Word only warns about document font substitutions and still reports missin
     await expect(frame.locator("math")).toHaveCount(1);
     await expect(note).toHaveCount(0);
 
-    await mount(page, files("缺字" + missing), mode, {}, fonts);
-    await expect(note).toContainText("缺少字形：U+3FFFD");
-    await expect(note).not.toContainText("字体替代");
-    await expect(note).not.toContainText("断行和版式");
+    await mount(page, files("缺字口" + missing), mode, {}, fonts);
+    await expect(note).toHaveText("缺少字形：U+3FFFD（" + missing + "）。");
 
     await mount(page, files("显式字体", requested), mode, {}, fonts);
     await expect(note).toHaveText("字体替代：" + requested + " → " + fallback + "。断行和版式可能与原字体不同。");
@@ -2136,6 +2134,18 @@ async function mount(
     },
   );
 }
+
+// Use the same fullwidth advances in the browser regardless of which system
+// fonts are present or visible to its font sandbox.
+async function wordLayoutFont(page: Page): Promise<NonNullable<Parameters<PaginationHost["mount"]>[3]>> {
+  const url = "/word-layout-serif.woff2";
+  await page.route("**" + url, (route) => route.fulfill({
+    path: fileURLToPath(new URL("../../apps/playground/src/assets/word-fonts/serif-regular.woff2", import.meta.url)),
+    contentType: "font/woff2",
+  }));
+  return [{ family: "Noto Serif CJK SC", aliases: [], url }];
+}
+
 test("hidden end-of-cell marks do not size empty cells or hide their visible text", async ({ page }) => {
   const cell = (hideMark: string, text = "") =>
       "<w:tc><w:tcPr>" + hideMark + "</w:tcPr><w:p>" +
@@ -2196,6 +2206,7 @@ for (const layout of ["pages", "continuous"] as const)
 test("Word compatibility mode retains the centered auto table grid and seven fullwidth characters", async ({
   page,
 }) => {
+  const fonts = await wordLayoutFont(page);
   const cell = (width: number, text: string): string =>
     '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="' + width + '"/></w:tcPr>' +
     '<w:p><w:r><w:rPr><w:rFonts w:eastAsia="Noto Serif CJK SC"/><w:sz w:val="24"/></w:rPr><w:t>' +
@@ -2217,34 +2228,37 @@ test("Word compatibility mode retains the centered auto table grid and seven ful
         '<w:pgMar w:top="1000" w:right="1000" w:bottom="1000" w:left="1000"/></w:sectPr>'),
     });
     const files = importDocx(docx, { documentId: "word-table-wrap-" + mode });
-    await mount(page, files, "preview");
-    const first = await bandTextBounds(page, "甲"),
-      seventh = await bandTextBounds(page, "庚"),
-      eighth = await bandTextBounds(page, "辛"),
-      geometry = await page.frameLocator("iframe").locator("table").evaluate((table) => {
-        const bounds = table.getBoundingClientRect();
-        const body = table.parentElement!.getBoundingClientRect();
-        return { width: bounds.width * 0.75, centerOffset: (bounds.left + bounds.right - body.left - body.right) / 2 };
-      });
-    expect(eighth.y).toBeGreaterThan(first.y + 10);
-    expect(geometry.centerOffset).toBeCloseTo(0, 1);
-    if (mode === 14) {
-      expect(seventh.y).toBeCloseTo(first.y);
-      expect(geometry.width).toBeGreaterThan(410.5);
-      expect(geometry.width).toBeLessThan(412);
-    } else {
-      expect(seventh.y).toBeGreaterThan(first.y + 10);
-      expect(geometry.width).toBeCloseTo(400, 0);
+    for (const surface of ["preview", "edit"] as const) {
+      await mount(page, files, surface, {}, fonts);
+      const first = await bandTextBounds(page, "甲"),
+        seventh = await bandTextBounds(page, "庚"),
+        eighth = await bandTextBounds(page, "辛"),
+        geometry = await page.frameLocator("iframe").locator("table").evaluate((table) => {
+          const bounds = table.getBoundingClientRect();
+          const body = table.parentElement!.getBoundingClientRect();
+          return { width: bounds.width * 0.75, centerOffset: (bounds.left + bounds.right - body.left - body.right) / 2 };
+        });
+      expect(eighth.y).toBeGreaterThan(first.y + 10);
+      expect(geometry.centerOffset).toBeCloseTo(0, 1);
+      if (mode === 14) {
+        expect(seventh.y).toBeCloseTo(first.y);
+        expect(geometry.width).toBeGreaterThan(410.5);
+        expect(geometry.width).toBeLessThan(412);
+      } else {
+        expect(seventh.y).toBeGreaterThan(first.y + 10);
+        expect(geometry.width).toBeCloseTo(400, 0);
+      }
     }
   }
 });
 test("legacy AutoFit shares spare width with automatic cells and keeps the saved grid editable", async ({
   page,
 }) => {
+  const fonts = await wordLayoutFont(page);
   const grid = [640, 2840, 2200];
   const cell = (width: number, text: string, automatic: boolean): string =>
     '<w:tc><w:tcPr><w:tcW w:type="' + (automatic ? "auto" : "dxa") + '" w:w="' +
-    (automatic ? 0 : width) + '"/></w:tcPr><w:p><w:r><w:rPr><w:sz w:val="24"/></w:rPr>' +
+    (automatic ? 0 : width) + '"/></w:tcPr><w:p><w:r><w:rPr><w:rFonts w:eastAsia="Noto Serif CJK SC"/><w:sz w:val="24"/></w:rPr>' +
     '<w:t>' + text + "</w:t></w:r></w:p></w:tc>";
   const row = (text: readonly string[], automatic = false): string =>
     "<w:tr>" + grid.map((width, index) => cell(width, text[index]!, automatic)).join("") + "</w:tr>";
@@ -2269,19 +2283,21 @@ test("legacy AutoFit shares spare width with automatic cells and keeps the saved
     model = openWordDocument(files, { kind: "document" });
   for (const table of model.snapshot().metadata.word!.tables)
     expect(table.grid).toEqual(grid.map((width) => width / 20));
-  await mount(page, files);
-  const widths = await page.frameLocator("iframe").locator("article table").evaluateAll(
-    (tables) => tables.map((table) =>
-      [...(table as HTMLTableElement).rows[0]!.cells].map((cell) =>
-        cell.getBoundingClientRect().width * 0.75,
+  for (const surface of ["preview", "edit"] as const) {
+    await mount(page, files, surface, {}, fonts);
+    const widths = await page.frameLocator("iframe").locator("article table").evaluateAll(
+      (tables) => tables.map((table) =>
+        [...(table as HTMLTableElement).rows[0]!.cells].map((cell) =>
+          cell.getBoundingClientRect().width * 0.75,
+        ),
       ),
-    ),
-  );
-  const [preferred, automatic] = widths.map((entry) => entry.map(Math.round));
-  expect(preferred).toEqual([32, 142, 110]);
-  expect(automatic![1]).toBeGreaterThan(170);
-  expect(automatic![2]).toBeLessThan(85);
-  expect(widths[1]!.reduce((total, width) => total + width, 0)).toBeCloseTo(284, 0);
+    );
+    const [preferred, automatic] = widths.map((entry) => entry.map(Math.round));
+    expect(preferred).toEqual([32, 142, 110]);
+    expect(automatic![1]).toBeGreaterThan(170);
+    expect(automatic![2]).toBeLessThan(85);
+    expect(widths[1]!.reduce((total, width) => total + width, 0)).toBeCloseTo(284, 0);
+  }
 });
 function columnFiles(table = false): DocumentPackage {
   const session = createDocumentSession(
@@ -7126,6 +7142,7 @@ test("East Asian spacing switches share exact source text across runs, line ends
 test("paragraph word wrapping respects the native Boolean and retains Chinese line-end restrictions", async ({
   page,
 }) => {
+  const fonts = await wordLayoutFont(page);
   const session = createDocumentSession(
     openWordDocument(createWordDocument({ documentId: "word-wrap-ui" }), { kind: "document" }),
   );
@@ -7138,12 +7155,16 @@ test("paragraph word wrapping respects the native Boolean and retains Chinese li
         {
           op: "replaceFragment",
           nodeId: "section-root-1",
-          html: '<p class="whole-word" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:1">ABC ABCDE</p><p class="whole-loose" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:1;--word-kinsoku:0">ABC ABCDE</p><p class="break-word" style="font-size:16px;font-family:monospace;width:80px;line-height:24px;margin:0;--word-word-wrap:0">ABC ABCDE</p><p class="kinsoku-on" style="font-size:16px;font-family:sans-serif;width:32px;line-height:24px;margin:0;--word-overflow-punctuation:0;--word-kinsoku:1">汉字，中文</p><p class="kinsoku-off" style="font-size:16px;font-family:sans-serif;width:32px;line-height:24px;margin:0;--word-overflow-punctuation:0;--word-kinsoku:0">汉字，中文</p>',
+          html: '<p class="whole-word" style="font-size:16px;font-family:monospace;width:8ch;line-height:24px;margin:0;--word-word-wrap:1">ABC ABCDE</p>' +
+            '<p class="whole-loose" style="font-size:16px;font-family:monospace;width:8ch;line-height:24px;margin:0;--word-word-wrap:1;--word-kinsoku:0">ABC ABCDE</p>' +
+            '<p class="break-word" style="font-size:16px;font-family:monospace;width:8ch;line-height:24px;margin:0;--word-word-wrap:0">ABC ABCDE</p>' +
+            '<p class="kinsoku-on" style="font-size:16px;font-family:Noto Serif CJK SC;width:32px;line-height:24px;margin:0;--word-overflow-punctuation:0;--word-kinsoku:1">汉字，中文</p>' +
+            '<p class="kinsoku-off" style="font-size:16px;font-family:Noto Serif CJK SC;width:32px;line-height:24px;margin:0;--word-overflow-punctuation:0;--word-kinsoku:0">汉字，中文</p>',
         },
       ],
     }),
   );
-  await mount(page, session.serialize());
+  await mount(page, session.serialize(), "preview", {}, fonts);
   const frame = page.frameLocator("iframe"),
     lines = async (selector: string) =>
       frame.locator(selector).evaluate((root) => {
@@ -10037,7 +10058,7 @@ for (const kind of ["table", "drawing", "image"] as const)
         const { centerWrapFixture, centerWrapText } = await import(
           "../../packages/office/tests/center-wrap-fixture.js"
         );
-        const files = importDocx(centerWrapFixture(kind), {
+        const files = importDocx(centerWrapFixture(kind, 36), {
           documentId: "center-wrap-ui",
           unsupportedContent: "reject",
         });
@@ -10106,8 +10127,18 @@ for (const kind of ["table", "drawing", "image"] as const)
             (id) => window.paginationHost.session!.getNode(id!)!.text,
             source,
           );
-        await target.click({ position: { x: 12, y: 35 } });
-        await page.keyboard.press("End");
+        await target.evaluate((paragraph, prefix) => {
+          paragraph.closest<HTMLElement>('[contenteditable="true"]')!.focus();
+          const doc = paragraph.ownerDocument,
+            walker = doc.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+          for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+            const offset = text.textContent?.indexOf(prefix) ?? -1;
+            if (offset < 0) continue;
+            doc.getSelection()!.collapse(text, offset + 1);
+            return;
+          }
+          throw new Error("Missing text at the floating object's anchor");
+        }, centerWrapText.slice(0, 4));
         await page.keyboard.insertText("输入");
         await expect
           .poll(() =>

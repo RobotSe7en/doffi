@@ -56,9 +56,21 @@ for (const remote of [false, true]) {
     });
     test("rejects no-op writes to a read-only source, releases failed candidates and preserves a pending input", async ({ page }) => {
       await page.evaluate(() => window.workbookWorkbench.build()); const problem = await page.evaluate(() => window.workbookWorkbench.loadNoop().then(() => "accepted", (error: { code: string }) => error.code)); expect(problem).toBe("InvalidProposal");
-      await page.evaluate(() => window.workbookWorkbench.load()); await page.getByRole("button", { name: "放弃工作簿提案", exact: true }).click(); await expect(page.getByLabel("工作簿提案差异")).toBeHidden();
-      await page.evaluate(() => window.workbookWorkbench.focusInput()); const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true }); await input.fill("draft😀");
-      await expect(page.getByRole("button", { name: "生成工作簿请求", exact: true })).toBeDisabled(); expect(await page.evaluate(() => window.workbookWorkbench.build().then(() => "accepted", (error: { code: string }) => error.code))).toBe("InvalidOperation"); await expect(input).toHaveValue("draft😀"); await page.evaluate(() => window.workbookWorkbench.cancelInput());
+      await page.evaluate(() => window.workbookWorkbench.load());
+      await page.getByRole("button", { name: "放弃工作簿提案", exact: true }).click();
+      await expect(page.getByLabel("工作簿提案差异")).toBeHidden();
+      const generate = page.getByRole("button", { name: "生成工作簿请求", exact: true });
+      // The Worker can still be releasing the candidate after the diff closes.
+      await expect(generate).toBeEnabled();
+      const input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true });
+      await page.evaluate(() => window.workbookWorkbench.focusInput());
+      await expect(input).toBeFocused();
+      await input.fill("draft😀");
+      await expect(input).toHaveValue("draft😀");
+      await expect(generate).toBeDisabled();
+      expect(await page.evaluate(() => window.workbookWorkbench.build().then(() => "accepted", (error: { code: string }) => error.code))).toBe("InvalidOperation");
+      await expect(input).toHaveValue("draft😀");
+      await page.evaluate(() => window.workbookWorkbench.cancelInput());
       expect(await page.evaluate(() => window.workbookWorkbench.inspect())).toMatchObject({ revision: 0, history: { undoSteps: 0 }, annotations: [{ status: "open" }] });
       for (const form of [
         { panel: "名称管理", field: "定义名称", discard: "放弃当前名称草稿并重新读取" },

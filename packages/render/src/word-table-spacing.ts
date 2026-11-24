@@ -33,7 +33,7 @@ function fitLegacyAutomaticColumns(
 
   const document = table.ownerDocument,
     view = document.defaultView!,
-    available = columns.reduce((width, column) => width + column.getBoundingClientRect().width, 0),
+    available = rows[0]!.getBoundingClientRect().width,
     preferred = grid.map((width) => width * 4 / 3),
     maximum = preferred.slice(),
     minimum = grid.map(() => 0);
@@ -82,19 +82,22 @@ function legacyCenteredGrid(
   const document = table.ownerDocument,
     view = document.defaultView!,
     tableBounds = table.getBoundingClientRect(),
-    first = columns[0]?.getBoundingClientRect(),
-    last = columns.at(-1)?.getBoundingClientRect(),
     firstRow = table.rows[0];
-  if (!first?.width || !last?.width || !firstRow?.cells.length) return;
+  if (!columns.length || !firstRow?.cells.length) return;
+  // Table rows span the rendered grid. Some engines expose empty or
+  // partial geometry on the non-rendered <col> elements.
+  const gridWidth = firstRow.getBoundingClientRect().width;
+  if (!gridWidth) return;
   const leftCell = view.getComputedStyle(firstRow.cells[0]!),
     rightCell = view.getComputedStyle(firstRow.cells[firstRow.cells.length - 1]!),
-    outsideBorder = Math.max(0, tableBounds.width - (last.right - first.left)),
+    outsideBorder = Math.max(0, tableBounds.width - gridWidth),
     allowance = numeric(leftCell.paddingLeft) + numeric(rightCell.paddingRight) + outsideBorder,
     width = `calc(${grid.reduce((sum, column) => sum + column, 0)}pt + ${outsideBorder}px)`,
     cap = `calc(100% + ${allowance}px)`;
   ownViewStyle(table, "width", "max-width", "margin-left");
   table.style.width = width;
   table.style.maxWidth = cap;
+  table.style.width = `min(${width}, ${cap})`;
   table.style.marginLeft = `calc((100% - min(${width}, ${cap})) / 2)`;
   fitLegacyAutomaticColumns(table, columns, grid, isAutomatic);
 
@@ -113,12 +116,15 @@ function legacyCenteredGrid(
       `display:block;height:0;margin:0 ${-right}px 0 ${-left}px;padding:0;border:0;line-height:0`;
     cell.append(probe);
   }
+  // Allow half a native twip for CSS layout rounding at a fullwidth break.
+  const paddingInsideBorder = (padding: number, inset: number): number =>
+    inset > 0 ? Math.max(0, padding - inset - 1 / 30) : padding;
   const adjusted = probes.map(({ cell, left, right, probe }) => {
     const bounds = cell.getBoundingClientRect(),
       inside = probe.getBoundingClientRect();
     return {
-      left: Math.max(0, left - Math.max(0, inside.left - bounds.left)),
-      right: Math.max(0, right - Math.max(0, bounds.right - inside.right)),
+      left: paddingInsideBorder(left, inside.left - bounds.left),
+      right: paddingInsideBorder(right, bounds.right - inside.right),
     };
   });
   probes.forEach(({ cell, probe, left, right }, index) => {
@@ -196,6 +202,8 @@ export function composeWordTableSpacing(document: Document, model: ContentDocume
       if (!fixed) {
         ownViewStyle(table, "max-width");
         table.style.maxWidth = "100%";
+        // WebKit can ignore max-width during auto table layout.
+        table.style.width = `min(${gridWidth}pt, 100%)`;
       }
       if (
         legacy && !fixed && (!width || width === "auto") &&
