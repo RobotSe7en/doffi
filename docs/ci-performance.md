@@ -40,7 +40,7 @@ gh workflow run ci.yml --ref <branch>
 
 `DOFFI_CI_MODE=daily` 只用于日常 CI。六项原生容量单元检查延后；浏览器 `@scale` 用例通过显式过滤延后，原断言保留。工作簿实际打开、切换、失败保留和授权资源仍有小样例覆盖。原生样例的字节、规范及负例审计继续执行；日常 Calc 重开省略一万行项。默认本地检查和参考记录命令保持完整模式，`--record` 永远不产生部分参考基线。
 
-编辑开发分支新增默认 `mountWorkbookEditor` 的 `@scale` 容量场景：100 次原生输入事件／公共确认入口，每次核对同一编辑器当前显示的依赖公式，再通过实际界面按钮执行 100 次撤销／重做／再撤销，并核对原始块和唯一 Worker 会话。此场景的额外 bundle 只在选中该场景时构建；日常检查继续排除它。`check:workbook-performance` 已为编辑增加独立的四引擎固定资源入口，包含混合响应的图片／形状／文本框、真实选择和按键反馈、100 次编辑及完整历史、两类万行取消与新包完整重开；严格汇总当前主线程／Worker 脚本和原生源摘要。带采样器或缩短样本的诊断不能计入验收。`4ee0710` 的本机四引擎编辑已通过，见[记录](evidence/workbook-editing-budget.json)；后续公式及审查修复的最终源仍须重测，读取成功不能代替编辑门槛。
+固定资源编辑覆盖默认 `mountWorkbookEditor`、混合响应绘图、实际选择和按键反馈、100 次输入和可见依赖公式、完整撤销／重做历史、两类万行取消及原生源重开。汇总器核对当前主线程／Worker 脚本和原生源摘要。带采样器或缩短样本的诊断不能计入验收。`4ee0710` 的本机四引擎编辑已通过，见[记录](evidence/workbook-editing-budget.json)；后续源码仍须复测。大表集成保留实际 Playground 导入取消与导出重试、Worker 有界读取和滚动、复制和取消。重复的两项非固定资源百次编辑由固定资源用例覆盖，跨格式切换使用小表。
 
 原生公式语料拆为每日小样例与阶段容量两部分；共享公式跟随者、打印名称及图表／规则／表格公式的独立来源检查继续每天执行。
 
@@ -48,18 +48,18 @@ gh workflow run ci.yml --ref <branch>
 
 阶段 PR 显式加上 `stage-acceptance` 标签，或手动运行 CI 并开启 `stage_acceptance`。最终 HEAD 必须同时通过全部日常检查和 `workbook-scale`，各分片必须实际成功。标签保留期间的新提交不自动重跑；集中修复完成后重新发起一次，旧 HEAD 的结果不能代替。
 
-专项运行完整原生 XLSX 参考与输出、六项原生及两项编辑补充容量单元检查、四引擎 128 份公开来源／生产者矩阵及其余实际大数据集成用例，然后依次执行四逻辑 CPU／8GiB／无交换资源验收。20 万实际单元格、2 万公式、40 块、首屏、交互、DOM、内存和取消门槛保持。[阶段脚本](../scripts/workbook-scale-acceptance.mjs)核对实际执行、当前包摘要及全部资源条件后才写成功记录。
+原生 XLSX 参考、输出和容量单元检查由一个 job 执行。Chromium、Firefox、WebKit 和旧版 Chromium 各用独立 runner 执行公开来源／生产者矩阵及关键大表集成。每个浏览器依次独占执行固定资源读取和编辑，使用四逻辑 CPU、8 GiB、无交换。保留四引擎合计 128 项公开读取、20 万实际单元格、2 万公式、40 块，以及首屏、交互、DOM、内存和取消门槛。[汇总脚本](../scripts/workbook-scale-acceptance.mjs)核对同一最终提交上所有分片的实际执行、当前包摘要和资源条件，成功后写入验收记录。
 
 ```sh
 node scripts/install-acceptance-fonts.mjs --system-fonts
 FONTCONFIG_FILE="$PWD/.cache/acceptance-fonts/fonts.conf" pnpm check:workbook-scale
 ```
 
-完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核）。工作簿浏览器作业总时限为 30 分钟。Word 的旧版 Chromium 作业在 R3 输出验收耗尽 15 分钟后，单独延长到 30 分钟。其他 Word 和 PPT 浏览器作业仍为 15 分钟。阶段容量串行包含四引擎读取与编辑、全部大表集成及补充用例，总时限为 60 分钟。首屏、计算、编辑／交互 p95、CPU／内存、DOM 和取消继续按各自的 SDK 性能门槛验收。
+完整 Firefox 工作簿日常集在 `b87098d` 上实际运行约 16.4 分钟（348 通过、3 跳过、6 个夹具失败，均已修复并定向复核）。工作簿浏览器作业总时限为 30 分钟。Word 的旧版 Chromium 作业在 R3 输出验收耗尽 15 分钟后，单独延长到 30 分钟。其他 Word 和 PPT 浏览器作业仍为 15 分钟。容量验收四个引擎分片各限 30 分钟，原生分片限 15 分钟。
 
 前提为 Linux/systemd/cgroup v2、至少四个可用逻辑 CPU、已固定的四个浏览器、字体及 LibreOffice 环境。脚本需要无交互 sudo 创建临时受限服务；不更改持久系统服务。
 
-正式结果位于 `.cache/workbook-scale-acceptance/` 并作为 CI artifact 上传。汇总器的 `--output <file>` 写入显式结果路径；原 `--record` 入口仍用于明确更新已提交证据，普通 CI 不改写参考基线。
+分片日志和测量值上传为 `workbook-scale-shard-*`。成功汇总后的正式结果位于 `.cache/workbook-scale-acceptance/` 并上传为 `workbook-scale-acceptance`。汇总器的 `--output <file>` 写入显式结果路径；原 `--record` 入口仍用于明确更新已提交证据，普通 CI 不改写参考基线。
 
 ## 固定字体的实际浏览器前置检查
 
