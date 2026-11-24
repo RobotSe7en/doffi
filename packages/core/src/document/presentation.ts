@@ -1,6 +1,7 @@
 import { parse, walk, ident } from "css-tree";
 import type { Anchor,Annotation } from "../contracts/annotations.js";
 import type { PresentationGeometry, PresentationMetadata, PresentationObject } from "../contracts/presentation.js";
+import type { AssetDescriptor } from "../contracts/document.js";
 import { PresentationGeometrySchema } from "../contracts/presentation.js";
 import type { ParsedHtml } from "./html.js";
 import type { DeepReadonly,DocumentReadLimits } from "../runtime.js";
@@ -10,6 +11,32 @@ import { evaluatePresentationCustomGeometry } from "../presentation-custom-geome
 const geometryNames = ["x", "y", "width", "height"] as const;
 const numeric = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 export function placeholderReferenceKeys(placeholder:{readonly type:string;readonly index:number}):readonly string[]{return[placeholder.type+":"+placeholder.index,...(placeholder.type==="title"||placeholder.type==="ctrTitle"?[(placeholder.type==="title"?"ctrTitle":"title")+":"+placeholder.index]:[])];}
+type Placeholder = NonNullable<PresentationObject["placeholder"]>;
+
+/** Slide-to-layout links use the index. A layout can inherit a master's
+ * geometry by role when the producer assigned different local indices. */
+export function matchPresentationPlaceholder<T>(
+  candidates: Iterable<T>, placeholder: Placeholder, identity: (item: T) => Placeholder | undefined,
+  parent: "layout" | "master",
+): T | undefined {
+  const keys = placeholderReferenceKeys(placeholder);
+  const entries = [...candidates].flatMap(item => {
+    const candidate = identity(item);
+    return candidate ? [{ item, candidate }] : [];
+  });
+  for (const key of keys) {
+    const exact = entries.find(({ candidate }) => candidate.type + ":" + candidate.index === key);
+    if (exact) return exact.item;
+  }
+  const types = new Set(keys.map(key => key.split(":")[0]));
+  const matches = entries.filter(({ candidate }) => parent === "layout" ? candidate.index === placeholder.index : types.has(candidate.type));
+  if (matches.length === 1) return matches[0]!.item;
+  if (parent === "master" && !matches.length && placeholder.type === "obj") {
+    const bodies = entries.filter(({ candidate }) => candidate.type === "body");
+    if (bodies.length === 1) return bodies[0]!.item;
+  }
+  return undefined;
+}
 /** Native classic positions are fixed slide points, independent of font layout. */
 export function isPresentationCommentPoint(anchor:DeepReadonly<Anchor>):boolean{return anchor.kind==="region"&&anchor.layoutKey==="pptx-classic-point"&&anchor.rect.width===1&&anchor.rect.height===1&&!anchor.nodeIds.length;}
 function number(value: string | undefined): number {
@@ -47,7 +74,7 @@ function unique<Value>(values: readonly Value[], key: (value: Value) => string):
 }
 
 /** Validate references against the one HTML/CSS source, without DOM or Office I/O. */
-export function validatePresentation(presentation: PresentationMetadata, annotations: readonly Annotation[], html: ParsedHtml, styles: readonly { css: string }[], limits: DocumentReadLimits): void {
+export function validatePresentation(presentation: PresentationMetadata, annotations: readonly Annotation[], html: ParsedHtml, styles: readonly { css: string }[], limits: DocumentReadLimits, assets: readonly AssetDescriptor[]): void {
   let work = Object.values(presentation).reduce<number>((count, value) => count + (Array.isArray(value) ? value.length : 0), 0);
   checkLimit(work, limits.maxNodes);
   for (const object of presentation.objects) if (object.kind === "table") { work += object.grid.length; checkLimit(work, limits.maxNodes); }
@@ -65,10 +92,6 @@ export function validatePresentation(presentation: PresentationMetadata, annotat
   const masters = unique(presentation.masters, (item) => item.masterId);
   const layouts = unique(presentation.layouts, (item) => item.layoutId);
   const slides = unique(presentation.slides, (item) => item.slideId);
-  for (const item of unique(presentation.nativePreview ?? [], item => item.feature + ":" + item.ownerId).values()) {
-    if (item.feature === "theme-defaults" && !themes.has(item.ownerId) || item.feature === "animation" && !slides.has(item.ownerId) ||
-        item.feature === "tags" && !html.hasNode(item.ownerId)) invalid("A preserved PPTX fragment must have a current owner.");
-  }
   const objects = unique(presentation.objects, (item) => item.nodeId);
   const charts = unique(presentation.charts, (item) => item.chartId);
   const dataSets = unique(presentation.dataSets, (item) => item.dataSetId);
@@ -84,6 +107,23 @@ export function validatePresentation(presentation: PresentationMetadata, annotat
   const presentationRoots = html.nodeIds().filter((id) => node(id).attributes["data-office-kind"] === "presentation");
   if (presentationRoots.length !== 1 || node(presentationRoots[0]!).parentNodeId !== null) invalid("Presentation requires exactly one root.");
   const root = presentationRoots[0]!;
+  const transitionOwners = new Set([...presentation.slides, ...presentation.layouts, ...presentation.masters].map(item => item.rootNodeId));
+  for (const item of unique(presentation.nativePreview ?? [], item => item.feature + ":" + item.ownerId).values()) {
+    const owner = item.ownerId;
+    const valid = {
+      "theme-defaults": () => themes.has(owner),
+      "theme-format": () => themes.has(owner),
+      animation: () => slides.has(owner),
+      transition: () => transitionOwners.has(owner),
+      tags: () => html.hasNode(owner),
+      "handout-master": () => owner === root,
+      "handout-theme": () => owner === root,
+      "table-style": () => objects.get(owner)?.kind === "table",
+      "emf-image": () => item.feature === "emf-image" && objects.get(owner)?.kind === "image" &&
+        assets.some(asset => asset.path === item.assetPath && ["image/emf", "image/x-emf"].includes(asset.mimeType)),
+    }[item.feature];
+    if (!valid()) invalid("A preserved PPTX fragment must have a current owner.");
+  }
   if (html.directText(root)?.trim()) invalid("Unregistered text cannot appear directly in a presentation root.");
   const addRoot = (id: string, kind: string): void => {
     const value = node(id);
@@ -228,18 +268,28 @@ export function validatePresentation(presentation: PresentationMetadata, annotat
     if (object.placeholder && (notes || roots.get(surface) === "notes-master")) continue;
     const parents = layout ? [layout.rootNodeId, masters.get(layout.masterId)!.rootNodeId].filter((id) => id !== surface)
       : notes?.notesMasterId ? [notesMasters.get(notes.notesMasterId)!.rootNodeId] : [];
-    const keys=placeholderReferenceKeys(object.placeholder!);
     if (!parents.some((id) => {
-      const inherited=keys.map(key=>placeholders.get(id)?.get(key)).find(value=>value!==undefined);
+      const inherited = matchPresentationPlaceholder(
+        placeholders.get(id)?.values() ?? [], object.placeholder!, candidate => candidate.placeholder,
+        id === layout?.rootNodeId ? "layout" : "master",
+      );
       return inherited !== undefined && transforms.get(inherited.nodeId) !== undefined;
     })) invalid("A placeholder transform cannot be resolved from its layout or master.");
   }
   for (const id of html.nodeIds()) {
     const value = node(id), kind = value.attributes["data-office-kind"];
+    if (value.attributes["data-office-background-image"] !== undefined &&
+        (value.attributes["data-office-background-image"] !== "true" || value.tagName !== "img" || !value.parentNodeId ||
+          !["master", "layout", "slide", "notes-master"].includes(roots.get(value.parentNodeId) ?? "") || objects.has(id)))
+      invalid("A presentation background image must be a direct child of its surface.");
     if (kind !== undefined && id !== root && !roots.has(id) && !objects.has(id)) invalid("An unregistered presentation source role is invalid.");
     if (Object.keys(value.attributes).some((key) => key.startsWith("data-word-"))) invalid("Word semantics cannot be embedded in a presentation source.");
     if (value.attributes["data-office-story"] !== undefined && !roots.has(id)) invalid("Presentation stories must be registered content roots.");
-    if (roots.has(id) && !["notes", "comment"].includes(roots.get(id)!) && (value.childNodeIds.some((child) => !objects.has(child)) || html.directText(id)?.trim())) invalid("A slide surface may only contain registered objects.");
+    if (roots.has(id) && !["notes", "comment"].includes(roots.get(id)!)) {
+      const backgrounds = value.childNodeIds.filter(child => node(child).attributes["data-office-background-image"] === "true");
+      if (backgrounds.length > 1 || value.childNodeIds.some(child => !objects.has(child) && !backgrounds.includes(child)) || html.directText(id)?.trim())
+        invalid("A slide surface accepts registered objects and at most one background image.");
+    }
   }
   for (const story of presentation.stories) if (story.kind === "notes") {
     const children = node(story.rootNodeId).childNodeIds;

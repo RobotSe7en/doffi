@@ -6,14 +6,35 @@ import type { Html } from "./context.js";
 import { fill, outline } from "./styles.js";
 import { importText } from "./text.js";
 
+const basicAccentStyle = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}";
+const styledEdges = [["lnL", "left"], ["lnR", "right"], ["lnT", "top"], ["lnB", "bottom"]] as const;
+
 export function importTable(context: Context, source: XmlNode, frame: Html, part: string): number[] {
   check(source, ["tblPr", "tblGrid", "tr"], A);
   const properties = child(source, "tblPr", A);
+  let basicAccent = false;
   if (properties) {
     check(properties, ["noFill", "solidFill", "effectLst", "tableStyleId", "extLst"], A);
     const style = child(properties, "tableStyleId", A);
-    // Built-in table styles need their style definition mapped, not discarded.
-    if (style && style.content.some(x => typeof x === "string" && x.trim() && !/^\{?00000000-0000-0000-0000-000000000000\}?$/.test(x.trim()))) unsupported(style, "This presentation table style is not supported.");
+    if (style) {
+      if (style.content.some(item => typeof item !== "string")) fail(style, "A table style ID must be text.");
+      const id = text(style).trim().toUpperCase();
+      if (id && !/^\{?00000000-0000-0000-0000-000000000000\}?$/.test(id)) {
+        if (!context.compatiblePreview || id !== basicAccentStyle ||
+            ["bandRow", "bandCol", "firstCol", "lastCol", "lastRow", "rtl"].some(name => bool(properties, name)))
+          unsupported(style, "This presentation table style is not supported.");
+        const main = context.related("", "officeDocument")!;
+        const stylesPart = context.related(main, "tableStyles", false);
+        if (stylesPart) {
+          const styles = context.part(stylesPart, "presentationml.tableStyles", "tblStyleLst", A);
+          check(styles, ["tblStyle"], A);
+          if (elements(styles, "tblStyle", A).some(entry => value(entry, "styleId")?.toUpperCase() === id))
+            unsupported(style, "A custom definition overrides this preview table style.");
+        }
+        basicAccent = true;
+        context.retainPreview("table-style", frame.attrs["data-node-id"]!, properties, "Built-in table styles require compatible preview.");
+      }
+    }
   }
   const columns = elements(child(source, "tblGrid", A), "gridCol", A);
   const grid = columns.map(column => points(column, "w"));
@@ -56,11 +77,18 @@ export function importTable(context: Context, source: XmlNode, frame: Html, part
       const cell = context.make("td", { ...(rowSpan > 1 ? { rowspan: String(rowSpan) } : {}), ...(colSpan > 1 ? { colspan: String(colSpan) } : {}) });
       const p = child(sourceCell, "tcPr", A);
       const css: Css = { ...fill(p, "--office-cell-fill") };
+      if (basicAccent) {
+        if (!css["--office-cell-fill-kind"]) unsupported(sourceCell, "Compatible table styles require explicit cell fills.");
+        const header = rowIndex === 0 && bool(properties!, "firstRow");
+        css.color = header ? "var(--office-theme-lt1,#ffffff)" : "var(--office-theme-dk1,#000000)";
+        if (header) css["font-weight"] = "bold";
+        for (const [, side] of styledEdges) css["border-" + side] = "1pt solid var(--office-theme-lt1,#ffffff)";
+      }
       if (p) {
         check(p, ["lnL", "lnR", "lnT", "lnB", "lnTlToBr", "lnBlToTr", "cell3D", "noFill", "solidFill", "gradFill", "headers", "extLst"], A);
         if (child(p, "lnTlToBr", A) || child(p, "lnBlToTr", A) || child(p, "cell3D", A)) unsupported(p, "Diagonal cell borders and 3D cells are not supported.");
-        for (const [tag, side] of [["lnL", "left"], ["lnR", "right"], ["lnT", "top"], ["lnB", "bottom"]]) {
-          const line = child(p, tag!, A), declarations = outline(line, "--office-cell-border-" + side);
+        for (const [tag, side] of styledEdges) {
+          const line = child(p, tag, A), declarations = outline(line, "--office-cell-border-" + side);
           Object.assign(css, declarations);
           if (line) {
             const width = points(line, "w", 9525), color = declarations["--office-cell-border-" + side + "-color"] ?? "transparent";

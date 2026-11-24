@@ -3,7 +3,7 @@ import type { PresentationGeometry, PresentationMetadata, PresentationObject } f
 import type { PresentationOperation } from "../contracts/operations.js";
 import type { ParsedHtml } from "../document/html.js";
 import type { DocumentEdit } from "../document/edit.js";
-import { readPresentationGeometry,placeholderReferenceKeys } from "../document/presentation.js";
+import { readPresentationGeometry, matchPresentationPlaceholder } from "../document/presentation.js";
 import { evaluatePresentationPreset } from "../presentation-geometry.js";
 import { evaluatePresentationCustomGeometry } from "../presentation-custom-geometry.js";
 import { invalid } from "../document/validation.js";
@@ -55,10 +55,12 @@ export function presentationTransforms(p: DeepReadonly<PresentationMetadata>, ht
       const master = layout ? p.masters.find(m => m.masterId === layout.masterId) : undefined;
       const notes = p.stories.find(s => s.kind === "notes" && s.rootNodeId === surface);
       const notesMaster = notes?.kind === "notes" ? p.notesMasters.find(m => m.notesMasterId === notes.notesMasterId) : undefined;
-      const keys=object?.placeholder?placeholderReferenceKeys(object.placeholder):[];
       for (const parent of [layout?.rootNodeId, master?.rootNodeId, notesMaster?.rootNodeId]) {
-        if (!parent || parent === surface) continue;
-        const inherited=keys.map(key=>bySurface.get(parent)?.get(key)).find(value=>value!==undefined);
+        if (!parent || parent === surface || !object?.placeholder) continue;
+        const inherited = matchPresentationPlaceholder(
+          bySurface.get(parent)?.values() ?? [], object.placeholder, candidate => candidate.placeholder,
+          parent === layout?.rootNodeId ? "layout" : "master",
+        );
         if (inherited) { result = readPresentationGeometry(html.peekNode(inherited.nodeId)!.attributes); if (result) break; }
       }
     }

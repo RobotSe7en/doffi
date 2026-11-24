@@ -1,4 +1,4 @@
-import { DocumentError, evaluatePresentationCustomGeometry, evaluatePresentationPreset, readPresentationGeometry } from "@doffi/core";
+import { DocumentError, evaluatePresentationCustomGeometry, evaluatePresentationPreset, matchPresentationPlaceholder, readPresentationGeometry } from "@doffi/core";
 import type { DeepReadonly, ContentDocumentModel, PresentationGeometry, PresentationMetadata, PresentationObject } from "@doffi/core";
 import type { DocumentRenderReport, LayoutDiagnostic, LayoutFieldResult, RenderedPage, RenderLimits } from "../contracts.js";
 import { PreviewSource } from "../source-index.js";
@@ -39,7 +39,9 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   const account = (amount: number): void => { count += amount; if (count > limits.maxNodes) throw new DocumentError("ResourceLimitExceeded", "Presentation rendering exceeds its node budget."); };
   if (metadata.slides.length > limits.maxPages) throw new DocumentError("ResourceLimitExceeded", "Presentation rendering exceeds its page budget.");
   account(0);
-  const css = document.createElement("style"); css.textContent = frameCss; document.head.insertBefore(css, document.head.querySelector("[data-sdk-source-styles]"));
+  const css = document.createElement("style");
+  css.textContent = frameCss + "article[data-office-kind=presentation] img[data-office-background-image]{display:none}";
+  document.head.insertBefore(css, document.head.querySelector("[data-sdk-source-styles]"));
   styleView(root, { width: metadata.size.width + "pt" });
   const byId = new Map([...source.elements].map(([id, entry]) => [id, entry.element]));
   const objects = new Map(metadata.objects.map(o => [o.nodeId, o])), layouts = new Map(metadata.layouts.map(l => [l.layoutId, l])), masters = new Map(metadata.masters.map(m => [m.masterId, m]));
@@ -52,6 +54,11 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     diagnostics.push({ code: "NativeFormatting", message: "Theme insertion defaults are preserved but are not applied when creating objects in the editor." });
   if (metadata.nativePreview?.some(item => item.feature === "tags"))
     diagnostics.push({ code: "NativeFormatting", message: "Presentation tags are retained as native metadata and do not affect the static canvas." });
+  for (const item of metadata.nativePreview ?? []) {
+    if (item.feature === "emf-image") diagnostics.push({ code: "NativeFormatting", nodeId: item.ownerId, message: "The EMF image is displayed using its embedded bitmap." });
+    if (item.feature === "table-style") diagnostics.push({ code: "NativeFormatting", nodeId: item.ownerId, message: "The built-in table style is approximated around explicit cell formatting." });
+    if (item.feature === "transition") diagnostics.push({ code: "NativeFormatting", nodeId: item.ownerId, message: "The slide transition is retained for the document package and the canvas is static." });
+  }
   const connectors: { node: HTMLElement; definition: DeepReadonly<Extract<PresentationObject, { kind: "connector" }>> }[] = [];
   const chartScenes: { scene: BasicChartScene; geometry: PresentationGeometry }[] = [];
   const surfaceLayout=metadata.layouts.find(l=>l.rootNodeId===surfaceId),surfaceMaster=metadata.masters.find(m=>m.rootNodeId===surfaceId),surfaceNotesMaster=metadata.notesMasters.find(m=>m.rootNodeId===surfaceId);
@@ -62,10 +69,8 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   if(surfaceId){for(const slide of slideNodes)styleView(slide,{display:"none"});styleView(slides[0]!,{display:"block",position:"relative",overflow:"hidden",isolation:"isolate","background-color":"white",margin:"0 0 18pt"});styleView(root,{width:size.width+"pt"});}
   const entryFor=(node:HTMLElement):DeepReadonly<PresentationMetadata>["slides"][number]=>metadata.slides.find(s=>s.rootNodeId===node.dataset.nodeId)??{slideId:surfaceLayout?.layoutId??surfaceMaster?.masterId??surfaceNotesMaster!.notesMasterId,rootNodeId:surfaceId!,layoutId:surfaceLayout?.layoutId??metadata.layouts[0]!.layoutId};
   const surfaceObjects = (surface: HTMLElement): HTMLElement[] => [...surface.children].filter((node): node is HTMLElement => objects.has(node.getAttribute("data-node-id") ?? ""));
-  const placeholder = (surface: HTMLElement, object: ObjectDefinition): HTMLElement | undefined => surfaceObjects(surface).find(node=>{const candidate=objects.get(node.dataset.nodeId!)!;return candidate.placeholder&&object.placeholder&&candidate.placeholder.index===object.placeholder.index&&candidate.placeholder.type===object.placeholder.type;})??surfaceObjects(surface).find(node => {
-    const candidate = objects.get(node.dataset.nodeId!)!;
-    return candidate.placeholder && object.placeholder && candidate.placeholder.index === object.placeholder.index && (candidate.placeholder.type === object.placeholder.type || [candidate.placeholder.type, object.placeholder.type].every(t => ["title", "ctrTitle"].includes(t)));
-  });
+  const placeholder = (surface: HTMLElement, object: ObjectDefinition, parent: "layout" | "master"): HTMLElement | undefined =>
+    object.placeholder && matchPresentationPlaceholder(surfaceObjects(surface), object.placeholder, node => objects.get(node.dataset.nodeId!)!.placeholder, parent);
   const geometry = (nodes: readonly HTMLElement[]): PresentationGeometry => {
     for (let i = nodes.length - 1; i >= 0; i--) { const result = readPresentationGeometry(attributes(nodes[i]!)); if (result) return result; }
     throw new DocumentError("InvalidDocument", "A presentation object has no resolved geometry.");
@@ -87,6 +92,9 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     const availableHeight = Math.max(0, content.clientHeight - padTop - padBottom);
     const availableWidth = Math.max(0, content.clientWidth - padLeft - padRight);
     const blocks = [...content.children].filter((child): child is HTMLElement => child instanceof view.HTMLElement);
+    if (style.writingMode === "vertical-rl")
+      return { contentHeight: Math.max(0, content.scrollHeight - padTop - padBottom), availableHeight,
+        contentWidth: blocks.reduce((width, block) => width + block.offsetWidth, 0), availableWidth };
     const contentHeight = blocks.reduce((sum, block) => {
       const blockStyle = view.getComputedStyle(block);
       const rawHeight = parseFloat(blockStyle.height);
@@ -146,6 +154,10 @@ export function composePresentation(document: Document, model: ContentDocumentMo
         let text = {} as NonNullable<Extract<PresentationObject, { kind: "text" }>["text"]>;
         for (const prototype of chain) { const entry = objects.get(prototype.dataset.nodeId!); if (entry && "text" in entry) text = { ...text, ...entry.text }; }
         content.style.whiteSpace = text.wrap === false ? "pre" : "pre-wrap";
+        if (property(computed, "--office-text-direction") === "eaVert") {
+          content.style.writingMode = "vertical-rl";
+          content.style.textOrientation = "mixed";
+        }
         ownViewAttribute(node,"data-sdk-text-auto-fit");node.setAttribute("data-sdk-text-auto-fit",text.autoFit??"none");
         const role = definition.placeholder?.type, textStyle = role === "title" || role === "ctrTitle" ? master.titleStyle : role === "body" ? master.bodyStyle : master.otherStyle;
         const hasDefaultTextStyle = root.classList.contains("presentation-default");
@@ -225,7 +237,18 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     if(layoutRoot!==masterRoot)inheritance.apply(layoutRoot, [masterRoot]);if(slide!==masterRoot)inheritance.apply(slide, layoutRoot===slide?[masterRoot]:[masterRoot,layoutRoot]);
     styleView(slide, { width: size.width + "pt", height: size.height + "pt" });
     const s = document.defaultView!.getComputedStyle(slide), fill = property(s, "--office-fill-kind");
-    if (fill === "solid") styleView(slide, { "background-color": resolvedColor(document, s, "--office-fill") });
+    if (fill === "image") {
+      const image = [slide, layoutRoot, masterRoot].map(surface => surface.querySelector(":scope > img[data-office-background-image]")).find(Boolean);
+      if (image) {
+        const background = markViewNode(image.cloneNode(false) as HTMLImageElement);
+        background.removeAttribute("data-office-background-image");
+        background.removeAttribute("data-node-id");
+        background.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none";
+        hideFromViewSelection(background);
+        slide.prepend(background);
+        account(1);
+      }
+    } else if (fill === "solid") styleView(slide, { "background-color": resolvedColor(document, s, "--office-fill") });
     else if (fill === "linear") {
       const background = markViewNode(svgElement(document, "svg", { width: "100%", height: "100%", viewBox: `0 0 ${size.width} ${size.height}` })); background.style.cssText = "position:absolute;inset:0;pointer-events:none";
       background.append(svgElement(document, "rect", { width: size.width, height: size.height, fill: svgFill(document, s, background, "slide-bg-" + index, { x: 0, y: 0, width: size.width, height: size.height }) })); slide.prepend(background);
@@ -248,14 +271,23 @@ export function composePresentation(document: Document, model: ContentDocumentMo
         for (const element of [clone, ...clone.querySelectorAll<HTMLElement>("[data-node-id]")]) instanceIds.add(element.dataset.nodeId!);
       }
     }
-    const first = surfaceObjects(slide)[0]; for (const clone of inherited) { slide.insertBefore(clone, first ?? null); const definition = objects.get(clone.dataset.nodeId!)!; process(clone, definition, [], index, master, true); source.registerInstances(clone); }
+    const first = surfaceObjects(slide)[0];
+    for (const clone of inherited) {
+      slide.insertBefore(clone, first ?? null);
+      const definition = objects.get(clone.dataset.nodeId!)!;
+      const ancestor = masterRoot !== layoutRoot && byId.get(definition.nodeId)?.parentElement === layoutRoot
+        ? placeholder(masterRoot, definition, "master") : undefined;
+      process(clone, definition, ancestor ? [ancestor] : [], index, master, true);
+      source.registerInstances(clone);
+    }
     for (const objectNode of surfaceObjects(slide).filter(node => !inherited.includes(node))) {
       const definition = objects.get(objectNode.dataset.nodeId!)!;
       if (surfaceNotesMaster && definition.placeholder && !readPresentationGeometry(attributes(objectNode))) {
         diagnostics.push({ code: "NativeFormatting", nodeId: definition.nodeId, message: "The notes placeholder has no authored print geometry and is not positioned on the definition canvas." });
         styleView(objectNode, { display: "none" }); continue;
       }
-      const prototypes = definition.placeholder ? [masterRoot!==objectNode.parentElement?placeholder(masterRoot, definition):undefined,layoutRoot!==objectNode.parentElement?placeholder(layoutRoot, definition):undefined].filter((n): n is HTMLElement => !!n) : [];
+      const prototypes = definition.placeholder ? [masterRoot !== objectNode.parentElement ? placeholder(masterRoot, definition, "master") : undefined,
+        layoutRoot !== masterRoot && layoutRoot !== objectNode.parentElement ? placeholder(layoutRoot, definition, "layout") : undefined].filter((n): n is HTMLElement => !!n) : [];
       process(objectNode, definition, prototypes, index, master);
     }
     if (entry.hidden) { const label = markViewNode(document.createElement("span")); label.className = "sdk-ppt-hidden-label"; label.textContent = "隐藏幻灯片"; slide.append(label); }
@@ -342,7 +374,9 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     let hangingChanged = false;
     for (const box of textBoxes) {
       const apply = (scale: number): void => { for (const { node, size, line } of box.fonts) styleView(node, { "font-size": size * scale + "px", ...(Number.isFinite(line) ? { "line-height": line * scale * (1 - box.lineReduction) + "px" } : {}) }); };
-      const applyHanging = (): void => { if (!box.rotated && applyPresentationHangingPunctuation(box.content)) hangingChanged = true; };
+      const applyHanging = (): void => {
+        if (!box.rotated && box.content.style.writingMode !== "vertical-rl" && applyPresentationHangingPunctuation(box.content)) hangingChanged = true;
+      };
       if (box.fit === "normal") {
         let scale = box.scale; apply(scale); applyHanging();
         for (let pass = 0; pass < limits.maxLayoutPasses && box.content.clientHeight > 0; pass++) {

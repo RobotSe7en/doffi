@@ -17,6 +17,8 @@ export function color(node: XmlNode): Color {
   } else if (node.name === "schemeClr") {
     if (!v || ![...themeColorRoles, "bg1", "bg2", "tx1", "tx2", "phClr"].includes(v)) fail(node, "A theme color role is invalid.");
     css = v === "phClr" ? "var(--office-placeholder-color,var(--office-theme-dk1))" : "var(--office-theme-" + v + ")";
+  } else if (node.name === "prstClr" && (v === "black" || v === "white")) {
+    css = v === "black" ? "#000000" : "#ffffff";
   } else return unsupported(node, "This DrawingML color representation is not supported.");
   check(node, ["alpha", ...drawingColorTransformNames], A);
   const result: Color = { css };

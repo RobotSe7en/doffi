@@ -233,6 +233,37 @@ test("master background keeps its inline palette and placeholder color through l
   expect(await page.evaluate(() => window.presentationHost.view!.printDocument().querySelector<HTMLElement>('[data-office-kind="slide"]')!.style.backgroundColor)).toBe("rgb(237, 125, 49)");
 });
 
+test("inherits a bitmap background and renders East Asian vertical text on the static and print canvases", async ({ page }) => {
+  const files = new Map(readDocumentZip(readFileSync("examples/pptx/07-images.pptx")));
+  const decoder = new TextDecoder(), encoder = new TextEncoder(), master = "ppt/slideMasters/slideMaster1.xml";
+  files.set("ppt/slideMasters/_rels/slideMaster1.xml.rels", encoder.encode(
+    decoder.decode(files.get("ppt/slideMasters/_rels/slideMaster1.xml.rels")).replace("</Relationships>",
+      '<Relationship Id="background" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/sample.png"/></Relationships>'),
+  ));
+  files.set(master, encoder.encode(decoder.decode(files.get(master)).replace("<p:spTree>",
+    '<p:bg><p:bgPr><a:blipFill><a:blip r:embed="background"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg><p:spTree>')));
+  const slide = "ppt/slides/slide1.xml";
+  files.set(slide, encoder.encode(decoder.decode(files.get(slide)).replace(/<a:bodyPr(?=[\s/>])/, '<a:bodyPr vert="eaVert"')));
+  await mount(page, importPptx(writeOpcZip(files), { documentId: "bitmap-inheritance" }));
+  const canvas = page.frameLocator("iframe").locator('article > [data-office-kind="slide"]');
+  const background = canvas.locator(":scope > img");
+  await expect(background).toHaveCount(1);
+  await expect.poll(() => background.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  expect(await background.boundingBox()).toMatchObject(await canvas.boundingBox() ?? {});
+  await expect(canvas.locator(".sdk-ppt-text").first()).toHaveCSS("writing-mode", "vertical-rl");
+  const result = await page.evaluate(() => {
+    const host = window.presentationHost;
+    const print = host.view!.printDocument();
+    return {
+      printed: print.querySelector('article > [data-office-kind="slide"] > img')?.getAttribute("src"),
+      projected: host.projected(),
+    };
+  });
+  expect(result.printed).toBeTruthy();
+  expect(result.projected).toContain('data-office-background-image="true"');
+  expect(result.projected).not.toContain("blob:");
+});
+
 test("an unassigned layout slide-number placeholder does not appear on a slide", async ({ page }) => {
   const files = new Map(readDocumentZip(readFileSync("examples/pptx/01-rich-text.pptx"))), decoder = new TextDecoder(), encoder = new TextEncoder(), part = "ppt/slideLayouts/slideLayout1.xml";
   const placeholder = '<p:sp><p:nvSpPr><p:cNvPr id="999" name="Number"/><p:cNvSpPr/><p:nvPr><p:ph type="sldNum" idx="99"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="12700" y="12700"/><a:ext cx="1270000" cy="1270000"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:p><a:fld id="{E2E6A947-9D1F-4CB0-B60C-B599565FFB82}" type="slidenum"/></a:p></p:txBody></p:sp>';

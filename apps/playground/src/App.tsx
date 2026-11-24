@@ -1367,6 +1367,11 @@ export function App() {
           {!!pptxNativePreview?.length && <p className="document-status" role="note">
             {animatedSlides > 0 ? `${animatedSlides} 页含动画，当前显示静态内容。 ` : ""}
             {pptxNativePreview.some(item => item.feature === "theme-defaults") ? "主题的新对象默认样式已保留，但不用于新建对象。 " : ""}
+            {pptxNativePreview.some(item => item.feature === "theme-format") ? "未引用的高级主题样式已保留。 " : ""}
+            {pptxNativePreview.some(item => item.feature === "handout-master") ? "讲义母版已保留。 " : ""}
+            {pptxNativePreview.some(item => item.feature === "transition") ? "幻灯片切换效果以静态方式预览。 " : ""}
+            {pptxNativePreview.some(item => item.feature === "emf-image") ? "EMF 图像使用内嵌位图预览。 " : ""}
+            {pptxNativePreview.some(item => item.feature === "table-style") ? "内置表格样式已保留，当前显示兼容样式。 " : ""}
             {pptxNativePreview.some(item => item.feature === "tags") ? "原生标签也已保留。 " : ""}
             原生定义保存在文档包中；为避免丢失，当前不能导出 PPTX。
           </p>}

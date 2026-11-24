@@ -15,6 +15,7 @@ export interface DrawingTextContext {
   content(node: Html, text: string): void;
   hyperlink(source: XmlNode | undefined, target: Html, part: string): void;
   field(source: XmlNode, target: Html): void;
+  readonly eastAsianVertical?: boolean;
   projection?(nodeId: string, paragraphs: { nodeId: string; start: number; text: string; nativeText: string }[]): void;
 }
 
@@ -115,7 +116,7 @@ export function paragraphProperties(node: XmlNode | undefined, listDefaults = fa
   }
   if (value(node, "defTabSz") !== undefined) {
     const size = points(node, "defTabSz");
-    if (size <= 0) fail(node, "A default tab interval must be positive.");
+    if (size < 0) fail(node, "A default tab interval cannot be negative.");
     css["tab-size"] = size + "pt";
   }
   if (value(node, "eaLnBrk") !== undefined) css["--office-ea-line-break"] = bool(node, "eaLnBrk") ? "true" : "false";
@@ -152,10 +153,12 @@ export function importTextStyle(context: Pick<DrawingTextContext, "rule">, sourc
   }
 }
 
-export function textBodyProperties(properties: XmlNode): { text: DrawingTextProperties; css: Css } {
+export function textBodyProperties(properties: XmlNode, eastAsianVertical = false): { text: DrawingTextProperties; css: Css } {
   check(properties, ["noAutofit", "normAutofit", "spAutoFit", "prstTxWarp", "scene3d", "sp3d", "extLst"], A);
   for (const name of ["rot", "numCol", "spcCol"]) if (integer(properties, name, name === "numCol" ? 1 : 0) !== (name === "numCol" ? 1 : 0)) unsupported(properties, "Rotated or multicolumn text bodies are not supported.");
-  if (value(properties, "vert") && value(properties, "vert") !== "horz" || bool(properties, "rtlCol")) unsupported(properties, "Only horizontal text is supported.");
+  const direction = value(properties, "vert");
+  if (direction && direction !== "horz" && !(eastAsianVertical && direction === "eaVert") || bool(properties, "rtlCol"))
+    unsupported(properties, "This drawing text direction is not supported.");
   const warp = child(properties, "prstTxWarp", A);
   if (warp && value(warp, "prst") !== "textNoShape" || child(properties, "scene3d", A) || child(properties, "sp3d", A)) unsupported(properties, "Text warping and 3D are not supported.");
   const kinds = ["noAutofit", "normAutofit", "spAutoFit"].filter(name => child(properties, name, A));
@@ -172,6 +175,7 @@ export function textBodyProperties(properties: XmlNode): { text: DrawingTextProp
     if (result.fontScale <= 0 || result.fontScale > 1 || result.lineSpacingReduction < 0 || result.lineSpacingReduction > 1) fail(normal, "Text auto-fit scales are invalid.");
   }
   const css: Css = { ...fill(properties, "--office-text-fill") };
+  if (eastAsianVertical && direction) css["--office-text-direction"] = direction;
   if (value(properties, "defTabSz") !== undefined) css["tab-size"] = points(properties, "defTabSz") + "pt";
   for (const [name, side, fallback] of [["lIns", "left", 91440], ["rIns", "right", 91440], ["tIns", "top", 45720], ["bIns", "bottom", 45720]] as const) {
     if (value(properties, name) === undefined) continue;
@@ -190,7 +194,7 @@ export function importText(context: DrawingTextContext, body: XmlNode, target: H
   check(body, ["bodyPr", "lstStyle", "p"], A);
   const properties = child(body, "bodyPr", A);
   if (!properties) fail(body, "A DrawingML text body requires body properties.");
-  const { text: result, css } = textBodyProperties(properties);
+  const { text: result, css } = textBodyProperties(properties, context.eastAsianVertical);
   target.attrs.style = (target.attrs.style ? target.attrs.style + ";" : "") + Object.entries(css).map(([k, v]) => k + ":" + v).join(";");
   const listStyle = context.id("text-style");
   importTextStyle(context, child(body, "lstStyle", A), listStyle);
