@@ -1,7 +1,7 @@
 import { openContentFixture as openDocument } from "../../../tests/content-fixture.js";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { createDocumentSession, DocumentError, readPresentationGeometry } from "@doffi/core";
+import { createDocumentSession, DocumentError, readPresentationGeometry, resolvePresentationGeometry } from "@doffi/core";
 import { exportPptx, importPptx, readDocumentZip, writeDocumentZip } from "@doffi/office";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
@@ -15,6 +15,11 @@ const load = (name = "01-rich-text.pptx") => openDocument(importPptx(fixture(nam
 function mutate(name: string, part: string, change: (source: string) => string): Uint8Array {
   const files = unzipSync(fixture(name)); files[part] = strToU8(change(strFromU8(files[part]!))); return zipSync(files);
 }
+const presentationNamespace = "http://schemas.openxmlformats.org/presentationml/2006/main";
+const relationshipNamespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const change = (files: Record<string, Uint8Array>, part: string, edit: (xml: string) => string) => {
+  files[part] = strToU8(edit(strFromU8(files[part]!)));
+};
 const readingLater = /^(09|10|11|12|13)-/;
 for (const item of expected.cases.filter(c => !readingLater.test(c.file))) for (const producer of ["", "producer/"]) {
   test("imports independent PPTX base objects and reopens the HTML package: " + producer + item.file, () => {
@@ -204,6 +209,115 @@ test("compatible PPTX retains theme insertion defaults and static animation with
   files[slide] = strToU8(original.replace("</p:sld>", timing.replace('spid="2"', 'spid="99999"') + "</p:sld>"));
   expect(() => importPptx(zipSync(files), options)).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
   files[slide] = strToU8(original.replace("</p:sld>", timing.replace("<p:set>", "<p:audio/><p:set>") + "</p:sld>"));
+  expect(() => importPptx(zipSync(files), options)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+});
+
+test("compatible PPTX keeps a linked print master, static transition, and unused theme formats", () => {
+  const files = unzipSync(fixture()), main = "ppt/presentation.xml", master = "ppt/slideMasters/slideMaster1.xml";
+  const theme = "ppt/theme/theme1.xml", handout = "ppt/print/print.xml", slide = "ppt/slides/slide1.xml";
+  const mode = { documentId: "compatible-definition", mode: "compatible" as const };
+  const timing = '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"/></p:par></p:tnLst></p:timing>';
+  change(files, main, xml => xml.replace("<p:sldIdLst>", '<p:handoutMasterIdLst><p:handoutMasterId r:id="print"/></p:handoutMasterIdLst><p:sldIdLst>'));
+  change(files, "ppt/_rels/presentation.xml.rels", xml => xml.replace("</Relationships>",
+    '<Relationship Id="print" Type="' + relationshipNamespace + '/handoutMaster" Target="print/print.xml"/></Relationships>'));
+  change(files, "[Content_Types].xml", xml => xml.replace("</Types>",
+    '<Override PartName="/' + handout + '" ContentType="application/vnd.openxmlformats-officedocument.presentationml.handoutMaster+xml"/></Types>'));
+  files[handout] = strToU8('<p:handoutMaster xmlns:p="' + presentationNamespace + '"><p:cSld><p:spTree/></p:cSld></p:handoutMaster>');
+  files["ppt/print/_rels/print.xml.rels"] = strToU8('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="theme" Type="' + relationshipNamespace + '/theme" Target="../theme/theme1.xml"/></Relationships>');
+  change(files, master, xml => xml.replace("</p:sldMaster>", timing + "</p:sldMaster>"));
+  change(files, slide, xml => xml.replace("</p:sld>", '<p:transition><p:wipe dir="r"/></p:transition>' + timing + "</p:sld>"));
+  change(files, theme, xml => xml.replace("<a:bgFillStyleLst>", '<a:bgFillStyleLst><a:gradFill><a:gsLst>' +
+    '<a:gs pos="0"><a:srgbClr val="000000"/></a:gs><a:gs pos="100000"><a:srgbClr val="FFFFFF"/></a:gs>' +
+    '</a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path></a:gradFill>'));
+  const bytes = zipSync(files);
+  expect(() => importPptx(bytes, { documentId: mode.documentId })).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+  const document = openDocument(importPptx(bytes, mode)), snapshot = document.snapshot();
+  expect(snapshot.metadata.presentation!.nativePreview!.map(item => item.feature)).toEqual(["theme-format", "transition", "handout-master", "handout-theme"]);
+  expect(openDocument(readDocumentZip(writeDocumentZip(document.serialize()))).snapshot()).toEqual(snapshot);
+  expect(() => exportPptx(document)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+  const rels = files["ppt/_rels/presentation.xml.rels"]!;
+  change(files, "ppt/_rels/presentation.xml.rels", xml => xml.replace('Target="print/print.xml"', 'Target="https://example.com/master.xml" TargetMode="External"'));
+  expect(() => importPptx(zipSync(files), mode)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
+  files["ppt/_rels/presentation.xml.rels"] = rels;
+  change(files, slide, xml => xml.replace("<p:spTree>", '<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg><p:spTree>'));
+  expect(() => importPptx(zipSync(files), mode)).toThrowError(/referenced theme style cannot be rendered/);
+});
+
+test("round trips stretched picture backgrounds and layout placeholders whose master uses a different index", () => {
+  const files = unzipSync(fixture("02-theme-placeholders.pptx"));
+  const layout = "ppt/slideLayouts/slideLayout2.xml", master = "ppt/slideMasters/slideMaster2.xml";
+  const content = unzipSync(fixture("07-images.pptx"))["ppt/media/sample.png"]!;
+  files["ppt/media/background.png"] = content;
+  change(files, "[Content_Types].xml", xml => xml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>'));
+  change(files, "ppt/slideMasters/_rels/slideMaster2.xml.rels", xml => xml.replace("</Relationships>",
+    '<Relationship Id="background" Type="' + relationshipNamespace + '/image" Target="../media/background.png"/></Relationships>'));
+  change(files, master, xml => xml.replace('type="title" idx="0"', 'type="title" idx="42"').replace("<p:spTree>",
+    '<p:bg><p:bgPr><a:blipFill><a:blip r:embed="background"/><a:srcRect/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg><p:spTree>'));
+  change(files, layout, xml => xml.replace(/<p:sp>.*?<\/p:sp>/s, shape =>
+    shape.replace(/<a:xfrm>.*?<\/a:xfrm>/s, "").replace(/<a:bodyPr(?=[\s/>])/, '<a:bodyPr vert="eaVert"')));
+  const document = openDocument(importPptx(zipSync(files), { documentId: "background-vertical" }));
+  const snapshot = document.snapshot(), presentation = snapshot.metadata.presentation!;
+  const slide = document.getNode(presentation.slides[0]!.rootNodeId)!;
+  const layoutTitle = presentation.objects.find(object => object.placeholder?.type === "title" &&
+    document.getNode(object.nodeId)?.parentNodeId === presentation.layouts.find(item => item.layoutId === presentation.slides[0]!.layoutId)!.rootNodeId)!;
+  expect(readPresentationGeometry(document.getNode(layoutTitle.nodeId)!.attributes)).toBeUndefined();
+  expect(resolvePresentationGeometry(document, slide.childNodeIds[0]!)).toMatchObject({ x: 48, y: 30, width: 864, height: 90 });
+  expect(document.getNode(layoutTitle.nodeId)!.attributes.style).toContain("--office-text-direction:eaVert");
+  const output = exportPptx(document).bytes;
+  const reopened = openDocument(importPptx(output, { documentId: "background-vertical" }));
+  expect(reopened.snapshot().html).toContain('data-office-background-image="true"');
+  expect(reopened.snapshot().html).toContain("--office-text-direction:eaVert");
+  expect(reopened.snapshot().manifest.assets[0]!.sha256).toBe(snapshot.manifest.assets[0]!.sha256);
+});
+
+test("compatible PPTX extracts a full-frame EMF DIB and retains the native bytes", () => {
+  const files = unzipSync(fixture("07-images.pptx")), original = "ppt/media/preview.emf";
+  const image = new Uint8Array(88 + 128 + 20), fields = new DataView(image.buffer);
+  const words = [
+    [0, 1], [4, 88], [16, 1], [20, 0], [40, 0x464d4520], [48, image.length], [52, 3],
+    [88, 81], [92, 128], [104, 1], [128, 2], [132, 1], [136, 80], [140, 40], [144, 120], [148, 8],
+    [156, 0x00cc0020], [160, 2], [164, 1], [168, 40], [172, 2], [176, 1],
+    [216, 14], [220, 20], [232, 20],
+  ] as const;
+  for (const [offset, value] of words) fields.setUint32(offset, value, true);
+  fields.setUint16(180, 1, true);
+  fields.setUint16(182, 32, true);
+  image.set([0, 0, 255, 0, 255, 0, 0, 0], 208);
+  files[original] = image;
+  change(files, "ppt/slides/_rels/slide1.xml.rels", xml => xml.replace("../media/sample.png", "../media/preview.emf"));
+  change(files, "[Content_Types].xml", xml => xml.replace("</Types>", '<Default Extension="emf" ContentType="image/x-emf"/></Types>'));
+  const options = { documentId: "embedded-raster", mode: "compatible" as const };
+  const document = openDocument(importPptx(zipSync(files), options)), snapshot = document.snapshot();
+  const preview = snapshot.metadata.presentation!.nativePreview!.find(item => item.feature === "emf-image")!;
+  expect(document.serialize().get(preview.assetPath)).toEqual(image);
+  const png = document.serialize().get("preview-assets/" + original + ".png")!;
+  expect(new DataView(png.buffer, png.byteOffset).getUint32(16)).toBe(2);
+  expect(snapshot.html).toContain("preview-assets/" + original + ".png");
+  const session = createDocumentSession(document);
+  const picture = document.getNode(preview.ownerId)!;
+  const replacement = snapshot.manifest.assets.find(asset => asset.mimeType === "image/jpeg")!;
+  session.commit(session.prepare({ protocolVersion: 1, documentId: options.documentId, baseRevision: 0, operations: [
+    { op: "replaceAsset", nodeId: picture.childNodeIds[0]!, assetPath: replacement.path },
+  ] }));
+  expect(session.snapshot().metadata.presentation!.nativePreview).toEqual([]);
+  session.undo();
+  expect(session.snapshot().metadata.presentation!.nativePreview).toEqual([preview]);
+  fields.setUint32(144, 128, true);
+  expect(() => importPptx(zipSync(files), options)).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+});
+
+test("compatible built-in table styles require explicit cell fills and reject unknown styles", () => {
+  const main = "ppt/slides/slide1.xml";
+  const preset = '<a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId>';
+  const options = { documentId: "styled-table", mode: "compatible" as const };
+  const files = unzipSync(fixture("08-table-merges.pptx"));
+  change(files, main, xml => xml.replace(/<a:tblPr(?: [^>]*)?\/>|<a:tblPr(?: [^>]*)?>.*?<\/a:tblPr>/s,
+    '<a:tblPr firstRow="1">' + preset + "</a:tblPr>"));
+  const snapshot = openDocument(importPptx(zipSync(files), options)).snapshot();
+  expect(snapshot.metadata.presentation!.nativePreview).toEqual([expect.objectContaining({ feature: "table-style" })]);
+  expect(snapshot.html).toContain("font-weight:bold");
+  change(files, main, xml => xml.replace(preset, preset.replace("5C22544A", "ABCDEFAB")));
   expect(() => importPptx(zipSync(files), options)).toThrowError(expect.objectContaining({ code: "UnsupportedFeature" }));
 });
 

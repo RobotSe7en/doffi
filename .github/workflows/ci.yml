@@ -197,11 +197,11 @@ jobs:
           RESULT: ${{ needs.office-suite.result }}
         run: test "$RESULT" = success
 
-  workbook-scale:
+  workbook-scale-native:
     needs: build
     if: contains(github.event.pull_request.labels.*.name, 'stage-acceptance') || inputs.stage_acceptance == true
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 15
     env:
       DOFFI_CI_MODE: full
     steps:
@@ -210,7 +210,6 @@ jobs:
         with:
           restore-build: 'true'
       - uses: ./.github/actions/ubuntu-downloads
-      - run: node scripts/playwright.mjs install --with-deps chromium firefox webkit --only-shell
       - run: sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-impress libreoffice-calc python3-uno python3-lxml poppler-utils fonts-noto-cjk fonts-liberation2
       - uses: actions/cache@v4
         with:
@@ -218,22 +217,96 @@ jobs:
           key: office-archive-f367c434aee8352e9742e192bedcdaef194ffcbcfeaf760c6300fb4fecbba73c
       - run: node scripts/install-acceptance-office.mjs
       - run: node scripts/install-acceptance-fonts.mjs --system-fonts
-      - run: node scripts/install-legacy-chromium.mjs
-      - run: pnpm check:workbook-scale
+      - run: pnpm check:workbook-scale --part native
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workbook-scale-acceptance
+          name: workbook-scale-shard-native
           path: |
             .cache/workbook-scale-acceptance/
             .cache/ci-office/workbook/xlsx-export/
-            .cache/workbook-reading-matrix-modern/
-            .cache/workbook-reading-matrix-legacy/
-            .cache/workbook-reading-budget/
-            .cache/workbook-editing-budget/
             .cache/xlsx-reference/result.json
             .cache/acceptance-office/environment.json
             .cache/acceptance-fonts/environment.json
             .cache/acceptance-fonts/fonts.conf
             .cache/acceptance-fonts/licenses/
+          retention-days: 14
+
+  workbook-scale-browser:
+    needs: build
+    if: contains(github.event.pull_request.labels.*.name, 'stage-acceptance') || inputs.stage_acceptance == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DOFFI_CI_MODE: full
+      ASSET_BROWSER: ${{ matrix.browser == 'legacy-chromium' && 'chromium' || matrix.browser }}
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit, legacy-chromium]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-project
+        with:
+          restore-build: 'true'
+      - uses: ./.github/actions/ubuntu-downloads
+      - uses: actions/cache@v4
+        with:
+          path: .playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}-${{ env.ASSET_BROWSER }}
+      - run: node scripts/playwright.mjs install --with-deps "$ASSET_BROWSER" --only-shell
+        timeout-minutes: 10
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '60000'
+      - run: sudo apt-get install -y --no-install-recommends fontconfig fonts-noto-cjk fonts-liberation2 fonts-opensymbol
+      - run: node scripts/install-acceptance-fonts.mjs --system-fonts
+      - uses: actions/cache@v4
+        if: matrix.browser == 'legacy-chromium'
+        with:
+          path: .cache/legacy-browser
+          key: ${{ runner.os }}-legacy-browser-${{ hashFiles('scripts/install-legacy-chromium.mjs') }}
+      - run: node scripts/install-legacy-chromium.mjs
+        if: matrix.browser == 'legacy-chromium'
+      - run: pnpm check:workbook-scale --part browser --browser "$BROWSER"
+        env:
+          BROWSER: ${{ matrix.browser }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workbook-scale-shard-${{ matrix.browser }}
+          include-hidden-files: true
+          path: |
+            .cache/workbook-scale-acceptance/
+            .cache/workbook-reading-matrix/${{ matrix.browser }}/
+            .cache/workbook-reading-budget/${{ matrix.browser }}/
+            .cache/workbook-editing-budget/${{ matrix.browser }}/
+          retention-days: 14
+
+  workbook-scale:
+    needs: [build, workbook-scale-native, workbook-scale-browser]
+    if: always() && needs.build.result == 'success' && (contains(github.event.pull_request.labels.*.name, 'stage-acceptance') || inputs.stage_acceptance == true)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DOFFI_CI_MODE: full
+    steps:
+      - name: Require native acceptance and all four browsers
+        env:
+          NATIVE_RESULT: ${{ needs.workbook-scale-native.result }}
+          BROWSER_RESULT: ${{ needs.workbook-scale-browser.result }}
+        run: test "$NATIVE_RESULT" = success && test "$BROWSER_RESULT" = success
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-project
+        with:
+          restore-build: 'true'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: workbook-scale-shard-*
+          path: .cache
+          merge-multiple: true
+      - run: pnpm check:workbook-scale --part summary
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbook-scale-acceptance
+          path: .cache/workbook-scale-acceptance/
           retention-days: 14

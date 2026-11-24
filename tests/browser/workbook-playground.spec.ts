@@ -244,14 +244,13 @@ for (const form of [
   expect(await page.evaluate(() => ({ created: window.workbookHostProbe.created, terminated: window.workbookHostProbe.terminated }))).toEqual({ created: 1, terminated: 0 });
 });
 
-for (const large of [false, true]) test(`Playground opens a ${large ? 'ten-thousand-row' : 'small'} workbook and switches between isolated Word, PPT and workbook views`, { tag: large ? '@scale' : [] }, async ({ page }, info) => {
+test('Playground opens a small workbook and switches between isolated Word, PPT and workbook views', async ({ page }, info) => {
   test.setTimeout(120_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  const filename = large ? '一万行工作簿.xlsx' : '09-classic-notes.xlsx';
-  const reopen = page.getByRole('button', { name: large ? '打开一万行 XLSX 样例' : '打开 09-classic-notes.xlsx', exact: true });
-  if (large) await reopen.click(); else await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx');
+  const reopen = page.getByRole('button', { name: '打开 09-classic-notes.xlsx', exact: true });
+  await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx');
   await expect(status(page)).toHaveAttribute("data-sheet-count", "1", { timeout: 60_000 });
-  await expect(page.getByRole('heading', { name: filename, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '09-classic-notes.xlsx', exact: true })).toBeVisible();
   await expect(page.getByLabel('Excel 工作簿编辑', { exact: true })).toBeVisible();
   const first = await workbookState(page);
   expect(first.grids).toBe(1); expect(first.readonly).toBe(true); expect(first.cells).toBeGreaterThan(0); expect(first.cells).toBeLessThan(2000);

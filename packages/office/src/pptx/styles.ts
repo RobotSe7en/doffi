@@ -45,20 +45,33 @@ export function importTheme(context: Context, path: string): string {
   }
   css.color = "var(--office-theme-dk1)"; css["font-family"] = "var(--office-minor-ascii),var(--office-minor-east-asia)"; css["font-size"] = "18pt";
   context.rule(id, css);
+  let retainFormat = false;
   for (const [name, prefix, map] of [["fillStyleLst", "fill", (n: XmlNode) => fill({ ...n, content: [n] })],
     ["bgFillStyleLst", "background", (n: XmlNode) => fill({ ...n, content: [n] })],
     ["lnStyleLst", "line", outline], ["effectStyleLst", "effect", (n: XmlNode) => { check(n, ["effectLst", "scene3d", "sp3d"], A); if (child(n, "scene3d", A) || child(n, "sp3d", A)) unsupported(n); return effects(child(n, "effectLst", A)); }]] as const) {
     const list = child(format, name, A);
     if (!list) fail(format, "A theme format list is missing.");
+    check(list, prefix === "line" ? ["ln"] : prefix === "effect" ? ["effectStyle"] :
+      ["noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill"], A);
     elements(list, undefined, A).forEach((item, index) => {
-      const css = map(item);
+      const className = id + "-" + prefix + "-" + (index + 1);
+      let css: Css;
+      try {
+        css = map(item);
+      } catch (error) {
+        if (!context.compatiblePreview || !(error instanceof DocumentError) || error.code !== "UnsupportedFeature") throw error;
+        context.unavailableThemeStyles.add(className);
+        retainFormat = true;
+        return;
+      }
       for (const key of Object.keys(css)) css[key] = css[key]!.replaceAll("--office-placeholder-color", "--office-" + prefix + "-reference-color");
       for (const key of Object.keys(css)) if (key.endsWith("-source") && css[key] === "placeholder") {
         css[key] = "reference"; css[key.slice(0, -7) + "-reference-prefix"] = "--office-" + prefix + "-reference";
       }
-      context.rule(id + "-" + prefix + "-" + (index + 1), css);
+      context.rule(className, css);
     });
   }
+  if (retainFormat) context.retainPreview("theme-format", id, format, "Unsupported theme styles require compatible preview.");
   const defaults = child(source, "objectDefaults", A);
   check(defaults, ["spDef", "lnDef", "txDef", "extLst"], A);
   if (defaults && elements(defaults, undefined, A).length) {
@@ -75,3 +88,4 @@ export function importTheme(context: Context, path: string): string {
   context.surfaces.set(path, { id, root: { tag: "div", attrs: {}, children: [] }, source, themeId: id });
   return id;
 }
+import { DocumentError } from "@doffi/core";

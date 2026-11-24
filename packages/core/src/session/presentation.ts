@@ -24,7 +24,17 @@ export function updatePresentationMetadata(metadata: ContentDocumentMetadata, be
   const p = metadata.presentation;
   if (!p) return;
   p.objects = p.objects.filter(item => after.hasNode(item.nodeId));
-  if (p.nativePreview) p.nativePreview = p.nativePreview.filter(item => item.feature !== "tags" || after.hasNode(item.ownerId));
+  const imageSource = (tree: ParsedHtml, owner: string): string | undefined => {
+    const node = tree.peekNode(owner);
+    if (node?.tagName === "img") return node.attributes.src;
+    return node?.childNodeIds.map(id => tree.peekNode(id)).find(child => child?.tagName === "img")?.attributes.src;
+  };
+  if (p.nativePreview) p.nativePreview = p.nativePreview.filter(item => {
+    if (!["tags", "transition", "table-style", "emf-image"].includes(item.feature)) return true;
+    if (!after.hasNode(item.ownerId)) return false;
+    if (item.feature !== "emf-image" || !before.html.hasNode(item.ownerId)) return true;
+    return imageSource(before.html, item.ownerId) === imageSource(after, item.ownerId);
+  });
   const objects = new Set(p.objects.map(o => o.nodeId));
   for (const object of p.objects) if (object.kind === "connector") {
     if (object.startNodeId && !objects.has(object.startNodeId)) { delete object.startNodeId; delete object.startSite; }

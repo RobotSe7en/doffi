@@ -56,7 +56,7 @@ export function buildDocumentState(
       sectionRoots.add(section.rootNodeId);
     }
     validateWord(metadata, annotations, html, manifest.assets);
-  } else validatePresentation(metadata.presentation, annotations, html, styles, limits);
+  } else validatePresentation(metadata.presentation, annotations, html, styles, limits, manifest.assets);
   validateAnnotations(annotations, manifest, html);
   const snapshot: ContentDocumentSnapshot = freeze({
     manifest,

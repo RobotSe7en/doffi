@@ -196,10 +196,14 @@ export function resolvePreviewFonts(
 export function resolvePreviewFontsInScope(document: Document, scope: ParentNode, selector: string, probes?: FontProbeCache, hosted?: HostedWordFonts): readonly FontResolution[] {
   hosted ??= loadedAliases.get(document);
   probes?.watch(document.fonts);
-  let canvas: HTMLCanvasElement | undefined, context: CanvasRenderingContext2D | undefined, glyphPhase = false;
+  let context: CanvasRenderingContext2D | undefined;
   const probe = (): CanvasRenderingContext2D => {
-    if (!context) { canvas = document.createElement("canvas"); if (glyphPhase) { canvas.width = 128; canvas.height = 128; } context = canvas.getContext("2d")!; }
-    return context;
+    const create = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 128;
+      return canvas.getContext("2d", { willReadFrequently: true })!;
+    };
+    return context ??= probes ? probes.canvas(create) : create();
   };
   const cache = new Map<string, boolean>();
   const resolutions = new Map<
@@ -297,23 +301,37 @@ export function resolvePreviewFontsInScope(document: Document, scope: ParentNode
   }
   // A local raster comparison also catches the generic missing-glyph box. This
   // is a preview diagnostic, not a promise of platform-independent font coverage.
-  glyphPhase = true;
-  if (canvas) { canvas.width = 128; canvas.height = 128; }
   const hashes = new Map<string, number>();
   const unavailableAudits = new Set<string>();
-  let audited = 0;
-  const glyphHash = (font: string, character: string): number => {
-    const key = font + "\0" + character;
+  const auditedCharacters = new Set<string>();
+  const glyphHash = (font: string, character: string, small = false): number => {
+    const key = font + "\0" + character + (small ? "\0small" : "");
     const cached = hashes.get(key);
     if (cached !== undefined) return cached;
     const measure = (): number => {
       const context = probe();
-      context.clearRect(0, 0, 128, 128); context.font = "64px " + font; context.fillText(character, 16, 90);
-      const pixels = context.getImageData(0, 0, 128, 128).data; let hash = 2166136261;
+      const extent = small ? 24 : 128;
+      context.clearRect(0, 0, extent, extent);
+      context.font = (small ? "8px " : "64px ") + font;
+      context.fillText(character, small ? 2 : 16, small ? 18 : 90);
+      const pixels = context.getImageData(0, 0, extent, extent).data; let hash = 2166136261;
       for (const value of pixels) hash = Math.imul(hash ^ value, 16777619);
       return hash >>> 0;
     };
     const hash = probes ? probes.glyph(key, measure) : measure(); hashes.set(key, hash); return hash;
+  };
+  const missingGlyph = (font: string, character: string): boolean => {
+    const supplementary = glyphHash(font, "\u{10ffff}"), bmp = glyphHash(font, "\uffff");
+    if (supplementary === bmp) return glyphHash(font, character) === bmp;
+
+    // Some engines put the code point inside their missing-glyph box. At a
+    // small size they draw only the border. Compare two controls from the same
+    // Unicode range so the box has the same width, and require visible ink.
+    const [first, second] = character.length === 2 ? ["\u{10fffe}", "\u{10ffff}"] : ["\ufffe", "\uffff"];
+    const outline = glyphHash(font, first, true);
+    return outline === glyphHash(font, second, true) &&
+      outline !== glyphHash(font, "", true) &&
+      outline === glyphHash(font, character, true);
   };
   for (const node of nodes.filter((item) =>
     item.matches('[data-word-script="eastAsia"],[data-office-script="east-asia"],.sdk-number-marker,.sdk-ppt-marker'),
@@ -324,13 +342,13 @@ export function resolvePreviewFontsInScope(document: Document, scope: ParentNode
     if (unavailableAudits.has(font)) { resolution.glyphAuditComplete = false; continue; }
     for (const character of new Set(node.textContent ?? "")) {
       const key = font + "\0" + character;
-      if (!hashes.has(key) && audited >= 4096) {
+      if (!auditedCharacters.has(key) && auditedCharacters.size >= 4096) {
         resolution.glyphAuditComplete = false;
         continue;
       }
-      if (!hashes.has(key)) audited++;
+      auditedCharacters.add(key);
       try {
-        if (glyphHash(font, character) === glyphHash(font, "\u{10ffff}") && glyphHash(font, character) === glyphHash(font, "\uffff")) resolution.missingCharacters.add(character);
+        if (missingGlyph(font, character)) resolution.missingCharacters.add(character);
       } catch (error) {
         // Platform/privacy raster failures cannot establish missing glyphs.
         // Keep rendering with an explicit incomplete audit, and stop retrying

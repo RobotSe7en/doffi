@@ -26,8 +26,9 @@ export function importHyperlink(context: Context, hyperlink: XmlNode | undefined
 export function importTextStyle(context: Context, source: XmlNode | undefined, className: string): void {
   drawingTextStyle(context, source, className);
 }
-export function importText(context: Context, body: XmlNode, target: Html, part: string): Extract<PresentationObject, { kind: "text" }>["text"] {
+export function importText(context: Context, body: XmlNode, target: Html, part: string, eastAsianVertical = false): Extract<PresentationObject, { kind: "text" }>["text"] {
   return drawingText({
+    eastAsianVertical,
     id: prefix => context.id(prefix), make: (tag, attrs) => context.make(tag, attrs),
     style: (node, css) => context.style(node, css), rule: (name, css) => context.rule(name, css),
     bytes: amount => context.bytes(amount), content: (node, text) => context.content(node, text),

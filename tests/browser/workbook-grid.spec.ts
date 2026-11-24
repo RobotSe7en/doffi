@@ -152,7 +152,9 @@ test('cached text keeps independent live UTF-16 projections, ownership, font inv
 
 test('owned font probes retain identical glyph diagnostics without repeating raster readbacks', async ({ page }) => {
   const result = await page.evaluate(() => window.workbookGridHost.fontProbeMeasurement());
-  expect(result.initial).toBeGreaterThan(0); expect(result.repeated).toBe(result.initial); expect(result.cleared).toBeGreaterThan(result.repeated);
+  expect(result.initial).toBeGreaterThan(0); expect(result.repeated).toBe(result.initial);
+  expect(result.extended).toBeGreaterThan(result.repeated); expect(result.activeCanvases).toBe(1);
+  expect(result.cleared).toBeGreaterThan(result.extended); expect(result.totalCanvases).toBe(2);
   expect(result.first).toEqual(result.second); expect(result.first).toEqual(result.third);
   expect(result.first[0]).toMatchObject({ requestedFamily: 'serif', selectedFamily: 'serif', substituted: false, glyphAuditComplete: true });
 });

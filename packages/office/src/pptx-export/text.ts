@@ -145,7 +145,7 @@ export function paragraphProperties(format: "pptx" | "xlsx", css: Css, own: Css,
         if (own[key!] !== undefined)
             attrs[name!] = emu(points(css[key!], css), -2147483648, 2147483647);
     if (own["tab-size"] !== undefined && css["tab-size"] && !/^\d+(?:\.\d+)?$/.test(css["tab-size"]!))
-        attrs.defTabSz = emu(points(css["tab-size"], css), 1, 2147483647);
+        attrs.defTabSz = emu(points(css["tab-size"], css), 0, 2147483647);
     if (own["--office-ea-line-break"] !== undefined)
         attrs.eaLnBrk = css["--office-ea-line-break"] === "true" ? 1 : 0;
     if (own["--office-latin-line-break"] !== undefined)
@@ -195,6 +195,8 @@ export class PresentationTextWriter {
             attrs.anchor = css["--office-text-anchor"];
         if (own["--office-text-anchor-center"] !== undefined)
             attrs.anchorCtr = css["--office-text-anchor-center"] === "true" ? 1 : 0;
+        if (own["--office-text-direction"] === "eaVert" || own["--office-text-direction"] === "horz")
+            attrs.vert = own["--office-text-direction"];
         let result = "<" + tag + "><a:bodyPr" + attributes(attrs) + ">", fit = object?.text?.autoFit;
         result += fit === "normal" ? empty("a:normAutofit", { fontScale: integer(object?.text?.fontScale ?? 1, 100000, 1, 100000), lnSpcReduction: integer(object?.text?.lineSpacingReduction ?? 0, 100000, 0, 100000) }) : fit === "shape" ? "<a:spAutoFit/>" : "<a:noAutofit/>";
         result += "</a:bodyPr><a:lstStyle><a:defPPr" + paragraphProperties("pptx", css, ["td", "th"].includes(node.tag) ? Object.fromEntries(Object.entries(own).filter(([key]) => key !== "vertical-align")) : own, raw) + "</a:defPPr></a:lstStyle>";

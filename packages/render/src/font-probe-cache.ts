@@ -7,6 +7,7 @@ export class FontProbeCache {
   private readonly faces = new WeakMap<FontFace, number>();
   private faceId = 0;
   private fonts: FontFaceSet | undefined;
+  private context: CanvasRenderingContext2D | undefined;
   private state: string | undefined;
   private epoch = 0;
   private units = 0;
@@ -21,6 +22,7 @@ export class FontProbeCache {
     }));
     const ready = fonts.status !== "loading";
     // fonts.ready can force source-table layout; this descriptor check does not.
+    if (fonts !== this.fonts) this.context = undefined;
     if (fonts !== this.fonts || state !== this.state || !ready) { this.entries.clear(); this.units = 0; this.epoch++; }
     this.fonts = fonts; this.state = state;
     return { ready, epoch: this.epoch };
@@ -39,5 +41,8 @@ export class FontProbeCache {
   }
   available(family: string, create: () => boolean): boolean { return this.read("a:" + family, create); }
   glyph(key: string, create: () => number): number { return this.read("g:" + key, create); }
-  clear(): void { this.entries.clear(); this.units = 0; this.fonts = undefined; this.state = undefined; this.epoch++; }
+  canvas(create: () => CanvasRenderingContext2D): CanvasRenderingContext2D {
+    return this.context ??= create();
+  }
+  clear(): void { this.entries.clear(); this.units = 0; this.context = undefined; this.fonts = undefined; this.state = undefined; this.epoch++; }
 }

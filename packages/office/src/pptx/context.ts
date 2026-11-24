@@ -9,6 +9,7 @@ import type { Css } from "../ooxml/styles.js";
 import type { Html } from "../drawingml/html.js";
 import { rootName } from "../drawingml/values.js";
 import { serializeXml } from "../ooxml/serialize.js";
+import { emfPreview } from "./emf-preview.js";
 export * from "../drawingml/html.js";
 export * from "../drawingml/values.js";
 
@@ -19,6 +20,7 @@ export class Context {
   work = 0;
   outputBytes = 0;
   readonly css: string[] = [];
+  readonly unavailableThemeStyles: Set<string> = new Set();
   readonly assets: ContentDocumentManifest["assets"] = [];
   readonly files: Map<string, Uint8Array> = new Map();
   readonly surfaces: Map<string, Surface> = new Map();
@@ -33,7 +35,7 @@ export class Context {
   readonly metadata: PresentationMetadata = { size: { unit: "pt", width: 960, height: 540 }, commentFormat: "modern",
     slides: [], themes: [], masters: [], layouts: [], notesMasters: [], stories: [], objects: [], charts: [], dataSets: [], comments: [], hyperlinks: [] };
   constructor(readonly opc: OpcPackage, readonly compatiblePreview = false) { this.nestedBytes = [...opc.files.values()].reduce((n, bytes) => n + bytes.length, 0); this.nestedFiles = opc.files.size; }
-  retainPreview(feature: NonNullable<PresentationMetadata["nativePreview"]>[number]["feature"], ownerId: string, source: XmlNode, message: string): void {
+  retainPreview(feature: Exclude<NonNullable<PresentationMetadata["nativePreview"]>[number]["feature"], "emf-image">, ownerId: string, source: XmlNode, message: string): void {
     if (!this.compatiblePreview) unsupported(source, message);
     const visit = (node: XmlNode): void => {
       this.count();
@@ -76,6 +78,11 @@ export class Context {
     if (source) node.attrs.style = source;
   }
   rule(name: string, css: Css): void { const text = "." + name + "{" + declarations(css) + "}"; this.bytes(text.length * 4); this.css.push(text); }
+  themeStyle(name: string, reference: XmlNode): string {
+    if (this.unavailableThemeStyles.has(name)) unsupported(reference, "A referenced theme style cannot be rendered.");
+    if (!this.css.some(rule => rule.startsWith("." + name + "{"))) fail(reference, "A theme style reference is missing.");
+    return name;
+  }
   relation(source: string, id: string | undefined, kind: string, external = false): { target: string; external: boolean } {
     const relation = id ? this.opc.relationships(source).get(id) : undefined;
     if (!relation || relation.type !== R + "/" + kind) fail({ part: source, name: "Relationship" }, "A required relationship is missing or has the wrong type.");
@@ -91,14 +98,28 @@ export class Context {
     if (this.opc.contentType(path) !== "application/vnd.openxmlformats-officedocument." + kind + "+xml") fail({ part: path, name }, "A PPTX part content type is invalid.");
     const root = this.opc.read(path); rootName(root, name, uri); return root;
   }
-  image(source: string, id: string | undefined): string {
+  private storeAsset(path: string, mime: string, data: Uint8Array): string {
+    if (!this.files.has(path)) {
+      this.bytes(data.byteLength);
+      this.assets.push(createAssetDescriptor(path, mime, data));
+      this.files.set(path, data);
+    }
+    return path;
+  }
+  image(source: string, id: string | undefined, ownerId?: string): string {
     const path = this.relation(source, id, "image").target, data = this.opc.files.get(path)!;
     const mime = this.opc.contentType(path);
-    if (!mime || !["image/png", "image/jpeg", "image/webp"].includes(mime)) unsupported({ part: path, name: "image" } as XmlNode, "This image container is not supported.");
-    const known = this.assets.find(a => a.path === "assets/" + path);
-    if (known) return known.path;
-    const target = "assets/" + path;
-    this.assets.push(createAssetDescriptor(target, mime, data)); this.files.set(target, data); this.bytes(data.length);
-    return target;
+    const nativePath = "assets/" + path;
+    if (mime && ["image/png", "image/jpeg", "image/webp"].includes(mime)) return this.storeAsset(nativePath, mime, data);
+    if (ownerId && this.compatiblePreview && (mime === "image/emf" || mime === "image/x-emf")) {
+      const previewPath = "preview-assets/" + path + ".png";
+      if (!this.files.has(previewPath)) {
+        this.storeAsset(nativePath, mime, data);
+        this.storeAsset(previewPath, "image/png", emfPreview(data, path, this.opc.limits.maxFileBytes, () => this.count()));
+      }
+      (this.metadata.nativePreview ??= []).push({ feature: "emf-image", ownerId, part: path, assetPath: nativePath });
+      return previewPath;
+    }
+    return unsupported({ part: path, name: "image" } as XmlNode, "This image container is not supported.");
   }
 }

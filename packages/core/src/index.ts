@@ -182,7 +182,7 @@ export type {
 } from "./workbook/rule-reader.js";
 export { createSharedFormulaTable as createSharedWorkbookFormulas } from "./workbook/shared-formula.js";
 export type { SharedFormulaTable as SharedWorkbookFormulas } from "./workbook/shared-formula.js";
-export { readPresentationGeometry, isPresentationCommentPoint } from "./document/presentation.js";
+export { readPresentationGeometry, isPresentationCommentPoint, matchPresentationPlaceholder } from "./document/presentation.js";
 export { evaluatePresentationPreset } from "./presentation-geometry.js";
 export type {
   PresentationPathCommand,

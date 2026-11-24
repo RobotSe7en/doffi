@@ -97,7 +97,7 @@ export function registerCopies(ctx: PresentationEditContext, identities: Readonl
     const html = ctx.parse();
     for (const item of [...ctx.p.nativePreview ?? []]) {
         const ownerId = identities.get(item.ownerId);
-        if (item.feature === "tags" && ownerId) ctx.p.nativePreview!.push({ ...item, ownerId });
+        if (["tags", "transition", "table-style", "emf-image"].includes(item.feature) && ownerId) ctx.p.nativePreview!.push({ ...item, ownerId });
     }
     const copiedTransforms = presentationTransforms(ctx.p, html);
     for (const original of [...ctx.p.objects]) {

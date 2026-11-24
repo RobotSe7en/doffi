@@ -1,6 +1,6 @@
 import { PresentationPresetSchema } from "@doffi/core";
 import type { PresentationObject } from "@doffi/core";
-import { A, attr, C, check, child, elements, fail, MC, P, R, unsupported } from "../ooxml/xml.js";
+import { A, attr, C, check, checkAttributes, child, elements, fail, MC, P, R, unsupported } from "../ooxml/xml.js";
 import type { XmlNode } from "../ooxml/xml.js";
 import type { Css } from "../ooxml/styles.js";
 import { bool, Context, integer, points, unsigned, value } from "./context.js";
@@ -61,9 +61,7 @@ function objectStyle(context: Context, source: XmlNode | undefined, properties: 
       const index = integer(reference, "idx");
       if (index < 0) fail(reference, "A style reference cannot be negative.");
       if (index) {
-        const style = themeId + "-" + kind + "-" + index;
-        if (!context.css.some(rule => rule.startsWith("." + style + "{"))) fail(reference, "A theme style reference is missing.");
-        classes.push(style);
+        classes.push(context.themeStyle(themeId + "-" + kind + "-" + index, reference));
       } else if (kind !== "effect") css["--office-" + kind + "-kind"] ??= "none";
       if (elements(reference, undefined, A).length) {
         const c = onlyColor(reference); paint(css, "--office-" + kind + "-reference", c);
@@ -140,11 +138,35 @@ export class Drawings {
       check(background, ["bgPr", "bgRef"], P);
       const properties = child(background, "bgPr", P), reference = child(background, "bgRef", P);
       if (!!properties === !!reference) fail(background, "A slide background requires exactly one representation.");
-      if (properties) { check(properties, ["noFill", "solidFill", "gradFill", "effectLst"], A); Object.assign(css, fill(properties), effects(child(properties, "effectLst", A))); }
+      if (properties) {
+        check(properties, ["noFill", "solidFill", "gradFill", "blipFill", "effectLst"], A);
+        const picture = child(properties, "blipFill", A);
+        if (picture) {
+          if (source.name === "notes") unsupported(picture, "Picture backgrounds on notes pages are not supported.");
+          if (["noFill", "solidFill", "gradFill"].some(name => child(properties, name, A))) fail(properties, "A DrawingML fill is repeated.");
+          const blip = child(picture, "blip", A), stretch = child(picture, "stretch", A);
+          check(picture, ["blip", "srcRect", "stretch"], A);
+          checkAttributes(picture, ["dpi", "rotWithShape"]);
+          if (value(picture, "dpi") !== undefined) unsigned(picture, "dpi");
+          bool(picture, "rotWithShape", true);
+          if (!blip || !stretch) unsupported(picture, "Only stretched embedded slide background images are supported.");
+          check(blip, ["extLst"], A);
+          check(stretch, ["fillRect"], A);
+          for (const rect of [child(picture, "srcRect", A), child(stretch, "fillRect", A)]) {
+            check(rect, [], A);
+            if (rect && ["l", "t", "r", "b"].some(side => integer(rect, side, 0) !== 0))
+              unsupported(rect, "Slide background image offsets are not supported.");
+          }
+          if (attr(blip, "link", R)) unsupported(blip, "External picture references are not supported.");
+          const src = context.image(source.part, attr(blip, "embed", R));
+          surface.root.children.push(context.make("img", { src, alt: "", "data-office-background-image": "true" }));
+          css["--office-fill-kind"] = "image";
+        } else Object.assign(css, fill(properties));
+        Object.assign(css, effects(child(properties, "effectLst", A)));
+      }
       if (reference) {
         const index = integer(reference, "idx") - 1000, name = surface.themeId + "-background-" + index;
-        if (!context.css.some(rule => rule.startsWith("." + name + "{"))) fail(reference, "A theme background reference is missing.");
-        surface.root.attrs.class += " " + name; paint(css, "--office-background-reference", onlyColor(reference));
+        surface.root.attrs.class += " " + context.themeStyle(name, reference); paint(css, "--office-background-reference", onlyColor(reference));
       }
     }
     context.style(surface.root, css);
@@ -238,7 +260,7 @@ export class Drawings {
         if (!parsed.success) unsupported(geometry ?? source, "This preset geometry is not supported.");
         object = !custom && (textBox || !geometry) && preset === "rect" ? { ...base, kind: "text" } : { ...base, kind: "geometry", preset: parsed.data, ...(custom ? { customGeometry: customGeometry(custom) } : {}) };
         const text = child(source, "txBody", P);
-        if (text) object.text = importText(context, text, target, source.part);
+        if (text) object.text = importText(context, text, target, source.part, true);
       }
       const adjustments = child(geometry, "avLst", A);
       check(geometry, ["avLst"], A);
@@ -257,7 +279,7 @@ export class Drawings {
       if (!blipFill || !blip) fail(source, "A picture source is missing.");
       check(blipFill, ["blip", "srcRect", "stretch"], A);
       if (attr(blip, "link", R)) unsupported(blip, "External picture references are not supported.");
-      const src = context.image(source.part, attr(blip, "embed", R));
+      const src = context.image(source.part, attr(blip, "embed", R), nodeId);
       check(blip, ["alphaModFix", "extLst"], A);
       const alpha = child(blip, "alphaModFix", A);
       if (alpha) {

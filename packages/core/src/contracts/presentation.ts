@@ -1,6 +1,6 @@
 import { ChartAppearanceSchema } from "./chart.js";
 import { z } from "zod";
-import { IdentifierSchema } from "./primitives.js";
+import { IdentifierSchema, PackagePathSchema } from "./primitives.js";
 import {
   DrawingPresetSchema,
   DrawingTextPropertiesSchema,
@@ -112,12 +112,20 @@ export const PresentationMetadataSchema = z.strictObject({
   size: PresentationSizeSchema,
   notesSize: PresentationSizeSchema.optional(),
   commentFormat: z.enum(["classic", "modern"]),
-  nativePreview: z.array(z.strictObject({
-    feature: z.enum(["theme-defaults", "animation", "tags"]),
-    part: z.string().min(1),
-    ownerId: IdentifierSchema,
-    xml: z.string().min(1),
-  })).optional(),
+  nativePreview: z.array(z.union([
+    z.strictObject({
+      feature: z.enum(["theme-defaults", "theme-format", "animation", "transition", "tags", "handout-master", "handout-theme", "table-style"]),
+      part: z.string().min(1),
+      ownerId: IdentifierSchema,
+      xml: z.string().min(1),
+    }),
+    z.strictObject({
+      feature: z.literal("emf-image"),
+      part: PackagePathSchema,
+      ownerId: IdentifierSchema,
+      assetPath: PackagePathSchema,
+    }),
+  ])).optional(),
   slides: z
     .array(
       z.strictObject({

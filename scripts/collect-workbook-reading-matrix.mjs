@@ -14,7 +14,7 @@ const outputs=Array.isArray(built)?built.flatMap(part=>part.output):built.output
 const bundle=sha(outputs.filter(part=>part.type==='chunk').map(part=>part.code).join('\n'));
 const runs=[];
 for(const browser of ['chromium','firefox','webkit','legacy-chromium']){
-  const base='.cache/workbook-reading-matrix-'+(browser==='legacy-chromium'?'legacy':'modern');
+  const base=join('.cache/workbook-reading-matrix', browser);
   assert.equal(JSON.parse(readFileSync(join(base,'.last-run.json'),'utf8')).status,'passed','The full matrix run must pass, including cleanup');
   const files=readdirSync(base,{recursive:true}).filter(path=>String(path).endsWith('/public-reading.json')&&String(path).split('/')[0].endsWith('-'+(browser==='legacy-chromium'?'chromium':browser)));
   assert.equal(files.length,32,browser+' must cover all 16 source and 16 actual producer files');

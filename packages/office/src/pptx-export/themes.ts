@@ -1,4 +1,5 @@
 import { fontName } from "../export/values.js";
+import { children } from "../export/source.js";
 import { attributes, declaration, empty } from "../export/xml.js";
 import { colorXml, fillXml } from "./appearance.js";
 import type { NativeSurface, PresentationExportContext } from "./context.js";
@@ -22,6 +23,10 @@ export function colorMap(ctx: PresentationExportContext, surface: NativeSurface,
 }
 export function background(ctx: PresentationExportContext, surface: NativeSurface): string {
     const css = ctx.styles.get(surface.node, surface), own = ctx.styles.own(surface.node, surface), raw = ctx.styles.raw(surface.node, surface);
+    const picture = children(surface.node).find(node => node.attrs["data-office-background-image"] === "true");
+    if (picture)
+        return "<p:bg><p:bgPr><a:blipFill>" + empty("a:blip", { "r:embed": ctx.image(picture, surface.part) }) +
+            "<a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg>";
     if (!Object.keys(own).some(key => key.startsWith("--office-fill-") || key === "background-color"))
         return "";
     const reference = css["--office-fill-reference-prefix"] ?? Array.from({ length: Math.min(1024, Number(css["--office-fill-stop-count"] ?? 0)) }, (_, index) => css["--office-fill-stop-" + index + "-reference-prefix"]).find(Boolean);
