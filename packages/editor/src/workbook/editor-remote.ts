@@ -234,7 +234,12 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
         const old = source; source = candidate; candidate = undefined; old?.dispose();
         const state = input.state(), anchor = state.selection?.anchor, sheetId = preview.layout().sheetId;
         const range = anchor?.kind === "cells" && anchor.sheetId === sheetId ? anchor.ranges[0]! : { from: { row: 0, column: 0 }, to: { row: 0, column: 0 } };
-        const selected = await preview.selectRange(range, false);
+        const retained = preview.selection(), retainedAnchor = retained?.anchor;
+        const sameRange = retainedAnchor?.kind === "cells" && retainedAnchor.sheetId === sheetId &&
+          retainedAnchor.ranges.length === 1 && retainedAnchor.ranges[0]!.from.row === range.from.row &&
+          retainedAnchor.ranges[0]!.from.column === range.from.column && retainedAnchor.ranges[0]!.to.row === range.to.row &&
+          retainedAnchor.ranges[0]!.to.column === range.to.column && retained?.baseRevision === refreshRevision;
+        const selected = retained && sameRange ? retained : await preview.selectRange(range, false);
         if (!pendingInput() && !state.applying && !state.composing) await acceptSelection(selected);
         const current = input.state(); ui.status.textContent = current.dirty || current.composing ? current.selection?.baseRevision !== client.state().revision ? "文档已更新；当前输入仍绑定原修订。" : "输入尚未确认。" : config.appearance === "workspace" ? "" : "修订 " + client.state().revision;
         try { config.onViewChange?.(source.cells.snapshot, preview.layout()); } catch { /* Host metadata cannot roll back the accepted view. */ }

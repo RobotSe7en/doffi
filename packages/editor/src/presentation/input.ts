@@ -180,12 +180,27 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
             committing = false;
         }
     };
+    function localReplacement(value: HTMLElement): DocumentOperation | undefined {
+        if (host.instance || host.newNotesSlideId || typing.size || paragraphStyles.size) return;
+        for (const edit of proofs) {
+            const selector = '[data-node-id="' + CSS.escape(edit.nodeId) + '"]';
+            const leaf = source.querySelector(selector);
+            if (!leaf || leaf.childElementCount || !leaf.textContent ||
+                leaf.textContent.slice(edit.from, edit.to) !== edit.expectedText) continue;
+            const expected = source.cloneNode(true) as HTMLElement;
+            expected.querySelector(selector)!.textContent = leaf.textContent.slice(0, edit.from) +
+                edit.text + leaf.textContent.slice(edit.to);
+            if (expected.innerHTML === value.innerHTML) return { op: "replaceText", ...edit };
+        }
+        return undefined;
+    }
     const flush = (): void => {
         if (disposed || composing || !dirty)
             return;
         const selection = remember(), text = sourceText(root, projection.ignored), recovery = compositionInsertion ? text.slice(compositionInsertion.from, compositionInsertion.to) : undefined;
         try {
-            const value = normalized(), operations: DocumentOperation[] = host.newNotesSlideId ? [{ op: "insertPresentationNotes", slideId: host.newNotesSlideId, html: value.innerHTML }] : [{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: value.innerHTML, textEdits: proofs }];
+            const value = normalized(), local = localReplacement(value);
+            const operations: DocumentOperation[] = local ? [local] : host.newNotesSlideId ? [{ op: "insertPresentationNotes", slideId: host.newNotesSlideId, html: value.innerHTML }] : [{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: value.innerHTML, textEdits: proofs }];
             dirty = false;
             commit(operations, compositionRevision ?? revision);
             if (!disposed)

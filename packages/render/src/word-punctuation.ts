@@ -80,14 +80,18 @@ interface Punctuation {
   end: number;
 }
 
-function fitPunctuation(
+type LayoutPhase = "read" | "write";
+
+function* fitPunctuation(
   items: Punctuation[],
   glyphs: readonly Glyph[],
   paragraph: HTMLElement,
   css: CSSStyleDeclaration,
   range: Range,
   step: () => void,
-): void {
+  batched: boolean,
+): Generator<LayoutPhase, void> {
+  yield "read";
   const writingMode = css.writingMode,
     vertical = writingMode.startsWith("vertical"),
     distributed = css.getPropertyValue("--word-distributed").trim() === "1",
@@ -129,10 +133,12 @@ function fitPunctuation(
     trimSpace.set(item, [item.start, item.end]);
     item.start = item.end = 0;
   }
+  yield "write";
   for (const item of items) place(item, item.start, item.end);
 
   const leading = new Map<Punctuation, number>();
   for (let pass = 0; pass < 3; pass++) {
+    yield "read";
     const read = measure(),
       changes: [Punctuation, number][] = [];
     for (const item of items) {
@@ -146,6 +152,7 @@ function fitPunctuation(
       if (trim !== (leading.get(item) ?? item.start)) changes.push([item, trim]);
     }
     if (!changes.length) break;
+    yield "write";
     for (const [item, trim] of changes) {
       leading.set(item, trim);
       place(item, trim, item.end);
@@ -154,8 +161,10 @@ function fitPunctuation(
 
   // A zero-advance inline box paints the original glyph past the line edge.
   // Keep it only when it joins the preceding line at its end.
+  yield "read";
   const before = measure(),
-    probes: { item: Punctuation; rect: DOMRect }[] = [];
+    beforeOrigin = batched ? progress(paragraph.getBoundingClientRect()) : 0,
+    probes: { item: Punctuation; offset: number }[] = [];
   for (const item of items) {
     if (!item.hanging) continue;
     const glyph = item.glyph,
@@ -168,7 +177,7 @@ function fitPunctuation(
       (!glyph.prior?.prior || sameLine(prior, before(glyph.prior.prior)))
     )
       continue;
-    probes.push({ item, rect });
+    probes.push({ item, offset: progress(rect) - beforeOrigin });
   }
   const hang = (item: Punctuation, enabled: boolean): void => {
     item.span.style.display = enabled ? "inline-block" : "";
@@ -180,20 +189,26 @@ function fitPunctuation(
     item.span.style.textAlign = enabled ? "start" : "";
     place(item, enabled ? 0 : (leading.get(item) ?? item.start), enabled ? 0 : item.end);
   };
+  yield "write";
   for (const { item } of probes) hang(item, true);
+  yield "read";
   const after = measure();
-  const rejected = probes.filter(({ item, rect }) => {
+  // Earlier paragraphs can change height between these two reads.
+  const afterOrigin = batched && probes.length ? progress(paragraph.getBoundingClientRect()) : 0;
+  const rejected = probes.filter(({ item, offset }) => {
     const glyph = item.glyph,
       moved = after(glyph);
     return (
       !moved ||
-      progress(moved) >= progress(rect) - 0.5 ||
+      progress(moved) - afterOrigin >= offset - 0.5 ||
       !sameLine(moved, after(glyph.prior)) ||
       sameLine(moved, after(glyph.next))
     );
   });
+  yield "write";
   for (const { item } of rejected) hang(item, false);
   if (leading.size || probes.length !== rejected.length) {
+    yield "read";
     const read = measure();
     const invalid = items.filter((item) => {
       const rect = read(item.glyph);
@@ -203,6 +218,7 @@ function fitPunctuation(
         (leading.get(item) !== undefined && sameLine(rect, read(item.glyph.prior)))
       );
     });
+    yield "write";
     for (const item of invalid) {
       leading.delete(item);
       hang(item, false);
@@ -210,6 +226,7 @@ function fitPunctuation(
   }
 
   if (!compressible.size) return;
+  yield "read";
   const hanging = new Map(items.filter((item) => item.hanging).map((item) => [item.glyph, item]));
   const beforeAlignment = paragraph.style.getPropertyValue("text-align"),
     priority = paragraph.style.getPropertyPriority("text-align"),
@@ -221,8 +238,10 @@ function fitPunctuation(
     inlineEnd = (rect: DOMRect) =>
       vertical ? (rtl ? -rect.top : rect.bottom) : rtl ? -rect.left : rect.right;
   // Measure remaining space before the browser distributes it for justification.
+  yield "write";
   paragraph.style.setProperty("text-align", "start", "important");
   try {
+    yield "read";
     let read = measure();
     for (let index = 0; index < glyphs.length;) {
       const first = glyphs[index++]!,
@@ -269,6 +288,7 @@ function fitPunctuation(
           return sum + start + end;
         }, 0);
       if (deficit <= 0 || deficit > capacity || room < -0.5) continue;
+      yield "write";
       for (const item of candidates) {
         const [start, end] = trimSpace.get(item)!;
         place(item, (deficit * start) / capacity, (deficit * end) / capacity);
@@ -276,18 +296,35 @@ function fitPunctuation(
       const alreadyHangs = trailing?.span.style.inlineSize === "0px";
       if (trailing && !alreadyHangs) hang(trailing, true);
       read = measure();
+      yield "read";
       if (
         sameLine(read(first), read(next)) &&
         (!trailing || (sameLine(read(next), read(after)) && !sameLine(read(after), read(after?.next))))
       ) index += trailing ? 2 : 1;
       else {
+        yield "write";
         for (const item of candidates) place(item, 0, 0);
         if (trailing && !alreadyHangs) hang(trailing, false);
         read = measure();
+        yield "read";
       }
     }
+    yield "write";
   } finally {
     paragraph.style.setProperty("text-align", beforeAlignment, priority);
+  }
+}
+
+/** Complete one layout read or write phase for every independent paragraph. */
+function fitParagraphs(tasks: readonly Generator<LayoutPhase, void>[]): void {
+  let pending = tasks.map(task => ({ task, next: task.next() }));
+  try {
+    while ((pending = pending.filter(entry => !entry.next.done)).length) {
+      const phase = pending.some(entry => entry.next.value === "write") ? "write" : "read";
+      for (const entry of pending) if (entry.next.value === phase) entry.next = entry.task.next();
+    }
+  } finally {
+    for (const entry of pending) if (!entry.next.done) entry.task.return();
   }
 }
 
@@ -297,6 +334,7 @@ export function wordPunctuationLayout(
   word: DeepReadonly<WordMetadata> | undefined,
   grids: ReadonlySet<string>,
   limits: Readonly<RenderLimits>,
+  singleColumn = false,
 ): { reset(): void; measure(root: HTMLElement, fixedGrid?: boolean): void } {
   const options = word?.typography,
     view = document.defaultView!,
@@ -318,6 +356,19 @@ export function wordPunctuationLayout(
   }
   function measure(root: HTMLElement, fixedGrid?: boolean): void {
     if (!word) return;
+    const paragraphs = [...root.querySelectorAll<HTMLElement>(paragraphSelector)];
+    const batched = singleColumn && paragraphs.length >= 16 && !word.tables.length && !word.drawings?.length &&
+      [root, ...root.querySelectorAll<HTMLElement>("*")].every(node => {
+        const css = view.getComputedStyle(node);
+        return css.cssFloat === "none" && css.writingMode === "horizontal-tb" &&
+          (css.position === "static" || css.position === "relative") && css.transform === "none" &&
+          (css.columnCount === "auto" || css.columnCount === "1") && css.columnWidth === "auto" &&
+          !/flex|grid|table/.test(css.display) && (!node.querySelector(paragraphSelector) ||
+            css.display === "block" || css.display === "flow-root" || css.display === "contents" || css.display === "none");
+      });
+    // Read visibility before writing overlays in adjacent paragraphs.
+    const visible = batched ? new Set(paragraphs.filter(paragraph => paragraph.getClientRects().length)) : undefined;
+    const tasks: Generator<LayoutPhase, void>[] = [];
     let work = 0,
       nodes = document.getElementsByTagName("*").length;
     const step = () => {
@@ -337,7 +388,7 @@ export function wordPunctuationLayout(
       overlays.push(element);
       return element;
     };
-    for (const paragraph of root.querySelectorAll<HTMLElement>(paragraphSelector)) {
+    for (const paragraph of paragraphs) {
       if (
         paragraph.closest(
           ".sdk-auxiliary,[data-word-drawing],[data-word-native-object]:not([data-word-native-boundary])",
@@ -347,7 +398,7 @@ export function wordPunctuationLayout(
         continue;
       const css = view.getComputedStyle(paragraph);
       if (
-        !paragraph.getClientRects().length ||
+        !(visible ? visible.has(paragraph) : paragraph.getClientRects().length) ||
         css.whiteSpace === "nowrap" ||
         css.whiteSpace === "pre"
       )
@@ -551,8 +602,11 @@ export function wordPunctuationLayout(
         glyph.node = piece.node;
         glyph.offset -= piece.offset;
       }
-      fitPunctuation(punctuation.reverse(), glyphs, paragraph, css, range, step);
+      const task = fitPunctuation(punctuation.reverse(), glyphs, paragraph, css, range, step, batched);
+      if (batched) tasks.push(task);
+      else for (const _phase of task) { /* Preserve layout order around floats and tables. */ }
     }
+    fitParagraphs(tasks);
   }
   return { reset, measure };
 }

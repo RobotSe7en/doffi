@@ -145,7 +145,7 @@ export function parseHtml(
     }
     const index = new Map<
       string,
-      { element: Element; parentId: string | null; children: string[] }
+      { element: Element; parentId: string | null; children: string[]; signature?: string }
     >();
     const domIds = new Set<string>();
     const stylePaths: string[] = [];
@@ -333,6 +333,7 @@ export function parseHtml(
       signature: (nodeId) => {
         const entry = index.get(nodeId);
         if (!entry) return undefined;
+        if (entry.signature !== undefined) return entry.signature;
         const tokens = (node: Node): unknown => {
           if (isElement(node)) {
             const id = attribute(node, "data-node-id");
@@ -345,7 +346,7 @@ export function parseHtml(
               ? { comment: node.data }
               : null;
         };
-        return JSON.stringify([entry.parentId, tokens(entry.element)]);
+        return (entry.signature = JSON.stringify([entry.parentId, tokens(entry.element)]));
       },
       peekNode: (nodeId) => {
         const entry = index.get(nodeId);

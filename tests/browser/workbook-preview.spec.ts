@@ -46,6 +46,20 @@ test('incremental preview remeasures distant hidden-column results and retains i
   expect(result.updated).toEqual(result.fresh); expect(result.updated.scrollTopPt).toBeGreaterThan(result.oldTop);
   expect(result.updatedReadRows).toBeLessThan(result.initialReadRows / 2);
 });
+test('incremental rows retain unchanged font warnings and remove them when their last source is cleared', async ({ page }) => {
+  const model = scalarWorkbook([
+    { row: 0, column: 0, value: { type: 'number', value: 1 } },
+    { row: 960, column: 0, value: { type: 'number', value: 2 } },
+    ...[1000, 2000].map(row => ({ row, column: 0, value: { type: 'text' as const, value: '中文' } })),
+  ]);
+  expect(await page.evaluate(entries => window.workbookPreview.incrementalFontWarnings(entries), encodeTestPackage(model.serialize()))).toEqual({
+    initial: true,
+    unrelated: { warned: true, checkedFirst: false, checkedLast: false },
+    remaining: { warned: true, checkedFirst: true, checkedLast: true },
+    cleared: { warned: false, checkedFirst: true, checkedLast: false },
+    restored: { warned: true, checkedFirst: false, checkedLast: true },
+  });
+});
 test('completed calculation renders an unruled long chain and preserves view selection and active sheet', async ({ page }) => {
   const model = scalarWorkbook(Array.from({ length: 150 }, (_, row) => ({ row, column: 0, value: { type: 'number' as const, value: 9999 }, formula: row ? `=A${row}+1` : '=1' })), metadata => { metadata.workbook.sheets[0]!.defaultRowHeightCustom = true; });
   const result = await page.evaluate(entries => window.workbookPreview.calculatedPreview(entries), encodeTestPackage(model.serialize()));

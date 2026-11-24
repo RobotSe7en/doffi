@@ -4628,6 +4628,173 @@ test("editing reflows pages immediately and undo restores layout without persist
   );
   expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
+
+test("repeated Chinese edits reuse pagination ranges and preserve source page geometry", async ({ page }) => {
+  const files = importDocx(readFileSync("examples/docx/05-long-page-break.docx"), { documentId: "pagination-range-reuse" });
+  const fonts = await wordLayoutFont(page);
+  await mount(page, files, "preview", {}, fonts);
+  const preview = await page.evaluate(() => window.paginationHost.view!.settled());
+  expect(preview.pages).toHaveLength(3);
+  await mount(page, files, "edit", {}, fonts);
+  const editor = page.frameLocator("iframe").locator("[data-office-editor]");
+  const original = await page.evaluate(() => window.paginationHost.view!.settled());
+  expect(original.pages).toEqual(preview.pages);
+  const { id, text } = await editor.evaluate(root => {
+    const paragraph = root.querySelector<HTMLElement>(":is(h1,p)[data-node-id]")!;
+    const document = root.ownerDocument;
+    root.focus();
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    const create = document.createRange.bind(document);
+    let ranges = 0;
+    document.createRange = () => { ranges++; return create(); };
+    (document as Document & { rangeCount?: () => number }).rangeCount = () => ranges;
+    return { id: paragraph.dataset.nodeId!, text: paragraph.textContent! };
+  });
+  for (let index = 0; index < 4; index++) await page.keyboard.insertText("中");
+  const edited = await page.evaluate(() => window.paginationHost.view!.settled());
+  expect(edited.pages).toEqual(original.pages);
+  expect(edited.nodePages[id]).toEqual(original.nodePages[id]);
+  expect(await editor.evaluate(root => (root.ownerDocument as Document & { rangeCount: () => number }).rangeCount())).toBeLessThan(256);
+  expect(await page.evaluate(id => window.paginationHost.session!.getNode(id)!.text, id)).toBe(text + "中".repeat(4));
+  await page.keyboard.press("Control+z");
+  expect(await page.evaluate(id => window.paginationHost.session!.getNode(id)!.text, id)).toBe(text + "中".repeat(3));
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("a long native Chinese document keeps the same punctuation and page assignments in preview and editing", async ({ page }) => {
+  const text = "逐段核对数据，记录测量结果。遇到异常时，重新检查输入和校验值。".repeat(4);
+  const native = mutateDocx("01-text-numbering.docx", {
+    "word/styles.xml": () => nativeStyles('<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Noto Serif CJK SC" w:eastAsia="Noto Serif CJK SC"/><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>'),
+    "word/document.xml": source => nativeBody(source, Array.from({ length: 160 }, (_, index) =>
+      '<w:p><w:r><w:t>第' + (index + 1) + '段。' + text + '</w:t></w:r></w:p>',
+    ).join("")),
+  });
+  const files = importDocx(native, { documentId: "long-native-chinese" });
+  const fonts = await wordLayoutFont(page);
+  const capture = () => page.evaluate(async () => {
+    const report = await window.paginationHost.view!.settled();
+    return { pages: report.pages, nodePages: report.nodePages };
+  });
+  const frame = page.frameLocator("iframe");
+  const marks = () => frame.locator(".sdk-page-flow .sdk-word-punctuation").evaluateAll(nodes => nodes.map(node => {
+    const element = node as HTMLElement;
+    return [element.style.inlineSize, element.style.marginInlineStart, element.style.marginInlineEnd];
+  }));
+  await mount(page, files, "preview", {}, fonts);
+  const batched = await capture(), before = await marks();
+  expect(batched.pages.length).toBeGreaterThan(10);
+  expect(before.length).toBeGreaterThan(0);
+
+  const flow = frame.locator(".sdk-page-flow").first();
+  await flow.evaluate(node => {
+    const float = node.ownerDocument.createElement("span");
+    float.id = "force-serial-punctuation";
+    float.style.cssText = "float:left;display:none";
+    node.append(float);
+  });
+  expect(await capture()).toEqual(batched);
+  expect(await marks()).toEqual(before);
+  await flow.locator("#force-serial-punctuation").evaluate(node => node.remove());
+
+  await mount(page, files, "edit", {}, fonts);
+  const opened = await capture();
+  expect(opened).toEqual(batched);
+  const last = frame.locator("[data-office-editor] p[data-node-id]").last(), id = await last.getAttribute("data-node-id");
+  await last.evaluate(node => {
+    (node.closest("[data-office-editor]") as HTMLElement).focus();
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+  });
+  await page.keyboard.insertText("完成");
+  expect(await page.evaluate(id => window.paginationHost.session!.getNode(id!)!.text, id)).toBe("第160段。" + text + "完成");
+  expect((await capture()).nodePages[id!]?.at(-1)).toBeDefined();
+  await page.keyboard.press("Control+z");
+  expect(await capture()).toEqual(opened);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("Word image URLs survive text edits and undo while the pictures stay decoded", async ({ page }) => {
+  const files = importDocx(readFileSync("examples/docx/03-images.docx"), { documentId: "word-edit-media" });
+  await mount(page, files, "edit");
+  const frame = page.frameLocator("iframe");
+  const images = () => frame.locator("[data-office-editor] img").evaluateAll(async nodes =>
+    Promise.all(nodes.map(async node => {
+      const image = node as HTMLImageElement;
+      await image.decode();
+      return { url: image.src, width: image.naturalWidth, height: image.naturalHeight };
+    })),
+  );
+  const before = await images();
+  expect(before).toHaveLength(3);
+  await frame.locator("[data-office-editor] p").first().evaluate(node => {
+    (node.closest("[data-office-editor]") as HTMLElement).focus();
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+  });
+  await page.keyboard.insertText("编辑");
+  expect(await images()).toEqual(before);
+  await page.keyboard.press("Control+z");
+  expect(await images()).toEqual(before);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("long Word typing commits before pagination and reconciles the latest page layout", async ({ page }) => {
+  const paragraphs = Array.from({ length: 36 }, (_, index) =>
+    (index ? '<w:p><w:pPr><w:pageBreakBefore/></w:pPr>' : '<w:p>') +
+      '<w:r><w:t>中文内容</w:t></w:r></w:p>').join("");
+  const table = '<w:tbl><w:tblPr><w:tblW w:w="4800" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4800"/></w:tblGrid>' +
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="4800" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>表格文字</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+  const files = importDocx(mutateDocx("01-text-numbering.docx", {
+    "word/document.xml": xml => nativeBody(xml, paragraphs + table),
+  }), { documentId: "long-local-input" });
+  await mount(page, files, "edit", {}, await wordLayoutFont(page));
+  const frame = page.frameLocator("iframe"), paragraph = frame.locator("[data-office-editor] p").first();
+  const id = (await paragraph.getAttribute("data-node-id"))!;
+  expect(await page.evaluate(() => window.paginationHost.layout().pages.length)).toBeGreaterThanOrEqual(32);
+  await paragraph.evaluate(node => {
+    const doc = node.ownerDocument, text = doc.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode()!;
+    (node.closest("[data-office-editor]") as HTMLElement).focus();
+    doc.getSelection()!.collapse(text, 1);
+    node.setAttribute("data-test-paragraph-instance", "original");
+  });
+  await page.keyboard.insertText("字");
+  const first = await page.evaluate(id => {
+    const host = window.paginationHost;
+    const revision = host.session!.snapshot().manifest.revision;
+    const measured = host.layout().revision;
+    return { revision, measured, text: host.session!.getNode(id)?.text };
+  }, id);
+  expect(first).toEqual({ revision: 1, measured: 0, text: "中字文内容" });
+  await expect(paragraph).toHaveAttribute("data-test-paragraph-instance", "original");
+  const report = await page.evaluate(() => window.paginationHost.view!.settled());
+  expect(report.revision).toBe(1);
+  expect(report.pages.length).toBeGreaterThanOrEqual(32);
+  await page.keyboard.press("Control+z");
+  expect(await page.evaluate(id => window.paginationHost.session!.getNode(id)?.text, id)).toBe("中文内容");
+  const cell = frame.locator("[data-office-editor] td p").last();
+  await cell.evaluate(node => {
+    (node.closest("[data-office-editor]") as HTMLElement).focus({ preventScroll: true });
+    const doc = node.ownerDocument, text = doc.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode()!;
+    doc.getSelection()!.collapse(text, 1);
+  });
+  await page.keyboard.insertText("内");
+  expect(await page.evaluate(() => ({
+    revision: window.paginationHost.session!.snapshot().manifest.revision,
+    measured: window.paginationHost.layout().revision,
+  }))).toEqual({ revision: 3, measured: 2 });
+  await expect(cell).toHaveText("表内格文字");
+});
+
 test("repeated table headers remain a display projection while body cells can be edited", async ({
   page,
 }) => {

@@ -27,13 +27,16 @@ const frameCss = `html{background:#eceef1}body{margin:0;padding:24px;font-family
 export interface PresentationCanvas {
   readonly source: PreviewSource;
   readonly fields: readonly LayoutFieldResult[];
+  ensureSlide(slideId: string): boolean;
+  fontScopes(): readonly HTMLElement[];
   finalizeCharts(): void;
   measure(): Pick<DocumentRenderReport, "pages" | "nodePages" | "diagnostics">;
 }
 /** Fixed slide composition. Every injected object is a reversible view node. */
-export function composePresentation(document: Document, model: ContentDocumentModel, limits: Readonly<RenderLimits>,surfaceId?:string): PresentationCanvas {
-  const snapshot = model.snapshot(), metadata = snapshot.metadata.presentation;
-  if (snapshot.manifest.kind !== "presentation" || !metadata) throw new DocumentError("UnsupportedFormat", "A presentation canvas requires a presentation package.");
+export function composePresentation(document: Document, model: ContentDocumentModel, limits: Readonly<RenderLimits>,surfaceId?:string, initialSlideId?: string): PresentationCanvas {
+  const snapshot = model.snapshot(), presentation = snapshot.metadata.presentation;
+  if (snapshot.manifest.kind !== "presentation" || !presentation) throw new DocumentError("UnsupportedFormat", "A presentation canvas requires a presentation package.");
+  const metadata = presentation;
   const source = new PreviewSource(document, model), root = source.root;
   let count = document.querySelectorAll("*").length, serial = 0;
   const account = (amount: number): void => { count += amount; if (count > limits.maxNodes) throw new DocumentError("ResourceLimitExceeded", "Presentation rendering exceeds its node budget."); };
@@ -227,7 +230,15 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     }
     if (definition.kind !== "chart" && definition.kind !== "group") account(node.querySelectorAll("svg *,svg,.sdk-ppt-text").length);
   };
-  for (const [index, slide] of slides.entries()) {
+  const slideIndices = new Map(slides.map((node, index) => [entryFor(node).slideId, index]));
+  const composed = new Set<HTMLElement>();
+  const windowed = !!initialSlideId && !surfaceId;
+  if (windowed)
+    for (const slide of slides) styleView(slide, { width: size.width + "pt", height: size.height + "pt" });
+  function composeSlide(slide: HTMLElement, index: number): HTMLElement[] {
+    const scopes = [slide];
+    const firstConnector = connectors.length;
+    composed.add(slide);
     const entry=entryFor(slide),layout=surfaceId?surfaceLayout:layouts.get(entry.layoutId)!,master=surfaceMaster??(surfaceNotesMaster?{...metadata.masters[0]!,rootNodeId:surfaceNotesMaster.rootNodeId,themeId:surfaceNotesMaster.themeId,otherStyle:surfaceNotesMaster.textStyle}:masters.get(layout!.masterId)!);
     const masterRoot = byId.get(master.rootNodeId)!, layoutRoot = layout?byId.get(layout.rootNodeId)!:masterRoot, theme = metadata.themes.find(t => t.themeId === master.themeId)!;
     ownViewAttribute(masterRoot, "class");for(const t of metadata.themes)masterRoot.classList.remove(t.cssClass);masterRoot.classList.add(theme.cssClass);
@@ -316,9 +327,16 @@ export function composePresentation(document: Document, model: ContentDocumentMo
         applyParagraphTypography(p);
       }
       account(panel.querySelectorAll("*").length + 1); source.registerInstances(clone);
+      scopes.push(panel);
     }
+    for (const { node, definition } of connectors.slice(firstConnector)) resolveConnector(node, definition, objects);
+    return scopes;
   }
-  for (const { node, definition } of connectors) resolveConnector(node, definition, objects);
+  const fontScopes: HTMLElement[] = [];
+  if (windowed) {
+    const index = slideIndices.get(initialSlideId!) ?? 0;
+    fontScopes.push(...composeSlide(slides[index]!, index));
+  } else for (const [index, slide] of slides.entries()) composeSlide(slide, index);
   const comments = snapshot.annotations;
   if (comments.length&&!surfaceId) {
     const panel = markViewNode(document.createElement("section")); panel.className = "sdk-ppt-comments"; panel.setAttribute("aria-label", "批注");
@@ -331,6 +349,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       if (modern && slide) inheritance.apply(clone, [byId.get(masters.get(layouts.get(slide.layoutId)!.masterId)!.rootNodeId)!]);
     };
     root.append(panel);
+    if (windowed) fontScopes.push(panel);
     for (const comment of comments) {
       const item = document.createElement("div"); item.textContent = (comment.author?.name ?? "") + (comment.date ? " · " + comment.date : "") + " · " + statuses[comment.status] + "\n";
       const info = metadata.comments.find(c => c.annotationId === comment.annotationId);
@@ -347,12 +366,13 @@ export function composePresentation(document: Document, model: ContentDocumentMo
   for (const link of metadata.hyperlinks) {
     const node = byId.get(link.nodeId); if (node) { ownViewAttribute(node, "data-sdk-hyperlink"); node.setAttribute("data-sdk-hyperlink", ""); }
   }
-  for (const node of root.querySelectorAll<HTMLElement>("[data-node-id]")) {
+  function decorate(scope: HTMLElement): void {
+  for (const node of scope.querySelectorAll<HTMLElement>("[data-node-id]")) {
     const style = document.defaultView!.getComputedStyle(node);
     if (property(style, "--office-text-color")) styleView(node, { color: resolvedColor(document, style, "--office-text") });
   }
   // Script wrappers retain exact UTF-16 text while resolving native font roles.
-  const texts: Text[] = [], walker = document.createTreeWalker(root, document.defaultView!.NodeFilter.SHOW_TEXT);
+  const texts: Text[] = [], walker = document.createTreeWalker(scope, document.defaultView!.NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) if (!n.parentElement?.closest("svg,.sdk-field-display")) texts.push(n as Text);
   for (const text of texts) {
     const parent = text.parentElement!; if (!text.textContent) continue;
@@ -368,9 +388,22 @@ export function composePresentation(document: Document, model: ContentDocumentMo
     }
     text.replaceWith(fragment);
   }
-  decorateLists(root, account);
+  decorateLists(scope, account);
+  }
+  for (const scope of windowed ? fontScopes : [root]) decorate(scope);
   source.reindex(); account(0);
-  return { source, fields, finalizeCharts() { for (const { scene, geometry } of chartScenes) { prepareChartTextDecorations(scene, account); prepareChartLabelFrames(scene, account, { rotationDegrees: geometry.rotation, flipH: geometry.flipH, flipV: geometry.flipV }); } chartScenes.length = 0; }, measure() {
+  return { source, fields,
+    ensureSlide(slideId) {
+      const index = slideIndices.get(slideId), slide = index === undefined ? undefined : slides[index];
+      if (!slide || index === undefined || composed.has(slide)) return false;
+      const scopes = composeSlide(slide, index);
+      fontScopes.push(...scopes);
+      for (const scope of scopes) decorate(scope);
+      source.reindex();
+      return true;
+    },
+    fontScopes: () => windowed ? fontScopes : [root],
+    finalizeCharts() { for (const { scene, geometry } of chartScenes) { prepareChartTextDecorations(scene, account); prepareChartLabelFrames(scene, account, { rotationDegrees: geometry.rotation, flipH: geometry.flipH, flipV: geometry.flipV }); } chartScenes.length = 0; }, measure() {
     let hangingChanged = false;
     for (const box of textBoxes) {
       const apply = (scale: number): void => { for (const { node, size, line } of box.fonts) styleView(node, { "font-size": size * scale + "px", ...(Number.isFinite(line) ? { "line-height": line * scale * (1 - box.lineReduction) + "px" } : {}) }); };
@@ -401,7 +434,7 @@ export function composePresentation(document: Document, model: ContentDocumentMo
       }
       typography.alignTextBox(box.content, box.anchor, box.rotated);
     }
-    typography.applySyntheticBold(root);
+    for (const scope of windowed ? fontScopes : [root]) typography.applySyntheticBold(scope);
     if (hangingChanged) source.reindex();
     for (const { node, definition } of connectors) resolveConnector(node, definition, objects);
     const origin = root.getBoundingClientRect(), pages: RenderedPage[] = [], nodePages: Record<string, string[]> = {};

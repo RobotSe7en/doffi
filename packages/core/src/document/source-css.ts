@@ -303,7 +303,7 @@ function higher(next: Entry, previous: Entry | undefined): boolean {
 /** Portable cascade for the validated document CSS subset. This resolves
  * authored values; it does not measure layout or substitute fonts. */
 export class SourceStyleResolver {
-  private readonly indexed = new Map<string, Rule[]>();
+  private indexed: ReadonlyMap<string, readonly Rule[]>;
   private readonly cache = new WeakMap<SourceStyleNode, Css>();
   private readonly specifiedCache = new WeakMap<SourceStyleNode, Css>();
   private readonly declarationCache = new WeakMap<
@@ -311,6 +311,7 @@ export class SourceStyleResolver {
     ReadonlyMap<string, DeclarationEntry>
   >();
   private readonly entriesCache = new WeakMap<SourceStyleNode, readonly CascadeRule[]>();
+  private readonly inlineRules = new Map<string, { rule: CascadeRule; bytes: number }>();
   private work = 0;
   private rootFont = 12;
   private readonly initial: Css;
@@ -320,6 +321,8 @@ export class SourceStyleResolver {
   private readonly combineDecorations: boolean;
   private readonly cssBudget: CssBudget = { nodes: 0 };
   private sourceBytes = 0;
+  private stylesheetBytes = 0;
+  private stylesheetNodes = 0;
   constructor(
     styles: readonly string[],
     limits: DocumentReadLimits,
@@ -332,6 +335,7 @@ export class SourceStyleResolver {
     this.initial = Object.freeze({ ...initial, ...options.initial });
     checkLimit(styles.length, this.limits.maxFiles);
     let order = 0;
+    const indexed = new Map<string, Rule[]>();
     for (const [index, source] of [
       "p,h1,h2,h3,h4,h5,h6{margin:0;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}",
       ...styles,
@@ -365,12 +369,26 @@ export class SourceStyleResolver {
               );
             });
           const rule = { ...compiled, declarations, order: order++, revisionDisplay };
-          const list = this.indexed.get(rule.key) ?? [];
+          const list = indexed.get(rule.key) ?? [];
           list.push(rule);
-          this.indexed.set(rule.key, list);
+          indexed.set(rule.key, list);
         }
       }
     }
+    this.indexed = indexed;
+    this.stylesheetBytes = this.sourceBytes;
+    this.stylesheetNodes = this.cssBudget.nodes;
+  }
+  /** Share compiled rules with a new cascade, with independent nodes and work budgets. */
+  fork(revisionIds: ReadonlySet<string> = new Set()): SourceStyleResolver {
+    const resolver = new SourceStyleResolver([], this.limits, revisionIds, {
+      initial: this.initial,
+      combineDecorations: this.combineDecorations,
+    });
+    resolver.indexed = this.indexed;
+    resolver.sourceBytes = resolver.stylesheetBytes = this.stylesheetBytes;
+    resolver.cssBudget.nodes = resolver.stylesheetNodes = this.stylesheetNodes;
+    return resolver;
   }
   private validated(source: string, context: "stylesheet" | "declarationList"): string {
     checkLimit(source.length, this.limits.maxFileBytes);
@@ -443,19 +461,32 @@ export class SourceStyleResolver {
         )
           selected.add(rule);
     const entries: CascadeRule[] = [...selected];
-    if (node.attrs.style) {
-      const ast = parse(this.validated(node.attrs.style, "declarationList"), {
-        context: "declarationList",
-        parseCustomProperty: true,
-      });
-      if (ast.type === "DeclarationList")
-        entries.push({
-          declarations: ast.children
-            .toArray()
-            .filter((item): item is Declaration => item.type === "Declaration"),
-          specificity: [1, 0, 0],
-          order: Number.MAX_SAFE_INTEGER,
+    const inline = node.attrs.style;
+    if (inline) {
+      const cached = this.inlineRules.get(inline);
+      if (cached) {
+        // As in package admission, each occurrence still costs input bytes
+        // and one CSS node, while exact declaration lists share compilation.
+        this.sourceBytes += cached.bytes;
+        checkLimit(this.sourceBytes, this.limits.maxPackageBytes);
+        checkLimit(++this.cssBudget.nodes, this.limits.maxCssNodes, "maxCssNodes", "inline CSS");
+        entries.push(cached.rule);
+      } else {
+        const before = this.sourceBytes;
+        const ast = parse(this.validated(inline, "declarationList"), {
+          context: "declarationList",
+          parseCustomProperty: true,
         });
+        if (ast.type === "DeclarationList") {
+          const rule: CascadeRule = {
+            declarations: ast.children.toArray().filter((item): item is Declaration => item.type === "Declaration"),
+            specificity: [1, 0, 0],
+            order: Number.MAX_SAFE_INTEGER,
+          };
+          this.inlineRules.set(inline, { rule, bytes: this.sourceBytes - before });
+          entries.push(rule);
+        }
+      }
     }
     this.entriesCache.set(node, entries);
     return [...entries];

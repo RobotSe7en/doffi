@@ -63,6 +63,19 @@ test("source resolver bounds aggregate CSS, inline source, ancestry and cyclic v
   expect(() => resolveSourceCssVariables("var(--a) var(--a)", () => "x".repeat(20), 0, 35)).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
 });
 
+test("identical inline declarations reuse compilation with per-node cascade and bounded input", () => {
+  const styles = new SourceStyleResolver([], { ...limits, maxCssNodes: 64 });
+  const parents = [node("div", { style: "font-size:10pt" }), node("div", { style: "font-size:20pt" })];
+  const inline = { style: "font-size:1.5em;color:blue" };
+  for (let index = 0; index < 24; index++) {
+    const size = index % 2 ? "30pt" : "15pt";
+    expect(styles.get(node("span", inline, parents[index % 2]))).toMatchObject({ color: "blue", "font-size": size });
+  }
+  expect(() => {
+    for (let index = 0; index < 64; index++) styles.get(node("span", inline, parents[0]));
+  }).toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
+});
+
 test("fallbacks preserve authored declarations and independent class queries stay frozen", () => {
   const parent = node("div", { style: "color:red" }), p = node("p", { class: "local" }, parent);
   const styles = new SourceStyleResolver(["p{color:green}.local{font-weight:bold}"], limits);

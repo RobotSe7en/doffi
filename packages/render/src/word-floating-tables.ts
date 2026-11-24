@@ -60,10 +60,6 @@ export function composeWordFloatingTables(
       css: Record<string, string>;
       width: number;
     }[] = [],
-    resolver = new SourceStyleResolver(
-      snapshot.styles.map((sheet) => sheet.css),
-      DEFAULT_DOCUMENT_READ_LIMITS,
-    ),
     project = (id: string): SourceStyleNode => {
       const node = model.getNode(id)!;
       return {
@@ -72,6 +68,7 @@ export function composeWordFloatingTables(
         parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
       };
     };
+  let resolver: SourceStyleResolver | undefined;
   let nodeCount = document.querySelectorAll("*").length;
   const amount = (css: Record<string, string>, key: string): number =>
     resolveSourceCssLength(css["--word-table-position-" + key] ?? "0pt", {
@@ -81,6 +78,7 @@ export function composeWordFloatingTables(
   for (const table of document.querySelectorAll<HTMLTableElement>("table[data-node-id]")) {
     const id = table.dataset.nodeId!;
     if (!word?.tables.some((info) => info.nodeId === id)) continue;
+    resolver ??= new SourceStyleResolver(snapshot.styles.map((sheet) => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS);
     const css = resolver.get(project(id));
     if (
       css["--word-table-floating"] !== "1" ||

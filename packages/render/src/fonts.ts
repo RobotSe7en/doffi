@@ -166,6 +166,7 @@ export function resolvePreviewDefaultFont(
   document: Document,
   stack: string,
   hosted?: HostedWordFonts,
+  probes?: FontProbeCache,
 ): string {
   const scope = document.createElement("div"),
     probe = document.createElement("span");
@@ -174,7 +175,7 @@ export function resolvePreviewDefaultFont(
   scope.append(probe);
   document.body.append(scope);
   try {
-    const [font] = resolvePreviewFontsInScope(document, scope, "span", undefined, hosted);
+    const [font] = resolvePreviewFontsInScope(document, scope, "span", probes, hosted);
     if (!font || font.selectedFamily === font.requestedFamily) return stack;
     if (generic.has(font.selectedFamily.toLowerCase())) return font.selectedFamily;
     return JSON.stringify(font.selectedFamily) + "," + stack;
@@ -188,8 +189,9 @@ export function resolvePreviewFonts(
   document: Document,
   selector: string = "[data-node-id]",
   hosted?: HostedWordFonts,
+  probes?: FontProbeCache,
 ): readonly FontResolution[] {
-  return resolvePreviewFontsInScope(document, document, selector, undefined, hosted);
+  return resolvePreviewFontsInScope(document, document, selector, probes, hosted);
 }
 /** Limit private probes/window diagnostics to their owning surface. A selector
  * in another mounted document must not participate in font substitution. */

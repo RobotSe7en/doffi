@@ -26,6 +26,11 @@ export interface WorkbookAutoRowLimits {
   readonly maxCodeUnits: number;
 }
 export const DEFAULT_AUTO_ROW_LIMITS: WorkbookAutoRowLimits = Object.freeze({ maxCells: 2_500_000, maxReadCells: 8_000_000, maxCodeUnits: 256 * 1024 * 1024 });
+const rowsPerRead = 128;
+const maxFontDiagnostics = 50_000;
+const fontBand = (row: number): number => row - row % rowsPerRead;
+const fontWarning = (font: FontResolution): boolean =>
+  font.substituted || font.missingCharacters.length > 0 || !font.glyphAuditComplete;
 export interface WorkbookAutoRows {
   readonly dimensions: ReturnType<typeof worksheetDimensions>;
   readonly fonts: readonly FontResolution[];
@@ -33,6 +38,7 @@ export interface WorkbookAutoRows {
   readonly measuredCells: number;
   /** Private measured state; never persisted or used as document authority. */
   readonly heights: ReadonlyMap<number, number>;
+  readonly fontWarnings: ReadonlyMap<number, ReadonlySet<FontResolution>>;
   readonly reusable: boolean;
 }
 export interface WorkbookAutoRowReuse {
@@ -105,18 +111,47 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
   const columnFonts = sheet.columnDimensions.some(run => run.cssClass);
   const fontRegions = implicitWorkbookFontRegions(snapshot, sheet, simpleClasses);
   const implicitFonts = columnFonts || sheet.rowDimensions.some(run => run.cssClass) || fontRegions.length > 0;
-  const partial = reuse?.previous.reusable && simpleClasses && !implicitFonts && !sheet.conditionalRules?.length && !sheet.tables?.length ? reuse : undefined;
-  const selectedRow = (row: number): boolean => {
-    if (!partial) return true;
-    let low = 0, high = partial.rows.length;
-    while (low < high) { const mid = (low + high) >>> 1; if (partial.rows[mid]!.to < row) low = mid + 1; else high = mid; }
-    return partial.rows[low] !== undefined && partial.rows[low]!.from <= row;
-  };
+  const eligible = simpleClasses && !implicitFonts && !sheet.conditionalRules?.length && !sheet.tables?.length;
+  const partial = eligible && reuse?.previous.reusable ? reuse : undefined;
   if (partial) for (const [index, row] of partial.rows.entries()) if (!Number.isSafeInteger(row.from) || !Number.isSafeInteger(row.to) || row.from < 0 || row.to < row.from || row.to >= 1_048_576
     || index > 0 && row.from <= partial.rows[index - 1]!.to) throw new DocumentError("InvalidOperation", "Row invalidation intervals must be ordered, disjoint source rows.");
   const checkReuse = (): void => { if (partial && !partial.guard()) throw new DocumentError("InvalidOperation", "Worksheet measurement conditions changed during row invalidation."); };
   checkReuse();
-  const heights = new Map(partial?.previous.heights), fonts = new Map((partial?.previous.fonts ?? []).map(font => [JSON.stringify(font), font]));
+  const dirty = partial?.rows ?? [];
+  const changed = (from: number, to = from): boolean => {
+    let low = 0, high = dirty.length;
+    while (low < high) { const mid = (low + high) >>> 1; if (dirty[mid]!.to < from) low = mid + 1; else high = mid; }
+    return dirty[low] !== undefined && dirty[low]!.from <= to;
+  };
+  const heights = new Map(partial?.previous.heights), fonts = new Map<string, FontResolution>();
+  const fontWarnings = new Map<number, Set<FontResolution>>(), dirtyBands = new Set<number>();
+  const displacedWarnings = new Set<FontResolution>();
+  let warningCount = 0;
+  function collectFont(font: FontResolution): FontResolution {
+    const key = JSON.stringify(font);
+    const known = fonts.get(key);
+    if (known) return known;
+    if (fonts.size >= maxFontDiagnostics)
+      throw new DocumentError("ResourceLimitExceeded", "Automatic row font diagnostics exceed their budget.");
+    fonts.set(key, font);
+    return font;
+  }
+  if (partial) {
+    for (const font of partial.previous.fonts) if (!fontWarning(font)) collectFont(font);
+    // Warnings come from batched reads. Recheck an affected band so removing
+    // its last offending cell removes the warning, while other bands keep theirs.
+    for (const [band, warnings] of partial.previous.fontWarnings) {
+      if (changed(band, band + rowsPerRead - 1)) {
+        dirtyBands.add(band);
+        for (const warning of warnings) displacedWarnings.add(warning);
+      } else {
+        fontWarnings.set(band, new Set([...warnings].map(collectFont)));
+        warningCount += warnings.size;
+      }
+    }
+  }
+  const selectedRow = (row: number): boolean =>
+    !partial || dirtyBands.has(fontBand(row)) || changed(row);
   if (partial) for (const row of heights.keys()) if (selectedRow(row)) heights.delete(row);
   const occupied = new Map<number, Set<number>>(); let lastUsedRow = -1;
   let visited = 0, units = 0, measuredCells = 0, usedFallbackLineMetrics = false, inlineStyles = false, checkpoint = performance.now();
@@ -124,25 +159,33 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
   const identity = { documentId: snapshot.manifest.documentId, revision: snapshot.manifest.revision };
   // Preflight sparse query slots before the first provider request. Fixed or
   // hidden rows need no measurement; column fonts still need their used bounds.
-  const windows: WorkbookWindow[] = [];
-  for (const [index, chunk] of chunks.entries()) {
-    checkWindowCancellation(signal);
-    if (index && index % 32 === 0) { await new Promise<void>(resolve => setTimeout(resolve, 0)); checkWindowCancellation(signal); }
-    let start: number | undefined;
-    for (let row = chunk.row; row <= chunk.row + 256; row++) {
-      const include = row < chunk.row + 256 && selectedRow(row) && (columnFonts || automatic(sheet, row));
-      if (include && start === undefined) start = row;
-      if (!include && start !== undefined) {
-        visited += (row - start) * 32;
-        if (visited > limits.maxReadCells) throw new DocumentError("ResourceLimitExceeded", "Automatic row discovery exceeds its cumulative query budget.");
-        for (let from = start; from < row; from += 128) windows.push({ sheetId, row: from, column: chunk.column, rows: Math.min(128, row - from), columns: 32 });
-        start = undefined;
+  async function rowWindows(includeRow: (row: number) => boolean): Promise<WorkbookWindow[]> {
+    const windows: WorkbookWindow[] = [];
+    for (const [index, chunk] of chunks.entries()) {
+      checkWindowCancellation(signal);
+      if (index && index % 32 === 0) { await new Promise<void>(resolve => setTimeout(resolve, 0)); checkWindowCancellation(signal); }
+      let start: number | undefined;
+      for (let row = chunk.row; row <= chunk.row + 256; row++) {
+        const include = row < chunk.row + 256 && includeRow(row) && (columnFonts || automatic(sheet, row));
+        if (include && start === undefined) start = row;
+        if (!include && start !== undefined) {
+          visited += (row - start) * 32;
+          if (visited > limits.maxReadCells) throw new DocumentError("ResourceLimitExceeded", "Automatic row discovery exceeds its cumulative query budget.");
+          for (let from = start; from < row;) {
+            const rows = Math.min(fontBand(from) + rowsPerRead - from, row - from);
+            windows.push({ sheetId, row: from, column: chunk.column, rows, columns: 32 });
+            from += rows;
+          }
+          start = undefined;
+        }
       }
     }
+    return windows;
   }
+  const windows = await rowWindows(selectedRow);
   const prototypes = simpleClasses && !sheet.conditionalRules?.length && !sheet.tables?.length ? new WorkbookRowSourcePrototypes(surface.source, snapshot, sheetId) : undefined;
   const probes = surface.fontProbes ?? new FontProbeCache(), fontEpoch = probes.watch(surface.source.ownerDocument.fonts).epoch;
-  async function measure(coordinates: readonly Readonly<WorkbookCoordinate>[], byCoordinate: ReadonlyMap<number, WorkbookCell>): Promise<void> {
+  async function measure(coordinates: readonly Readonly<WorkbookCoordinate>[], byCoordinate: ReadonlyMap<number, WorkbookCell>, band?: number): Promise<void> {
     checkWindowCancellation(signal);
     checkReuse();
     const fontState = probes.watch(surface.source.ownerDocument.fonts);
@@ -178,9 +221,11 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
       const measured = layoutWorkbookRowTexts(surface.view, snapshot, selected, formatter, normal.spaceWidthPx, fontCache, input => workbookRowFontKey(input, typography), probes);
       usedFallbackLineMetrics ||= measured.usedFallbackLineMetrics;
       for (const font of measured.fonts) {
-        const key = JSON.stringify(font);
-        if (fonts.size >= 50_000 && !fonts.has(key)) throw new DocumentError("ResourceLimitExceeded", "Automatic row font diagnostics exceed their budget.");
-        fonts.set(key, font);
+        const report = collectFont(font);
+        if (band === undefined || !fontWarning(report) || warningCount > maxFontDiagnostics) continue;
+        let warnings = fontWarnings.get(band);
+        if (!warnings) { warnings = new Set(); fontWarnings.set(band, warnings); }
+        if (!warnings.has(report)) { warnings.add(report); warningCount++; }
       }
       for (const [index, cell] of coordinates.entries()) {
         const key = keys[index], required = indices[index] === -1 ? metricCache.get(key!) : measured.heights[indices[index]!];
@@ -196,8 +241,8 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     } finally { sources?.dispose(); }
     if (performance.now() - checkpoint >= 8) { await new Promise<void>(resolve => setTimeout(resolve, 0)); checkpoint = performance.now(); }
   }
-  try {
-    for await (const [window, response] of autoRowReads(source, windows, Math.min(limits.maxCodeUnits, 8 * 1024 * 1024), signal)) {
+  async function measureWindows(reads: readonly WorkbookWindow[]): Promise<void> {
+    for await (const [window, response] of autoRowReads(source, reads, Math.min(limits.maxCodeUnits, 8 * 1024 * 1024), signal)) {
       checkWindowCancellation(signal); checkWindowIdentity(response, snapshot);
       checkReuse();
       if (response.cells.length > window.rows * window.columns) throw new DocumentError("InvalidDocument", "Automatic row data exceeds its requested coordinates.");
@@ -220,9 +265,18 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
       }
       for (let offset = 0; offset < cells.length; offset += 128) {
         const batch = cells.slice(offset, offset + 128);
-        await measure(batch.map(cell => Object.freeze({ row: cell.row, column: cell.column })), new Map(batch.map(cell => [cell.row * 16_384 + cell.column, cell])));
+        await measure(batch.map(cell => Object.freeze({ row: cell.row, column: cell.column })), new Map(batch.map(cell => [cell.row * 16_384 + cell.column, cell])),
+          eligible ? fontBand(window.row) : undefined);
       }
     }
+  }
+  try {
+    await measureWindows(windows);
+    // Equivalent height probes can have skipped identical text in unchanged
+    // bands. When a warning loses every measured source, audit the other rows
+    // under the same cumulative budgets before dropping it from the report.
+    if ([...displacedWarnings].some(font => !fonts.has(JSON.stringify(font))))
+      await measureWindows(await rowWindows(row => !selectedRow(row)));
     let implicit: Readonly<WorkbookCoordinate>[] = [];
     const admit = (): void => {
       if (++visited > limits.maxReadCells) throw new DocumentError("ResourceLimitExceeded", "Automatic row discovery exceeds its cumulative query and implicit-discovery budget.");
@@ -239,11 +293,9 @@ export async function measureWorkbookAutoRows(surface: Pick<WorkbookSurface, "so
     const finalFonts = probes.watch(surface.source.ownerDocument.fonts);
     if (!finalFonts.ready || finalFonts.epoch !== fontEpoch) throw new DocumentError("InvalidOperation", "Worksheet fonts changed during automatic row measurement.");
     const finalDiagnostics = Object.freeze([...fonts.values()]);
-    // A warning or incomplete audit needs a fresh pass next time, so clearing
-    // its last source cannot retain a stale diagnostic. Healthy declarations
-    // remain valid while their stylesheet and font epoch are unchanged.
-    const reusable = simpleClasses && !implicitFonts && !sheet.conditionalRules?.length && !sheet.tables?.length && !inlineStyles && !usedFallbackLineMetrics
-      && finalDiagnostics.every(font => !font.substituted && !font.missingCharacters?.length && font.glyphAuditComplete !== false);
-    return Object.freeze({ dimensions: worksheetDimensions(sheet, normal.maximumDigitWidthPx, heights), fonts: finalDiagnostics, usedFallbackLineMetrics, measuredCells, heights, reusable });
+    const reusable = eligible && !inlineStyles && !usedFallbackLineMetrics && warningCount <= maxFontDiagnostics
+      && finalDiagnostics.every(font => font.glyphAuditComplete);
+    return Object.freeze({ dimensions: worksheetDimensions(sheet, normal.maximumDigitWidthPx, heights), fonts: finalDiagnostics, usedFallbackLineMetrics, measuredCells, heights,
+      fontWarnings: reusable ? fontWarnings : new Map(), reusable });
   } finally { prototypes?.dispose(); if (!surface.fontProbes) probes.clear(); }
 }

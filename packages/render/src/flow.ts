@@ -39,6 +39,7 @@ export function pageFlow(
   constraints?: PageFlowConstraints,
 ): PageFlow {
   const view = document.defaultView!,
+    range = document.createRange(),
     gaps: HTMLElement[] = [],
     tableEdges: HTMLElement[] = [],
     tableGaps = new Map<HTMLTableElement, { row: HTMLTableRowElement; spanning: boolean }[]>(),
@@ -58,13 +59,13 @@ export function pageFlow(
     operations = 0;
   const bottoms = new Map<number, number>();
   const origin = (): number => flow.getBoundingClientRect().top;
-  const page = (y: number): number => Math.max(0, Math.floor((y - origin() + 0.25) / pitch));
-  const start = (index: number): number => origin() + index * pitch;
+  const page = (y: number, top = origin()): number => Math.max(0, Math.floor((y - top + 0.25) / pitch));
+  const start = (index: number, top = origin()): number => top + index * pitch;
   const available = (index: number): number =>
     Math.max(Math.min(24, area), area - (constraints?.reserved(index) ?? 0));
-  const ensure = (index: number, bottom?: number): void => {
+  const ensure = (index: number, bottom?: number, top?: number): void => {
     if (bottom !== undefined)
-      bottoms.set(index, Math.max(bottoms.get(index) ?? 0, bottom - start(index)));
+      bottoms.set(index, Math.max(bottoms.get(index) ?? 0, bottom - start(index, top)));
     if (index >= limits.maxPages)
       throw new DocumentError("ResourceLimitExceeded", "Document exceeds the render page budget.");
     last = Math.max(last, index);
@@ -106,33 +107,22 @@ export function pageFlow(
     }
     return result;
   }
-  const headerHeight = (table: HTMLTableElement): number =>
-    headerRows(table).reduce(
+  const measureHeader = (rows: readonly HTMLTableRowElement[]): number =>
+    rows.reduce(
       (sum, row) => sum + continuationHeader(row).getBoundingClientRect().height,
       0,
     );
-  function spanningCellsBefore(
-    rows: readonly HTMLTableRowElement[],
-    ordinal: number,
-  ): HTMLTableCellElement[] {
-    const spanningCells: HTMLTableCellElement[] = [];
-    for (let index = 0; index < ordinal; index++)
-      for (const cell of rows[index]!.cells) {
-        const span = canonicalSpans.get(cell) ?? cell.rowSpan;
-        if (!span || index + span > ordinal) spanningCells.push(cell);
-      }
-    return spanningCells;
-  }
+  const headerHeight = (table: HTMLTableElement): number => measureHeader(headerRows(table));
   function rowGap(
     table: HTMLTableElement,
-    rows: readonly HTMLTableRowElement[],
-    ordinal: number,
+    row: HTMLTableRowElement,
+    spanningCells: HTMLTableCellElement[],
+    colSpan: number,
     targetPage: number,
     inset: number,
   ): void {
     ensure(targetPage);
-    const spanningCells = spanningCellsBefore(rows, ordinal);
-    const firstFragmentEnd = rows[ordinal]!.getBoundingClientRect().top;
+    const firstFragmentEnd = row.getBoundingClientRect().top;
     fixCellAlignment(spanningCells, firstFragmentEnd);
     for (const cell of spanningCells)
       if (cell.rowSpan) {
@@ -145,13 +135,10 @@ export function pageFlow(
     gap.setAttribute("aria-hidden", "true");
     gap.contentEditable = "false";
     const cell = document.createElement("td");
-    cell.colSpan = Math.max(
-      1,
-      ...rows.map((item) => [...item.cells].reduce((sum, value) => sum + value.colSpan, 0)),
-    );
+    cell.colSpan = colSpan;
     cell.style.cssText = "padding:0;border:0;line-height:0;font-size:0";
     gap.append(cell);
-    rows[ordinal]!.before(gap);
+    row.before(gap);
     gaps.push(gap);
     const spanning = spanningCells.length > 0;
     if (!spanning && view.getComputedStyle(table).borderCollapse === "collapse")
@@ -281,7 +268,6 @@ export function pageFlow(
         )
       )
         continue;
-      const range = document.createRange();
       range.selectNodeContents(scaled?.firstChild?.firstChild ?? node);
       for (const rect of node.nodeType === 3 || scaled ? range.getClientRects() : owner.getClientRects()) {
         if (!wordRowVisibleRect(owner, rect)) continue;
@@ -296,11 +282,10 @@ export function pageFlow(
         let lo = 0,
           hi = node.nodeType === 3 ? (node as Text).length : 0;
         while (lo < hi) {
-          const mid = Math.floor((lo + hi) / 2),
-            probe = document.createRange();
-          probe.setStart(node, mid);
-          probe.setEnd(node, Math.min((node as Text).length, mid + 1));
-          if (probe.getBoundingClientRect().top < rect.top - 0.5) lo = mid + 1;
+          const mid = Math.floor((lo + hi) / 2);
+          range.setStart(node, mid);
+          range.setEnd(node, Math.min((node as Text).length, mid + 1));
+          if (range.getBoundingClientRect().top < rect.top - 0.5) lo = mid + 1;
           else hi = mid;
         }
         if (node.nodeType === 3 && lo && /[\udc00-\udfff]/.test((node as Text).data[lo] ?? ""))
@@ -321,6 +306,9 @@ export function pageFlow(
     fragmentGaps: readonly HTMLElement[],
   ): Line | undefined {
     const fragmentStarts: number[] = [];
+    // This scan only reads geometry. Page-relative bounds stay fixed until
+    // the caller inserts the next fragment spacer.
+    let flowTop: number | undefined;
     if (exactHeight) {
       const css = view.getComputedStyle(element);
       fragmentStarts.push(
@@ -358,7 +346,6 @@ export function pageFlow(
         )
           continue;
       }
-      const range = document.createRange();
       range.selectNodeContents(scaled?.firstChild?.firstChild ?? node);
       const rectangles =
         node.nodeType === 3 || scaled
@@ -383,15 +370,17 @@ export function pageFlow(
       for (const rect of rectangles) {
         if (!wordRowVisibleRect(owner, rect)) continue;
         if (rect.height < 0.1 || rect.width < 0.01) continue;
+        flowTop ??= origin();
         const middle = rect.top + rect.height / 2,
-          origin = fragmentStarts.find((top) => top <= middle) ?? fragmentStarts.at(-1),
+          fragmentTop = fragmentStarts.find((top) => top <= middle) ?? fragmentStarts.at(-1),
           // For exact spacing, the page needs room for the entire line box.
           // Glyph ink can finish before the bottom of the paragraph strut.
-          lineTop = origin === undefined
+          lineTop = fragmentTop === undefined
             ? rect.top
-            : origin + Math.max(0, Math.floor((middle - origin) / exactHeight)) * exactHeight,
-          current = page(origin === undefined ? middle : lineTop + exactHeight / 2),
-          end = start(current) + available(current),
+            : fragmentTop + Math.max(0, Math.floor((middle - fragmentTop) / exactHeight)) * exactHeight,
+          current = page(fragmentTop === undefined ? middle : lineTop + exactHeight / 2, flowTop),
+          pageStart = start(current, flowTop),
+          end = pageStart + available(current),
           minimum = constraints?.minimumPage(node);
         if (minimum !== undefined && current < minimum)
           return { node: node as HTMLElement, rect, targetPage: minimum };
@@ -400,14 +389,14 @@ export function pageFlow(
           rect.height,
           parseFloat(view.getComputedStyle(owner).lineHeight) || rect.height,
         ),
-          lineBottom = origin === undefined
+          lineBottom = fragmentTop === undefined
             ? rect.bottom + Math.max(0, height - rect.height) / 2
             : lineTop + exactHeight;
         if (
-          lineTop >= start(current) + inset - 5 &&
+          lineTop >= pageStart + inset - 5 &&
           lineBottom <= end + 0.5
         ) {
-          ensure(current, lineBottom);
+          ensure(current, lineBottom, flowTop);
           continue;
         }
         if (height > area - inset + 0.5)
@@ -421,11 +410,10 @@ export function pageFlow(
           hi = text.length;
         // Locate the first character on this visual line without measuring every character.
         while (lo < hi) {
-          const mid = Math.floor((lo + hi) / 2),
-            probe = document.createRange();
-          probe.setStart(text, mid);
-          probe.setEnd(text, Math.min(text.length, mid + 1));
-          const box = probe.getBoundingClientRect();
+          const mid = Math.floor((lo + hi) / 2);
+          range.setStart(text, mid);
+          range.setEnd(text, Math.min(text.length, mid + 1));
+          const box = range.getBoundingClientRect();
           if (box.top < rect.top - 0.5) lo = mid + 1;
           else hi = mid;
         }
@@ -522,7 +510,6 @@ export function pageFlow(
         if (inset) {
           // Negative font leading can lift the first glyph above the block
           // spacer and into the repeated header. Reserve the measured overhang.
-          const range = document.createRange();
           range.selectNodeContents(tail);
           const first = (tail.nodeType === 3 ? range : (tail as HTMLElement)).getClientRects()[0];
           if (first && first.top < target - 0.25)
@@ -594,8 +581,9 @@ export function pageFlow(
     });
   }
   function table(element: HTMLTableElement): void {
-    const header = headerRows(element),
-      height = headerHeight(element),
+    const headers = headerRows(element),
+      header = new Set(headers),
+      height = measureHeader(headers),
       tableStyle = view.getComputedStyle(element),
       collapsedStroke = tableStyle.borderCollapse === "collapse" &&
         (parseFloat(tableStyle.borderBottomWidth) > 0 ||
@@ -611,18 +599,34 @@ export function pageFlow(
         view.getComputedStyle(row).display !== "none" &&
         view.getComputedStyle(row).visibility !== "collapse",
     );
-    let mergeEnd = 0;
+    const colSpan = rows.reduce((maximum, row) =>
+      Math.max(maximum, [...row.cells].reduce((sum, cell) => sum + cell.colSpan, 0)), 1);
+    const activeSpans = new Set<HTMLTableCellElement>();
+    const endingAt = new Map<number, HTMLTableCellElement[]>();
     for (const [ordinal, row] of rows.entries()) {
+      for (const cell of endingAt.get(ordinal) ?? []) activeSpans.delete(cell);
+      endingAt.delete(ordinal);
+      const previous = rows[ordinal - 1];
+      for (const cell of previous?.cells ?? []) {
+        const span = canonicalSpans.get(cell) ?? cell.rowSpan;
+        if (span === 1) continue;
+        activeSpans.add(cell);
+        if (span) {
+          const end = ordinal - 1 + span;
+          const queue = endingAt.get(end) ?? [];
+          queue.push(cell);
+          endingAt.set(end, queue);
+        }
+      }
+      const continuesMerge = activeSpans.size > 0;
       let box = row.getBoundingClientRect(),
         current = page(box.top);
-      const continuesMerge = mergeEnd > ordinal,
-        cells = [...row.cells],
+      const cells = [...row.cells],
         rowSpan = cells.reduce(
           (span, cell) => Math.max(span, cell.rowSpan || rows.length - ordinal),
           1,
         );
-      mergeEnd = Math.max(mergeEnd, ordinal + rowSpan);
-      const repeated = header.includes(row),
+      const repeated = header.has(row),
         inset = current > topPage(element) ? height : 0,
         end = start(current) + available(current),
         style = view.getComputedStyle(row),
@@ -644,7 +648,7 @@ export function pageFlow(
         ? cells.map(cellBlocks)
         : undefined;
       if (blocks && canStartRow(blocks, end)) {
-        const continuing = continuesMerge ? spanningCellsBefore(rows, ordinal) : [];
+        const continuing = [...activeSpans];
         // A continuing merge can stay on the preceding fragment while the
         // cells owned by this row split at the available line.
         if (
@@ -668,7 +672,7 @@ export function pageFlow(
       ) {
         const next = box.top < start(current) + height - 0.5 ? current : current + 1;
         if (ordinal === 0) before(element, next);
-        else rowGap(element, rows, ordinal, next, height);
+        else rowGap(element, row, [...activeSpans], colSpan, next, height);
         box = row.getBoundingClientRect();
         current = page(box.top);
       }
@@ -676,7 +680,7 @@ export function pageFlow(
         let target = current + 1;
         while (target < limits.maxPages && box.height > available(target) - height) target++;
         if (ordinal === 0) before(element, target);
-        else rowGap(element, rows, ordinal, target, height);
+        else rowGap(element, row, [...activeSpans], colSpan, target, height);
         box = row.getBoundingClientRect();
         current = page(box.top);
       }

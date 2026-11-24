@@ -20,9 +20,10 @@ import { composeWordRowSpacing } from "./word-row-spacing.js";
 import { composeWordParagraphMarks } from "./word-paragraph-marks.js";
 import { composeWordNative } from "./word-native.js";
 import { composeWordControls } from "./word-controls.js";
-import { DocumentError, openDocument } from "@doffi/core";
+import { captureContentModel, DocumentError } from "@doffi/core";
 import { collectDocumentFontNames, hasUnloadedWordWebFonts, loadWordWebFonts, resolvePreviewDefaultFont, resolvePreviewFonts } from "./fonts.js";
 import type { FontResolution, HostedWordFonts, WordWebFont } from "./fonts.js";
+import { FontProbeCache } from "./font-probe-cache.js";
 import type { DeepReadonly, ContentDocumentModel, WordMetadata } from "@doffi/core";
 import { PreviewSource } from "./source-index.js";
 import { renderLimits } from "./contracts.js";
@@ -64,6 +65,8 @@ export interface DocumentPreviewOptions {
   readonly wordWebFonts?: readonly WordWebFont[];
   /** Read-only editing projection of a registered master/layout/notes-master root. */
   readonly presentationSurfaceId?: string;
+  /** Compose slides on demand in a presentation editing viewport. */
+  readonly presentationEditingSlideId?: string;
 }
 
 export function packagePath(reference: string, entrypoint: string): string {
@@ -186,17 +189,22 @@ export function decorate(
 
 const wordFrameFont = '"Noto Sans CJK SC",serif';
 
-function prepareDocument(input: ContentDocumentModel): {
+interface PreparedWordPreview {
   model: ContentDocumentModel;
   document: Document;
-  urls: string[];
   nativeUrls: Map<string, string>;
-} {
-  const model = openDocument(input.serialize(), { kind: "document" });
+}
+
+function releaseWordUrls(previous: ReadonlyMap<string, string>, next?: ReadonlyMap<string, string>): void {
+  for (const [path, url] of previous)
+    if (next?.get(path) !== url) URL.revokeObjectURL(url);
+}
+
+function prepareDocument(input: ContentDocumentModel, previous?: PreparedWordPreview): PreparedWordPreview {
+  const model = captureContentModel(input, "document");
   const snapshot = model.snapshot();
   if (snapshot.manifest.kind !== "document" || snapshot.metadata.presentation !== undefined)
     throw new DocumentError("UnsupportedFormat", "This renderer supports the document flow view.");
-  const files = model.serialize();
   const parsed = new DOMParser().parseFromString(snapshot.html, "text/html");
   for (const link of parsed.querySelectorAll("link")) link.remove();
   const policy = parsed.createElement("meta");
@@ -257,27 +265,37 @@ function prepareDocument(input: ContentDocumentModel): {
       if (auxiliaryRoots.has(node.getAttribute("data-node-id") ?? "")) auxiliary.append(node);
     if (auxiliary.children.length) article.append(auxiliary);
   }
-  const urls: string[] = [],
-    nativeUrls = new Map<string, string>();
+  const nativeUrls = new Map<string, string>(),
+    assets = new Map(snapshot.manifest.assets.map(asset => [asset.path, asset])),
+    previousAssets = new Map(previous?.model.snapshot().manifest.assets.map(asset => [asset.path, asset]));
   const imageUrl = (path: string): string => {
     const known = nativeUrls.get(path);
     if (known) return known;
-    const asset = snapshot.manifest.assets.find((item) => item.path === path)!,
-      bytes = files.get(path)!,
+    const asset = assets.get(path)!;
+    const old = previousAssets.get(path), oldUrl = previous?.nativeUrls.get(path);
+    if (oldUrl && old?.sha256 === asset.sha256 && old.mimeType === asset.mimeType) {
+      nativeUrls.set(path, oldUrl);
+      return oldUrl;
+    }
+    const bytes = model.getAsset!(path)!,
       buffer = new ArrayBuffer(bytes.length);
     new Uint8Array(buffer).set(bytes);
     const url = URL.createObjectURL(new Blob([buffer], { type: asset.mimeType }));
-    urls.push(url);
     nativeUrls.set(path, url);
     return url;
   };
-  for (const fragment of snapshot.metadata.word?.nativeContent?.fragments ?? [])
-    if (fragment.preview) imageUrl(fragment.preview.assetPath);
-  for (const image of parsed.querySelectorAll("img")) {
-    const path = packagePath(image.getAttribute("src")!, snapshot.manifest.entrypoint);
-    image.src = imageUrl(path);
+  try {
+    for (const fragment of snapshot.metadata.word?.nativeContent?.fragments ?? [])
+      if (fragment.preview) imageUrl(fragment.preview.assetPath);
+    for (const image of parsed.querySelectorAll("img")) {
+      const path = packagePath(image.getAttribute("src")!, snapshot.manifest.entrypoint);
+      image.src = imageUrl(path);
+    }
+  } catch (error) {
+    releaseWordUrls(nativeUrls, previous?.nativeUrls);
+    throw error;
   }
-  return { model, document: parsed, urls, nativeUrls };
+  return { model, document: parsed, nativeUrls };
 }
 
 /** Mount a validated, scriptless read-only view. The iframe DOM is never serialized. */
@@ -311,7 +329,11 @@ export function mountPreview(
   container: HTMLElement,
   input: ContentDocumentModel,
   options: DocumentPreviewOptions = {},
-): DocumentPreview & { source(): PreviewSource | undefined } {
+): DocumentPreview & {
+  source(): PreviewSource | undefined;
+  pauseMeasurement?(paused: boolean): void;
+  showCanvasSlide?(slideId: string, active?: boolean): boolean;
+} {
   if (input.snapshot().manifest.kind === "presentation")
     return mountPresentationPreview(container, input, options);
   if (options.presentationSurfaceId)
@@ -319,7 +341,7 @@ export function mountPreview(
       "InvalidOperation",
       "Definition surfaces are available only for presentations.",
     );
-  const limits = renderLimits(options.limits),
+  const limits = renderLimits({ maxPages: 512, maxNodes: 128_000, ...options.limits }),
     hostDocument = container.ownerDocument;
   let prepared = prepareDocument(input),
     model = prepared.model;
@@ -343,6 +365,9 @@ export function mountPreview(
     generation = 0,
     scheduled: number | undefined,
     observer: ResizeObserver | undefined;
+  let measuredGeometry: string | undefined;
+  let measureImage = false;
+  let measurementPaused = false;
   let report: DocumentRenderReport = Object.freeze({
     documentId: model.snapshot().manifest.documentId,
     revision: model.snapshot().manifest.revision,
@@ -358,10 +383,11 @@ export function mountPreview(
   let tabs: WordTabLayout | undefined;
   let hostedFonts: HostedWordFonts | undefined;
   const defaultFonts = new Map<string, string>();
+  const fontProbes = new FontProbeCache();
   function defaultFont(stack: string): string {
     let resolved = defaultFonts.get(stack);
     if (resolved === undefined) {
-      resolved = resolvePreviewDefaultFont(iframe.contentDocument!, stack, hostedFonts);
+      resolved = resolvePreviewDefaultFont(iframe.contentDocument!, stack, hostedFonts, fontProbes);
       defaultFonts.set(stack, resolved);
     }
     return resolved;
@@ -372,8 +398,33 @@ export function mountPreview(
     resolveReady = resolve;
     rejectReady = reject;
   });
+  function geometry(): string {
+    const frame = iframe.contentDocument!, body = frame.body.getBoundingClientRect();
+    return [iframe.clientWidth, iframe.clientHeight, frame.documentElement.clientWidth, body.width, body.height].join(",");
+  }
+  function fitHeight(): void {
+    const body = iframe.contentDocument!.body;
+    const height =
+      Math.ceil(Math.max(200, body.scrollHeight, body.getBoundingClientRect().height)) + "px";
+    if (iframe.style.height !== height) iframe.style.height = height;
+    measuredGeometry = geometry();
+  }
+  function scheduleMeasure(image = false): void {
+    if (disposed) return;
+    measureImage ||= image;
+    if (scheduled !== undefined) return;
+    scheduled = hostDocument.defaultView!.requestAnimationFrame(() => {
+      scheduled = undefined;
+      const forced = measureImage;
+      measureImage = false;
+      // ResizeObserver delivers an initial notification for each new body.
+      // A completed layout of identical dimensions already includes it.
+      if (forced || measuredGeometry !== geometry() || model.snapshot().metadata.word?.revisions.length)
+        measure();
+    });
+  }
   function measure(): void {
-    if (disposed || !source) return;
+    if (disposed || !source || measurementPaused) return;
     // A display:none host has no usable geometry. Keep the last accepted
     // layout instead of removing page gaps and measuring zero-sized lines.
     if (!iframe.clientWidth || !iframe.clientHeight) return;
@@ -430,6 +481,7 @@ export function mountPreview(
         iframe.contentDocument!,
         ".sdk-field-display [data-word-script]",
         hostedFonts,
+        fontProbes,
       );
       fontReport = Object.freeze([...baseFonts, ...derivedFonts]);
     }
@@ -514,13 +566,11 @@ export function mountPreview(
       ]),
       fonts: fontReport,
     });
-    const body = iframe.contentDocument!.body;
-    const height =
-      Math.ceil(Math.max(200, body.scrollHeight, body.getBoundingClientRect().height)) + "px";
-    if (iframe.style.height !== height) iframe.style.height = height;
+    fitHeight();
   }
   function render(): void {
     const frame = iframe.contentDocument!;
+    measuredGeometry = undefined;
     const frameFont = frame.head.querySelector<HTMLStyleElement>("style[data-sdk-word-frame-font]")!;
     frameFont.textContent = "body{font-family:" + defaultFont(wordFrameFont) + "}";
     runWidths?.reset();
@@ -540,9 +590,11 @@ export function mountPreview(
     composeWordLanguages(frame, model, limits);
     composeWordContextualSpacing(frame, model);
     const fontSelector = "[data-node-id],[data-sdk-word-script-view]";
-    const hostedResolution = hostedFonts?.size ? resolvePreviewFonts(frame, fontSelector, hostedFonts) : undefined;
+    const hostedResolution = hostedFonts?.size
+      ? resolvePreviewFonts(frame, fontSelector, hostedFonts, fontProbes)
+      : undefined;
     composeWordTypography(frame, model, limits);
-    const sourceFonts = hostedResolution ?? resolvePreviewFonts(frame, fontSelector);
+    const sourceFonts = hostedResolution ?? resolvePreviewFonts(frame, fontSelector, undefined, fontProbes);
     source = new PreviewSource(frame, model);
     // Empty paragraphs reserve a line in the main story and repeated headers
     // and footers. A blank line in a bottom-anchored footer raises the preceding
@@ -571,7 +623,7 @@ export function mountPreview(
       } else paragraph.append(markViewNode(frame.createElement("br")));
     }
     const word = snapshot.metadata.word;
-    const numberingFonts = composeWordNumbering(frame, word, hostedFonts);
+    const numberingFonts = composeWordNumbering(frame, word, hostedFonts, fontProbes);
     decorate(frame, word);
     tabs = word?.tabs.length ? wordTabLayout(frame, word) : undefined;
     tabs?.measure(frame);
@@ -601,6 +653,7 @@ export function mountPreview(
         snapshot.metadata.word,
         new Set(),
         limits,
+        true,
       );
     baseFonts = Object.freeze([
       ...sourceFonts,
@@ -609,6 +662,7 @@ export function mountPreview(
         frame,
         ".sdk-word-equation-view,.sdk-word-equation-view *,[data-sdk-word-chart] text,[data-sdk-word-chart] tspan",
         hostedFonts,
+        fontProbes,
       ),
     ]);
     fontReport = baseFonts;
@@ -665,16 +719,13 @@ export function mountPreview(
         (fontReport.some((item) => !item.glyphAuditComplete) ? "部分字形未核验。" : "") +
         (substitutions.length ? "断行和版式可能与原字体不同。" : "");
       frame.body.append(note);
+      if (measuredGeometry !== undefined) fitHeight();
     }
-    for (const image of frame.images) image.addEventListener("load", measure, { once: true });
+    for (const image of frame.images)
+      if (!image.complete)
+        image.addEventListener("load", () => { if (image.isConnected) scheduleMeasure(true); }, { once: true });
     observer?.disconnect();
-    observer = new ResizeObserver(() => {
-      if (scheduled !== undefined || disposed) return;
-      scheduled = hostDocument.defaultView!.requestAnimationFrame(() => {
-        scheduled = undefined;
-        measure();
-      });
-    });
+    observer = new ResizeObserver(() => scheduleMeasure());
     observer.observe(frame.body);
     observer.observe(iframe);
   }
@@ -719,6 +770,7 @@ export function mountPreview(
     ready,
     fonts: () => fontReport,
     source: () => source,
+    pauseMeasurement(paused) { measurementPaused = paused; },
     layout: () => report,
     update(next) {
       if (disposed) throw new DocumentError("InvalidOperation", "The renderer has been disposed.");
@@ -727,8 +779,8 @@ export function mountPreview(
           "InvalidOperation",
           "Wait for renderer.ready before updating the view.",
         );
-      const incoming = prepareDocument(next),
-        previous = prepared;
+      const previous = prepared,
+        incoming = prepareDocument(next, previous);
       generation++;
       observer?.disconnect();
       notes?.dispose();
@@ -740,7 +792,7 @@ export function mountPreview(
       const frame = iframe.contentDocument;
       frame.head.replaceWith(frame.importNode(incoming.document.head, true));
       frame.body.replaceWith(frame.importNode(incoming.document.body, true));
-      for (const url of previous.urls) URL.revokeObjectURL(url);
+      releaseWordUrls(previous.nativeUrls, incoming.nativeUrls);
       render();
       if (options.wordWebFonts?.length) {
         const requested = collectDocumentFontNames(model.snapshot());
@@ -801,6 +853,7 @@ export function mountPreview(
       disposed = true;
       generation++;
       observer?.disconnect();
+      fontProbes.clear();
       notes?.dispose();
       notes = undefined;
       pagination?.dispose();
@@ -810,7 +863,7 @@ export function mountPreview(
       iframe.removeEventListener("load", load);
       iframe.remove();
       iframe.srcdoc = "";
-      for (const url of prepared.urls) URL.revokeObjectURL(url);
+      releaseWordUrls(prepared.nativeUrls);
       resolveReady();
     },
   };

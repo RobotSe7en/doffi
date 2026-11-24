@@ -2,6 +2,7 @@ import { DocumentError } from "@doffi/core";
 import type { DeepReadonly, WordMetadata } from "@doffi/core";
 import { resolvePreviewFonts } from "./fonts.js";
 import type { HostedWordFonts } from "./fonts.js";
+import type { FontProbeCache } from "./font-probe-cache.js";
 import type { FontResolution } from "./fonts.js";
 import { markViewNode, ownViewStyle } from "./view-nodes.js";
 
@@ -52,6 +53,7 @@ export function composeWordNumbering(
   document: Document,
   word: DeepReadonly<WordMetadata> | undefined,
   hostedFonts: HostedWordFonts | undefined,
+  probes: FontProbeCache,
 ): readonly FontResolution[] {
   if (!word?.numbering.length) return [];
   const view = document.defaultView!,
@@ -94,7 +96,7 @@ export function composeWordNumbering(
       entries.push({ paragraph, marker, suffix: rule.suffix });
     }
   }
-  const fonts = resolvePreviewFonts(document, ".sdk-number-marker", hostedFonts);
+  const fonts = resolvePreviewFonts(document, ".sdk-number-marker", hostedFonts, probes);
   const offsets = entries.map(({ paragraph, marker, suffix }) => {
     const css = view.getComputedStyle(paragraph),
       start = parseFloat(css.textIndent) || 0,

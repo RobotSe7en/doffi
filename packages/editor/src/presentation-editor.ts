@@ -23,7 +23,7 @@ import type {
   TransactionPrepareOptions,
   TransactionReceipt,
 } from "@doffi/core";
-import { collectDocumentFontNames, loadWordWebFonts, mountPreview } from "@doffi/render";
+import { collectDocumentFontNames, loadWordWebFonts, mountPreview, presentationThumbnailSource } from "@doffi/render";
 import type { DocumentPreviewOptions, DocumentRenderReport, FontResolution } from "@doffi/render";
 import { bindObjectGestures } from "./presentation/gestures.js";
 import type { ObjectGestures } from "./presentation/gestures.js";
@@ -513,6 +513,7 @@ export function mountPresentationEditor(
     const slide = p().slides.find((s) => s.slideId === slideId);
     if (!slide || !current())
       throw new DocumentError("InvalidOperation", "请等待幻灯片画布就绪后检查区域布局。");
+    preview.showCanvasSlide?.(slideId, false);
     if (slide.slideId === active || !slideVisibility) return preview.source()!.layoutKey(slide.rootNodeId);
     slideVisibility.disabled = true;
     try { return preview.source()!.layoutKey(slide.rootNodeId); }
@@ -933,7 +934,11 @@ export function mountPresentationEditor(
     },
     attempt,
   });
-  let preview = mountPreview(previewHost, session, options);
+  const windowedSlides = p().slides.length >= 24;
+  let preview = mountPreview(previewHost, session, {
+    ...options,
+    ...(windowedSlides && !definitionSurface ? { presentationEditingSlideId: active } : {}),
+  });
   preview.element.dataset.sdkPresentationCanvas = "";
   let slideVisibility: HTMLStyleElement | undefined, thumbnailObserver: IntersectionObserver | undefined;
   const thumbFrames = new Map<string, HTMLIFrameElement>();
@@ -946,6 +951,7 @@ export function mountPresentationEditor(
   function showCurrentSlide(resetScroll = false): void {
     const frame = preview.element.contentDocument;
     if (previewLoaded && frame && currentSlide()) {
+      if (!definitionSurface) preview.showCanvasSlide?.(active);
       if (slideVisibility?.ownerDocument !== frame || !slideVisibility.isConnected) {
         slideVisibility = frame.createElement("style");
         slideVisibility.dataset.sdkSlideVisibility = "";
@@ -978,25 +984,19 @@ export function mountPresentationEditor(
     thumbFrames.clear();
     for (const node of slideButtons.values()) node.firstElementChild!.replaceChildren();
     if (definitionSurface || !previewLoaded) return;
-    const print = preview.printDocument();
-    const style = print.createElement("style");
-    style.textContent = "html,body{width:100%;height:100%;overflow:hidden}article{margin:0!important}";
-    print.head.append(style);
-    const slides = new Map([...print.querySelectorAll<HTMLElement>('article>[data-office-kind="slide"]')].map(slide => [slide.dataset.nodeId!, slide]));
-    const head = print.head.outerHTML;
-    const requestedFonts = options.wordWebFonts?.length ? collectDocumentFontNames(session.snapshot()) : undefined;
-    thumbnailObserver = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (disposed || !entry.target.isConnected) continue;
-        const button = entry.target as HTMLButtonElement, id = button.dataset.slideId!;
-        const slide = p().slides.find(slide => slide.slideId === id);
-        const source = slide && slides.get(slide.rootNodeId);
-        if (!entry.isIntersecting) {
-          thumbFrames.get(id)?.remove(); thumbFrames.delete(id);
-          thumbnailResize.unobserve(button.firstElementChild!);
-          continue;
-        }
-        if (!source || thumbFrames.has(id)) continue;
+    const revision = generation;
+    const slides = new Map(p().slides.map(slide => [slide.slideId, slide.rootNodeId]));
+    let thumbnailSource: ReturnType<typeof presentationThumbnailSource> | undefined;
+    let requestedFonts: ReturnType<typeof collectDocumentFontNames> | undefined;
+    const pending = new Map<string, HTMLButtonElement>();
+    let scheduled = false;
+    function createThumbnail(button: HTMLButtonElement, id: string): void {
+        const rootId = slides.get(id);
+        if (!rootId || thumbFrames.has(id)) return;
+        if (windowedSlides && preview.showCanvasSlide?.(id, false)) thumbnailSource = undefined;
+        const source = preview.source()?.elements.get(rootId)?.element;
+        if (!source) return;
+        thumbnailSource ??= presentationThumbnailSource(source.ownerDocument);
         const thumb = button.firstElementChild!, thumbnail = document.createElement("iframe");
         thumbnail.setAttribute("sandbox", "allow-same-origin");
         thumbnail.setAttribute("aria-hidden", "true");
@@ -1005,16 +1005,44 @@ export function mountPresentationEditor(
         const width = p().size.width * 4 / 3, height = p().size.height * 4 / 3;
         thumbnail.style.cssText = `width:${width}px;height:${height}px;transform-origin:0 0;transform:scale(${thumb.getBoundingClientRect().width / width})`;
         if (options.wordWebFonts?.length) {
+          requestedFonts ??= collectDocumentFontNames(session.snapshot());
           thumbnail.addEventListener("load", () => {
             if (!disposed && thumbnail.isConnected && thumbnail.contentDocument)
               void loadWordWebFonts(thumbnail.contentDocument, options.wordWebFonts!, requestedFonts).catch(() => {});
           }, { once: true });
         }
-        thumbnail.srcdoc = "<!doctype html><html>" + head + '<body><article data-office-kind="presentation">' + source.outerHTML + "</article></body></html>";
+        thumbnail.srcdoc = thumbnailSource(source);
         thumbFrames.set(id, thumbnail);
         thumb.append(thumbnail);
         thumbnailResize.observe(thumb);
+    }
+    function scheduleThumbnails(): void {
+      if (scheduled || !pending.size) return;
+      scheduled = true;
+      document.defaultView!.setTimeout(() => {
+        scheduled = false;
+        if (disposed || revision !== generation) return;
+        const next = pending.entries().next().value;
+        if (next) {
+          const [id, button] = next;
+          pending.delete(id);
+          if (button.isConnected) attempt(() => createThumbnail(button, id));
+        }
+        scheduleThumbnails();
+      }, 180);
+    }
+    thumbnailObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (disposed || revision !== generation || !entry.target.isConnected) continue;
+        const button = entry.target as HTMLButtonElement, id = button.dataset.slideId!;
+        if (!entry.isIntersecting) {
+          pending.delete(id);
+          thumbFrames.get(id)?.remove(); thumbFrames.delete(id);
+          thumbnailResize.unobserve(button.firstElementChild!);
+        } else if (windowedSlides && id !== active) pending.set(id, button);
+        else attempt(() => createThumbnail(button, id));
       }
+      scheduleThumbnails();
     }, { root: nav, rootMargin: "160px 0px" });
     for (const node of slideButtons.values()) thumbnailObserver.observe(node);
   }
@@ -1761,6 +1789,7 @@ export function mountPresentationEditor(
     preview = mountPreview(previewHost, session, {
       ...previewOptions,
       ...(rootNodeId ? { presentationSurfaceId: rootNodeId } : {}),
+      ...(windowedSlides && !rootNodeId ? { presentationEditingSlideId: active } : {}),
     });
     preview.element.dataset.sdkPresentationCanvas = "";
     previewResize.observe(preview.element);

@@ -46,7 +46,7 @@ export * from "./contracts/events.js";
 export { DocumentError } from "./errors.js";
 export { createOpaqueId } from "./identifiers.js";
 export * from "./schema-registry.js";
-export { DEFAULT_DOCUMENT_READ_LIMITS, openDocument } from "./document-model.js";
+export { DEFAULT_DOCUMENT_READ_LIMITS, captureContentModel, openDocument } from "./document-model.js";
 export { createPresentation, resolvePresentationGeometry } from "./presentation.js";
 export type { CreatePresentationOptions } from "./presentation.js";
 export { createWorkbook } from "./workbook.js";

@@ -10,8 +10,8 @@ import { modelRuleSource } from '../../../packages/render/src/workbook/rule-sour
 import { createWorkbookSurface } from '../../../packages/render/src/workbook/surface.js';
 import { WorkbookWindowController } from '../../../packages/render/src/workbook/window-controller.js';
 import { decorateWorkbookPreview } from '../../../packages/render/src/workbook/preview-decoration.js';
-import { incrementalPreview } from './workbook-incremental.js';
-export { incrementalPreview };
+import { incrementalFontWarnings, incrementalPreview } from './workbook-incremental.js';
+export { incrementalFontWarnings, incrementalPreview };
 import type { WorkbookPreviewDecoration } from '../../../packages/render/src/workbook/preview-decoration.js';
 
 type Entries = TestPackage;
@@ -226,7 +226,7 @@ export async function ruleWindowLifecycle(entries: Entries) {
     return { failures, cancelled, aborted, retainedLatest: controller.current!.frame.sheetId === 'preview-empty' };
   } finally { controller.dispose(); surface.dispose(); formatter.dispose(); container.remove(); }
 }
-(window as unknown as { workbookPreview: unknown }).workbookPreview = { incrementalPreview, mountPublicPreview, previewInspect, previewAction, imperativeRangeSelection, calculatedPreview, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
+(window as unknown as { workbookPreview: unknown }).workbookPreview = { incrementalFontWarnings, incrementalPreview, mountPublicPreview, previewInspect, previewAction, imperativeRangeSelection, calculatedPreview, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
 
 export async function publicReadAhead(entries: Entries, allow: boolean, rows: number, mode: 'normal' | 'hold' | 'parent-input' | 'failure' | 'revision' | 'active' | 'preference' = 'normal') {
   const model = modelOf(entries), before = model.serialize(), snapshot = model.snapshot(), source = modelWindowSource(model), container = host();

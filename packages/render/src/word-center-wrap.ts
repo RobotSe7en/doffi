@@ -80,10 +80,7 @@ export function wordCenterWrap(
       ?.filter((item) => needsWordDrawingLineExclusion(item) && inFlow(item.nodeId))
       .map((item) => [item.nodeId, item]),
   );
-  const resolver = new SourceStyleResolver(
-    snapshot.styles.map((sheet) => sheet.css),
-    DEFAULT_DOCUMENT_READ_LIMITS,
-  );
+  let resolver: SourceStyleResolver | undefined;
   const project = (id: string): SourceStyleNode => {
     const node = model.getNode(id)!;
     return {
@@ -94,6 +91,7 @@ export function wordCenterWrap(
   };
   const tables = new Map(
     snapshot.metadata.word?.tables.flatMap((info) => {
+      resolver ??= new SourceStyleResolver(snapshot.styles.map((sheet) => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS);
       const css = resolver.get(project(info.nodeId));
       return css["--word-table-floating"] === "1" && inFlow(info.nodeId)
         ? [[info.nodeId, css] as const]

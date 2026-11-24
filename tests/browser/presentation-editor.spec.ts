@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { expect,test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { createPresentation,openDocument } from "@doffi/core";
+import { createDocumentSession,createPresentation,openDocument } from "@doffi/core";
 import type { DocumentPackage } from "@doffi/core";
 import { renderDocumentPdf } from "@doffi/node";
 import { importPptx,readDocumentZip } from "@doffi/office";
@@ -22,6 +22,58 @@ function example():DocumentPackage{return new Map([...readdirSync("examples/pres
 async function mount(page:Page,files:DocumentPackage=createPresentation({documentId:"editor"})):Promise<void>{await openSdkHost(page);await page.addScriptTag({type:"module",content:code});await page.waitForFunction(()=>!!window.presentationEditorHost);await page.evaluate(files=>window.presentationEditorHost.mount(files),[...files].map(([path,bytes])=>[path,[...bytes]] as [string,number[]]));}
 async function settled(page:Page):Promise<void>{await page.evaluate(()=>window.presentationEditorHost.view!.ready);}
 const frame=(page:Page)=>page.frameLocator("iframe[data-sdk-presentation-canvas]");
+
+test("a large deck composes a distant slide on demand and edits its shape without composing the whole deck", async ({ page }) => {
+  const session = createDocumentSession(openDocument(createPresentation({ documentId: "windowed-slides" }), { kind: "presentation" }));
+  const apply = (operations: Parameters<typeof session.prepare>[0]["operations"]) => session.commit(session.prepare({
+    protocolVersion: 1, documentId: "windowed-slides", baseRevision: session.snapshot().manifest.revision, operations,
+  }));
+  apply(Array.from({ length: 27 }, () => ({ op: "insertSlide" as const, layoutId: "layout-blank" })));
+  const last = session.snapshot().metadata.presentation!.slides.at(-1)!;
+  const geometry = { x: 25, y: 30, width: 180, height: 70, rotation: 0, flipH: false, flipV: false };
+  apply([{ op: "insertPresentationObject", parentNodeId: last.rootNodeId, geometry, object: { kind: "geometry", preset: "rect", text: "" } }]);
+  const shape = session.snapshot().metadata.presentation!.objects.find(item => item.kind === "geometry")!;
+  await mount(page, session.serialize());
+  session.dispose();
+  const canvas = frame(page), slide = canvas.locator('[data-node-id="' + last.rootNodeId + '"]');
+  await expect(slide.locator("svg")).toHaveCount(0);
+  await page.getByRole("navigation", { name: "幻灯片与对象导航" }).locator(".slide-list button").last().click();
+  await expect(slide).toBeVisible();
+  await expect(slide.locator("svg").first()).toBeVisible();
+  await page.evaluate(({ nodeId, geometry }) => {
+    window.presentationEditorHost.view!.perform([{ op: "setPresentationGeometry", nodeId, geometry }]);
+  }, { nodeId: shape.nodeId, geometry: { ...geometry, x: 60 } });
+  await settled(page);
+  await expect(slide.locator('[data-node-id="' + shape.nodeId + '"]')).toHaveCSS("left", "80px");
+  expect(await page.evaluate(() => window.presentationEditorHost.view!.layout().pages.length)).toBe(28);
+  expect(await page.evaluate(() => window.presentationEditorHost.errors)).toEqual([]);
+});
+
+test("presentation object geometry changes keep unchanged image resources available", async ({ page }) => {
+  const files = importPptx(readFileSync("examples/pptx/07-images.pptx"), { documentId: "presentation-image-reuse" });
+  await mount(page, files);
+  const image = frame(page).locator('[data-office-kind="image"] img').filter({ visible: true }).first();
+  await expect(image).toBeVisible();
+  const { id, url } = await image.evaluate(node => ({
+    id: node.closest<HTMLElement>('[data-office-kind="image"]')!.dataset.nodeId!,
+    url: (node as HTMLImageElement).src,
+  }));
+  await page.evaluate(id => {
+    const { view, session } = window.presentationEditorHost, attrs = session!.getNode(id)!.attributes;
+    view!.perform([{ op: "setPresentationGeometry", nodeId: id, geometry: {
+      x: Number(attrs["data-office-x"]) + 10, y: Number(attrs["data-office-y"]),
+      width: Number(attrs["data-office-width"]), height: Number(attrs["data-office-height"]),
+      rotation: Number(attrs["data-office-rotation"] ?? 0), flipH: attrs["data-office-flip-h"] === "true",
+      flipV: attrs["data-office-flip-v"] === "true",
+    } }]);
+  }, id);
+  await settled(page);
+  expect(await image.getAttribute("src")).toBe(url);
+  expect(await image.evaluate(async node => {
+    await (node as HTMLImageElement).decode();
+    return (node as HTMLImageElement).naturalWidth;
+  })).toBeGreaterThan(0);
+});
 
 test("normal view switches one canvas with live thumbnails and keyboard navigation without editing the document", async ({ page, browserName }) => {
   const files = importPptx(new Uint8Array(readFileSync("examples/pptx/13-multi-slide.pptx")), { documentId: "normal-view" });
@@ -81,6 +133,26 @@ test("native PPT text typing, paragraphs, formatting and empty shapes keep sourc
   await page.getByRole("button",{name:"完成输入",exact:true}).click();await page.getByRole("button",{name:"形状",exact:true}).click();await settled(page);await page.getByRole("button",{name:"编辑文字",exact:true}).click();await frame(page).getByRole("textbox").pressSequentially("空形状");await settled(page);
   expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).toContain("空形状");expect(await page.evaluate(()=>window.presentationEditorHost.errors)).toEqual([]);
   expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).not.toMatch(/contenteditable|sdk-ppt|data-sdk-/);
+});
+
+test("editing a Chinese presentation reuses glyph probes and keeps current font diagnostics", async ({ page }) => {
+  await mount(page, importPptx(readFileSync("examples/pptx/13-multi-slide.pptx"), { documentId: "ppt-font-probe-reuse" }));
+  const result = await page.evaluate(async () => {
+    const { view, session, errors } = window.presentationEditorHost;
+    const iframe = view!.element.shadowRoot!.querySelector<HTMLIFrameElement>("iframe[data-sdk-presentation-canvas]")!;
+    const win = iframe.contentWindow as Window & typeof globalThis;
+    const context = win.CanvasRenderingContext2D.prototype, read = context.getImageData;
+    const before = view!.layout().fonts;
+    let readbacks = 0;
+    context.getImageData = function (...args: Parameters<typeof read>) { readbacks++; return read.apply(this, args); };
+    try {
+      view!.perform([{ op: "setSlideProperties", slideId: view!.activeSlide(), changes: { name: "编辑后的页名" } }]);
+      await view!.ready;
+      return { readbacks, before, after: view!.layout().fonts, revision: session!.snapshot().manifest.revision, errors };
+    } finally { context.getImageData = read; }
+  });
+  expect(result.before.length).toBeGreaterThan(0);
+  expect(result).toMatchObject({ readbacks: 0, after: result.before, revision: 1, errors: [] });
 });
 
 test("new and imported notes edit the registered story through the same undo boundary",async({page})=>{

@@ -1,5 +1,6 @@
 export { decorate, mountDocumentPreview, mountPreview, packagePath } from "./preview.js";
 export type { DocumentPreview, DocumentPreviewOptions } from "./preview.js";
+export { presentationThumbnailSource } from "./print.js";
 export type {
   WorkbookPreview,
   WorkbookPreviewInput,

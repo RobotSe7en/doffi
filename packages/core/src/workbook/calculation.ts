@@ -10,7 +10,7 @@ import { currentWorkbookModel, workbookSource } from "./source.js";
 import type { ChunkIndex } from "./chunk-index.js";
 import { checkLimit, freeze } from "../document/validation.js";
 import { DocumentError } from "../errors.js";
-import { compareWorkbooks } from "./source-changes.js";
+import { workbookCalculationChanges } from "./source-changes.js";
 import { registerWorkbookCalculation } from "./calculation-source.js";
 
 export const WORKBOOK_CALCULATION_VERSION = "doffi-scalar-1";
@@ -181,7 +181,7 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
       let calculatedValues = new Map<string, ScalarResolved>();
       const dirty = new Set<string>(), changedContext = JSON.stringify(calculationContext) !== contextKey;
       if (graph && graph.namespace === namespace && graph.model.snapshot().manifest.documentId === manifest.documentId) {
-        const changes: readonly WorkbookRangeChange[] = graph.model === model ? [] : compareWorkbooks(graph.model, model).changedRanges;
+        const changes: readonly WorkbookRangeChange[] = graph.model === model ? [] : workbookCalculationChanges(graph.model, model);
         const queue = [...changes];
         if (!sameTopology || changedLocale || graph.volatile) for (const record of records.values()) {
           const old = graph.records.get(record.key);
@@ -190,6 +190,10 @@ export function createWorkbookCalculator(source: WorkbookModel | (() => Workbook
         for (let cursor = 0; cursor < queue.length; cursor++) {
           step(); const changed = queue[cursor]!;
           for (const owner of reverse.query({ sheetId: changed.sheetId, ...changed.range }, step)) if (!dirty.has(owner)) { dirty.add(owner); const record = records.get(owner)!; queue.push({ sheetId: record.location.sheetId, range: { from: record.location, to: record.location } }); }
+        }
+        if (sameTopology && !dirty.size) {
+          reused = records.size;
+          return publish(next, values);
         }
         if (sameTopology) {
           // A completed batch contains every record of this identical table.

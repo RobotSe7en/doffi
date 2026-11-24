@@ -6,7 +6,7 @@ import { ownViewStyle, ownViewAttribute } from "./view-nodes.js";
  * their own writing direction and UTF-16 order. All changes are view-owned. */
 export function composeWordTableBidi(document: Document, model: ContentDocumentModel): void {
   const word = model.snapshot().metadata.word;
-  if (!word) return;
+  if (!word?.tables.length) return;
   const css = new SourceStyleResolver(
       model.snapshot().styles.map((sheet) => sheet.css),
       DEFAULT_DOCUMENT_READ_LIMITS,
