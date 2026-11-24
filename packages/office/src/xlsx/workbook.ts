@@ -5,6 +5,7 @@ import type { XmlNode } from "../ooxml/xml.js";
 import type { OpcPackage } from "../ooxml/package.js";
 import { attributes, boolean, integer, one, spreadsheetText, value } from "./values.js";
 import type { PrintNames } from "./print.js";
+import { excelRootAttributes, excelWorkbookContent, readExcelCalcFeatures } from "./excel-metadata.js";
 
 export interface NativeSheet {
   readonly part: string;
@@ -30,6 +31,7 @@ function extension(root: XmlNode): void {
   if (extensions.length > 1) unsupported(list);
   for (const item of extensions) {
     attributes(item, ["uri"]);
+    if (readExcelCalcFeatures(item)) continue;
     if (value(item, "uri") !== "{7626C862-2A13-11E5-B345-FEFF819CDC9F}") unsupported(item);
     check(item, ["extCalcPr"], "http://schemas.libreoffice.org/");
     const settings = one(item, "extCalcPr", "http://schemas.libreoffice.org/");
@@ -71,9 +73,10 @@ export function readWorkbook(opc: OpcPackage): NativeWorkbook {
   const part = opc.related("", "officeDocument");
   if (!part) fail({ part: "_rels/.rels", name: "Relationships" }, "The package has no workbook relationship.");
   if (opc.contentType(part) !== "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml") unsupported({ part, name: "workbook", uri: S, attrs: new Map(), namespaces: {}, content: [] }, "The native input is not an ordinary XLSX workbook.");
-  const root = opc.read(part);
-  if (root.uri !== S || root.name !== "workbook") fail(root, "The workbook root is invalid.");
-  attributes(root, []);
+  const source = opc.read(part);
+  if (source.uri !== S || source.name !== "workbook") fail(source, "The workbook root is invalid.");
+  excelRootAttributes(source);
+  const root = excelWorkbookContent(source);
   check(root, ["fileVersion", "workbookPr", "workbookProtection", "bookViews", "sheets", "definedNames", "calcPr", "extLst"], S);
   extension(root); protection(one(root, "workbookProtection"));
   const props = one(root, "workbookPr"), calculation = one(root, "calcPr"), views = one(root, "bookViews"), sheetsRoot = one(root, "sheets");

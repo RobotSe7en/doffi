@@ -5,6 +5,7 @@ import type { OpcPackage } from "../ooxml/package.js";
 import { address, attributes, boolean, integer, number, one, range, spreadsheetText, value } from "./values.js";
 import { readPrint } from "./print.js";
 import type { NativeSheet } from "./workbook.js";
+import { excelRootAttributes } from "./excel-metadata.js";
 
 export interface CellStyleReference { readonly cssClass: string; readonly numberFormatId: string }
 export interface SheetStyles {
@@ -78,8 +79,15 @@ function hyperlinks(root: XmlNode, opc: OpcPackage): WorkbookHyperlink[] {
  * header tree also carries bounded R3-07 table/rule/object references. */
 export function readSheet(root: XmlNode, source: NativeSheet, rows: WorkbookSheet["rowDimensions"], opc: OpcPackage, styles: SheetStyles): WorkbookSheet {
   if (root.uri !== S || root.name !== "worksheet") fail(root, "The worksheet root is invalid.");
-  attributes(root, []);
-  check(root, ["sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData", "autoFilter", "mergeCells", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"], S);
+  excelRootAttributes(root, true);
+  check(root, ["sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData", "autoFilter", "mergeCells", "phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"], S);
+  const phonetic = one(root, "phoneticPr");
+  if (phonetic) {
+    // Excel writes sheet defaults even when no cell has phonetic content.
+    attributes(phonetic, ["fontId", "type"]); check(phonetic, [], S);
+    integer(phonetic, "fontId");
+    if (value(phonetic, "type") !== "noConversion") unsupported(phonetic, "Worksheet phonetic conversion is not supported.");
+  }
   const format = one(root, "sheetFormatPr"), properties = one(root, "sheetPr"), dimension = one(root, "dimension"), views = one(root, "sheetViews"), mergeCells = one(root, "mergeCells");
   if (dimension) { attributes(dimension, ["ref"]); check(dimension, [], S); range(value(dimension, "ref") ?? "", dimension); }
   if (format) {

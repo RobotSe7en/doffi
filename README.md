@@ -61,7 +61,7 @@ SDK 管理文档、选区、批注、候选和历史。宿主提供身份、授�
 
 Excel 编辑阶段已通过最终源的日常与容量验收，覆盖一万行、20 万实际单元格、2 万公式及固定资源下的四引擎读取／编辑。范围与证据见[读取验收](docs/workbook-reading-acceptance.md)、[编辑验收矩阵](docs/workbook-editing-acceptance.md)及 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。
 
-外部 Office 验收使用固定的 LibreOffice 25.8.1.1。已有 Excel 网页版名称语义观测仅适用于所记录的案例；Word／PowerPoint／WPS 尚未实机验证，删除合并区域首行／首列的 Excel 对照验收仍按用户决定延期。R1-15 达智集成验证延期，R1-16 的宿主验收仍有未完成项。正式宿主存储、多人实时共同编辑与发布准备见[整体计划](docs/implementation-plan.md)。
+自动外部 Office 验收使用固定的 LibreOffice 25.8.1.1。[macOS 桌面 Office 抽样](docs/native-office-macos-acceptance.md)记录 Word、PowerPoint 和 Excel 的实际编辑、重存、已知差异，以及删除合并区域首行／首列的 Excel 对照。Excel 网页版名称语义观测仅适用于所记录的案例。WPS 尚未实机验证。R1-15 达智集成验证延期，R1-16 的宿主验收仍有未完成项。正式宿主存储、多人实时共同编辑与发布准备见[整体计划](docs/implementation-plan.md)。
 
 ## 快速开始
 

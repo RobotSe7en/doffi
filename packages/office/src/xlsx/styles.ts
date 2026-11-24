@@ -15,6 +15,7 @@ import { fontDeclarations } from "./font.js";
 import { alignmentDeclarations, borderDeclarations, fillDeclarations } from "./appearance.js";
 import type { CellStyleReference, SheetStyles } from "./sheet.js";
 import type { RichTextStyles } from "./strings.js";
+import { excelRootAttributes, readExcelStyleDefaults } from "./excel-metadata.js";
 
 const groups = ["Font", "Fill", "Border", "Alignment", "NumberFormat", "Protection"] as const;
 type FormatGroup = typeof groups[number];
@@ -69,7 +70,8 @@ export class XlsxStyles implements SheetStyles, RichTextStyles {
     this.fallbackNode = { part: part ?? workbookPart, name: "xf", uri: S, attrs: new Map(), namespaces: {}, content: [] };
     if (root) {
       if (root.uri !== S || root.name !== "styleSheet" || opc.contentType(part!) !== "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml") fail(root, "The native style part is invalid.");
-      attributes(root, []); check(root, ["numFmts", "fonts", "fills", "borders", "cellStyleXfs", "cellXfs", "cellStyles", "dxfs", "tableStyles", "colors"], S);
+      excelRootAttributes(root); check(root, ["numFmts", "fonts", "fills", "borders", "cellStyleXfs", "cellXfs", "cellStyles", "dxfs", "tableStyles", "colors", "extLst"], S);
+      readExcelStyleDefaults(one(root, "extLst"));
     }
     this.colors = new SpreadsheetColors(one(root, "colors"), this.theme.colors);
     this.addRule("xlsx-theme", { ...this.theme.css, ...this.colors.css });

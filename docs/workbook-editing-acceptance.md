@@ -2,7 +2,7 @@
 
 本页将 R3-09～16 的已声明范围对应到实现和可复现检查，供完整阶段审查使用。实现核对及恰好两位完整阶段独立审查、问题修复复核已完成；阶段验收与合并状态以 [PR #31](https://github.com/RobotSe7en/doffi/pull/31) 同一最终 HEAD 的日常 CI 和 `workbook-scale` 为准，全部通过后才能合并。它不包括 R3-17～20 的原生 XLSX、PDF／PNG、Node 输出和独立打包闭环。
 
-唯一延期项是用户于 2026-11-09 明确暂缓的“删除合并区域首行／首列”的 Excel 对照。当前缩小行为及 Calc 差异保留，Excel 兼容性未验证；其他门槛保持。名称求值另有[实际 Excel 网页版观测](evidence/excel-web-name-semantics/README.md)，不得将这份观测推广为 Excel 结构编辑或 WPS 验收。
+此前延期的“删除合并区域首行／首列”已于 2026-11-24 补做[桌面 Excel 实机对照](native-office-macos-acceptance.md#删除合并区域首行或首列)。合并缩小、左上格内容删除及公式引用与现有事务一致，原 Calc 差异保留。名称求值另有[实际 Excel 网页版观测](evidence/excel-web-name-semantics/README.md)，各项结果限于所记录样例。
 
 ## 要求与覆盖
 
