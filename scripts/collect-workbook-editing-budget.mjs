@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
+import { workbookCapacityCpuTopology } from './workbook-capacity-resources.mjs';
 
 const { values } = parseArgs({ options: { output: { type: 'string' }, record: { type: 'boolean' } } });
 if (Boolean(values.output) === Boolean(values.record)) throw Error('Use exactly one of --record or --output <file>.');
@@ -58,9 +59,10 @@ for (const browser of ['chromium', 'firefox', 'webkit', 'legacy-chromium']) {
   assert.deepEqual(measurement.audit.hostUsable, { type: 'number', value: 42 });
   runs.push({ browser, measurement, resources });
 }
+const topology = workbookCapacityCpuTopology(runs[0].resources);
 for (const run of runs) {
   assert.deepEqual(run.resources.fontFiles, runs[0].resources.fontFiles); assert.equal(run.resources.fontListSha256, runs[0].resources.fontListSha256);
-  assert.equal(run.resources.cpuSet, runs[0].resources.cpuSet); assert.deepEqual(run.resources.os.reportedCpuTopology, runs[0].resources.os.reportedCpuTopology);
+  assert.deepEqual(workbookCapacityCpuTopology(run.resources), topology, run.browser + ' must use an equivalent CPU topology.');
 }
 const report = { scope: 'R3-09–16 fixed-resource mounted editing, current dependent results and 100-step history subset; other stage gates are separate.',
   source: { path: source, sha256: digest(source), generator: 'scripts/generate-workbook-editing-scale.py', generatorSha256: digest('scripts/generate-workbook-editing-scale.py'),

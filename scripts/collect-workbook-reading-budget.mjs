@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
+import { workbookCapacityCpuTopology } from './workbook-capacity-resources.mjs';
 const { values: outputOptions } = parseArgs({ options: { record: { type: 'boolean' }, output: { type: 'string' } } });
 if (Boolean(outputOptions.record) === Boolean(outputOptions.output)) throw Error('Use exactly one of --record or --output <file> to save verified evidence.');
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -46,11 +47,10 @@ for (const browser of ['chromium', 'firefox', 'webkit', 'legacy-chromium']) {
   runs.push({ browser, measurement, resources });
 }
 const fonts = runs[0].resources.fontFiles;
+const topology = workbookCapacityCpuTopology(runs[0].resources);
 for (const run of runs) {
   assert.deepEqual(run.resources.fontFiles, fonts); assert.equal(run.resources.fontListSha256, runs[0].resources.fontListSha256);
-  assert.equal(run.resources.cpuSet, runs[0].resources.cpuSet);
-  assert.equal(run.resources.os.reportedCpuTopology.length, 4);
-  assert.deepEqual(run.resources.os.reportedCpuTopology, runs[0].resources.os.reportedCpuTopology);
+  assert.deepEqual(workbookCapacityCpuTopology(run.resources), topology, run.browser + ' must use an equivalent CPU topology.');
 }
 const report = { scope: 'R3-08 fixed-resource reading performance subset; not the complete XLSX reading gate.',
   method: 'docs/workbook-reading-budget.md', source: { path: sourcePath, sha256: digest(sourcePath), generator: 'scripts/generate-xlsx-fixtures.py', generatorSha256: digest('scripts/generate-xlsx-fixtures.py') },

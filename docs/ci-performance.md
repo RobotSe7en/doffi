@@ -48,7 +48,7 @@ gh workflow run ci.yml --ref <branch>
 
 阶段 PR 显式加上 `stage-acceptance` 标签，或手动运行 CI 并开启 `stage_acceptance`。最终 HEAD 必须同时通过全部日常检查和 `workbook-scale`，各分片必须实际成功。标签保留期间的新提交不自动重跑；集中修复完成后重新发起一次，旧 HEAD 的结果不能代替。
 
-原生 XLSX 参考、输出和容量单元检查由一个 job 执行。Chromium、Firefox、WebKit 和旧版 Chromium 各用独立 runner 执行公开来源／生产者矩阵及关键大表集成。每个浏览器依次独占执行固定资源读取和编辑，使用四逻辑 CPU、8 GiB、无交换。保留四引擎合计 128 项公开读取、20 万实际单元格、2 万公式、40 块，以及首屏、交互、DOM、内存和取消门槛。[汇总脚本](../scripts/workbook-scale-acceptance.mjs)核对同一最终提交上所有分片的实际执行、当前包摘要和资源条件，成功后写入验收记录。
+原生 XLSX 参考、输出和容量单元检查由一个 job 执行。Chromium、Firefox、WebKit 和旧版 Chromium 各用独立 runner 执行公开来源／生产者矩阵及关键大表集成。每个浏览器依次独占执行固定资源读取和编辑，使用四逻辑 CPU、8 GiB、无交换。汇总器核对各 runner 的核心及同核线程分组，原始 CPU 编号随各自资源记录保存。保留四引擎合计 128 项公开读取、20 万实际单元格、2 万公式、40 块，以及首屏、交互、DOM、内存和取消门槛。[汇总脚本](../scripts/workbook-scale-acceptance.mjs)核对同一最终提交上所有分片的实际执行、当前包摘要和资源条件，成功后写入验收记录。
 
 ```sh
 node scripts/install-acceptance-fonts.mjs --system-fonts
