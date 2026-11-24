@@ -33,6 +33,7 @@ import { Icon } from "./icons.js";
 import { openWorkbookFile } from "./open-workbook.js";
 import type { HostedWorkbook, OpenedWorkspaceDocument } from "./open-workbook.js";
 import { WorkbookPane } from "./WorkbookPane.js";
+import { SlideShow } from "./SlideShow.js";
 import { WorkbookPrintOptions } from "./WorkbookPrintOptions.js";
 import type { WorkbookSelectedCells } from "./WorkbookPrintOptions.js";
 import type { WorkbookOutputOptions, WorkbookOutputResult } from "./workbook-output.js";
@@ -95,6 +96,7 @@ export function App() {
   const workbookEditor = useRef<WorkbookRemoteEditorView>(undefined);
   const [changingMode, setChangingMode] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [slideShowStartId, setSlideShowStartId] = useState<string>();
   const [commentsVisible, setCommentsVisible] = useState(true);
   const [pageCount, setPageCount] = useState(0);
   const [files, setFiles] = useState(examples);
@@ -307,6 +309,7 @@ export function App() {
         lastWorkbookPane.current = document;
         setOfficeTab("开始");
         setEditing(false);
+        setZoom(1);
         setNativeCommands([]);
         setTextFormat({ enabled: false });
         setHome(false);
@@ -801,10 +804,31 @@ export function App() {
   }
   function changeZoom(value: number): void {
     try {
-      (isPresentation ? presentationRef.current : workbenchRef.current)?.setZoom(value);
+      if (workbook?.pendingInput) return;
+      if (!workbook) (isPresentation ? presentationRef.current : workbenchRef.current)?.setZoom(value);
       setZoom(value);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "缩放失败。");
+    }
+  }
+  function startSlideShow(fromCurrent: boolean): void {
+    const editor = presentationRef.current?.editor;
+    const slides = session?.snapshot().metadata.presentation?.slides;
+    if (!editor || !slides?.length) return;
+    try {
+      editor.finishInput();
+      const start = fromCurrent ? editor.activeSlide() : (slides.find(slide => !slide.hidden) ?? slides[0]!).slideId;
+      setSlideShowStartId(start);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法开始放映。");
+    }
+  }
+  function fitSlide(): void {
+    try {
+      const editor = presentationRef.current?.editor;
+      if (editor) setZoom(editor.fitSlide());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "适应窗口失败。");
     }
   }
   async function changeEditing(value: boolean): Promise<void> {
@@ -893,6 +917,9 @@ export function App() {
   }
   const history = workbook ? workbook.session.state().history : session?.history();
   const actions: OfficeActions = {
+    fitSlide: { run: fitSlide, disabled: !isPresentation || !session || !pageCount },
+    slideShowFromStart: { run: () => startSlideShow(false), disabled: !isPresentation || !session || !pageCount },
+    slideShowFromCurrent: { run: () => startSlideShow(true), disabled: !isPresentation || !session || !pageCount },
     copy: {
       run: () => clipboard("copy"),
       disabled: !textFormat.enabled || !textFormat.hasSelection,
@@ -1361,6 +1388,7 @@ export function App() {
             onLayout={changeLayout}
             zoom={zoom}
             onZoom={changeZoom}
+            enableWorkbookZoom={!workbook?.pendingInput}
           />
         </div>
         <div className="workspace-feedback">
@@ -1533,6 +1561,7 @@ export function App() {
               document={(candidate?.document ?? workbook ?? lastWorkbookPane.current)!}
               preparing={!workbook}
               activation={candidate}
+              zoom={workbook ? zoom : 1}
               onEditor={(document, view) => {
                 if (activeDocument.current === document) {
                   workbookEditor.current = view;
@@ -1591,6 +1620,9 @@ export function App() {
             onError={(reason) => setError(reason.message)}
           />
         )}
+        {isPresentation && session && slideShowStartId && (
+          <SlideShow session={session} startId={slideShowStartId} onClose={() => setSlideShowStartId(undefined)} />
+        )}
         {model && session && !isPresentation && (
           <DocumentWorkbench
             session={session}
@@ -1641,6 +1673,7 @@ export function App() {
                 <button
                   aria-label="页面视图"
                   title="页面视图"
+                  aria-pressed={layout === "pages"}
                   onClick={() => changeLayout("pages")}
                 >
                   <Icon name="file" size={14} />
@@ -1648,33 +1681,52 @@ export function App() {
                 <button
                   aria-label="连续视图"
                   title="连续视图"
+                  aria-pressed={layout === "continuous"}
                   onClick={() => changeLayout("continuous")}
                 >
                   <Icon name="globe" size={14} />
                 </button>
+                {layout === "pages" && pageCount > 1 && (
+                  <form className="page-navigation" aria-label="转到页面" onSubmit={event => {
+                    event.preventDefault();
+                    const page = Number(new FormData(event.currentTarget).get("page"));
+                    void workbenchRef.current?.goToPage(page).catch(reason => setError(reason.message));
+                  }}>
+                    <input name="page" type="number" aria-label="目标页码" required min={1} max={pageCount} defaultValue={1} />
+                    <button type="submit">转到</button>
+                  </form>
+                )}
               </>
             )}
-            <span className="zoom-controls" title={workbook ? "工作簿缩放尚未实现" : undefined}>
+            {isPresentation && <>
+              <button type="button" aria-label="幻灯片适应窗口" title="幻灯片适应窗口"
+                disabled={loading || actions.fitSlide?.disabled} onClick={fitSlide}>适应窗口</button>
+              <button type="button" aria-label="从当前幻灯片放映" title="从当前幻灯片放映"
+                disabled={loading || actions.slideShowFromCurrent?.disabled} onClick={actions.slideShowFromCurrent?.run}>
+                <Icon name="slides" size={14} />
+              </button>
+            </>}
+            <span className="zoom-controls">
               <button
                 aria-label="缩小"
-                disabled={Boolean(workbook) || zoom <= 0.5}
+                disabled={loading || changingMode || Boolean(workbook?.pendingInput) || zoom <= 0.5}
                 onClick={() => changeZoom(Math.max(0.5, zoom - 0.25))}
               >
                 −
               </button>
               <input
                 aria-label="文档缩放"
-                disabled={Boolean(workbook)}
+                disabled={loading || changingMode || Boolean(workbook?.pendingInput)}
                 type="range"
                 min="50"
                 max="200"
-                step="25"
+                step="1"
                 value={zoom * 100}
                 onChange={(event) => changeZoom(Number(event.currentTarget.value) / 100)}
               />
               <button
                 aria-label="放大"
-                disabled={Boolean(workbook) || zoom >= 2}
+                disabled={loading || changingMode || Boolean(workbook?.pendingInput) || zoom >= 2}
                 onClick={() => changeZoom(Math.min(2, zoom + 0.25))}
               >
                 ＋

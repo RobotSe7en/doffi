@@ -1,6 +1,6 @@
 import { createWordCommentControls } from "./word-comment-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
-import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
+import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
 import { AnchorSchema, createOpaqueId, DocumentError } from "@doffi/core";
 import type {
@@ -43,6 +43,8 @@ export interface DocumentInteractionView {
   layout(): DocumentRenderReport | undefined;
   setMode(mode: DocumentInteractionMode): void;
   setZoom(zoom: number): void;
+  /** Scroll to a physical page in the current paginated view. */
+  goToPage(page: number): Promise<void>;
   focusAnnotation(annotationId: string): void;
   startAnnotation(selection?: DocumentSelection): void;
   /** Releases only this view; the supplied session remains owned by the host. */
@@ -986,6 +988,10 @@ export function mountDocumentInteraction(
     layout: () => (needsVisibleRender ? undefined : preview?.layout()),
     setMode,
     setZoom,
+    async goToPage(page) {
+      const report = await settled();
+      scrollToWordPage(stage, preview!.element, report, page, zoom);
+    },
     focusAnnotation,
     startAnnotation(chosen) {
       if (chosen) {

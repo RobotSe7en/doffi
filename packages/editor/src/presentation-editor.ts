@@ -77,6 +77,7 @@ export interface PresentationEditorView extends EditorCommandTarget {
   layout(): DocumentRenderReport;
   fonts(): readonly FontResolution[];
   setZoom(value: number): void;
+  fitSlide(): number;
   setMode(mode: "text" | "node" | "region"): void;
   focusAnnotation(annotationId: string): void;
   startAnnotation(): void;
@@ -1334,6 +1335,19 @@ export function mountPresentationEditor(
     regions?.paint();
     restoreZoomAnchor(stage, plane, zoom, anchor);
   }
+  function fitSlide(): number {
+    ensure();
+    const slide = currentSlide(), frame = preview.element.contentDocument;
+    const paper = slide && frame?.querySelector<HTMLElement>(`[data-office-kind="slide"][data-node-id="${CSS.escape(slide.rootNodeId)}"]`);
+    if (!paper?.offsetWidth || !paper.offsetHeight || definitionSurface || !stage.clientWidth || !stage.clientHeight)
+      throw new DocumentError("InvalidOperation", "请先回到幻灯片画布。");
+    const scale = Math.min((stage.clientWidth - 32) / paper.offsetWidth, (stage.clientHeight - 32) / paper.offsetHeight);
+    const next = Math.max(.5, Math.min(2, Math.floor(scale * 100) / 100));
+    setZoom(next);
+    stage.scrollLeft = 0;
+    stage.scrollTop = 0;
+    return next;
+  }
   const disposeInput = (): void => {
     input?.dispose();
     input = undefined;
@@ -1872,6 +1886,7 @@ export function mountPresentationEditor(
     },
     zoom: () => { ensure(); return zoom; },
     setZoom,
+    fitSlide,
     setMode,
     focusAnnotation,
     startAnnotation: () => commentControls.start(),

@@ -134,6 +134,7 @@ export interface OfficeRibbonProps {
   onLayout(value: "pages" | "continuous"): void;
   zoom: number;
   onZoom(value: number): void;
+  enableWorkbookZoom?: boolean;
 }
 
 /** Optional SDK chrome; hosts supply authorized file/export callbacks. */
@@ -152,6 +153,7 @@ export function OfficeRibbon({
   onLayout,
   zoom,
   onZoom,
+  enableWorkbookZoom = false,
 }: OfficeRibbonProps): ReactElement {
   const id = useId(),
     panelId = id + "-panel";
@@ -1251,6 +1253,13 @@ export function OfficeRibbon({
         <Group title="计算">{command("recalculate", "重新计算", "refresh", true)}</Group>
       </>
     );
+  else if (tab === "幻灯片放映" && kind === "presentation")
+    content = (
+      <Group title="开始放映">
+        {command("slideShowFromStart", "从头放映", "slides", true)}
+        {command("slideShowFromCurrent", "从当前页放映", "chevron", true)}
+      </Group>
+    );
   else if (tab === "视图")
     content = (
       <>
@@ -1280,14 +1289,16 @@ export function OfficeRibbon({
             {command("library", "导航窗格", "panel")}
           </div>
         </Group>
-        {kind === "workbook" ? (
+        {kind === "workbook" && (
           <Group title="窗口">
             {command("freezePanes", "冻结窗格", "grid", true)}
             {command("unfreezePanes", "取消冻结", "grid", true)}
           </Group>
-        ) : (
+        )}
+        {(kind !== "workbook" || enableWorkbookZoom) && (
           <Group title="缩放">
             <Tool label="100%" icon="search" large disabled={busy} run={() => onZoom(1)} />
+            {kind === "presentation" && actions.fitSlide && command("fitSlide", "适应窗口", "slides", true)}
             <select
               aria-label="预览缩放"
               value={zoom}
@@ -1299,8 +1310,11 @@ export function OfficeRibbon({
                   {value * 100}%
                 </option>
               ))}
+              {![0.5, 0.75, 1, 1.25, 1.5, 2].includes(zoom) && (
+                <option value={zoom}>{Math.round(zoom * 100)}%</option>
+              )}
             </select>
-            <span className="view-description">{layout === "pages" ? "打印布局" : "连续阅读"}</span>
+            {kind === "document" && <span className="view-description">{layout === "pages" ? "打印布局" : "连续阅读"}</span>}
           </Group>
         )}
         {kind === "presentation" && (

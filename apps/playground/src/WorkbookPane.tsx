@@ -5,29 +5,39 @@ import type { WorkbookRemoteEditorView, EditorCommandState, TextFormatState } fr
 import type { HostedWorkbook } from "./open-workbook.js";
 
 interface Mounted { readonly document: HostedWorkbook; readonly slot: HTMLDivElement; readonly editor: WorkbookRemoteEditorView; dispose(): void }
-export function WorkbookPane({ document: hosted, preparing, activation, onReady, onUpdate, onError, onEditor, onCommands, onFormat }: {
-  document: HostedWorkbook; preparing: boolean; activation?: object | undefined;
+export function WorkbookPane({ document: hosted, preparing, activation, zoom, onReady, onUpdate, onError, onEditor, onCommands, onFormat }: {
+  document: HostedWorkbook; preparing: boolean; activation?: object | undefined; zoom: number;
   onEditor(document: HostedWorkbook, editor: WorkbookRemoteEditorView): void; onCommands(document: HostedWorkbook, commands: readonly EditorCommandState[]): void; onFormat(document: HostedWorkbook, state: TextFormatState): void;
   onReady(document: HostedWorkbook): void; onUpdate(document: HostedWorkbook): void; onError(document: HostedWorkbook, error: Error): void;
 }) {
   const container = useRef<HTMLDivElement>(null), active = useRef<Mounted>(undefined), pending = useRef<Mounted>(undefined), changing = useRef(false);
   const callbacks = useRef({ onReady, onUpdate, onError, onEditor, onCommands, onFormat }); callbacks.current = { onReady, onUpdate, onError, onEditor, onCommands, onFormat };
   const hidden = useRef(preparing); hidden.current = preparing;
+  const gridZoom = useRef(zoom); gridZoom.current = zoom;
   const resize = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     const element = container.current!;
     resize.current = async () => {
       const current = active.current; if (!current || changing.current || hidden.current || !element.clientWidth) return;
+      const scale = gridZoom.current;
       try {
-        const widthPt = Math.max(180, element.clientWidth * .75 - 49.5), viewport = current.editor.layout().viewport;
-        if (Math.abs(viewport.widthPt - widthPt) > .5) await current.editor.setViewport({ ...viewport, widthPt });
-      } catch (error) { if (active.current === current && !changing.current) callbacks.current.onError(current.document, error instanceof Error ? error : new Error("工作簿尺寸更新失败。")); }
+        const widthPt = Math.max(48, (element.clientWidth - 2) * .75 / scale - 48), heightPt = 450 / scale;
+        const viewport = current.editor.layout().viewport;
+        if (Math.abs(viewport.widthPt - widthPt) > .5 || Math.abs(viewport.heightPt - heightPt) > .5)
+          await current.editor.setViewport({ ...viewport, widthPt, heightPt });
+        if (active.current === current && !changing.current && gridZoom.current === scale)
+          current.slot.style.setProperty("--doffi-workbook-grid-zoom", String(scale));
+      } catch (error) {
+        if (active.current === current && !changing.current && gridZoom.current === scale
+          && !(error instanceof DocumentError && error.code === "OperationCancelled"))
+          callbacks.current.onError(current.document, error instanceof Error ? error : new Error("工作簿尺寸更新失败。"));
+      }
     };
     const observer = new ResizeObserver(() => { void resize.current(); });
     observer.observe(element);
     return () => { observer.disconnect(); pending.current?.dispose(); active.current?.dispose(); pending.current = active.current = undefined; };
   }, []);
-  useEffect(() => { if (!preparing) void resize.current(); }, [preparing]);
+  useEffect(() => { if (!preparing) void resize.current(); }, [preparing, zoom]);
   useEffect(() => {
     let cancelled = false; changing.current = true;
     if (active.current?.document === hosted) {

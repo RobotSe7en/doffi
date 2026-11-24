@@ -46,6 +46,33 @@ const status = (page: Page) => page.locator('.office-app');
 const upload = (page: Page) => page.getByLabel('打开文件', { exact: true }).filter({ visible: false });
 const formulaInput = (page: Page) => page.getByRole('textbox', { name: '单元格或公式输入', exact: true });
 
+test('Playground Excel zoom resizes the grid and keeps pointer selection and formula editing aligned', async ({ page }) => {
+  await upload(page).setInputFiles('examples/xlsx/01-values-text.xlsx');
+  await expect(status(page)).toHaveAttribute('data-revision', '0');
+  const address = page.getByRole('textbox', { name: '选择单元格或区域', exact: true });
+  const grid = page.frameLocator('iframe[title="工作簿只读预览"]');
+  const cells = grid.getByRole('gridcell');
+  const second = cells.nth(1);
+  const column = page.getByRole('columnheader', { name: 'B', exact: true });
+  const row = page.getByRole('rowheader', { name: '1', exact: true });
+  const zoomedCellWidth = async () => (await column.boundingBox())!.width;
+  await expect(second).toBeVisible();
+  const original = await zoomedCellWidth();
+  await page.getByRole('button', { name: '放大', exact: true }).click();
+  await expect.poll(async () => (await zoomedCellWidth()) / original).toBeGreaterThan(1.2);
+  const x = (await column.boundingBox())!, y = (await row.boundingBox())!;
+  await page.mouse.click(x.x + x.width / 2, y.y + y.height / 2);
+  await expect(address).toHaveValue('B1');
+  await expect(status(page)).toHaveAttribute('data-revision', '0');
+  await formulaInput(page).fill('=2*9');
+  await formulaInput(page).press('Control+Enter');
+  await expect(status(page)).toHaveAttribute('data-revision', '1');
+  await expect(second).toHaveText('18');
+  await page.getByRole('button', { name: '缩小', exact: true }).click();
+  await expect.poll(zoomedCellWidth).toBeCloseTo(original, 0);
+  await expect(address).toHaveValue('B1');
+});
+
 test('Playground exports the current revision as editable XLSX and a reopenable package from one Worker', async ({ page }) => {
   await upload(page).setInputFiles('examples/xlsx/09-classic-notes.xlsx');
   await expect(status(page)).toHaveAttribute('data-revision', '0', { timeout: 30_000 });

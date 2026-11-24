@@ -16,7 +16,7 @@ import { createWordMathControls } from "./word-math-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { bindWordSelectionScroll } from "./word-selection-scroll.js";
 import { showWordWhitespace } from "./word-marks.js";
-import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
+import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
 import {
@@ -182,6 +182,7 @@ export interface DocumentTextEditor {
   execute(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
   setZoom(zoom: number): void;
+  goToPage(page: number): Promise<void>;
   editStory(storyId?: string): void;
   selection(): DocumentSelection | undefined;
   clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
@@ -2611,6 +2612,12 @@ export function mountDocumentTextEditor(
     },
     formatState,
     setZoom,
+    async goToPage(page) {
+      await ready;
+      const report = await preview.settled();
+      resizePlane();
+      scrollToWordPage(stage, preview.element, report, page, zoom);
+    },
     editStory,
     selection() {
       const range = selectedRange();

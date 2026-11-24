@@ -305,6 +305,10 @@ a { color: var(--accent); }
 .workspace-footer { min-height: 28px; padding-block: 3px; background: #f5f7fa; color: #677a96; }
 .office-status-controls { display: flex; align-items: center; gap: 5px; }
 .office-status-controls>button { padding: 3px 7px; border-radius: 0; }
+.office-status-controls>button[aria-pressed=true] { background: #e2ebf7; color: #204775; }
+.page-navigation { display: flex; align-items: center; gap: 3px; }
+.page-navigation input { width: 44px; padding: 3px 4px; font: inherit; border: 1px solid #cbd5e3; border-radius: 4px; }
+.page-navigation button { padding: 3px 4px; }
 .zoom-controls { display: flex; align-items: center; gap: 4px; margin-left: 5px; color: #687d9b; font-size: 10px; }
 .zoom-controls>button { padding: 0 4px; font-size: 15px; }
 .zoom-controls input { appearance: none; width: 100px; height: 2px; background: #b9c5d7; accent-color: #185abd; }
@@ -324,3 +328,16 @@ a { color: var(--accent); }
 
 
 .word-office:has(.doffi-office-ribbon[data-collapsed=true]) .preview { --doffi-canvas-height: calc(100dvh - 140px); }
+
+.slide-show { margin: 0; padding: clamp(10px, 2vw, 24px); border: 0; color: #e9f0fb; background: #132033; }
+.slide-show[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 14px; width: 100%; max-width: none; height: 100dvh; max-height: none; }
+.slide-show::backdrop { background: #132033; }
+.slide-show-header, .slide-show-actions { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.slide-show-actions { justify-content: center; }
+.slide-show button { padding: 7px 13px; border: 1px solid #506485; border-radius: 6px; background: #263954; color: #fff; }
+.slide-show button:disabled { opacity: .42; }
+.slide-show-picture { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; }
+.slide-show-picture>p { position: absolute; margin: 0; text-align: center; }
+.slide-show-surface { position: relative; overflow: hidden; background: #fff; }
+.slide-show-surface[data-ready=false] { visibility: hidden; }
+.slide-show-surface>iframe { position: absolute; left: 0; top: 0; height: var(--slide-height)!important; pointer-events: none; transform: scale(var(--slide-scale, 1)); transform-origin: top left; }

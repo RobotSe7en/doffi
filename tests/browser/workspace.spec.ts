@@ -598,6 +598,58 @@ for (const file of ['04-styles-sections.docx', '05-long-page-break.docx']) {
   });
 }
 
+test("Word page navigation scrolls to measured paper in preview and editing", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("doffi:editing", "preview"));
+  await page.goto("/");
+  await page.getByLabel("打开文件", { exact: true }).filter({ visible: false }).setInputFiles("examples/docx/05-long-page-break.docx");
+  async function jump(title: string) {
+    const paper = page.frameLocator(`iframe[title="${title}"]`).locator(".sdk-paper").nth(2);
+    const viewport = page.locator(".preview .stage").filter({ visible: true }).first();
+    await expect(paper).toBeAttached();
+    const target = page.getByRole("spinbutton", { name: "目标页码" });
+    await target.fill("3");
+    await target.press("Enter");
+    await expect.poll(async () => Math.abs((await paper.boundingBox())!.y - (await viewport.boundingBox())!.y)).toBeLessThan(24);
+  }
+  await jump("文档只读预览");
+  await page.getByRole("button", { name: "编辑正文", exact: true }).click();
+  await jump("正文编辑");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
+  await expect(page.getByRole("button", { name: "撤销", exact: true })).toBeDisabled();
+});
+
+test("PowerPoint starts a read-only slide show from the current slide or the beginning", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("打开文件", { exact: true }).filter({ visible: false }).setInputFiles("examples/pptx/13-multi-slide.pptx");
+  const second = page.getByRole("button", { name: "2. Slide 2", exact: true });
+  await second.click();
+  await page.getByLabel("文档缩放", { exact: true }).fill("200");
+  await page.getByRole("button", { name: "幻灯片适应窗口" }).click();
+  await expect(page.getByLabel("文档缩放", { exact: true })).not.toHaveValue("200");
+  await expect(second).toHaveAttribute("aria-pressed", "true");
+  const dialog = page.getByRole("dialog", { name: "幻灯片放映" });
+  const visible = dialog.frameLocator('iframe[title="放映画布"]').locator('article>[data-office-kind="slide"]:visible');
+  const launch = page.getByRole("button", { name: "从当前幻灯片放映", exact: true });
+  await launch.click();
+  await expect(visible).toHaveCount(1);
+  await expect(visible).toHaveAttribute("data-node-id", "node-22");
+  await expect(dialog.getByRole("button", { name: "下一张" })).toBeDisabled();
+  await page.keyboard.press("ArrowLeft");
+  await expect(visible).toHaveAttribute("data-node-id", "node-8");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(launch).toBeFocused();
+  await expect(second).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("tab", { name: "幻灯片放映" }).click();
+  await page.getByRole("button", { name: "从头放映" }).click();
+  await expect(dialog.locator(".slide-show-surface")).toHaveAttribute("data-ready", "true");
+  await expect(visible).toHaveAttribute("data-node-id", "node-8");
+  await page.keyboard.press("PageDown");
+  await expect(visible).toHaveAttribute("data-node-id", "node-22");
+  await dialog.getByRole("button", { name: "退出放映" }).click();
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
+});
+
 test('the SDK Office ribbon owns its styles, preview behavior and independent instance navigation', async ({ page }) => {
   const bundle = await build({ configFile: false, logLevel: 'silent', define: { 'process.env.NODE_ENV': '"production"' }, resolve: { alias: { react: fileURLToPath(new URL('../../apps/playground/node_modules/react', import.meta.url)), 'react-dom': fileURLToPath(new URL('../../apps/playground/node_modules/react-dom', import.meta.url)) } }, build: { write: false, target: 'es2022', lib: { entry: fileURLToPath(new URL('./fixtures/office-ribbon-host.ts', import.meta.url)), formats: ['es'] } } });
   const output = Array.isArray(bundle) ? bundle[0]!.output : 'output' in bundle ? bundle.output : [];
