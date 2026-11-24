@@ -1,13 +1,21 @@
 import { dailyCi } from '../../../tests/ci-mode.js';
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DocumentError, openDocument } from "@doffi/core";
-import { importXlsx } from "@doffi/office";
+import { createDocumentSession, DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, iterateWorkbookRows, openDocument, SourceStyleResolver } from "@doffi/core";
+import { exportXlsx, importXlsx } from "@doffi/office";
 import type { OfficeImportProgress, XlsxImportOptions } from "@doffi/office";
 import { readDocumentZip, writeOpcZip } from "../src/document-zip.js";
 
 const source = (name: string) => readFileSync(`examples/xlsx/${name}.xlsx`);
 const decoder = new TextDecoder(), encoder = new TextEncoder();
+const filterName = (reference: string, localSheetId?: number) =>
+  `<definedName name="_xlnm._FilterDatabase"${localSheetId === undefined ? "" : ` localSheetId="${localSheetId}"`}>${reference}</definedName>`;
+function workbookWithNames(...names: string[]): Uint8Array {
+  const files = new Map(readDocumentZip(source("12-multi-sheet-filter")));
+  const part = "xl/workbook.xml";
+  files.set(part, encoder.encode(decoder.decode(files.get(part)!).replace("</definedNames>", names.join("") + "</definedNames>")));
+  return writeOpcZip(files);
+}
 interface Expected { file: string; sheets: string[]; cellCount: number; formulaCount: number; values?: Record<string, number | string | boolean> }
 const expected = JSON.parse(readFileSync("examples/xlsx/expected.json", "utf8")).cases as Expected[];
 
@@ -46,6 +54,82 @@ describe("public native workbook import", () => {
       expect(openDocument(model.serialize(), { kind: "workbook" }).snapshot()).toEqual(snapshot);
     }
     expect(count).toBe(scale ? 2 : 30);
+  });
+  it("resolves an unscoped filter name by its qualified range without activating a filter", async () => {
+    const options = { documentId: "unscoped-filter" };
+    const original = openDocument(await importXlsx(source("12-multi-sheet-filter"), options), { kind: "workbook" });
+    // Overview has no auto-filter. Input has an active filter and is not the active tab.
+    for (const reference of ["'Overview'!$A$1:$B$3", "'Input'!$A$1:$B$3"]) {
+      const files = await importXlsx(workbookWithNames(filterName(reference)), options);
+      expect(openDocument(files, { kind: "workbook" }).snapshot()).toEqual(original.snapshot());
+    }
+  });
+  it("rejects conflicting or invalid filter names and keeps print names worksheet-scoped", async () => {
+    const options = { documentId: "invalid-filter" };
+    for (const names of [
+      [filterName("$A$1:$B$3")],
+      [filterName("Missing!$A$1:$B$3")],
+      [filterName("Overview!$A$1:B3")],
+      [filterName("Input!$A$1:$B$4")],
+      [filterName("Overview!$A$1:$B$3", 0)],
+      [filterName("Input!$A$1:$B$3", 1), filterName("Input!$A$1:$B$3")],
+      [filterName("Overview!$A$1:$B$3"), filterName("Input!$A$1:$B$3")],
+      ['<definedName name="_xlnm.Print_Area">Overview!$A$1:$B$3</definedName>'],
+    ]) {
+      await expect(importXlsx(workbookWithNames(...names), options)).rejects.toMatchObject({ code: "InvalidDocument" });
+    }
+    await expect(importXlsx(workbookWithNames(filterName("Overview!$A$1:Input!$B$3")), options))
+      .rejects.toMatchObject({ code: "UnsupportedFeature" });
+  });
+  it("preserves ordered Excel theme saturation and luminance transforms", async () => {
+    const files = new Map(readDocumentZip(source("12-multi-sheet-filter"))), part = "xl/theme/theme1.xml";
+    const xml = decoder.decode(files.get(part)!);
+    const transforms = '<a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/>';
+    const background = '<a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr">';
+    const edited = xml.replace(background, background + transforms);
+    expect(edited).not.toBe(xml);
+    files.set(part, encoder.encode(edited));
+    const model = openDocument(await importXlsx(writeOpcZip(files), { documentId: "ordered-theme-color" }), { kind: "workbook" });
+    const css = new SourceStyleResolver(model.snapshot().styles.map(style => style.css), DEFAULT_DOCUMENT_READ_LIMITS);
+    expect(css.specifiedClass("xlsx-theme-background-1")).toMatchObject({
+      "--office-fill-color-transforms": "tint 93000 satMod 150000 shade 98000 lumMod 102000",
+    });
+  });
+  it("retains row and column outlines alongside text with inactive phonetic settings through XLSX reopen", async () => {
+    const files = new Map(readDocumentZip(source("01-values-text")));
+    const sheetPart = "xl/worksheets/sheet1.xml", stringsPart = "xl/sharedStrings.xml";
+    const phonetic = '<phoneticPr fontId="1" type="noConversion"/>';
+    const sheet = decoder.decode(files.get(sheetPart)!).replace("<sheetPr>", '<sheetPr codeName="功能表">')
+      .replace("<sheetFormatPr ", '<sheetFormatPr outlineLevelRow="1" outlineLevelCol="2" ')
+      .replace("<sheetData>", '<cols><col min="2" max="2" outlineLevel="2" hidden="1"/><col min="3" max="3" collapsed="1"/></cols><sheetData>')
+      .replace('<row r="1">', '<row r="1" outlineLevel="1" hidden="1">')
+      .replace('<row r="2">', '<row r="2" outlineLevel="1" hidden="1">')
+      .replace('<row r="3">', '<row r="3" outlineLevel="1" collapsed="1">')
+      .replace("</sheetData>", "</sheetData>" + phonetic);
+    files.set(sheetPart, encoder.encode(sheet));
+    files.set(stringsPart, encoder.encode(decoder.decode(files.get(stringsPart)!).replaceAll("</si>", phonetic + "</si>")));
+    const options = { documentId: "imported-outlines" };
+    const model = openDocument(await importXlsx(writeOpcZip(files), options), { kind: "workbook" });
+    const metadata = model.snapshot().metadata.workbook.sheets[0]!;
+    expect(metadata.rowDimensions).toEqual([
+      { from: 0, to: 1, outlineLevel: 1, hidden: true },
+      { from: 2, to: 2, outlineLevel: 1, collapsed: true },
+    ]);
+    expect(metadata.columnDimensions).toEqual([
+      { from: 1, to: 1, unit: "characters", outlineLevel: 2, hidden: true },
+      { from: 2, to: 2, unit: "characters", collapsed: true },
+    ]);
+    const plain = openDocument(await importXlsx(source("01-values-text"), options), { kind: "workbook" });
+    expect([...iterateWorkbookRows(model, metadata.sheetId)]).toEqual([...iterateWorkbookRows(plain, metadata.sheetId)]);
+    const session = createDocumentSession(model);
+    try {
+      session.commit(session.prepare({ protocolVersion: 1, documentId: options.documentId, baseRevision: 0,
+        operations: [{ op: "editWorkbookAxis", sheetId: metadata.sheetId, axis: "row", action: "insert", index: 2, count: 1, formatSource: "after" }] }));
+      const { bytes } = await exportXlsx(session);
+      const reopened = openDocument(await importXlsx(bytes, options), { kind: "workbook" }).snapshot().metadata.workbook.sheets[0]!;
+      expect(reopened.rowDimensions).toEqual([metadata.rowDimensions[0], { from: 3, to: 3, outlineLevel: 1, collapsed: true }]);
+      expect(reopened.columnDimensions).toEqual(metadata.columnDimensions);
+    } finally { session.dispose(); }
   });
   it("rejects all 17 negative sources and late unmapped parts without exposing a partial package", async () => {
     const names = readdirSync("examples/xlsx/invalid").filter(name => name.endsWith(".xlsx")); expect(names).toHaveLength(17);

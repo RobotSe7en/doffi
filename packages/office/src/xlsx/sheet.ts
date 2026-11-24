@@ -6,6 +6,7 @@ import { address, attributes, boolean, integer, number, one, range, spreadsheetT
 import { readPrint } from "./print.js";
 import type { NativeSheet } from "./workbook.js";
 import { excelRootAttributes } from "./excel-metadata.js";
+import { validatePhoneticProperties } from "./strings.js";
 
 export interface CellStyleReference { readonly cssClass: string; readonly numberFormatId: string }
 export interface SheetStyles {
@@ -14,12 +15,19 @@ export interface SheetStyles {
   tabStyle(node: XmlNode): string;
 }
 
+function readOutline(node: XmlNode, dimension: Pick<WorkbookSheet["rowDimensions"][number], "outlineLevel" | "collapsed">): void {
+  const level = integer(node, "outlineLevel", 0, 7, 0);
+  if (level) dimension.outlineLevel = level;
+  if (boolean(node, "collapsed")) dimension.collapsed = true;
+}
+
 /** Only fixed row heights are source dimensions; automatic native heights are
  * layout caches. Rows without an explicit override inherit sheet defaults. */
 export function rowDimension(node: XmlNode, row: number, styles: SheetStyles): WorkbookSheet["rowDimensions"][number] | undefined {
   attributes(node, ["r", "spans", "s", "customFormat", "ht", "hidden", "customHeight", "outlineLevel", "collapsed", "thickTop", "thickBot", "ph"]);
-  if (integer(node, "outlineLevel", 0, 7, 0) || boolean(node, "collapsed") || boolean(node, "thickTop") || boolean(node, "thickBot") || boolean(node, "ph")) unsupported(node, "Worksheet outline or phonetic row properties are not supported.");
+  if (boolean(node, "thickTop") || boolean(node, "thickBot") || boolean(node, "ph")) unsupported(node, "Thick row spacing and phonetic display are not supported.");
   const result: WorkbookSheet["rowDimensions"][number] = { from: row, to: row };
+  readOutline(node, result);
   if (value(node, "customHeight") !== undefined && !boolean(node, "customHeight")) result.autoHeight = true;
   if (value(node, "hidden") !== undefined) result.hidden = boolean(node, "hidden");
   if (value(node, "ht") !== undefined) {
@@ -39,11 +47,12 @@ function columns(root: XmlNode, styles: SheetStyles): WorkbookSheet["columnDimen
     attributes(parent, []); check(parent, ["col"], S);
     for (const node of elements(parent, "col", S)) {
       attributes(node, ["min", "max", "width", "style", "hidden", "bestFit", "customWidth", "phonetic", "outlineLevel", "collapsed"]); check(node, [], S);
-      if (integer(node, "outlineLevel", 0, 7, 0) || boolean(node, "collapsed") || boolean(node, "phonetic") || boolean(node, "bestFit")) unsupported(node, "This worksheet column sizing or outline mode is not supported.");
+      if (boolean(node, "phonetic") || boolean(node, "bestFit")) unsupported(node, "Automatic column sizing and phonetic display are not supported.");
       if (value(node, "customWidth") !== undefined) boolean(node, "customWidth");
       const from = integer(node, "min", 1, 16384) - 1, to = integer(node, "max", 1, 16384) - 1;
       if (from > to) fail(node, "A worksheet column span is reversed.");
       const dimension: WorkbookSheet["columnDimensions"][number] = { from, to, unit: "characters" };
+      readOutline(node, dimension);
       if (value(node, "width") !== undefined) { dimension.width = number(node, "width"); if (dimension.width < 0 || dimension.width > 255) fail(node, "A column width exceeds native bounds."); }
       if (value(node, "hidden") !== undefined) dimension.hidden = boolean(node, "hidden");
       if (value(node, "style") !== undefined) Object.assign(dimension, styles.cell(integer(node, "style"), node));
@@ -81,23 +90,22 @@ export function readSheet(root: XmlNode, source: NativeSheet, rows: WorkbookShee
   if (root.uri !== S || root.name !== "worksheet") fail(root, "The worksheet root is invalid.");
   excelRootAttributes(root, true);
   check(root, ["sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData", "autoFilter", "mergeCells", "phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"], S);
-  const phonetic = one(root, "phoneticPr");
-  if (phonetic) {
-    // Excel writes sheet defaults even when no cell has phonetic content.
-    attributes(phonetic, ["fontId", "type"]); check(phonetic, [], S);
-    integer(phonetic, "fontId");
-    if (value(phonetic, "type") !== "noConversion") unsupported(phonetic, "Worksheet phonetic conversion is not supported.");
-  }
+  validatePhoneticProperties(one(root, "phoneticPr"));
   const format = one(root, "sheetFormatPr"), properties = one(root, "sheetPr"), dimension = one(root, "dimension"), views = one(root, "sheetViews"), mergeCells = one(root, "mergeCells");
   if (dimension) { attributes(dimension, ["ref"]); check(dimension, [], S); range(value(dimension, "ref") ?? "", dimension); }
   if (format) {
     attributes(format, ["baseColWidth", "defaultColWidth", "defaultRowHeight", "customHeight", "zeroHeight", "thickTop", "thickBottom", "outlineLevelRow", "outlineLevelCol"]); check(format, [], S);
-    if (boolean(format, "thickTop") || boolean(format, "thickBottom") || integer(format, "outlineLevelRow", 0, 7, 0) || integer(format, "outlineLevelCol", 0, 7, 0)) unsupported(format, "Worksheet outlines or thick row spacing are not supported.");
+    if (boolean(format, "thickTop") || boolean(format, "thickBottom")) unsupported(format, "Thick row spacing is not supported.");
+    integer(format, "outlineLevelRow", 0, 7, 0);
+    integer(format, "outlineLevelCol", 0, 7, 0);
     if (value(format, "customHeight") !== undefined) boolean(format, "customHeight");
   }
   if (properties) {
-    attributes(properties, ["filterMode", "published", "enableFormatConditionsCalculation", "syncHorizontal", "syncVertical", "syncRef", "transitionEvaluation", "transitionEntry"]);
+    attributes(properties, ["codeName", "filterMode", "published", "enableFormatConditionsCalculation", "syncHorizontal", "syncVertical", "syncRef", "transitionEvaluation", "transitionEntry"]);
     check(properties, ["tabColor", "pageSetUpPr"], S);
+    // A VBA code name can be present on an ordinary macro-free worksheet.
+    const codeName = value(properties, "codeName");
+    if (codeName !== undefined) spreadsheetText(codeName, properties, 31);
     if (boolean(properties, "transitionEvaluation") || boolean(properties, "transitionEntry") || !boolean(properties, "enableFormatConditionsCalculation", true)) unsupported(properties, "This worksheet calculation dialect is not supported.");
     for (const key of ["filterMode", "published", "syncHorizontal", "syncVertical"]) if (value(properties, key) !== undefined) boolean(properties, key);
     if (value(properties, "syncRef") !== undefined) address(value(properties, "syncRef")!, properties);

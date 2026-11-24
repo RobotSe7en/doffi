@@ -14,7 +14,7 @@ export interface NativeSheet {
   readonly name: string;
   readonly visibility: WorkbookSheet["visibility"];
   readonly printNames: PrintNames;
-  filterName?: WorkbookRange;
+  filterName?: { readonly range: WorkbookRange; readonly inferredScope: boolean };
 }
 export interface NativeWorkbook {
   readonly part: string;
@@ -117,6 +117,7 @@ export function readWorkbook(opc: OpcPackage): NativeWorkbook {
   const view = elements(views, "workbookView", S)[0], activeIndex = view ? integer(view, "activeTab", 0, sheets.length - 1, 0) : 0;
   if (sheets[activeIndex]!.visibility !== "visible") fail(root, "The active worksheet must be visible.");
   const names: WorkbookDefinedName[] = [], definitions = one(root, "definedNames"), seen = new Map<string, string>();
+  let unscopedFilterSeen = false;
   if (definitions) { attributes(definitions, []); check(definitions, ["definedName"], S); }
   for (const node of elements(definitions, "definedName", S)) {
     attributes(node, ["name", "localSheetId", "hidden", "comment", "function", "vbProcedure", "xlm"]);
@@ -125,10 +126,23 @@ export function readWorkbook(opc: OpcPackage): NativeWorkbook {
     // Native defined-name offsets use A1, not the selected cell or active tab;
     // see the independent pinned-Calc name-origin probes in scripts/.
     const name = spreadsheetText(value(node, "name") ?? "", node, 255), expression = "=" + text(node), origin = { row: 0, column: 0 }, ast = parseWorkbookFormula(expression, origin);
-    const index = value(node, "localSheetId") === undefined ? undefined : integer(node, "localSheetId", 0, sheets.length - 1), scope = index === undefined ? undefined : sheets[index]!;
-    const key = JSON.stringify([index ?? null, name.toUpperCase()]);
+    const index = value(node, "localSheetId") === undefined ? undefined : integer(node, "localSheetId", 0, sheets.length - 1);
+    const localScope = index === undefined ? undefined : sheets[index];
     if (name.startsWith("_xlnm.")) {
+      const filter = name === "_xlnm._FilterDatabase";
+      let inferredScope: NativeSheet | undefined;
+      if (filter && index === undefined) {
+        // Some producers write this marker at workbook scope. Its fixed reference
+        // identifies the worksheet even when the file omits localSheetId.
+        if (unscopedFilterSeen) fail(node, "A built-in worksheet name is repeated or conflicting.");
+        unscopedFilterSeen = true;
+        const target = ast.kind === "range" ? ast.from.sheet : ast.kind === "cell" || ast.kind === "axisRange" ? ast.sheet : undefined;
+        const sheetName = target?.toUpperCase();
+        inferredScope = sheets.find(sheet => sheet.name.toUpperCase() === sheetName);
+      }
+      const scope = localScope ?? inferredScope;
       if (!scope) fail(node, "A built-in worksheet name requires a local scope.");
+      const key = JSON.stringify([scope.sheetId, name.toUpperCase()]);
       let canonical: string;
       if (name === "_xlnm.Print_Area") {
         const areas = terms(ast).map(term => boundRange(term, scope, node)); canonical = JSON.stringify(areas);
@@ -144,16 +158,17 @@ export function readWorkbook(opc: OpcPackage): NativeWorkbook {
         }
         canonical = JSON.stringify([result.repeatRows ?? null, result.repeatColumns ?? null]);
         if (!seen.has(key)) Object.assign(scope.printNames, result);
-      } else if (name === "_xlnm._FilterDatabase") {
+      } else if (filter) {
         const range = boundRange(ast, scope, node); canonical = JSON.stringify(range);
-        if (!seen.has(key)) scope.filterName = range;
+        if (!seen.has(key)) scope.filterName = { range, inferredScope: index === undefined };
       } else unsupported(node, "This built-in defined name is not supported.");
       if (seen.has(key) && (name !== "_xlnm.Print_Titles" || seen.get(key) !== canonical)) fail(node, "A built-in worksheet name is repeated or conflicting.");
       seen.set(key, canonical);
     } else {
+      const key = JSON.stringify([localScope?.sheetId ?? null, name.toUpperCase()]);
       if (seen.has(key)) fail(node, "A defined name is repeated in its scope.");
       seen.set(key, expression);
-      names.push({ nameId: `name-${names.length + 1}`, name, expression, origin, ...(scope ? { sheetId: scope.sheetId } : {}),
+      names.push({ nameId: `name-${names.length + 1}`, name, expression, origin, ...(localScope ? { sheetId: localScope.sheetId } : {}),
         hidden: boolean(node, "hidden"), ...(value(node, "comment") === undefined ? {} : { description: spreadsheetText(value(node, "comment")!, node) }) });
     }
   }

@@ -81,6 +81,8 @@ function sheetHeader(sheet: Sheet, active: boolean, styles: WorkbookStylesWriter
     styles.reportFormatLoss("A fractional base column width is rounded to a whole character in XLSX.");
   const format = empty("sheetFormatPr", { defaultRowHeight: sheet.defaultRowHeightPt,
     customHeight: bool(sheet.defaultRowHeightCustom), zeroHeight: bool(sheet.defaultRowsHidden),
+    outlineLevelRow: sheet.rowDimensions.reduce((level, row) => Math.max(level, row.outlineLevel ?? 0), 0) || undefined,
+    outlineLevelCol: sheet.columnDimensions.reduce((level, column) => Math.max(level, column.outlineLevel ?? 0), 0) || undefined,
     baseColWidth: standardWidth ? undefined : baseWidth, defaultColWidth: standardWidth ? sheet.defaultColumnWidth : undefined });
   return (properties || filterMode ? element("sheetPr", properties, { filterMode: filterMode ? 1 : undefined }) : "") + sheetViews(sheet, active) + format;
 }
@@ -96,6 +98,7 @@ export async function writeSheet(options: SheetWriteOptions): Promise<void> {
     part.add("<cols>");
     for (const column of sheet.columnDimensions) part.add(empty("col", {
       min: column.from + 1, max: column.to + 1, width: column.width, customWidth: column.width === undefined ? undefined : 1,
+      outlineLevel: column.outlineLevel, collapsed: bool(column.collapsed),
       hidden: bool(column.hidden), style: column.cssClass || column.numberFormatId
         ? styles.cell(column.cssClass ?? sheet.defaultCssClass, column.numberFormatId ?? sheet.defaultNumberFormatId) : undefined,
     }));
@@ -116,6 +119,7 @@ export async function writeSheet(options: SheetWriteOptions): Promise<void> {
       ? styles.cell(dimension.cssClass ?? sheet.defaultCssClass, dimension.numberFormatId ?? sheet.defaultNumberFormatId) : undefined;
     const rowAttributes = attributes({ r: row + 1, ht: dimension?.heightPt,
       customHeight: dimension?.heightPt !== undefined ? 1 : dimension?.autoHeight ? 0 : undefined,
+      outlineLevel: dimension?.outlineLevel, collapsed: bool(dimension?.collapsed),
       hidden: hiddenByFilter ? 1 : bool(dimension?.hidden), s: format, customFormat: format === undefined ? undefined : 1 });
     const solelyFiltered = hiddenByFilter && !(dimension?.hidden ?? sheet.defaultRowsHidden) && dimension?.heightPt !== 0;
     if (!current.done && row === current.value[0]!.row) {

@@ -34,7 +34,7 @@ import { readWorkbookProperties } from "./properties.js";
 type RowDimension = WorkbookSheet["rowDimensions"][number];
 /** Join identical adjacent explicit runs without expanding implicit rows. */
 function appendRow(rows: RowDimension[], row: RowDimension): void {
-  const previous = rows.at(-1), keys = ["heightPt", "hidden", "cssClass", "numberFormatId", "autoHeight"] as const;
+  const previous = rows.at(-1), keys = ["heightPt", "hidden", "cssClass", "numberFormatId", "autoHeight", "outlineLevel", "collapsed"] as const;
   if (previous && previous.to + 1 === row.from && keys.every(key => previous[key] === row[key])) previous.to = row.to;
   else rows.push(row);
 }
@@ -109,7 +109,10 @@ export async function readXlsxRecords(bytes: Uint8Array, options: XlsxReadOption
     metadata.tables = readTables(root, opc, styles, tableStyles);
     const autoFilter = readAutoFilter(one(root, "autoFilter"));
     if (autoFilter) metadata.autoFilter = autoFilter;
-    if (source.filterName && (!autoFilter || JSON.stringify(source.filterName) !== JSON.stringify(autoFilter.range))) fail(root, "The built-in filter name does not match its worksheet auto-filter.");
+    // A workbook-scoped marker alone does not activate a worksheet filter.
+    const filterName = source.filterName;
+    if (filterName && (autoFilter ? JSON.stringify(filterName.range) !== JSON.stringify(autoFilter.range) : !filterName.inferredScope))
+      fail(root, "The built-in filter name does not match its worksheet auto-filter.");
     // Calc often writes hidden="false" on every row. Keep overrides only when
     // they differ from the sheet default; formatting/height remains explicit.
     metadata.rowDimensions = [];

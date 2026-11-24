@@ -78,14 +78,17 @@ export const WorkbookNumberFormatSchema = z.union([
   z.strictObject({ formatId: IdentifierSchema, builtinId: z.number().int().min(0).max(163) }),
 ]);
 export type WorkbookNumberFormat = z.infer<typeof WorkbookNumberFormatSchema>;
+const workbookOutline = { outlineLevel: z.number().int().min(1).max(7).optional(), collapsed: z.boolean().optional() };
 export const WorkbookRowDimensionSchema = z.strictObject({
   from: WorkbookRowSchema, to: WorkbookRowSchema,
+  ...workbookOutline,
   /** Explicit automatic sizing can override a manually fixed sheet default. */
   autoHeight: z.boolean().optional(),
   heightPt: z.number().min(0).max(409).optional(), hidden: z.boolean().optional(), cssClass: IdentifierSchema.optional(), numberFormatId: IdentifierSchema.optional(),
 });
 export const WorkbookColumnDimensionSchema = z.strictObject({
   from: WorkbookColumnSchema, to: WorkbookColumnSchema,
+  ...workbookOutline,
   width: z.number().min(0).max(255).optional(), unit: z.literal("characters"), hidden: z.boolean().optional(), cssClass: IdentifierSchema.optional(), numberFormatId: IdentifierSchema.optional(),
 });
 export const WorkbookSheetSchema = z.strictObject({
