@@ -1,3 +1,4 @@
+import { registerWorkbookAppearanceCommands } from "./appearance-commands.js";
 import type { TextFormatState } from "../text-format-state.js";
 import { createEditorCommands, workbookCommandIds } from "../commands.js";
 import { DocumentError, parseContract } from "@doffi/core";
@@ -52,13 +53,13 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || !client || typeof client.readInput !== "function" || typeof client.view !== "function") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its authorized session connection.");
   client.state();
-  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "appearance", "onCommandStateChange", "onFormatStateChange", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["wordWebFonts", "title", "appearance", "onCommandStateChange", "onFormatStateChange", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onViewChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   if (options.appearance !== undefined && options.appearance !== "default" && options.appearance !== "workspace") throw new DocumentError("InvalidOperation", "Invalid workbook editor appearance.");
   if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
-  const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑", config.appearance), events = new view.AbortController();
+  const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑", config.appearance, config.wordWebFonts?.filter(font => !font.fallbackOnly).flatMap(font => [font.family, ...font.aliases]), formatState), events = new view.AbortController();
   const commandRegistry = createEditorCommands(() => !disposed, config.onCommandStateChange);
   const layoutService = createWorkbookLayoutService(ui.preview, { ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
-    ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
+    ...(config.wordWebFonts ? { wordWebFonts: config.wordWebFonts } : {}), ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
   const authorizedClient = client;
   client = Object.freeze({ ...authorizedClient, prepare: (...args: Parameters<WorkbookSessionConnection["prepare"]>) => {
     const [command, preparation, execution] = args;
@@ -125,7 +126,8 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
     if (!style) return { enabled };
     const size = parseFloat(style["font-size"] ?? "") * .75;
     return { enabled, bold: style["font-weight"] === "bold" || Number(style["font-weight"]) >= 600, italic: style["font-style"] === "italic", underline: !["", "none"].includes(style["--office-font-underline"] ?? "") || (style["text-decoration-line"] ?? "").includes("underline"),
-      ...(Number.isFinite(size) ? { fontSize: Math.round(size * 100) / 100 } : {}), fontFamily: style["--office-font-east-asia"] || style["font-family"] || "", color: style["color"] ?? "", alignment: style["--office-cell-horizontal"] || style["text-align"] || "" };
+      ...(style["--office-number-format-code"] ? { numberFormatCode: style["--office-number-format-code"] } : { numberFormatBuiltinId: Number(style["--office-number-format-builtin"] || 0) }),
+      ...(Number.isFinite(size) ? { fontSize: Math.round(size * 100) / 100 } : {}), numberPreview: style["--office-cell-preview"] ?? "", fontFamily: style["--office-font-east-asia"] || style["font-family"] || "", color: style["color"] ?? "", alignment: style["--office-cell-horizontal"] || style["text-align"] || "" };
   }
   function notifyFormat(): void {
     if (disposed || !config.onFormatStateChange) return;
@@ -227,7 +229,7 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
         if (preview) { preview.update(candidate); await preview.settled(); }
         else {
           preview = mountDocumentPreview(ui.preview, candidate, { retainSelection: true, ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
-            ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits === undefined ? {} : { limits: config.limits }), onSelectionChange: sourceSelection, onCellActivate: selected => queueInteraction(async () => { await sourceSettled(); if (!idle()) throw new DocumentError("InvalidOperation", "请先完成或取消当前输入。"); await acceptSelection(selected); binding.focus(false); }), onError: error => report(new DocumentError(error.code, error.message, error.details)) });
+            ...(config.wordWebFonts ? { wordWebFonts: config.wordWebFonts } : {}), ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits === undefined ? {} : { limits: config.limits }), onSelectionChange: sourceSelection, onCellActivate: selected => queueInteraction(async () => { await sourceSettled(); if (!idle()) throw new DocumentError("InvalidOperation", "请先完成或取消当前输入。"); await acceptSelection(selected); binding.focus(false); }), onError: error => report(new DocumentError(error.code, error.message, error.details)) });
           await preview.ready;
         }
         if (disposed || ticket !== generation || abort.signal.aborted) return;
@@ -485,10 +487,11 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   tableStyleControls = createWorkbookTableStyleControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   filterControls = createWorkbookFilterControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
   rulesControls = createWorkbookRulesControls(ui.element.ownerDocument, ui.preview.parentNode!, auxiliaryHost);
-  function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void {
+  function button(label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): HTMLButtonElement {
     const element = ui.element.ownerDocument.createElement("button"); element.type = "button"; element.textContent = label;
     element.addEventListener("click", () => { try { const result = action(); if (result instanceof Promise) void result.catch(report); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(element); buttons.push({ button: element, available });
     const id = workbookCommandIds[label]; if (id) commandRegistry.register(id, label, action, () => !element.disabled);
+    return element;
   }
   button("确认输入", () => binding.apply(), () => !!input.state().selection && !input.state().composing && !input.state().applying && !commandAbort && !refreshing);
   button("取消输入", () => queueInteraction(cancelInput), () => !!input.state().selection && !input.state().applying && !commandAbort);
@@ -512,19 +515,27 @@ export function mountWorkbookRemoteEditor(container: HTMLElement, client: Workbo
   button("复制选区", () => queueInteraction(() => copySelection("copy")), idle);
   button("剪切选区", () => queueInteraction(() => copySelection("cut")), idle);
   button("粘贴选区", () => queueInteraction(pasteSelection), () => idle() && clipboard.available);
-  button("应用单元格格式", () => queueInteraction(formatSelection), idle, ui.format.tools);
-  button("应用选中文字字体", () => queueInteraction(formatSelectedText), () => idle() && !!input.state().selection && ui.input.selectionStart < ui.input.selectionEnd, ui.format.tools);
+  button("确定", () => runInteraction(async () => { await formatSelection(); ui.format.close(); }).catch(ui.format.error), idle, ui.format.tools).classList.add("primary");
+  button("应用选中文字字体", () => queueInteraction(async () => { await formatSelectedText(); ui.format.close(); }), () => idle() && !!input.state().selection && ui.input.selectionStart < ui.input.selectionEnd, ui.format.element.querySelector<HTMLElement>('[role="tabpanel"][aria-label="字体"]')!);
   button("取消操作", () => commandAbort?.abort(), () => !!commandAbort && !commandApplying);
   button("查找下一个", () => queueInteraction(() => search()), () => idle() && !!ui.find.value, ui.searchTools);
   button("替换当前项", () => queueInteraction(() => search("one")), () => idle() && ui.findField.value !== "display" && !!found && found.result.baseRevision === client.state().revision && found.index >= 0, ui.searchTools);
   button("全部替换", () => queueInteraction(() => search("all")), () => idle() && ui.findField.value !== "display" && !!ui.find.value, ui.searchTools);
+  registerWorkbookAppearanceCommands(commandRegistry, {
+    snapshot: () => source!.cells.snapshot, selection: () => input.state().selection,
+    style: () => { const selected = input.state().selection; return selected?.anchor.kind === "cells" ? preview?.cellTextStyle(selected.anchor.ranges[0]!.from) : undefined; },
+    enabled: () => idle() && input.state().selection?.anchor.kind === "cells",
+    run: operations => runInteraction(async () => { await perform(operations); await sourceSettled(); binding.focus(); }),
+  });
   const panels = { formatCells: ui.format.element, drawings: drawingControls.element, comments: commentControls.element, names: nameControls.element, worksheets: worksheetControls.element, hyperlinks: hyperlinkControls.element, tables: tableControls.element, tableStyles: tableStyleControls.element, filters: filterControls.element, rules: rulesControls.element };
-  for (const [id, panel] of Object.entries(panels)) commandRegistry.register(id, panel.querySelector("summary")?.textContent ?? id, () => { panel.dataset.officePanel = id; panel.open = true; panel.scrollIntoView({ block: "nearest" }); panel.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled),textarea:not(:disabled)")?.focus(); }, () => !!source && !commandAbort);
+  for (const [id, panel] of Object.entries(panels)) commandRegistry.register(id, panel.querySelector("summary")?.textContent ?? id, () => { if (id === "formatCells") { ui.format.open(formatState()); return; } panel.dataset.officePanel = id; panel.open = true; panel.scrollIntoView({ block: "nearest" }); panel.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled),textarea:not(:disabled)")?.focus(); }, () => !!source && !commandAbort);
   for (const id of ["find", "replace"]) commandRegistry.register(id, id === "find" ? "查找" : "替换", () => { ui.element.style.setProperty("--doffi-workbook-search", "flex"); ui.find.focus(); ui.find.select(); }, () => !ui.find.disabled);
   for (const field of [ui.find, ui.findField, ui.findScope, ui.matchCase, ui.entireCell]) for (const type of ["input", "change"]) field.addEventListener(type, () => { found = undefined; findSelectionScope = undefined; controls(); }, { signal: events.signal });
   ui.find.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); void runInteraction(() => search()); } }, { signal: events.signal });
   ui.element.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing && ["f", "h"].includes(event.key.toLowerCase())) { event.preventDefault(); if (!commandAbort) { ui.find.focus(); ui.find.select(); } } }, { signal: events.signal });
   ui.mode.addEventListener("change", () => { try { input.setMode(ui.mode.value as WorkbookTextInputMode); binding.refresh(); controls(); } catch (error) { report(error); } }, { signal: events.signal });
+  ui.acceptInput.addEventListener("click", () => { void runInteraction(async () => { await binding.apply(); }); }, { signal: events.signal });
+  ui.discardInput.addEventListener("click", () => { void runInteraction(async () => { await cancelInput(); }); }, { signal: events.signal });
   ui.address.addEventListener("keydown", event => {
     if (event.key !== "Enter") return; event.preventDefault(); const expression = "=" + ui.address.value.trim();
     void runInteraction(async () => {

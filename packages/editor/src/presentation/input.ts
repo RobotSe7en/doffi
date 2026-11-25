@@ -28,6 +28,7 @@ export interface PresentationInput {
     composing(): boolean;
     committing(): boolean;
     format(property: string, value: string): void;
+    formatProperties(properties: ReadonlyMap<string, string>): void;
     formatState(): TextFormatState;
     clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
     toggle(property: "bold" | "italic" | "underline"): void;
@@ -303,14 +304,15 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         select(next, 0);
     };
     let typingAnchor: string | undefined;
-    const format = (property: string, value: string): void => {
+    const formatProperties = (inputProperties: ReadonlyMap<string, string>): void => {
         if (disposed || composing)
             return;
         restore(remember());
         const selected = range();
         if (!selected)
             return;
-        const properties = characterStyle(property, value);
+        const properties = new Map<string, string>();
+        for (const [property, value] of inputProperties) for (const [name, part] of characterStyle(property, value)) properties.set(name, part);
         if (selected.collapsed) {
             for (const [name, value] of properties)
                 typing.set(name, value);
@@ -320,6 +322,7 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         const selection = remember();
         mutate(selected, () => { styleNativeRange(root, selected, properties, projection.ignored, projection.setStyles); restoreBookmark(root, selection, projection.ignored); });
     };
+    const format = (property: string, value: string): void => formatProperties(new Map([[property, value]]));
     const formatState = (): TextFormatState => disposed || composing ? { enabled: false } : { ...readTextFormat(root, range(), typing, projection.ignored), editingText: true };
     const toggle = (property: "bold" | "italic" | "underline"): void => {
         const active = formatState()[property] === true;
@@ -585,7 +588,7 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         restoreBookmark(root, selection, projection.ignored);
     } flush(); host.compositionEnded(); }), { signal: controls.signal });
     frame.addEventListener("selectionchange", () => { if (range()) { const next = bookmark(root, projection.ignored); if (!composing && typingAnchor && next && JSON.stringify(next) !== typingAnchor) { typing.clear(); typingAnchor = undefined; } remember(); } }, { signal: controls.signal });
-    return { focus: restore, selection: remember, composing: () => composing, committing: () => committing, format, formatState, toggle,
+    return { focus: restore, selection: remember, composing: () => composing, committing: () => committing, format, formatProperties, formatState, toggle,
         clipboard(action) { const expected = revision, selected = JSON.stringify(remember()); return executeClipboard(root, () => restore(saved), action, () => !disposed && !composing && revision === expected && JSON.stringify(remember()) === selected); }, paragraph, list,
         finish() { if (disposed)
             return; composing = false; flush(); },

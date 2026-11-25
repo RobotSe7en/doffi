@@ -79,8 +79,8 @@ export function decorateWorkbookPreview(surface: WorkbookSurface, snapshot: Work
       const rect = { x: x - pane.sourceLeftPt + pane.inlineStartPt, y: y - pane.sourceTopPt + pane.blockStartPt, width, height }, clip = intersectRect(rect, paneRect(pane));
       if (!clip) continue;
       const node = document.createElement("div"), left = sheet.rightToLeft ? window.frame.layout.widthPt - clip.x - clip.width : clip.x;
-      node.style.cssText = `position:absolute;box-sizing:border-box;left:${left}pt;top:${clip.y}pt;width:${clip.width}pt;height:${clip.height}pt;background:rgba(52,100,189,.06);pointer-events:none`;
-      const edge = (name: string, visible: boolean): void => { if (visible) node.style.setProperty("border-" + name, "2px solid #3464bd"); };
+      node.style.cssText = `position:absolute;box-sizing:border-box;left:${left}pt;top:${clip.y}pt;width:${clip.width}pt;height:${clip.height}pt;background:rgba(16,124,65,.06);pointer-events:none`;
+      const edge = (name: string, visible: boolean): void => { if (visible) node.style.setProperty("border-" + name, "2px solid #107c41"); };
       edge("top", Math.abs(rect.y - clip.y) < 1e-6); edge("bottom", Math.abs(rect.y + rect.height - clip.y - clip.height) < 1e-6);
       edge(sheet.rightToLeft ? "right" : "left", Math.abs(rect.x - clip.x) < 1e-6); edge(sheet.rightToLeft ? "left" : "right", Math.abs(rect.x + rect.width - clip.x - clip.width) < 1e-6);
       next.append(node);

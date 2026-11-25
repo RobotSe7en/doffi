@@ -2146,6 +2146,40 @@ async function wordLayoutFont(page: Page): Promise<NonNullable<Parameters<Pagina
   return [{ family: "Noto Serif CJK SC", aliases: [], url }];
 }
 
+test("delayed hosted fonts preserve composition, selection and subsequent input", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/late-editor-font.woff2", async route => {
+    await pending;
+    await route.fulfill({ path: "apps/playground/src/assets/word-fonts/serif-regular.woff2", contentType: "font/woff2" });
+  });
+  await mount(page, pagedFiles('<p data-node-id="late-font">原文 ABC</p>'), "edit", {}, [
+    { family: "Late Editor Serif", aliases: [], url: "/late-editor-font.woff2" },
+  ]);
+  const paragraph = page.frameLocator("iframe").locator('[data-node-id="late-font"]');
+  await paragraph.evaluate(node => {
+    node.closest<HTMLElement>("[contenteditable]")!.focus();
+    const range = document.createRange(); range.selectNodeContents(node);
+    const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+  });
+  await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
+    type: "format", property: "font-family", value: '"Late Editor Serif"',
+  }));
+  const active = await paragraph.elementHandle();
+  await paragraph.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+  release();
+  await expect.poll(() => paragraph.evaluate(() => [...document.fonts].some(face => face.family === "Late Editor Serif" && face.status === "loaded"))).toBe(true);
+  expect(await active!.evaluate(node => node.isConnected)).toBe(true);
+  await paragraph.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+  await expect.poll(() => active!.evaluate(node => node.isConnected)).toBe(false);
+  expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe("原文 ABC");
+  await page.keyboard.insertText("新内容");
+  await expect(paragraph).toHaveText("新内容");
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  await expect(paragraph).toHaveText("原文 ABC");
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
 test("hidden end-of-cell marks do not size empty cells or hide their visible text", async ({ page }) => {
   const cell = (hideMark: string, text = "") =>
       "<w:tc><w:tcPr>" + hideMark + "</w:tcPr><w:p>" +
@@ -6609,16 +6643,17 @@ test("font controls apply script roles, complex size and language in one tracked
       action: "fontSettings",
     }),
   );
-  const panel = page.getByRole("region", { name: "字符格式", exact: true });
+  const panel = page.getByRole("dialog", { name: "字体", exact: true });
   await panel.getByLabel("ASCII 字体", { exact: true }).fill("Liberation Serif");
   await panel.getByLabel("东亚字体", { exact: true }).fill("Noto Serif CJK SC");
+  await panel.getByRole("tab", { name: "高级", exact: true }).click(); await panel.locator("summary").filter({ hasText: "其他语言设置" }).click();
   await panel.getByLabel("复杂文字字体", { exact: true }).fill("Liberation Sans");
   await panel.getByLabel("复杂文字字号（磅）", { exact: true }).fill("16");
   await panel.getByLabel("复杂文字字重", { exact: true }).selectOption({ value: "1" });
   await panel.getByLabel("西文语言", { exact: true }).fill("en-GB");
   await panel.getByLabel("东亚语言", { exact: true }).fill("ja-JP");
   await panel.getByLabel("复杂文字语言", { exact: true }).fill("ar-SA");
-  await panel.getByRole("button", { name: "应用字符格式", exact: true }).click();
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -7090,16 +7125,17 @@ test("paragraph mark font controls preserve body text, expose original history a
       action: "fontSettings",
     }),
   );
+  await page.getByRole("dialog", { name: "字体", exact: true }).getByRole("tab", { name: "高级", exact: true }).click(); await page.getByRole("dialog", { name: "字体", exact: true }).locator("summary").filter({ hasText: "其他语言设置" }).click();
   await page.getByLabel("仅设置段落标记", { exact: true }).check();
+  await page.getByRole("dialog", { name: "字体", exact: true }).getByRole("tab", { name: "字体", exact: true }).click();
   await page.getByLabel("字符字号（磅）", { exact: true }).fill("18");
-  await page.getByRole("button", { name: "应用字符格式", exact: true }).click();
+  await page.getByRole("dialog", { name: "字体", exact: true }).getByRole("button", { name: "确定", exact: true }).click();
   expect(
     await first.evaluate((node) => parseFloat(getComputedStyle(node, "::after").fontSize) * 0.75),
   ).toBeCloseTo(18, 1);
   expect(
     await first.evaluate((node) => parseFloat(getComputedStyle(node).fontSize) * 0.75),
   ).toBeCloseTo(12, 1);
-  await page.getByRole("button", { name: "关闭字符格式", exact: true }).click();
   await page.evaluate(() =>
     (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
       type: "word",
@@ -7119,11 +7155,12 @@ test("paragraph mark font controls preserve body text, expose original history a
       action: "fontSettings",
     }),
   );
+  await page.getByRole("dialog", { name: "字体", exact: true }).getByRole("tab", { name: "高级", exact: true }).click(); await page.getByRole("dialog", { name: "字体", exact: true }).locator("summary").filter({ hasText: "其他语言设置" }).click();
   await page.getByLabel("仅设置段落标记", { exact: true }).check();
+  await page.getByRole("dialog", { name: "字体", exact: true }).getByRole("tab", { name: "字体", exact: true }).click();
   await page.getByLabel("字符字号（磅）", { exact: true }).fill("24");
   await page.getByLabel("字符颜色", { exact: true }).fill("#880000");
-  await page.getByRole("button", { name: "应用字符格式", exact: true }).click();
-  await page.getByRole("button", { name: "关闭字符格式", exact: true }).click();
+  await page.getByRole("dialog", { name: "字体", exact: true }).getByRole("button", { name: "确定", exact: true }).click();
   expect(
     await empty.evaluate((node) => parseFloat(getComputedStyle(node).fontSize) * 0.75),
   ).toBeCloseTo(24, 1);

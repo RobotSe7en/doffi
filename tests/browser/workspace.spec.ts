@@ -29,7 +29,7 @@ async function selectText(page: Page, from = 2, to = 8): Promise<void> {
 }
 
 test("Word preview and editing load Playground web fonts and keep the native font names", async ({ page }, info) => {
-  const manifest = new URL("../../apps/playground/src/assets/word-fonts/internal/sources.json", import.meta.url);
+  const manifest = new URL("../../fonts/local/sources.json", import.meta.url);
   const internal = existsSync(manifest);
   const families = internal ? [
     ["宋体", "SimSun"],
@@ -100,7 +100,7 @@ test("Word preview and editing load Playground web fonts and keep the native fon
   await page.keyboard.insertText("增");
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   const pending = page.waitForEvent("download");
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   await page.getByRole("button", { name: "下载文档包", exact: true }).click();
   const saved = info.outputPath("web-font-edit.zip");
   await (await pending).saveAs(saved);
@@ -135,7 +135,7 @@ test("homepage drop opens a document and home navigation preserves its editing h
   await page.getByRole("button", { name: "返回首页", exact: true }).click();
   await expect(page.getByRole("heading", { name: "样例文档", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "打开报告协作样例", exact: true }).click();
-  await page.getByRole("button", { name: "显示文档列表", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "显示文档列表", exact: true }).click();
   await page.getByRole("button", { name: "打开 dropped.docx", exact: true }).click();
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
   await expect(page.frameLocator('iframe[title="正文编辑"]').getByRole("heading", { name: "实施报告已编辑", exact: true })).toBeVisible();
@@ -205,7 +205,7 @@ test("selection opens a bounded comment dialog; cancellation, IME and keyboard s
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
   const box = (await dialog.boundingBox())!, viewport = page.viewportSize()!;
   expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
-  const toolbar = (await page.getByRole("toolbar", { name: "文件与导出", exact: true }).boundingBox())!;
+  const toolbar = (await page.locator(".office-ribbon").boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(toolbar.y + toolbar.height);
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.width); expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
   await page.screenshot({ path: info.outputPath("word-comment.png") });
@@ -225,7 +225,7 @@ test("selection opens a bounded comment dialog; cancellation, IME and keyboard s
 test("object and rectangle selections use the same floating composer", async ({ page }) => {
   await report(page);
   await page.getByRole("tab", { name: "审阅", exact: true }).click();
-  await page.getByRole("button", { name: "对象选择", exact: true }).click();
+  await page.getByRole("button", { name: "选择", exact: true }).click(); await page.getByRole("menuitem", { name: "对象选择", exact: true }).click();
   await page.frameLocator('iframe[title="文档只读预览"]').locator('[data-node-id="n-title"]').click();
   await page.getByRole("button", { name: "新建批注", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "新建批注", exact: true });
@@ -236,7 +236,7 @@ test("object and rectangle selections use the same floating composer", async ({ 
   await input.click(); await expect(input).toBeFocused(); await input.fill("对象批注");
   await dialog.getByRole("button", { name: "添加批注", exact: true }).click();
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
-  await page.getByRole("button", { name: "矩形框选", exact: true }).click();
+  await page.getByRole("button", { name: "选择", exact: true }).click(); await page.getByRole("menuitem", { name: "矩形框选", exact: true }).click();
   const paragraph = await page.frameLocator('iframe[title="文档只读预览"]').locator('[data-node-id="n-summary"]').boundingBox();
   await page.mouse.move(paragraph!.x + 1, paragraph!.y + 1); await page.mouse.down();
   await page.mouse.move(paragraph!.x + 100, paragraph!.y + 20, { steps: 4 });
@@ -252,8 +252,17 @@ test("PPT comment popover preserves native comments and can be undone, exported 
   await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto("/");
   await page.getByRole("button", { name: "打开 PPT 协作样例", exact: true }).click();
   const frame = page.frameLocator('iframe[title="幻灯片只读预览"]');
+  await expect(frame.locator('[data-node-id="heading-p"]')).toBeVisible();
+  await expect(page.locator(".comments-pane")).toBeAttached();
+  await expect(page.locator(".comments-pane")).toBeHidden();
+  await expect(page.getByRole("heading", { name: "当前页对象", exact: true })).toHaveCount(0);
+  await expect(page.locator(".object-list")).toHaveCount(0);
   await frame.locator('[data-node-id="heading-p"]').click();
   await page.getByRole("tab", { name: "审阅", exact: true }).click();
+  await page.getByRole("button", { name: "显示批注", exact: true }).click();
+  await expect(page.locator(".comments-pane")).toBeVisible();
+  await page.getByRole("button", { name: "显示批注", exact: true }).click();
+  await expect(page.locator(".comments-pane")).toBeHidden();
   await page.getByRole("button", { name: "新建批注", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "新建批注", exact: true }); await expect(dialog).toBeVisible();
   await dialog.getByLabel("批注显示署名", { exact: true }).fill("审阅人");
@@ -263,13 +272,22 @@ test("PPT comment popover preserves native comments and can be undone, exported 
   await page.getByRole("button", { name: "撤销", exact: true }).click();
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "2");
   await page.getByRole("button", { name: "重做", exact: true }).click();
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   const pending = page.waitForEvent("download"); await page.getByRole("button", { name: "导出 PPTX", exact: true }).click();
   const path = info.outputPath("comment.pptx"); await (await pending).saveAs(path);
   const model = openDocument(importPptx(new Uint8Array(readFileSync(path)), { documentId: "workspace-comment" }));
   expect(model.snapshot().annotations).toHaveLength(2);
   expect(model.snapshot().annotations.map(annotation => annotation.bodyNodeId ? model.getNode(annotation.bodyNodeId)?.text : annotation.instruction)).toContain("确认演示标题");
   expect(model.snapshot().annotations.at(-1)?.author?.name).toBe("审阅人");
+  await page.getByRole("tab", { name: "审阅", exact: true }).click();
+  await page.getByRole("button", { name: "选择", exact: true }).click(); await page.getByRole("menuitem", { name: "矩形框选", exact: true }).click();
+  const slide = (await frame.locator('[data-node-id="slide-root-1"]').boundingBox())!;
+  await page.mouse.move(slide.x + 35, slide.y + 25); await page.mouse.down();
+  await page.mouse.move(slide.x + 175, slide.y + 80, { steps: 4 }); await page.mouse.up();
+  await page.getByRole("button", { name: "新建批注", exact: true }).click();
+  await expect(dialog).toContainText("所选幻灯片区域");
+  await dialog.getByRole("button", { name: "取消批注", exact: true }).click();
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "3");
 });
 
 test("switching documents discards comment drafts without changing either session", async ({ page }) => {
@@ -322,7 +340,7 @@ test("workspace unmount releases views and floating controls while the host reta
 test("narrow workspace keeps page chrome within the viewport and comment actions above the canvas", async ({ page }, info) => {
   await page.setViewportSize({ width: 390, height: 844 }); await report(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  const toolbar = (await page.getByRole("toolbar", { name: "文件与导出", exact: true }).boundingBox())!;
+  const toolbar = (await page.locator(".office-ribbon").boundingBox())!;
   const canvas = (await page.locator('iframe[title="文档只读预览"]').boundingBox())!;
   expect(toolbar.y + toolbar.height).toBeLessThanOrEqual(canvas.y);
   await selectText(page); const dialog = page.getByRole("dialog", { name: "新建批注", exact: true }); await expect(dialog).toBeVisible();
@@ -347,10 +365,10 @@ test("Office text toggles preserve the selected text, current state and shared h
     expect(await paragraph.evaluate(() => document.getSelection()!.toString())).toBe(text);
   }
   await page.getByRole('group', { name: '字体', exact: true }).getByLabel('字号', { exact: true }).fill("18"); await page.getByRole('group', { name: '字体', exact: true }).getByLabel('字号', { exact: true }).press("Enter");
-  await expect(page.getByRole('group', { name: '字体', exact: true }).getByLabel('字号', { exact: true })).toHaveValue('18');
+  await expect(page.getByRole('group', { name: '字体', exact: true }).getByLabel('字号', { exact: true })).toHaveValue('小二');
   await page.getByRole('button', { name: '居中', exact: true }).click(); await expect(paragraph).toHaveCSS('text-align', 'center');
   await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(paragraph).not.toHaveCSS('text-align', 'center');
-  await expect(page.getByRole('group', { name: '字体', exact: true }).getByLabel('字号', { exact: true })).toHaveValue('18');
+  await expect(page.getByRole('group', { name: '字体', exact: true }).getByLabel('字号', { exact: true })).toHaveValue('小二');
   await page.getByRole('tab', { name: '审阅', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '新建批注', exact: true })).toBeHidden();
   await page.getByRole('button', { name: '新建批注', exact: true }).click();
@@ -391,6 +409,8 @@ test("PPT ribbon executes slide and text commands and zoom centers the slide", a
   await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto('/');
   await page.getByRole('button', { name: '打开 PPT 协作样例', exact: true }).click();
   const text = page.frameLocator('iframe[title="幻灯片只读预览"]').locator('[data-node-id="heading-p"]'); await expect(text).toBeVisible();
+  await expect(page.locator('.slide-list button[aria-pressed=true]')).toHaveCSS('border-color', 'rgb(183, 71, 42)');
+  await expect(page.locator('.stage')).toHaveCSS('height', '780px');
   await expect.poll(async () => { const g = await zoomGeometry(page); return g.zoom >= 0.5 && g.zoom <= 1 && Math.abs(g.x) < 1; }).toBe(true);
   await text.click(); const bold = page.getByRole('button', { name: '加粗', exact: true }); await expect(bold).toBeEnabled();
   const original = await bold.getAttribute('aria-pressed'); await bold.click(); await expect(bold).toHaveAttribute('aria-pressed', original === 'true' ? 'false' : 'true');
@@ -419,7 +439,7 @@ test('partial underline removal preserves surrounding text through history and n
   expect(await underlines(paragraph)).toEqual(expected);
   await page.getByRole('button', { name: '撤销', exact: true }).click(); expect((await underlines(paragraph)).every(Boolean)).toBe(true);
   await page.getByRole('button', { name: '重做', exact: true }).click(); expect(await underlines(paragraph)).toEqual(expected);
-  await page.getByRole('tab', { name: '文件', exact: true }).click(); const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click(); const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
   const path = info.outputPath('partial-underline.docx'); await (await pending).saveAs(path);
   await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles(path);
   const reopened = page.frameLocator('iframe[title="正文编辑"]').locator('p').filter({ hasText: /^项目计划于第三季度完成。$/ }); await expect(reopened).toBeVisible();
@@ -472,7 +492,7 @@ test('Word left margin selects wrapped visual lines in editing and preview', asy
       if (zoom > 1) await page.getByRole('button', { name: '缩小', exact: true }).click();
     }
   }
-  await page.getByRole('tabpanel', { name: '视图', exact: true }).getByRole('button', { name: '连续视图', exact: true }).click();
+  await page.getByRole('tabpanel', { name: '视图', exact: true }).getByRole('button', { name: 'Web 版式', exact: true }).click();
   const continuous = page.frameLocator('iframe[title="文档只读预览"]');
   await expect(continuous.locator('[data-node-id="n-summary"]')).toHaveText(text);
   await expect(continuous.locator('.sdk-paper')).toHaveCount(0);
@@ -497,14 +517,14 @@ test('Office audit: native DOCX fonts change visible glyphs and survive export/r
   const spanCount = await paragraph.locator('span').count();
   for (const family of ['Noto Serif CJK SC', 'Calibri', 'Aptos', 'FandolKai', 'FandolSong', chosenFont]) { await font.fill(family); await font.press('Enter'); await expect(font).toHaveValue(family); }
   expect(await paragraph.locator('span').count()).toBeLessThanOrEqual(spanCount);
-  await size.fill('10.5'); await size.press('Enter'); await expect(size).toHaveValue('10.5');
-  await page.getByRole('tab', { name: '文件', exact: true }).click(); const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
+  await size.fill('10.5'); await size.press('Enter'); await expect(size).toHaveValue('五号');
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click(); const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
   const path = info.outputPath('font-audit.docx'); await (await pending).saveAs(path); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles(path);
   await expect(page.getByRole('heading', { name: 'font-audit.docx', exact: true })).toBeVisible();
   const reopened = page.frameLocator('iframe[title="正文编辑"]').locator('[data-office-editor] p').filter({ hasText: 'ABCxyz' }).first();
   await reopened.evaluate(root => { root.closest<HTMLElement>('[contenteditable]')!.focus(); const range = document.createRange(); range.selectNodeContents(root); const selected = document.getSelection()!; selected.removeAllRanges(); selected.addRange(range); document.dispatchEvent(new Event('selectionchange')); });
-  await expect(font).toHaveValue(chosenFont); await expect(size).toHaveValue('10.5');
-  await font.fill('Calibri'); await font.press('Enter'); await expect(page.getByRole('status', { name: /本机没有.*Calibri/ })).toBeVisible();
+  await expect(font).toHaveValue(chosenFont); await expect(size).toHaveValue('五号');
+  await font.fill('Calibri'); await font.press('Enter'); await expect(page.locator('.office-font-hint')).toHaveCount(0);
   await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(font).toHaveValue(chosenFont);
 });
 
@@ -545,7 +565,7 @@ test('Office audit: editable font fields validate size and their list fits a nar
   await page.getByRole('option', { name: 'FandolSong', exact: true }).click();
   const size = page.getByRole('group', { name: '字体', exact: true }).getByRole('combobox', { name: '字号', exact: true });
   const revision = await page.locator('.office-app').getAttribute('data-revision'); await size.fill('10.3'); await size.press('Enter'); await expect(size).toHaveAttribute('aria-invalid', 'true'); await expect(page.locator('.office-app')).toHaveAttribute('data-revision', revision!);
-  await size.press('Escape'); await expect(size).toHaveAttribute('aria-invalid', 'false'); await size.fill('10.5'); await size.press('Enter'); await expect(size).toHaveValue('10.5');
+  await size.press('Escape'); await expect(size).toHaveAttribute('aria-invalid', 'false'); await size.fill('10.5'); await size.press('Enter'); await expect(size).toHaveValue('五号');
 });
 
 test('Office audit: font list keyboard navigation and Tab preserve the document selection', async ({ page }) => {
@@ -573,8 +593,13 @@ for (const file of ['04-styles-sections.docx', '05-long-page-break.docx']) {
   test('Word preview keeps separate paper geometry after editing and repeated mode switches: ' + file, async ({ page }) => {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto('/'); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles('examples/docx/' + file);
+    // Runtime host fonts can change automatic overflow; fixed-font pagination
+    // fixtures assert exact counts. This case verifies stable geometry across modes.
+    let paperCount: number | undefined;
     async function papers(title: string) {
-      const frame = page.frameLocator(`iframe[title="${title}"]`); await expect(frame.locator('.sdk-paper')).toHaveCount(file.startsWith('04') ? 2 : 3);
+      const frame = page.frameLocator(`iframe[title="${title}"]`);
+      if (paperCount === undefined) { await expect.poll(() => frame.locator('.sdk-paper').count()).toBeGreaterThanOrEqual(file.startsWith('04') ? 2 : 3); paperCount = await frame.locator('.sdk-paper').count(); }
+      await expect(frame.locator('.sdk-paper')).toHaveCount(paperCount);
       return frame.locator('.sdk-paper').first().evaluate(paper => {
         const root = paper.ownerDocument.querySelector('[data-office-kind="document"]')!.getBoundingClientRect();
         return [...paper.ownerDocument.querySelectorAll('.sdk-paper')].map(node => { const rect = node.getBoundingClientRect(); return { x: rect.x - root.x, y: rect.y - root.y, width: rect.width, height: rect.height }; });
@@ -641,7 +666,7 @@ test("PowerPoint starts a read-only slide show from the current slide or the beg
   await expect(launch).toBeFocused();
   await expect(second).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("tab", { name: "幻灯片放映" }).click();
-  await page.getByRole("button", { name: "从头放映" }).click();
+  await page.getByRole("button", { name: "从头播放" }).click();
   await expect(dialog.locator(".slide-show-surface")).toHaveAttribute("data-ready", "true");
   await expect(visible).toHaveAttribute("data-node-id", "node-8");
   await page.keyboard.press("PageDown");
@@ -651,6 +676,7 @@ test("PowerPoint starts a read-only slide show from the current slide or the beg
 });
 
 test('the SDK Office ribbon owns its styles, preview behavior and independent instance navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
   const bundle = await build({ configFile: false, logLevel: 'silent', define: { 'process.env.NODE_ENV': '"production"' }, resolve: { alias: { react: fileURLToPath(new URL('../../apps/playground/node_modules/react', import.meta.url)), 'react-dom': fileURLToPath(new URL('../../apps/playground/node_modules/react-dom', import.meta.url)) } }, build: { write: false, target: 'es2022', lib: { entry: fileURLToPath(new URL('./fixtures/office-ribbon-host.ts', import.meta.url)), formats: ['es'] } } });
   const output = Array.isArray(bundle) ? bundle[0]!.output : 'output' in bundle ? bundle.output : [];
   await openSdkHost(page); await page.addScriptTag({ type: 'module', content: output.flatMap(item => item.type === 'chunk' ? [item.code] : []).join('\n') });
@@ -661,9 +687,29 @@ test('the SDK Office ribbon owns its styles, preview behavior and independent in
   expect(await firstFont.getAttribute('aria-controls')).not.toBe(await secondFont.getAttribute('aria-controls'));
   await firstFont.fill('FandolKai'); await firstFont.press('Enter'); await expect(firstFont).toHaveValue('FandolKai'); await expect(secondFont).toHaveValue('Arial');
   await first.getByRole('button', { name: '切换预览', exact: true }).click(); await expect(first.getByRole('group', { name: '字体', exact: true })).toBeHidden(); await expect(first.getByRole('tab', { name: '插入', exact: true })).toBeDisabled();
-  await first.getByRole('tab', { name: '文件', exact: true }).click(); await first.getByRole('button', { name: '打开', exact: true }).click(); await expect(first.getByLabel('打开次数')).toHaveText('1'); await expect(second.getByLabel('打开次数')).toHaveText('0');
-  await second.getByRole('tab', { name: '开始', exact: true }).press('End'); await expect(second.getByRole('tab', { name: '帮助', exact: true })).toBeFocused(); await expect(first.getByRole('tab', { name: '文件', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await first.getByRole('button', { name: '文件菜单', exact: true }).click(); await first.getByRole('menuitem', { name: '文件和导出…', exact: true }).click(); await first.getByRole('button', { name: '打开', exact: true }).click(); await expect(first.getByLabel('打开次数')).toHaveText('1'); await expect(second.getByLabel('打开次数')).toHaveText('0');
+  await second.getByRole('tab', { name: '开始', exact: true }).press('End'); await expect(second.getByRole('tab', { name: '视图', exact: true })).toBeFocused(); await expect(first.getByRole('tabpanel', { name: '文件', exact: true })).toBeVisible();
   await first.getByRole('button', { name: '切换编辑', exact: true }).click(); await expect(firstFont).toBeVisible(); await expect(firstFont).toHaveValue('FandolKai');
+  await expect(first.getByRole('tab', { name: '文件', exact: true })).toHaveCount(0);
+  for (const name of ['文档一', '演示文稿', '工作簿']) {
+    const region = page.getByRole('region', { name, exact: true });
+    await expect(region.locator('.doffi-office-titlebar')).toHaveCSS('height', '40px');
+    await expect(region.locator('.office-tabs')).toHaveCSS('height', '32px');
+    await expect(region.locator('.office-ribbon-panel')).toHaveCSS('height', '74px');
+    await expect(region.getByRole('button', { name: '粘贴', exact: true }).locator('svg')).toHaveAttribute('width', '32');
+  }
+  await expect(first.getByRole('group', { name: '字体', exact: true })).toHaveCSS('width', '375px');
+  await expect(first.getByRole('group', { name: '段落', exact: true })).toHaveCSS('width', '338px');
+  await first.getByRole('button', { name: '字体颜色选项', exact: true }).click();
+  const colorMenu = first.getByRole('menu', { name: '字体颜色选项', exact: true }); await expect(colorMenu).toBeVisible();
+  const triggerBox = (await first.getByRole('button', { name: '字体颜色选项', exact: true }).boundingBox())!, menuBox = (await colorMenu.boundingBox())!;
+  expect(menuBox.y - triggerBox.y - triggerBox.height).toBeGreaterThanOrEqual(0); expect(menuBox.y - triggerBox.y - triggerBox.height).toBeLessThan(8);
+  await first.getByRole('button', { name: '字体颜色选项', exact: true }).press('Escape');
+  await expect(first.getByRole('menu')).toHaveCount(0);
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await expect(first.locator('.style-gallery')).toBeHidden();
+  await expect(first.getByRole('button', { name: '更多样式', exact: true }).locator('svg')).toBeVisible();
+
 });
 
 for (const [label, offset] of [['实施报告', 0], ['实施报告', 4], ['第一项', 0], ['第一项', 3], ['子项', 2], ['第二项', 3], ['从四开始', 4]] as const) {
@@ -671,6 +717,7 @@ for (const [label, offset] of [['实施报告', 0], ['实施报告', 4], ['第�
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto('/'); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles('examples/docx/01-text-numbering.docx');
     const frame = page.frameLocator('iframe[title="正文编辑"]'), original = frame.locator('[data-word-script]').filter({ hasText: label }).first();
+    await expect(original.locator('xpath=ancestor::*[@contenteditable="true"]')).toBeVisible();
     const id = await original.evaluate((node, offset) => {
       node.closest<HTMLElement>('[contenteditable]')!.focus(); const text = document.createTreeWalker(node, 4).nextNode()!, range = document.createRange(); range.setStart(text, offset); range.collapse(true);
       const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range); return node.closest<HTMLElement>('p,h1')!.dataset.nodeId!;
@@ -694,7 +741,7 @@ for (const [label, offset] of [['实施报告', 0], ['实施报告', 4], ['第�
     await page.getByRole('button', { name: '撤销', exact: true }).click(); await expect(next).toHaveCount(0); await expect.poll(() => logical(previous)).toBe(label);
     await page.getByRole('button', { name: '重做', exact: true }).click(); await page.getByRole('button', { name: '重做', exact: true }).click(); await expect.poll(() => logical(next)).toBe('新增中文😀' + label.slice(offset));
     if (offset === label.length && (label === '实施报告' || label === '第一项')) {
-      await page.getByRole('tab', { name: '文件', exact: true }).click(); const download = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
+      await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click(); const download = page.waitForEvent('download'); await page.getByRole('button', { name: '导出 DOCX', exact: true }).click();
       const path = info.outputPath('enter-reopen.docx'); await (await download).saveAs(path); await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles(path);
       await expect(page.getByRole('heading', { name: 'enter-reopen.docx', exact: true })).toBeVisible();
       await expect(frame.locator('[data-office-editor]')).toContainText('新增中文😀'); await expect(page.getByRole('alert')).toHaveCount(0);
@@ -702,3 +749,42 @@ for (const [label, offset] of [['实施报告', 0], ['实施报告', 4], ['第�
     expect(errors).toEqual([]);
   });
 }
+
+
+test('native paragraph dialog shows current values, cancels without an edit and converts character and line units in one undo', async ({ page }) => {
+  await page.goto('/'); await page.getByRole('button', { name: '打开报告协作样例', exact: true }).click();
+  const paragraph = page.frameLocator('iframe[title="正文编辑"]').locator('[data-node-id="n-summary"]');
+  await paragraph.evaluate(node => { node.closest<HTMLElement>('[contenteditable]')!.focus(); const range = document.createRange(); range.selectNodeContents(node); const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); });
+  const font = await paragraph.evaluate(node => parseFloat(getComputedStyle(node).fontSize) * .75);
+  const before = await paragraph.evaluate(node => ({ marginLeft: getComputedStyle(node).marginLeft, marginBottom: getComputedStyle(node).marginBottom }));
+  const open = async () => { await page.getByRole('button', { name: '行和段落间距', exact: true }).click(); await page.getByRole('menuitem', { name: '行距选项…', exact: true }).click(); };
+  await open(); let dialog = page.getByRole('dialog', { name: '段落', exact: true });
+  await expect(dialog).toHaveCSS('width', '580px'); await dialog.getByLabel('左侧（字符）', { exact: true }).fill('2'); await dialog.press('Escape');
+  await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '0');
+  await open(); dialog = page.getByRole('dialog', { name: '段落', exact: true });
+  await dialog.getByLabel('左侧（字符）', { exact: true }).fill('1.5'); await dialog.getByLabel('段后（行）', { exact: true }).fill('1.2'); await dialog.getByRole('button', { name: '确定', exact: true }).click();
+  await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '1');
+  await expect.poll(() => paragraph.evaluate(node => parseFloat(getComputedStyle(node).marginLeft) * .75)).toBeCloseTo(font * 1.5, 1);
+  await expect.poll(() => paragraph.evaluate(node => parseFloat(getComputedStyle(node).marginBottom) * .75)).toBeCloseTo(font * 1.2, 1);
+  await page.getByRole('button', { name: '撤销', exact: true }).click();
+  expect(await paragraph.evaluate(node => ({ marginLeft: getComputedStyle(node).marginLeft, marginBottom: getComputedStyle(node).marginBottom }))).toEqual(before);
+});
+
+test('Excel workspace opens its native modal above hidden SDK panels and formula buttons use the shared history', async ({ page }) => {
+  await page.addInitScript(() => { const attach = Element.prototype.attachShadow; Element.prototype.attachShadow = function(init) { return attach.call(this, { ...init, mode: 'open' }); }; });
+  await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto('/');
+  await page.getByLabel('打开文件', { exact: true }).filter({ visible: false }).setInputFiles('examples/xlsx/01-values-text.xlsx');
+  const formats = page.getByRole('combobox', { name: '数字格式', exact: true }); await expect(formats).toBeEnabled();
+  await page.getByRole('button', { name: '格式', exact: true }).click(); await page.getByRole('menuitem', { name: '设置单元格格式…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '设置单元格格式', exact: true });
+  await expect.poll(() => page.locator('dialog[aria-label="设置单元格格式"]').evaluateAll(nodes => nodes.map(node => { const el = node as HTMLDialogElement; return { open: el.open, display: getComputedStyle(el).display, parent: getComputedStyle(el.parentElement!).display }; }))).toEqual([{ open: true, display: 'block', parent: 'contents' }]); await expect(dialog).toBeVisible();
+  expect(await dialog.getByRole('tab').allTextContents()).toEqual(['数字', '对齐', '字体', '边框', '填充', '保护']);
+  await dialog.getByRole('tab', { name: '字体', exact: true }).click(); await expect(dialog.getByLabel('西文字体', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: '取消', exact: true }).click(); await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '0');
+  await formats.fill('货币'); await formats.press('Enter'); await expect(formats).toHaveValue('货币'); await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '1');
+  const input = page.getByRole('textbox', { name: '单元格或公式输入', exact: true }); await input.fill('42');
+  await page.getByRole('button', { name: '确认单元格输入', exact: true }).click(); await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '2'); await expect(input).toHaveValue('42');
+  await input.fill('cancelled'); await page.getByRole('button', { name: '取消单元格输入', exact: true }).click(); await expect(input).toHaveValue('42');
+  await expect(page.locator('.office-app')).toHaveAttribute('data-revision', '2');
+  const footer = (await page.locator('.doffi-office-statusbar').boundingBox())!; expect(footer.y + footer.height).toBeLessThanOrEqual(1001);
+});

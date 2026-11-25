@@ -21,6 +21,7 @@ interface Item {
     geometry: Readonly<PresentationGeometry>;
     source: Readonly<PresentationGeometry>;
     autoFitShape: boolean;
+    coordinateScale: number;
     parent: DOMMatrix;
     inverse: DOMMatrix;
     start: DOMPoint;
@@ -37,7 +38,7 @@ interface Drag {
     next: Map<string, PresentationGeometry>;
 }
 /** A short-lived SVG probe measures the renderer's actual parent coordinate system. */
-function matrix(node: HTMLElement): DOMMatrix {
+function matrix(node: HTMLElement, coordinateScale = 1): DOMMatrix {
     const frame = node.ownerDocument, probe = frame.createElementNS("http://www.w3.org/2000/svg", "svg");
     // 750 pt is exactly 1000 CSS px: a 1 pt probe suffers layout-unit rounding.
     probe.setAttribute("viewBox", "0 0 750 750");
@@ -47,7 +48,7 @@ function matrix(node: HTMLElement): DOMMatrix {
     probe.remove();
     if (!result)
         throw new Error("对象坐标暂不可测量。");
-    return result;
+    return result.scale(coordinateScale);
 }
 function transformed(geometry: Readonly<PresentationGeometry>, parent: DOMMatrix): DOMMatrix {
     return parent.translate(geometry.x + geometry.width / 2, geometry.y + geometry.height / 2).rotate(geometry.rotation).scale(geometry.flipH ? -1 : 1, geometry.flipV ? -1 : 1).translate(-geometry.width / 2, -geometry.height / 2);
@@ -89,9 +90,10 @@ export function bindObjectGestures(frame: Document, host: ObjectGestureHost): Ob
                 box = node.getBoundingClientRect();
             overlay(`pointer-events:none!important;border:2px ${drag ? "dashed" : "solid"} #245aa5!important;background:${drag ? "rgba(36,90,165,.08)" : "transparent"}!important;left:${box.left}px!important;top:${box.top}px!important;width:${Math.max(box.width, 2)}px!important;height:${Math.max(box.height, 2)}px!important;`);
             if (ids.length === 1 && !drag) {
-                const original = resolvePresentationGeometry(host.session, id), style = frame.defaultView!.getComputedStyle(node), auto = node.getAttribute("data-sdk-text-auto-fit") === "shape", width = parseFloat(style.width) * .75, height = parseFloat(style.height) * .75;
-                const g = auto ? { ...original, width: Math.abs(width - original.width) > .02 ? width : original.width, height: Math.abs(height - original.height) > .02 ? height : original.height } : original, m = matrix(node);
-                for (const [kind, x, y] of [["resize", g.width, g.height], ["rotate", g.width / 2, -24]] as const) {
+                const coordinateScale = Number(node.dataset.sdkPptCoordinateScale ?? 1);
+                const original = resolvePresentationGeometry(host.session, id), style = frame.defaultView!.getComputedStyle(node), auto = node.getAttribute("data-sdk-text-auto-fit") === "shape", width = parseFloat(style.width) * .75 / coordinateScale, height = parseFloat(style.height) * .75 / coordinateScale;
+                const g = auto ? { ...original, width: Math.abs(width - original.width) * coordinateScale > .02 ? width : original.width, height: Math.abs(height - original.height) * coordinateScale > .02 ? height : original.height } : original, m = matrix(node, coordinateScale);
+                for (const [kind, x, y] of [["resize", g.width, g.height], ["rotate", g.width / 2, -24 / coordinateScale]] as const) {
                     const p = point(frame, x, y, m), handle = overlay(`pointer-events:auto!important;cursor:${kind === "resize" ? "nwse-resize" : "grab"}!important;left:${p.x - 5}px!important;top:${p.y - 5}px!important;width:10px!important;height:10px!important;background:white!important;border:2px solid #245aa5!important;border-radius:${kind === "rotate" ? "50%" : "0"}!important;`);
                     handle.dataset.sdkPptHandle = kind;
                     handle.dataset.sdkPptObject = id;
@@ -137,10 +139,10 @@ export function bindObjectGestures(frame: Document, host: ObjectGestureHost): Ob
                     host.select([id]);
             }
             const items = host.selected().map(id => {
-                const node = element(id)!, parent = matrix(node.parentElement!), inverse = parent.inverse();
-                const source = resolvePresentationGeometry(host.session, id), style = frame.defaultView!.getComputedStyle(node), autoFitShape = node.getAttribute("data-sdk-text-auto-fit") === "shape", width = parseFloat(style.width) * .75, height = parseFloat(style.height) * .75;
-                const geometry = autoFitShape ? { ...source, width: Math.abs(width - source.width) > .02 ? width : source.width, height: Math.abs(height - source.height) > .02 ? height : source.height } : source;
-                return { id, geometry, source, autoFitShape, parent, inverse, start: point(frame, event.clientX, event.clientY, inverse) };
+                const node = element(id)!, coordinateScale = Number(node.dataset.sdkPptCoordinateScale ?? 1), parent = matrix(node.parentElement!, coordinateScale), inverse = parent.inverse();
+                const source = resolvePresentationGeometry(host.session, id), style = frame.defaultView!.getComputedStyle(node), autoFitShape = node.getAttribute("data-sdk-text-auto-fit") === "shape", width = parseFloat(style.width) * .75 / coordinateScale, height = parseFloat(style.height) * .75 / coordinateScale;
+                const geometry = autoFitShape ? { ...source, width: Math.abs(width - source.width) * coordinateScale > .02 ? width : source.width, height: Math.abs(height - source.height) * coordinateScale > .02 ? height : source.height } : source;
+                return { id, geometry, source, autoFitShape, coordinateScale, parent, inverse, start: point(frame, event.clientX, event.clientY, inverse) };
             });
             if (!items.length)
                 return;
@@ -177,7 +179,7 @@ export function bindObjectGestures(frame: Document, host: ObjectGestureHost): Ob
             }
             else {
                 const r = g.rotation * Math.PI / 180, u = { x: Math.cos(r) * (g.flipH ? -1 : 1), y: Math.sin(r) * (g.flipH ? -1 : 1) }, v = { x: -Math.sin(r) * (g.flipV ? -1 : 1), y: Math.cos(r) * (g.flipV ? -1 : 1) };
-                let width = Math.max(1, g.width + dx * u.x + dy * u.y), height = Math.max(1, g.height + dx * v.x + dy * v.y);
+                let width = Math.max(1 / item.coordinateScale, g.width + dx * u.x + dy * u.y), height = Math.max(1 / item.coordinateScale, g.height + dx * v.x + dy * v.y);
                 if (event.shiftKey && g.width && g.height) {
                     const scale = Math.max(width / g.width, height / g.height);
                     width = g.width * scale;

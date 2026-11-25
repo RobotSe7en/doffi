@@ -7,7 +7,7 @@ import type { Page } from "@playwright/test";
 import { createDocumentSession,createPresentation,openDocument } from "@doffi/core";
 import type { DocumentPackage } from "@doffi/core";
 import { renderDocumentPdf } from "@doffi/node";
-import { importPptx,readDocumentZip } from "@doffi/office";
+import { exportPptx,importPptx,readDocumentZip } from "@doffi/office";
 import {writeOpcZip} from "../../packages/office/src/document-zip.js";
 import type { PresentationEditorHost } from "./fixtures/presentation-editor-host.js";
 declare global{interface Window{presentationEditorHost:PresentationEditorHost}}
@@ -170,6 +170,9 @@ test("PPT real IME input commits once and rejects concurrent source changes",asy
   const cdp=await page.context().newCDPSession(page);await cdp.send("Input.imeSetComposition",{text:"中",selectionStart:1,selectionEnd:1});expect(await page.evaluate(()=>window.presentationEditorHost.session!.history().undoSteps)).toBe(1);await cdp.send("Input.imeSetComposition",{text:"中文",selectionStart:2,selectionEnd:2});await cdp.send("Input.insertText",{text:"中文"});await settled(page);
   expect(await page.evaluate(()=>window.presentationEditorHost.session!.history().undoSteps)).toBe(2);expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).toContain("中文");
   await cdp.send("Input.imeSetComposition",{text:"迟到",selectionStart:2,selectionEnd:2});await page.evaluate(()=>window.presentationEditorHost.view!.perform([{op:"setSlideProperties",slideId:window.presentationEditorHost.view!.activeSlide(),changes:{name:"并发"}}]));await cdp.send("Input.insertText",{text:"迟到"});await settled(page);
+  // The source refresh also schedules thumbnails. Their completion must retain
+  // the conflict alert rather than treating background work as a user command.
+  await expect(page.getByRole("navigation",{name:"幻灯片与对象导航"}).locator(".slide-list button").first().frameLocator("iframe").locator('[data-office-kind="slide"]')).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("输入期间文档已变化");expect(await page.evaluate(()=>window.presentationEditorHost.session!.snapshot().html)).not.toContain("迟到");
 });
 
@@ -299,6 +302,35 @@ test("nested transformed group drags use the actual parent space and concurrent 
   expect(await page.evaluate(()=>Number(window.presentationEditorHost.session!.getNode("milestone")!.attributes["data-office-x"]))).toBe(48);expect(await page.evaluate(()=>window.presentationEditorHost.session!.history().undoSteps)).toBe(3);
 });
 
+test("conditioned tiny group coordinates map pointer movement and resize back to the original source units", async ({ page }) => {
+  const model = openDocument(example(), { kind: "presentation" }), files = new Map(model.serialize()), group = model.getNode("delivery-group")!;
+  let normalized = group.html.replace(/data-office-child-(x|y|width|height)="([^"]+)"/g, (_, name: string, value: string) => `data-office-child-${name}="${Number(value) / 1000}"`);
+  for (const id of group.childNodeIds) {
+    const child = model.getNode(id)!.html;
+    normalized = normalized.replace(child, child.replace(/data-office-(x|y|width|height)="([^"]+)"/g, (_, name: string, value: string) => `data-office-${name}="${Number(value) / 1000}"`));
+  }
+  files.set("content.html", new TextEncoder().encode(model.snapshot().html.replace(group.html, normalized)));
+  const source = openDocument(files).getNode("group-label")!.attributes;
+  await mount(page, files);
+  const node = frame(page).locator('[data-node-id="group-label"]'), before = (await node.boundingBox())!;
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2); await page.mouse.down();
+  await page.mouse.move(before.x + before.width / 2 + 40, before.y + before.height / 2 + 20, { steps: 5 }); await page.mouse.up(); await settled(page);
+  const moved = await page.evaluate(() => window.presentationEditorHost.session!.getNode("group-label")!.attributes);
+  expect(Number(moved["data-office-x"])).toBeCloseTo(Number(source["data-office-x"]) + .03, 5);
+  expect(Number(moved["data-office-y"])).toBeCloseTo(Number(source["data-office-y"]) + .015, 5);
+  const after = (await node.boundingBox())!;
+  expect(after.x - before.x).toBeCloseTo(40, 0); expect(after.y - before.y).toBeCloseTo(20, 0);
+  const resize = (await frame(page).getByRole("button", { name: "调整对象大小", exact: true }).boundingBox())!;
+  await page.mouse.move(resize.x + resize.width / 2, resize.y + resize.height / 2); await page.mouse.down();
+  await page.mouse.move(resize.x + resize.width / 2 + 20, resize.y + resize.height / 2 + 10, { steps: 4 }); await page.mouse.up(); await settled(page);
+  const resized = await page.evaluate(() => window.presentationEditorHost.session!.getNode("group-label")!.attributes);
+  expect(Number(resized["data-office-width"])).toBeCloseTo(Number(source["data-office-width"]) + .015, 5);
+  expect(Number(resized["data-office-height"])).toBeCloseTo(Number(source["data-office-height"]) + .0075, 5);
+  await page.evaluate(() => { window.presentationEditorHost.session!.undo(); window.presentationEditorHost.session!.undo(); }); await settled(page);
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.getNode("group-label")!.attributes)).toEqual(source);
+  expect(await page.evaluate(() => window.presentationEditorHost.errors)).toEqual([]);
+});
+
 test("image insertion, native crop and undo restore the authorized resource manifest",async({page})=>{
   await mount(page,example());await page.locator('input[type="file"]').setInputFiles("examples/presentation/assets/sample.png");
   await expect.poll(()=>page.evaluate(()=>window.presentationEditorHost.session!.snapshot().manifest.assets.length)).toBe(2);await settled(page);
@@ -376,4 +408,42 @@ test("review: editing native theme paints keeps visible alpha and applies direct
   await page.getByLabel("不透明度（%）",{exact:true}).fill("75");await page.getByLabel("不透明度（%）",{exact:true}).press("Tab");await settled(page);await expect(path).toHaveAttribute("fill","rgba(68,114,196,0.75)");await page.getByRole("button",{name:"撤销",exact:true}).click();await settled(page);
   await page.getByLabel("填充颜色",{exact:true}).fill("#123456");await page.getByLabel("填充颜色",{exact:true}).press("Tab");await settled(page);await expect(path).toHaveAttribute("fill","rgba(18,52,86,0.5)");
   await page.getByLabel("轮廓颜色",{exact:true}).fill("#abcdef");await page.getByLabel("轮廓颜色",{exact:true}).press("Tab");await settled(page);await expect(path).toHaveAttribute("stroke","rgba(171,205,239,0.35)");expect(await page.evaluate(()=>window.presentationEditorHost.errors)).toEqual([]);
+});
+
+
+test("native font dialog confirms one PPT transaction, cancels without a revision and survives editable PPTX reopen", async ({ page }) => {
+  await mount(page, example());
+  const original = await page.evaluate(() => [...window.presentationEditorHost.session!.serialize()].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]));
+  await page.evaluate(async () => { window.presentationEditorHost.view!.selectObjects(["heading"]); await window.presentationEditorHost.view!.executeCommand("fontSettings"); });
+  let dialog = page.getByRole("dialog", { name: "字体", exact: true });
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.history().undoSteps)).toBe(0);
+  await page.evaluate(() => window.presentationEditorHost.view!.executeCommand("fontSettings"));
+  dialog = page.getByRole("dialog", { name: "字体", exact: true });
+  await dialog.getByRole("button", { name: "展开西文字体:", exact: true }).click(); await dialog.getByRole("option", { name: "Arial", exact: true }).click(); await expect(dialog.getByLabel("西文字体:", { exact: true })).toHaveValue("Arial");
+  await dialog.getByLabel("字号:", { exact: true }).fill("21");
+  await dialog.getByLabel("字形", { exact: true }).selectOption("boldItalic");
+  await dialog.getByRole("button", { name: "确定", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.history().undoSteps)).toBe(1);
+  const source = new Map((await page.evaluate(() => [...window.presentationEditorHost.session!.serialize()].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]))).map(([path, bytes]) => [path, new Uint8Array(bytes)]));
+  const bytes = exportPptx(openDocument(source, { kind: "presentation" })).bytes;
+  const reopened = openDocument(await importPptx(bytes, { documentId: "font-dialog-reopen" }), { kind: "presentation" });
+  expect(reopened.snapshot().html).toContain("项目进展");
+  const xml = new TextDecoder().decode(readDocumentZip(bytes).get("ppt/slides/slide1.xml")!);
+  expect(xml).toContain('sz="2100"'); expect(xml).toContain('b="1"'); expect(xml).toContain('i="1"');
+  await page.evaluate(() => window.presentationEditorHost.session!.undo());
+  const restored = await page.evaluate(() => [...window.presentationEditorHost.session!.serialize()].filter(([path]) => path !== "manifest.json" && path !== "annotations.json").map(([path, bytes]) => [path, [...bytes]] as [string, number[]]));
+  expect(restored).toEqual(original.filter(([path]) => path !== "manifest.json" && path !== "annotations.json"));
+});
+
+test("shape palette properties use one PPT history step and reject an invalid appearance atomically", async ({ page }) => {
+  await mount(page, example());
+  await page.evaluate(() => { window.presentationEditorHost.view!.selectObjects(["milestone"]); window.presentationEditorHost.view!.formatObjects({ "--office-fill-kind": "solid", "--office-fill-color": "#ff0000", "--office-fill-alpha": "1", "--office-line-kind": "solid", "--office-line-color": "#00ff00" }); });
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.history().undoSteps)).toBe(1);
+  await expect.poll(() => frame(page).locator('[data-node-id="milestone"]>svg>path').first().getAttribute("fill")).toBe("rgba(255,0,0,1)");
+  await expect(page.evaluate(() => window.presentationEditorHost.view!.formatObjects({ "--office-fill-color": "url(https://invalid.test/private)" }))).rejects.toThrow();
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.history().undoSteps)).toBe(1);
+  await page.evaluate(() => window.presentationEditorHost.session!.undo());
+  expect(await page.evaluate(() => window.presentationEditorHost.session!.history().undoSteps)).toBe(0);
 });

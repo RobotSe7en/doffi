@@ -3,7 +3,7 @@ import type { ContentDocumentModel } from "@doffi/core";
 import type { DocumentPreview, DocumentPreviewOptions } from "../preview.js";
 import { renderLimits } from "../contracts.js";
 import type { PresentationRenderReport, FontResolution } from "../contracts.js";
-import { collectDocumentFontNames, hasUnloadedWordWebFonts, loadWordWebFonts, resolvePreviewFonts, resolvePreviewFontsInScope } from "../fonts.js";
+import { collectDocumentFontNames, hasUnloadedWordWebFonts, loadWordWebFonts, resolvePreviewDefaultFont, resolvePreviewFonts, resolvePreviewFontsInScope } from "../fonts.js";
 import type { HostedWordFonts } from "../fonts.js";
 import { FontProbeCache } from "../font-probe-cache.js";
 import { preparePreviewPackage, releasePreviewUrls } from "../preview-package.js";
@@ -68,7 +68,9 @@ export function mountPresentationPreview(container: HTMLElement, input: ContentD
   }
   function render(): void {
     observer?.disconnect();
-    const document = frame.contentDocument!; canvas = composePresentation(document, prepared.model, limits, options.presentationSurfaceId, editingSlide);
+    const document = frame.contentDocument!;
+    const defaultFont = resolvePreviewDefaultFont(document, "'Noto Sans CJK SC',sans-serif", hostedFonts, fontProbes);
+    canvas = composePresentation(document, prepared.model, limits, options.presentationSurfaceId, editingSlide, defaultFont);
     if (editingSlide) {
       fonts = [];
       addScopeFonts(document, canvas.fontScopes());
@@ -137,7 +139,8 @@ export function mountPresentationPreview(container: HTMLElement, input: ContentD
           void loadWordWebFonts(document, options.wordWebFonts, requested).then(next => {
             if (disposed || expected !== generation) return;
             hostedFonts = next;
-            replace(prepared);
+            if (options.onFontsReady) options.onFontsReady();
+            else replace(prepared);
           }).catch(() => {});
         }
       }

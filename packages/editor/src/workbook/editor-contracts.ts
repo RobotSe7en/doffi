@@ -17,6 +17,7 @@ export interface WorkbookValidationConfirmation {
   readonly warnings: readonly WorkbookValidationWarning[];
 }
 export interface WorkbookEditorOptions {
+  readonly wordWebFonts?: WorkbookPreviewOptions["wordWebFonts"];
   readonly title?: string;
   readonly appearance?: "default" | "workspace";
   readonly onFormatStateChange?: (state: TextFormatState) => void;

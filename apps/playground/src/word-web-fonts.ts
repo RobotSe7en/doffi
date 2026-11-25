@@ -29,15 +29,15 @@ const fangsongAliases = ["仿宋", "仿宋_GB2312", "FangSong", "FangSong_GB2312
 const kaiAliases = ["楷体", "楷体_GB2312", "KaiTi", "KaiTi_GB2312", "SimKai", "楷体-简", "Kaiti SC", "华文楷体", "STKaiti", "LXGW WenKai", "霞鹜文楷"];
 
 type InternalFont = Pick<WordWebFont, "family" | "aliases" | "weight" | "style"> & { file: string };
-const internalAssets = import.meta.glob<string>("./assets/word-fonts/internal/*.woff", {
+const internalAssets = import.meta.glob<string>(["../../../fonts/local/*.woff", "../../../fonts/local/*.woff2", "../../../fonts/local/*.ttf", "../../../fonts/local/*.otf"], {
   eager: true, query: "?url", import: "default",
 });
-const internalManifests = import.meta.glob<{ fonts: InternalFont[] }>("./assets/word-fonts/internal/sources.json", {
+const internalManifests = import.meta.glob<{ fonts: InternalFont[] }>("../../../fonts/local/sources.json", {
   eager: true, import: "default",
 });
 const internalFonts = Object.values(internalManifests).flatMap(({ fonts }) =>
   fonts.map(({ file, ...definition }) => {
-    const url = internalAssets["./assets/word-fonts/internal/" + file];
+    const url = internalAssets["../../../fonts/local/" + file];
     if (!url) throw new Error("Missing internal Word font asset: " + file);
     return webFont({ ...definition, equivalentAliases: true }, url);
   }),

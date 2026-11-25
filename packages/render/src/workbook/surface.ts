@@ -1,6 +1,8 @@
 import { DocumentError } from "@doffi/core";
 import type { WorkbookSnapshot } from "@doffi/core";
 import { FontProbeCache } from "../font-probe-cache.js";
+import { collectDocumentFontNames, loadWordWebFonts } from "../fonts.js";
+import type { WordWebFont } from "../fonts.js";
 
 export interface WorkbookSurface {
   /** Bounded measurements belong to this actual iframe/font-set lifetime. */
@@ -19,6 +21,7 @@ export interface WorkbookSurface {
   dispose(): void;
 }
 export interface WorkbookSurfaceOptions {
+  readonly wordWebFonts?: readonly WordWebFont[];
   readonly widthPt: number;
   readonly heightPt: number;
   readonly maxCssCodeUnits?: number;
@@ -103,7 +106,11 @@ export function createWorkbookSurface(container: HTMLElement, snapshot: Workbook
         host.style.cssText = "all:initial!important;display:block!important;position:absolute!important;left:0!important;top:0!important;width:100%!important;height:100%!important;direction:ltr!important;unicode-bidi:isolate!important";
         view.style.cssText = "position:relative;width:100%;height:100%;overflow:hidden;direction:ltr";
         host.attachShadow({ mode: "closed" }).append(view); document.body.append(source, host);
-        void document.fonts.ready.then(() => {
+        void (async () => {
+          if (options.wordWebFonts?.length)
+            await loadWordWebFonts(document, options.wordWebFonts, collectDocumentFontNames({ html: snapshot.content?.html ?? "", styles: snapshot.styles }));
+          await document.fonts.ready;
+        })().then(() => {
           if (disposed || !pending) return;
           pending = false; detach(); resolve(lease(document, source, host, view));
         }).catch(fail);

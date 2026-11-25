@@ -36,6 +36,24 @@ function mount(container: HTMLElement, input: WorkbookModel | WorkbookPreviewSou
 let cleanup = () => {}, inspect = () => ({}), action = async (_action: string) => ({});
 export function previewInspect() { return inspect(); }
 export function previewAction(name: string) { return action(name); }
+export async function hostedWebFonts(entries: Entries, encoded: string) {
+  cleanup();
+  const model = modelOf(entries), before = model.serialize(), container = host();
+  let loads = 0;
+  const { preview, chrome } = mount(container, model, { wordWebFonts: [{
+    family: "SDK Hosted Serif", aliases: ["Authorized Test Serif"], equivalentAliases: true,
+    async load() { loads++; return Uint8Array.from(atob(encoded), character => character.charCodeAt(0)).buffer; },
+  }] });
+  try {
+    await preview.ready;
+    const fonts = preview.fonts();
+    await preview.setViewport({ ...preview.layout().viewport, scrollTopPt: 10 });
+    await preview.settled();
+    const document = chrome.querySelector("iframe")!.contentDocument!;
+    return { loads, fonts, installed: [...document.fonts].some(face => face.family === "SDK Hosted Serif" && face.status === "loaded"),
+      unchanged: [...before].every(([path, bytes]) => bytes.every((byte, index) => byte === model.serialize().get(path)![index])) };
+  } finally { preview.dispose(); container.remove(); }
+}
 export async function imperativeRangeSelection(entries: Entries, rtl: boolean) {
   cleanup(); const model = modelOf(entries, rtl), before = model.serialize(), container = host();
   const { preview } = mount(container, model);
@@ -226,7 +244,7 @@ export async function ruleWindowLifecycle(entries: Entries) {
     return { failures, cancelled, aborted, retainedLatest: controller.current!.frame.sheetId === 'preview-empty' };
   } finally { controller.dispose(); surface.dispose(); formatter.dispose(); container.remove(); }
 }
-(window as unknown as { workbookPreview: unknown }).workbookPreview = { incrementalFontWarnings, incrementalPreview, mountPublicPreview, previewInspect, previewAction, imperativeRangeSelection, calculatedPreview, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
+(window as unknown as { workbookPreview: unknown }).workbookPreview = { hostedWebFonts, incrementalFontWarnings, incrementalPreview, mountPublicPreview, previewInspect, previewAction, imperativeRangeSelection, calculatedPreview, publicPreviewLifecycle, previewDecorationMeasurement, initialPreviewFailure, ruleWindowLifecycle, publicReadAhead };
 
 export async function publicReadAhead(entries: Entries, allow: boolean, rows: number, mode: 'normal' | 'hold' | 'parent-input' | 'failure' | 'revision' | 'active' | 'preference' = 'normal') {
   const model = modelOf(entries), before = model.serialize(), snapshot = model.snapshot(), source = modelWindowSource(model), container = host();

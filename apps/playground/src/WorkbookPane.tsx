@@ -3,6 +3,7 @@ import { DocumentError } from "@doffi/core";
 import { mountWorkbookEditor } from "@doffi/editor";
 import type { WorkbookRemoteEditorView, EditorCommandState, TextFormatState } from "@doffi/editor";
 import type { HostedWorkbook } from "./open-workbook.js";
+import { wordWebFonts } from "./word-web-fonts.js";
 
 interface Mounted { readonly document: HostedWorkbook; readonly slot: HTMLDivElement; readonly editor: WorkbookRemoteEditorView; dispose(): void }
 export function WorkbookPane({ document: hosted, preparing, activation, zoom, onReady, onUpdate, onError, onEditor, onCommands, onFormat }: {
@@ -21,7 +22,7 @@ export function WorkbookPane({ document: hosted, preparing, activation, zoom, on
       const current = active.current; if (!current || changing.current || hidden.current || !element.clientWidth) return;
       const scale = gridZoom.current;
       try {
-        const widthPt = Math.max(48, (element.clientWidth - 2) * .75 / scale - 48), heightPt = 450 / scale;
+        const widthPt = Math.max(48, (element.clientWidth - 2) * .75 / scale - 48), heightPt = Math.max(90, (window.innerHeight - element.getBoundingClientRect().top - 82) * .75 / scale - 30);
         const viewport = current.editor.layout().viewport;
         if (Math.abs(viewport.widthPt - widthPt) > .5 || Math.abs(viewport.heightPt - heightPt) > .5)
           await current.editor.setViewport({ ...viewport, widthPt, heightPt });
@@ -34,8 +35,9 @@ export function WorkbookPane({ document: hosted, preparing, activation, zoom, on
       }
     };
     const observer = new ResizeObserver(() => { void resize.current(); });
-    observer.observe(element);
-    return () => { observer.disconnect(); pending.current?.dispose(); active.current?.dispose(); pending.current = active.current = undefined; };
+    observer.observe(element); window.addEventListener("resize", resized);
+    function resized() { void resize.current(); }
+    return () => { window.removeEventListener("resize", resized); observer.disconnect(); pending.current?.dispose(); active.current?.dispose(); pending.current = active.current = undefined; };
   }, []);
   useEffect(() => { if (!preparing) void resize.current(); }, [preparing, zoom]);
   useEffect(() => {
@@ -52,7 +54,7 @@ export function WorkbookPane({ document: hosted, preparing, activation, zoom, on
     slot.style.cssText = "position:absolute;inset:0;transform:translateX(-200vw);opacity:0;visibility:hidden;pointer-events:none"; slot.inert = true; slot.setAttribute("aria-hidden", "true"); container.current!.append(slot);
     let mounted: Mounted | undefined;
     try {
-      const editor = mountWorkbookEditor(slot, hosted.session, { appearance: "workspace", widthPt: Math.max(180, container.current!.clientWidth * .75 - 49.5), heightPt: 450,
+      const editor = mountWorkbookEditor(slot, hosted.session, { appearance: "workspace", wordWebFonts, widthPt: Math.max(180, container.current!.clientWidth * .75 - 49.5), heightPt: 450,
         prepareOptions: () => ({ calculationContext: { now: { unixMilliseconds: Date.now(), utcOffsetMinutes: -new Date().getTimezoneOffset() } } }),
         confirmValidationWarnings(confirmation) {
           return window.confirm(confirmation.warnings.map(warning => `${warning.message}（${warning.sheetId}，行 ${warning.row + 1}，列 ${warning.column + 1}）`).join("\n") + "\n是否仍应用本次更改？");

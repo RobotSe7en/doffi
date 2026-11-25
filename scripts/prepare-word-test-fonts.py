@@ -207,7 +207,7 @@ def main():
         default=Path("/Applications/Microsoft Word.app/Contents/Resources/DFonts"),
     )
     args = parser.parse_args()
-    output = Path(__file__).resolve().parents[1] / "apps/playground/src/assets/word-fonts/internal"
+    output = Path(__file__).resolve().parents[1] / "fonts/local"
     output.mkdir(parents=True, exist_ok=True)
     sources = []
     for key, filename, index, aliases in FACES:

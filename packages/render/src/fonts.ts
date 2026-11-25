@@ -343,6 +343,9 @@ export function resolvePreviewFontsInScope(document: Document, scope: ParentNode
     const font = document.defaultView!.getComputedStyle(node).fontFamily;
     if (unavailableAudits.has(font)) { resolution.glyphAuditComplete = false; continue; }
     for (const character of new Set(node.textContent ?? "")) {
+      // Whitespace intentionally has no ink. Comparing its empty raster with
+      // a font's blank missing-glyph control cannot establish a missing glyph.
+      if (/\p{White_Space}/u.test(character)) continue;
       const key = font + "\0" + character;
       if (!auditedCharacters.has(key) && auditedCharacters.size >= 4096) {
         resolution.glyphAuditComplete = false;

@@ -53,7 +53,15 @@ export function runProperties(node: XmlNode | undefined): Css {
   if (solid) { const c = onlyColor(solid); paint(css, "--office-text", c); css.color = c.css; }
   if (child(node, "noFill", A)) { css.color = "transparent"; css["--office-text-color"] = "transparent"; }
   for (const [tag, role] of [["latin", "ascii"], ["ea", "east-asia"], ["cs", "complex-script"]] as const) {
-    const font = fontCss(child(node, tag, A), role);
+    const source = child(node, tag, A), font = fontCss(source, role);
+    // CT_TextCharacterProperties orders latin, ea, cs. PowerPoint ignores an
+    // ea written after cs (and removes it on resave); retain its declaration
+    // as inactive source data while the effective east-Asian font inherits.
+    const complex = child(node, "cs", A);
+    if (tag === "ea" && source && complex && node.content.indexOf(source) > node.content.indexOf(complex)) {
+      if (font) css["--office-ignored-font-east-asia"] = font;
+      continue;
+    }
     if (font) css["--office-font-" + role] = font;
     if (font && role === "ascii") { css["--office-font-h-ansi"] = font; css["font-family"] = font + ",var(--office-font-east-asia,var(--office-minor-east-asia))"; }
   }

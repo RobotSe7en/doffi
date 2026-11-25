@@ -75,16 +75,6 @@ a { color: var(--accent); }
 .sidebar-footer .connection-dot { margin-left: auto; }
 .workspace { position: relative; display: flex; flex-direction: column; min-width: 0; background: #f4f6fa; }
 .workspace.home-preparing { position: fixed; left: -200vw; top: 0; width: calc(100% - 208px); visibility: hidden; }
-.document-header { display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 8px 17px; background: #fff; border-bottom: 1px solid var(--line); }
-.document-navigation { display: flex; gap: 1px; padding-right: 10px; border-right: 1px solid var(--line); }
-.document-navigation button { padding: 7px; color: #7b8aa1; }
-.document-title { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
-.document-title h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
-.document-title>div { min-width: 0; }
-.document-title p { color: #94a0b3; font-size: 9px; margin-top: 2px; }
-.document-title .file-icon { width: 27px; height: 31px; background: transparent; }
-.document-header-actions { display: flex; align-items: center; gap: 7px; }
-.document-header-actions button { font-size: 11px; padding: 7px 10px; }
 .document-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 5px 17px; border-bottom: 1px solid var(--line); background: #f8faff; }
 .document-toolbar button { font-size: 11px; padding: 5px 7px; color: #4e6280; }
 .toolbar-group { display: flex; align-items: center; gap: 3px; border-right: 1px solid #dfe6f1; padding-right: 10px; }
@@ -113,8 +103,6 @@ a { color: var(--accent); }
 .empty-workspace { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; min-height: 400px; color: #6e7f98; }
 .empty-workspace p { margin-top: 12px; }
 .empty-paper, .empty-eyebrow, .format-tags { display: none; }
-.workspace-footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-top: auto; padding: 8px 18px; border-top: 1px solid #dce3ed; background: #f8faff; color: #8191a9; font-size: 9px; }
-.workspace-footer>span:first-child { display: flex; align-items: center; gap: 8px; }
 
 /* Public entry: examples and local-file opening, with the same visual language. */
 .welcome { min-width: 0; }
@@ -204,9 +192,6 @@ a { color: var(--accent); }
   .document-toolbar { gap: 5px; padding-inline: 12px; }
   .toolbar-caption { display: none; }
   .toolbar-group { padding-right: 6px; }
-  .document-header { padding-inline: 10px; gap: 8px; }
-  .document-header-actions { gap: 5px; }
-  .document-header-actions button { font-size: 10px; padding: 6px 8px; }
   .welcome-hero { padding-top: 40px; }
 }
 @media (max-width: 680px) {
@@ -218,21 +203,11 @@ a { color: var(--accent); }
   .file-icon { width: 23px; height: 27px; }
   .file-description strong { font-size: 10px; }
   .file-description small { font-size: 8px; }
-  .document-header { min-height: 55px; flex-wrap: wrap; padding: 8px 10px; gap: 6px; }
-  .document-title h1 { font-size: 12px; }
-  .document-title .file-icon { display: none; }
-  .document-navigation { padding-right: 5px; }
-  .document-navigation button { padding: 5px; }
-  .document-header-actions { margin-left: auto; }
-  .document-header-actions button { padding: 6px; }
-  .document-header-actions button svg { display: none; }
   .document-toolbar { padding: 5px 7px; gap: 3px; }
   .document-toolbar button { padding: 5px; font-size: 10px; }
   .toolbar-group { padding-right: 3px; }
   .view-mode { margin-left: 0; }
   .view-mode select { font-size: 10px; }
-  .workspace-footer { padding: 8px 12px; }
-  .workspace-footer>span:last-child { display: none; }
   .welcome-header { height: 61px; padding: 0 20px; }
   .welcome-header img { width: 85px; height: 44px; }
   .welcome-header>a:first-child { gap: 11px; }
@@ -287,37 +262,6 @@ a { color: var(--accent); }
   .welcome-footer { flex-direction: column; padding: 20px; font-size: 9px; gap: 7px; }
 }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
-
-/* Office desktop chrome: title bar, tab strip, grouped ribbon and status bar. */
-.document-header { min-height: 50px; padding-block: 5px; background: #f5f7fa; }
-.document-navigation { padding-right: 7px; }
-.quick-access { display: flex; align-items: center; gap: 1px; margin-right: 7px; }
-.quick-access button { padding: 5px; color: #566d8f; }
-.quick-access button:disabled { opacity: .32; }
-.document-title h1 { font-size: 12px; font-weight: 550; }
-.document-title p { font-size: 8px; }
-.document-header-actions button { padding-block: 6px; }
-.editing-mode-button { border-color: #cbd5e3; background: #fff; color: #485a74; }
-.dropdown-arrow { color: #8391a5; padding-left: 7px; }
-.word-office .preview { --doffi-editing-controls: none; --doffi-interaction-controls: none; --doffi-text-controls: none; --doffi-collaboration-controls: none; --doffi-canvas-height: calc(100dvh - 250px); }
-.word-office[data-office-tab=审阅] .preview { --doffi-collaboration-controls: flex; --doffi-canvas-height: calc(100dvh - 290px); }
-.word-office.hide-comments .preview { --doffi-annotations-display: none; --doffi-annotations-width: 0px; }
-.workspace-footer { min-height: 28px; padding-block: 3px; background: #f5f7fa; color: #677a96; }
-.office-status-controls { display: flex; align-items: center; gap: 5px; }
-.office-status-controls>button { padding: 3px 7px; border-radius: 0; }
-.office-status-controls>button[aria-pressed=true] { background: #e2ebf7; color: #204775; }
-.page-navigation { display: flex; align-items: center; gap: 3px; }
-.page-navigation input { width: 44px; padding: 3px 4px; font: inherit; border: 1px solid #cbd5e3; border-radius: 4px; }
-.page-navigation button { padding: 3px 4px; }
-.zoom-controls { display: flex; align-items: center; gap: 4px; margin-left: 5px; color: #687d9b; font-size: 10px; }
-.zoom-controls>button { padding: 0 4px; font-size: 15px; }
-.zoom-controls input { appearance: none; width: 100px; height: 2px; background: #b9c5d7; accent-color: #185abd; }
-.zoom-controls input::-webkit-slider-thumb { appearance: none; width: 6px; height: 13px; border: 1px solid #9badc7; background: #fff; border-radius: 1px; }
-.zoom-controls input::-moz-range-thumb { width: 5px; height: 12px; border: 1px solid #9badc7; background: #fff; border-radius: 1px; }
-.zoom-controls input:disabled { opacity: .4; }
-.zoom-controls>span { min-width: 35px; text-align: right; }
-@media(max-width:1100px) { .quick-access { gap: 0; margin-right: 0; }.quick-access button { padding: 4px; } }
-@media(max-width:680px) { .document-header { gap: 4px; }.quick-access { order: 3; }.quick-access button { padding: 4px; }.document-header-actions { order:4; }.document-header-actions .subtle-button { display:none; }.document-title p { display:none; }.document-header-actions button { font-size:10px; }.editing-mode-button { padding:5px 6px; }.dropdown-arrow { padding-left:2px; }.office-status-controls { gap:0; }.zoom-controls { gap:1px;margin-left:0; }.zoom-controls input { width:60px; }.workspace-footer { padding-inline:9px; }.workspace-footer>span:first-child { font-size:8px;gap:5px; } }
 
 /* The ribbon invokes the native view commands; their duplicate button rows stay hidden. */
 .presentation-office .preview { --doffi-presentation-controls: none; }

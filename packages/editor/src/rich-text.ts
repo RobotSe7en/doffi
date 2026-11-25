@@ -340,6 +340,7 @@ export function mountDocumentTextEditor(
       else formatAppearance(properties);
     },
     report,
+    options.wordWebFonts?.filter(font => !font.fallbackOnly).flatMap(font => [font.family, ...font.aliases]),
   );
   const styleControls = createWordStyleControls(
     shadow,
@@ -649,7 +650,7 @@ export function mountDocumentTextEditor(
     selection.removeAllRanges();
     selection.addRange(range);
   };
-  function refresh(selection = savedSelection): void {
+  function refresh(selection = savedSelection, focus = true): void {
     if (!root || !frame || disposed) return;
     if (reflowTimer !== undefined) document.defaultView!.clearTimeout(reflowTimer);
     reflowTimer = undefined;
@@ -676,8 +677,10 @@ export function mountDocumentTextEditor(
       report(reason);
       return;
     }
-    root.focus({ preventScroll: true });
+    const active = document.activeElement;
+    if (focus) root.focus({ preventScroll: true });
     restoreBookmark(root, selection, projection.ignored);
+    if (!focus && active instanceof HTMLElement) active.focus({ preventScroll: true });
     savedSelection = bookmark(root, projection.ignored);
     notifyFormat();
   }
@@ -2658,7 +2661,19 @@ export function mountDocumentTextEditor(
   const unsubscribe = session.subscribe((event) => {
     if (event.type !== "error" && !committing && !disposed && !composing) refresh();
   });
-  const preview = mountPreview(plane, viewModel(), { ...options, title: "正文编辑" });
+  let fontRefreshPending = false;
+  function refreshFonts(): void {
+    if (disposed || !root || !frame) return;
+    fontRefreshPending = true;
+    if (composing) return;
+    fontRefreshPending = false;
+    const styles = new Map(typingStyles), anchor = typingAnchor;
+    refresh(bookmark(root, projection.ignored) ?? savedSelection, document.activeElement === preview.element);
+    for (const [property, value] of styles) typingStyles.set(property, value);
+    typingAnchor = anchor;
+    notifyFormat();
+  }
+  const preview = mountPreview(plane, viewModel(), { ...options, title: "正文编辑", onFontsReady: refreshFonts });
   let zoom = 1;
   function resizePlane(
     anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom),
@@ -2697,10 +2712,17 @@ export function mountDocumentTextEditor(
     .then(() => {
       if (disposed) return;
       frame = preview.element.contentDocument!;
+      frame.addEventListener("compositionend", () => {
+        queueMicrotask(() => queueMicrotask(() => { if (fontRefreshPending) refreshFonts(); }));
+      }, { signal: controls.signal });
       root = rootElement(frame);
       const source = rootElement(new DOMParser().parseFromString(initial.html, "text/html"));
       activate(source);
       if (revision !== session.snapshot().manifest.revision) refresh();
+      if (options.appearance === "workspace" && !bookmark(root, projection.ignored)) {
+        select(...caretAt(root, 0, projection.ignored));
+        savedSelection = bookmark(root, projection.ignored);
+      }
       resizePlane();
       notifyFormat();
       frame.addEventListener(

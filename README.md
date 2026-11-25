@@ -76,6 +76,10 @@ pnpm dev
 
 打开终端显示的本地地址，即可载入 Word、PPT 或一万行 XLSX 样例，也可打开自己的受支持文件。Playground 提供编辑、批注、撤销重做和文档包保存重开。「文件」选项卡可下载原生文件、PDF 或 PNG。固定提案样例用于演示请求、差异审阅和整批应用，实际模型执行由宿主接入。
 
+默认启动会读取 [`fonts/local/`](fonts/README.md) 中的本地字体清单，浏览器按文档需要自动加载，PDF／PNG 服务使用同一配置。该目录由 Git 忽略，不进入 SDK 包。
+
+三种格式的标题栏、功能区、字体／字号菜单、色板、SVG 图标和状态栏随 `@doffi/editor/react` 的 `OfficeWorkspace` 提供。其他宿主可直接复用，接入自己的文件与保存回调，无需复制 Playground CSS。见[工作台接入](docs/workbench.md#react-与-playground)。
+
 ### 使用 SDK
 
 五个库使用 `@doffi/*` 包名，目前通过 workspace 或本地 tarball 消费。下面的 Node.js 示例读取 DOCX、通过统一事务标记一条已有批注为已解决，再导出当前源：

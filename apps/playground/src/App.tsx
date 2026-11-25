@@ -38,7 +38,7 @@ import { WorkbookPrintOptions } from "./WorkbookPrintOptions.js";
 import type { WorkbookSelectedCells } from "./WorkbookPrintOptions.js";
 import type { WorkbookOutputOptions, WorkbookOutputResult } from "./workbook-output.js";
 import { WelcomeScreen } from "./WelcomeScreen.js";
-import { OfficeRibbon } from "@doffi/editor/react";
+import { OfficeWorkspace } from "@doffi/editor/react";
 import type { OfficeActions } from "@doffi/editor/react";
 import { brandLogo } from "./brand.js";
 type WorkspaceFile = {
@@ -97,7 +97,7 @@ export function App() {
   const [changingMode, setChangingMode] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [slideShowStartId, setSlideShowStartId] = useState<string>();
-  const [commentsVisible, setCommentsVisible] = useState(true);
+  const [commentsVisible, setCommentsVisible] = useState(false);
   const [pageCount, setPageCount] = useState(0);
   const [files, setFiles] = useState(examples);
   const [activeId, setActiveId] = useState("");
@@ -142,8 +142,6 @@ export function App() {
   }>();
   const [pptxReport, setPptxReport] = useState<PptxExportReport>();
   const isPresentation = Boolean(snapshot?.metadata.presentation);
-  const pptxNativePreview = snapshot?.metadata.presentation?.nativePreview;
-  const animatedSlides = pptxNativePreview?.filter(item => item.feature === "animation").length ?? 0;
   const [docxReport, setDocxReport] = useState<DocxExportReport>();
   const exportRef = useRef<{
     controller: AbortController;
@@ -917,6 +915,7 @@ export function App() {
   }
   const history = workbook ? workbook.session.state().history : session?.history();
   const actions: OfficeActions = {
+    find: { run: () => { if (workbook || isPresentation) runNative("find"); else void runTextCommand({ type: "word", action: "find" }); }, disabled: loading || (workbook || isPresentation ? !nativeCommands.some(command => command.id === "find" && command.enabled) : !editing) },
     fitSlide: { run: fitSlide, disabled: !isPresentation || !session || !pageCount },
     slideShowFromStart: { run: () => startSlideShow(false), disabled: !isPresentation || !session || !pageCount },
     slideShowFromCurrent: { run: () => startSlideShow(true), disabled: !isPresentation || !session || !pageCount },
@@ -1003,7 +1002,7 @@ export function App() {
       },
       disabled: !history?.redoSteps || Boolean(workbook?.pendingInput),
     },
-    ...(!workbook && !editing
+    ...(!workbook && (isPresentation || !editing)
       ? {
           textSelection: {
             run: () => {
@@ -1254,109 +1253,25 @@ export function App() {
         aria-hidden={home || undefined}
         inert={home}
       >
-        <header className="document-header">
-          <div className="document-navigation">
-            <button
-              aria-label="返回首页"
-              title="返回首页"
-              onClick={() => {
-                if (canLeaveWorkbook()) {
-                  leaveExport();
-                  setHome(true);
-                  window.scrollTo(0, 0);
-                }
-              }}
-            >
-              <Icon name="home" size={17} />
-            </button>
-            <button
-              aria-label="显示文档列表"
-              title="显示或收起文档列表"
-              aria-expanded={libraryVisible}
-              onClick={() => setLibraryVisible((value) => !value)}
-            >
-              <Icon name="panel" size={17} />
-            </button>
-          </div>
-          <div className="quick-access" role="toolbar" aria-label="快速访问">
-            {actions.package && (
-              <button
-                title="下载文档包"
-                aria-label="下载文档包"
-                disabled={actions.package.disabled || loading}
-                onClick={actions.package.run}
-              >
-                <Icon name="save" size={17} />
-              </button>
-            )}
-            <button
-              title="撤销"
-              aria-label="撤销"
-              disabled={loading || actions.undo?.disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={actions.undo?.run}
-            >
-              <Icon name="undo" size={17} />
-            </button>
-            <button
-              title="重做"
-              aria-label="重做"
-              disabled={loading || actions.redo?.disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={actions.redo?.run}
-            >
-              <Icon name="redo" size={17} />
-            </button>
-          </div>
-          <div className="document-title">
-            <span
-              className={
-                "file-icon " + (workbook ? "workbook" : isPresentation ? "presentation" : "word")
-              }
-            >
-              <Icon name={workbook ? "grid" : isPresentation ? "slides" : "file"} size={18} />
-            </span>
-            <div>
-              <h1>{activeFile?.name ?? "文档工作台"}</h1>
-              <p>
-                {workbook ? "Excel" : isPresentation ? "PowerPoint" : "Word"} · doffi Playground
-              </p>
-            </div>
-          </div>
-          <div className="document-header-actions">
-            {!workbook && !isPresentation && (
-              <button
-                className="editing-mode-button"
-                aria-label={editing ? "返回预览与批注" : "编辑正文"}
-                disabled={loading || changingMode || !session}
-                onClick={() => {
-                  void changeEditing(!editing);
-                }}
-              >
-                <Icon name={editing ? "edit" : "book"} size={15} />
-                {editing ? "返回预览与批注" : "编辑正文"}
-                <span className="dropdown-arrow" aria-hidden="true">
-                  ⌄
-                </span>
-              </button>
-            )}
-            <button className="subtle-button" disabled={loading} onClick={newWordDocument}>
-              <Icon name="plus" size={16} />
-              新建 Word
-            </button>
-            <button className="subtle-button" disabled={loading} onClick={newPresentation}>
-              <Icon name="plus" size={16} />
-              新建 PPT
-            </button>
-            <button
-              className="primary-button"
-              disabled={loading}
-              onClick={() => fileInput.current?.click()}
-            >
-              <Icon name="upload" size={16} />
-              打开文件
-            </button>
-          </div>
+        <OfficeWorkspace
+          titleBar={{ title: activeFile?.name ?? "文档工作台", kind: workbook ? "workbook" : isPresentation ? "presentation" : "document", actions,
+            busy: loading || changingMode, editing, commentsVisible,
+            onHome: () => { if (canLeaveWorkbook()) { leaveExport(); setHome(true); window.scrollTo(0, 0); } },
+            onToggleDocuments: () => setLibraryVisible(value => !value), documentsVisible: libraryVisible,
+            ...(!workbook && !isPresentation ? { onEditingChange: () => { void changeEditing(!editing); } } : {}),
+            onNewWord: newWordDocument, onNewPresentation: newPresentation, onFile: () => setOfficeTab("文件"),
+          }}
+          ribbon={{ webFonts: wordWebFonts, kind: workbook ? "workbook" : isPresentation ? "presentation" : "document", tab: officeTab, onTab: setOfficeTab,
+            mode: !workbook && !isPresentation && !editing ? "preview" : "edit", busy: loading || changingMode, actions, commands: nativeCommands, onCommand: runNative,
+            formatState: textFormat, onTextCommand: runTextCommand,
+            ...(isPresentation ? { onObjectFormat: (properties: Readonly<Record<string, string>>) => { try { presentationRef.current?.editor.formatObjects(properties); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } } } : {}), layout, onLayout: changeLayout, zoom, onZoom: changeZoom, enableWorkbookZoom: !workbook?.pendingInput,
+          }}
+          statusBar={{ kind: workbook ? "workbook" : isPresentation ? "presentation" : "document", pageCount, zoom, onZoom: changeZoom,
+            disabled: loading || changingMode || Boolean(workbook?.pendingInput), layout,
+            ...(!workbook && !isPresentation ? { onLayout: changeLayout, onPage: (page: number) => { void workbenchRef.current?.goToPage(page).catch(reason => setError(reason.message)); } } : {}),
+            ...(isPresentation ? { onFit: fitSlide, ...(actions.slideShowFromCurrent ? { onSlideShow: actions.slideShowFromCurrent.run } : {}) } : {}),
+          }}>
+
           <input
             ref={fileInput}
             className="file-input"
@@ -1371,38 +1286,8 @@ export function App() {
               event.currentTarget.value = "";
             }}
           />
-        </header>
-        <div role="toolbar" aria-label="文件与导出">
-          <OfficeRibbon
-            kind={workbook ? "workbook" : isPresentation ? "presentation" : "document"}
-            tab={officeTab}
-            onTab={setOfficeTab}
-            mode={!workbook && !isPresentation && !editing ? "preview" : "edit"}
-            busy={loading || changingMode}
-            actions={actions}
-            commands={nativeCommands}
-            onCommand={runNative}
-            formatState={textFormat}
-            onTextCommand={runTextCommand}
-            layout={layout}
-            onLayout={changeLayout}
-            zoom={zoom}
-            onZoom={changeZoom}
-            enableWorkbookZoom={!workbook?.pendingInput}
-          />
-        </div>
+
         <div className="workspace-feedback">
-          {!!pptxNativePreview?.length && <p className="document-status" role="note">
-            {animatedSlides > 0 ? `${animatedSlides} 页含动画，当前显示静态内容。 ` : ""}
-            {pptxNativePreview.some(item => item.feature === "theme-defaults") ? "主题的新对象默认样式已保留，但不用于新建对象。 " : ""}
-            {pptxNativePreview.some(item => item.feature === "theme-format") ? "未引用的高级主题样式已保留。 " : ""}
-            {pptxNativePreview.some(item => item.feature === "handout-master") ? "讲义母版已保留。 " : ""}
-            {pptxNativePreview.some(item => item.feature === "transition") ? "幻灯片切换效果以静态方式预览。 " : ""}
-            {pptxNativePreview.some(item => item.feature === "emf-image") ? "EMF 图像使用内嵌位图预览。 " : ""}
-            {pptxNativePreview.some(item => item.feature === "table-style") ? "内置表格样式已保留，当前显示兼容样式。 " : ""}
-            {pptxNativePreview.some(item => item.feature === "tags") ? "原生标签也已保留。 " : ""}
-            原生定义保存在文档包中；为避免丢失，当前不能导出 PPTX。
-          </p>}
           {docxDiagnosticsEnabled && <p className="document-status">{docxDiagnosticsNotice}</p>}
           {exporting && (
             <p role="status">
@@ -1656,85 +1541,8 @@ export function App() {
           />
         )}
 
-        <footer className="workspace-footer">
-          <span>
-            {pageCount > 0 && !workbook && (
-              <>
-                {pageCount} {isPresentation ? "张幻灯片" : "页"} <i />
-              </>
-            )}
-            简体中文 <i />
-            <span className="connection-dot" />
-            本地工作空间
-          </span>
-          <div className="office-status-controls">
-            {!workbook && !isPresentation && (
-              <>
-                <button
-                  aria-label="页面视图"
-                  title="页面视图"
-                  aria-pressed={layout === "pages"}
-                  onClick={() => changeLayout("pages")}
-                >
-                  <Icon name="file" size={14} />
-                </button>
-                <button
-                  aria-label="连续视图"
-                  title="连续视图"
-                  aria-pressed={layout === "continuous"}
-                  onClick={() => changeLayout("continuous")}
-                >
-                  <Icon name="globe" size={14} />
-                </button>
-                {layout === "pages" && pageCount > 1 && (
-                  <form className="page-navigation" aria-label="转到页面" onSubmit={event => {
-                    event.preventDefault();
-                    const page = Number(new FormData(event.currentTarget).get("page"));
-                    void workbenchRef.current?.goToPage(page).catch(reason => setError(reason.message));
-                  }}>
-                    <input name="page" type="number" aria-label="目标页码" required min={1} max={pageCount} defaultValue={1} />
-                    <button type="submit">转到</button>
-                  </form>
-                )}
-              </>
-            )}
-            {isPresentation && <>
-              <button type="button" aria-label="幻灯片适应窗口" title="幻灯片适应窗口"
-                disabled={loading || actions.fitSlide?.disabled} onClick={fitSlide}>适应窗口</button>
-              <button type="button" aria-label="从当前幻灯片放映" title="从当前幻灯片放映"
-                disabled={loading || actions.slideShowFromCurrent?.disabled} onClick={actions.slideShowFromCurrent?.run}>
-                <Icon name="slides" size={14} />
-              </button>
-            </>}
-            <span className="zoom-controls">
-              <button
-                aria-label="缩小"
-                disabled={loading || changingMode || Boolean(workbook?.pendingInput) || zoom <= 0.5}
-                onClick={() => changeZoom(Math.max(0.5, zoom - 0.25))}
-              >
-                −
-              </button>
-              <input
-                aria-label="文档缩放"
-                disabled={loading || changingMode || Boolean(workbook?.pendingInput)}
-                type="range"
-                min="50"
-                max="200"
-                step="1"
-                value={zoom * 100}
-                onChange={(event) => changeZoom(Number(event.currentTarget.value) / 100)}
-              />
-              <button
-                aria-label="放大"
-                disabled={loading || changingMode || Boolean(workbook?.pendingInput) || zoom >= 2}
-                onClick={() => changeZoom(Math.min(2, zoom + 0.25))}
-              >
-                ＋
-              </button>
-              <span>{Math.round(zoom * 100)}%</span>
-            </span>
-          </div>
-        </footer>
+        </OfficeWorkspace>
+
       </section>
     </main>
   );

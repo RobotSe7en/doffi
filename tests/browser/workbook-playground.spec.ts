@@ -80,7 +80,7 @@ test('Playground exports the current revision as editable XLSX and a reopenable 
   await address.fill('AG257'); await address.press('Enter');
   await expect(input).toHaveValue('');
   await input.fill('=7*3');
-  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click();
   const exportNative = page.getByRole('button', { name: '导出 XLSX', exact: true });
   await expect(exportNative).toBeDisabled();
   await input.press('Control+Enter');
@@ -116,7 +116,7 @@ test('Playground cancels and retries native export of the ten-thousand-row sampl
   test.setTimeout(180_000);
   await page.getByRole('button', { name: '打开一万行 XLSX 样例', exact: true }).click();
   await expect(status(page)).toHaveAttribute('data-revision', '0', { timeout: 60_000 });
-  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click();
   const action = page.getByRole('button', { name: '导出 XLSX', exact: true });
   await action.click();
   await expect(page.getByRole('status').filter({ hasText: '正在导出 XLSX' })).toContainText('计算公式', { timeout: 15_000 });
@@ -153,7 +153,7 @@ function replyPrint(call: PrintCall, revision: number): Promise<void> {
   } } });
 }
 async function openPrint(page: Page, format: 'PDF' | 'PNG'): Promise<void> {
-  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click();
   await page.getByRole('button', { name: '导出 ' + format, exact: true }).click();
 }
 
@@ -282,7 +282,7 @@ test('Playground opens a small workbook and switches between isolated Word, PPT 
   const first = await workbookState(page);
   expect(first.grids).toBe(1); expect(first.readonly).toBe(true); expect(first.cells).toBeGreaterThan(0); expect(first.cells).toBeLessThan(2000);
   await expect(page.getByRole('toolbar', { name: '文件与导出' })).toBeVisible();
-  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click();
   await expect(page.getByRole('button', { name: '导出 XLSX', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: '导出 DOCX', exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('workbook-playground.png') });
@@ -346,7 +346,7 @@ test('workbook ZIP and native failures retain the accepted canvas and content ZI
   await expect.poll(() => page.evaluate(() => window.workbookHostProbe.terminated)).toBe(2);
   await upload(page).setInputFiles({ name: 'report.zip', mimeType: 'application/zip', buffer: reportZip }); await expect(page.getByRole('heading', { name: 'report.zip', exact: true })).toBeVisible();
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0");
-  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '文件菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '文件和导出…', exact: true }).click();
   await expect(page.getByRole('button', { name: '导出 DOCX', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.workbookHostProbe.terminated)).toBe(3);
   expect(errors).toEqual([]);

@@ -32,6 +32,15 @@ test.beforeAll(async () => {
   }
 });
 test.beforeEach(async ({ page }) => { await openSdkHost(page); await page.addScriptTag({ content: code }); });
+test('authorized host fonts load before workbook measurement and remain isolated from source bytes', async ({ page }) => {
+  const files = new Map(scalarWorkbook([{ row: 0, column: 0, value: { type: 'text', value: '汉字AB' } }]).serialize());
+  files.set('styles.css', new TextEncoder().encode(new TextDecoder().decode(files.get('styles.css')!) + '.cell-default{font-family:"Authorized Test Serif";--office-font-ascii:"Authorized Test Serif";--office-font-east-asia:"Authorized Test Serif"}'));
+  const result = await page.evaluate(({ entries, font }) => window.workbookPreview.hostedWebFonts(entries, font), {
+    entries: encodeTestPackage(files), font: readFileSync('apps/playground/src/assets/word-fonts/serif-regular.woff2').toString('base64'),
+  });
+  expect(result).toMatchObject({ loads: 1, installed: true, unchanged: true });
+  expect(result.fonts).toEqual(expect.arrayContaining([expect.objectContaining({ requestedFamily: 'Authorized Test Serif', selectedFamily: 'SDK Hosted Serif', substituted: false })]));
+});
 test('incremental preview remeasures distant hidden-column results and retains its accepted surface on failure and cancellation', async ({ page }) => {
   const model = scalarWorkbook(Array.from({ length: 2048 * 3 }, (_, index) => {
     const row = Math.floor(index / 3), column = index % 3;

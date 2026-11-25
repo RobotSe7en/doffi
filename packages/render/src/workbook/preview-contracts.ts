@@ -1,5 +1,6 @@
 import type { DeepReadonly, DocumentErrorData, DocumentSelection, WorkbookChangeImpact, WorkbookCoordinate, WorkbookModel, WorkbookRange, WorkbookSnapshot } from "@doffi/core";
 import type { FontResolution } from "../contracts.js";
+import type { WordWebFont } from "../fonts.js";
 import type { WorkbookWindowSource } from "./window-source.js";
 import type { WorkbookAssetSource } from "./assets.js";
 import type { WorkbookChartSource } from "./chart-source.js";
@@ -24,6 +25,7 @@ export interface WorkbookPreviewSource {
 }
 export type WorkbookPreviewInput = WorkbookModel | WorkbookPreviewSource;
 export interface WorkbookPreviewOptions {
+  readonly wordWebFonts?: readonly WordWebFont[];
   readonly title?: string;
   readonly widthPt?: number;
   readonly heightPt?: number;

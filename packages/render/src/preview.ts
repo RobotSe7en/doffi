@@ -63,6 +63,9 @@ export interface DocumentPreviewOptions {
   readonly layout?: "pages" | "continuous";
   readonly limits?: Partial<RenderLimits>;
   readonly wordWebFonts?: readonly WordWebFont[];
+  /** When provided, the input owner recomposes after new fonts load instead of
+   * the preview replacing its DOM independently of the active input binding. */
+  readonly onFontsReady?: () => void;
   /** Read-only editing projection of a registered master/layout/notes-master root. */
   readonly presentationSurfaceId?: string;
   /** Compose slides on demand in a presentation editing viewport. */
@@ -803,6 +806,10 @@ export function mountPreview(
               if (disposed || expected !== generation) return;
               hostedFonts = resolved;
               defaultFonts.clear();
+              if (options.onFontsReady) {
+                options.onFontsReady();
+                return;
+              }
               observer?.disconnect();
               notes?.dispose();
               notes = undefined;

@@ -9,7 +9,7 @@ import { build } from "vite";
 import { exportPptx, importPptx, readDocumentZip } from "@doffi/office";
 import { renderDocumentPdf } from "@doffi/node";
 import { writeOpcZip } from "../../packages/office/src/document-zip.js";
-import { createPresentation, readPresentationGeometry } from "@doffi/core";
+import { createAssetDescriptor, createPresentation, readPresentationGeometry } from "@doffi/core";
 import type { DocumentPackage, DocumentMetadata } from "@doffi/core";
 import type { DocumentPreviewOptions } from "@doffi/render";
 import type { PresentationHost } from "./fixtures/presentation-host.js";
@@ -21,10 +21,14 @@ test.beforeAll(async () => {
   code = output.flatMap(item => item.type === "chunk" ? [item.code] : []).join("\n");
 });
 const entries = encodeTestPackage;
-async function mount(page: Page, files: DocumentPackage, options: DocumentPreviewOptions = {}): Promise<void> {
+async function mount(page: Page, files: DocumentPackage, options: DocumentPreviewOptions = {}, fonts: readonly { family: string; bytes: string }[] = []): Promise<void> {
   await openSdkHost(page); await page.addScriptTag({ type: "module", content: code }); await page.waitForFunction(() => !!window.presentationHost);
-  await page.evaluate(args => window.presentationHost.mount(args.files, args.options), { files: entries(files), options });
+  await page.evaluate(args => window.presentationHost.mount(args.files, {
+    ...args.options,
+    ...(args.fonts.length ? { wordWebFonts: args.fonts.map(font => ({ family: font.family, aliases: [], load: async () => Uint8Array.from(atob(font.bytes), c => c.charCodeAt(0)).buffer })) } : {}),
+  }), { files: entries(files), options, fonts });
 }
+const fixedSerif = () => [{ family: "Noto Serif CJK SC", bytes: readFileSync("apps/playground/src/assets/word-fonts/serif-regular.woff2").toString("base64") }];
 const fixture = (name: string, producer = false): DocumentPackage => importPptx(new Uint8Array(readFileSync(`examples/pptx/${producer ? "producer/" : ""}${name}.pptx`)), { documentId: "ppt-preview" });
 test("new decks render fixed pages without an editing session or changes to the canonical source", async ({ page }) => {
   const files = createPresentation({ documentId: "new-deck" }); await mount(page, files);
@@ -34,6 +38,92 @@ test("new decks render fixed pages without an editing session or changes to the 
   await expect(page.frameLocator("iframe").locator("script,input,textarea,[contenteditable=true]")).toHaveCount(0);
   const projected = await page.evaluate(() => window.presentationHost.projected());
   expect(projected).not.toMatch(/svg|data-sdk|sdk-ppt|position:|transform:/);
+});
+
+test("small DrawingML runs set paragraph line boxes through preview, editing, undo and print", async ({ page }) => {
+  const native = new Map(readDocumentZip(readFileSync("examples/pptx/01-rich-text.pptx")));
+  const decoder = new TextDecoder(), encoder = new TextEncoder();
+  const part = "ppt/slides/slide1.xml", xml = decoder.decode(native.get(part)!);
+  const paragraph = '<a:p><a:pPr><a:lnSpc><a:spcPct val="100000"/></a:lnSpc></a:pPr><a:r><a:rPr sz="1000"><a:latin typeface="Arial"/></a:rPr><a:t>Small text</a:t></a:r></a:p>';
+  native.set(part, encoder.encode(xml.replace(/<a:p>[\s\S]*<\/a:p>/, paragraph.repeat(3))));
+  const files = new Map(importPptx(writeOpcZip(native), { documentId: "small-run-strut" }));
+  let model = openDocument(files), p = model.snapshot().metadata.presentation!;
+  const object = model.getNode(model.getNode(p.slides[0]!.rootNodeId)!.childNodeIds[0]!)!;
+  files.set("styles.css", encoder.encode(decoder.decode(files.get("styles.css")!) + '\np[data-office-level="0"]{font-size:36pt}'));
+  model = openDocument(files);
+  await mount(page, files);
+  const paragraphs = page.frameLocator("iframe").locator(`[data-node-id="${object.nodeId}"] .sdk-ppt-text p`);
+  const metrics = await paragraphs.evaluateAll(nodes => nodes.map(node => ({ size: parseFloat(getComputedStyle(node).fontSize), height: node.getBoundingClientRect().height, run: parseFloat(getComputedStyle(node.querySelector("span")!).fontSize) })));
+  expect(metrics).toHaveLength(3);
+  for (const metric of metrics) { expect(metric.size).toBeCloseTo(40 / 3, 2); expect(metric.run).toBeCloseTo(40 / 3, 2); expect(metric.height).toBeLessThan(22); }
+  const before = model.snapshot().html;
+  expect(await page.evaluate(() => window.presentationHost.projected() === new DOMParser().parseFromString(
+    window.presentationHost.model!.snapshot().html, "text/html").querySelector('article')!.outerHTML)).toBe(true);
+  const run = model.getNode(model.getNode(object.childNodeIds[0]!)!.childNodeIds[0]!)!;
+  await page.evaluate(async id => window.presentationHost.edit([{ op: "replaceText", nodeId: id, from: 0, to: 0, expectedText: "", text: "New " }]), run.nodeId);
+  await expect(paragraphs.first()).toHaveText("New Small text");
+  await page.evaluate(() => window.presentationHost.history("undo"));
+  await expect(paragraphs.first()).toHaveText("Small text");
+  expect(await page.evaluate(() => window.presentationHost.model!.snapshot().html)).toBe(before);
+  const printed = await page.evaluate(id => {
+    const doc = window.presentationHost.view!.printDocument();
+    return [...doc.querySelectorAll(`[data-node-id="${id}"] p`)].map(p => ({ size: (p as HTMLElement).style.fontSize, text: p.textContent }));
+  }, object.nodeId);
+  expect(printed).toHaveLength(3); expect(printed.every(p => p.size === "13.3333px")).toBe(true);
+});
+
+for (const first of [0, 7]) test(`slide fields and printed page labels respect firstSlideNum=${first} without rewriting caches`, async ({ page }) => {
+  const source = new Map(readDocumentZip(readFileSync("examples/pptx/01-rich-text.pptx"))), decoder = new TextDecoder(), encoder = new TextEncoder();
+  source.set("ppt/presentation.xml", encoder.encode(decoder.decode(source.get("ppt/presentation.xml")!).replace("<p:presentation ", `<p:presentation firstSlideNum="${first}" `)));
+  source.set("ppt/slides/slide1.xml", encoder.encode(decoder.decode(source.get("ppt/slides/slide1.xml")!).replace(/<a:r>[\s\S]*?<\/a:r>/, '<a:fld id="{00000000-0000-0000-0000-000000000001}" type="slidenum"><a:rPr sz="1000"/><a:t>999</a:t></a:fld>')));
+  const files = importPptx(writeOpcZip(source), { documentId: "first-slide-number" });
+  await mount(page, files);
+  const field = page.frameLocator("iframe").locator('[data-office-kind="slide"] .sdk-field-display');
+  await expect(field).toHaveText(String(first));
+  const state = await page.evaluate(() => ({ page: window.presentationHost.view!.layout().pages[0], fields: window.presentationHost.view!.layout().fields, printed: window.presentationHost.view!.printDocument().querySelector('.sdk-field-display')!.textContent, html: window.presentationHost.model!.snapshot().html }));
+  expect(state.page).toMatchObject({ index: 1, number: first, label: String(first) });
+  expect(state.fields[0]!.value).toBe(String(first)); expect(state.printed).toBe(String(first));
+  expect(state.html).toBe(openDocument(files).snapshot().html); expect(state.html).toContain('999');
+});
+
+test("tiny group coordinates keep images, text and horizontal rules visible without changing source geometry", async ({ page }) => {
+  const files = new Map(createPresentation({ documentId: "tiny-group" })), encoder = new TextEncoder(), decoder = new TextDecoder();
+  const asset = "assets/group.png", bytes = new Uint8Array(readFileSync("examples/presentation/assets/sample.png"));
+  const manifest = JSON.parse(decoder.decode(files.get("manifest.json")!)); manifest.assets.push(createAssetDescriptor(asset, "image/png", bytes));
+  files.set("manifest.json", encoder.encode(JSON.stringify(manifest))); files.set(asset, bytes);
+  const group = '<div data-node-id="tiny-group" data-office-kind="group" data-office-x="20" data-office-y="40" data-office-width="600" data-office-height="60" data-office-child-x="0" data-office-child-y="0" data-office-child-width="0.6" data-office-child-height="0.06">'
+    + '<div data-node-id="tiny-image" data-office-kind="image" data-office-x="0" data-office-y="0" data-office-width="0.2" data-office-height="0.06"><img data-node-id="tiny-pixels" src="assets/group.png" alt="Grouped image"></div>'
+    + '<div data-node-id="tiny-text" data-office-kind="text" data-office-x="0.25" data-office-y="0" data-office-width="0.35" data-office-height="0.06" style="padding:0pt"><p data-node-id="tiny-p"><span data-node-id="tiny-run" style="font-size:20pt">Grouped text</span></p></div></div>'
+    + '<div data-node-id="flat-line" data-office-kind="geometry" data-office-x="20" data-office-y="130" data-office-width="600" data-office-height="0" style="--office-fill-kind:none;--office-line-kind:solid;--office-line-color:#ba1b20;--office-line-width:0.5pt"></div>';
+  files.set("content.html", encoder.encode(decoder.decode(files.get("content.html")!).replace('</section>', group + '</section>')));
+  const metadata = JSON.parse(decoder.decode(files.get("metadata.json")!)) as DocumentMetadata;
+  metadata.presentation!.objects.push({ nodeId: "tiny-group", kind: "group" }, { nodeId: "tiny-image", kind: "image" }, { nodeId: "tiny-text", kind: "text", text: { autoFit: "shape" } }, { nodeId: "flat-line", kind: "geometry", preset: "line" });
+  files.set("metadata.json", encoder.encode(JSON.stringify(metadata)));
+  await mount(page, files);
+  const frame = page.frameLocator("iframe");
+  const metrics = await frame.locator('[data-node-id="tiny-group"]').evaluate(group => {
+    const image = group.querySelector<HTMLImageElement>("img")!, text = group.querySelector<HTMLElement>(".sdk-ppt-text")!, g = group.getBoundingClientRect(), r = text.getBoundingClientRect();
+    return { imageWidth: image.clientWidth, imageHeight: image.clientHeight, complete: image.complete, textTop: r.top - g.top, textHeight: r.height, groupHeight: g.height, runSize: parseFloat(getComputedStyle(text.querySelector("span")!).fontSize) };
+  });
+  expect(metrics.complete).toBe(true); expect(metrics.imageWidth).toBeGreaterThan(200); expect(metrics.imageHeight).toBeGreaterThan(50);
+  expect(metrics.textTop).toBeGreaterThanOrEqual(-1); expect(metrics.textHeight).toBeLessThanOrEqual(metrics.groupHeight + 1); expect(metrics.runSize).toBeCloseTo(80 / 3, 2);
+  expect(await frame.locator('[data-node-id="flat-line"] svg').evaluate(svg => svg.getBoundingClientRect().height)).toBeGreaterThan(1);
+  expect(await page.evaluate(() => window.presentationHost.model!.getNode("tiny-image")!.attributes["data-office-width"])).toBe("0.2");
+  expect(await page.evaluate(() => window.presentationHost.projected())).not.toMatch(/transform:|sdk-ppt|<svg/);
+});
+
+test("custom square bullets use the installed native glyph fallback while retaining authored color and character", async ({ page }) => {
+  const source = new Map(readDocumentZip(readFileSync("examples/pptx/01-rich-text.pptx"))), decoder = new TextDecoder(), encoder = new TextEncoder();
+  source.set("ppt/slides/slide1.xml", encoder.encode(decoder.decode(source.get("ppt/slides/slide1.xml")!).replace(
+    '<a:buChar char="•"/>', '<a:buClr><a:srgbClr val="BA1B20"/></a:buClr><a:buFont typeface="Arial"/><a:buChar char="▪"/>')));
+  const files = importPptx(writeOpcZip(source), { documentId: "native-square-bullet" });
+  await mount(page, files);
+  const marker = page.frameLocator("iframe").locator('[data-office-kind="slide"] .sdk-ppt-marker').filter({ hasText: "▪" });
+  await expect(marker).toHaveText("▪");
+  const style = await marker.evaluate(node => ({ font: getComputedStyle(node).fontFamily, color: getComputedStyle(node).color }));
+  if (process.platform === "darwin") expect(style.font).toContain("Apple Color Emoji");
+  expect(style.color).toBe("rgb(186, 27, 32)");
+  expect(await page.evaluate(() => window.presentationHost.model!.snapshot().html)).toBe(openDocument(files).snapshot().html);
 });
 
 test("Word UI adapters reject PPT without retaining a partial mount", async ({ page }) => {
@@ -349,7 +439,7 @@ test("notes body resolves its notes-master typography and background in the read
   const files = new Map(fixture("10-notes")), decoder = new TextDecoder(), encoder = new TextEncoder(), metadata = openDocument(files).snapshot().metadata.presentation!, master = metadata.notesMasters[0]!;
   files.set("styles.css", encoder.encode(decoder.decode(files.get("styles.css")) + `\n.${master.textStyle}-level-0{font-style:italic;--office-font-east-asia:"Noto Serif CJK SC";color:#990000}`));
   files.set("content.html", encoder.encode(decoder.decode(files.get("content.html")).replace(new RegExp(`<section data-node-id="${master.rootNodeId}"[^>]*>`), tag => tag.replace('style="', 'style="--office-fill-kind:solid;--office-fill-color:#ffff00;'))));
-  await mount(page, files); await page.frameLocator("iframe").locator(".sdk-ppt-notes summary").click();
+  await mount(page, files, {}, fixedSerif()); await page.frameLocator("iframe").locator(".sdk-ppt-notes summary").click();
   const span = page.frameLocator("iframe").locator('.sdk-ppt-notes [data-node-id] [data-office-script="east-asia"]').first();
   const style = await span.evaluate(node => { const s = getComputedStyle(node); return { font: s.fontFamily, italic: s.fontStyle, color: s.color }; });
   expect(style.font).toContain("Noto Serif CJK SC"); expect(style.italic).toBe("italic"); expect(style.color).toBe("rgb(153, 0, 0)");
@@ -360,7 +450,7 @@ test("modern comment bodies resolve their slide theme font references and preser
   const files = new Map(fixture("12-modern-comments")), decoder = new TextDecoder(), encoder = new TextEncoder(), model = openDocument(files), metadata = model.snapshot().metadata.presentation!, body = model.getNode(model.snapshot().annotations[0]!.bodyNodeId!)!;
   const theme = metadata.themes[0]!, bodyClass = body.attributes.class!.split(" ")[0]!;
   files.set("styles.css", encoder.encode(decoder.decode(files.get("styles.css")) + `\n.${theme.cssClass}{--office-minor-east-asia:"Noto Serif CJK SC"}\n.${bodyClass}{--office-font-east-asia:var(--office-minor-east-asia);--office-list-kind:bullet;--office-list-character:"•"}`));
-  await mount(page, files);
+  await mount(page, files, {}, fixedSerif());
   const bodyView = page.frameLocator("iframe").locator(`.sdk-ppt-comments [data-node-id="${body.nodeId}"]`);
   expect(await bodyView.locator('[data-office-script="east-asia"]').first().evaluate(node => getComputedStyle(node).fontFamily)).toContain("Noto Serif CJK SC");
   await expect(bodyView.locator(".sdk-ppt-marker")).toHaveText("•");
@@ -514,7 +604,7 @@ test("DrawingML typography aligns proportional baselines, bottom negative half-l
     // Shape 3: uninstalled font pure ASCII vs mixed CJK+ASCII runs, plus bold single-weight SimSun vs dual-weight Microsoft YaHei
     '<p:sp><p:nvSpPr><p:cNvPr id="103" name="Fonts"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="2971800"/><a:ext cx="6858000" cy="1828800"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr anchor="t"/><a:lstStyle/>' +
       '<a:p><a:r><a:rPr sz="2400"><a:latin typeface="Missing Custom Display 999"/><a:ea typeface="Missing Custom Display 999"/></a:rPr><a:t>2026</a:t></a:r></a:p>' +
-      '<a:p><a:r><a:rPr sz="2400"><a:latin typeface="Missing Custom Display 999"/><a:ea typeface="Missing Custom Display 999"/></a:rPr><a:t>中文2026</a:t></a:r></a:p>' +
+      '<a:p><a:r><a:rPr sz="2400"><a:latin typeface="Missing Custom Display 999"/><a:ea typeface="Missing Custom Display 999"/></a:rPr><a:t>中文　2026</a:t></a:r></a:p>' +
       '<a:p><a:r><a:rPr sz="2400" b="1"><a:latin typeface="SimSun"/><a:ea typeface="SimSun"/></a:rPr><a:t>加粗宋体</a:t></a:r><a:r><a:rPr sz="2400" b="1"><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:rPr><a:t>加粗雅黑</a:t></a:r></a:p>' +
     '</p:txBody></p:sp>',
   ].join("");
@@ -566,6 +656,7 @@ test("DrawingML typography aligns proportional baselines, bottom negative half-l
   expect(checks.simSunShadow).not.toBe("none");
   expect(checks.yaHeiSynth).toBe("");
   expect(checks.yaHeiShadow).toBe("none");
+  expect(await page.evaluate(() => window.presentationHost.view!.fonts().flatMap(font => [...font.missingCharacters]))).not.toContain("　");
   expect(await page.evaluate(() => window.presentationHost.projected())).not.toMatch(/data-sdk-synthetic-bold/);
 
   // Verify Node PDF conversion loads the same host-supplied webFonts offline without substitution.
