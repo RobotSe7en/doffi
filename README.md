@@ -53,6 +53,8 @@ SDK 管理文档、选区、批注、候选和历史。宿主提供身份、授�
 
 以下状态均限于各格式已声明的支持范围；完整 OOXML 兼容性仍需逐项验收。
 
+逐项状态见 [Office 功能覆盖表](docs/office-feature-coverage.md)，按 DOCX、PPTX、XLSX 记录功能项、完成状态、预览与编辑支持及依据。
+
 | 格式 | 读取与预览 | 编辑与协作 | 原生输出与独立闭环 |
 | --- | --- | --- | --- |
 | Word / DOCX | 段落、样式、表格、图片、字段、经典批注与文字修订 | 富文本与中文输入、选择批注、提案差异、统一历史 | 可编辑 DOCX、PDF/PNG、JS/React/Node 打包与重开已完成 |
@@ -178,6 +180,7 @@ tests/              浏览器、集成及独立打包消费检查
 | [PPTX 读取](docs/pptx-import.md) · [PPT 编辑](docs/presentation-editing.md) · [PPT 工作台](docs/presentation-workbench.md) · [PPTX 输出](docs/pptx-export.md) | 幻灯片对象、协作与原生输出 |
 | [工作簿模型](docs/workbook-model.md) · [公式与引用](docs/workbook-formulas.md) · [读取验收](docs/workbook-reading-acceptance.md) · [编辑验收](docs/workbook-editing-acceptance.md) | Excel 分块模型、计算、范围和证据 |
 | [分页与渲染](docs/pagination-rendering.md) · [中文字体](docs/fonts.md) · [资源与 ZIP](docs/resources-and-zip.md) | 页面投影、字体诊断与资源预算 |
+| [Office 功能覆盖表](docs/office-feature-coverage.md) · [功能缺口](docs/office-feature-gaps.md) · [macOS 实机验收](docs/native-office-macos-acceptance.md) | 按 DOCX、PPTX、XLSX 记录功能状态、支持范围和实机证据 |
 | [整体计划](docs/implementation-plan.md) · [Word](docs/iteration-1.md) · [PPT](docs/iteration-2.md) · [Excel](docs/iteration-3.md) | 交付顺序、已定范围和阶段门槛 |
 | [本地开发](docs/development.md) · [CI 执行](docs/ci-performance.md) · [技术选型](docs/technology-selection.md) · [开发约定](AGENTS.md) | 环境、命令、检查与依赖边界 |
 
