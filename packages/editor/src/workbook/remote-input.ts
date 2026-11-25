@@ -68,11 +68,14 @@ export function createWorkbookRemoteInputController(client: WorkbookSessionConne
       try {
         guard(); const at = selected.anchor.ranges[0]!.from;
         candidate = await client.prepare({ kind: "input", documentId: selected.documentId, revision: selected.baseRevision, sheetId: selected.anchor.sheetId, at, text: submitted, mode: submittedMode }, preparation, { signal: abort.signal });
-        guard(); const canonical = await client.readInput(selected.anchor.sheetId, at, candidate, { signal: abort.signal }); guard();
+        guard();
+        const canonical = candidate.canonicalInput ??
+          (await client.readInput(selected.anchor.sheetId, at, candidate, { signal: abort.signal })).text;
+        guard();
         committing = true; const receipt = await client.commit(candidate); consumed = true;
         if (!disposed) {
-          selection = Object.freeze({ ...selected, baseRevision: receipt.revision }); original = canonical.text;
-          if (ticket === version) { text = canonical.text; mode = "auto"; composing = false; }
+          selection = Object.freeze({ ...selected, baseRevision: receipt.revision }); original = canonical;
+          if (ticket === version) { text = canonical; mode = "auto"; composing = false; }
           // Continued typing after this controller sent its own commit is a
           // new transient draft. Preserve it against that known receipt;
           // any later external revision still conflicts at the next apply.

@@ -52,6 +52,72 @@ test("keeps source font roles, Unicode variation sequences, paragraphs, lists an
   expect(snapshot.html).not.toContain('href="https://example.com');
 });
 
+test.each([0, 7, 9999])("preserves native firstSlideNum=%i through package and native reopening", first => {
+  const bytes = mutate("01-rich-text.pptx", "ppt/presentation.xml", source =>
+    source.replace("<p:presentation ", `<p:presentation firstSlideNum="${first}" `));
+  const model = openDocument(importPptx(bytes, { documentId: "slide-numbering" }));
+  expect(model.snapshot().metadata.presentation!.firstSlideNumber).toBe(first);
+  expect(openDocument(model.serialize()).snapshot()).toEqual(model.snapshot());
+  const output = exportPptx(model);
+  expect(strFromU8(unzipSync(output.bytes)["ppt/presentation.xml"]!)).toContain(`firstSlideNum="${first}"`);
+  expect(openDocument(importPptx(output.bytes, { documentId: "number-reopen" })).snapshot().metadata.presentation!.firstSlideNumber).toBe(first);
+});
+
+test.each([-1, 10000, 1.5])("rejects a first slide number outside the Office range: %i", first => {
+  const bytes = mutate("01-rich-text.pptx", "ppt/presentation.xml", source =>
+    source.replace("<p:presentation ", `<p:presentation firstSlideNum="${first}" `));
+  expect(() => importPptx(bytes, { documentId: "bad-number" })).toThrowError(expect.objectContaining({ code: "InvalidDocument" }));
+});
+
+test("retains an out-of-order east-Asian font as inactive while matching PowerPoint inheritance", () => {
+  const bytes = mutate("01-rich-text.pptx", "ppt/slides/slide1.xml", source => source.replace(
+    '<a:ea typeface="Noto Sans CJK SC"/><a:cs typeface="Liberation Sans"/>',
+    '<a:cs typeface="Liberation Sans"/><a:ea typeface="Noto Serif CJK SC"/>'));
+  const model = openDocument(importPptx(bytes, { documentId: "ordered-fonts" }));
+  const slide = model.getNode(model.snapshot().metadata.presentation!.slides[0]!.rootNodeId)!;
+  const object = model.getNode(slide.childNodeIds[0]!)!, paragraph = model.getNode(object.childNodeIds[0]!)!;
+  const run = model.getNode(paragraph.childNodeIds[0]!)!;
+  expect(run.attributes.style).toContain('--office-ignored-font-east-asia:"Noto Serif CJK SC"');
+  expect(run.attributes.style).not.toContain('--office-font-east-asia:');
+  expect(openDocument(model.serialize()).snapshot()).toEqual(model.snapshot());
+  // Canonical native export expresses the effective font cascade, never an invalid child order.
+  const output = exportPptx(model);
+  expect(strFromU8(unzipSync(output.bytes)["ppt/slides/slide1.xml"]!)).not.toContain('typeface="Noto Serif CJK SC"');
+  const reopened = openDocument(importPptx(output.bytes, { documentId: "font-reopen" }));
+  expect(reopened.getNode(reopened.snapshot().metadata.presentation!.slides[0]!.rootNodeId)!.text).toBe(slide.text);
+});
+
+test("imports repeated native run formatting within default CSS limits through editing and native reopening", () => {
+  const bytes = mutate("01-rich-text.pptx", "ppt/slides/slide1.xml", source => {
+    const run = source.match(/<a:r>.*?<\/a:r>/s)![0];
+    // Parsing these identical declarations separately exceeds 100,000 CSS nodes.
+    return source.replace(run, run.repeat(6000));
+  });
+  const before = new Uint8Array(bytes);
+  const files = importPptx(bytes, { documentId: "repeated-runs" });
+  const model = openDocument(files), snapshot = model.snapshot();
+  const slide = model.getNode(snapshot.metadata.presentation!.slides[0]!.rootNodeId)!;
+  const object = model.getNode(slide.childNodeIds[0]!)!;
+  const paragraph = model.getNode(object.childNodeIds[0]!)!;
+  const run = model.getNode(paragraph.childNodeIds[0]!)!;
+  expect(paragraph.text).toBe("中文与 Latin 😀，".repeat(6000) + "粗体和斜体");
+  expect(run.attributes.style).toContain("--office-font-east-asia");
+  expect(bytes).toEqual(before);
+  expect(openDocument(readDocumentZip(writeDocumentZip(files))).snapshot()).toEqual(snapshot);
+  expect(() => importPptx(bytes, { documentId: "repeated-runs", limits: { maxCssNodes: 6000 } }))
+    .toThrowError(expect.objectContaining({ code: "ResourceLimitExceeded" }));
+  const session = createDocumentSession(model);
+  try {
+    session.commit(session.prepare({ protocolVersion: 1, documentId: "repeated-runs", baseRevision: 0,
+      operations: [{ op: "replaceText", nodeId: run.nodeId, from: 0, to: 0, expectedText: "", text: "新增" }] }));
+    const reopened = openDocument(importPptx(exportPptx(session).bytes, { documentId: "native-reopen" }));
+    const reopenedSlide = reopened.snapshot().metadata.presentation!.slides[0]!;
+    expect(reopened.getNode(reopenedSlide.rootNodeId)!.text).toBe("新增" + slide.text);
+    session.undo();
+    expect(session.snapshot().html).toBe(snapshot.html);
+  } finally { session.dispose(); }
+});
+
 test("preserves placeholder inheritance without materializing a second transform", () => {
   const model = load("02-theme-placeholders.pptx"), p = model.snapshot().metadata.presentation!;
   expect(p.masters).toHaveLength(2);

@@ -8,6 +8,7 @@ import type { DocumentState } from "../document/state.js";
 import { freeze } from "../document/validation.js";
 import { affectedPresentationSlides } from "./presentation.js";
 import { wordSemanticChanges } from "./word-impact.js";
+import { changedTextRuns } from "../document/text-revision.js";
 
 /** ReadonlyMap is a runtime boundary too: Object.freeze(new Map()) still exposes set(). */
 export function readonlyMap<Key, Value>(input: Map<Key, Value>): ReadonlyMap<Key, Value> {
@@ -40,14 +41,15 @@ export function compareStates(
   const changes: DocumentNodeChange[] = [];
   const nodes = new Map<string, string | null>();
   const affected = new Set<string>();
-  const ids = new Set([...before.html.nodeIds(), ...after.html.nodeIds()]);
-  const root = after.html.nodeIds().find((id) => after.html.peekNode(id)!.parentNodeId === null)!;
-  const semantic = before.snapshot.metadata.presentation
+  const textOnly = changedTextRuns(before.html, after.html);
+  const ids = textOnly ?? new Set([...before.html.nodeIds(), ...after.html.nodeIds()]);
+  const semantic = before.snapshot.metadata === after.snapshot.metadata || before.snapshot.metadata.presentation
     ? new Set<string>()
-    : wordSemanticChanges(before.snapshot.metadata, after.snapshot.metadata, root);
+    : wordSemanticChanges(before.snapshot.metadata, after.snapshot.metadata,
+      after.html.nodeIds().find((id) => after.html.peekNode(id)!.parentNodeId === null)!);
   for (const nodeId of ids) {
-    const previous = before.html.signature(nodeId);
-    const next = after.html.signature(nodeId);
+    const previous = textOnly ? before.html.directText(nodeId) : before.html.signature(nodeId);
+    const next = textOnly ? after.html.directText(nodeId) : after.html.signature(nodeId);
     if (previous === next && !semantic.has(nodeId)) continue;
     changes.push({
       nodeId,
@@ -79,9 +81,12 @@ export function compareStates(
       ? { textTransfers: freeze(textTransfers.map((item) => ({ ...item }))) }
       : {}),
   });
-  const affectedSlideIds = before.snapshot.metadata.presentation
-    ? affectedPresentationSlides(before, after)
-    : undefined;
+  const presentation = before.snapshot.metadata.presentation;
+  const affectedSlideIds = presentation && (
+    textOnly && before.snapshot.metadata === after.snapshot.metadata
+      ? presentation.slides.filter(slide => affected.has(slide.rootNodeId)).map(slide => slide.slideId)
+      : affectedPresentationSlides(before, after)
+  );
   if (affectedSlideIds)
     for (const slide of [
       ...(before.snapshot.metadata.presentation?.slides ?? []),
@@ -102,7 +107,7 @@ export function retainedBytes(states: Iterable<DocumentState>): number {
   const buffers = new Set<Uint8Array>();
   let total = 0;
   for (const state of states)
-    for (const bytes of state.files.values()) {
+    for (const bytes of [...state.files.values(), ...(state.textEntry?.patches ?? [])]) {
       if (!buffers.has(bytes)) {
         buffers.add(bytes);
         total += bytes.byteLength;

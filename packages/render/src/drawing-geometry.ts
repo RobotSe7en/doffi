@@ -20,8 +20,8 @@ export function createDrawingGeometryView(document: Document, style: CSSStyleDec
   let count = 0;
   const account = (amount: number): void => { count += amount; if (count > maxNodes) throw new DocumentError("ResourceLimitExceeded", "Drawing geometry exceeds its node budget."); };
   account(1);
-  const svg = markViewNode(svgElement(document, "svg", { width: "100%", height: "100%", viewBox: `0 0 ${Math.max(widthPt, .001)} ${Math.max(heightPt, .001)}`, "aria-hidden": "true", "data-sdk-preset": input.preset }));
-  svg.style.cssText = `position:absolute;left:0;top:0;width:${Math.max(widthPt, .001)}pt;height:${Math.max(heightPt, .001)}pt;overflow:visible;pointer-events:none`;
+  const svg = markViewNode(svgElement(document, "svg", { width: "100%", height: "100%", viewBox: `0 0 ${Math.max(widthPt, 1)} ${Math.max(heightPt, 1)}`, "aria-hidden": "true", "data-sdk-preset": input.preset }));
+  svg.style.cssText = `position:absolute;left:0;top:0;width:${Math.max(widthPt, 1)}pt;height:${Math.max(heightPt, 1)}pt;overflow:visible;pointer-events:none`;
   const fill = input.paint === "stroke" ? "none" : svgFill(document, style, svg, id + "-fill", { x: 0, y: 0, width: widthPt, height: heightPt }, "--office-fill", input.fillFallback ?? "none", account, input.orientation);
   const stroke = strokeAttributes(document, style, "--office-line", input.strokeFallback ?? "none");
   if (input.paint !== "fill" && input.geometry.paths.some(path => path.stroke) && style.getPropertyValue("--office-line-kind").trim() === "linear")

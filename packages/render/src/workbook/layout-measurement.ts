@@ -25,8 +25,8 @@ let nextFontEnvironment = 0;
 /** The same scriptless source cascade, authorized local fonts, current rule
  * appearances and automatic row measurement as the grid. No rendered pixels
  * or persisted row-height copy become document source. */
-export function createWorkbookLayoutService(container: HTMLElement, options: Pick<WorkbookPreviewOptions, "widthPt" | "heightPt" | "locale" | "limits"> = {}): WorkbookLayoutService {
-  if (!container.isConnected || !container.ownerDocument.defaultView || !options || Object.keys(options).some(key => !["widthPt", "heightPt", "locale", "limits"].includes(key)))
+export function createWorkbookLayoutService(container: HTMLElement, options: Pick<WorkbookPreviewOptions, "wordWebFonts" | "widthPt" | "heightPt" | "locale" | "limits"> = {}): WorkbookLayoutService {
+  if (!container.isConnected || !container.ownerDocument.defaultView || !options || Object.keys(options).some(key => !["wordWebFonts", "widthPt", "heightPt", "locale", "limits"].includes(key)))
     throw new DocumentError("InvalidOperation", "Workbook layout measurement requires a connected owner and supported options.");
   const widthPt = options.widthPt ?? 600, heightPt = options.heightPt ?? 360, locale = options.locale;
   const limits = { autoRows: { ...options.limits?.autoRows }, rules: { ...DEFAULT_WORKBOOK_RULE_LIMITS, ...options.limits?.rules } };
@@ -61,7 +61,7 @@ export function createWorkbookLayoutService(container: HTMLElement, options: Pic
     const previous = cached && surfaceFonts?.ready && surfaceFonts.epoch === cached.surfaceEpoch && cached.epoch === before.epoch && cached.size === sizeKey && cached.locale === localeKey ? cached : undefined;
     const invalidation = previous ? workbookRowInvalidation(previous.source.cells.snapshot, snapshot, workbookPreviewChangeImpact(previous.source, request.source), limits.autoRows.maxCells ?? 2_500_000) : undefined;
     if (!invalidation) { cached?.surface.dispose(); cached = undefined; }
-    const surface = cached?.surface ?? await createWorkbookSurface(container, snapshot, { ...size, signal: abort.signal });
+    const surface = cached?.surface ?? await createWorkbookSurface(container, snapshot, { ...size, signal: abort.signal, ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}) });
     const localFonts = surface.fontState?.();
     const sameFonts = (): boolean => {
       const main = fonts.watch(document.fonts), local = surface.fontState?.();

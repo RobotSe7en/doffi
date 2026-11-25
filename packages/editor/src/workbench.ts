@@ -320,7 +320,7 @@ function mountContentWorkbench(
   }
   function updateFields(): void {
     ensureActive();
-    const layout = textEditor?.layout() ?? interaction.layout();
+    const layout = textEditor?.layout(true) ?? interaction.layout();
     if (!layout?.pages.length) throw new DocumentError("InvalidOperation", "请等待页面布局完成。");
     const prepared = session.prepare(createLayoutFieldTransaction(session, layout));
     try {
@@ -692,6 +692,7 @@ function mountContentWorkbench(
     layout: () => textEditor?.layout() ?? interaction.layout(),
     setMode: interaction.setMode,
     setZoom,
+    goToPage: (page) => (textEditor ?? interaction).goToPage(page),
     focusAnnotation: interaction.focusAnnotation,
     startAnnotation: interaction.startAnnotation,
     request: () => activeRequest,

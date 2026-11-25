@@ -46,6 +46,8 @@
 
 ## Boundaries
 
+- Local Office fonts live in `fonts/local/`, with a `sources.json` manifest recording family names, aliases, weights, styles and file hashes. This directory is ignored by Git and must never enter SDK tarballs or commits. The default development service discovers these faces on startup without an opt-in flag; the browser automatically loads requested faces through `word-web-fonts.ts` before document measurement, including Word, PPT, Excel and font menus. The local PDF/PNG service reads the same directory. Reuse the existing files. If they are absent, use the bundled open-source fallbacks; do not download or extract proprietary fonts automatically. `python3 scripts/prepare-word-test-fonts.py --font-dir <authorized-directory>` prepares fonts only when the user explicitly authorizes the source and intended use. Ignoring files does not grant web embedding or redistribution rights; retain each font's license and do not publish local-font builds without the applicable rights.
+
 - Keep SDK code independent of Enterprise and `dagent-ai`. Hosts own identity, permissions, credentials, authoritative storage, model execution and deployment.
 - Accept authorized bytes and opaque references through host interfaces. Document IDs, node IDs, HTML attributes and cache keys never grant access.
 - Do not read Enterprise databases or knowledge tables. A host supplies only context authorized for its current principal.

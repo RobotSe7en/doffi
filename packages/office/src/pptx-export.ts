@@ -84,7 +84,7 @@ export function exportPptx(document: ContentDocumentModel, options: PptxExportOp
         part.finish();
     }
     const main = ctx.opc.part(mainPart, pmlType("presentation.main"));
-    main.add(declaration + "<p:presentation" + nativeNamespaces + "><p:sldMasterIdLst>");
+    main.add(declaration + "<p:presentation" + nativeNamespaces + attributes({ firstSlideNum: ctx.p.firstSlideNumber }) + "><p:sldMasterIdLst>");
     for (const [index, master] of masters.entries())
         main.add(empty("p:sldMasterId", { id: 2147483648 + index, "r:id": ctx.opc.relate(mainPart, "slideMaster", relativePart(mainPart, master.part)) }));
     main.add("</p:sldMasterIdLst>");

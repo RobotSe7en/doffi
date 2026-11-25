@@ -41,6 +41,7 @@ export function refreshWordTableStyles(
   styles: SourceStyleEdit,
   ids: ReadonlySet<string>,
 ): void {
+  if (!ids.size) return;
   const source = parse(),
     resolver = styles.resolver(),
     read = (name: string) => resolver.specifiedClass(name),

@@ -52,13 +52,31 @@ view.dispose();
 
 可选入口 `@doffi/editor/react` 导出 `DocumentWorkbench`，接受 `session`、工作台选项及 `onViewChange`。会话由宿主创建和释放；普通入口不导入 React，非 React 消费者不需要安装 React。回调变化通过最新引用传递，不重建文档视图；会话及上下文配置变化才重新挂载。
 
-同一入口还导出 SDK 自带的 `OfficeRibbon`、`OfficeRibbonProps`、`OfficeActions` 和 `OfficeIcon`。Word、PPT、Excel 共用功能区组件；字体框、菜单、图标、禁用状态和作用域样式随 SDK 提供，不需要复制 Playground 组件或引入它的 CSS。`mode: "edit" | "preview"` 控制界面：预览下默认收起“开始”的编辑面板，禁用编辑标签，仍可打开文件、审阅和视图面板。样式与导航身份按组件实例隔离，支持一个页面挂载多个工作台。普通 JavaScript 的原有 DOM 工作台继续可用；该组件属于可选 React UI，不改变普通入口的依赖。
+同一入口导出 SDK 自带的 `OfficeWorkspace`、`OfficeTitleBar`、`OfficeRibbon`、`OfficeStatusBar`、相应 Props、`OfficeActions` 和 `OfficeIcon`。`OfficeWorkspace` 组合标题栏、功能区、内容容器和状态栏；Playground 使用同一组件。字体框、菜单、图标、禁用状态和作用域样式随 SDK 提供，不需要复制 Playground 组件或引入它的 CSS。`mode: "edit" | "preview"` 控制界面：预览下默认收起“开始”的编辑面板，禁用编辑标签，仍可打开文件、审阅和视图面板。样式与导航身份按组件实例隔离，支持一个页面挂载多个工作台。普通 JavaScript 的原有 DOM 工作台继续可用；React UI 不改变普通入口的依赖。
+
+```tsx
+import { DocumentWorkbench, OfficeWorkspace } from "@doffi/editor/react";
+import type { OfficeWorkspaceProps } from "@doffi/editor/react";
+import type { DocumentSession } from "@doffi/core";
+
+export function WordHost({ session, chrome }: {
+  session: DocumentSession;
+  chrome: Omit<OfficeWorkspaceProps, "children">;
+}) {
+  return <OfficeWorkspace {...chrome}>
+    <DocumentWorkbench session={session} appearance="workspace" annotationTrigger="command" />
+  </OfficeWorkspace>;
+}
+```
+
+宿主传入文件名、命令状态、当前格式、缩放及打开／保存／导出回调。两行功能区、字体／字号列表、色板、菜单定位、SVG 图标和格式弹窗由 SDK 提供。Word 样式库按容器宽度收起。普通 DOM 的 Word／PPT 字体与 Excel 单元格格式弹窗共用 Office 对话框样式；取消不写入文档，确认沿用共享事务与历史。标题栏的自动保存仅在宿主提供保存策略时启用。
 
 | `OfficeRibbonProps` 字段 | 责任 |
 | --- | --- |
 | `kind`、`mode`、`tab`、`onTab` | 文档种类、编辑／预览与当前标签；`kind` 为 `document`、`presentation` 或 `workbook`。 |
 | `commands`、`onCommand` | 传入原生视图的命令状态，并执行同一个原生命令入口。 |
 | `formatState`、`onTextCommand` | 传入当前格式与类型化文字命令回调；内容和历史仍由 SDK 原生编辑器及核心会话管理。异步工作簿提交完成后才移动字段焦点。 |
+| `onObjectFormat` | PPT 对象填充／轮廓回调，调用编辑器 `formatObjects`，一次应用到选中对象。 |
 | `actions` | 宿主提供已授权的打开、保存和导出等回调及其可用性；组件不自行读取文件、存储或执行模型。 |
 | `layout`／`onLayout`、`zoom`／`onZoom` | 宿主的显示偏好与 SDK 视图控制接线，不创建另一份文档源。 |
 | `busy` | 当前模式切换、导入或其他待完成操作的界面状态。 |
@@ -67,13 +85,13 @@ view.dispose();
 
 Playground 提供报告协作样例和固定提案，使用公开 React 入口。固定示例提案调整当前请求的关联身份和修订后仍经过完整校验；它只能用于包含相应节点和内容的报告。界面交接给本地演示宿主，不执行模型。测试覆盖双批注请求、提案、应用、撤销重做、文档包下载重开及实际 DOCX 导入语义。
 
-Playground 首页提供三种格式的样例卡片、协作样例和本地文件选择／拖放入口。打开文档后显示 Office 桌面式标题栏、快速访问、SDK 的 `OfficeRibbon`、纸张／幻灯片画布、批注及底部视图／缩放栏。Word 功能区按剪贴板、字体、段落、样式等分组，已接入的命令沿用 SDK 公共入口；未实现或当前模式不可用的命令使用原生禁用状态。导出位于“文件”，请求与提案位于“审阅”；Word 默认打开正文编辑，可切回只读预览；模式偏好存于 `doffi:editing`。预览时默认收起正文编辑面板，并保留读取和批注入口。三种格式的功能区读取各自原生编辑器的命令可用性、选区与文字格式状态，执行同一命令回调；连续切换加粗、斜体、下划线保留选区并正确开关，字体／字号／对齐沿用共同事务历史。Word/PPT 缩放保持可见文档位置和水平居中，不产生修订；工作簿缩放尚未实现，控件禁用。文档列表默认收起，其显示偏好存于 `doffi:library`，提供当前页面导入的文件、搜索与格式筛选。SDK 仍以 `appearance: "workspace"` 提供画布及批注，工作簿编辑器也接受这一外观选项。
+Playground 首页提供三种格式的样例卡片、协作样例和本地文件选择／拖放入口。打开文档后显示快速访问、SDK 的 `OfficeWorkspace` 外框和格式专用画布。Word 默认打开正文编辑，可切回只读预览，模式偏好存于 `doffi:editing`。预览时默认收起正文编辑面板，并保留读取和批注入口。Word 分页视图可按物理页码跳转。PPT 可将幻灯片适应窗口，以及从头或从当前页放映。Excel 缩放保持公式栏和工作表标签的显示尺寸，并调整读取窗口。以上视图操作不产生修订。三种格式的编辑命令沿用各自原生视图的事务和历史。导出位于“文件菜单 → 文件和导出…”，请求与提案位于“审阅”。文档列表默认收起，显示偏好存于 `doffi:library`。SDK 的 `appearance: "workspace"` 提供画布及批注外观。
 
-字体／字号字段接受直接输入，保留当前选区并沿用共享历史；缺失字体在字段旁提示替代显示。已核对行为、修复和剩余差异见 [Office 行为核对](playground-office-behavior-audit.md)。
+字体／字号字段接受直接输入，保留当前选区并沿用共享历史；字体／字号菜单和色板由 SDK 提供；字段旁不再显示黄色叹号，字体替代仍保留在 SDK 渲染报告中。已核对行为、修复和剩余差异见 [Office 行为核对](playground-office-behavior-audit.md)。
 
 页面左侧选择区支持单击选择实际显示的一行、拖动扩展至多行、双击选择段落及三击／Ctrl 单击选择正文。换行定位使用当前文本几何与 UTF-16 字符边界，不按固定字符数估算。选择本身不提交修订；后续格式或输入沿用现有事务与历史。表格行选择尚未接入此选择区。
 
-返回首页及文档切换保留各自的会话、修订及撤销历史，刷新页面后清除；不提供正式存储。选择文字／对象／区域后，通过“新建批注”打开非模态批注框；选择本身不弹框，填写和取消不推进修订。编辑时批注面板继续可用。Playground 不显示修订调试状态；SDK 默认视图仍保留原有状态信息及选择触发批注行为，可用 `annotationTrigger: "command"` 切换为显式命令。窄屏将文档列表改为横向排列，批注卡片移到画布下方；功能区和 Office 画布在各自容器内滚动。开发服务默认监听 `0.0.0.0`，可通过 `pnpm --filter @doffi/playground dev --port 5174 --strictPort` 启动。
+返回首页及文档切换保留各自的会话、修订及撤销历史，刷新页面后清除；不提供正式存储。选择文字／对象／区域后，通过“新建批注”打开非模态批注框；选择本身不弹框，填写和取消不推进修订。批注右栏默认收起，可通过“审阅 → 显示批注”切换，新建批注时也会展开。Playground 不显示修订调试状态；SDK 默认视图仍保留原有状态信息及选择触发批注行为，可用 `annotationTrigger: "command"` 切换为显式命令。窄屏将文档列表改为横向排列，批注卡片移到画布下方；功能区和 Office 画布在各自容器内滚动。开发服务默认监听 `0.0.0.0`，可通过 `pnpm --filter @doffi/playground dev --port 5174 --strictPort` 启动。
 
 [R1-11 富文本输入](rich-text.md)、[R1-12 分页／PDF 渲染](pagination-rendering.md)及 [R1-13 原生 DOCX 导出](docx-export.md)已实现。第一轮历史与延期的宿主验收见[第一轮细则](iteration-1.md)；[第二轮 PPT](iteration-2.md)已实现格式操作、只读依赖、全局作用域及批注回复，见[PPT 工作台](presentation-workbench.md)。当前进入[第三轮 Excel](iteration-3.md)，工作簿协作尚未实现。
 

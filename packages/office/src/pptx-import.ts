@@ -83,6 +83,11 @@ class Importer {
   import(): DocumentPackage {
     const { context } = this, { opc, metadata } = context;
     const source = context.part(this.main, "presentationml.presentation.main", "presentation", P);
+    if (value(source, "firstSlideNum") !== undefined) {
+      const first = integer(source, "firstSlideNum");
+      if (first < 0 || first > 9999) fail(source, "The first slide number is outside the Office range.");
+      metadata.firstSlideNumber = first;
+    }
     check(source, ["sldMasterIdLst", "notesMasterIdLst", "handoutMasterIdLst", "sldIdLst", "sldSz", "notesSz", "defaultTextStyle", "extLst", "embeddedFontLst", "custDataLst", "photoAlbum", "custShowLst", "kinsoku"], P);
     for (const name of ["embeddedFontLst", "photoAlbum", "custShowLst"]) {
       const feature = child(source, name, P);

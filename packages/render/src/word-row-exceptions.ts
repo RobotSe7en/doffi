@@ -16,11 +16,12 @@ export function composeWordRowExceptions(
   model: ContentDocumentModel,
   limits: Readonly<RenderLimits>,
 ): void {
-  const snapshot = model.snapshot(),
-    resolver = new SourceStyleResolver(
-      snapshot.styles.map((sheet) => sheet.css),
-      DEFAULT_DOCUMENT_READ_LIMITS,
-    );
+  const snapshot = model.snapshot();
+  if (!snapshot.metadata.word?.tables.length) return;
+  const resolver = new SourceStyleResolver(
+    snapshot.styles.map((sheet) => sheet.css),
+    DEFAULT_DOCUMENT_READ_LIMITS,
+  );
   const project = (id: string): SourceStyleNode => {
     const node = model.getNode(id)!;
     return {

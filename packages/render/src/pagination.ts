@@ -115,6 +115,7 @@ export function paginate(
         .map((section) => section.rootNodeId),
     ),
     limits,
+    metadata.sections.every(section => (section.columns?.count ?? 1) === 1),
   );
   const diagnostics: LayoutDiagnostic[] = [],
     groups: Group[] = [];
@@ -675,31 +676,35 @@ export function paginate(
           readonly string[]
         >;
       const drawings = new Set(metadata.word?.drawings?.map((drawing) => drawing.nodeId));
-      for (const [id] of sourceElements) {
-        const rectangles = source.elementRectangles(id);
-        result[id] = Object.freeze(
-          current
-            .filter(
-              (page) =>
-                !page.blank &&
-                rectangles.some(
-                  (rect) =>
-                    rect.bottom >
-                      surface.top +
-                        px(page.rect.y + (drawings.has(id) ? 0 : page.setup.margins.top)) +
-                        0.1 &&
-                    rect.top <
-                      surface.top +
-                        px(
-                          page.rect.y +
-                            page.rect.height -
-                            (drawings.has(id) ? 0 : page.setup.margins.bottom),
-                        ) -
-                        0.1,
-                ),
-            )
-            .map((page) => page.pageId),
-        );
+      const bands = (paper: boolean) => {
+        const intervals = current.flatMap((page, index) => {
+          if (page.blank) return [];
+          const { y, height } = page.rect, margins = page.setup.margins;
+          return [{
+            index,
+            top: surface.top + px(y + (paper ? 0 : margins.top)) + 0.1,
+            bottom: surface.top + px(y + height - (paper ? 0 : margins.bottom)) - 0.1,
+          }];
+        }).sort((a, b) => a.top - b.top);
+        let bottom = -Infinity;
+        return intervals.map(interval => ({ ...interval, furthestBottom: bottom = Math.max(bottom, interval.bottom) }));
+      };
+      const body = bands(false), paper = drawings.size ? bands(true) : body;
+      for (const [id, rectangles] of source.elementRectangleEntries(sourceElements.keys())) {
+        const intervals = drawings.has(id) ? paper : body, matches = new Set<number>();
+        for (const { top, bottom } of rectangles) {
+          let low = 0, high = intervals.length;
+          while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (intervals[mid]!.furthestBottom <= top) low = mid + 1;
+            else high = mid;
+          }
+          for (let i = low; i < intervals.length && intervals[i]!.top < bottom; i++) {
+            const interval = intervals[i]!;
+            if (interval.bottom > top) matches.add(interval.index);
+          }
+        }
+        result[id] = Object.freeze([...matches].sort((a, b) => a - b).map(index => current[index]!.pageId));
       }
       return Object.freeze(result);
     },

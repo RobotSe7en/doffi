@@ -1,8 +1,9 @@
+import type { TextFormatState } from "../text-format-state.js";
 import { createWorkbookFormatUi } from "./format-ui.js";
 import { workspaceControls } from "../workspace.js";
 interface WorkbookEditorUi {
   readonly element: HTMLDivElement; readonly tools: HTMLDivElement; readonly input: HTMLTextAreaElement; readonly address: HTMLInputElement;
-  readonly mode: HTMLSelectElement; readonly preview: HTMLDivElement; readonly status: HTMLParagraphElement; readonly error: HTMLParagraphElement;
+  readonly acceptInput: HTMLButtonElement; readonly discardInput: HTMLButtonElement; readonly mode: HTMLSelectElement; readonly preview: HTMLDivElement; readonly status: HTMLParagraphElement; readonly error: HTMLParagraphElement;
   readonly find: HTMLInputElement; readonly replacement: HTMLInputElement; readonly findField: HTMLSelectElement; readonly findScope: HTMLSelectElement;
   readonly matchCase: HTMLInputElement; readonly entireCell: HTMLInputElement; readonly replacementMode: HTMLSelectElement; readonly searchTools: HTMLDivElement;
   readonly insertedFormat: HTMLSelectElement;
@@ -11,7 +12,7 @@ interface WorkbookEditorUi {
   readonly clipboardMode: HTMLSelectElement; readonly clipboardOverwrite: HTMLInputElement; readonly clipboardSkipBlanks: HTMLInputElement;
   readonly format: ReturnType<typeof createWorkbookFormatUi>;
 }
-export function createWorkbookEditorUi(container: HTMLElement, title: string, appearance: "default" | "workspace" = "default"): WorkbookEditorUi {
+export function createWorkbookEditorUi(container: HTMLElement, title: string, appearance: "default" | "workspace" = "default", fonts: readonly string[] = [], readFormat?: () => TextFormatState): WorkbookEditorUi {
   const document = container.ownerDocument, element = document.createElement("div"), shadow = element.attachShadow({ mode: "closed" });
   const style = document.createElement("style"), heading = document.createElement("h2"), tools = document.createElement("div"), bar = document.createElement("div");
   const input = document.createElement("textarea"), address = document.createElement("input"), mode = document.createElement("select"), preview = document.createElement("div");
@@ -21,13 +22,26 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string, ap
   const insertedFormat = document.createElement("select"), fillFormat = document.createElement("select");
   const sortColumns = document.createElement("input"), sortHeader = document.createElement("input"), sortCase = document.createElement("input"), sortMethod = document.createElement("select");
   const clipboardMode = document.createElement("select"), clipboardOverwrite = document.createElement("input"), clipboardSkipBlanks = document.createElement("input");
-  const format = createWorkbookFormatUi(document);
+  const format = createWorkbookFormatUi(document, fonts, readFormat);
+  const acceptInput = document.createElement("button"), discardInput = document.createElement("button"), insertFunction = document.createElement("button");
+  for (const [button, label, glyph] of [[discardInput, "取消单元格输入", "×"], [acceptInput, "确认单元格输入", "✓"], [insertFunction, "插入函数", "ƒx"]] as const) {
+    button.type = "button"; button.setAttribute("aria-label", label); button.title = label; button.textContent = glyph; button.className = "formula-action";
+    button.addEventListener("mousedown", event => event.preventDefault());
+  }
+  insertFunction.disabled = true;
+  const expand = document.createElement("button"); expand.type = "button"; expand.className = "formula-action"; expand.textContent = "⌄"; expand.title = "展开编辑栏"; expand.setAttribute("aria-label", "展开编辑栏"); expand.setAttribute("aria-expanded", "false");
+  expand.addEventListener("click", () => { const expanded = expand.getAttribute("aria-expanded") !== "true"; expand.setAttribute("aria-expanded", String(expanded)); input.rows = expanded ? 4 : 1; bar.classList.toggle("expanded", expanded); });
   style.textContent = ":host{display:block;color:#172638;font:14px/1.5 system-ui,sans-serif}*{box-sizing:border-box}h2{margin:0 0 8px;font-size:17px}.tools,.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}button,input,textarea,select{font:inherit;border:1px solid #bdc9d5;border-radius:4px;background:#fff;color:inherit;padding:5px 8px}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}textarea{flex:1;min-width:160px;resize:vertical;min-height:35px;max-height:160px}input{width:120px}p{margin:4px 0;white-space:pre-wrap}.error{color:#a12626}.preview{position:relative}";
   if (appearance === "workspace") style.textContent += workspaceControls + `
-    :host{background:#fff}h2{display:none}
+    :host{background:#fff}:host>h2{display:none}
     .tools,.bar{gap:5px;margin:0;padding:7px 14px;border-bottom:1px solid #e0e6f0;background:#f8faff}
     :host>.tools{display:var(--doffi-workbook-tools,flex);max-height:118px;overflow:auto}button,input,textarea,select{font-size:11px;padding:5px 7px}
     input{width:100px}label{font-size:10px;color:#6f819e}textarea{min-height:29px;max-height:80px}
+    .bar{background:#fff;flex-wrap:nowrap;gap:0;padding:0;border-block:1px solid #d3d3d3;min-height:27px;margin:0;font-size:12px}
+    .bar:not([role=search]) input{border:0;border-right:1px solid #ccc;border-radius:0;width:115px;align-self:stretch;padding:4px 8px}
+    .bar:not([role=search]) textarea{border:0;border-left:1px solid #ccc;border-radius:0;min-height:25px;height:25px;padding:3px 8px;resize:none;max-height:none;font-size:12px}
+    .bar.expanded textarea{height:85px}.bar>.formula-action{border:0;border-radius:0;background:white;width:26px;height:25px;min-width:26px;padding:1px;color:#777;font:17px Georgia,serif}
+    .bar>select{display:none}:host>p[role=status]{display:none}
     .bar{background:#fff}.bar[role=search]{display:var(--doffi-workbook-search,flex);background:#f8faff}.bar .tools{border:0;padding:0}
     :host>details{display:var(--doffi-workbook-panels,block);padding:8px 14px;border-bottom:1px solid #e0e6f0;font-size:11px;color:#526b92}
     :host>details[data-office-panel][open]{display:block;position:fixed;z-index:40;right:14px;top:208px;width:min(460px,calc(100vw - 28px));max-height:calc(100dvh - 235px);overflow:auto;border:1px solid #d6e1f1;border-radius:6px;background:white;box-shadow:0 8px 28px #243f6920}
@@ -70,6 +84,6 @@ export function createWorkbookEditorUi(container: HTMLElement, title: string, ap
   }
   status.setAttribute("role", "status"); status.setAttribute("aria-label", "工作簿编辑状态"); status.setAttribute("aria-live", "polite"); status.textContent = "正在打开工作簿…";
   error.setAttribute("role", "alert"); error.className = "error"; error.hidden = true; preview.className = "preview";
-  bar.append(address, input, mode); shadow.append(style, heading, tools, bar, search, format.element, status, error, preview); container.append(element);
-  return { element, tools, input, address, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, fillFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite, clipboardSkipBlanks, format };
+  bar.append(address, discardInput, acceptInput, insertFunction, input, expand, mode); shadow.append(style, heading, tools, bar, search, format.element, status, error, preview); container.append(element);
+  return { element, tools, input, address, acceptInput, discardInput, mode, preview, status, error, find, replacement, findField, findScope, matchCase, entireCell, replacementMode, searchTools, insertedFormat, fillFormat, sortColumns, sortHeader, sortCase, sortMethod, clipboardMode, clipboardOverwrite, clipboardSkipBlanks, format };
 }

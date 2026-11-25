@@ -22,6 +22,8 @@ export interface WorkbookSessionCandidate extends Pick<WorkbookCandidateChange, 
   readonly mapping: WorkbookSessionMapping;
   readonly proposalReview?: DeepReadonly<WorkbookProposalReview>;
   readonly clipboardDiagnostics?: readonly string[];
+  /** Canonical input of the prepared cell, available on input candidates. */
+  readonly canonicalInput?: string;
 }
 export type WorkbookSessionCommand =
   | { readonly kind: "transaction"; readonly transaction: DocumentTransaction }

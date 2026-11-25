@@ -53,6 +53,8 @@ SDK 管理文档、选区、批注、候选和历史。宿主提供身份、授�
 
 以下状态均限于各格式已声明的支持范围；完整 OOXML 兼容性仍需逐项验收。
 
+逐项状态见 [Office 功能覆盖表](docs/office-feature-coverage.md)，按 DOCX、PPTX、XLSX 记录功能项、完成状态、预览与编辑支持及依据。
+
 | 格式 | 读取与预览 | 编辑与协作 | 原生输出与独立闭环 |
 | --- | --- | --- | --- |
 | Word / DOCX | 段落、样式、表格、图片、字段、经典批注与文字修订 | 富文本与中文输入、选择批注、提案差异、统一历史 | 可编辑 DOCX、PDF/PNG、JS/React/Node 打包与重开已完成 |
@@ -61,7 +63,7 @@ SDK 管理文档、选区、批注、候选和历史。宿主提供身份、授�
 
 Excel 编辑阶段已通过最终源的日常与容量验收，覆盖一万行、20 万实际单元格、2 万公式及固定资源下的四引擎读取／编辑。范围与证据见[读取验收](docs/workbook-reading-acceptance.md)、[编辑验收矩阵](docs/workbook-editing-acceptance.md)及 [PR #31](https://github.com/RobotSe7en/doffi/pull/31)。
 
-外部 Office 验收使用固定的 LibreOffice 25.8.1.1。已有 Excel 网页版名称语义观测仅适用于所记录的案例；Word／PowerPoint／WPS 尚未实机验证，删除合并区域首行／首列的 Excel 对照验收仍按用户决定延期。R1-15 达智集成验证延期，R1-16 的宿主验收仍有未完成项。正式宿主存储、多人实时共同编辑与发布准备见[整体计划](docs/implementation-plan.md)。
+自动外部 Office 验收使用固定的 LibreOffice 25.8.1.1。[macOS 桌面 Office 抽样](docs/native-office-macos-acceptance.md)记录 Word、PowerPoint 和 Excel 的实际编辑、重存、已知差异，以及删除合并区域首行／首列的 Excel 对照。Excel 网页版名称语义观测仅适用于所记录的案例。WPS 尚未实机验证。R1-15 达智集成验证延期，R1-16 的宿主验收仍有未完成项。正式宿主存储、多人实时共同编辑与发布准备见[整体计划](docs/implementation-plan.md)。
 
 ## 快速开始
 
@@ -75,6 +77,10 @@ pnpm dev
 ```
 
 打开终端显示的本地地址，即可载入 Word、PPT 或一万行 XLSX 样例，也可打开自己的受支持文件。Playground 提供编辑、批注、撤销重做和文档包保存重开。「文件」选项卡可下载原生文件、PDF 或 PNG。固定提案样例用于演示请求、差异审阅和整批应用，实际模型执行由宿主接入。
+
+默认启动会读取 [`fonts/local/`](fonts/README.md) 中的本地字体清单，浏览器按文档需要自动加载，PDF／PNG 服务使用同一配置。该目录由 Git 忽略，不进入 SDK 包。
+
+三种格式的标题栏、功能区、字体／字号菜单、色板、SVG 图标和状态栏随 `@doffi/editor/react` 的 `OfficeWorkspace` 提供。其他宿主可直接复用，接入自己的文件与保存回调，无需复制 Playground CSS。见[工作台接入](docs/workbench.md#react-与-playground)。
 
 ### 使用 SDK
 
@@ -174,6 +180,7 @@ tests/              浏览器、集成及独立打包消费检查
 | [PPTX 读取](docs/pptx-import.md) · [PPT 编辑](docs/presentation-editing.md) · [PPT 工作台](docs/presentation-workbench.md) · [PPTX 输出](docs/pptx-export.md) | 幻灯片对象、协作与原生输出 |
 | [工作簿模型](docs/workbook-model.md) · [公式与引用](docs/workbook-formulas.md) · [读取验收](docs/workbook-reading-acceptance.md) · [编辑验收](docs/workbook-editing-acceptance.md) | Excel 分块模型、计算、范围和证据 |
 | [分页与渲染](docs/pagination-rendering.md) · [中文字体](docs/fonts.md) · [资源与 ZIP](docs/resources-and-zip.md) | 页面投影、字体诊断与资源预算 |
+| [Office 功能覆盖表](docs/office-feature-coverage.md) · [功能缺口](docs/office-feature-gaps.md) · [macOS 实机验收](docs/native-office-macos-acceptance.md) | 按 DOCX、PPTX、XLSX 记录功能状态、支持范围和实机证据 |
 | [整体计划](docs/implementation-plan.md) · [Word](docs/iteration-1.md) · [PPT](docs/iteration-2.md) · [Excel](docs/iteration-3.md) | 交付顺序、已定范围和阶段门槛 |
 | [本地开发](docs/development.md) · [CI 执行](docs/ci-performance.md) · [技术选型](docs/technology-selection.md) · [开发约定](AGENTS.md) | 环境、命令、检查与依赖边界 |
 

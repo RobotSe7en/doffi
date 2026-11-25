@@ -232,9 +232,13 @@ export function* editWorkbookAxis(workbook: WorkbookMetadata, cells: WorkbookCel
   if (axis === "row") sheet.rowDimensions = dimensions(sheet.rowDimensions);
   else sheet.columnDimensions = dimensions(sheet.columnDimensions);
   if (dimensionSource) {
-    const source = { ...dimensionSource, from: index, to: index + count - 1 };
-    if (axis === "row") { sheet.rowDimensions.push(source); sheet.rowDimensions.sort((a, b) => a.from - b.from); }
-    else { sheet.columnDimensions.push({ ...source, unit: "characters" }); sheet.columnDimensions.sort((a, b) => a.from - b.from); }
+    // Outline markers belong to the original axes, even when their formatting is copied.
+    const { outlineLevel: _level, collapsed: _collapsed, ...format } = dimensionSource;
+    if (Object.keys(format).length > ("unit" in format ? 3 : 2)) {
+      const source = { ...format, from: index, to: index + count - 1 };
+      if (axis === "row") { sheet.rowDimensions.push(source); sheet.rowDimensions.sort((a, b) => a.from - b.from); }
+      else { sheet.columnDimensions.push({ ...source, unit: "characters" }); sheet.columnDimensions.sort((a, b) => a.from - b.from); }
+    }
   }
   sheet.merges = ranges(sheet.merges).filter(range => range.from.row !== range.to.row || range.from.column !== range.to.column);
   const frozenKey = axis === "row" ? "rows" : "columns", frozen = sheet.frozen[frozenKey];

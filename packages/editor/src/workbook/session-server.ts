@@ -137,7 +137,10 @@ export function serveWorkbookSession(port: MessagePort, session: WorkbookSession
       handle = ++nextCandidate; candidates.set(handle, { candidate: owned, requestId, views: new Set(), ...(retainedPreparation === undefined ? {} : { preparation: retainedPreparation }) });
       const { documentId, baseRevision, affectedNodeIds, affectedSheetIds, changedRanges, changes, changedAnnotationIds, mapping } = owned;
       const review = session.getProposalReview(owned);
-      post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping), ...(review ? { proposalReview: review } : {}), ...(clipboardDiagnostics ? { clipboardDiagnostics } : {}) } });
+      const canonicalInput = command.kind === "input"
+        ? readWorkbookInputText(owned.model.getCell(command.sheetId, command.at.row, command.at.column))
+        : undefined;
+      post(requestId, { handle, candidate: { documentId, baseRevision, affectedNodeIds, ...(affectedSheetIds ? { affectedSheetIds } : {}), ...(changedRanges ? { changedRanges } : {}), changes, changedAnnotationIds, mapping: sessionMapping(mapping), ...(review ? { proposalReview: review } : {}), ...(clipboardDiagnostics ? { clipboardDiagnostics } : {}), ...(canonicalInput === undefined ? {} : { canonicalInput }) } });
     } catch (reason) {
       if (handle !== undefined) release(handle); else if (owned) try { session.discard(owned); } catch { /* Disposed or invalidated by its host. */ }
       throw reason;

@@ -1,6 +1,7 @@
 import { DocumentError } from "@doffi/core";
 import { markViewNode, ownViewStyle } from "../view-nodes.js";
 import { property, resolvedColor } from "./appearance.js";
+import { resolvePreviewDefaultFont } from "../fonts.js";
 
 /** Native group scaling changes object rectangles; it does not mirror glyphs
  * or rewrite their point sizes. Resolve the cumulative linear view transform. */
@@ -42,6 +43,7 @@ export function decorateLists(root: HTMLElement, account: (n: number) => void): 
 export function decorateDrawingLists(box: HTMLElement, account: (n: number) => void): void {
     const document = box.ownerDocument;
     const counters = new Map<string, number>();
+    const bulletFonts = new Map<string, string>();
     for (const paragraph of box.querySelectorAll<HTMLElement>("p")) {
       const s = document.defaultView!.getComputedStyle(paragraph), kind = paragraph.hasAttribute("data-office-list-none") ? "none" : paragraph.dataset.officeBullet ? "bullet" : paragraph.dataset.officeNumbering ? "number" : property(s, "--office-list-kind");
       if (kind !== "bullet" && kind !== "number") { counters.clear(); continue; }
@@ -53,7 +55,17 @@ export function decorateDrawingLists(box: HTMLElement, account: (n: number) => v
       marker.textContent = kind === "bullet" ? character : numberLabel(value, format);
       const sourceIndent = parseFloat(s.textIndent), sourceMargin = parseFloat(s.marginLeft);
       const indent = Number.isFinite(sourceIndent) ? sourceIndent : -24, margin = Number.isFinite(sourceMargin) ? sourceMargin : 24;
-      marker.style.cssText = `position:absolute;pointer-events:none;white-space:pre;left:${indent}px;width:${Math.abs(indent)}px;font-family:${property(s, "--office-bullet-font", s.fontFamily)};font-size:${property(s, "--office-bullet-size", "1em")};color:${resolvedColor(document, s, "--office-bullet", s.color)}`;
+      const sourceFont = property(s, "--office-bullet-font", s.fontFamily);
+      let bulletFont = sourceFont;
+      if (character === "▪") {
+        // macOS PowerPoint uses its color-emoji fallback for this custom square
+        // even with an Arial bullet declaration. Prefer that installed face;
+        // other platforms keep their available source font. Native paint and
+        // character declarations remain unchanged in the document package.
+        bulletFont = bulletFonts.get(sourceFont) ?? resolvePreviewDefaultFont(document, '"Apple Color Emoji",' + sourceFont);
+        bulletFonts.set(sourceFont, bulletFont);
+      }
+      marker.style.cssText = `position:absolute;pointer-events:none;white-space:pre;left:${indent}px;width:${Math.abs(indent)}px;font-family:${bulletFont};font-size:${property(s, "--office-bullet-size", "1em")};color:${resolvedColor(document, s, "--office-bullet", s.color)}`;
       ownViewStyle(paragraph, "position", "text-indent", "margin-left"); paragraph.style.position = "relative"; paragraph.style.textIndent = "0"; paragraph.style.marginLeft = margin + "px"; paragraph.prepend(marker);
     }
 }

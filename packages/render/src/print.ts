@@ -15,6 +15,18 @@ function copyHead(document: Document, output: Document): void {
       );
 }
 
+/** A thumbnail uses one composed slide and the shared style context. */
+export function presentationThumbnailSource(document: Document): (slide: HTMLElement) => string {
+  const output = document.implementation.createHTMLDocument("");
+  copyHead(document, output);
+  output.head.querySelector("[data-sdk-slide-visibility]")?.remove();
+  const style = output.createElement("style");
+  style.textContent = "html,body{width:100%;height:100%;overflow:hidden;margin:0!important;padding:0!important}article,article>[data-office-kind=slide]{margin:0!important}.sdk-ppt-hidden-label{display:none!important}";
+  output.head.append(style);
+  const head = output.head.outerHTML;
+  return slide => "<!doctype html><html>" + head + '<body><article data-office-kind="presentation">' + slide.outerHTML + "</article></body></html>";
+}
+
 /** Clip the measured canvas per page. Chromium retains searchable text and culls
  * content outside each page; the editable source and its flow remain unchanged. */
 export function createPrintDocument(

@@ -5,7 +5,7 @@ import type { Page } from "@playwright/test";
 import { openDocument } from "@doffi/core";
 import { importPptx, readDocumentZip } from "@doffi/office";
 async function example(page: Page): Promise<void> { await page.addInitScript(() => localStorage.setItem("doffi:library", "open")); await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto("/"); await page.getByRole("button", { name: "打开 PPT 协作样例", exact: true }).click(); await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "0"); await expect(page.frameLocator('iframe[title="幻灯片只读预览"]').locator('[data-node-id="heading-p"]')).toHaveText("项目进展"); }
-async function typeHeading(page: Page): Promise<void> { await page.getByRole("tab", { name: "开始", exact: true }).click(); const frame = page.frameLocator('iframe[title="幻灯片只读预览"]'); await frame.locator('[data-node-id="heading-p"]').click(); await page.getByRole("button", { name: "编辑文字", exact: true }).click(); const input = frame.getByRole("textbox", { name: "幻灯片文字输入" }); await input.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End"); await page.keyboard.insertText("（人工）"); await expect(input).toContainText("项目进展（人工）"); await page.getByRole("button", { name: "完成输入", exact: true }).click(); }
+async function typeHeading(page: Page): Promise<void> { await page.getByRole("tab", { name: "开始", exact: true }).click(); const frame = page.frameLocator('iframe[title="幻灯片只读预览"]'); await frame.locator('[data-node-id="heading-p"]').dblclick(); const input = frame.getByRole("textbox", { name: "幻灯片文字输入" }); await input.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End"); await page.keyboard.insertText("（人工）"); await expect(input).toContainText("项目进展（人工）"); await input.press("Escape"); }
 test("Playground PPT input/proposal/native/PDF/PNG/package/reopen uses the current revision", async ({ page }, info) => {
     test.setTimeout(60000);
     const errors: string[] = [];
@@ -20,7 +20,7 @@ test("Playground PPT input/proposal/native/PDF/PNG/package/reopen uses the curre
     await page.getByRole("button", { name: "应用 PPT 提案", exact: true }).click();
     await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "2");
     let pending = page.waitForEvent("download");
-    await page.getByRole("tab", { name: "文件", exact: true }).click();
+    await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
     await page.getByRole("button", { name: "导出 PPTX", exact: true }).click();
     const path = info.outputPath("edited.pptx");
     await (await pending).saveAs(path);
@@ -82,7 +82,7 @@ for (const action of ["cancel", "edit", "switch"] as const)
         await example(page);
         const downloads: string[] = [];
         page.on("download", download => downloads.push(download.suggestedFilename()));
-        await page.getByRole("tab", { name: "文件", exact: true }).click();
+        await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
         await page.getByRole("button", { name: "导出 PPTX", exact: true }).click();
         await expect(page.getByRole("status").filter({ hasText: "正在导出 PPTX" })).toBeVisible();
         if (action === "cancel")
@@ -99,7 +99,7 @@ for (const action of ["cancel", "edit", "switch"] as const)
         }).latePosts > 0);
         expect(downloads).toEqual([]);
         await expect(page.getByLabel("PPTX 导出报告")).toHaveCount(0);
-        if (action !== "switch") { await page.getByRole("tab", { name: "文件", exact: true }).click();
+        if (action !== "switch") { await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
             await expect(page.getByRole("button", { name: "导出 PPTX", exact: true })).toBeEnabled(); }
     });
-test("new presentation and native PPTX sample open independently of Word", async ({ page }) => { await page.addInitScript(() => localStorage.setItem("doffi:library", "open")); await page.goto("/"); await page.getByRole("button", { name: "新建 PPT", exact: true }).click(); await page.getByRole("tab", { name: "文件", exact: true }).click(); await expect(page.getByRole("button", { name: "导出 PPTX", exact: true })).toBeEnabled(); await page.getByRole("button", { name: "打开 PPTX 样例", exact: true }).click(); await expect(page.locator(".office-app")).toHaveAttribute("data-annotation-count", "2"); await expect(page.getByRole("button", { name: "导出 DOCX", exact: true })).toHaveCount(0); });
+test("new presentation and native PPTX sample open independently of Word", async ({ page }) => { await page.addInitScript(() => localStorage.setItem("doffi:library", "open")); await page.goto("/"); await page.getByRole("button", { name: "新建 PPT", exact: true }).click(); await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click(); await expect(page.getByRole("button", { name: "导出 PPTX", exact: true })).toBeEnabled(); await page.getByRole("button", { name: "打开 PPTX 样例", exact: true }).click(); await expect(page.locator(".office-app")).toHaveAttribute("data-annotation-count", "2"); await expect(page.getByRole("button", { name: "导出 DOCX", exact: true })).toHaveCount(0); });

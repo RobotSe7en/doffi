@@ -1,4 +1,5 @@
 import { property } from "./appearance.js";
+import { ownViewStyle } from "../view-nodes.js";
 
 interface NormalizedMetrics {
   readonly asc: number;
@@ -17,6 +18,27 @@ const FONT_PROBE_SIZE = 100;
 export class PresentationTypography {
   private context: CanvasRenderingContext2D | null | undefined;
   private readonly metrics = new Map<string, NormalizedMetrics | null>();
+
+  /** DrawingML measures a nonempty paragraph from its actual runs. An inherited
+   * larger paragraph font must not add a CSS strut to every small-text line. */
+  prepareParagraph(paragraph: HTMLElement): void {
+    const doc = paragraph.ownerDocument, view = doc.defaultView!;
+    const walker = doc.createTreeWalker(paragraph, view.NodeFilter.SHOW_TEXT);
+    let largest = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent) continue;
+      const size = parseFloat(view.getComputedStyle(node.parentElement!).fontSize);
+      if (Number.isFinite(size)) largest = Math.max(largest, size);
+    }
+    const inherited = parseFloat(view.getComputedStyle(paragraph).fontSize);
+    if (!largest || Math.abs(largest - inherited) < 0.01) return;
+    // Freeze effective run sizes before changing their ancestor, including
+    // relative sizes and nested formatting. Projection restores authored CSS.
+    const runs = [...paragraph.querySelectorAll<HTMLElement>("*")].map(node =>
+      ({ node, size: view.getComputedStyle(node).fontSize }));
+    for (const { node, size } of runs) { ownViewStyle(node, "font-size"); node.style.fontSize = size; }
+    ownViewStyle(paragraph, "font-size"); paragraph.style.fontSize = largest + "px";
+  }
 
   private measureMetrics(document: Document, style: CSSStyleDeclaration): NormalizedMetrics | null {
     const key = `${style.fontStyle}|${style.fontWeight}|${style.fontFamily}`;

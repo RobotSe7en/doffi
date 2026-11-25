@@ -18,7 +18,7 @@ export function WorkbookWorkbench(props: WorkbookWorkbenchProps): ReactElement {
     if (!container.current) return;
     const view = mountWorkbookWorkbench(container.current, props.session, {
       ...(props.appearance ? { appearance: props.appearance } : {}), ...(props.title !== undefined ? { title: props.title } : {}), ...(props.widthPt !== undefined ? { widthPt: props.widthPt } : {}), ...(props.heightPt !== undefined ? { heightPt: props.heightPt } : {}),
-      ...(props.locale !== undefined ? { locale: props.locale } : {}), ...(props.limits ? { limits: props.limits } : {}), ...(props.scope ? { scope: props.scope } : {}), ...(props.allowGlobalScope !== undefined ? { allowGlobalScope: props.allowGlobalScope } : {}),
+      ...(props.wordWebFonts ? { wordWebFonts: props.wordWebFonts } : {}), ...(props.locale !== undefined ? { locale: props.locale } : {}), ...(props.limits ? { limits: props.limits } : {}), ...(props.scope ? { scope: props.scope } : {}), ...(props.allowGlobalScope !== undefined ? { allowGlobalScope: props.allowGlobalScope } : {}),
       ...(props.readRanges ? { readRanges: props.readRanges } : {}), ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}), ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
       ...(props.prepareOptions ? { prepareOptions: () => latest.current.prepareOptions!() } : {}),
       ...(props.confirmValidationWarnings ? { confirmValidationWarnings: confirmation => latest.current.confirmValidationWarnings!(confirmation) } : {}),
@@ -28,7 +28,7 @@ export function WorkbookWorkbench(props: WorkbookWorkbenchProps): ReactElement {
     try { latest.current.onViewChange?.(view); } catch (error) { view.dispose(); throw error; }
     void view.ready.catch(() => { /* The ordinary workbench reports errors. */ });
     return () => { view.dispose(); latest.current.onViewChange?.(undefined); };
-  }, [props.session, props.appearance, props.title, props.widthPt, props.heightPt, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), Boolean(props.confirmValidationWarnings), hasSubmission]);
+  }, [props.session, props.appearance, props.title, props.widthPt, props.heightPt, props.wordWebFonts, props.locale, props.limits, props.scope, props.allowGlobalScope, props.readRanges, props.supportedOperations, props.contextLimits, Boolean(props.prepareOptions), Boolean(props.confirmValidationWarnings), hasSubmission]);
   return createElement("div", { ref: container, className: props.className });
 }
 import { mountDocumentWorkbench } from "./workbench.js";
@@ -123,3 +123,6 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
 export { OfficeRibbon } from "./react-office/OfficeRibbon.js";
 export type { OfficeActions, OfficeRibbonProps } from "./react-office/OfficeRibbon.js";
 export { OfficeIcon } from "./react-office/icons.js";
+export { OfficeMenu } from "./react-office/OfficeMenu.js";
+export { OfficeTitleBar, OfficeStatusBar, OfficeWorkspace } from "./react-office/OfficeChrome.js";
+export type { OfficeTitleBarProps, OfficeStatusBarProps, OfficeWorkspaceProps } from "./react-office/OfficeChrome.js";

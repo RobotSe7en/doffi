@@ -1,3 +1,4 @@
+import { registerWorkbookAppearanceCommands } from "./appearance-commands.js";
 import type { TextFormatState } from "../text-format-state.js";
 import { createEditorCommands, workbookCommandIds } from "../commands.js";
 import { captureWorkbookModel, DocumentError, parseContract } from "@doffi/core";
@@ -53,7 +54,7 @@ export function mountWorkbookEditor(container: HTMLElement, session: WorkbookSes
 function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSession, options: WorkbookEditorOptions): WorkbookEditorView {
   const view = container?.ownerDocument?.defaultView;
   if (!view || !container.isConnected || session.kind !== "workbook") throw new DocumentError("InvalidOperation", "Workbook editing requires a connected container and its owning workbook session.");
-  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["title", "appearance", "onCommandStateChange", "onFormatStateChange", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
+  if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["wordWebFonts", "title", "appearance", "onCommandStateChange", "onFormatStateChange", "widthPt", "heightPt", "locale", "limits", "prepareOptions", "confirmValidationWarnings", "onError", "onSelectionChange", "onPendingChange"].includes(key))) throw new DocumentError("InvalidOperation", "Invalid workbook editor options.");
   let drawingControls: ReturnType<typeof createWorkbookDrawingControls> | undefined;
   let commentControls: ReturnType<typeof createWorkbookCommentControls> | undefined;
   let nameControls: ReturnType<typeof createWorkbookNameControls> | undefined;
@@ -65,10 +66,10 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   let rulesControls: ReturnType<typeof createWorkbookRulesControls> | undefined;
   if (options.appearance !== undefined && options.appearance !== "default" && options.appearance !== "workspace") throw new DocumentError("InvalidOperation", "Invalid workbook editor appearance.");
   if (options.confirmValidationWarnings !== undefined && typeof options.confirmValidationWarnings !== "function") throw new DocumentError("InvalidOperation", "Validation confirmation requires a host callback.");
-  const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑", config.appearance), input = createWorkbookInputController(session), events = new view.AbortController();
+  const config = { ...options }, ui = createWorkbookEditorUi(container, config.title ?? "工作簿编辑", config.appearance, config.wordWebFonts?.filter(font => !font.fallbackOnly).flatMap(font => [font.family, ...font.aliases]), formatState), input = createWorkbookInputController(session), events = new view.AbortController();
   const commandRegistry = createEditorCommands(() => !disposed, config.onCommandStateChange);
   const layoutService = createWorkbookLayoutService(ui.preview, { ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }), ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }),
-    ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
+    ...(config.wordWebFonts ? { wordWebFonts: config.wordWebFonts } : {}), ...(config.locale === undefined ? {} : { locale: config.locale }), ...(config.limits ? { limits: config.limits } : {}) });
   const clipboard = new WorkbookClipboard();
   let disposed = false, choosing = 0, refreshQueued = false, forceCalculation = false, latest: Promise<void> = Promise.resolve();
   let reportedPending: boolean | undefined;
@@ -125,7 +126,8 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
     if (!style) return { enabled };
     const size = parseFloat(style["font-size"] ?? "") * .75;
     return { enabled, bold: style["font-weight"] === "bold" || Number(style["font-weight"]) >= 600, italic: style["font-style"] === "italic", underline: !["", "none"].includes(style["--office-font-underline"] ?? "") || (style["text-decoration-line"] ?? "").includes("underline"),
-      ...(Number.isFinite(size) ? { fontSize: Math.round(size * 100) / 100 } : {}), fontFamily: style["--office-font-east-asia"] || style["font-family"] || "", color: style["color"] ?? "", alignment: style["--office-cell-horizontal"] || style["text-align"] || "" };
+      ...(style["--office-number-format-code"] ? { numberFormatCode: style["--office-number-format-code"] } : { numberFormatBuiltinId: Number(style["--office-number-format-builtin"] || 0) }),
+      ...(Number.isFinite(size) ? { fontSize: Math.round(size * 100) / 100 } : {}), numberPreview: style["--office-cell-preview"] ?? "", fontFamily: style["--office-font-east-asia"] || style["font-family"] || "", color: style["color"] ?? "", alignment: style["--office-cell-horizontal"] || style["text-align"] || "" };
   }
   function notifyFormat(): void {
     if (disposed || !config.onFormatStateChange) return;
@@ -135,7 +137,7 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   function controls(): void {
     if (disposed) return;
     for (const { button, available } of buttons) button.disabled = !available();
-    const state = input.state(); ui.mode.value = state.mode; ui.mode.disabled = Boolean(commandAbort) || state.composing || !state.selection;
+    const state = input.state(); ui.acceptInput.disabled = !state.dirty || state.composing || Boolean(commandAbort); ui.discardInput.disabled = !state.dirty || Boolean(commandAbort); ui.mode.value = state.mode; ui.mode.disabled = Boolean(commandAbort) || state.composing || !state.selection;
     ui.address.disabled = Boolean(commandAbort) || revision < 0;
     for (const field of searchFields) field.disabled = Boolean(commandAbort);
     ui.clipboardMode.disabled ||= clipboard.kind === "cut"; ui.clipboardSkipBlanks.disabled ||= clipboard.kind === "cut";
@@ -550,14 +552,15 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   try {
     renderedSource = createWorkbookPreviewSource(session);
     preview = mountDocumentPreview(ui.preview, renderedSource, { title: "工作簿网格", retainSelection: true, ...(config.widthPt === undefined ? {} : { widthPt: config.widthPt }),
-      ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }), ...(config.locale === undefined ? {} : { locale: config.locale }),
+      ...(config.heightPt === undefined ? {} : { heightPt: config.heightPt }), ...(config.wordWebFonts ? { wordWebFonts: config.wordWebFonts } : {}), ...(config.locale === undefined ? {} : { locale: config.locale }),
       ...(config.limits === undefined ? {} : { limits: config.limits }), onError: error => report(new DocumentError(error.code, error.message, error.details)), onSelectionChange: sourceSelection, onCellActivate: selected => { if (!idle()) return; acceptSelection(selected, false); binding.focus(false); } });
   } catch (error) { layoutService.dispose(); binding.dispose(); input.dispose(); ui.element.remove(); throw error; }
   const unsubscribe = session.subscribe(event => { if (event.type === "documentChanged" || event.type === "annotationChanged") { found = undefined; findSelectionScope = undefined; commandAbort?.abort(); void scheduleRefresh(); } });
-  const button = (label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): void => {
+  const button = (label: string, action: () => unknown, available: () => boolean, parent: HTMLElement = ui.tools): HTMLButtonElement => {
     const button = ui.element.ownerDocument.createElement("button"); button.type = "button"; button.textContent = label;
     button.addEventListener("click", () => { try { action(); } catch (error) { report(error); } }, { signal: events.signal }); parent.append(button); buttons.push({ button, available });
     const id = workbookCommandIds[label]; if (id) commandRegistry.register(id, label, action, () => !button.disabled);
+    return button;
   };
   const idle = (): boolean => !commandAbort && !pendingInput() && revision === session.snapshot().manifest.revision;
   const auxiliaryHost: WorkbookControlsHost = { signal: events.signal, snapshot: () => session.snapshot(), draftChanged: controls, prepareOptions: () => preparation(),
@@ -598,16 +601,22 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   button("复制选区", () => copySelection("copy"), idle);
   button("剪切选区", () => copySelection("cut"), idle);
   button("粘贴选区", () => { void runInteraction(pasteSelection); }, () => idle() && clipboard.available);
-  button("应用单元格格式", () => { void runInteraction(formatSelection); }, idle, ui.format.tools);
-  button("应用选中文字字体", () => { void runInteraction(formatSelectedText); }, () => idle() && !!input.state().selection && ui.input.selectionStart < ui.input.selectionEnd, ui.format.tools);
+  button("确定", () => { void runInteraction(async () => { await formatSelection(); ui.format.close(); }).catch(ui.format.error); }, idle, ui.format.tools).classList.add("primary");
+  button("应用选中文字字体", () => { void runInteraction(async () => { await formatSelectedText(); ui.format.close(); }); }, () => idle() && !!input.state().selection && ui.input.selectionStart < ui.input.selectionEnd, ui.format.element.querySelector<HTMLElement>('[role="tabpanel"][aria-label="字体"]')!);
   button("取消操作", () => commandAbort?.abort(), () => Boolean(commandAbort));
   button("查找下一个", () => { void runInteraction(() => search()); }, () => idle() && Boolean(ui.find.value), ui.searchTools);
   button("替换当前项", () => { void runInteraction(() => search("one")); }, () => idle() && ui.findField.value !== "display" && Boolean(found && found.index >= 0), ui.searchTools);
   button("全部替换", () => { void runInteraction(() => search("all")); }, () => idle() && ui.findField.value !== "display" && Boolean(ui.find.value), ui.searchTools);
   const searchSettings = (): string => JSON.stringify([ui.find.value, ui.findField.value, ui.findScope.value, ui.matchCase.checked, ui.entireCell.checked]);
   let lastSearchSettings = searchSettings();
+  registerWorkbookAppearanceCommands(commandRegistry, {
+    snapshot: () => session.snapshot(), selection: () => input.state().selection,
+    style: () => { const selected = input.state().selection; return selected?.anchor.kind === "cells" ? preview.cellTextStyle(selected.anchor.ranges[0]!.from) : undefined; },
+    enabled: () => idle() && input.state().selection?.anchor.kind === "cells",
+    run: operations => runInteraction(async () => { await perform(operations); await sourceSettled(); binding.focus(); }),
+  });
   const panels = { formatCells: ui.format.element, drawings: drawingControls.element, comments: commentControls.element, names: nameControls.element, worksheets: worksheetControls.element, hyperlinks: hyperlinkControls.element, tables: tableControls.element, tableStyles: tableStyleControls.element, filters: filterControls.element, rules: rulesControls.element };
-  for (const [id, panel] of Object.entries(panels)) commandRegistry.register(id, panel.querySelector("summary")?.textContent ?? id, () => { panel.dataset.officePanel = id; panel.open = true; panel.scrollIntoView({ block: "nearest" }); panel.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled),textarea:not(:disabled)")?.focus(); }, () => !commandAbort);
+  for (const [id, panel] of Object.entries(panels)) commandRegistry.register(id, panel.querySelector("summary")?.textContent ?? id, () => { if (id === "formatCells") { ui.format.open(formatState()); return; } panel.dataset.officePanel = id; panel.open = true; panel.scrollIntoView({ block: "nearest" }); panel.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled),textarea:not(:disabled)")?.focus(); }, () => !commandAbort);
   for (const id of ["find", "replace"]) commandRegistry.register(id, id === "find" ? "查找" : "替换", () => { ui.element.style.setProperty("--doffi-workbook-search", "flex"); ui.find.focus(); ui.find.select(); }, () => !ui.find.disabled);
   for (const field of [ui.find, ui.findField, ui.findScope, ui.matchCase, ui.entireCell]) for (const event of ["input", "change"]) field.addEventListener(event, () => {
     const current = searchSettings(); if (current !== lastSearchSettings) { found = undefined; findSelectionScope = undefined; lastSearchSettings = current; } controls();
@@ -619,6 +628,8 @@ function mountWorkbookDirectEditor(container: HTMLElement, session: WorkbookSess
   }, { signal: events.signal });
   for (const type of ["input", "keydown", "keyup", "select", "mouseup", "compositionstart", "compositionend"]) ui.input.addEventListener(type, controls, { signal: events.signal });
   ui.mode.addEventListener("change", () => { try { input.setMode(ui.mode.value as WorkbookTextInputMode); binding.refresh(); controls(); } catch (error) { report(error); } }, { signal: events.signal });
+  ui.acceptInput.addEventListener("click", () => { void runInteraction(async () => { await binding.apply(); }); }, { signal: events.signal });
+  ui.discardInput.addEventListener("click", () => { void runInteraction(async () => { await cancelInput(); }); }, { signal: events.signal });
   ui.address.addEventListener("keydown", event => {
     if (event.key !== "Enter") return; event.preventDefault();
     try {

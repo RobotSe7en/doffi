@@ -215,6 +215,26 @@ test("invalidates exact dependent closures while reusing unaffected results acro
   expect(calculator.getCell(location(0, 2))).toMatchObject({ state: "valid", value: number(6), revision: 2 });
   expect(session.history()).toMatchObject({ undoSteps: 0, redoSteps: 1 }); calculator.dispose(); session.dispose();
 });
+test("formatting cells keeps their dependents while a subsequent value edit recalculates them", () => {
+  const session = createDocumentSession(scalarWorkbook([
+    { row: 0, column: 0, value: number(2) },
+    { row: 0, column: 1, value: number(999), formula: "=A1+1" },
+  ])), calculator = createWorkbookCalculator(session);
+  calculator.calculateSync();
+  const at = { row: 0, column: 0 };
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "scalar-kernel", baseRevision: 0,
+    operations: [{ op: "formatWorkbookRanges", sheetId: "sheet-1",
+      ranges: [{ from: at, to: at }], properties: { "font-weight": "700", "background-color": "#ffeeaa" } }] }));
+  expect(calculator.calculateSync()).toMatchObject({ calculated: 0, reused: 1, revision: 1 });
+  expect(calculator.getCell(location(0, 1))).toMatchObject({ state: "valid", value: number(3), revision: 1 });
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "scalar-kernel", baseRevision: 1,
+    operations: [{ op: "setWorkbookCells", sheetId: "sheet-1",
+      cells: [{ ...at, source: { kind: "value", value: number(10) } }] }] }));
+  expect(calculator.calculateSync()).toMatchObject({ calculated: 1, reused: 0, revision: 2 });
+  expect(calculator.getCell(location(0, 1))).toMatchObject({ state: "valid", value: number(11), revision: 2 });
+  calculator.dispose();
+  session.dispose();
+});
 test("whole-axis dependencies remain rectangular and include sparse distant data", () => {
   const model = scalarWorkbook([{ row: 0, column: 0, value: number(2) }, { row: 1_048_575, column: 0, value: number(5) },
     { row: 0, column: 1, value: number(999), formula: "=SUM(A:A)" }]), calculator = createWorkbookCalculator(model, { maxDependencies: 1 });

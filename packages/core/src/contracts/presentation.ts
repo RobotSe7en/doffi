@@ -110,6 +110,7 @@ export const PresentationChartSchema = ChartAppearanceSchema.extend({
 export type PresentationChart = z.infer<typeof PresentationChartSchema>;
 export const PresentationMetadataSchema = z.strictObject({
   size: PresentationSizeSchema,
+  firstSlideNumber: z.number().int().min(0).max(9999).optional(),
   notesSize: PresentationSizeSchema.optional(),
   commentFormat: z.enum(["classic", "modern"]),
   nativePreview: z.array(z.union([

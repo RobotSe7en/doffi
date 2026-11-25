@@ -170,7 +170,7 @@ test("Playground downloads real PDF and PNG from the edited workbook via the dev
   await expect(input).toHaveValue("记录 2");
   await input.fill("R3-19"); await input.press("Control+Enter");
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "1");
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   for (const format of ["PDF", "PNG"]) {
     await page.getByRole("button", { name: "导出 " + format, exact: true }).click();
     if (format === "PNG") await page.getByLabel("打印页码").fill("2");

@@ -8,6 +8,7 @@ const decorationKeys = [
   "text-decoration-color",
   "--office-font-decoration-reset",
 ] as const;
+const compiled = new WeakMap<Document, { readonly css: readonly string[]; readonly resolver: SourceStyleResolver }>();
 export function createSourceStyleResolver(
   document: Document,
   revisionIds: ReadonlySet<string> = new Set(),
@@ -22,6 +23,9 @@ export function createSourceStyleResolver(
   const defaultFont = document.head.querySelector<HTMLStyleElement>("style[data-sdk-word-frame-font]");
   if (defaultFont) sheets.unshift(defaultFont);
   const css = sheets.map((sheet) => sheet.textContent ?? "");
+  const previous = compiled.get(document);
+  if (previous?.css.length === css.length && previous.css.every((text, index) => text === css[index]))
+    return previous.resolver.fork(revisionIds);
   // These styles have already passed their package/surface admission budgets.
   // Bound this second, mask-only parse by those captured input strings, rather
   // than imposing a smaller package limit on a host's admitted source.
@@ -38,6 +42,7 @@ export function createSourceStyleResolver(
       },
       revisionIds,
     );
+  compiled.set(document, { css, resolver });
   return resolver;
 }
 export function sourceStyleProjection(

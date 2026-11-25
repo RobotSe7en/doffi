@@ -23,7 +23,7 @@ import type {
   TransactionPrepareOptions,
   TransactionReceipt,
 } from "@doffi/core";
-import { collectDocumentFontNames, loadWordWebFonts, mountPreview } from "@doffi/render";
+import { collectDocumentFontNames, loadWordWebFonts, mountPreview, presentationThumbnailSource } from "@doffi/render";
 import type { DocumentPreviewOptions, DocumentRenderReport, FontResolution } from "@doffi/render";
 import { bindObjectGestures } from "./presentation/gestures.js";
 import type { ObjectGestures } from "./presentation/gestures.js";
@@ -36,6 +36,7 @@ import { mapSelectionBookmark } from "./rich-text/dom.js";
 import { createTextControls } from "./presentation/text-controls.js";
 import { createTableControls } from "./presentation/table-controls.js";
 import { bindPresentationRegions } from "./presentation/regions.js";
+import { createPresentationFontDialog } from "./presentation/font-dialog.js";
 import type { PresentationRegions } from "./presentation/regions.js";
 import { createCommentControls } from "./presentation/comment-controls.js";
 import { createChartControls } from "./presentation/chart-controls.js";
@@ -54,6 +55,7 @@ export interface PresentationEditorView extends EditorCommandTarget {
   zoom(): number;
   executeTextCommand(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
+  formatObjects(properties: Readonly<Record<string, string>>): void;
   clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
@@ -77,6 +79,7 @@ export interface PresentationEditorView extends EditorCommandTarget {
   layout(): DocumentRenderReport;
   fonts(): readonly FontResolution[];
   setZoom(value: number): void;
+  fitSlide(): number;
   setMode(mode: "text" | "node" | "region"): void;
   focusAnnotation(annotationId: string): void;
   startAnnotation(): void;
@@ -137,10 +140,10 @@ export function mountPresentationEditor(
       :host>.tools{display:var(--doffi-presentation-controls,flex)}
       .tools{margin:0;padding:10px 17px;background:#f8faff;border-bottom:1px solid #e0e6f0;gap:5px}.tools button,.tools select{font-size:10px;padding:5px 7px}.tools label{font-size:10px;color:#8193ae}
       .advanced-tools{padding:9px 18px;background:#f9fbfe;border-bottom:1px solid #e0e6f0;font-size:10px;color:#8193ae}.advanced-tools summary{cursor:pointer}.inspector{max-height:230px;overflow:auto;padding-top:7px}
-      .status{margin:0;padding:7px 18px;background:#f0f4fb;color:#8193ae;font-size:10px}
       .body{grid-template-columns:135px minmax(0,1fr) var(--doffi-presentation-comments-width,240px);gap:0;background:#eceef1}
-      .nav{padding:5px 9px 16px;border-right:1px solid #e0e6f0;background:#f6f8fc;max-height:65vh}.nav h2{font-size:10px;color:#8193ae;font-weight:550;margin:13px 5px 9px}.nav button{font-size:10px;white-space:normal;border:1px solid #e0e6f0;padding:10px 8px;line-height:1.7;margin:6px 0}
-      .stage{border:0;min-height:410px;max-height:65vh}.comments-pane{display:var(--doffi-presentation-comments-display,block);max-height:65vh;overflow:auto;padding:14px 10px;background:#f9fbfe;border-left:1px solid #e0e6f0}
+      .nav{padding:5px 9px 16px;border-right:1px solid #e0e6f0;background:#f5f5f5;max-height:var(--doffi-presentation-canvas-height,65vh)}.nav h2{font-size:10px;color:#8193ae;font-weight:550;margin:13px 5px 9px}.nav button{font-size:10px;white-space:normal;border:1px solid #e0e6f0;padding:10px 8px;line-height:1.7;margin:6px 0}
+      .stage{border:0;min-height:410px;height:var(--doffi-presentation-canvas-height,65vh);max-height:var(--doffi-presentation-canvas-height,65vh)}.comments-pane{display:var(--doffi-presentation-comments-display,block);max-height:65vh;overflow:auto;padding:14px 10px;background:#f9fbfe;border-left:1px solid #e0e6f0}
+      .nav .slide-list button[aria-pressed=true]{border-color:#b7472a;background:#f8ebe7;color:#843820;box-shadow:0 0 0 1px #b7472a}.nav .slide-list button[aria-pressed=true]:focus-visible{outline-color:#b7472a}
       .comments-pane>fieldset{display:block;padding:0;margin:0;border:0}.comments-pane legend{font-size:12px;font-weight:600;margin-bottom:13px;color:#5274a8}.comments-pane section{border:1px solid #dfe6f1;border-radius:7px;background:white;padding:11px;margin-bottom:10px;overflow-wrap:anywhere}
       .comments-pane section p{font-size:11px;line-height:1.8;color:#7185a2;margin-top:0}.comments-pane section button{font-size:9px;padding:4px 6px;margin:2px;border-color:transparent;background:#f0f4fb}.comments-pane input{max-width:100%;margin-top:8px}
       .annotation-popover label{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}.annotation-popover label input{min-width:0;max-width:100%}.annotation-popover select{font-size:10px;margin-bottom:9px}.annotation-popover .composer button{font-size:11px}
@@ -176,6 +179,7 @@ export function mountPresentationEditor(
     previewHost = document.createElement("div");
   inspector.className = "inspector";
   status.className = "status";
+  status.hidden = workspace;
   status.setAttribute("aria-live", "polite");
   error.className = "error";
   error.setAttribute("role", "alert");
@@ -190,9 +194,12 @@ export function mountPresentationEditor(
   plane.style.cssText = "min-width:0;margin-inline:auto";
   const slideHeading = document.createElement("h2");
   slideHeading.textContent = "幻灯片";
-  const objectHeading = document.createElement("h2");
-  objectHeading.textContent = "当前页对象";
-  nav.append(slideHeading, slideList, objectHeading, objectList);
+  nav.append(slideHeading, slideList);
+  if (!workspace) {
+    const objectHeading = document.createElement("h2");
+    objectHeading.textContent = "当前页对象";
+    nav.append(objectHeading, objectList);
+  }
   plane.append(previewHost);
   stage.append(plane);
   body.append(nav, stage);
@@ -337,9 +344,9 @@ export function mountPresentationEditor(
       /* Host callback errors do not alter source state. */
     }
   };
-  const attempt = (action: () => unknown): void => {
+  const attempt = (action: () => unknown, clearError = true): void => {
     if (disposed) return;
-    error.hidden = true;
+    if (clearError) error.hidden = true;
     try {
       action();
     } catch (reason) {
@@ -512,6 +519,7 @@ export function mountPresentationEditor(
     const slide = p().slides.find((s) => s.slideId === slideId);
     if (!slide || !current())
       throw new DocumentError("InvalidOperation", "请等待幻灯片画布就绪后检查区域布局。");
+    preview.showCanvasSlide?.(slideId, false);
     if (slide.slideId === active || !slideVisibility) return preview.source()!.layoutKey(slide.rootNodeId);
     slideVisibility.disabled = true;
     try { return preview.source()!.layoutKey(slide.rootNodeId); }
@@ -932,7 +940,18 @@ export function mountPresentationEditor(
     },
     attempt,
   });
-  let preview = mountPreview(previewHost, session, options);
+  const windowedSlides = p().slides.length >= 24;
+  function refreshFonts(): void {
+    const focused = document.activeElement;
+    refresh();
+    if (focused instanceof HTMLElement && focused !== preview.element)
+      focused.focus({ preventScroll: true });
+  }
+  let preview = mountPreview(previewHost, session, {
+    ...options,
+    onFontsReady: refreshFonts,
+    ...(windowedSlides && !definitionSurface ? { presentationEditingSlideId: active } : {}),
+  });
   preview.element.dataset.sdkPresentationCanvas = "";
   let slideVisibility: HTMLStyleElement | undefined, thumbnailObserver: IntersectionObserver | undefined;
   const thumbFrames = new Map<string, HTMLIFrameElement>();
@@ -945,6 +964,7 @@ export function mountPresentationEditor(
   function showCurrentSlide(resetScroll = false): void {
     const frame = preview.element.contentDocument;
     if (previewLoaded && frame && currentSlide()) {
+      if (!definitionSurface) preview.showCanvasSlide?.(active);
       if (slideVisibility?.ownerDocument !== frame || !slideVisibility.isConnected) {
         slideVisibility = frame.createElement("style");
         slideVisibility.dataset.sdkSlideVisibility = "";
@@ -977,25 +997,19 @@ export function mountPresentationEditor(
     thumbFrames.clear();
     for (const node of slideButtons.values()) node.firstElementChild!.replaceChildren();
     if (definitionSurface || !previewLoaded) return;
-    const print = preview.printDocument();
-    const style = print.createElement("style");
-    style.textContent = "html,body{width:100%;height:100%;overflow:hidden}article{margin:0!important}";
-    print.head.append(style);
-    const slides = new Map([...print.querySelectorAll<HTMLElement>('article>[data-office-kind="slide"]')].map(slide => [slide.dataset.nodeId!, slide]));
-    const head = print.head.outerHTML;
-    const requestedFonts = options.wordWebFonts?.length ? collectDocumentFontNames(session.snapshot()) : undefined;
-    thumbnailObserver = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (disposed || !entry.target.isConnected) continue;
-        const button = entry.target as HTMLButtonElement, id = button.dataset.slideId!;
-        const slide = p().slides.find(slide => slide.slideId === id);
-        const source = slide && slides.get(slide.rootNodeId);
-        if (!entry.isIntersecting) {
-          thumbFrames.get(id)?.remove(); thumbFrames.delete(id);
-          thumbnailResize.unobserve(button.firstElementChild!);
-          continue;
-        }
-        if (!source || thumbFrames.has(id)) continue;
+    const revision = generation;
+    const slides = new Map(p().slides.map(slide => [slide.slideId, slide.rootNodeId]));
+    let thumbnailSource: ReturnType<typeof presentationThumbnailSource> | undefined;
+    let requestedFonts: ReturnType<typeof collectDocumentFontNames> | undefined;
+    const pending = new Map<string, HTMLButtonElement>();
+    let scheduled = false;
+    function createThumbnail(button: HTMLButtonElement, id: string): void {
+        const rootId = slides.get(id);
+        if (!rootId || thumbFrames.has(id)) return;
+        if (windowedSlides && preview.showCanvasSlide?.(id, false)) thumbnailSource = undefined;
+        const source = preview.source()?.elements.get(rootId)?.element;
+        if (!source) return;
+        thumbnailSource ??= presentationThumbnailSource(source.ownerDocument);
         const thumb = button.firstElementChild!, thumbnail = document.createElement("iframe");
         thumbnail.setAttribute("sandbox", "allow-same-origin");
         thumbnail.setAttribute("aria-hidden", "true");
@@ -1004,16 +1018,45 @@ export function mountPresentationEditor(
         const width = p().size.width * 4 / 3, height = p().size.height * 4 / 3;
         thumbnail.style.cssText = `width:${width}px;height:${height}px;transform-origin:0 0;transform:scale(${thumb.getBoundingClientRect().width / width})`;
         if (options.wordWebFonts?.length) {
+          requestedFonts ??= collectDocumentFontNames(session.snapshot());
           thumbnail.addEventListener("load", () => {
             if (!disposed && thumbnail.isConnected && thumbnail.contentDocument)
               void loadWordWebFonts(thumbnail.contentDocument, options.wordWebFonts!, requestedFonts).catch(() => {});
           }, { once: true });
         }
-        thumbnail.srcdoc = "<!doctype html><html>" + head + '<body><article data-office-kind="presentation">' + source.outerHTML + "</article></body></html>";
+        thumbnail.srcdoc = thumbnailSource(source);
         thumbFrames.set(id, thumbnail);
         thumb.append(thumbnail);
         thumbnailResize.observe(thumb);
+    }
+    function scheduleThumbnails(): void {
+      if (scheduled || !pending.size) return;
+      scheduled = true;
+      document.defaultView!.setTimeout(() => {
+        scheduled = false;
+        if (disposed || revision !== generation) return;
+        const next = pending.entries().next().value;
+        if (next) {
+          const [id, button] = next;
+          pending.delete(id);
+          if (button.isConnected) attempt(() => createThumbnail(button, id), false);
+        }
+        scheduleThumbnails();
+      }, 180);
+    }
+    thumbnailObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (disposed || revision !== generation || !entry.target.isConnected) continue;
+        const button = entry.target as HTMLButtonElement, id = button.dataset.slideId!;
+        if (!entry.isIntersecting) {
+          pending.delete(id);
+          thumbFrames.get(id)?.remove(); thumbFrames.delete(id);
+          thumbnailResize.unobserve(button.firstElementChild!);
+        } else if (windowedSlides && id !== active) pending.set(id, button);
+        // Background rendering must not dismiss a source/input error.
+        else attempt(() => createThumbnail(button, id), false);
       }
+      scheduleThumbnails();
     }, { root: nav, rootMargin: "160px 0px" });
     for (const node of slideButtons.values()) thumbnailObserver.observe(node);
   }
@@ -1245,7 +1288,7 @@ export function mountPresentationEditor(
     connectors.refresh();
     commandRegistry.notify();
     notifyTextFormat();
-    status.textContent = `第 ${slides.findIndex((slide) => slide.slideId === active) + 1} / ${slides.length} 页 · ${selected.length ? "已选 " + selected.length + " 个对象" : "未选择对象"}${busy ? " · 正在更新画布" : ""}`;
+    if (!workspace) status.textContent = `第 ${slides.findIndex((slide) => slide.slideId === active) + 1} / ${slides.length} 页 · ${selected.length ? "已选 " + selected.length + " 个对象" : "未选择对象"}${busy ? " · 正在更新画布" : ""}`;
     navControls.abort();
     navControls = new AbortController();
     objectList.replaceChildren();
@@ -1272,7 +1315,7 @@ export function mountPresentationEditor(
       }
     }
     for (const [id, node] of slideButtons) node.setAttribute("aria-pressed", String(id === active && !definitionSurface));
-    for (const object of p().objects.filter((o) =>
+    if (!workspace) for (const object of p().objects.filter((o) =>
       definitionSurface
         ? surfaceRoot(o.nodeId) === definitionSurface
         : ownedSlide(o.nodeId) === active,
@@ -1333,6 +1376,19 @@ export function mountPresentationEditor(
     gestures?.paint();
     regions?.paint();
     restoreZoomAnchor(stage, plane, zoom, anchor);
+  }
+  function fitSlide(): number {
+    ensure();
+    const slide = currentSlide(), frame = preview.element.contentDocument;
+    const paper = slide && frame?.querySelector<HTMLElement>(`[data-office-kind="slide"][data-node-id="${CSS.escape(slide.rootNodeId)}"]`);
+    if (!paper?.offsetWidth || !paper.offsetHeight || definitionSurface || !stage.clientWidth || !stage.clientHeight)
+      throw new DocumentError("InvalidOperation", "请先回到幻灯片画布。");
+    const scale = Math.min((stage.clientWidth - 32) / paper.offsetWidth, (stage.clientHeight - 32) / paper.offsetHeight);
+    const next = Math.max(.5, Math.min(2, Math.floor(scale * 100) / 100));
+    setZoom(next);
+    stage.scrollLeft = 0;
+    stage.scrollTop = 0;
+    return next;
   }
   const disposeInput = (): void => {
     input?.dispose();
@@ -1746,7 +1802,9 @@ export function mountPresentationEditor(
     const { presentationSurfaceId: _surface, ...previewOptions } = options;
     preview = mountPreview(previewHost, session, {
       ...previewOptions,
+      onFontsReady: refreshFonts,
       ...(rootNodeId ? { presentationSurfaceId: rootNodeId } : {}),
+      ...(windowedSlides && !rootNodeId ? { presentationEditingSlideId: active } : {}),
     });
     preview.element.dataset.sdkPresentationCanvas = "";
     previewResize.observe(preview.element);
@@ -1783,6 +1841,26 @@ export function mountPresentationEditor(
       .querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled)")
       ?.focus();
   };
+  function ensureTextInput(): NonNullable<typeof input> {
+    if (!input && selected.length === 1) {
+      editText();
+      const root = preview.source()?.elements.get(selected[0]!)?.element;
+      if (root) {
+        const range = root.ownerDocument.createRange(); range.selectNodeContents(root);
+        const selection = root.ownerDocument.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+      }
+    }
+    if (!input || input.composing()) throw new DocumentError("InvalidOperation", "请选择可编辑的文字。");
+    return input;
+  }
+  const fontDialog = createPresentationFontDialog(shadow, {
+    state: () => ensureTextInput().formatState(),
+    fonts: options.wordWebFonts?.filter(font => !font.fallbackOnly).flatMap(font => [font.family, ...font.aliases]) ?? ["等线", "宋体", "微软雅黑", "Arial", "Calibri", "Aptos", "Times New Roman"],
+    apply: properties => { ensureTextInput().formatProperties(properties); notifyTextFormat(); },
+    attempt,
+  });
+  commandRegistry.register("shapeAppearance", "设置形状格式", () => openInspector("对象外观"), () => !busy && current() && !input?.composing() && selected.length > 0 && selected.every(nodeId => p().objects.some(object => object.nodeId === nodeId && ["geometry", "text", "connector"].includes(object.kind))));
+  commandRegistry.register("fontSettings", "字体", () => fontDialog.open(), () => !busy && !input?.composing() && (Boolean(input) || selected.length === 1 && p().objects.some(item => item.nodeId === selected[0] && ["text", "geometry", "table"].includes(item.kind))));
   for (const [id, title] of [
     ["formatObject", "对象外观"],
     ["slideLayout", "主题、母版与布局"],
@@ -1822,24 +1900,18 @@ export function mountPresentationEditor(
       range.selectNodeContents(object);
       return { ...readTextFormat(object, range), hasSelection: false, editingText: false };
     },
+    formatObjects(properties) {
+      ensure();
+      if (!current() || input?.composing() || !selected.length || selected.some(nodeId => !p().objects.some(object => object.nodeId === nodeId && ["geometry", "text", "connector"].includes(object.kind)))) throw new DocumentError("InvalidOperation", "请选择可设置外观的对象。");
+      const operations = selected.flatMap(nodeId => Object.entries(properties).map(([property, value]) => ({ op: "setStyle" as const, nodeId, property, value })));
+      if (operations.length) perform(operations);
+    },
     executeTextCommand(command) {
       ensure();
-      if (!input && selected.length === 1) {
-        editText();
-        const root = preview.source()?.elements.get(selected[0]!)?.element;
-        if (root) {
-          const range = root.ownerDocument.createRange();
-          range.selectNodeContents(root);
-          const selection = root.ownerDocument.getSelection()!;
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      }
-      if (!input || input.composing())
-        throw new DocumentError("InvalidOperation", "请选择可编辑的文字。");
-      if (command.type === "toggle") input.toggle(command.property);
-      else if (command.type === "format") input.format(command.property, command.value);
-      else if (command.type === "align") input.paragraph("text-align", command.value);
+      const currentInput = ensureTextInput();
+      if (command.type === "toggle") currentInput.toggle(command.property);
+      else if (command.type === "format") currentInput.format(command.property, command.value);
+      else if (command.type === "align") currentInput.paragraph("text-align", command.value);
       else throw new DocumentError("InvalidOperation", "Word 文档命令不能应用到演示文稿。");
       notifyTextFormat();
     },
@@ -1872,6 +1944,7 @@ export function mountPresentationEditor(
     },
     zoom: () => { ensure(); return zoom; },
     setZoom,
+    fitSlide,
     setMode,
     focusAnnotation,
     startAnnotation: () => commentControls.start(),
@@ -1890,6 +1963,7 @@ export function mountPresentationEditor(
       regions?.dispose();
       disposeInput();
       textControls.dispose();
+      fontDialog.dispose();
       tableControls.dispose();
       definitions.dispose();
       chartControls.dispose();

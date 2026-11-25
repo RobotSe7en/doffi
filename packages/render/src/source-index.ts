@@ -43,6 +43,7 @@ export class PreviewSource {
   readonly tokens: Token[] = [];
   readonly root: HTMLElement;
   private readonly document: Document;
+  private geometryRange: Range | undefined;
   private pages: readonly RenderedPage[] = [];
   private fieldViews = new WeakMap<Node, HTMLElement>();
   private readonly fieldScopes = new Map<string, HTMLElement>();
@@ -62,6 +63,19 @@ export class PreviewSource {
     return Object.freeze([...(this.instances.get(nodeId) ?? [])]);
   }
   elementRectangles(id: string): DOMRect[] {
+    return this.rectanglesForElement(id, token => this.visibleTokenRectangles(token));
+  }
+  /** Batch requests share token geometry while the caller leaves layout unchanged. */
+  *elementRectangleEntries(ids: Iterable<string>): IterableIterator<readonly [string, DOMRect[]]> {
+    const cache = new Map<Token, DOMRect[]>();
+    const rectangles = (token: Token): DOMRect[] => {
+      let value = cache.get(token);
+      if (!value) { value = this.visibleTokenRectangles(token); cache.set(token, value); }
+      return value;
+    };
+    for (const id of ids) yield [id, this.rectanglesForElement(id, rectangles)];
+  }
+  private rectanglesForElement(id: string, measure: (token: Token) => DOMRect[]): DOMRect[] {
     const entry = this.elements.get(id),
       copies = [...(this.instances.get(id) ?? [])].flatMap((node) =>
         [...node.getClientRects()].flatMap((rect) => this.instanceClip(node, rect)),
@@ -102,7 +116,7 @@ export class PreviewSource {
       index++
     ) {
       const token = this.tokens[index]!;
-      if (this.visible(token)) rectangles.push(...this.tokenRectangles(token));
+      rectangles.push(...measure(token));
     }
     return [
       ...(rectangles.length
@@ -196,7 +210,9 @@ export class PreviewSource {
   }
 
   private tokenRange(token: Token, from = 0, to = token.text.length): Range {
-    const range = this.document.createRange();
+    // Geometry reads are synchronous. Retain one live range for the canvas
+    // instead of making thousands of ranges track later DOM changes.
+    const range = (this.geometryRange ??= this.document.createRange());
     const display = this.fieldViews.get(token.node);
     if (display) {
       range.selectNodeContents(display);
@@ -209,6 +225,10 @@ export class PreviewSource {
     return range;
   }
   private visible(token: Token, includeLineBreaks = false): boolean {
+    return this.visibleTokenRectangles(token, includeLineBreaks).length > 0;
+  }
+  private visibleTokenRectangles(token: Token, includeLineBreaks = false): DOMRect[] {
+    if (!token.node.isConnected) return [];
     const element =
       this.fieldViews.get(token.node) ??
       (token.node.nodeType === 1 ? (token.node as HTMLElement) : token.node.parentElement!);
@@ -217,13 +237,10 @@ export class PreviewSource {
       element.dataset.nodeId &&
       this.instances.has(element.dataset.nodeId)
     )
-      return token.node.isConnected && this.elementRectangles(element.dataset.nodeId).length > 0;
-    const style = this.document.defaultView!.getComputedStyle(element);
-    return (
-      token.node.isConnected &&
-      style.visibility === "visible" &&
-      this.tokenRectangles(token, 0, token.text.length, includeLineBreaks).length > 0
-    );
+      return this.elementRectangles(element.dataset.nodeId);
+    return this.document.defaultView!.getComputedStyle(element).visibility === "visible"
+      ? this.tokenRectangles(token, 0, token.text.length, includeLineBreaks)
+      : [];
   }
   private tokenRectangles(token: Token, from = 0, to = token.text.length, includeLineBreaks = false): DOMRect[] {
     const owner =
@@ -279,7 +296,7 @@ export class PreviewSource {
           const start = Math.max(from, offset),
             end = Math.min(to, offset + size);
           if (start < end) {
-            const range = this.document.createRange();
+            const range = (this.geometryRange ??= this.document.createRange());
             if (node.nodeType === 3) {
               range.setStart(node, start - offset);
               range.setEnd(node, end - offset);

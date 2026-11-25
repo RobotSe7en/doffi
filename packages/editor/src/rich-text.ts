@@ -16,7 +16,7 @@ import { createWordMathControls } from "./word-math-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { bindWordSelectionScroll } from "./word-selection-scroll.js";
 import { showWordWhitespace } from "./word-marks.js";
-import { captureZoomAnchor, restoreZoomAnchor } from "./viewport-zoom.js";
+import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
 import {
@@ -39,6 +39,7 @@ import {
   createOpaqueId,
   WordStyleSchema,
   DocumentError,
+  wordScriptRole,
 } from "@doffi/core";
 import type {
   ContentDocumentModel,
@@ -48,7 +49,7 @@ import type {
   TransactionPrepareOptions,
   DocumentOperation,
 } from "@doffi/core";
-import { mountDocumentPreview } from "./preview.js";
+import { mountPreview } from "./preview.js";
 import { wordReviewPreview } from "./word-review-preview.js";
 import { projectWordColumnReview } from "./word-column-review.js";
 import { bindWordTableResize } from "./word-table-resize.js";
@@ -177,11 +178,13 @@ export interface DocumentTextEditor {
   readonly element: HTMLElement;
   readonly ready: Promise<void>;
   settled(): Promise<DocumentRenderReport>;
-  layout(): DocumentRenderReport;
+  /** While pagination is pending, a passive read returns the last measured revision. */
+  layout(current?: boolean): DocumentRenderReport;
   focus(): void;
   execute(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
   setZoom(zoom: number): void;
+  goToPage(page: number): Promise<void>;
   editStory(storyId?: string): void;
   selection(): DocumentSelection | undefined;
   clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
@@ -243,6 +246,13 @@ export function mountDocumentTextEditor(
   let savedSelection: SelectionBookmark | undefined;
   let compositionInsertion: { from: number; to: number } | undefined;
   let wholeStoryReplacement = false;
+  let reflowTimer: number | undefined;
+  let localComposition: {
+    target: LocalRange;
+    value: string;
+    observer: MutationObserver;
+    outside: boolean;
+  } | undefined;
   let pendingCut: { token: string; cutId: string; revision: number; html: string } | undefined;
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
@@ -330,6 +340,7 @@ export function mountDocumentTextEditor(
       else formatAppearance(properties);
     },
     report,
+    options.wordWebFonts?.filter(font => !font.fallbackOnly).flatMap(font => [font.family, ...font.aliases]),
   );
   const styleControls = createWordStyleControls(
     shadow,
@@ -639,8 +650,12 @@ export function mountDocumentTextEditor(
     selection.removeAllRanges();
     selection.addRange(range);
   };
-  function refresh(selection = savedSelection): void {
+  function refresh(selection = savedSelection, focus = true): void {
     if (!root || !frame || disposed) return;
+    if (reflowTimer !== undefined) document.defaultView!.clearTimeout(reflowTimer);
+    reflowTimer = undefined;
+    delete element.dataset.layoutPending;
+    preview.pauseMeasurement?.(false);
     const renderedModel = viewModel();
     const source = rootElement(sourceDocument());
     viewControls.abort();
@@ -662,10 +677,85 @@ export function mountDocumentTextEditor(
       report(reason);
       return;
     }
-    root.focus();
+    const active = document.activeElement;
+    if (focus) root.focus({ preventScroll: true });
     restoreBookmark(root, selection, projection.ignored);
+    if (!focus && active instanceof HTMLElement) active.focus({ preventScroll: true });
     savedSelection = bookmark(root, projection.ignored);
     notifyFormat();
+  }
+  function flushLayout(): void {
+    if (reflowTimer !== undefined && !composing) refresh(bookmark(root!, projection.ignored));
+  }
+  function scheduleReflow(): void {
+    const host = document.defaultView!;
+    preview.pauseMeasurement?.(true);
+    element.dataset.layoutPending = "true";
+    if (reflowTimer !== undefined) host.clearTimeout(reflowTimer);
+    reflowTimer = host.setTimeout(() => {
+      if (composing) scheduleReflow();
+      else flushLayout();
+    }, 220);
+  }
+
+  function localRange(range: Range) {
+    if (!root || (preview.layout().pages.length < 32 && initial.html.length < 256_000) ||
+      activeStoryId || revisionDisplay !== "all" || showMarks || typingStyles.size ||
+      session.snapshot().annotations.length || wordMetadata().word?.trackChanges) return;
+    const node = range.startContainer;
+    if (node.nodeType !== 3 || node !== range.endContainer || projection.ignored(node)) return;
+    const leaf = node as Text, owner = leaf.parentElement?.closest<HTMLElement>("[data-node-id]");
+    const paragraph = owner?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6");
+    if (!owner || !paragraph || paragraph.closest("del,ins,[data-word-drawing],[data-word-field]")) return;
+    const source = session.getNode(owner.dataset.nodeId!);
+    if (!source || source.childNodeIds.length || source.text !== sourceText(owner, projection.ignored)) return;
+    const offset = offsetAt(owner, leaf, 0, projection.ignored);
+    return { leaf, source, offset, from: range.startOffset, to: range.endOffset };
+  }
+  type LocalRange = NonNullable<ReturnType<typeof localRange>>;
+  function commitLocalText(target: LocalRange, text: string, alreadyInView = false): boolean {
+    const { leaf, source, offset, from, to } = target;
+    if (!leaf.isConnected || /[\r\n\t]/u.test(text)) return false;
+    const script = leaf.parentElement?.closest<HTMLElement>("[data-word-script]")?.dataset.wordScript;
+    if (script === "ascii" || script === "eastAsia" || script === "hAnsi" || script === "cs") {
+      if ([...text].some(character => wordScriptRole(character, script) !== script)) return false;
+    }
+    const start = offset + from, end = offset + to;
+    const expectedText = source.text.slice(start, end);
+    if (expectedText === text) return false;
+    const snapshot = session.snapshot();
+    if (revision !== snapshot.manifest.revision || source.text !== session.getNode(source.nodeId)?.text)
+      return false;
+    let candidate: ReturnType<typeof session.prepare> | undefined;
+    try {
+      candidate = session.prepare({
+        protocolVersion: 1, documentId: snapshot.manifest.documentId, baseRevision: revision,
+        operations: [{ op: "replaceText", nodeId: source.nodeId, from: start, to: end, expectedText, text }],
+      });
+      const next = candidate.model.getNode(source.nodeId);
+      if (!next || next.childNodeIds.length || candidate.preview.metadata !== snapshot.metadata) {
+        session.discard(candidate);
+        return false;
+      }
+      committing = true;
+      const result = session.commit(candidate);
+      revision = result.revision;
+      if (!alreadyInView) leaf.replaceData(from, to - from, text);
+      select(leaf, from + text.length);
+      savedSelection = bookmark(root!, projection.ignored);
+      error.hidden = true;
+      scheduleReflow();
+      return true;
+    } catch (reason) {
+      if (candidate) {
+        try { session.discard(candidate); } catch { /* The candidate may have been consumed. */ }
+      }
+      refresh();
+      report(reason);
+      return true;
+    } finally {
+      committing = false;
+    }
   }
   function normalizedRoot(): HTMLElement {
     const value = projection.serialize(root!),
@@ -2259,8 +2349,10 @@ export function mountDocumentTextEditor(
           event.inputType.startsWith("insert") &&
           range?.collapsed &&
           native.collapsed &&
-          offsetAt(root, range.startContainer, range.startOffset, projection.ignored) ===
-            offsetAt(root, native.startContainer, native.startOffset, projection.ignored)
+          (range.startContainer === native.startContainer
+            ? range.startOffset === native.startOffset
+            : offsetAt(root, range.startContainer, range.startOffset, projection.ignored) ===
+              offsetAt(root, native.startContainer, native.startOffset, projection.ignored))
         )
       )
         range = native;
@@ -2270,6 +2362,11 @@ export function mountDocumentTextEditor(
       return;
     }
     if (composing || event.isComposing || event.inputType === "insertCompositionText") {
+      if (localComposition) {
+        if (range.startContainer !== localComposition.target.leaf || range.endContainer !== localComposition.target.leaf)
+          localComposition.outside = true;
+        return;
+      }
       pending = inputStep(root, range, projection.ignored);
       wholeStoryReplacement ||=
         pending.from === 0 &&
@@ -2287,7 +2384,9 @@ export function mountDocumentTextEditor(
       }
       return;
     }
-    if (["insertText", "insertReplacementText"].includes(event.inputType))
+    if (["insertText", "insertReplacementText"].includes(event.inputType)) {
+      const local = localRange(range);
+      if (local && commitLocalText(local, event.data ?? "")) return;
       mutate(range, () => {
         let content: Node = frame!.createTextNode(event.data ?? "");
         if (typingStyles.size) {
@@ -2298,8 +2397,10 @@ export function mountDocumentTextEditor(
         }
         insert(range!, content);
       });
-    else if (event.inputType.startsWith("delete")) {
-      range = deletionRange(range, event.inputType);
+    } else if (event.inputType.startsWith("delete")) {
+      if (range.collapsed) range = deletionRange(range, event.inputType);
+      const local = localRange(range);
+      if (local && commitLocalText(local, "")) return;
       mutate(range, () => {
         deleteRange(range!);
         select(range!.startContainer, range!.startOffset);
@@ -2504,6 +2605,15 @@ export function mountDocumentTextEditor(
       () => {
         composing = true;
         compositionRevision = revision;
+        const selected = selectedRange(), target = selected && localRange(selected);
+        if (target) {
+          const observer = new MutationObserver(records => {
+            if (records.some(record => record.type !== "characterData" || record.target !== target.leaf) && localComposition)
+              localComposition.outside = true;
+          });
+          observer.observe(root!, { subtree: true, childList: true, characterData: true });
+          localComposition = { target, observer, value: target.leaf.data, outside: false };
+        }
         notifyFormat();
       },
       { signal: viewControls.signal },
@@ -2514,6 +2624,22 @@ export function mountDocumentTextEditor(
         queueMicrotask(() => {
           if (disposed || !root || !frame) return;
           composing = false;
+          const local = localComposition;
+          localComposition = undefined;
+          if (local) {
+            const unexpected = local.observer.takeRecords().some(record =>
+              record.type !== "characterData" || record.target !== local.target.leaf);
+            local.observer.disconnect();
+            const { target, value } = local;
+            const current = target.leaf.data, tail = value.slice(target.to);
+            if (!local.outside && !unexpected && current.startsWith(value.slice(0, target.from)) &&
+              current.endsWith(tail) && target.from + tail.length <= current.length &&
+              revision === session.snapshot().manifest.revision &&
+              commitLocalText(target, current.slice(target.from, current.length - tail.length), true)) {
+              compositionRevision = undefined;
+              return;
+            }
+          }
           if (
             compositionInsertion &&
             typingStyles.size &&
@@ -2535,7 +2661,19 @@ export function mountDocumentTextEditor(
   const unsubscribe = session.subscribe((event) => {
     if (event.type !== "error" && !committing && !disposed && !composing) refresh();
   });
-  const preview = mountDocumentPreview(plane, viewModel(), { ...options, title: "正文编辑" });
+  let fontRefreshPending = false;
+  function refreshFonts(): void {
+    if (disposed || !root || !frame) return;
+    fontRefreshPending = true;
+    if (composing) return;
+    fontRefreshPending = false;
+    const styles = new Map(typingStyles), anchor = typingAnchor;
+    refresh(bookmark(root, projection.ignored) ?? savedSelection, document.activeElement === preview.element);
+    for (const [property, value] of styles) typingStyles.set(property, value);
+    typingAnchor = anchor;
+    notifyFormat();
+  }
+  const preview = mountPreview(plane, viewModel(), { ...options, title: "正文编辑", onFontsReady: refreshFonts });
   let zoom = 1;
   function resizePlane(
     anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom),
@@ -2574,10 +2712,17 @@ export function mountDocumentTextEditor(
     .then(() => {
       if (disposed) return;
       frame = preview.element.contentDocument!;
+      frame.addEventListener("compositionend", () => {
+        queueMicrotask(() => queueMicrotask(() => { if (fontRefreshPending) refreshFonts(); }));
+      }, { signal: controls.signal });
       root = rootElement(frame);
       const source = rootElement(new DOMParser().parseFromString(initial.html, "text/html"));
       activate(source);
       if (revision !== session.snapshot().manifest.revision) refresh();
+      if (options.appearance === "workspace" && !bookmark(root, projection.ignored)) {
+        select(...caretAt(root, 0, projection.ignored));
+        savedSelection = bookmark(root, projection.ignored);
+      }
       resizePlane();
       notifyFormat();
       frame.addEventListener(
@@ -2605,12 +2750,20 @@ export function mountDocumentTextEditor(
     ready,
     async settled() {
       await ready;
+      flushLayout();
       const result = await preview.settled();
       resizePlane();
       return result;
     },
     formatState,
     setZoom,
+    async goToPage(page) {
+      await ready;
+      flushLayout();
+      const report = await preview.settled();
+      resizePlane();
+      scrollToWordPage(stage, preview.element, report, page, zoom);
+    },
     editStory,
     selection() {
       const range = selectedRange();
@@ -2639,7 +2792,10 @@ export function mountDocumentTextEditor(
           (!root || JSON.stringify(bookmark(root, projection.ignored)) === selection),
       );
     },
-    layout: () => preview.layout(),
+    layout(current = false) {
+      if (current) flushLayout();
+      return preview.layout();
+    },
     focus: () => {
       root?.focus();
     },
@@ -2677,6 +2833,8 @@ export function mountDocumentTextEditor(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      if (reflowTimer !== undefined) document.defaultView!.clearTimeout(reflowTimer);
+      localComposition?.observer.disconnect();
       geometryObserver.disconnect();
       unsubscribe();
       controls.abort();

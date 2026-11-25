@@ -14,6 +14,11 @@ export interface TextFormatState {
   readonly color?: string;
   readonly alignment?: string;
   readonly paragraphStyleId?: string;
+  readonly characterProperties?: Readonly<Record<string, string>>;
+  readonly paragraphProperties?: Readonly<Record<string, string>>;
+  readonly numberPreview?: string;
+  readonly numberFormatCode?: string;
+  readonly numberFormatBuiltinId?: number;
 }
 function pointSize(element: Element, style: CSSStyleDeclaration, root: HTMLElement): number {
   const measured = parseFloat(style.fontSize) * 0.75;
@@ -158,11 +163,21 @@ export function readTextFormat(
             );
           }),
         );
+  const characterProperties: Record<string, string> = {};
+  for (const key of ["letter-spacing", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-snap-to-grid", "--word-language-val", "--word-language-eastAsia", "--word-language-bidi"]) {
+    const value = uniform(style => style.getPropertyValue(key).trim()); if (value) characterProperties[key] = value;
+  }
   const paragraphStyleId = same(
     elements.map(
       (element) => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")?.dataset.wordStyle,
     ),
   );
+  const paragraphs = [...new Set(elements.map(element => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")).filter((element): element is HTMLElement => Boolean(element)))];
+  const paragraphProperties: Record<string, string> = {};
+  for (const key of ["margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom", "line-height", "font-size", "text-align", "widows", "break-after", "break-inside", "break-before", "--word-line-rule", "--word-contextual-spacing", "--word-paragraph-snap-to-grid", "--word-kinsoku", "--word-word-wrap", "--word-overflow-punctuation", "--word-top-line-punctuation", "--word-auto-space-de", "--word-auto-space-dn"]) {
+    const value = same(paragraphs.map(paragraph => view.getComputedStyle(paragraph).getPropertyValue(key).trim()));
+    if (value) paragraphProperties[key] = value;
+  }
   const color =
       range.collapsed && typing.has("color")
         ? typing.get("color")
@@ -171,6 +186,8 @@ export function readTextFormat(
   return {
     enabled: true,
     hasSelection: !range.collapsed,
+    characterProperties,
+    ...(paragraphs.length ? { paragraphProperties } : {}),
     ...(paragraphStyleId === undefined ? {} : { paragraphStyleId }),
     ...(strike === undefined ? {} : { strikethrough: strike }),
     ...(verticalAlign === undefined ? {} : { verticalAlign }),

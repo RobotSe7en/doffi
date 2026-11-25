@@ -35,7 +35,7 @@ test("Playground closes HTML/manual input/proposal/DOCX/PDF/package/reopen throu
   await expect(page.getByLabel("提案差异", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "整批应用提案", exact: true }).click();
   await expect(page.locator(".office-app")).toHaveAttribute("data-revision", "2");
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   let download = page.waitForEvent("download"); await page.getByRole("button", { name: "导出 DOCX", exact: true }).click();
   const docx = info.outputPath("edited.docx"); await (await download).saveAs(docx);
   const reopened = openDocument(importDocx(new Uint8Array(readFileSync(docx)), { documentId: "ui-docx" }));
@@ -77,14 +77,14 @@ test("switching documents terminates delayed DOCX work and never downloads a sta
     prototype.postMessage = function (message, transfer): void { setTimeout(() => { state.latePosts++; original.call(this, message, transfer); }, 1200); };
   });
   await report(page); const downloads: string[] = []; page.on("download", (download) => downloads.push(download.suggestedFilename()));
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   await page.getByRole("button", { name: "导出 DOCX", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "正在导出 DOCX" })).toBeVisible();
   await page.getByRole("button", { name: "打开 DOCX 样例", exact: true }).click();
   await expect(page.locator(".office-app")).toHaveAttribute("data-annotation-count", "0");
   await page.waitForFunction(() => (window as unknown as { latePosts: number }).latePosts > 0);
   expect(downloads).toEqual([]); await expect(page.getByLabel("DOCX 导出报告")).toHaveCount(0);
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   await expect(page.getByRole("button", { name: "导出 DOCX", exact: true })).toBeEnabled();
 });
 for (const action of ["cancel", "edit"] as const) test(`${action} stops DOCX export without downloading an outdated result`, async ({ page }) => {
@@ -96,13 +96,13 @@ for (const action of ["cancel", "edit"] as const) test(`${action} stops DOCX exp
     prototype.postMessage = function (message, transfer): void { setTimeout(() => original.call(this, message, transfer), 5000); };
   });
   await report(page); const downloads: string[] = []; page.on("download", (value) => downloads.push(value.suggestedFilename()));
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   await page.getByRole("button", { name: "导出 DOCX", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "正在导出 DOCX" })).toBeVisible();
   if (action === "cancel") await page.getByRole("button", { name: "取消导出", exact: true }).click();
   else await typeTitle(page);
   await expect(page.getByRole("alert")).toContainText(action === "cancel" ? "已取消 DOCX 导出" : "导出期间文档已变化");
-  await page.getByRole("tab", { name: "文件", exact: true }).click();
+  await page.getByRole("button", { name: "文件菜单", exact: true }).click(); await page.getByRole("menuitem", { name: "文件和导出…", exact: true }).click();
   await expect(page.getByRole("button", { name: "导出 DOCX", exact: true })).toBeEnabled();
   expect(await page.evaluate(() => (window as unknown as { terminatedWorkers: number }).terminatedWorkers)).toBe(1);
   await expect(page.getByLabel("DOCX 导出报告")).toHaveCount(0); expect(downloads).toEqual([]);

@@ -2,7 +2,7 @@ import { openContentFixture as openDocument } from "../../../tests/content-fixtu
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createAssetDescriptor, createDocumentSession, DocumentError, parseContract } from "@doffi/core";
+import { captureContentModel, createAssetDescriptor, createDocumentSession, createWordDocument, DEFAULT_DOCUMENT_READ_LIMITS, DocumentError, parseContract } from "@doffi/core";
 import type { CandidateChange, DocumentEditingSession, DocumentErrorCode, DocumentOperation, DocumentSessionOptions } from "@doffi/core";
 import { annotations, proposal, repository } from "./fixtures.js";
 
@@ -38,6 +38,78 @@ function failure(action: () => unknown, code: DocumentErrorCode = "InvalidOperat
 }
 
 describe("isolated document transactions and history", () => {
+  test("local text revisions retain the validated Word structure and exact ancestor offsets", () => {
+    const input = new Map(createWordDocument({ documentId: "local-runs" }));
+    const html = new TextDecoder().decode(input.get("content.html"));
+    const source = html.replace(/(<p\b[^>]*>)[\s\S]*?(<\/p>)/,
+      '$1<span data-node-id="left">甲</span><span data-node-id="right">乙</span>$2');
+    input.set("content.html", encode(source));
+    const s = createDocumentSession(openDocument(input));
+    const original = s.snapshot(), first = prepare(s, [text("left", "", "中文", 1)]);
+    expect(first.preview.metadata).toBe(original.metadata);
+    s.commit(first);
+    const second = prepare(s, [text("right", "乙", "<&")]);
+    const root = original.metadata.word!.stories.find(story => story.kind === "main")!.rootNodeId;
+    expect(second.mapping.textEdits).toContainEqual({ nodeId: root, from: 3, to: 4, insertedLength: 2 });
+    s.commit(second);
+    expect(openDocument(s.serialize()).getNode(root)?.text).toBe("甲中文<&");
+    s.undo();
+    expect(s.getNode(root)?.text).toBe("甲中文乙");
+    s.undo();
+    expect(s.snapshot().html).toBe(original.html);
+    s.redo();
+    expect(s.getNode(root)?.text).toBe("甲中文乙");
+    const quoted = '<span data-node-id="left">甲</span>';
+    input.set("content.html", encode(source.replace(quoted, "<!--" + quoted + "-->" + quoted)));
+    const withComment = createDocumentSession(openDocument(input));
+    withComment.commit(prepare(withComment, [text("left", "甲", "丙")]));
+    expect(openDocument(withComment.serialize()).getNode("left")?.text).toBe("丙");
+    expect(withComment.snapshot().html).toContain("<!--" + quoted + "-->");
+    withComment.dispose();
+    s.dispose();
+  });
+  test("many edits in a large file retain immutable text patches and reopen the latest source", () => {
+    const input = new Map(createWordDocument({ documentId: "bounded-local-history" }));
+    const original = new TextDecoder().decode(input.get("content.html"));
+    input.set("content.html", encode(original.replace("</section>", "<!--" + "layout ".repeat(30_000) + "--></section>")
+      .replace("</p>", "初</p>")));
+    const model = openDocument(input);
+    const initialBytes = [...model.serialize().values()].reduce((size, value) => size + value.length, 0);
+    const s = createDocumentSession(model, { sessionLimits: { maxHistoryBytes: initialBytes + 64_000 } });
+    for (let index = 0; index < 80; index++)
+      s.commit(prepare(s, [text("paragraph-1", "", "字", index + 1)]));
+    expect(s.history().undoSteps).toBe(80);
+    expect(s.history().retainedBytes).toBeLessThan(initialBytes + 64_000);
+    expect(openDocument(s.serialize()).getNode("paragraph-1")?.text).toBe("初" + "字".repeat(80));
+    for (let index = 0; index < 80; index++) s.undo();
+    expect(s.snapshot().html).toBe(model.snapshot().html);
+    s.dispose();
+  });
+  test("captures private revisions and reuses unchanged CSS without relaxing package limits", () => {
+    const input = files('<p data-node-id="p">甲</p>');
+    input.set("styles.css", encode("p{color:blue}"));
+    const s = createDocumentSession(openDocument(input), { limits: { maxCssNodes: 10 } });
+    const previous = captureContentModel(s);
+    expect(previous.snapshot()).toBe(s.snapshot());
+    s.commit(prepare(s, [text("p", "甲", "乙")]));
+    expect(previous.getNode("p")!.text).toBe("甲");
+    expect(s.snapshot().styles[0]).toBe(previous.snapshot().styles[0]);
+    failure(() => prepare(s, [{ op: "setStyle", nodeId: "p", property: "color", value: "red" }]), "ResourceLimitExceeded");
+    s.undo();
+    expect(s.snapshot().styles[0]).toBe(previous.snapshot().styles[0]);
+    expect(s.getNode("p")!.text).toBe("甲");
+
+    const unsafe = new Map(input);
+    const source = new TextDecoder().decode(unsafe.get("content.html"));
+    unsafe.set("content.html", encode(source.replace("</body>", "<script>0</script></body>")));
+    expect(() => captureContentModel({ ...previous, serialize: () => unsafe })).toThrowError(DocumentError);
+
+    const max = DEFAULT_DOCUMENT_READ_LIMITS.maxFileBytes;
+    input.set("extra.bin", new Uint8Array(max + 1));
+    const wide = openDocument(input, { limits: { maxFileBytes: max + 1 } });
+    failure(() => captureContentModel(wide), "ResourceLimitExceeded");
+    s.dispose();
+  });
   test("preserves explicit carriage returns through text transactions, conflicts, history and reopening", () => {
     const s = session('<p data-node-id="p" title="甲&#x000D;乙">甲&#13;乙</p>');
     expect(s.getNode("p")!.text).toBe("甲\r乙");

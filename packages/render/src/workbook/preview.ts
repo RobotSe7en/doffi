@@ -64,7 +64,7 @@ function reportOf(window: WorkbookRenderedWindow): WorkbookRenderReport {
 export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPreviewInput, options: WorkbookPreviewOptions = {}): WorkbookPreview {
   const cellStyles = new WeakMap<WorkbookRenderedWindow, Map<number, Readonly<Record<string, string>>>>();
   const sourceStyles = new WeakMap<Document, ReturnType<typeof createSourceStyleResolver>>();
-  if (Object.keys(options).some(key => !["title", "widthPt", "heightPt", "sheetId", "locale", "retainSelection", "limits", "onError", "onCellActivate", "onSelectionChange"].includes(key))
+  if (Object.keys(options).some(key => !["wordWebFonts", "title", "widthPt", "heightPt", "sheetId", "locale", "retainSelection", "limits", "onError", "onCellActivate", "onSelectionChange"].includes(key))
     || options.retainSelection !== undefined && typeof options.retainSelection !== "boolean")
     throw new DocumentError("InvalidOperation", "Workbook preview received an unsupported option.");
   const config = { ...options, limits: { ...options.limits, read: { ...options.limits?.read }, cells: { ...options.limits?.cells },
@@ -242,7 +242,7 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
       }
       let surface: WorkbookSurface | undefined, formatter: ReturnType<typeof createWorkbookNumberFormatter> | undefined;
       try {
-        surface = share ? share.surface.fork!() : await createWorkbookSurface(slot, snapshot, { ...viewport, signal: abort.signal });
+        surface = share ? share.surface.fork!() : await createWorkbookSurface(slot, snapshot, { ...viewport, signal: abort.signal, ...(config.wordWebFonts ? { wordWebFonts: config.wordWebFonts } : {}) });
         if (share && surface.document.fonts.status === "loading") await waitForWorkbookRead(surface.document.fonts.ready, abort.signal);
         if (abort.signal.aborted) return;
         formatter = createWorkbookNumberFormatter({ dateSystem: snapshot.metadata.workbook.dateSystem,
@@ -316,7 +316,12 @@ export function mountWorkbookPreview(container: HTMLElement, input: WorkbookPrev
       const sources = new WorkbookCellSources(context.surface.source, context.snapshot, { ...window.frame, sourceCoordinates: [at] }, 50_000, window.rules);
       try {
         const element = sources.get(at.row, at.column)!.element, computed = element.ownerDocument.defaultView!.getComputedStyle(element);
-        const values = Object.fromEntries(["font-weight", "font-style", "font-size", "font-family", "color", "text-align", "text-decoration-line", "--office-font-underline", "--office-font-strike", "--office-cell-horizontal", "--office-cell-wrap", "--office-font-east-asia", "--office-font-ascii"].map(name => [name, computed.getPropertyValue(name).trim()]));
+        const values = Object.fromEntries(["font-weight", "font-style", "font-size", "font-family", "color", "text-align", "text-decoration-line", "--office-font-underline", "--office-font-strike", "--office-cell-horizontal", "--office-cell-vertical", "--office-cell-indent", "--office-cell-wrap", "--office-font-east-asia", "--office-font-ascii"].map(name => [name, computed.getPropertyValue(name).trim()]));
+        values["--office-cell-preview"] = window.element.querySelector(`[data-office-view="workbook-cell"][data-row="${at.row}"][data-column="${at.column}"]`)?.textContent ?? "";
+        const formatId = sources.get(at.row, at.column)!.format.numberFormatId;
+        const format = context.snapshot.metadata.workbook.numberFormats.find(item => item.formatId === formatId);
+        if (format && "code" in format) values["--office-number-format-code"] = format.code;
+        else values["--office-number-format-builtin"] = String(format?.builtinId ?? 0);
         // Keep exact source points rather than Firefox's quantized computed
         // pixels. Reuse the existing first-party cascade once per source CSS
         // document; coordinate/window caches retain no temporary source DOM.

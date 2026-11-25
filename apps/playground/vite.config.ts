@@ -15,13 +15,14 @@ function playgroundNodeWebFonts(): readonly NodeWebFont[] {
     { family: "Doffi Fangsong SC", aliases: ["仿宋", "仿宋_GB2312", "FangSong", "FangSong_GB2312", "华文仿宋", "STFangsong", "朱雀仿宋", "Zhuque Fangsong"], fallbackOnly: true, path: asset("fangsong-regular.woff2") },
     { family: "Doffi Kai SC", aliases: ["楷体", "楷体_GB2312", "KaiTi", "KaiTi_GB2312", "SimKai", "楷体-简", "Kaiti SC", "华文楷体", "STKaiti", "LXGW WenKai", "霞鹜文楷"], fallbackOnly: true, path: asset("kai-regular.woff2") },
   ];
-  const manifestPath = asset("internal/sources.json");
+  const localAsset = (relative: string): string => fileURLToPath(new URL("../../fonts/local/" + relative, import.meta.url));
+  const manifestPath = localAsset("sources.json");
   if (existsSync(manifestPath)) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
       fonts?: readonly { family: string; aliases?: readonly string[]; weight?: string; style?: string; file: string }[];
     };
     for (const entry of manifest.fonts ?? []) {
-      const path = asset("internal/" + entry.file);
+      const path = localAsset(entry.file);
       if (!existsSync(path)) continue;
       fonts.push({
         family: entry.family,

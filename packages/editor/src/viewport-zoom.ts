@@ -1,3 +1,6 @@
+import { DocumentError } from "@doffi/core";
+import type { DocumentRenderReport } from "@doffi/render";
+
 export interface ZoomAnchor { readonly xFromCenter: number; readonly y: number }
 /** Preserve the visible document point, including when a narrow page is centered
  * inside a wider viewport. Geometry reads stay bounded to these two elements. */
@@ -13,4 +16,13 @@ export function restoreZoomAnchor(stage: HTMLElement, plane: HTMLElement, zoom: 
   const viewport = stage.getBoundingClientRect(), content = plane.getBoundingClientRect();
   stage.scrollLeft += content.left + plane.offsetWidth / 2 + anchor.xFromCenter * zoom - viewport.left - stage.clientLeft - stage.clientWidth / 2;
   stage.scrollTop += content.top + anchor.y * zoom - viewport.top - stage.clientTop - stage.clientHeight / 2;
+}
+
+export function scrollToWordPage(stage: HTMLElement, frame: HTMLIFrameElement, report: DocumentRenderReport, index: number, zoom: number): void {
+  const page = report.layout === "pages" && Number.isInteger(index) && report.pages[index - 1];
+  const paper = page && frame.contentDocument?.querySelector<HTMLElement>(`.sdk-paper[data-page-id="${CSS.escape(page.pageId)}"]`);
+  if (!paper) throw new DocumentError("InvalidOperation", "页码超出当前页面视图。");
+  const viewport = stage.getBoundingClientRect();
+  stage.scrollTop += frame.getBoundingClientRect().top + paper.getBoundingClientRect().top * zoom
+    - viewport.top - stage.clientTop - 12;
 }

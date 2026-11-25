@@ -1,8 +1,9 @@
+import { drawingColorTransformNames } from "@doffi/core";
 import { A, check, elements, fail, unsupported } from "../ooxml/xml.js";
 import type { XmlNode } from "../ooxml/xml.js";
 import { attributes, boolean, integer, one, value } from "./values.js";
 import type { Css } from "../ooxml/styles.js";
-import { effects, fill, onlyColor, outline, paint } from "../drawingml/styles.js";
+import { color, effects, fill, onlyColor, outline, paint } from "../drawingml/styles.js";
 import type { XlsxStyles } from "./styles.js";
 
 function empty(node: XmlNode, names: readonly string[] = []): void { attributes(node, names); check(node, [], A); }
@@ -12,15 +13,18 @@ function enumeration(node: XmlNode, name: string, values: readonly string[]): vo
 function choice(node: XmlNode, names: readonly string[]): void {
   if (elements(node, undefined, A).filter(item => names.includes(item.name)).length > 1) fail(node, "A DrawingML appearance choice is repeated.");
 }
-/** The shared appearance source represents these transforms in this order.
- * Preserve that meaning instead of silently reordering arbitrary native lists. */
+/** Keep the native order for colors represented by the shared transform sequence.
+ * Legacy color declarations support a fixed order. */
 export function validateDrawingColor(node: XmlNode): void {
   if (node.uri !== A || !["srgbClr", "sysClr", "schemeClr"].includes(node.name)) unsupported(node, "This drawing color is not supported.");
   attributes(node, node.name === "sysClr" ? ["val", "lastClr"] : ["val"]);
+  check(node, [...drawingColorTransformNames, "alpha"], A);
+  const transforms = elements(node, undefined, A);
+  for (const transform of transforms) attributes(transform, ["val"]);
+  if (color(node).transforms) return;
   const order = ["lumMod", "lumOff", "shade", "tint"];
-  check(node, [...order, "alpha"], A); let previous = -1;
-  for (const transform of elements(node, undefined, A)) {
-    one(node, transform.name, A); empty(transform, ["val"]); integer(transform, "val", 0, 100000);
+  let previous = -1;
+  for (const transform of transforms) {
     if (transform.name === "alpha") continue;
     const index = order.indexOf(transform.name);
     if (index < previous) unsupported(node, "This ordered color-transform sequence cannot be represented by the drawing appearance source.");

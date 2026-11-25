@@ -55,6 +55,23 @@ describe("Presentation package model", () => {
     expect(model.getNode("layout-body")!.attributes["data-office-width"]).toBe("648");
   });
 
+  test("shares identical PPT inline declarations while budgeting every use and validating new styles", () => {
+    const files = initial();
+    files.set("styles.css", encoder.encode(".theme-default{}"));
+    addText(files, "repeated", Array.from({ length: 20 }, (_, index) =>
+      `<span data-node-id="run-${index}" style="color: red">字</span>`).join(""));
+    // Six stylesheet nodes, four for the first declaration list, nineteen reused lists.
+    const limits = { maxCssNodes: 29 };
+    const model = openDocument(files, { limits });
+    expect(model.getNode("repeated")!.text).toBe("字".repeat(20));
+    expect(model.getNode("run-19")!.attributes.style).toBe("color:red");
+    expect(openDocument(model.serialize(), { limits }).snapshot()).toEqual(model.snapshot());
+    expect(() => openDocument(files, { limits: { maxCssNodes: 28 } })).toThrowError(
+      expect.objectContaining({ code: "ResourceLimitExceeded", message: "Document input exceeds maxCssNodes (29 > 28) in inline CSS." }));
+    files.set("content.html", encoder.encode(source(files).replace('style="color: red"', 'style="color: red;background-color:url(https://example.com/image)"')));
+    expectFailure(() => openDocument(files), "InvalidDocument");
+  });
+
   test("isolates bytes, source snapshots and different document identities", () => {
     const files = initial(), first = openDocument(files), second = openDocument(createPresentation({ documentId: "other" }));
     const snapshot = first.snapshot();

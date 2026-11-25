@@ -65,3 +65,54 @@ export async function incrementalPreview(entries: TestPackage) {
     release(); reference?.preview.dispose(); reference?.host.remove(); preview.dispose(); mounted.host.remove(); session.dispose(); window.removeEventListener('unhandledrejection', rejection);
   }
 }
+
+export async function incrementalFontWarnings(entries: TestPackage) {
+  const requested = "Doffi Missing Row Test Face", cssClass = "row-missing-face", sheetId = "sheet-1";
+  const files = new Map(decodeTestPackage(entries));
+  const css = new TextDecoder().decode(files.get("styles.css")!);
+  files.set("styles.css", new TextEncoder().encode(css + '\n.' + cssClass + '{font-family:"' + requested + '",serif}'));
+  const session = createDocumentSession(openDocument(files, { kind: 'workbook' }));
+  const change = (operations: Parameters<typeof session.prepare>[0]["operations"]) => {
+    const { documentId, revision } = session.snapshot().manifest;
+    session.commit(session.prepare({ protocolVersion: 1, documentId, baseRevision: revision, operations }));
+  };
+  const firstWarning = { row: 1000, column: 0 }, lastWarning = { row: 2000, column: 0 };
+  change([{ op: "setWorkbookCellFormats", sheetId, cells: [{ ...firstWarning, cssClass }, { ...lastWarning, cssClass }] }]);
+  let model = captureWorkbookModel(session), reads = new Set<number>();
+  function provider() {
+    const source = createWorkbookPreviewSource(model);
+    return { ...source, cells: { ...source.cells, async read(request: Parameters<typeof source.cells.read>[0], signal: AbortSignal) {
+      for (const window of request.windows)
+        for (let row = window.row; row < window.row + window.rows; row++) reads.add(row);
+      return source.cells.read(request, signal);
+    } } };
+  }
+  let source = provider();
+  const host = document.createElement("div"); document.body.append(host);
+  const preview = mountDocumentPreview(host, source, { widthPt: 300, heightPt: 150 });
+  const warned = () => preview.layout().fonts.some(font => font.requestedFamily === requested && font.substituted);
+  const update = async () => {
+    const previous = model;
+    model = captureWorkbookModel(session); reads = new Set();
+    const next = linkWorkbookPreviewSource(provider(), source, readWorkbookChangeImpact(previous, model));
+    preview.update(next);
+    await preview.settled();
+    source = next;
+    return { warned: warned(), checkedFirst: reads.has(firstWarning.row), checkedLast: reads.has(lastWarning.row) };
+  };
+  const clear = (at: typeof firstWarning) => change([
+    { op: "clearWorkbookRanges", sheetId, ranges: [{ from: at, to: at }], mode: "all" },
+  ]);
+  try {
+    await preview.ready;
+    const initial = warned();
+    change([{ op: "setWorkbookCells", sheetId, cells: [{ row: 0, column: 0, source: { kind: "value", value: { type: "number", value: 42 } } }] }]);
+    const unrelated = await update();
+    clear(firstWarning);
+    const remaining = await update();
+    clear(lastWarning);
+    const cleared = await update();
+    session.undo();
+    return { initial, unrelated, remaining, cleared, restored: await update() };
+  } finally { preview.dispose(); host.remove(); session.dispose(); }
+}

@@ -7,12 +7,13 @@ import type {
 } from "./runtime.js";
 import { copyPackage } from "./document/package.js";
 import { buildDocumentState } from "./document/state.js";
-import { readLimits } from "./document/validation.js";
+import { DEFAULT_DOCUMENT_READ_LIMITS, readLimits } from "./document/validation.js";
 import { readManifest } from "./document/manifest.js";
 import { DocumentError } from "./errors.js";
 import { openWorkbookModel } from "./workbook/model.js";
 import { takeSerializedWorkbook } from "./workbook/source.js";
-import { copyContentAsset } from "./document/assets.js";
+import { contentModel, contentSource } from "./document/model-source.js";
+import type { DocumentReadLimits } from "./runtime.js";
 
 export { DEFAULT_DOCUMENT_READ_LIMITS } from "./document/validation.js";
 
@@ -46,14 +47,19 @@ export function openDocument(
       options.workbookLimits,
       takeSerializedWorkbook(input),
     );
-  const state = buildDocumentState(files, limits);
-  return Object.freeze({
-    kind: state.snapshot.manifest.kind,
-    snapshot: () => state.snapshot,
-    getNode: (nodeId: string) => state.html.getNode(nodeId),
-    getAsset: (path: string, maxBytes = limits.maxFileBytes) =>
-      copyContentAsset(state.files, state.snapshot.manifest.assets, path, maxBytes),
-    serialize: () =>
-      new Map([...state.files].map(([path, bytes]) => [path, new Uint8Array(bytes)])),
-  });
+  return contentModel(buildDocumentState(files, limits));
+}
+
+/** Capture a validated revision for consumers that require default read limits. */
+export function captureContentModel(
+  input: ContentDocumentModel,
+  kind: ContentDocumentModel["kind"] = input.kind,
+): ContentDocumentModel {
+  const state = contentSource(input);
+  if (state?.snapshot.manifest.kind === kind &&
+    (Object.keys(DEFAULT_DOCUMENT_READ_LIMITS) as (keyof DocumentReadLimits)[]).every(
+      key => state.limits[key] <= DEFAULT_DOCUMENT_READ_LIMITS[key],
+    ))
+    return contentModel(state);
+  return openDocument(input.serialize(), { kind });
 }

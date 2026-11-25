@@ -129,15 +129,19 @@ test("mounted direct range appearance edits native rich text with current colors
   const source = await importXlsx(readFileSync("examples/xlsx/01-values-text.xlsx"), { documentId: "native-format-ui" });
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), encodeTestPackage(source)); await page.evaluate(() => window.workbookEditor.select(5));
   const original = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0));
-  await page.getByText("设置单元格格式", { exact: true }).click();
+  await page.locator("summary").filter({ hasText: "设置单元格格式" }).click();
+  await page.getByRole("dialog", { name: "设置单元格格式" }).getByRole("button", { name: "确定", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 0 }, errors: [] });
+  expect(await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0))).toEqual(original);
+  await page.locator("summary").filter({ hasText: "设置单元格格式" }).click(); await page.getByRole("tab", { name: "字体", exact: true }).click();
   await page.getByLabel("文字颜色", { exact: true }).fill("#cc2200"); await page.getByLabel("字重", { exact: true }).selectOption("normal");
-  await page.getByLabel("斜体", { exact: true }).selectOption("normal"); await page.getByLabel("字号（磅）", { exact: true }).fill("16");
-  await page.getByLabel("中文字体", { exact: true }).fill("Noto Sans CJK SC"); await page.getByLabel("水平对齐", { exact: true }).selectOption("center");
-  await page.getByLabel("自动换行", { exact: true }).selectOption("true"); await page.getByLabel("下划线", { exact: true }).selectOption("doubleAccounting");
-  await page.getByLabel("填充方式", { exact: true }).selectOption("linear"); await page.getByLabel("填充前景色", { exact: true }).fill("#cceeff");
+  await page.getByLabel("字号（磅）", { exact: true }).fill("16");
+  await page.getByLabel("中文字体", { exact: true }).fill("Noto Sans CJK SC"); await page.getByRole("tab", { name: "对齐", exact: true }).click(); await page.getByLabel("水平对齐", { exact: true }).selectOption("center");
+  await page.getByLabel("自动换行", { exact: true }).selectOption("true"); await page.getByRole("tab", { name: "字体", exact: true }).click(); await page.getByLabel("下划线", { exact: true }).selectOption("doubleAccounting");
+  await page.getByRole("tab", { name: "填充", exact: true }).click(); await page.getByLabel("填充方式", { exact: true }).selectOption("linear"); await page.getByLabel("填充前景色", { exact: true }).fill("#cceeff");
   await page.getByLabel("填充背景色", { exact: true }).fill("#ffffff"); await page.getByLabel("渐变角度", { exact: true }).fill("45");
-  await page.getByLabel("边框位置", { exact: true }).selectOption("diagonalBoth"); await page.getByLabel("边框线型", { exact: true }).selectOption("double");
-  await page.getByRole("button", { name: "应用单元格格式", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+  await page.getByRole("tab", { name: "边框", exact: true }).click(); await page.getByLabel("边框位置", { exact: true }).selectOption("diagonalBoth"); await page.getByLabel("边框线型", { exact: true }).selectOption("double");
+  await page.getByRole("button", { name: "确定", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 1 }, errors: [] });
   const changed = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 5, 0)); expect(changed?.text).toBe(original?.text);
   expect(changed?.html.slice(changed.html.indexOf(">") + 1)).toBe(original?.html.slice(original.html.indexOf(">") + 1));
@@ -155,7 +159,7 @@ test("mounted direct selected text fonts map CRLF and literal-prefix offsets, pr
   ] }] })); const entries = encodeTestPackage(s.serialize()); s.dispose();
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), entries); await page.evaluate(() => window.workbookEditor.select(0));
   const original = await page.evaluate(() => window.workbookEditor.cell("sheet-1", 0, 0)), input = page.getByRole("textbox", { name: "单元格或公式输入", exact: true });
-  await page.getByText("设置单元格格式", { exact: true }).click(); await page.getByLabel("文字颜色", { exact: true }).fill("#cc2200");
+  await page.locator("summary").filter({ hasText: "设置单元格格式" }).click(); await page.getByRole("tab", { name: "字体", exact: true }).click(); await page.getByLabel("文字颜色", { exact: true }).fill("#cc2200");
   await page.getByLabel("字重", { exact: true }).selectOption("bold");
   await input.evaluate(element => { const field = element as HTMLTextAreaElement, from = field.value.indexOf("禰"); field.setSelectionRange(from, from + 5); field.dispatchEvent(new Event("select", { bubbles: true })); });
   await page.getByRole("button", { name: "应用选中文字字体", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
@@ -180,10 +184,11 @@ test("mounted direct range appearance preserves nested selector styling while re
   ] }] })); const entries = encodeTestPackage(session.serialize()); session.dispose();
   await page.evaluate(entries => window.workbookEditor.mountObserved(entries), entries); await page.evaluate(() => window.workbookEditor.select(0));
   expect((await page.evaluate(() => window.workbookEditor.displayedTextStyles(0, 0))).some(style => style.italic === "italic")).toBe(true);
-  await page.getByText("设置单元格格式", { exact: true }).click(); await page.getByLabel("填充方式", { exact: true }).selectOption("solid");
+  await page.locator("summary").filter({ hasText: "设置单元格格式" }).click(); await page.getByRole("tab", { name: "字体", exact: true }).click(); await page.getByRole("tab", { name: "填充", exact: true }).click(); await page.getByLabel("填充方式", { exact: true }).selectOption("solid");
   for (const color of ["cyan", "magenta", "yellow"]) {
+    if (!await page.getByRole("dialog", { name: "设置单元格格式" }).isVisible()) { await page.locator("summary").filter({ hasText: "设置单元格格式" }).click(); await page.getByRole("tab", { name: "填充", exact: true }).click(); await page.getByLabel("填充方式", { exact: true }).selectOption("solid"); }
     await page.getByLabel("填充前景色", { exact: true }).fill(color);
-    await page.getByRole("button", { name: "应用单元格格式", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
+    await page.getByRole("button", { name: "确定", exact: true }).click(); await page.evaluate(() => window.workbookEditor.settled());
     expect((await page.evaluate(() => window.workbookEditor.displayedTextStyles(0, 0))).some(style => style.italic === "italic")).toBe(true);
   }
   expect(await page.evaluate(() => window.workbookEditor.inspect())).toMatchObject({ history: { undoSteps: 3 }, errors: [] });

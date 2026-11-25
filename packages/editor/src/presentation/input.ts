@@ -28,6 +28,7 @@ export interface PresentationInput {
     composing(): boolean;
     committing(): boolean;
     format(property: string, value: string): void;
+    formatProperties(properties: ReadonlyMap<string, string>): void;
     formatState(): TextFormatState;
     clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
     toggle(property: "bold" | "italic" | "underline"): void;
@@ -180,12 +181,27 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
             committing = false;
         }
     };
+    function localReplacement(value: HTMLElement): DocumentOperation | undefined {
+        if (host.instance || host.newNotesSlideId || typing.size || paragraphStyles.size) return;
+        for (const edit of proofs) {
+            const selector = '[data-node-id="' + CSS.escape(edit.nodeId) + '"]';
+            const leaf = source.querySelector(selector);
+            if (!leaf || leaf.childElementCount || !leaf.textContent ||
+                leaf.textContent.slice(edit.from, edit.to) !== edit.expectedText) continue;
+            const expected = source.cloneNode(true) as HTMLElement;
+            expected.querySelector(selector)!.textContent = leaf.textContent.slice(0, edit.from) +
+                edit.text + leaf.textContent.slice(edit.to);
+            if (expected.innerHTML === value.innerHTML) return { op: "replaceText", ...edit };
+        }
+        return undefined;
+    }
     const flush = (): void => {
         if (disposed || composing || !dirty)
             return;
         const selection = remember(), text = sourceText(root, projection.ignored), recovery = compositionInsertion ? text.slice(compositionInsertion.from, compositionInsertion.to) : undefined;
         try {
-            const value = normalized(), operations: DocumentOperation[] = host.newNotesSlideId ? [{ op: "insertPresentationNotes", slideId: host.newNotesSlideId, html: value.innerHTML }] : [{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: value.innerHTML, textEdits: proofs }];
+            const value = normalized(), local = localReplacement(value);
+            const operations: DocumentOperation[] = local ? [local] : host.newNotesSlideId ? [{ op: "insertPresentationNotes", slideId: host.newNotesSlideId, html: value.innerHTML }] : [{ op: "reconcileFragment", nodeId: root.dataset.nodeId!, html: value.innerHTML, textEdits: proofs }];
             dirty = false;
             commit(operations, compositionRevision ?? revision);
             if (!disposed)
@@ -288,14 +304,15 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         select(next, 0);
     };
     let typingAnchor: string | undefined;
-    const format = (property: string, value: string): void => {
+    const formatProperties = (inputProperties: ReadonlyMap<string, string>): void => {
         if (disposed || composing)
             return;
         restore(remember());
         const selected = range();
         if (!selected)
             return;
-        const properties = characterStyle(property, value);
+        const properties = new Map<string, string>();
+        for (const [property, value] of inputProperties) for (const [name, part] of characterStyle(property, value)) properties.set(name, part);
         if (selected.collapsed) {
             for (const [name, value] of properties)
                 typing.set(name, value);
@@ -305,6 +322,7 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         const selection = remember();
         mutate(selected, () => { styleNativeRange(root, selected, properties, projection.ignored, projection.setStyles); restoreBookmark(root, selection, projection.ignored); });
     };
+    const format = (property: string, value: string): void => formatProperties(new Map([[property, value]]));
     const formatState = (): TextFormatState => disposed || composing ? { enabled: false } : { ...readTextFormat(root, range(), typing, projection.ignored), editingText: true };
     const toggle = (property: "bold" | "italic" | "underline"): void => {
         const active = formatState()[property] === true;
@@ -570,7 +588,7 @@ export function bindPresentationInput(host: PresentationInputHost): Presentation
         restoreBookmark(root, selection, projection.ignored);
     } flush(); host.compositionEnded(); }), { signal: controls.signal });
     frame.addEventListener("selectionchange", () => { if (range()) { const next = bookmark(root, projection.ignored); if (!composing && typingAnchor && next && JSON.stringify(next) !== typingAnchor) { typing.clear(); typingAnchor = undefined; } remember(); } }, { signal: controls.signal });
-    return { focus: restore, selection: remember, composing: () => composing, committing: () => committing, format, formatState, toggle,
+    return { focus: restore, selection: remember, composing: () => composing, committing: () => committing, format, formatProperties, formatState, toggle,
         clipboard(action) { const expected = revision, selected = JSON.stringify(remember()); return executeClipboard(root, () => restore(saved), action, () => !disposed && !composing && revision === expected && JSON.stringify(remember()) === selected); }, paragraph, list,
         finish() { if (disposed)
             return; composing = false; flush(); },

@@ -36,6 +36,10 @@ SDK 默认 `strict`，Playground 打开 PPTX 时显式使用 `compatible`。兼�
 
 位置和组子坐标仍由 `data-office-x/y/width/height` 等源属性保存。原生预设常量为 `data-office-adjust-*`，连接线原始类型为 `data-office-connector-preset`；核心校验检查其类型、数值和 routing 一致性。幻灯片内原生 ID 保存在类型化对象元数据，用于连接引用和后续批注映射。它们只表示身份，不授予访问权限。
 
+`firstSlideNum` 保存为 `presentation.firstSlideNumber`，缺省从 1 开始，可保存 Office 范围内的 0～9999；文档包和原生 PPTX 重开保留。动态页码采用起始值加页面顺序，源字段缓存保持原样。[PowerPoint 页码语义](https://learn.microsoft.com/en-us/office/vba/api/powerpoint.slide.slidenumber)、[Office 属性范围](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/76016a6d-35f9-47cc-8fc3-8d47ba713bbb)。
+
+2026-11-25 的 PowerPoint 16.114.1 实机对照发现：字符属性中位于 `a:cs` 之后的 `a:ea` 不参与东亚字体覆盖，原生重存会移除它。导入沿用该有效继承行为，同时把未生效的声明保存在 `--office-ignored-font-east-asia` 中；文档包重开仍保留源字体名。规范的 `latin`、`ea`、`cs` 顺序继续分别映射字体角色。原生导出写有效字体继承和规范顺序，不把未生效声明重新变成有效覆盖。
+
 验收使用[独立输入与 LibreOffice 重存文件](../examples/pptx/README.md)。基础读取用例对 11 份源及对应 11 份外部生产者文件分别验证文字、对象和引用、输入不变、确定性以及文档包 ZIP 保存重开；另覆盖图片原始字节、主题与占位符、嵌套坐标、连接引用、合并、异常输入及预算。LibreOffice 重存可能改变连接线预设和小数网格尺寸，读取保留重存文件的实际值，不改回原合成值。现代批注在生产者重存中丢失，不使用无批注重存文件代替现代读取验收。
 
 ```bash

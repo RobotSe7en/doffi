@@ -145,12 +145,12 @@ export function parseHtml(
     }
     const index = new Map<
       string,
-      { element: Element; parentId: string | null; children: string[] }
+      { element: Element; parentId: string | null; children: string[]; signature?: string }
     >();
     const domIds = new Set<string>();
     const stylePaths: string[] = [];
     const assets = new Map(manifest.assets.map((asset) => [asset.path, asset]));
-    const inlineStyles = manifest.kind === "document" ? new Map<string, string>() : undefined;
+    const inlineStyles = new Map<string, string>();
     const stack: { node: Node; depth: number; inBody: boolean; parentId: string | null }[] = [
       { node: tree, depth: 0, inBody: false, parentId: null },
     ];
@@ -185,14 +185,14 @@ export function parseHtml(
           }
           if (attr.name === "style") {
             const source = attr.value;
-            const cached = inlineStyles?.get(source);
+            const cached = inlineStyles.get(source);
             if (cached !== undefined) {
               // An identical declaration list shares its parse, but each use costs one node.
               checkLimit(++cssBudget.nodes, limits.maxCssNodes, "maxCssNodes", "inline CSS");
               attr.value = cached;
             } else {
               attr.value = normalizeCss(source, "declarationList", limits, cssBudget);
-              inlineStyles?.set(source, attr.value);
+              inlineStyles.set(source, attr.value);
             }
           }
           if (attr.name === "dir" && !["ltr", "rtl", "auto"].includes(attr.value))
@@ -333,6 +333,7 @@ export function parseHtml(
       signature: (nodeId) => {
         const entry = index.get(nodeId);
         if (!entry) return undefined;
+        if (entry.signature !== undefined) return entry.signature;
         const tokens = (node: Node): unknown => {
           if (isElement(node)) {
             const id = attribute(node, "data-node-id");
@@ -345,7 +346,7 @@ export function parseHtml(
               ? { comment: node.data }
               : null;
         };
-        return JSON.stringify([entry.parentId, tokens(entry.element)]);
+        return (entry.signature = JSON.stringify([entry.parentId, tokens(entry.element)]));
       },
       peekNode: (nodeId) => {
         const entry = index.get(nodeId);

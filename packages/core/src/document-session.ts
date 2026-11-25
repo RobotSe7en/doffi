@@ -30,9 +30,10 @@ import { DocumentEdit } from "./document/edit.js";
 import { parseHtml } from "./document/html.js";
 import type { ParsedHtml } from "./document/html.js";
 import { copyPackage, encode } from "./document/package.js";
-import { buildDocumentState } from "./document/state.js";
+import { buildDocumentState, materializeDocumentFiles, snapshotWithText } from "./document/state.js";
 import type { DocumentState } from "./document/state.js";
-import { checkLimit, readLimits } from "./document/validation.js";
+import { replaceTextLeaf } from "./document/text-revision.js";
+import { checkLimit, freeze, readLimits } from "./document/validation.js";
 import { compareStates, retainedBytes } from "./session/changes.js";
 import { checkTransactionSize, sessionLimits } from "./session/limits.js";
 import { annotationNodes, mapAnnotations } from "./session/anchors.js";
@@ -69,6 +70,7 @@ import { mergeWordMovedClipboardComments } from "./session/word-content-comments
 import { validateWordCandidate } from "./session/word-interaction.js";
 import { updateWordDrawingConnectors } from "./word-drawing.js";
 import { copyContentAsset } from "./document/assets.js";
+import { contentModel, registerContentSource } from "./document/model-source.js";
 import { PresentationStyleEdit } from "./session/presentation-styles.js";
 export { DEFAULT_INTERACTION_LIMITS } from "./session/interaction.js";
 
@@ -135,9 +137,21 @@ function rebase(
   const annotations = state.snapshot.annotations.map((annotation) =>
     annotation.status === "needs_reanchor" ? annotation : { ...annotation, baseRevision: revision },
   );
-  files.set("manifest.json", encode(JSON.stringify(manifest)));
-  files.set(manifest.annotations, encode(JSON.stringify(annotations)));
-  return buildDocumentState(files, limits);
+  // History and commit already own this fully validated source. Advancing its
+  // revision changes only the manifest and the bindings of live annotations.
+  files.set("manifest.json", encode(JSON.stringify(manifest, null, 2) + "\n"));
+  if (annotations.some((annotation, index) => annotation !== state.snapshot.annotations[index]))
+    files.set(manifest.annotations, encode(JSON.stringify(annotations, null, 2) + "\n"));
+  let total = 0;
+  for (const [path, bytes] of files) {
+    const size = path === manifest.entrypoint ? state.textEntry?.byteLength ?? bytes.byteLength : bytes.byteLength;
+    checkLimit(size, limits.maxFileBytes, "maxFileBytes", `normalized ${path}`);
+    total += size;
+  }
+  checkLimit(total, limits.maxPackageBytes, "maxPackageBytes", "the normalized package");
+  const snapshot = { manifest: freeze(manifest), annotations: freeze(annotations),
+    styles: state.snapshot.styles, metadata: state.snapshot.metadata };
+  return { ...state, files, snapshot: snapshotWithText(snapshot, state.html) };
 }
 
 /** Create an isolated session using the shared transaction/history boundary. */
@@ -161,25 +175,20 @@ export function createDocumentSession(
   const limits = readLimits(options.limits),
     budgets = sessionLimits(options.sessionLimits);
   const initial = buildDocumentState(copyPackage(document.serialize(), limits), limits);
-  const model = (source: DocumentState): ContentDocumentModel =>
-    Object.freeze<ContentDocumentModel>({
-      kind: source.snapshot.manifest.kind,
-      snapshot: () => source.snapshot,
-      getNode: (id) => source.html.getNode(id),
-      getAsset: (path, maxBytes = limits.maxFileBytes) =>
-        copyContentAsset(source.files, source.snapshot.manifest.assets, path, maxBytes),
-      serialize: () =>
-        new Map([...source.files].map(([path, bytes]) => [path, new Uint8Array(bytes)])),
-    });
   const boundary = createSessionLifecycle(
     initial,
     {
-      model,
+      model: contentModel,
       prepare: prepareContent,
       rebase: (source, revision) => rebase(source, revision, limits),
       compare: (before, after, mapping) =>
         compareStates(before, after, mapping?.textEdits, mapping?.textTransfers),
-      same: (before, after) => JSON.stringify(before.snapshot) === JSON.stringify(after.snapshot),
+      same: (before, after) => {
+        const a = before.snapshot, b = after.snapshot;
+        return a.html === b.html &&
+          JSON.stringify([a.manifest, a.styles, a.metadata, a.annotations]) ===
+            JSON.stringify([b.manifest, b.styles, b.metadata, b.annotations]);
+      },
       retained: retainedBytes,
       identities: (source) => source.html.nodeIds(),
     },
@@ -236,6 +245,11 @@ export function createDocumentSession(
     resolvedIds?: readonly string[],
     options?: TransactionPrepareOptions,
   ) {
+    const [operation] = transaction.operations;
+    if (!resolvedIds && !options && transaction.operations.length === 1 && operation?.op === "replaceText") {
+      const patched = replaceTextLeaf(base, operation);
+      if (patched) return { state: patched.state, diff: compareStates(base, patched.state, patched.textEdits) };
+    }
     // Validate every target against the base before applying any operation.
     for (const operation of transaction.operations) {
       if (isWorkbookOperation(operation))
@@ -250,10 +264,17 @@ export function createDocumentSession(
     const parsedMetadata = parseContract("document-metadata", base.snapshot.metadata);
     if ("workbook" in parsedMetadata) invalid("Content operations require Word or PPT metadata.");
     const metadata: ContentDocumentMetadata = parsedMetadata;
-    const files = new Map(resources.state.files);
+    const files = materializeDocumentFiles(resources.state);
     const styles = new PresentationStyleEdit(files, base.snapshot.manifest.styles, limits);
-    const parseEdited = (): ParsedHtml =>
-      parseHtml(edit.html(), resources.state.snapshot.manifest, files, limits, { nodes: 0 });
+    let parsedSource = resources.state.snapshot.html, parsedEdit = resources.state.html;
+    const parseEdited = (): ParsedHtml => {
+      const source = edit.html();
+      if (source !== parsedSource) {
+        parsedEdit = parseHtml(source, resources.state.snapshot.manifest, files, limits, { nodes: 0 });
+        parsedSource = source;
+      }
+      return parsedEdit;
+    };
     const explicit = new Set<string>();
     const copiedComments = new Map<string, { source: ParsedHtml; at: number; transfers: number }>();
     const copiedCommentSources = new Map<string, string>();
@@ -672,10 +693,10 @@ export function createDocumentSession(
     }
     files.set(base.snapshot.manifest.metadata, encode(JSON.stringify(metadata)));
     files.set(base.snapshot.manifest.annotations, encode(JSON.stringify(annotations)));
-    const next = buildDocumentState(files, limits);
+    const next = buildDocumentState(files, limits, resources.state);
     return {
       state: next,
-      mapping: compareStates(base, next, edit.textEdits, edit.textTransfers).mapping,
+      diff: compareStates(base, next, edit.textEdits, edit.textTransfers),
     };
   }
 
@@ -770,15 +791,17 @@ export function createDocumentSession(
     });
   }
 
-  return Object.freeze({
+  const session = Object.freeze({
     kind: initial.snapshot.manifest.kind,
     snapshot: () => state().snapshot,
     getNode: (id: string) => state().html.getNode(id),
     getAsset: (path: string, maxBytes = limits.maxFileBytes) =>
       copyContentAsset(state().files, state().snapshot.manifest.assets, path, maxBytes),
-    serialize: () => model(state()).serialize(),
+    serialize: () => contentModel(state()).serialize(),
     ...boundary.lifecycle,
     buildInteractionRequest: buildRequest,
     prepareProposal: prepareProposalRequest,
   });
+  registerContentSource(session, state);
+  return session;
 }

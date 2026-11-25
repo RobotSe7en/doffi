@@ -4,7 +4,7 @@ import type { DocumentManifest, ContentDocumentMetadata } from "../contracts/doc
 import type { DeepReadonly, DocumentPackage } from "../runtime.js";
 import type { DocumentReadLimits } from "../runtime.js";
 import type { ParsedHtml } from "../document/html.js";
-import { buildDocumentState } from "../document/state.js";
+import { buildDocumentState, materializeDocumentFiles } from "../document/state.js";
 import { encode, resolveReference } from "../document/package.js";
 import { validateAsset } from "../document/assets.js";
 import { checkLimit, invalid } from "../document/validation.js";
@@ -17,9 +17,10 @@ export function stageResources(
   options: TransactionPrepareOptions | undefined,
   limits: DocumentReadLimits,
 ): { state: DocumentState; added: ReadonlySet<string> } {
-  const staged = stageResourceFiles(base.files, base.snapshot.manifest, options, limits);
+  const source = base.textEntry && options?.assets?.length ? materializeDocumentFiles(base) : base.files;
+  const staged = stageResourceFiles(source, base.snapshot.manifest, options, limits);
   return {
-    state: staged.added.size ? buildDocumentState(staged.files, limits) : base,
+    state: staged.added.size ? buildDocumentState(staged.files, limits, base) : base,
     added: staged.added,
   };
 }

@@ -21,8 +21,20 @@ export function spreadsheetStringText(node: XmlNode): string {
   if (node.content.some(item => typeof item !== "string")) fail(node, "Native text must not contain child elements.");
   return spreadsheetText(text(node), node);
 }
+/** Phonetic display settings can exist without any pronunciation runs. */
+export function validatePhoneticProperties(node: XmlNode | undefined): void {
+  if (!node) return;
+  attributes(node, ["fontId", "type", "alignment"]); check(node, [], S);
+  integer(node, "fontId");
+  const type = value(node, "type"), alignment = value(node, "alignment");
+  if (type !== undefined && !["halfwidthKatakana", "fullwidthKatakana", "Hiragana", "noConversion"].includes(type))
+    fail(node, "A phonetic conversion type is invalid.");
+  if (alignment !== undefined && !["noControl", "left", "center", "distributed"].includes(alignment))
+    fail(node, "A phonetic alignment is invalid.");
+}
 export function richString(node: XmlNode, styles: RichTextStyles, nodeId?: () => string): RichString {
-  attributes(node, []); check(node, ["t", "r"], S);
+  attributes(node, []); check(node, ["t", "r", "phoneticPr"], S);
+  validatePhoneticProperties(one(node, "phoneticPr"));
   const simple = one(node, "t"), runs = elements(node, "r", S);
   if (simple && runs.length) fail(node, "A native string mixes plain and rich text containers.");
   if (simple) { const source = spreadsheetStringText(simple); return { html: textHtml(source), codeUnits: source.length }; }

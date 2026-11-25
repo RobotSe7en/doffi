@@ -2,7 +2,7 @@ import type { ChangeMapping, DocumentNodeChange, WorkbookModel, WorkbookRangeCha
 import { freeze, invalid } from "../document/validation.js";
 import { readonlyMap } from "../session/changes.js";
 import { workbookSource } from "./source.js";
-import { CHUNK_COLUMNS, CHUNK_ROWS } from "./chunk-index.js";
+import { CHUNK_COLUMNS, CHUNK_ROWS, decodeWorkbookCell } from "./chunk-index.js";
 
 interface WorkbookSourceDiff {
   readonly changes: readonly DocumentNodeChange[];
@@ -13,6 +13,11 @@ interface WorkbookSourceDiff {
   readonly mapping: ChangeMapping;
 }
 const comparisons = new WeakMap<WorkbookModel, WeakMap<WorkbookModel, WorkbookSourceDiff>>();
+const calculationImpacts = new WeakMap<WorkbookSourceDiff, readonly WorkbookRangeChange[]>();
+export function workbookCalculationChanges(before: WorkbookModel, after: WorkbookModel): readonly WorkbookRangeChange[] {
+  const diff = compareWorkbooks(before, after);
+  return calculationImpacts.get(diff) ?? diff.changedRanges;
+}
 export function compareWorkbooks(before: WorkbookModel, after: WorkbookModel, mapping?: ChangeMapping): WorkbookSourceDiff {
   const steps = compareWorkbookSteps(before, after, mapping);
   for (;;) { const next = steps.next(); if (next.done) return next.value ?? invalid("Workbook comparison did not complete."); }
@@ -20,7 +25,14 @@ export function compareWorkbooks(before: WorkbookModel, after: WorkbookModel, ma
 export function* compareWorkbookSteps(before: WorkbookModel, after: WorkbookModel, mapping?: ChangeMapping): Generator<{ completed: number; total: number }, WorkbookSourceDiff | undefined> {
   const known = comparisons.get(before)?.get(after);
   if (known) return mapping === undefined ? known : freeze({ ...known, mapping: { nodes: known.mapping.nodes, textEdits: mapping.textEdits, workbook: mapping.workbook ?? [] } });
-  const previous = workbookSource(before)!, next = workbookSource(after)!, changedRanges: WorkbookRangeChange[] = [], sheets = new Set<string>();
+  const previous = workbookSource(before)!, next = workbookSource(after)!;
+  const changedRanges: WorkbookRangeChange[] = [], calculationRanges: WorkbookRangeChange[] = [], sheets = new Set<string>();
+  function appendRange(ranges: WorkbookRangeChange[], sheetId: string, row: number, column: number): void {
+    const last = ranges.at(-1);
+    if (last?.sheetId === sheetId && last.range.from.row === row && last.range.to.column + 1 === column)
+      ranges[ranges.length - 1] = { sheetId, range: { from: last.range.from, to: { row, column } } };
+    else ranges.push({ sheetId, range: { from: { row, column }, to: { row, column } } });
+  }
   const oldDescriptors = new Map(before.snapshot().manifest.chunks.map(chunk => [chunk.path, chunk]));
   const newDescriptors = new Map(after.snapshot().manifest.chunks.map(chunk => [chunk.path, chunk]));
   const paths = new Set([...oldDescriptors.keys(), ...newDescriptors.keys()]);
@@ -35,11 +47,12 @@ export function* compareWorkbookSteps(before: WorkbookModel, after: WorkbookMode
     for (const sheetId of new Set([...(old ? [old.sheetId] : []), ...(current ? [current.sheetId] : [])])) {
       const left = old?.sheetId === sheetId ? oldCells : new Map<number, string>(), right = current?.sheetId === sheetId ? newCells : new Map<number, string>();
       for (const key of [...new Set([...left.keys(), ...right.keys()])].sort((a, b) => a - b)) {
-        if (left.get(key) === right.get(key)) continue;
-        const row = Math.floor(key / 16_384), column = key % 16_384, last = changedRanges.at(-1);
-        if (last?.sheetId === sheetId && last.range.from.row === row && last.range.to.column + 1 === column)
-          changedRanges[changedRanges.length - 1] = { sheetId, range: { from: last.range.from, to: { row, column } } };
-        else changedRanges.push({ sheetId, range: { from: { row, column }, to: { row, column } } });
+        const before = left.get(key), after = right.get(key);
+        if (before === after) continue;
+        const row = Math.floor(key / 16_384), column = key % 16_384;
+        appendRange(changedRanges, sheetId, row, column);
+        if (before === undefined || after === undefined || inputsDiffer(before, after))
+          appendRange(calculationRanges, sheetId, row, column);
         sheets.add(sheetId);
       }
     }
@@ -71,8 +84,16 @@ export function* compareWorkbookSteps(before: WorkbookModel, after: WorkbookMode
   const result = freeze({ changes, affectedNodeIds: [...affected], affectedSheetIds: [...sheets], changedRanges, changedAnnotationIds,
     mapping: { nodes: readonlyMap(nodes), textEdits: mapping?.textEdits ?? [], workbook: mapping?.workbook ?? [] } });
   let values = comparisons.get(before); if (!values) { values = new WeakMap(); comparisons.set(before, values); }
-  values.set(after, mapping === undefined ? result : freeze({ ...result, mapping: { nodes: result.mapping.nodes, textEdits: [], workbook: [] } }));
+  const cached = mapping === undefined ? result : freeze({ ...result, mapping: { nodes: result.mapping.nodes, textEdits: [], workbook: [] } });
+  calculationImpacts.set(cached, freeze(calculationRanges));
+  values.set(after, cached);
   return result;
+}
+function inputsDiffer(before: string, after: string): boolean {
+  const a = decodeWorkbookCell(before), b = decodeWorkbookCell(after);
+  return a.value.type !== b.value.type ||
+    !Object.is("value" in a.value ? a.value.value : undefined, "value" in b.value ? b.value.value : undefined) ||
+    a.formula?.expression !== b.formula?.expression || a.formula?.cacheState !== b.formula?.cacheState;
 }
 export function sameWorkbookSource(before: WorkbookModel, after: WorkbookModel): boolean {
   return sameWorkbookFiles(before, workbookSource(after)!.files);
