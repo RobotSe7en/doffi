@@ -6602,6 +6602,150 @@ test("mirrored physical pages swap text, header and gutter margins independently
   );
 });
 
+test("Word reading navigation keeps precise UTF-16 ranges and leaves history unchanged", async ({ page }) => {
+  const session = createDocumentSession(openWordDocument(createWordDocument({ documentId: "reading-navigation" }), { kind: "document" }));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "reading-navigation", baseRevision: 0,
+    operations: [{ op: "replaceFragment", nodeId: "section-root-1", html: '<h2>阅读标题</h2><p class="reading"><span>😀 Alpha </span><span style="font-weight:bold">Beta alpha</span></p>' }] }));
+  const before = session.snapshot();
+  await mount(page, session.serialize(), "interaction");
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("find"));
+  const pane = page.getByRole("region", { name: "全文查找", exact: true });
+  await pane.getByRole("searchbox", { name: "查找内容" }).fill("Alpha Beta");
+  await pane.getByRole("button", { name: "下一处", exact: true }).click();
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection()!.anchor)).toMatchObject({
+    kind: "text", from: 3, to: 13, quote: "Alpha Beta",
+  });
+  await expect(page.getByRole("dialog", { name: "新建批注", exact: true })).toHaveCount(0);
+  await pane.getByRole("searchbox", { name: "查找内容" }).fill("alpha");
+  await pane.getByRole("button", { name: "上一处", exact: true }).click();
+  await expect(pane).toContainText("2 处匹配 · 第 2 处");
+  await pane.getByLabel("区分大小写", { exact: true }).check();
+  await pane.getByRole("searchbox", { name: "查找内容" }).press("Enter");
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection()!.anchor)).toMatchObject({
+    kind: "text", from: 14, to: 19, quote: "alpha",
+  });
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("outline"));
+  await page.getByRole("region", { name: "文档导航", exact: true }).getByRole("button", { name: "阅读标题", exact: true }).click();
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection()!.anchor.kind)).toBe("node");
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("wordCount"));
+  await expect(page.getByRole("region", { name: "字数统计", exact: true })).toContainText("段落 2");
+  expect(await page.evaluate(() => ({ html: window.paginationHost.session!.snapshot().html,
+    revision: window.paginationHost.session!.snapshot().manifest.revision, undoSteps: window.paginationHost.session!.history().undoSteps })))
+    .toEqual({ html: before.html, revision: before.manifest.revision, undoSteps: 0 });
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("find"));
+  await pane.getByRole("searchbox", { name: "查找内容" }).fill("Alpha");
+  const id = await page.frameLocator("iframe").locator(".reading").getAttribute("data-node-id");
+  await page.evaluate(id => {
+    const session = window.paginationHost.session!;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId,
+      baseRevision: session.snapshot().manifest.revision,
+      operations: [{ op: "replaceText", nodeId: id!, from: 3, to: 8, expectedText: "Alpha", text: "Gamma" }] }));
+  }, id);
+  await page.evaluate(() => window.paginationHost.view!.settled());
+  await expect(pane).toContainText("1 处匹配");
+  await pane.getByRole("button", { name: "下一处", exact: true }).click();
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection())).toMatchObject({
+    baseRevision: before.manifest.revision + 1, anchor: { kind: "text", from: 14, to: 19, quote: "alpha" },
+  });
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("Word selection pane selects grouped objects and deletes ancestors once with atomic undo", async ({ page }) => {
+  const session = createDocumentSession(openWordDocument(createWordDocument({ documentId: "selection-pane" }), { kind: "document" }));
+  const apply = (operations: import("@doffi/core").DocumentOperation[]) => session.commit(session.prepare({
+    protocolVersion: 1, documentId: "selection-pane", baseRevision: session.snapshot().manifest.revision, operations,
+  }));
+  apply([{ op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "AB" },
+    ...[0, 1].map(index => ({ op: "insertWordDrawing" as const, nodeId: "paragraph-1", offset: 1,
+      object: { kind: "shape" as const, preset: "rect" as const },
+      geometry: { x: index * 110, y: 0, width: 100, height: 50, rotation: 0, flipH: false, flipV: false },
+      layout: { mode: "floating" as const, wrap: "none" as const },
+    })),
+  ]);
+  apply([{ op: "groupWordDrawings", nodeId: "paragraph-1", nodeIds: session.snapshot().metadata.word!.drawings!.map(item => item.nodeId) }]);
+  const before = session.snapshot(), group = before.metadata.word!.drawings!.find(item => item.kind === "group")!;
+  await mount(page, session.serialize(), "edit");
+  await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "selectionPane" }));
+  const pane = page.getByRole("region", { name: "选择窗格", exact: true });
+  await expect(pane.getByRole("option")).toHaveCount(3);
+  const groupOption = pane.getByRole("option", { name: /^组合/ });
+  await groupOption.click();
+  await expect(groupOption).toHaveAttribute("aria-selected", "true");
+  await expect(page.frameLocator("iframe").locator('[data-sdk-word-object="' + group.nodeId + '"]').first()).toHaveAttribute("data-sdk-word-selected", "");
+  await pane.getByRole("option", { name: /^形状/ }).first().click({ modifiers: ["Shift"] });
+  await expect(pane.locator('[aria-selected="true"]')).toHaveCount(2);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().manifest.revision)).toBe(before.manifest.revision);
+  await page.frameLocator("iframe").getByRole("textbox", { name: "文档正文", exact: true }).press("ArrowRight");
+  const moved = await page.evaluate(() => window.paginationHost.session!.snapshot().metadata.word!.drawings!);
+  expect(moved.find(item => item.nodeId === group.nodeId)!.geometry.x).toBe(group.geometry.x + 1);
+  for (const child of before.metadata.word!.drawings!.filter(item => item.kind !== "group"))
+    expect(moved.find(item => item.nodeId === child.nodeId)!.geometry).toEqual(child.geometry);
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before.html);
+  await groupOption.press("Delete");
+  await expect(pane.getByRole("option")).toHaveCount(0);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().metadata.word!.drawings)).toHaveLength(0);
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  await expect(pane.getByRole("option")).toHaveCount(3);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before.html);
+  await pane.getByRole("option").first().click();
+  await pane.getByRole("option").first().press("ArrowDown");
+  await expect(pane.getByRole("option").nth(1)).toHaveAttribute("aria-selected", "true");
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("font dialog edits underline color and character scale with native reopen, preview and undo", async ({ page }) => {
+  const session = createDocumentSession(openWordDocument(createWordDocument({ documentId: "font-scale-color" }), { kind: "document" }));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "font-scale-color", baseRevision: 0,
+    operations: [{ op: "replaceFragment", nodeId: "section-root-1", html: '<p class="sample"><span style="text-decoration-line:underline;text-decoration-style:double;text-decoration-color:#224466;--word-run-native-w:125">ScaleColor</span></p>' }] }));
+  await mount(page, session.serialize(), "edit", { layout: "continuous" });
+  const paragraph = page.frameLocator("iframe").locator(".sample");
+  const select = async () => {
+    await paragraph.click();
+    await paragraph.evaluate(node => {
+      const range = node.ownerDocument.createRange(); range.selectNodeContents(node);
+      const selection = node.ownerDocument.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    });
+  };
+  const open = () => page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "fontSettings" }));
+  await select(); await open();
+  const panel = page.getByRole("dialog", { name: "字体", exact: true });
+  await expect(panel.getByLabel("字符下划线", { exact: true })).toHaveValue("double");
+  await expect(panel.getByLabel("下划线颜色", { exact: true })).toHaveValue("rgb(34, 68, 102)");
+  await panel.getByLabel("下划线颜色", { exact: true }).fill("#cc3300");
+  await panel.getByRole("tab", { name: "高级", exact: true }).click();
+  await expect(panel.getByLabel("字符缩放（百分比）", { exact: true })).toHaveValue("125");
+  await panel.getByLabel("字符缩放（百分比）", { exact: true }).fill("601");
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
+  await expect(panel).toBeVisible();
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().manifest.revision)).toBe(session.snapshot().manifest.revision);
+  await panel.getByLabel("字符缩放（百分比）", { exact: true }).fill("75");
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
+  await page.evaluate(() => window.paginationHost.view!.settled());
+  await expect(paragraph.locator(".sdk-word-run-width").first()).toBeVisible();
+  const source = await page.evaluate(() => [...window.paginationHost.session!.serialize()].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]));
+  const native = exportDocx(openWordDocument(new Map(source.map(([path, bytes]) => [path, new Uint8Array(bytes)])), { kind: "document" }));
+  const xml = new TextDecoder().decode(readDocumentZip(native.bytes).get("word/document.xml"));
+  expect(xml).toContain('w:w w:val="75"'); expect(xml.toLowerCase()).toContain('w:val="double" w:color="cc3300"');
+  for (const properties of xml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/g) ?? [])
+    expect((properties.match(/<w:dstrike\b/g) ?? []).length).toBeLessThanOrEqual(1);
+  const reopened = importDocx(native.bytes, { documentId: "font-scale-color-reopen", unsupportedContent: "reject" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, reopened, mode, { layout: "continuous" });
+    const span = page.frameLocator("iframe").locator(".sdk-word-run-width > span").first();
+    await expect(span).toHaveCSS("text-decoration-color", "rgb(204, 51, 0)");
+    await expect(span).toHaveCSS("transform", "matrix(0.75, 0, 0, 1, 0, 0)");
+  }
+  await mount(page, session.serialize(), "edit", { layout: "continuous" });
+  await select(); await open();
+  await panel.getByRole("tab", { name: "高级", exact: true }).click();
+  await panel.getByLabel("字符缩放（百分比）", { exact: true }).fill("80");
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(session.snapshot().html);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
 test("font controls apply script roles, complex size and language in one tracked undoable source change", async ({
   page,
 }) => {

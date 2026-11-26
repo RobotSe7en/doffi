@@ -241,6 +241,10 @@ export class ExportAnnotations {
       this.add(first.start, id, "starts");
       this.add(end, id, "ends");
       this.add(point, id, "references");
+      // Native Word discards unreferenced comment messages before attaching
+      // their parent metadata. Replies share the thread's point reference;
+      // only its root owns the selected text range.
+      for (const message of replies.values()) this.add(point, message.id, "references");
       if (annotation.sourceId !== undefined)
         this.nativeBindings.push({
           sourceId: annotation.sourceId,

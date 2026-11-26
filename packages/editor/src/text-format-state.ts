@@ -164,8 +164,9 @@ export function readTextFormat(
           }),
         );
   const characterProperties: Record<string, string> = {};
-  for (const key of ["letter-spacing", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-snap-to-grid", "--word-language-val", "--word-language-eastAsia", "--word-language-bidi"]) {
-    const value = uniform(style => style.getPropertyValue(key).trim()); if (value) characterProperties[key] = value;
+  for (const key of ["letter-spacing", "text-decoration-style", "text-decoration-color", "--word-run-native-w", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-snap-to-grid", "--word-language-val", "--word-language-eastAsia", "--word-language-bidi"]) {
+    const value = range.collapsed && typing.has(key) ? typing.get(key) : uniform(style => style.getPropertyValue(key).trim() || (key === "--word-run-native-w" ? "100" : ""));
+    if (value) characterProperties[key] = value;
   }
   const paragraphStyleId = same(
     elements.map(

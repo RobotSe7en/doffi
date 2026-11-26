@@ -28,6 +28,28 @@ async function selectText(page: Page, from = 2, to = 8): Promise<void> {
   }
 }
 
+test("Word preview exposes find, heading navigation and statistics without entering editing", async ({ page }) => {
+  await report(page);
+  const before = await page.locator(".office-app").getAttribute("data-revision");
+  await page.getByRole("button", { name: "查找", exact: true }).click();
+  const find = page.getByRole("region", { name: "全文查找", exact: true });
+  await find.getByRole("searchbox", { name: "查找内容" }).fill("第三季度");
+  await find.getByRole("button", { name: "下一处", exact: true }).click();
+  await expect(find).toContainText("处匹配 · 第 1 处");
+  await expect(page.locator('iframe[title="正文编辑"]')).toHaveCount(0);
+  await find.getByRole("button", { name: "关闭导航", exact: true }).click();
+  await page.getByRole("tab", { name: "视图", exact: true }).click();
+  await page.getByRole("button", { name: "导航窗格", exact: true }).click();
+  await expect(page.getByRole("region", { name: "文档导航", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "审阅", exact: true }).click();
+  await page.getByRole("button", { name: "字数统计", exact: true }).click();
+  await expect(page.getByRole("region", { name: "字数统计", exact: true })).toContainText("字符数");
+  await expect(page.locator(".office-app")).toHaveAttribute("data-revision", before!);
+  await page.getByRole("button", { name: "编辑正文", exact: true }).click();
+  await expect(page.locator('iframe[title="正文编辑"]')).toBeVisible();
+  await expect(page.getByRole("region", { name: "字数统计", exact: true })).toBeHidden();
+});
+
 test("Word preview and editing load Playground web fonts and keep the native font names", async ({ page }, info) => {
   const manifest = new URL("../../fonts/local/sources.json", import.meta.url);
   const internal = existsSync(manifest);

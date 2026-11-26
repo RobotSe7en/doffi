@@ -39,6 +39,7 @@ session.dispose();
 | `fonts()` | 当前预览的字体替代和缺字报告 |
 | `setMode("text" / "node" / "region")` | 切换选择模式，清除旧的临时选择 |
 | `setZoom(zoom)` | 50% 至 200% 的显示缩放，不推进修订 |
+| `openWordNavigation("find" / "outline" / "wordCount")` | Word 只读查找、标题导航和统计；不创建编辑候选，不推进修订或历史 |
 | `focusAnnotation(id)` | 滚动并高亮有效批注；失效或不可显示的位置报 `AnchorNotFound` |
 | `dispose()` | 可重复调用，解除订阅、监听和观察器，释放 iframe、URL 与 DOM 引用；不销毁宿主传入的会话 |
 

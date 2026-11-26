@@ -9,7 +9,7 @@
 | 应用与样例 | 实机结果 |
 | --- | --- |
 | Word，`02-table-merges.docx` | 无修复提示打开，插入文字并原生保存。SDK 严格重开，新增文字和三行合并表格保留。两边 PDF 均为一页 A4；横纵合并正确，行高有可见差异。 |
-| Word，`08-comments-revisions.docx` | SDK 导出件在 Word 打开时出现“发现无法读取的内容”及恢复提示。该项未通过；原始输入对照与恢复后差异尚未取得可用结果。 |
+| Word，`08-comments-revisions.docx` | 11 月 24 日 SDK 导出件出现恢复提示；11 月 26 日已定位并修复，见本页 Word 补充验收。保留首次失败记录。 |
 | PowerPoint，`01-rich-text.pptx` | 无修复提示打开，通过键盘选中文字对象，追加文字并原生保存。SDK 严格重开并读到新增文字。原生打印及 doffi 幻灯片输出都可读，但纸面尺寸不同，doffi PDF 中列表标记和扩展字存在可见差异。 |
 | PowerPoint，`12-modern-comments.pptx` | 原生打开三张幻灯片，评论面板显示线程和回复。此次只检查原生可见性，尚无原生编辑重存线程的结论。 |
 | Excel，`04-formulas-names.xlsx` | 原生打开，录入 `D50=123` 和 `E50 = D50*2`。原生保存后，SDK 严格重开，读到公式及 Excel 计算的缓存值 `246`。 |
@@ -80,3 +80,29 @@ Word、PowerPoint、Excel 16.114.1 的选项卡、Home 命令顺序和字体／�
 自动验证共 55 项 Chromium 用例通过：完整工作区及 Word／PPT 独立闭环 45 项，延迟字体、字体窗口与 Excel 格式事务 10 项；另有 12 项单元测试覆盖直接与 Worker 命令共享的数字格式、原生 XLSX 重开和撤销。独立宿主用例不加载 Playground CSS，检查外框与分组尺寸、32 px 图标、菜单定位、窄窗口样式库和多实例隔离。最终 PPT 外观调整后重跑 5 项功能区、批注、字体、放映及独立宿主用例。
 
 构建、工具类型检查、架构边界和差异空白检查通过。浏览器使用本机 Google Chrome，PDF／PNG 验证使用同一 Chromium 和运行环境附带的 Poppler。原始 11 页用户 PPT 再次在内置浏览器打开，保留原文件；缩略图选中框为 PowerPoint 橙色，画布按工作区剩余高度布局。
+
+## 2026-11-26 Word 批注字体和内置浏览器对照
+
+继续使用本机 Word 16.114.1、macOS 27.2。用户明确授权 AppleScript 控制 Word，只操作仓库合成样例的副本。网页使用 Codex 内置浏览器打开本分支 Playground，同文件上传，不连接云端服务。原生文件和调试副本在忽略目录 `.cache/word-gap-2026-11-26/`；包含 Office 本地元数据，不提交为公开夹具。
+
+| 项目 | 原生观测与修复 |
+| --- | --- |
+| 批注与文字修订，COMP-01 | 独立 `08-comments-revisions.docx` 正常打开；旧 SDK 导出触发恢复。四类批注扩展部件的 MIME 错写为 `application/vnd.ms-word.*+xml`，更正为 `application/vnd.openxmlformats-officedocument.wordprocessingml.*+xml`。新 SDK 导出无恢复提示，Word 读到一条批注、两条修订；插入 `Native Word verification: ` 并实际原生保存后，SDK 严格重开保留这些内容。 |
+| 根批注与回复 | 单独合成线程含 Reviewer A 根消息和 Reviewer B 回复。只有父级元数据而没有回复正文引用时，Word 只显示根消息并在重存中删除回复。为每条回复补点引用，根批注仍独占文字范围。Word 窗格实际显示两条消息；插入 `Native reply roundtrip: ` 并保存后，SDK 严格重开仍有一个线程、一条回复和原文字锚点。没有执行原生解决／重新打开线程，不将其计为通过。 |
+| 字体窗口，WORD-03 | 新编辑入口使用已有字符格式事务。合成 DOCX 在 Word 无恢复提示打开，原生字体 API 读到横向缩放 75%、双下划线、下划线 RGB 16 位值 `52428,13107,0`，对应 #CC3300。自动回归另检查预览和编辑的缩放与颜色、无效值不提交、原生导出重开及撤销。 |
+| 内置浏览器视觉抽样，WORD-01 | 将独立批注修订样例的字体声明换成两端实际可用的 DengXian，其他内容保留。Word 与网页均使用最终修订视图；按相同纸张显示宽度比较，Word 100%、网页 75%（两者屏幕点换算不同）。1120×728 窗口下纸宽均约 595 px，正文距纸张左侧均约 72 px，两个段落的文字顶端相隔约 26 px；页内首行顶端仍有约 2 px 差异。此为同机视觉抽样，没有跨平台像素相等结论。 |
+
+原样例请求 Noto Sans CJK SC，本机 Word 与网页回退字体不同；两端默认修订显示方式也不同。先统一字体、纸面宽度及修订显示，再比较正文。浏览器预览与编辑切换后的修订视图偏好尚未统一；复杂表格、浮动组合、公式与多页文档没有因这一页样例而获得整体验收。
+
+扩展到同字体合并表格后，内置浏览器显示表格边界比 Word 向左约 4 px，三行高度也有小差异。另造无样式、空默认样式、自定义默认／显式样式、显式边距及更换样式 ID／名称的独立副本，直接查询 Word 的表格边距和行缩进：只有样式 ID 相同不足以确定内置默认，`Normal Table` 名称与普通自定义样式的未声明属性存在差异。仅按是否绑定样式选择 5.4pt 的候选修改无法覆盖这些情况，已撤回，未纳入本轮修复或验收通过项。后续需要统一处理样式有效值、继承／覆盖、缩进原点和兼容模式，再覆盖预览、编辑、原生导出重开；不能用这个样例的坐标补偿代替通用规则。
+
+四类部件 MIME 的依据为 Microsoft Open XML SDK 的原始元数据：[CommentsExtended](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingCommentsExPart.json)、[CommentsIds](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingCommentsIdsPart.json)、[CommentsExtensible](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordCommentsExtensiblePart.json)、[People](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingPeoplePart.json)。新增回归同时断言精确 MIME、根范围与回复引用，保留既有多次 SDK 重开及批注保留检查。
+
+| 实际原生编辑保存文件 | SHA-256 |
+| --- | --- |
+| `export-fixed.docx` | `0ea9dfd74d6d9491950e0aacebee484f1604f3c089fd90972d9024c338c49b9f` |
+| `thread-reference-fixed.docx` | `dfcd8cc24e5fd2b1a0cc52a3ca8e727eaa3d3cab4f9174518c2fd9b37a319e52` |
+
+另外修复 UI-02 的错误路由：绘图选择窗格显示当前故事的对象及组合子项，支持指针多选、键盘定位、属性窗口和删除。父组与子项同时选中时，移动、复制、组合和删除统一使用顶层选项，避免对子对象重复处理，事务可以撤销。只读查找、标题导航和统计已经接通工作区；定位使用当前修订的准确 UTF-16 范围，不触发编辑或新增历史。它们不代表完整 Word 大纲视图及全部选择窗格操作。
+
+定向验证：74 项相关 Office 单元测试、9 项 Chromium 浏览器测试通过，覆盖多个范围／点批注线程、字体导出、组合父子对象去重与撤销、既有拖动缩放、只读查找和导航、外部内容变化后定位刷新、完整工作区入口及独立 SDK 宿主的预览／编辑切换。SDK／Playground 构建、工具类型检查及架构边界通过。没有运行远程全量 CI。

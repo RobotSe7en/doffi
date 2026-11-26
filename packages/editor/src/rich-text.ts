@@ -156,6 +156,7 @@ export type DocumentTextCommand =
         | "insertTextBox"
         | "insertConnector"
         | "drawingSettings"
+        | "selectionPane"
         | "insertFootnote"
         | "insertEndnote"
         | "referenceSettings"
@@ -1412,7 +1413,8 @@ export function mountDocumentTextEditor(
       command.action === "insertShape" ||
       command.action === "insertTextBox" ||
       command.action === "insertConnector" ||
-      command.action === "drawingSettings"
+      command.action === "drawingSettings" ||
+      command.action === "selectionPane"
     ) {
       drawingControls.open(command.action);
       return;

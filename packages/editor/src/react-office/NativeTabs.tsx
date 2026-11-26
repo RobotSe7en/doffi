@@ -28,7 +28,7 @@ const word: Readonly<Record<string, readonly Section[]>> = {
   布局: [
     ["页面设置", ["文本方向", "textDirection", "w:pageSettings"], ["页边距", "margins", "w:pageSettings"], ["方向", "orientation", "w:pageSettings"], ["大小", "file", "w:pageSettings"], ["栏", "columns", "w:pageSettings"], stack(["分隔符", "pageBreak", "w:sectionBreak"], ["行号", "numbering"], ["断字", "file"])],
     ["缩进和间距", stack(["左侧缩进", "outdent", "paragraph"], ["右侧缩进", "indent", "paragraph"]), stack(["段前间距", "lineSpacing", "paragraph"], ["段后间距", "lineSpacing", "paragraph"])],
-    ["排列", ["位置", "grid", "w:drawingSettings"], ["自动换行", "lineSpacing", "w:drawingSettings"], stack(["前移一层", "arrow", "w:drawingSettings"], ["后移一层", "arrow", "w:drawingSettings"], ["选择窗格", "panel", "w:outline"]), stack(["对齐", "left", "w:drawingSettings"], ["组合", "grid"], ["旋转", "refresh", "w:drawingSettings"])],
+    ["排列", ["位置", "grid", "w:drawingSettings"], ["自动换行", "lineSpacing", "w:drawingSettings"], stack(["前移一层", "arrow", "w:drawingSettings"], ["后移一层", "arrow", "w:drawingSettings"], ["选择窗格", "panel", "w:selectionPane"]), stack(["对齐", "left", "w:drawingSettings"], ["组合", "grid"], ["旋转", "refresh", "w:drawingSettings"])],
   ],
   引用: [
     ["目录", ["目录", "list", "w:referenceSettings"], stack(["添加文字", "textBox", "w:referenceSettings"], ["更新目录", "refresh", "fields"])],
@@ -71,7 +71,7 @@ export function NativeOfficeTabs({ kind, tab, commands, actions, canFormat, busy
 }): ReactElement {
   const states = new Map(commands.map(command => [command.id, command]));
   const invoke = (key: string): (() => void) | undefined => {
-    if (key.startsWith("w:")) return canFormat ? () => onTextCommand({ type: "word", action: key.slice(2) } as DocumentTextCommand) : undefined;
+    if (key.startsWith("w:")) return canFormat || kind === "document" && !busy && ["w:find", "w:outline", "w:wordCount"].includes(key) ? () => onTextCommand({ type: "word", action: key.slice(2) } as DocumentTextCommand) : undefined;
     if (key === "view:pages" || key === "view:continuous") return !busy ? () => onLayout(key.slice(5) as "pages" | "continuous") : undefined;
     if (key === "zoom100") return !busy && (kind !== "workbook" || enableWorkbookZoom) ? () => onZoom(1) : undefined;
     if (key === "paragraph") return canFormat ? paragraph : undefined;

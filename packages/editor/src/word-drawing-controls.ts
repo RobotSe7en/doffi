@@ -13,7 +13,8 @@ export type WordDrawingAction =
   | "insertShape"
   | "insertTextBox"
   | "insertConnector"
-  | "drawingSettings";
+  | "drawingSettings"
+  | "selectionPane";
 export function createWordDrawingControls(
   parent: ShadowRoot,
   before: HTMLElement,
@@ -33,8 +34,15 @@ export function createWordDrawingControls(
     controller: AbortController | undefined,
     selected: string[] = [],
     boundRoot: HTMLElement | undefined,
-    selectionStyle: HTMLStyleElement | undefined;
+    selectionStyle: HTMLStyleElement | undefined,
+    paintSelection = (): void => {},
+    updateSelectionPane: (() => void) | undefined;
   const drawings = () => session.snapshot().metadata.word?.drawings ?? [];
+  const selectedRoots = () => selected.filter(id => {
+    for (let parentId = session.getNode(id)?.parentNodeId; parentId; parentId = session.getNode(parentId)?.parentNodeId)
+      if (selected.includes(parentId)) return false;
+    return true;
+  });
   const apply = (operations: DocumentOperation[], options?: TransactionPrepareOptions): void => {
     const snapshot = session.snapshot();
     session.commit(
@@ -117,6 +125,7 @@ export function createWordDrawingControls(
     controller?.abort();
     panel?.remove();
     panel = undefined;
+    updateSelectionPane = undefined;
   };
   const attempt = (run: () => void): void => {
     try {
@@ -156,6 +165,81 @@ export function createWordDrawingControls(
   }
   function open(action: WordDrawingAction): void {
     close();
+    if (action === "selectionPane") {
+      controller = new AbortController();
+      const signal = controller.signal;
+      panel = document.createElement("section");
+      panel.setAttribute("role", "region");
+      panel.setAttribute("aria-label", "选择窗格");
+      panel.style.cssText = "padding:12px;background:white;border:1px solid #dbe3ef;max-height:320px;overflow:auto";
+      const title = document.createElement("strong"), closeButton = document.createElement("button"), settings = document.createElement("button"), list = document.createElement("div");
+      title.textContent = "选择窗格";
+      closeButton.type = settings.type = "button";
+      closeButton.textContent = "关闭选择窗格";
+      settings.textContent = "对象属性";
+      closeButton.addEventListener("click", close, { signal });
+      settings.addEventListener("click", () => attempt(() => open("drawingSettings")), { signal });
+      list.setAttribute("role", "listbox");
+      list.setAttribute("aria-label", "绘图对象");
+      list.setAttribute("aria-multiselectable", "true");
+      const kinds = { image: "图片", shape: "形状", textBox: "文本框", chart: "图表", connector: "连接线", group: "组合" };
+      const selectObject = (id: string, multiple: boolean, focus = false): void => {
+        selected = multiple
+          ? selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id]
+          : [id];
+        paintSelection();
+        updateSelectionPane?.();
+        boundRoot?.querySelector('[data-sdk-word-object="' + CSS.escape(id) + '"]')?.scrollIntoView({ block: "nearest" });
+        if (focus) list.querySelector<HTMLButtonElement>('[data-word-selection-id="' + CSS.escape(id) + '"]')?.focus();
+      };
+      list.addEventListener("click", event => {
+        const id = (event.target as Element).closest<HTMLElement>("[data-word-selection-id]")?.dataset.wordSelectionId;
+        if (id) selectObject(id, event.shiftKey || event.ctrlKey || event.metaKey, true);
+      }, { signal });
+      list.addEventListener("keydown", event => {
+        if (event.key === "Delete" || event.key === "Backspace") {
+          event.preventDefault();
+          attempt(() => {
+            if (selected.length) apply(selectedRoots().map(nodeId => ({ op: "removeWordDrawing", nodeId })));
+            selected = [];
+            paintSelection();
+            updateSelectionPane?.();
+          });
+        } else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          const options = [...list.querySelectorAll<HTMLButtonElement>("[data-word-selection-id]")];
+          const current = options.indexOf((event.target as Element).closest<HTMLButtonElement>("[data-word-selection-id]")!);
+          const index = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1
+            : Math.max(0, Math.min(options.length - 1, current + (event.key === "ArrowUp" ? -1 : 1)));
+          const id = options[index]?.dataset.wordSelectionId;
+          if (id) selectObject(id, event.shiftKey, true);
+        }
+      }, { signal });
+      updateSelectionPane = () => {
+        list.replaceChildren();
+        const visible = drawings().filter(item => boundRoot?.querySelector('[data-sdk-word-object="' + CSS.escape(item.nodeId) + '"]'));
+        for (const [index, item] of visible.entries()) {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.setAttribute("role", "option");
+          option.setAttribute("aria-selected", String(selected.includes(item.nodeId)));
+          option.dataset.wordSelectionId = item.nodeId;
+          option.textContent = item.name || kinds[item.kind] + " " + (index + 1);
+          let depth = 0;
+          for (let parentId = session.getNode(item.nodeId)?.parentNodeId; parentId; parentId = session.getNode(parentId)?.parentNodeId)
+            if (visible.some(parent => parent.nodeId === parentId)) depth++;
+          option.style.cssText = "display:block;width:100%;text-align:left;padding:6px;padding-left:" + (6 + depth * 16) + "px;"
+            + (selected.includes(item.nodeId) ? "background:#dce9f9;color:#123456" : "");
+          list.append(option);
+        }
+        if (!visible.length) list.textContent = "当前故事没有绘图对象。";
+        settings.disabled = !selected.length;
+      };
+      panel.append(title, closeButton, settings, list);
+      parent.insertBefore(panel, before);
+      updateSelectionPane();
+      return;
+    }
     const location = selection();
     if (action !== "drawingSettings" && !location)
       throw new DocumentError("InvalidOperation", "请先在段落中放置光标。");
@@ -751,16 +835,16 @@ export function createWordDrawingControls(
       );
     }
     button("复制对象", () => {
-      apply(selected.map((nodeId) => ({ op: "copyWordDrawing", nodeId })));
+      apply(selectedRoots().map((nodeId) => ({ op: "copyWordDrawing", nodeId })));
     });
     button("删除对象", () => {
-      apply(selected.map((nodeId) => ({ op: "removeWordDrawing", nodeId })));
+      apply(selectedRoots().map((nodeId) => ({ op: "removeWordDrawing", nodeId })));
       selected = [];
       close();
     });
-    if (selected.length > 1)
+    if (selectedRoots().length > 1)
       button("组合对象", () => {
-        const id = selected[0]!,
+        const roots = selectedRoots(), id = roots[0]!,
           source = boundRoot?.querySelector<HTMLElement>(
             '[data-sdk-word-object="' + CSS.escape(id) + '"]',
           ),
@@ -768,13 +852,13 @@ export function createWordDrawingControls(
             source?.dataset.sdkWordSourceParagraph ??
             source?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6")?.dataset.nodeId;
         if (!paragraphId) throw new DocumentError("InvalidOperation", "组合对象须在同一段落中。");
-        const objects = drawings().filter((item) => selected.includes(item.nodeId));
+        const objects = drawings().filter((item) => roots.includes(item.nodeId));
         apply([
           ...materialize(
             objects,
             objects.some((item) => !!item.layout.relativeWidth || !!item.layout.relativeHeight),
           ),
-          { op: "groupWordDrawings", nodeId: paragraphId, nodeIds: [...selected] },
+          { op: "groupWordDrawings", nodeId: paragraphId, nodeIds: roots },
         ]);
         const group = drawings().find(
           (item) =>
@@ -809,7 +893,9 @@ export function createWordDrawingControls(
           selected.includes(node.dataset.sdkWordObject!) ? "" : null,
         );
     };
+    paintSelection = paint;
     paint();
+    updateSelectionPane?.();
     root.addEventListener(
       "pointerdown",
       (event) => {
@@ -828,22 +914,24 @@ export function createWordDrawingControls(
         event.stopImmediatePropagation();
         root.focus({ preventScroll: true });
         const id = target.dataset.sdkWordObject!;
+        const paneOpen = updateSelectionPane !== undefined;
         if (event.shiftKey) {
           selected = selected.includes(id)
             ? selected.filter((item) => item !== id)
             : [...selected, id];
           paint();
-          open("drawingSettings");
+          if (paneOpen) updateSelectionPane?.();
+          else open("drawingSettings");
           return;
         }
-        if (!selected.includes(id)) selected = [id];
+        if (!selected.includes(id) || event.altKey && !selectedRoots().includes(id)) selected = [id];
         paint();
         const item = drawings().find((item) => item.nodeId === id)!;
         const sx = event.clientX,
           sy = event.clientY,
           rect = target.getBoundingClientRect(),
           resize = sx > rect.right - 12 && sy > rect.bottom - 12,
-          initial = selected
+          initial = selectedRoots()
             .map((id) => drawings().find((item) => item.nodeId === id)!)
             .filter(Boolean)
             .map((object) => ({ ...object, geometry: displayed(object) })),
@@ -910,7 +998,8 @@ export function createWordDrawingControls(
                 ]),
               );
             });
-          open("drawingSettings");
+          if (paneOpen) updateSelectionPane?.();
+          else open("drawingSettings");
         };
         root.ownerDocument.addEventListener("pointermove", move, { signal });
         root.ownerDocument.addEventListener("pointerup", end, { once: true, signal });
@@ -943,14 +1032,16 @@ export function createWordDrawingControls(
         event.stopImmediatePropagation();
         attempt(() => {
           if (event.key === "Delete" || event.key === "Backspace") {
-            apply(selected.map((nodeId) => ({ op: "removeWordDrawing", nodeId })));
+            const paneOpen = updateSelectionPane !== undefined;
+            apply(selectedRoots().map((nodeId) => ({ op: "removeWordDrawing", nodeId })));
             selected = [];
-            close();
+            if (paneOpen) updateSelectionPane?.();
+            else close();
             return;
           }
           const delta = event.shiftKey ? 10 : 1;
           apply(
-            selected.flatMap((nodeId) => {
+            selectedRoots().flatMap((nodeId) => {
               const object = drawings().find((item) => item.nodeId === nodeId)!,
                 g = displayed(object);
               return [

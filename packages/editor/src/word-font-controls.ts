@@ -181,7 +181,7 @@ export function createWordFontControls(
     weight.value = state.bold === undefined ? "" : state.bold ? "700" : "400";
     italic.value = state.italic === undefined ? "" : state.italic ? "italic" : "normal";
     italic.parentElement!.firstChild!.textContent = "倾斜:";
-    underline.value = state.underline ? "solid" : "none";
+    underline.value = state.underline === undefined ? "" : state.underline ? state.characterProperties?.["text-decoration-style"] ?? "solid" : "none";
     underline.parentElement!.firstChild!.textContent = "下划线线型:";
     target = advancedTab;
     const spacing = field("字符间距（磅）", "number"),
@@ -200,7 +200,10 @@ export function createWordFontControls(
     color.parentElement!.firstChild!.textContent = "字体颜色:";
     background.parentElement!.firstChild!.textContent = "文字底纹:";
     const colors = document.createElement("fieldset"), colorsLegend = document.createElement("legend"); colorsLegend.textContent = "颜色和下划线"; colors.style.cssText = "grid-template-columns:1fr 1fr 1fr 70px;margin-top:20px";
-    const underlineColor = document.createElement("label"), underlineColorInput = document.createElement("select"); underlineColor.append("下划线颜色:", underlineColorInput); underlineColorInput.disabled = true; const automatic = document.createElement("option"); automatic.textContent = "自动"; underlineColorInput.append(automatic);
+    const underlineColorInput = field("下划线颜色"), underlineColor = underlineColorInput.parentElement!;
+    underlineColorInput.placeholder = "自动";
+    underlineColorInput.value = state.characterProperties?.["text-decoration-color"] ?? "";
+    underlineColorInput.addEventListener("input", () => underlineColorInput.setCustomValidity(""), { signal });
     const emphasis = document.createElement("label"), emphasisInput = document.createElement("select"); emphasis.append("着重号:", emphasisInput); emphasisInput.disabled = true; const none = document.createElement("option"); none.textContent = "(无)"; emphasisInput.append(none);
     const rgb = /^rgb\(\s*(\d+)[, ]+\s*(\d+)[, ]+\s*(\d+)\s*\)$/.exec(state.color ?? "");
     color.value = /^#[0-9a-f]{6}$/i.test(state.color ?? "") ? state.color! : rgb ? "#" + rgb.slice(1).map(value => Number(value).toString(16).padStart(2, "0")).join("") : "#000000"; color.type = "color"; color.style.width = "100%";
@@ -213,6 +216,8 @@ export function createWordFontControls(
       const pointSize = (wordSizeNames[size.value] ?? Number(size.value)); if (pointSize) preview.style.fontSize = Math.min(pointSize, 40) + "pt";
       preview.style.fontWeight = weight.value; preview.style.fontStyle = italic.value; preview.style.color = color.value;
       preview.style.textDecoration = [underline.value && underline.value !== "none" ? "underline" : "", strike.value === "line-through" ? "line-through" : ""].filter(Boolean).join(" ");
+      preview.style.textDecorationStyle = underline.value === "none" ? "solid" : underline.value;
+      preview.style.textDecorationColor = underlineColorInput.value.trim() || "currentColor";
     };
     for (const type of ["input", "change"]) panel.addEventListener(type, updatePreview, { signal }); updatePreview();
     const mark = field("仅设置段落标记", "checkbox");
@@ -234,7 +239,11 @@ export function createWordFontControls(
     for (const node of [...advancedTab.children]) if (node !== spacing.parentElement && node !== kern.parentElement) extraFields.append(node);
     const intervalGroup = document.createElement("fieldset"), intervalTitle = document.createElement("legend"); intervalTitle.textContent = "字符间距"; intervalGroup.append(intervalTitle);
     const disabledChoice = (group: HTMLElement, name: string, value: string) => { const label = document.createElement("label"), select = document.createElement("select"), option = document.createElement("option"); label.append(name, select); option.textContent = value; select.append(option); select.disabled = true; group.append(label); };
-    disabledChoice(intervalGroup, "缩放:", "100%");
+    const scale = field("字符缩放（百分比）", "number");
+    scale.min = "1"; scale.max = "600"; scale.step = "1";
+    scale.value = native["--word-run-native-w"] ?? (state.hasSelection ? "" : "100");
+    scale.parentElement!.firstChild!.textContent = "缩放（%）:";
+    intervalGroup.append(scale.parentElement!);
     const intervalLabel = document.createElement("label"), interval = document.createElement("select"); intervalLabel.append("间距:", interval); intervalGroup.append(intervalLabel);
     for (const [value, title] of [["normal", "标准"], ["expanded", "加宽"], ["condensed", "紧缩"]]) { const option = document.createElement("option"); option.value = value!; option.textContent = title!; interval.append(option); }
     spacing.parentElement!.firstChild!.textContent = "磅值:"; intervalGroup.append(spacing.parentElement!);
@@ -250,6 +259,10 @@ export function createWordFontControls(
     const advancedPreview = document.createElement("div"); advancedPreview.className = "dialog-preview"; advancedPreview.textContent = "微软卓越　AaBbCc";
     advancedTab.className = "dialog-stack"; interval.value = Number(spacing.value) < 0 ? "condensed" : Number(spacing.value) > 0 ? "expanded" : "normal"; updatePreview(); advancedTab.append(intervalGroup, layoutGroup, extra, advancedPreview);
     button("确定", () => {
+      if (changed.has(underlineColorInput) && underlineColorInput.value.trim()
+        && !CSS.supports("color", underlineColorInput.value.trim())) {
+        underlineColorInput.setCustomValidity("请输入有效颜色，或留空使用自动颜色。");
+      }
       if (!allFields.every(field => field.reportValidity())) return;
       if (changed.has(size) && size.value) {
         const points = wordSizeNames[size.value] ?? Number(size.value);
@@ -273,6 +286,8 @@ export function createWordFontControls(
       if (italic.value) properties.set("font-style", italic.value);
       if (vertical.value) properties.set("vertical-align", vertical.value);
       if (spacing.value) properties.set("letter-spacing", spacing.value + "pt");
+      if (scale.value) properties.set("--word-run-native-w", scale.value);
+      if (changed.has(underlineColorInput)) properties.set("text-decoration-color", underlineColorInput.value.trim() || "currentColor");
       if (changed.has(color) && color.value.trim()) properties.set("color", color.value.trim());
       if (background.value.trim()) properties.set("background-color", background.value.trim());
       if (underline.value || strike.value) {

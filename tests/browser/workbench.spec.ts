@@ -83,6 +83,26 @@ test.beforeAll(async () => {
   hostCode = output.flatMap((item) => (item.type === "chunk" ? [item.code] : [])).join("\n");
 });
 
+test("public Word reading commands follow the active preview or editor without changing source or history", async ({ page }) => {
+  await mount(page);
+  const before = await page.evaluate(() => window.workbenchHost.session!.snapshot().html);
+  for (const editing of [false, true, false]) {
+    await page.evaluate(async editing => {
+      await window.workbenchHost.view!.setEditing(editing);
+      window.workbenchHost.view!.openWordNavigation("find");
+    }, editing);
+    const pane = page.getByRole("region", { name: editing ? "查找和替换" : "全文查找", exact: true });
+    await pane.getByLabel("查找内容", { exact: true }).fill("第三季度");
+    await pane.getByRole("button", { name: "1 · 第三季度", exact: true }).click();
+    await page.evaluate(() => window.workbenchHost.view!.openWordNavigation("wordCount"));
+    await expect(page.getByRole("region", { name: "字数统计", exact: true }).filter({ visible: true })).toContainText("字符数");
+    expect(await page.evaluate(() => ({ html: window.workbenchHost.session!.snapshot().html,
+      revision: window.workbenchHost.session!.snapshot().manifest.revision, steps: window.workbenchHost.session!.history().undoSteps })))
+      .toEqual({ html: before, revision: 0, steps: 0 });
+  }
+  expect(await page.evaluate(() => window.workbenchHost.errors)).toEqual([]);
+});
+
 test("plain JS host exports a frozen two-annotation request, reviews a proposal, applies and undoes atomically", async ({
   page,
 }, info) => {

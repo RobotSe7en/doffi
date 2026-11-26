@@ -684,13 +684,24 @@ function mountContentWorkbench(
     formatState: () => textEditor?.formatState() ?? { enabled: false },
     executeTextCommand(command) {
       ensureActive();
-      if (!textEditor) throw new DocumentError("InvalidOperation", "请先进入正文编辑模式。");
+      if (!textEditor) {
+        if (command.type === "word" && (command.action === "find" || command.action === "outline" || command.action === "wordCount")) {
+          interaction.openWordNavigation(command.action);
+          return;
+        }
+        throw new DocumentError("InvalidOperation", "请先进入正文编辑模式。");
+      }
       textEditor.execute(command);
     },
     selection: () => (textEditor ? textEditor.selection() : interaction.selection()),
     fonts: interaction.fonts,
     layout: () => textEditor?.layout() ?? interaction.layout(),
     setMode: interaction.setMode,
+    openWordNavigation(action) {
+      ensureActive();
+      if (textEditor) textEditor.execute({ type: "word", action });
+      else interaction.openWordNavigation(action);
+    },
     setZoom,
     goToPage: (page) => (textEditor ?? interaction).goToPage(page),
     focusAnnotation: interaction.focusAnnotation,

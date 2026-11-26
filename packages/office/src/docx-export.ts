@@ -2208,7 +2208,7 @@ class Exporter {
     };
     extension(
       "commentsExtended.xml",
-      "application/vnd.ms-word.commentsExtended+xml",
+      contentType("commentsExtended"),
       W15,
       "w15",
       "commentsEx",
@@ -2235,7 +2235,7 @@ class Exporter {
     );
     extension(
       "commentsIds.xml",
-      "application/vnd.ms-word.commentsIds+xml",
+      contentType("commentsIds"),
       CID,
       "w16cid",
       "commentsIds",
@@ -2259,7 +2259,7 @@ class Exporter {
     );
     extension(
       "commentsExtensible.xml",
-      "application/vnd.ms-word.commentsExtensible+xml",
+      contentType("commentsExtensible"),
       CEX,
       "w16cex",
       "commentsExtensible",
@@ -2319,7 +2319,7 @@ class Exporter {
       })
       .join("");
     if (!items) return;
-    const out = this.opc.part("word/people.xml", "application/vnd.ms-word.people+xml");
+    const out = this.opc.part("word/people.xml", contentType("people"));
     out.add(declaration + '<w15:people xmlns:w15="' + W15 + '">' + items + "</w15:people>");
     out.finish();
     this.opc.relate(

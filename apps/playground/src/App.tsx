@@ -915,7 +915,7 @@ export function App() {
   }
   const history = workbook ? workbook.session.state().history : session?.history();
   const actions: OfficeActions = {
-    find: { run: () => { if (workbook || isPresentation) runNative("find"); else void runTextCommand({ type: "word", action: "find" }); }, disabled: loading || (workbook || isPresentation ? !nativeCommands.some(command => command.id === "find" && command.enabled) : !editing) },
+    find: { run: () => { if (workbook || isPresentation) runNative("find"); else void runTextCommand({ type: "word", action: "find" }); }, disabled: loading || (workbook || isPresentation ? !nativeCommands.some(command => command.id === "find" && command.enabled) : !session) },
     fitSlide: { run: fitSlide, disabled: !isPresentation || !session || !pageCount },
     slideShowFromStart: { run: () => startSlideShow(false), disabled: !isPresentation || !session || !pageCount },
     slideShowFromCurrent: { run: () => startSlideShow(true), disabled: !isPresentation || !session || !pageCount },

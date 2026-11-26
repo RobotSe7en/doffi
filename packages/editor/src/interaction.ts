@@ -1,4 +1,5 @@
 import { createWordCommentControls } from "./word-comment-controls.js";
+import { createWordReadingControls } from "./word-reading-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
 import type { ZoomAnchor } from "./viewport-zoom.js";
@@ -43,6 +44,8 @@ export interface DocumentInteractionView {
   layout(): DocumentRenderReport | undefined;
   setMode(mode: DocumentInteractionMode): void;
   setZoom(zoom: number): void;
+  /** Read-only Word find, heading navigation and statistics. */
+  openWordNavigation(action: "find" | "outline" | "wordCount"): void;
   /** Scroll to a physical page in the current paginated view. */
   goToPage(page: number): Promise<void>;
   focusAnnotation(annotationId: string): void;
@@ -194,6 +197,16 @@ export function mountDocumentInteraction(
     report,
     options.onEditAnnotationBody,
   );
+  const readingControls = createWordReadingControls(shadow, toolbar.nextElementSibling as HTMLElement, session, (anchor, revision) => {
+    if (!source || !preview || needsVisibleRender || revision !== session.snapshot().manifest.revision || renderedContent !== contentKey())
+      throw new DocumentError("RevisionConflict", "文档已变化，请等待当前预览完成后重新定位。");
+    const rect = source.rectangles(anchor)[0];
+    if (!rect) throw new DocumentError("AnchorNotFound", "当前预览中无法定位该内容。");
+    setSelection(anchor, false);
+    const box = stage.getBoundingClientRect();
+    stage.scrollTop += preview.element.getBoundingClientRect().top + rect.top * zoom - box.top - 40;
+    stage.scrollLeft += preview.element.getBoundingClientRect().left + rect.left * zoom - box.left - 40;
+  }, report);
 
   function showComposer(): void {
     if (options.annotationTrigger !== "command" && selection && !nativeDragging && !regionDragging)
@@ -254,7 +267,7 @@ export function mountDocumentInteraction(
       throw new DocumentError("RevisionConflict", "区域布局已变化，请重新框选。");
     return selection;
   }
-  function setSelection(anchor: Anchor | undefined): void {
+  function setSelection(anchor: Anchor | undefined, compose = true): void {
     const { documentId, revision } = session.snapshot().manifest;
     const next = anchor ? immutable({ documentId, baseRevision: revision, anchor }) : undefined;
     // Painting a DOM highlight can itself emit selectionchange during native dragging.
@@ -269,7 +282,7 @@ export function mountDocumentInteraction(
     if (!selection) {
       popover?.close();
       if (workspace) draft.value = "";
-    } else showComposer();
+    } else if (compose) showComposer();
     options.onSelectionChange?.(selection);
     highlight();
   }
@@ -862,6 +875,7 @@ export function mountDocumentInteraction(
       resizeQueued = document.defaultView!.requestAnimationFrame(() => {
         resizeQueued = undefined;
         if (!signal.aborted) {
+          if (!stage.clientWidth) readingControls.dispose();
           if (needsVisibleRender && stage.clientWidth) {
             void settled().catch(report);
             return;
@@ -954,6 +968,7 @@ export function mountDocumentInteraction(
           }
         }
         updatePanel();
+        readingControls.refresh();
         highlight();
       });
     });
@@ -988,6 +1003,12 @@ export function mountDocumentInteraction(
     layout: () => (needsVisibleRender ? undefined : preview?.layout()),
     setMode,
     setZoom,
+    openWordNavigation(action) {
+      if (disposed) throw new DocumentError("InvalidOperation", "文档视图已释放。");
+      if (session.kind !== "document")
+        throw new DocumentError("UnsupportedFeature", "该导航入口仅用于 Word 文档。");
+      readingControls.open(action);
+    },
     async goToPage(page) {
       const report = await settled();
       scrollToWordPage(stage, preview!.element, report, page, zoom);
@@ -1021,6 +1042,7 @@ export function mountDocumentInteraction(
       source = undefined;
       editDrafts.clear();
       commentControls.dispose();
+      readingControls.dispose();
       list.replaceChildren();
       draft.value = "";
       element.remove();

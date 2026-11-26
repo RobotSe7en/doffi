@@ -197,11 +197,11 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
     const enabled = lines.includes("line-through"),
       previous = (inherited["text-decoration-line"] ?? "").includes("line-through");
     if (!style || enabled !== previous) {
-      out += toggle(
+      if (!style && !enabled) out += toggle("strike", false) + toggle("dstrike", false);
+      else out += toggle(
         css["text-decoration-style"] === "double" ? "dstrike" : "strike",
         style || enabled,
       );
-      if (!style && !enabled) out += toggle("dstrike", false);
     }
   }
   if (css.color !== undefined)
