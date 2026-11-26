@@ -39,7 +39,7 @@ export function defaultWordTableStyles(): WordMetadata["styles"] {
 const grid =
   "border-collapse:collapse;border:0.5pt solid #000000;--word-border-inside-h:0.5pt solid #000000;--word-border-inside-v:0.5pt solid #000000";
 export const defaultWordTableCss =
-  ".word-table-normal{border-collapse:collapse}.word-table-normal-p{}.word-table-normal-r{}.word-table-normal-table{border-collapse:collapse}.word-table-normal-cell{padding-left:5.4pt;padding-right:5.4pt;vertical-align:top}.word-table-normal-row{}.word-table-grid{" +
+  ".word-table-normal{border-collapse:collapse}.word-table-normal-p{}.word-table-normal-r{}.word-table-normal-table{border-collapse:collapse;margin-left:0pt;--word-table-indent-origin:native}.word-table-normal-cell{padding-left:5.4pt;padding-right:5.4pt;vertical-align:top}.word-table-normal-row{}.word-table-grid{" +
   grid +
   "}.word-table-grid-p{}.word-table-grid-r{}.word-table-grid-table{" +
   grid +

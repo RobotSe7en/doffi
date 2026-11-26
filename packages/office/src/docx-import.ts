@@ -1774,13 +1774,13 @@ class Importer {
     const styleId = attr(child(properties, "tblStyle"), "val") ?? this.styles.defaultTable;
     const style = this.styles.get(styleId);
     const tableCss: Css = {
-      "margin-left": "-5.4pt",
+      "margin-left": "0pt",
       ...style.table,
       ...resolveWordTableStyle(this.word, this.styles.readComponent, styleId, []).table,
       ...this.styles.table(properties),
     };
     const table = this.make("table", {
-      style: declarations(this.styles.table(properties)),
+      style: declarations({ "--word-table-indent-origin": "native", ...this.styles.table(properties) }),
       ...(styleId ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) } : {}),
     });
     const gridSource = child(source, "tblGrid");
@@ -1803,7 +1803,7 @@ class Importer {
       table,
       "table",
       {
-        "margin-left": "-5.4pt",
+        "margin-left": "0pt",
         ...style.table,
         ...resolveWordTableStyle(this.word, this.styles.readComponent, styleId, []).table,
       },
@@ -1996,8 +1996,8 @@ class Importer {
             htmlCell,
             "cell",
             {
-              "padding-left": "5.4pt",
-              "padding-right": "5.4pt",
+              "padding-left": "0pt",
+              "padding-right": "0pt",
               ...inner,
               ...wordRowExceptionCellProperties(
                 wordRowExceptionProperties(exceptionCss),

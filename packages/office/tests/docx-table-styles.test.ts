@@ -12,6 +12,7 @@ import {
 import type { DocumentNode, SourceStyleNode, DocumentOperation } from "@doffi/core";
 import { importDocx, exportDocx } from "@doffi/office";
 import { tableStylesFixture, rowStylesFixture } from "./table-style-fixture.js";
+import { tableDefaultCases, tableDefaultFixture, rowHeightFixture } from "./table-default-fixture.js";
 test("text defaults follow live table conditions and paragraph styles independently of character overrides through native reopens", () => {
   const session = createDocumentSession(
       openDocument(
@@ -760,4 +761,56 @@ test("new tables use isolated named defaults and switching to plain removes grid
   }
   session.undo();
   expect(css(session, table)["border-top-style"]).toBe("solid");
+});
+
+// These native defaults were also queried in Word with independent synthetic
+// sources. IDs, default bindings, built-in names and custom flags vary separately.
+test.each(tableDefaultCases)("empty native table style $kind resolves its own defaults through editing and two reopens", ({ kind, padding }) => {
+  const open = (bytes: Uint8Array) => createDocumentSession(openDocument(importDocx(bytes, {
+    documentId: "native-table-defaults", unsupportedContent: "reject",
+  }), { kind: "document" }));
+  for (const override of [false, true]) {
+    let session = open(tableDefaultFixture(kind, { override }));
+    for (let pass = 0; pass < 3; pass++) {
+      const table = session.snapshot().metadata.word!.tables[0]!.nodeId,
+        cells = descendants(session, table).filter(node => node.tagName === "td");
+      expect(css(session, table)["margin-left"]).toBe("0pt");
+      expect(css(session, cells[0]!.nodeId)["padding-left"]).toBe((override ? 7 : padding) + "pt");
+      expect(css(session, cells[0]!.nodeId)["padding-right"]).toBe((override ? 9 : padding) + "pt");
+      expect(css(session, cells[1]!.nodeId)["padding-right"]).toBe(padding + "pt");
+      const before = session.snapshot().html;
+      session.commit(session.prepare({ protocolVersion: 1, documentId: "native-table-defaults",
+        baseRevision: session.snapshot().manifest.revision,
+        operations: [{ op: "formatWordTable", nodeId: table, properties: { "background-color": "#112233" } }],
+      }));
+      expect(css(session, cells[1]!.nodeId)["padding-right"]).toBe(padding + "pt");
+      session.undo(); expect(session.snapshot().html).toBe(before);
+      const bytes = exportDocx(session).bytes; session.dispose();
+      session = open(bytes);
+    }
+    session.dispose();
+  }
+});
+
+test("native direct inside borders survive row height recomposition, undo and editable export", () => {
+  let session = createDocumentSession(openDocument(importDocx(rowHeightFixture(), {
+    documentId: "native-row-strokes", unsupportedContent: "reject",
+  }), { kind: "document" }));
+  for (let pass = 0; pass < 3; pass++) {
+    const table = session.snapshot().metadata.word!.tables[0]!.nodeId,
+      cell = descendants(session, table).filter(node => node.tagName === "td")[3]!;
+    expect(css(session, cell.nodeId)["border-top-width"]).toBe("1pt");
+    expect(css(session, cell.nodeId)["border-left-width"]).toBe("1pt");
+    const before = session.snapshot().html;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: "native-row-strokes",
+      baseRevision: session.snapshot().manifest.revision,
+      operations: [{ op: "editWordTable", nodeId: table, change: { kind: "resize", rowIndex: 1, rowHeight: 70 } }],
+    }));
+    expect(css(session, cell.nodeId)["border-top-width"]).toBe("1pt");
+    expect(css(session, cell.nodeId)["border-left-width"]).toBe("1pt");
+    session.undo(); expect(session.snapshot().html).toBe(before);
+    const bytes = exportDocx(session).bytes; session.dispose();
+    session = createDocumentSession(openDocument(importDocx(bytes, { documentId: "native-row-strokes", unsupportedContent: "reject" }), { kind: "document" }));
+  }
+  session.dispose();
 });

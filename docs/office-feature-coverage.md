@@ -131,8 +131,8 @@
 | DOCX | 表格与页面排版 | 自动表格布局 | 部分完成 | 部分支持 | 支持 | 动态网格可编辑；浏览器列宽与 Word 仍有差异。 [D1] [D2] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
 | DOCX | 表格与页面排版 | 百分比表格宽度 | 部分完成 | 部分支持 | 支持 | 动态网格可编辑；浏览器列宽与 Word 仍有差异。 [D1] [D2] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
 | DOCX | 表格与页面排版 | 设置列宽 | 部分完成 | 支持 | 支持 | 固定／最小行高、直接拖动和撤销已有回归。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
-| DOCX | 表格与页面排版 | 设置固定行高 | 部分完成 | 支持 | 支持 | 固定／最小行高、直接拖动和撤销已有回归。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
-| DOCX | 表格与页面排版 | 设置最小行高 | 部分完成 | 支持 | 支持 | 固定／最小行高、直接拖动和撤销已有回归。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
+| DOCX | 表格与页面排版 | 设置固定行高 | 部分完成 | 支持 | 支持 | 已按 Word 最大下边距规则裁切，预览、编辑、原生重开与撤销有回归及本机对照。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
+| DOCX | 表格与页面排版 | 设置最小行高 | 部分完成 | 支持 | 支持 | 已按整行最大上下边距和边框组合，预览、编辑、原生重开与撤销有回归及本机对照。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
 | DOCX | 表格与页面排版 | 拖动列宽 | 部分完成 | 支持 | 支持 | 固定／最小行高、直接拖动和撤销已有回归。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
 | DOCX | 表格与页面排版 | 拖动行高 | 部分完成 | 支持 | 支持 | 固定／最小行高、直接拖动和撤销已有回归。 [D1] [DT] [C2]；[WORD-01](office-feature-gaps.md#word-docx) |
 | DOCX | 表格与页面排版 | 单元格边框 | 部分完成 | 支持 | 支持 | 包括后续实现的表格级和行级间距；旧导入表中的限制不作为当前结论。 [D1] [D5] |

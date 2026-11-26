@@ -1,5 +1,7 @@
 import { registerWordFloatingSectionTests } from "./word-floating-section-cases.js";
 import { registerWordTableIndentTests } from "./word-table-indent-cases.js";
+import { registerWordTableDefaultTests } from "./word-table-default-cases.js";
+import { fontLineFixture, rowHeightCases, rowHeightFixture } from "../../packages/office/tests/table-default-fixture.js";
 import { registerWordPunctuationTests } from "./word-punctuation-cases.js";
 import { registerWordDrawingSizeTests } from "./word-drawing-size-cases.js";
 import { registerWordDrawingWrapTests } from "./word-drawing-wrap-cases.js";
@@ -60,6 +62,78 @@ declare global {
 }
 let code: string;
 registerWordTableIndentTests(mount);
+registerWordTableDefaultTests(mount);
+
+test("native automatic row height follows a CJK face for Latin too, with proportional metrics across sizes and clean input undo", async ({ page }) => {
+  const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "Layout Coverage Fixture" }));
+  // Use the same licensed fixture under an unrelated family name: behavior
+  // depends on actual Han coverage, never a list of font names.
+  for (const family of ["Layout Coverage Fixture", "serif"]) {
+    const files = importDocx(fontLineFixture(family), { documentId: "native-row-metrics" });
+    const reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "native-row-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, { layout: "continuous" }, fonts);
+      const frame = page.frameLocator("iframe"), rows = frame.locator("tr"),
+        heights = await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height)),
+        lines = await frame.locator("p").evaluateAll(ps => ps.map(p => parseFloat(getComputedStyle(p).lineHeight)));
+      for (const index of [0, 2, 4]) {
+        expect(heights[index]).toBeCloseTo(lines[index]! * 2, 0);
+        if (family === "Layout Coverage Fixture") {
+          expect(heights[index]).toBeCloseTo(heights[index + 1]!, 1);
+          expect(lines[index]).toBeCloseTo(lines[index + 1]!, 2);
+        }
+      }
+      expect(lines[2]! / lines[0]!).toBeCloseTo(1.5, 2);
+      expect(lines[4]! / lines[2]!).toBeCloseTo(1.5, 2);
+      if (surface === "edit" && source === files && family === "Layout Coverage Fixture") {
+        const before = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
+        const paragraph = frame.locator("p").first();
+        await paragraph.click(); await paragraph.press("End"); await paragraph.press("X");
+        await page.evaluate(() => window.paginationHost.session!.undo());
+        expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
+
+test("Word exact row heights add the largest bottom margin and minimum heights reserve margins and collapsed borders", async ({ page }) => {
+  const fonts = await wordLayoutFont(page);
+  for (const nativeMode of [14, 15] as const) {
+    const files = importDocx(rowHeightFixture(nativeMode), { documentId: "native-row-heights" });
+    const reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "native-row-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, { layout: "continuous" }, fonts);
+      const rows = page.frameLocator("iframe").locator("tr"),
+        heights = await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height * 0.75));
+      for (const [index, spec] of rowHeightCases.entries()) {
+        const top = Math.max(spec.top, "otherTop" in spec ? spec.otherTop : 0);
+        if (spec.rule === "auto") expect(heights[index]).toBeLessThan(spec.height);
+        else expect(heights[index]).toBeCloseTo(spec.height + spec.bottom + (spec.rule === "atLeast" ? top + 1 : 0), 1);
+        if ("otherTop" in spec) {
+          expect(await rows.nth(index).locator("td").first().evaluate(cell => parseFloat(getComputedStyle(cell).paddingTop))).toBeCloseTo(top * 4 / 3, 3);
+          expect(await rows.nth(index).locator("td").last().evaluate(cell => parseFloat(getComputedStyle(cell).paddingBottom))).toBeCloseTo(spec.bottom * 4 / 3, 3);
+        }
+      }
+      if (surface === "edit" && source === files) {
+        const before = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
+        const paragraph = rows.last().locator("p").first();
+        await paragraph.click(); await paragraph.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End"); await paragraph.press("X");
+        await page.evaluate(() => window.paginationHost.session!.undo());
+        expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+        for (const index of [0, 2, 6]) {
+          const row = rows.nth(index), height = await row.evaluate(node => node.getBoundingClientRect().height * 0.75);
+          await row.locator("td").first().hover();
+          await page.frameLocator("iframe").getByRole("button", { name: "调整第 " + (index + 1) + " 行高度", exact: true }).press("ArrowDown");
+          expect(await row.evaluate(node => node.getBoundingClientRect().height * 0.75)).toBeCloseTo(height + 1, 1);
+          await page.evaluate(() => window.paginationHost.session!.undo());
+          expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+        }
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
 
 test("native style components preserve relative spacing in preview and editing after DOCX reopen", async ({ page }) => {
   const model = openWordDocument(importDocx(mutateDocx("04-styles-sections.docx", {}), { documentId: "relative-paragraph-style" }), { kind: "document" });
@@ -649,6 +723,9 @@ test("automatic spacing without a grid uses run metrics and preserves the paragr
 });
 for (const platform of ["Linux x86_64", "MacIntel"]) {
   test("Noto Sans CJK SC automatic spacing preserves the platform metrics on " + platform, async ({ page }) => {
+    const url = "/word-layout-sans.woff2";
+    await page.route("**" + url, route => route.fulfill({ path: "apps/playground/src/assets/word-fonts/sans-regular.woff2", contentType: "font/woff2" }));
+    const fonts = [{ family: "Noto Sans CJK SC", aliases: [], url }];
     await page.addInitScript(platform => {
       Object.defineProperty(Navigator.prototype, "platform", { configurable: true, get: () => platform });
     }, platform);
@@ -658,15 +735,15 @@ for (const platform of ["Linux x86_64", "MacIntel"]) {
         '<w:rFonts w:eastAsia="Noto Sans CJK SC"/><w:sz w:val="24"/></w:rPr><w:t>正文行距</w:t></w:r></w:p>'),
     }), { documentId: "native-noto-leading" });
     for (const mode of ["preview", "edit"] as const) {
-      await mount(page, files, mode);
+      await mount(page, files, mode, {}, fonts);
       const run = page.frameLocator("iframe").locator('[data-sdk-word-script-view][data-word-script="eastAsia"]')
         .filter({ hasText: "正文行距" });
       const geometry = await run.evaluate(node => {
         const css = getComputedStyle(node);
         const canvas = document.createElement("canvas").getContext("2d")!;
-        canvas.font = `${css.fontStyle} ${css.fontWeight} 256px ${css.fontFamily}`;
+        canvas.font = `${css.fontStyle} ${css.fontWeight} 4096px ${css.fontFamily}`;
         const font = canvas.measureText("汉");
-        const em = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 256;
+        const em = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 4096;
         return {
           platform: navigator.platform, family: css.fontFamily,
           runHeight: parseFloat(css.lineHeight), nativeHeight: em * parseFloat(css.fontSize) * 1.25,
@@ -1651,7 +1728,7 @@ test("fixed table row heights clip long source text, avoid phantom pages and edi
       .locator("tr")
       .first()
       .evaluate((row) => row.getBoundingClientRect().height * 0.75),
-  ).toBeCloseTo(24, 0);
+  ).toBeCloseTo(28, 0);
   expect((await page.evaluate(() => window.paginationHost.layout())).pages).toHaveLength(1);
   expect(await frame.locator(".sdk-word-row-clip").count()).toBe(4);
   expect(
@@ -2353,7 +2430,7 @@ function columnFiles(table = false): DocumentPackage {
   const content = table
     ? '<table style="width:100pt;border-collapse:collapse"><tr data-word-repeat-header="true"><th style="border:1pt solid black"><p>HEADER</p></th></tr>' +
       Array.from(
-        { length: 32 },
+        { length: 48 },
         (_, n) => '<tr><td style="border:1pt solid black;padding:0"><p>ROW-' + n + "</p></td></tr>",
       ).join("") +
       "</table>"
@@ -6145,12 +6222,12 @@ test("tracked native Enter and Backspace preserve paragraph marks and fold a new
     }),
   );
   await mount(page, session.serialize(), "edit");
-  const frame = page.frameLocator("iframe");
+  const frame = page.frameLocator("iframe"), body = frame.getByRole("textbox", { name: "文档正文" });
   await frame.locator('[data-node-id="paragraph-1"]').click();
   await page.keyboard.press("Home");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
-  await expect(frame.locator("p")).toHaveCount(2);
+  await expect(body.locator("p")).toHaveCount(2);
   expect(
     await page.evaluate(() =>
       window.paginationHost
@@ -6159,13 +6236,13 @@ test("tracked native Enter and Backspace preserve paragraph marks and fold a new
     ),
   ).toEqual(["paragraphInsert"]);
   await page.keyboard.press("Backspace");
-  await expect(frame.locator("p")).toHaveCount(1);
-  await expect(frame.locator("p")).toHaveText("AB");
+  await expect(body.locator("p")).toHaveCount(1);
+  await expect(body.locator("p")).toHaveText("AB");
   expect(
     await page.evaluate(() => window.paginationHost.session!.snapshot().metadata.word!.revisions),
   ).toEqual([]);
   await page.evaluate(() => window.paginationHost.session!.undo());
-  await expect(frame.locator("p")).toHaveCount(2);
+  await expect(body.locator("p")).toHaveCount(2);
   expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
 
@@ -10148,7 +10225,7 @@ for (const [grid, span] of [
         p = table.locator("p").first();
       await expect(p).toHaveText("DYNAMIC");
       await p.click();
-      await page.keyboard.press("End");
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
       await page.keyboard.insertText("EDIT");
       await expect
         .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
@@ -10157,6 +10234,7 @@ for (const [grid, span] of [
         () => window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid,
       );
       await p.click();
+      await page.evaluate(() => window.paginationHost.view!.settled());
       const handle = frame.getByRole("button", { name: "调整第 " + span + " 列宽度", exact: true });
       await expect(handle).toBeVisible();
       const r = (await handle.boundingBox())!;

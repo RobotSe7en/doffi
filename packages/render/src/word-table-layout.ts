@@ -1,14 +1,17 @@
 import { DocumentError } from "@doffi/core";
-import type { DeepReadonly, WordMetadata } from "@doffi/core";
+import type { ContentDocumentModel } from "@doffi/core";
+import { composeWordRowHeights } from "./word-row-heights.js";
 import type { RenderLimits } from "./contracts.js";
 import { markViewNode, ownViewStyle, ownViewAttribute, viewNodeRole } from "./view-nodes.js";
 /** Exact row heights clip the view; all hidden cell content remains in source. */
 export function composeWordTableLayout(
   document: Document,
   limits: Readonly<RenderLimits>,
-  word?: DeepReadonly<WordMetadata>,
+  model: ContentDocumentModel,
 ): void {
   const view = document.defaultView!;
+  const word = model.snapshot().metadata.word;
+  const exactHeights = composeWordRowHeights(document, model);
   const tables = new Map(word?.tables.map((table) => [table.nodeId, table] as const));
   let count = document.querySelectorAll("*").length;
   for (const gap of document.querySelectorAll<HTMLElement>("[data-word-grid-gap]")) {
@@ -37,29 +40,7 @@ export function composeWordTableLayout(
   }
   for (const table of document.querySelectorAll<HTMLTableElement>("table")) {
     const rows = [...table.rows],
-      heights = rows.map((row) => {
-        const css = view.getComputedStyle(row),
-          rule = css.getPropertyValue("--word-row-height-rule").trim();
-        if (rule === "auto") {
-          ownViewStyle(row, "height");
-          row.style.height = "auto";
-          return undefined;
-        }
-        if (rule !== "exact") return undefined;
-        const match = /^([\d.]+)(pt|px|in|cm|mm|pc|em|rem)$/.exec(row.style.height);
-        if (!match) return undefined;
-        const factors: Record<string, number> = {
-          pt: 4 / 3,
-          px: 1,
-          in: 96,
-          cm: 96 / 2.54,
-          mm: 96 / 25.4,
-          pc: 16,
-          em: parseFloat(css.fontSize),
-          rem: parseFloat(view.getComputedStyle(document.documentElement).fontSize),
-        };
-        return Number(match[1]) * factors[match[2]!]!;
-      });
+      heights = rows.map(row => exactHeights.get(row));
     if (!heights.some((height) => height !== undefined)) continue;
     const targets = [0],
       exact = [0];

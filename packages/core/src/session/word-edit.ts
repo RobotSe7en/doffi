@@ -830,6 +830,13 @@ export function applyWordOperation(
         { width: previousWidth, height: Math.max(1, rowIds.length) * 20 },
         operation.change,
       );
+      if (operation.change.kind === "resize" && (operation.change.rowHeights || operation.change.rowIndex !== undefined)) {
+        const resized = operation.change.rowHeights ? rowIds : [rowIds[operation.change.rowIndex!]!];
+        for (const id of resized) {
+          const rule = /--word-row-height-rule\s*:\s*(auto|atLeast|exact)/.exec(source.peekNode(id)!.attributes.style ?? "")?.[1];
+          if (rule !== "exact" && rule !== "atLeast") edit.sourceStyle(id, "--word-row-height-rule", "atLeast");
+        }
+      }
       if (previousCells) {
         const old = new Set(previousCells.map((cell) => cell.id)),
           added = result.cells.filter((cell) => !old.has(cell.id)),

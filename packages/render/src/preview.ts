@@ -41,6 +41,7 @@ import type { LayoutFields } from "./fields.js";
 import { SourceProjection } from "./projection.js";
 import { copyPreviewSelection } from "./clipboard.js";
 import { composeWordAutoLineSpacing } from "./word-line-spacing.js";
+import { loadWordFontProbe } from "./word-font-probe.js";
 import { mountPresentationPreview } from "./presentation/preview.js";
 import { mountWorkbookPreview } from "./workbook/preview.js";
 import type {
@@ -636,7 +637,7 @@ export function mountPreview(
     composeWordRowExceptions(frame, model, limits);
     composeWordTableBidi(frame, model);
     composeWordTableIndent(frame, model);
-    composeWordTableLayout(frame, limits, snapshot.metadata.word);
+    composeWordTableLayout(frame, limits, model);
     continuationCells = composeWordContinuationCells(frame, model, limits, rowSpacing);
     floatingTables = composeWordFloatingTables(frame, model, limits);
     composeWordNative(frame, model, prepared.nativeUrls, limits);
@@ -740,6 +741,7 @@ export function mountPreview(
     if (disposed || !frame) return;
     void frame.fonts.ready
       .then(async () => {
+        if (model.snapshot().metadata.word) await loadWordFontProbe(frame);
         if (options.wordWebFonts?.length && !disposed)
           hostedFonts = await loadWordWebFonts(frame, options.wordWebFonts, collectDocumentFontNames(model.snapshot()));
         if (!disposed) {

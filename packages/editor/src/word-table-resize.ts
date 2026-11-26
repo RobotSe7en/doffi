@@ -1,5 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { DocumentEditingSession } from "@doffi/core";
+import { getWordRowHeightInset } from "@doffi/render";
 interface TableCell {
   row: number;
   column: number;
@@ -62,10 +63,10 @@ export function bindWordTableResize(
       ratio = grid.reduce((a, b) => a + b, 0) / table.getBoundingClientRect().width,
       bidi = table.dataset.sdkWordTableBidi === "true";
     const heights = rows.map((id) => {
-      const element = root.querySelector<HTMLElement>(
+      const element = root.querySelector<HTMLTableRowElement>(
         '[data-node-id="' + view.CSS.escape(id) + '"]',
       );
-      return Math.max(1, (element?.getBoundingClientRect().height ?? 0) * 0.75 || 20);
+      return Math.max(1, element ? element.getBoundingClientRect().height * 0.75 - getWordRowHeightInset(element) : 20);
     });
     const commit = (axis: "column" | "row", delta: number, baseRevision: number): void => {
       if (Math.abs(delta) < 0.01) return;

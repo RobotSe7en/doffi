@@ -22,7 +22,7 @@ export function registerWordTableIndentTests(mount: (page: Page, files: Document
         const table = page.frameLocator("iframe").locator("table").first();
         const actual = await table.evaluate((node, rtl) => parseFloat(getComputedStyle(node).getPropertyValue(rtl ? "margin-right" : "margin-left")), options.rtl ?? false);
         expect(actual).toBeCloseTo(expected * 4 / 3, 2);
-        if (options.nested) await expect(table.locator("table")).toHaveCSS("margin-left", "-7.2px");
+        if (options.nested) await expect(table.locator("table")).toHaveCSS("margin-left", "0px");
         if (source === files && mode === "edit" && options.mode === 12) {
           const before = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
           const id = await table.getAttribute("data-node-id");

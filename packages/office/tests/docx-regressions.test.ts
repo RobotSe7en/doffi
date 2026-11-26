@@ -345,8 +345,8 @@ test("preserves ignored wholeTable definitions and applies active region-specifi
   expect(sourceCss(model, model.getNode(id)!)).toContain("margin-left:20pt");
   const cells = descendants(model, id).filter((node) => node.tagName === "td");
   expect(sourceCss(model, cells[0]!)).toContain("padding-left:50pt");
-  expect(sourceCss(model, cells[2]!)).toContain("padding-left:5.4pt");
-  expect(cells.every((node) => sourceCss(model, node).includes("padding-right:5.4pt"))).toBe(true);
+  expect(sourceCss(model, cells[2]!)).toContain("padding-left:0pt");
+  expect(cells.every((node) => sourceCss(model, node).includes("padding-right:0pt"))).toBe(true);
 });
 test("rejects table indentation in a conditional cell region", () => {
   const bytes = mutateDocx("02-table-merges.docx", {

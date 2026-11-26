@@ -235,8 +235,8 @@ export function wordTableCellProperties(
   if (base.table["--word-border-inside-v"] && column > 0)
     inner["border-left"] = "var(--word-border-inside-v)";
   return {
-    "padding-left": "5.4pt",
-    "padding-right": "5.4pt",
+    "padding-left": "0pt",
+    "padding-right": "0pt",
     ...inner,
     ...wordRowExceptionCellProperties(exception, column, span, info.grid.length),
     ...value.cell,

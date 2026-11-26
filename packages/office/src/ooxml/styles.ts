@@ -349,6 +349,10 @@ export class DocxStyles {
       const value = this.resolve(style.styleId);
       const definition = this.definitions.get(style.styleId)!;
       const parent = style.basedOn ? this.resolve(style.basedOn) : empty();
+      const intrinsic = this.intrinsicTableStyle(definition);
+      const fallback = (values: Css, inherited: Css): Css => Object.fromEntries(
+        Object.entries(values).filter(([key]) => inherited[key] === undefined),
+      );
       style.paragraphProperties = Object.keys(this.paragraph(child(definition, "pPr")));
       style.runProperties = Object.keys(
         this.run(child(definition, "rPr"), parent.r, style.kind !== "table"),
@@ -364,10 +368,11 @@ export class DocxStyles {
             ? {
                 table: this.component(
                   style.cssClass + "-table",
-                  this.table(child(definition, "tblPr")),
+                  { ...fallback(intrinsic.table, parent.table), ...this.table(child(definition, "tblPr")) },
                 ),
                 row: this.component(style.cssClass + "-row", this.row(child(definition, "trPr"))),
                 cell: this.component(style.cssClass + "-cell", {
+                  ...fallback(intrinsic.cell, parent.cell),
                   ...this.margins(child(child(definition, "tblPr"), "tblCellMar")),
                   ...this.cell(child(definition, "tcPr")),
                 }),
@@ -1253,6 +1258,7 @@ export class DocxStyles {
         : undefined;
     const outline = child(pPr, "outlineLvl");
     const tableProperties = child(source, "tblPr");
+    const intrinsic = this.intrinsicTableStyle(source);
     this.cellSpacing(child(source, "trPr"));
     const result: StyleValues = {
       p: { ...parent.p, ...paragraph },
@@ -1260,8 +1266,9 @@ export class DocxStyles {
         ...parent.r,
         ...this.run(child(source, "rPr"), parent.r, attr(source, "type") !== "table"),
       },
-      table: { ...parent.table, ...this.table(tableProperties) },
+      table: { ...intrinsic.table, ...parent.table, ...this.table(tableProperties) },
       cell: {
+        ...intrinsic.cell,
         ...parent.cell,
         ...this.margins(child(tableProperties, "tblCellMar")),
         ...this.cell(child(source, "tcPr")),
@@ -1274,6 +1281,18 @@ export class DocxStyles {
     visiting.delete(id);
     this.resolved.set(id, result);
     return result;
+  }
+  /** Word identifies a stock style by its canonical/localized name, not its
+   * document-local styleId. Materialize its fallback before ordinary inheritance
+   * so core editing and export need no stock-name branches. */
+  private intrinsicTableStyle(source: XmlNode): { table: Css; cell: Css } {
+    const name = val(child(source, "name"))?.toLowerCase();
+    if (attr(source, "type") !== "table" || ["1", "true", "on"].includes(attr(source, "customStyle") ?? "")
+      || (name !== "normal table" && name !== "普通表格")) return { table: {}, cell: {} };
+    return {
+      table: { "margin-left": "0pt", "--word-table-indent-origin": "native" },
+      cell: { "padding-top": "0pt", "padding-bottom": "0pt", "padding-left": "5.4pt", "padding-right": "5.4pt" },
+    };
   }
   hasStyle(id: string, kind: string): boolean {
     return attr(this.definitions.get(id), "type") === kind;

@@ -18,6 +18,8 @@ export function composeWordTableIndent(document: Document, model: ContentDocumen
     // This is a table's native semantic, never an inherited instruction for
     // nested tables which may still own ordinary physical CSS margins.
     if (css.specified(project(table.dataset.nodeId!))["--word-table-indent-origin"] === undefined) continue;
+    const source = css.get(project(table.dataset.nodeId!));
+    if (source["margin-left"] === "auto" || source["margin-right"] === "auto") continue;
     const computed = view.getComputedStyle(table);
     if (computed.getPropertyValue("--word-table-indent-origin").trim() !== "native"
       || computed.getPropertyValue("--word-table-floating").trim() === "1") continue;
