@@ -1,9 +1,15 @@
 import { floatingStory } from "./word-floating-placement.js";
-import type { DocumentSection, DeepReadonly, WordDrawing } from "@doffi/core";
+import type { DocumentSection, DeepReadonly, WordDrawing, WordDrawingLayout } from "@doffi/core";
 import type { RenderedPage } from "./contracts.js";
 import { isDocumentTextBoundary } from "@doffi/core";
 import { isMeasuredViewContent, viewNodeRole } from "./view-nodes.js";
 import { columnRegion } from "./column-regions.js";
+
+/** Word 2013+ constrains cell-anchored drawings to the cell even when the
+ * saved legacy flag is false. Preserve that flag for native export. */
+export function wordDrawingLayoutInCell(layout: DeepReadonly<WordDrawingLayout>, compatibilityMode = 12): boolean {
+  return compatibilityMode >= 15 || layout.layoutInCell !== false;
+}
 
 /** A page gap may sit after a leading zero-width anchor. Find its first real
  * following glyph so the floating object follows the paragraph onto that page. */
@@ -54,6 +60,7 @@ export function wordDrawingPosition(
   anchor: HTMLElement,
   section?: DeepReadonly<DocumentSection>,
   anchorRect?: DOMRect,
+  compatibilityMode = 12,
 ): { left: number; top: number; offsetX: number; offsetY: number } {
   const g = drawing.geometry,
     l = drawing.layout,
@@ -69,7 +76,7 @@ export function wordDrawingPosition(
   const horizontal = l.horizontal ?? "column",
     vertical = l.vertical ?? "paragraph",
     story = floatingStory(anchor),
-    cell = l.layoutInCell !== false ? paragraph.closest<HTMLElement>("td,th") : null,
+    cell = wordDrawingLayoutInCell(l, compatibilityMode) ? paragraph.closest<HTMLElement>("td,th") : null,
     column = !story ? columnRegion(anchor, a, cell ?? paragraph) : undefined,
     paragraphFragment = !cell ? column?.fragment : undefined;
   let h = { start: left + m.left / 0.75, size: (s.width - m.left - m.right) / 0.75 },
@@ -131,6 +138,12 @@ export function wordDrawingPosition(
         start: rect.top + topInset,
         size: Math.max(g.height / 0.75, rect.bottom - rect.top - topInset - bottomInset),
       };
+  } else if (vertical === "paragraph") {
+    // A legacy object outside its cell uses the cell's row origin, including
+    // when its anchor is in a later paragraph. Cell-contained objects keep
+    // that paragraph's own origin instead.
+    const owner = paragraph.closest<HTMLElement>("td,th");
+    if (owner) v.start = owner.getBoundingClientRect().top;
   }
   const aligned = (
     kind: string | undefined,
@@ -153,14 +166,12 @@ export function wordDrawingPosition(
   if (cell) {
     const bounds = column?.fragment ?? cell.getBoundingClientRect(),
       css = cell.ownerDocument.defaultView!.getComputedStyle(cell),
-      left =
-        bounds.left + (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.borderLeftWidth) || 0),
-      right =
-        bounds.right -
-        (parseFloat(css.paddingRight) || 0) -
-        (parseFloat(css.borderRightWidth) || 0),
       top = bounds.top + (parseFloat(css.paddingTop) || 0) + (parseFloat(css.borderTopWidth) || 0);
-    x = Math.max(left, Math.min(x, Math.max(left, right - g.width / 0.75)));
+    // Word constrains a fitting object to the cell grid, including its padding
+    // area. Negative offsets may enter that padding; the text inset is not a
+    // clipping boundary. Oversized objects retain their native position.
+    if (g.width / .75 <= bounds.right - bounds.left)
+      x = Math.max(bounds.left, Math.min(x, bounds.right - g.width / 0.75));
     y = Math.max(top, y);
   }
   return { left: x, top: y, offsetX: (x - h.start) * 0.75, offsetY: (y - v.start) * 0.75 };

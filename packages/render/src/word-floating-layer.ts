@@ -10,7 +10,7 @@ import {
   ownViewStyle,
   viewNodeRole,
 } from "./view-nodes.js";
-import { wordDrawingPosition, wordDrawingLeadingTextRect } from "./word-drawing-position.js";
+import { wordDrawingPosition, wordDrawingLeadingTextRect, wordDrawingLayoutInCell } from "./word-drawing-position.js";
 import { wordDrawingCollisionBounds } from "./word-wrap-geometry.js";
 import type { WordFloatingPlacement } from "./word-floating-placement.js";
 import { wordDrawingDimensions as wordDrawingSize } from "@doffi/core";
@@ -177,12 +177,13 @@ export function wordFloatingLayer(
                 anchor,
                 sections.get(page.sectionId),
                 correction?.rect,
+                model.snapshot().metadata.word?.compatibilityMode,
               ),
               cell =
-                drawing.layout.layoutInCell !== false
+                wordDrawingLayoutInCell(drawing.layout, model.snapshot().metadata.word?.compatibilityMode)
                   ? paragraph.closest<HTMLElement>("td,th")
                   : null,
-              bounds = wordDrawingCollisionBounds(position, geometry);
+              bounds = wordDrawingCollisionBounds(position, geometry, drawing.layout.effectExtent);
             placements.push({
               drawing,
               frame,

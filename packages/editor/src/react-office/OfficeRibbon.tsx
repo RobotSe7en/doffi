@@ -118,9 +118,10 @@ export function OfficeRibbon({
 
   const preview = mode === "preview",
     allowedPreviewTabs = ["开始", "文件", "审阅", "视图", "帮助"];
-  const tab = preview && !allowedPreviewTabs.includes(requestedTab) ? "开始" : requestedTab,
+  const shapeSelected = word && !preview && !!format.drawingKind && ["shape", "textBox", "connector", "group"].includes(format.drawingKind);
+  const tab = preview && !allowedPreviewTabs.includes(requestedTab) || requestedTab === "形状格式" && !shapeSelected ? "开始" : requestedTab,
     collapsed = preview && tab === "开始";
-  const tabs = tabsByKind[kind].filter(name => showApplicationTabs || name !== "文件" && name !== "帮助"),
+  const tabs = [...tabsByKind[kind].filter(name => showApplicationTabs || name !== "文件" && name !== "帮助"), ...(shapeSelected ? ["形状格式"] : [])],
     states = new Map(commands.map((command) => [command.id, command]));
   const canFormat = !preview && format.enabled && !busy;
   const command = (id: string, label: string, icon: Glyph, large = false) => {
@@ -574,6 +575,13 @@ export function OfficeRibbon({
   else content = <Group title="帮助"><Tool label="帮助" icon="book" large /></Group>;
   if (!["开始", "文件", "帮助"].includes(tab)) content = <NativeOfficeTabs kind={kind} tab={tab} commands={commands} actions={actions} canFormat={canFormat} busy={busy}
     onCommand={onCommand} onTextCommand={onTextCommand} onLayout={onLayout} onZoom={onZoom} paragraph={() => setParagraphOpen(true)} borders={() => setBorderOpen(true)} layout={layout} zoom={zoom} enableWorkbookZoom={enableWorkbookZoom} />;
+  if (tab === "形状格式" && shapeSelected) content = <>
+    <Group title="插入形状"><Tool label="形状" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "insertShape" })} /></Group>
+    <Group title="文本"><Tool label="编辑文字" icon="textBox" large disabled={!canFormat || format.drawingCount !== 1 || !["shape", "textBox"].includes(format.drawingKind!) || !!format.editingInPlace} run={() => wordCommand({ type: "word", action: "editDrawingText" })} /></Group>
+    <Group title="形状样式"><Tool label="填充与线条" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
+    <Group title="排列"><div className="ribbon-tool-stack"><Tool label="文字环绕" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /><Tool label="选择窗格" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} /></div></Group>
+    <Group title="大小"><Tool label="大小和位置" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
+  </>;
   return (
     <div ref={root} data-compact={compact} className="doffi-office-ribbon office-ribbon" data-kind={kind} data-mode={mode} data-collapsed={collapsed}>
       <style>{officeRibbonStyles}</style>
@@ -619,7 +627,7 @@ export function OfficeRibbon({
           </button>
         ))}
       </div>
-      {word && format.storyKind && format.storyKind !== "main" && (
+      {word && format.storyKind && format.storyKind !== "main" && !format.editingInPlace && (
         <div style={{ padding: "6px 12px", background: "#eef4ff" }}>
           正在编辑
           {format.storyKind === "header"

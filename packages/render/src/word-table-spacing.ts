@@ -1,6 +1,7 @@
 import { SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS } from "@doffi/core";
 import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
 import { ownViewStyle } from "./view-nodes.js";
+import { wordTablePropertyResolver } from "./word-table-properties.js";
 
 // Word expects the native preferred table width to fit a signed short in twips.
 const maxNativeWidthPt = 32767 / 20;
@@ -162,11 +163,12 @@ export function composeWordTableSpacing(document: Document, model: ContentDocume
         parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
       };
     };
+  const effective = wordTablePropertyResolver(model);
   for (const table of document.querySelectorAll<HTMLTableElement>("table")) {
     const id = table.dataset.nodeId,
       info = id ? tables.get(id) : undefined;
     if (!id || !info) continue;
-    const computed = css.get(project(id)),
+    const computed = effective(table),
       spacing = computed["--word-table-cell-spacing"],
       fixed = computed["table-layout"] === "fixed",
       width = computed.width,

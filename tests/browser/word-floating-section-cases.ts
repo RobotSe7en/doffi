@@ -174,7 +174,7 @@ export function registerWordFloatingSectionTests(mount: Mount) {
     expect(objects[1]!.y).toBeGreaterThanOrEqual(positions.at(-1)!.bottom - 0.2);
     const source = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
     await row.locator("p").click({ position: { x: 3, y: 9 } });
-    await page.keyboard.press("End");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
     await page.keyboard.insertText("编辑");
     await expect(row).toContainText(/16\s*编辑/);
     const paragraphId = await row.locator("p").getAttribute("data-node-id");

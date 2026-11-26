@@ -1,5 +1,6 @@
 import { floatingStory } from "./word-floating-placement.js";
 import { columnRegion } from "./column-regions.js";
+import { wordDrawingLayoutInCell } from "./word-drawing-position.js";
 import { wordWrapIntervals, wordWrapPoints } from "./word-wrap-geometry.js";
 import type { WrapPoint } from "./word-wrap-geometry.js";
 import {
@@ -217,7 +218,7 @@ export function wordCenterWrap(
                 reserve,
               )
             : undefined;
-        const bounds = points
+        const paintBounds = points
           ? {
               left: points.reduce((v, p) => Math.min(v, p.x), Infinity),
               right: points.reduce((v, p) => Math.max(v, p.x), -Infinity),
@@ -225,6 +226,11 @@ export function wordCenterWrap(
               bottom: points.reduce((v, p) => Math.max(v, p.y), -Infinity),
             }
           : rect;
+        const extent = drawing?.layout.effectExtent,
+          bounds = { left: paintBounds.left - (extent?.left ?? 0) / .75,
+            right: paintBounds.right + (extent?.right ?? 0) / .75,
+            top: paintBounds.top - (extent?.top ?? 0) / .75,
+            bottom: paintBounds.bottom + (extent?.bottom ?? 0) / .75 };
         obstacles.push({
           key: id + ":" + page.pageId,
           story,
@@ -234,7 +240,7 @@ export function wordCenterWrap(
                 points,
                 cell:
                   node.dataset.sdkWordWrapCell ??
-                  (drawing.layout.layoutInCell !== false
+                  (wordDrawingLayoutInCell(drawing.layout, snapshot.metadata.word?.compatibilityMode)
                     ? anchor?.closest<HTMLElement>("td,th")?.dataset.nodeId
                     : undefined),
               }
@@ -617,6 +623,12 @@ export function wordCenterWrap(
             : `display:inline-block;width:${Math.max(1, width)}px;height:0;padding:0;margin:0;border:0;font-size:0;line-height:0;vertical-align:baseline;pointer-events:none;user-select:none`;
         const tail = hit.at ? hit.text.splitText(hit.at) : hit.text;
         tail.before(spacer);
+        if (blocked) {
+          // A block inserted after an inline anchor can start below the old
+          // line box. Measure that actual start so the old line is not charged
+          // again as extra clearance below a full-width floating object.
+          spacer.style.height = Math.max(1, hit.obstacle.bottom - spacer.getBoundingClientRect().top) + "px";
+        }
         spacers.set(spacer, {
           key: hit.obstacle.key,
           height: hit.line.height,

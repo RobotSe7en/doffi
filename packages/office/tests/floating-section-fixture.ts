@@ -81,6 +81,10 @@ export function floatingSectionFixture(
         "CELL",
         index === 0 ? "REPEAT HEADER" : "ROW " + String(index).padStart(2, "0"),
       );
+      // This case isolates row continuation across columns. Pin its cell
+      // metrics as well as the surrounding paragraphs; omitted single
+      // spacing is covered separately with native default-spacing fixtures.
+      entry = entry.replace("<w:p>", '<w:p><w:pPr><w:spacing w:line="320" w:lineRule="exact"/></w:pPr>');
       if (index === 0) entry = entry.replace("<w:tr>", "<w:tr><w:trPr><w:tblHeader/></w:trPr>");
       if (index === 16)
         entry = entry.replace("<w:r><w:t>", draw(4, "none", "line", 0) + "<w:r><w:t>");

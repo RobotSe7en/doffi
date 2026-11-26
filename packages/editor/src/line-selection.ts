@@ -6,6 +6,9 @@ const selectionCursor = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.or
 /** Word's left selection bar uses rendered lines, including soft wraps. It
  * changes the native selection only; input/history retain their existing owner. */
 export function bindWordLineSelection(frame: Document, root: HTMLElement, options: { signal: AbortSignal; enabled(): boolean; ignored(node: Node): boolean; layout(): DocumentRenderReport | undefined; setup(): Readonly<PageSetup>; changed(): void }): void {
+  // A text box owns its own input area. Its leading text is never the page's
+  // left selection bar, regardless of the box's position or inner margins.
+  if (root.dataset.officeStory === 'textBox' || root.dataset.sdkWordTextStory) return;
   const cursorStyle = frame.createElement('style'); cursorStyle.textContent = `html[data-doffi-line-cursor],html[data-doffi-line-cursor] *{cursor:${selectionCursor}!important}`; frame.head.append(cursorStyle);
   const clearCursor = (): void => { frame.documentElement.removeAttribute('data-doffi-line-cursor'); };
   frame.documentElement.addEventListener('mouseleave', clearCursor, { signal: options.signal });

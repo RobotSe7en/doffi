@@ -16,6 +16,7 @@ import { composeWordTableLayout } from "./word-table-layout.js";
 import { composeWordContinuationCells } from "./word-continuation-cells.js";
 import { composeWordTableBidi } from "./word-table-bidi.js";
 import { composeWordTableSpacing } from "./word-table-spacing.js";
+import { composeWordTableProperties } from "./word-table-properties.js";
 import { composeWordTableIndent } from "./word-table-indent.js";
 import { composeWordRowSpacing } from "./word-row-spacing.js";
 import { composeWordParagraphMarks } from "./word-paragraph-marks.js";
@@ -41,6 +42,7 @@ import type { LayoutFields } from "./fields.js";
 import { SourceProjection } from "./projection.js";
 import { copyPreviewSelection } from "./clipboard.js";
 import { composeWordAutoLineSpacing } from "./word-line-spacing.js";
+import { applyWordGrid } from "./word-grid.js";
 import { loadWordFontProbe } from "./word-font-probe.js";
 import { mountPresentationPreview } from "./presentation/preview.js";
 import { mountWorkbookPreview } from "./workbook/preview.js";
@@ -459,6 +461,27 @@ export function mountPreview(
       floatingTables?.measure(pages, root, placement, storiesOnly);
       placement.place();
       finish?.();
+      const frame = iframe.contentDocument!, metadata = model.snapshot().metadata,
+        origin = root.getBoundingClientRect();
+      for (const text of frame.querySelectorAll<HTMLElement>(".sdk-word-drawing-text")) {
+        if (!text.getClientRects().length || frame.defaultView!.getComputedStyle(text).visibility !== "visible") continue;
+        const pageId = text.closest<HTMLElement>(".sdk-word-floating-page,.sdk-paper")?.dataset.pageId,
+          y = (text.getBoundingClientRect().top - origin.top) * .75,
+          page = pageId ? pages.find(page => page.pageId === pageId) : pages.find(page => y >= page.rect.y && y < page.rect.y + page.rect.height),
+          sourceId = text.closest<HTMLElement>("[data-sdk-word-object]")?.dataset.sdkWordObject;
+        let section = metadata.sections?.find(section => section.sectionId === page?.sectionId);
+        for (let node = sourceId ? model.getNode(sourceId) : undefined; node; node = node.parentNodeId ? model.getNode(node.parentNodeId) : undefined) {
+          const owner = metadata.sections?.find(section => section.rootNodeId === node!.nodeId);
+          if (owner) { section = owner; break; }
+        }
+        if (section) {
+          // A text box is its own text scope. Its outer table/object does not
+          // suppress the line grid inherited from its physical section.
+          const grid = applyWordGrid(frame, text, section, limits, metadata.word, undefined, false);
+          grid?.measure(); grid?.dispose();
+        }
+        runWidths?.measure(text);
+      }
     };
     let pages: DocumentRenderReport["pages"] = [],
       nodePages: DocumentRenderReport["nodePages"] = {},
@@ -632,11 +655,12 @@ export function mountPreview(
     decorate(frame, word);
     tabs = word?.tabs.length ? wordTabLayout(frame, word) : undefined;
     tabs?.measure(frame);
+    composeWordTableProperties(frame, model);
     composeWordTableSpacing(frame, model);
     const rowSpacing = composeWordRowSpacing(frame, model, limits);
-    composeWordRowExceptions(frame, model, limits);
     composeWordTableBidi(frame, model);
     composeWordTableIndent(frame, model);
+    composeWordRowExceptions(frame, model, limits);
     composeWordTableLayout(frame, limits, model);
     continuationCells = composeWordContinuationCells(frame, model, limits, rowSpacing);
     floatingTables = composeWordFloatingTables(frame, model, limits);

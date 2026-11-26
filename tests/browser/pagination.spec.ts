@@ -1,6 +1,9 @@
 import { registerWordFloatingSectionTests } from "./word-floating-section-cases.js";
 import { registerWordTableIndentTests } from "./word-table-indent-cases.js";
 import { registerWordTableDefaultTests } from "./word-table-default-cases.js";
+import { registerWordRowExceptionScopeTests } from "./word-row-exception-scope-cases.js";
+import { registerWordFloatingCompatibilityTests } from "./word-floating-compatibility-cases.js";
+import { nativeSingleSpacingFixture, nativeTextBoxGridFixture } from "../../packages/office/tests/word-producer-drawing-fixture.js";
 import { fontLineFixture, rowHeightCases, rowHeightFixture } from "../../packages/office/tests/table-default-fixture.js";
 import { registerWordPunctuationTests } from "./word-punctuation-cases.js";
 import { registerWordDrawingSizeTests } from "./word-drawing-size-cases.js";
@@ -63,6 +66,56 @@ declare global {
 let code: string;
 registerWordTableIndentTests(mount);
 registerWordTableDefaultTests(mount);
+
+test("floating text inherits its physical section line grid while exact spacing and snap-off stay independent", async ({ page }) => {
+  const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "SimSun" }));
+  let baseline = 0;
+  for (const options of [{}, { grid: true }, { grid: true, snap: false }, { grid: true, exact: 20 }]) {
+    const files = importDocx(nativeTextBoxGridFixture(options), { documentId: "box-line-grid" }),
+      reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "grid-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, {}, fonts);
+      const p = page.frameLocator("iframe").locator('.sdk-word-floating-layer [data-sdk-word-text-story] p'),
+        pitch = await p.evaluate(p => {
+          const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT), tops: number[] = [];
+          for (let text = walker.nextNode(); text; text = walker.nextNode()) if (text.textContent === "Single" || text.textContent === "Second") {
+            const range = document.createRange(); range.selectNodeContents(text); tops.push(range.getBoundingClientRect().top);
+          }
+          if (tops.length !== 2) throw new Error("Two source lines are required.");
+          return (tops[1]! - tops[0]!) * .75;
+        });
+      if (!("grid" in options)) baseline = pitch;
+      else if ("exact" in options) expect(pitch).toBeCloseTo(20, 1);
+      else if ("snap" in options) expect(pitch).toBeCloseTo(baseline, 1);
+      else {
+        expect(pitch).toBeCloseTo(Math.round(pitch / 15.6) * 15.6, 1);
+        expect(Math.abs(pitch - baseline)).toBeGreaterThan(.5);
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
+
+test("omitted native single spacing matches explicit automatic spacing in table text and floating text on both surfaces", async ({ page }) => {
+  const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "SimSun" }));
+  let reference: { height: number; line: number }[] | undefined;
+  for (const explicit of [false, true]) {
+    const files = importDocx(nativeSingleSpacingFixture(explicit), { documentId: "single-default" }),
+      reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "single-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, {}, fonts);
+      const frame = page.frameLocator("iframe"), boxes = await frame.locator('p[data-node-id],p[data-sdk-word-text-node]').evaluateAll(ps => ps.filter(p => p.getClientRects().length && getComputedStyle(p).visibility === "visible").map(p => ({ height: p.getBoundingClientRect().height, line: Math.max(...[p, ...p.querySelectorAll('[data-word-run],[data-word-script]')].map(node => parseFloat(getComputedStyle(node).lineHeight)).filter(Number.isFinite)) })));
+      expect(boxes.length).toBeGreaterThan(2);
+      expect(boxes.every(box => Number.isFinite(box.line) && box.line > 30), JSON.stringify(boxes)).toBe(true);
+      if (!reference) reference = boxes;
+      else for (const [index, box] of boxes.entries()) {
+        expect(box.height).toBeCloseTo(reference[index]!.height, 1);
+        expect(box.line).toBeCloseTo(reference[index]!.line, 1);
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
 
 test("native automatic row height follows a CJK face for Latin too, with proportional metrics across sizes and clean input undo", async ({ page }) => {
   const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "Layout Coverage Fixture" }));
@@ -491,7 +544,10 @@ test("fixed character grids use Normal pitch across font sizes and preserve supp
             const range = document.createRange();
             range.setStart(text, offset);
             range.setEnd(text, offset + (text.data.codePointAt(offset)! > 65535 ? 2 : 1));
-            return range.getBoundingClientRect().x;
+            const rect = range.getBoundingClientRect(), spacing = parseFloat(getComputedStyle(text.parentElement!).letterSpacing) || 0;
+            // Fixed grid slots center fallback glyphs of different advances;
+            // their painted left edges need not be equally spaced.
+            return rect.left + (rect.width - spacing) / 2;
           }
           offset -= text.length;
         }
@@ -3915,11 +3971,11 @@ test("Word objects drag and resize through one-step history and edit their text 
   expect((await page.evaluate(() => window.paginationHost.session!.snapshot())).html).toBe(
     before.html,
   );
-  await shape.click({ position: { x: 10, y: 10 } });
-  await page.getByRole("button", { name: "编辑对象文字", exact: true }).click();
+  await shape.dblclick({ position: { x: 10, y: 10 } });
+  await expect(shape.locator("[data-office-editor]")).toHaveCount(1);
   const text = frame.locator("[data-office-editor] p").first();
   await text.click();
-  await page.keyboard.press("End");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
   await page.keyboard.insertText("编辑");
   await page.evaluate(() =>
     (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
@@ -3966,8 +4022,10 @@ test("moving an aligned floating object starts at its displayed position and rel
     before = await shape.boundingBox();
   expect(before).not.toBeNull();
   await shape.click({ position: { x: 15, y: 15 } });
+  await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "drawingSettings" }));
   await expect(page.getByLabel("对象水平对齐", { exact: true })).toHaveValue("center");
   await expect(page.getByLabel("对象垂直对齐", { exact: true })).toHaveValue("center");
+  await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
   await shape.scrollIntoViewIfNeeded();
   const position = await shape.evaluate((node) => {
       const r = node.getBoundingClientRect(),
@@ -10109,6 +10167,8 @@ registerWordNoteClipboardTests(mount);
 registerWordCommentClipboardTests(mount);
 
 registerWordNativeClipboardTests(mount);
+registerWordRowExceptionScopeTests(mount);
+registerWordFloatingCompatibilityTests(mount);
 
 for (const count of [3, 60])
   test(
@@ -10146,7 +10206,7 @@ for (const count of [3, 60])
           (await page.evaluate(() => window.paginationHost.layout())).pages.length,
         ).toBeGreaterThan(1);
       await paragraph.click();
-      await page.keyboard.press("End");
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
       await page.keyboard.insertText("EDIT");
       await expect
         .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
@@ -10619,7 +10679,9 @@ for (const kind of ["table", "drawing", "image"] as const)
         await target.evaluate((p) => p.ownerDocument.getSelection()?.removeAllRanges());
         if (kind === "drawing" && layout === "pages") {
           await object.click({ position: { x: 15, y: 15 } });
+          await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "drawingSettings" }));
           await expect(page.getByLabel("对象水平对齐", { exact: true })).toHaveValue("center");
+          await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
           const rect = (await object.boundingBox())!;
           await page.mouse.move(rect.x + 20, rect.y + 20);
           await page.mouse.down();
@@ -10778,7 +10840,7 @@ test("centered wrapping breaks a long unspaced Latin run safely across both side
 for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as const)
   test(
     "centered wrapping composes with paragraph alignment and character grids " + variant,
-    async ({ page }) => {
+    async ({ page }, info) => {
       const { centerWrapFixture } = await import(
         "../../packages/office/tests/center-wrap-fixture.js"
       );
@@ -10819,6 +10881,7 @@ for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as con
         }),
       );
       const before = session.snapshot().html;
+      writeFileSync(info.outputPath("wrapped-alignment.docx"), exportDocx(session).bytes);
       await mount(page, session.serialize(), "edit");
       const result = await page
         .frameLocator("iframe")

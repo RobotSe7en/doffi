@@ -118,6 +118,7 @@ export function rowProperties(css: Css): string {
       ? toggle("cantSplit", css["break-inside"] === "avoid" || css["break-inside"] === "avoid-page")
       : "") +
     rowHeightProperties(css) +
+    (css["--word-row-alignment"] !== undefined ? value("jc", css["--word-row-alignment"]) : "") +
     wordCellSpacing(css, "row") +
     (css["--word-row-repeat-header"] !== undefined
       ? toggle("tblHeader", css["--word-row-repeat-header"] === "1")

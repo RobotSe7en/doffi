@@ -5,7 +5,7 @@ import { exportDocx, importDocx, importDocxWithReport } from "@doffi/office";
 import { nativeDrawingFrameFixture } from "./native-drawing-frame-fixture.js";
 
 const variants: [string, (xml: string) => string, string][] = [
-  ["effect extent", (s) => s.replace(/(<wp:effectExtent[^>]* l=")0/, "$112700"), 'l="12700"'],
+  ["negative effect extent", (s) => s.replace(/(<wp:effectExtent[^>]* l=")0/, "$1-12700"), 'l="-12700"'],
   [
     "frame unknown attribute",
     (s) => s.replace("<wp:anchor ", '<wp:anchor dataNative="frame-value" '),
@@ -25,7 +25,6 @@ const variants: [string, (xml: string) => string, string][] = [
       ),
     'noMove="1"',
   ],
-  ["nonvisual hidden", (s) => s.replace("<wp:docPr ", '<wp:docPr hidden="1" '), 'hidden="1"'],
   [
     "nested effect attribute",
     (s) =>
@@ -52,7 +51,7 @@ const variants: [string, (xml: string) => string, string][] = [
   [
     "nonvisual child",
     (s) =>
-      s.replace(/<wps:cNvSpPr[^>]*\/>/, '<wps:cNvSpPr><a:spLocks noSelect="1"/></wps:cNvSpPr>'),
+      s.replace(/<wps:cNvSpPr[^>]*\/>|<wps:cNvSpPr[^>]*>[\s\S]*?<\/wps:cNvSpPr>/, '<wps:cNvSpPr><a:spLocks noSelect="1"/></wps:cNvSpPr>'),
     'noSelect="1"',
   ],
   [

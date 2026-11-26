@@ -185,7 +185,7 @@ export function registerWordObjectClipboardTests(
           await page.getByRole("button", { name: "编辑对象文字", exact: true }).click();
           const paragraph = page
             .frameLocator("iframe")
-            .locator('[data-node-id="' + story.rootNodeId + '"] p')
+            .locator('[data-office-editor][data-node-id="' + story.rootNodeId + '"] p')
             .filter({ hasText: /OWNED/ });
           await paragraph.evaluate((p) => {
             (p.closest("[data-office-editor]") as HTMLElement).focus();

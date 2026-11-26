@@ -2,7 +2,7 @@ import { floatingStory } from "./word-floating-placement.js";
 import type { WordFloatingPlacement } from "./word-floating-placement.js";
 import { wordDrawingCollisionBounds } from "./word-wrap-geometry.js";
 import { wordFloatingLayer } from "./word-floating-layer.js";
-import { wordDrawingPosition } from "./word-drawing-position.js";
+import { wordDrawingPosition, wordDrawingLayoutInCell } from "./word-drawing-position.js";
 import { wordDrawingDimensions as wordDrawingSize } from "@doffi/core";
 import { createWordDrawingResize } from "./word-drawing-resize.js";
 import type { PreviewSource } from "./source-index.js";
@@ -115,6 +115,13 @@ export function composeWordDrawings(
       "background-color": "transparent",
       ...(group ? { left: g.x + "pt", top: g.y + "pt" } : {}),
     });
+    if (item.layout.hidden) {
+      style(frame, { display: "none" });
+      return;
+    }
+    if (item.layout.mode === "inline" && item.layout.effectExtent)
+      for (const side of ["left", "right", "top", "bottom"] as const)
+        style(frame, { ["margin-" + side]: item.layout.effectExtent[side] + "pt" });
     if (property(computed, "--office-shadow-kind") === "outer") {
       const angle = (numeric(computed, "--office-shadow-direction", 0) * Math.PI) / 180,
         distance = numeric(computed, "--office-shadow-distance", 0);
@@ -226,14 +233,18 @@ export function composeWordDrawings(
           rect = geometry.textRect ?? { x: 0, y: 0, width: g.width, height: g.height };
         text.className = "sdk-word-drawing-text";
         text.style.cssText = `position:absolute;box-sizing:border-box;display:flex;flex-direction:column;left:${rect.x}pt;top:${rect.y}pt;width:${rect.width}pt;height:${rect.height}pt;padding:${insets.top}pt ${insets.right}pt ${insets.bottom}pt ${insets.left}pt;overflow:hidden;white-space:${body.wrap === false ? "pre" : "pre-wrap"};overflow-wrap:anywhere;color:${originalColor};font-size:${originalFont};line-height:normal;justify-content:${body.vertical === "middle" ? "center" : body.vertical === "bottom" ? "flex-end" : "flex-start"};writing-mode:${body.direction && body.direction !== "horizontal" ? "vertical-rl" : "horizontal-tb"};transform:rotate(${(body.rotation ?? 0) + (body.direction === "vertical270" ? 180 : 0)}deg)`;
+        if (body.upright) text.style.transform = `scale(${g.flipH ? -1 : 1},${g.flipV ? -1 : 1}) rotate(${-g.rotation}deg) ${text.style.transform}`;
         const sourceStyle = view.getComputedStyle(original);
         text.style.fontSize = sourceStyle.fontSize;
         text.dataset.sdkWordBaseFont = originalFont;
         text.style.color = sourceStyle.color;
         const clone = cloneViewTree(original, limits.maxNodes);
+        clone.dataset.sdkWordTextStory = item.textStoryId;
         clone.classList.remove("sdk-auxiliary");
         clone.style.cssText += ";display:block;border:0;padding:0;margin:0";
         for (const child of [clone, ...clone.querySelectorAll<HTMLElement>("*")]) {
+          const id = child.getAttribute("data-node-id");
+          if (id) child.setAttribute("data-sdk-word-text-node", id);
           child.removeAttribute("data-node-id");
           child.removeAttribute("data-sdk-word-object");
           child.removeAttribute("data-sdk-word-selected");
@@ -466,6 +477,8 @@ export function composeWordDrawings(
               paragraph,
               anchor,
               sections.get(page.sectionId),
+              undefined,
+              word?.compatibilityMode,
             ),
             containing = paper?.getBoundingClientRect() ?? paragraph.getBoundingClientRect();
           const apply = (delta: number): void => {
@@ -477,9 +490,9 @@ export function composeWordDrawings(
           };
           const story = floatingStory(anchor);
           if (paper && story) {
-            const bounds = wordDrawingCollisionBounds(position, geometry);
+            const bounds = wordDrawingCollisionBounds(position, geometry, item.layout.effectExtent);
             const cell =
-              item.layout.layoutInCell !== false ? anchor.closest<HTMLElement>("td,th") : null;
+              wordDrawingLayoutInCell(item.layout, word?.compatibilityMode) ? anchor.closest<HTMLElement>("td,th") : null;
             placement.add({
               anchor,
               page,

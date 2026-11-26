@@ -156,6 +156,7 @@ export type DocumentTextCommand =
         | "insertTextBox"
         | "insertConnector"
         | "drawingSettings"
+        | "editDrawingText"
         | "selectionPane"
         | "insertFootnote"
         | "insertEndnote"
@@ -258,6 +259,9 @@ export function mountDocumentTextEditor(
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
   let activeStoryId = options.storyId;
+  const inPlaceStory = (id: string | undefined): boolean => !!id &&
+    (session.snapshot().metadata.word?.drawings ?? []).some(item =>
+      "textStoryId" in item && item.textStoryId === id && !item.layout.hidden);
   let revisionDisplay: WordRevisionDisplay = "all";
   let showMarks = false,
     clearMarks: () => void = () => {};
@@ -413,6 +417,7 @@ export function mountDocumentTextEditor(
     },
     editStory,
     report,
+    notifyFormat,
   );
   const referenceControls = createWordReferenceControls(
     shadow,
@@ -550,20 +555,50 @@ export function mountDocumentTextEditor(
       cachedView.display === revisionDisplay
     )
       return cachedView.model;
-    const source = wordStoryPreview(session, activeStoryId),
+    const source = wordStoryPreview(session, inPlaceStory(activeStoryId) ? undefined : activeStoryId),
       model = revisionDisplay === "original" ? wordReviewPreview(source) : source;
     cachedView = { snapshot, storyId: activeStoryId, display: revisionDisplay, model };
     return model;
   };
-  function editStory(storyId?: string): void {
+  function editStory(storyId?: string, point?: { x: number; y: number }): void {
     if (composing) throw new DocumentError("InvalidOperation", "请先完成当前输入法组合。");
+    const leavingTextBox = !storyId && inPlaceStory(activeStoryId);
+    const sameCanvas = (!activeStoryId || inPlaceStory(activeStoryId)) && (!storyId || inPlaceStory(storyId));
     activeStoryId = storyId;
     savedSelection = undefined;
+    if (sameCanvas && frame && root) {
+      root.contentEditable = "false";
+      root.removeAttribute("data-office-editor"); root.removeAttribute("role");
+      viewControls.abort(); viewControls = new AbortController();
+      root = rootElement(frame);
+      projection = new SourceProjection();
+      activate(rootElement(sourceDocument()));
+      root.focus({ preventScroll: true });
+      let range = point ? frame.caretRangeFromPoint?.(point.x, point.y) : undefined;
+      const caret = !range && point ? frame.caretPositionFromPoint?.(point.x, point.y) : undefined;
+      if (caret) {
+        range = frame.createRange();
+        range.setStart(caret.offsetNode, caret.offset);
+        range.collapse(true);
+      }
+      if (range && root.contains(range.startContainer)) {
+        frame.getSelection()!.removeAllRanges(); frame.getSelection()!.addRange(range);
+      } else if (leavingTextBox) frame.getSelection()!.removeAllRanges();
+      else select(...caretAt(root, 0, projection.ignored));
+      savedSelection = bookmark(root, projection.ignored);
+      notifyFormat();
+      return;
+    }
     refresh();
   }
   const sourceDocument = (): Document =>
     new DOMParser().parseFromString(session.snapshot().html, "text/html");
   const rootElement = (source: Document): HTMLElement => {
+    if (source === frame && inPlaceStory(activeStoryId)) {
+      const instances = [...source.querySelectorAll<HTMLElement>('[data-sdk-word-text-story="' + CSS.escape(activeStoryId!) + '"]')];
+      const visible = instances.find(node => node.getClientRects().length && source.defaultView!.getComputedStyle(node).visibility === "visible");
+      if (visible) return visible;
+    }
     const main = session
       .snapshot()
       .metadata.word?.stories.find((story) =>
@@ -584,11 +619,16 @@ export function mountDocumentTextEditor(
       : undefined;
   };
   function formatState(): TextFormatState {
+    const selected = drawingControls.selectedNodeIds(),
+      drawing = session.snapshot().metadata.word?.drawings?.find(item => selected.includes(item.nodeId) ||
+        !!activeStoryId && "textStoryId" in item && item.textStoryId === activeStoryId);
     return !root || composing || disposed
       ? { enabled: false }
       : {
           ...readTextFormat(root, selectedRange(), typingStyles, projection.ignored),
           editingText: true,
+          editingInPlace: !!root.dataset.sdkWordTextStory,
+          ...(drawing ? { drawingKind: drawing.kind, drawingCount: selected.length || 1 } : {}),
           storyKind:
             session
               .snapshot()
@@ -1406,6 +1446,10 @@ export function mountDocumentTextEditor(
     }
     if (command.action === "listSettings") {
       listControls.open();
+      return;
+    }
+    if (command.action === "editDrawingText") {
+      drawingControls.editSelectedText();
       return;
     }
     if (
@@ -2285,6 +2329,11 @@ export function mountDocumentTextEditor(
   }
   function keydown(event: KeyboardEvent): void {
     if (!root || composing) return;
+    if (event.key === "Escape" && root.dataset.sdkWordTextStory) {
+      event.preventDefault();
+      editStory();
+      return;
+    }
     const key = event.key.toLowerCase();
     if (
       (event.ctrlKey || event.metaKey) &&
@@ -2430,6 +2479,12 @@ export function mountDocumentTextEditor(
   }
   function activate(source: HTMLElement): void {
     if (!root || !frame) return;
+    const inPlace = !!root.dataset.sdkWordTextStory;
+    if (inPlace)
+      for (const node of [root, ...root.querySelectorAll<HTMLElement>("[data-sdk-word-text-node]")]) {
+        const id = node.dataset.sdkWordTextNode;
+        if (id) projection.setViewAttribute(node, "data-node-id", id);
+      }
     const reviewStyle = frame.createElement("style");
     reviewStyle.textContent =
       '[data-sdk-word-revision="insert"]{background:#dff7e5;text-decoration:underline}[data-sdk-word-revision="delete"]{background:#ffe3e3;text-decoration:line-through}[data-sdk-word-revision="format"]{outline:1px dotted #827600}[data-sdk-word-text-review="insert"]{background:#dff7e5!important}[data-sdk-word-text-review="delete"]{background:#ffe3e3!important}' +
@@ -2499,7 +2554,11 @@ export function mountDocumentTextEditor(
       marker.setAttribute("data-sdk-number-text", marker.textContent ?? "");
       marker.replaceChildren();
     }
-    projection.capture(root, source);
+    if (inPlace) projection.captureInstance(root, source);
+    else projection.capture(root, source);
+    if (inPlace) frame.addEventListener("pointerdown", event => {
+      if (!composing && root && !root.contains(event.target as Node)) editStory();
+    }, { signal: viewControls.signal, capture: true });
     updateMarks();
     bindWordLineSelection(frame, root, {
       signal: viewControls.signal,
@@ -2518,6 +2577,7 @@ export function mountDocumentTextEditor(
       viewStyle.textContent =
         '[data-office-editor][data-doffi-show-marks] :is(p,h1,h2,h3,h4,h5,h6)::after{content:"¶";color:var(--sdk-word-mark-color,#8a9ab0);font-family:var(--sdk-word-mark-font-family,inherit);font-size:var(--sdk-word-mark-font-size,inherit);font-weight:var(--sdk-word-mark-font-weight,normal);font-style:var(--sdk-word-mark-font-style,normal);text-decoration-line:var(--sdk-word-mark-text-decoration-line,none);text-decoration-style:var(--sdk-word-mark-text-decoration-style,solid);position:absolute;pointer-events:none}[data-office-editor] .sdk-space-mark{position:relative}[data-office-editor][data-doffi-show-marks] .sdk-space-mark::after{content:attr(data-sdk-space-mark);position:absolute;left:0;top:0;color:#8a9ab0;pointer-events:none}[data-office-editor][data-doffi-show-marks] [data-word-tab]::after{content:"→";color:#8a9ab0;position:absolute;left:0;pointer-events:none}[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all;position:relative}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}';
       frame.head.append(viewStyle);
+      viewStyle.textContent += '[data-sdk-word-text-story][data-office-editor]{min-height:0}';
     }
     if (!root.querySelector(blockSelector)) {
       const first = wordMetadata().sections[0]!.rootNodeId;

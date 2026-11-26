@@ -8,6 +8,36 @@ import { openDocument } from "@doffi/core";
 import { importPptx, readDocumentZip } from "@doffi/office";
 import { body as nativeBody, mutateDocx } from "../../packages/office/tests/regression-fixtures.js";
 import type {} from "./fixtures/interaction-host.js";
+import { wordProducerDrawingFixture } from "../../packages/office/tests/word-producer-drawing-fixture.js";
+
+test("Word shape selection exposes its contextual format tab and edits text on the page", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("doffi:editing", "preview"));
+  await page.goto("/");
+  await page.getByLabel("打开文件", { exact: true }).setInputFiles({
+    name: "contextual-shape.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(wordProducerDrawingFixture({ scale: 90 })),
+  });
+  await page.getByRole("button", { name: "编辑正文", exact: true }).click();
+  const frame = page.frameLocator('iframe[title="正文编辑"]'), object = frame.locator('.sdk-word-floating-layer [data-word-drawing="textBox"]');
+  await expect(page.getByRole("tab", { name: "形状格式", exact: true })).toHaveCount(0);
+  await object.click({ position: { x: 15, y: 15 } });
+  await expect(page.getByRole("region", { name: "绘图设置", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "形状格式", exact: true }).click();
+  await expect(page.getByRole("tabpanel", { name: "形状格式", exact: true })).toBeVisible();
+  const paper = await frame.locator(".sdk-paper").first().boundingBox();
+  await page.getByRole("button", { name: "大小和位置", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "形状格式", exact: true })).toBeVisible();
+  expect((await frame.locator(".sdk-paper").first().boundingBox())!.y).toBeCloseTo(paper!.y, 1);
+  await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
+  await page.getByRole("button", { name: "编辑文字", exact: true }).click();
+  const editor = object.locator("[data-office-editor]");
+  await expect(editor).toBeVisible();
+  await expect(page.getByText("正在编辑辅助内容", { exact: false })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "形状格式", exact: true })).toBeVisible();
+  await editor.press("Escape");
+  await frame.locator('td p').filter({ hasText: "中文排版" }).first().click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole("tab", { name: "形状格式", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "开始", exact: true })).toHaveAttribute("aria-selected", "true");
+});
 
 async function report(page: Page): Promise<void> {
   await page.addInitScript(() => { localStorage.setItem("doffi:library", "open"); localStorage.setItem("doffi:editing", "preview"); });

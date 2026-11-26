@@ -140,6 +140,7 @@ export class DocxStyles {
   private readonly themeColors = new Map<string, string>();
   private readonly themeFonts = new Map<string, string>();
   private readonly locale: string;
+  private readonly bidiLocale: string;
   readonly language: string | undefined;
 
   private readonly stylePart: string | undefined;
@@ -152,7 +153,10 @@ export class DocxStyles {
       "lang",
     );
     this.language = attr(defaultLanguage, "val");
-    this.locale = attr(defaultLanguage, "eastAsia") ?? attr(defaultLanguage, "val") ?? "en-US";
+    const settingsPath = opc.related(main, "settings"),
+      themeLanguage = settingsPath ? child(opc.read(settingsPath), "themeFontLang") : undefined;
+    this.locale = attr(defaultLanguage, "eastAsia") ?? attr(themeLanguage, "eastAsia") ?? attr(defaultLanguage, "val") ?? "en-US";
+    this.bidiLocale = attr(defaultLanguage, "bidi") ?? attr(themeLanguage, "bidi") ?? "ar-SA";
     const themePath = opc.related(main, "theme");
     if (themePath) {
       const root = opc.read(themePath);
@@ -178,7 +182,8 @@ export class DocxStyles {
         for (const font of elements(group, "font", A)) {
           const script = attr(font, "script", "");
           const face = attr(font, "typeface", "");
-          if (script && face) this.themeFonts.set(family + "EastAsia:" + script, face);
+          if (script && face) for (const role of ["EastAsia", "Bidi"])
+            this.themeFonts.set(family + role + ":" + script, face);
         }
       }
     }
@@ -188,6 +193,9 @@ export class DocxStyles {
     check(root, ["docDefaults", "latentStyles", "style"]);
     const docDefaults = child(root, "docDefaults");
     this.defaults = empty();
+    // Omitted native spacing means single automatic spacing independently of
+    // the browser's default paragraph line-height.
+    this.defaults.p["line-height"] = "1";
     Object.assign(this.defaults.r, this.run(child(child(docDefaults, "rPrDefault"), "rPr")));
     Object.assign(this.defaults.p, this.paragraph(child(child(docDefaults, "pPrDefault"), "pPr")));
     this.defaults.tabs = mergeTabs(
@@ -542,19 +550,24 @@ export class DocxStyles {
         ["cs", "cstheme"],
       ]) {
         const role = attr(fonts, themeName!);
-        const language =
+        const language = name === "cs" ? attr(child(properties, "lang"), "bidi") ?? this.bidiLocale :
           attr(child(properties, "lang"), "eastAsia") ??
           attr(child(properties, "lang"), "val") ??
           this.locale;
-        const script = /^ja/i.test(language)
+        let script = /^ja/i.test(language)
           ? "Jpan"
           : /^ko/i.test(language)
             ? "Hang"
             : /^zh-(?:TW|HK|MO|Hant)/i.test(language)
               ? "Hant"
               : "Hans";
+        if (name === "cs") {
+          try { script = new Intl.Locale(language).maximize().script ?? "Arab"; }
+          catch { script = "Arab"; }
+        }
         const face = role
-          ? (this.themeFonts.get(role) ?? this.themeFonts.get(role + ":" + script))
+          ? (this.themeFonts.get(role) ?? this.themeFonts.get(role + ":" + script)
+            ?? (/^(major|minor)Bidi$/.test(role) ? this.themeFonts.get(role.replace("Bidi", "HAnsi")) : undefined))
           : attr(fonts, name!);
         if (role && !face) unsupported(fonts, "A theme font cannot be resolved.");
         if (face) {
@@ -1087,7 +1100,6 @@ export class DocxStyles {
     ]);
     for (const name of [
       "hidden",
-      "jc",
       ...(shared
         ? [
             "gridBefore",
@@ -1107,6 +1119,13 @@ export class DocxStyles {
       if (value) unsupported(value, "This row property remains native.");
     }
     const result: Css = { ...this.cellSpacing(properties) };
+    const alignment = child(properties, "jc");
+    if (alignment) {
+      const value = val(alignment);
+      if (!value || !["left", "center", "right", "start"].includes(value))
+        unsupported(alignment, "This row alignment remains native.");
+      result["--word-row-alignment"] = value;
+    }
     const split = child(properties, "cantSplit");
     if (split) result["break-inside"] = on(split) ? "avoid" : "auto";
     const header = child(properties, "tblHeader");

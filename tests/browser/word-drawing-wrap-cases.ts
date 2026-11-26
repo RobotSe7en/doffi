@@ -494,7 +494,9 @@ export function registerWordDrawingWrapTests(mount: Mount): void {
         .locator(".sdk-word-floating-layer [data-sdk-word-object]")
         .first();
     await object.click({ position: { x: 10, y: 10 } });
+    await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "drawingSettings" }));
     await page.getByLabel("文字环绕", { exact: true }).selectOption("through");
+    await page.getByText("自定义环绕边界", { exact: true }).click();
     await page
       .getByLabel("环绕边界点（x,y；21600 为完整宽高）", { exact: true })
       .fill("10800,0;21600,10800;10800,21600;0,10800");

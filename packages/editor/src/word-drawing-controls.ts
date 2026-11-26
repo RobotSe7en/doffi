@@ -8,6 +8,7 @@ import type {
   WordDrawingLayout,
 } from "@doffi/core";
 import type { SourceProjection } from "@doffi/render";
+import { createOfficeDialog } from "./office-dialog.js";
 export type WordDrawingAction =
   | "insertImage"
   | "insertShape"
@@ -20,17 +21,20 @@ export function createWordDrawingControls(
   before: HTMLElement,
   session: DocumentEditingSession,
   selection: () => { paragraphId: string; offset: number } | undefined,
-  editStory: (id: string) => void,
+  editStory: (id: string, point?: { x: number; y: number }) => void,
   onError: (error: unknown) => void,
+  selectionChanged: () => void,
 ): {
   open(action: WordDrawingAction): void;
   insertImage(file: File): Promise<void>;
   selectedNodeIds(): readonly string[];
+  editSelectedText(): void;
   bind(root: HTMLElement, projection: SourceProjection, signal: AbortSignal): void;
   dispose(): void;
 } {
   const document = before.ownerDocument;
   let panel: HTMLElement | undefined,
+    formatDialog: ReturnType<typeof createOfficeDialog> | undefined,
     controller: AbortController | undefined,
     selected: string[] = [],
     boundRoot: HTMLElement | undefined,
@@ -123,6 +127,9 @@ export function createWordDrawingControls(
     });
   const close = (): void => {
     controller?.abort();
+    formatDialog?.close();
+    formatDialog?.dialog.remove();
+    formatDialog = undefined;
     panel?.remove();
     panel = undefined;
     updateSelectionPane = undefined;
@@ -162,6 +169,19 @@ export function createWordDrawingControls(
       ],
       resource.options,
     );
+  }
+  function editSelectedText(): void {
+    const current = drawings().find(item => item.nodeId === selected[0]);
+    if (selected.length !== 1 || !current || !(current.kind === "shape" || current.kind === "textBox"))
+      throw new DocumentError("InvalidOperation", "请选择一个形状或文本框。");
+    let storyId = current.textStoryId;
+    if (!storyId) {
+      apply([{ op: "setWordDrawingText", nodeId: current.nodeId, text: {} }]);
+      const updated = drawings().find(item => item.nodeId === current.nodeId)!;
+      if ("textStoryId" in updated) storyId = updated.textStoryId;
+    }
+    close();
+    if (storyId) editStory(storyId);
   }
   function open(action: WordDrawingAction): void {
     close();
@@ -252,14 +272,20 @@ export function createWordDrawingControls(
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", "绘图设置");
     panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:320px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+      "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px";
+    formatDialog = createOfficeDialog(document, action === "drawingSettings" ? "形状格式" : "插入绘图对象");
+    formatDialog.content.style.cssText = "min-height:0;max-height:65dvh;overflow:auto;margin-top:12px";
+    formatDialog.content.append(panel);
+    parent.insertBefore(formatDialog.dialog, before);
+    formatDialog.dialog.addEventListener("cancel", event => { event.preventDefault(); close(); }, { signal });
+    formatDialog.show();
     const button = (label: string, run: () => void): void => {
       const node = document.createElement("button");
       node.type = "button";
       node.textContent = label;
       node.addEventListener("click", () => attempt(run), { signal });
-      panel!.append(node);
+      if (label === "关闭绘图设置") formatDialog!.footer.append(node);
+      else panel!.append(node);
     };
     const field = (name: string, value: number | string, type = "number"): HTMLInputElement => {
       const label = document.createElement("label"),
@@ -268,7 +294,7 @@ export function createWordDrawingControls(
       input.setAttribute("aria-label", name);
       input.type = type;
       input.value = String(value);
-      input.style.width = type === "number" ? "70px" : "140px";
+      input.style.width = type === "number" ? "100px" : "100%";
       if (type === "number") input.step = "0.5";
       label.append(input);
       panel!.append(label);
@@ -509,6 +535,11 @@ export function createWordDrawingControls(
       polygon = field("环绕边界点（x,y；21600 为完整宽高）", polygonText, "text");
     polygon.style.width = "320px";
     polygon.maxLength = 100000;
+    const contour = document.createElement("details"), contourTitle = document.createElement("summary");
+    contourTitle.textContent = "自定义环绕边界";
+    contour.style.gridColumn = "1 / -1";
+    contour.append(contourTitle, polygon.parentElement!);
+    panel.append(contour);
     const polygonLayout = (): Pick<WordDrawingLayout, "wrapPolygon" | "wrapPolygonEdited"> => {
       if (polygon.value === polygonText)
         return {
@@ -785,14 +816,7 @@ export function createWordDrawingControls(
           },
         ]),
       );
-      button("编辑对象文字", () => {
-        if (!current.textStoryId) {
-          apply([{ op: "setWordDrawingText", nodeId: current.nodeId, text: {} }]);
-          const updated = drawings().find((item) => item.nodeId === current.nodeId)!;
-          if ("textStoryId" in updated && updated.textStoryId) editStory(updated.textStoryId);
-        } else editStory(current.textStoryId);
-        close();
-      });
+      button("编辑对象文字", editSelectedText);
     }
     if (current?.kind === "connector") {
       const routing = choose(
@@ -877,7 +901,8 @@ export function createWordDrawingControls(
   function bind(root: HTMLElement, projection: SourceProjection, signal: AbortSignal): void {
     boundRoot = root;
     selected = selected.filter(
-      (id) => !!root.querySelector('[data-sdk-word-object="' + CSS.escape(id) + '"]'),
+      (id) => !!root.querySelector('[data-sdk-word-object="' + CSS.escape(id) + '"]') ||
+        root.closest<HTMLElement>("[data-sdk-word-object]")?.dataset.sdkWordObject === id,
     );
     selectionStyle?.remove();
     selectionStyle = root.ownerDocument.createElement("style");
@@ -892,6 +917,7 @@ export function createWordDrawingControls(
           "data-sdk-word-selected",
           selected.includes(node.dataset.sdkWordObject!) ? "" : null,
         );
+      selectionChanged();
     };
     paintSelection = paint;
     paint();
@@ -921,7 +947,6 @@ export function createWordDrawingControls(
             : [...selected, id];
           paint();
           if (paneOpen) updateSelectionPane?.();
-          else open("drawingSettings");
           return;
         }
         if (!selected.includes(id) || event.altKey && !selectedRoots().includes(id)) selected = [id];
@@ -999,17 +1024,26 @@ export function createWordDrawingControls(
               );
             });
           if (paneOpen) updateSelectionPane?.();
-          else open("drawingSettings");
         };
         root.ownerDocument.addEventListener("pointermove", move, { signal });
         root.ownerDocument.addEventListener("pointerup", end, { once: true, signal });
       },
       { signal, capture: true },
     );
+    root.addEventListener("dblclick", event => {
+      const target = (event.target as Element).closest<HTMLElement>("[data-sdk-word-object]");
+      if (!target || !root.contains(target)) return;
+      const item = drawings().find(item => item.nodeId === target.dataset.sdkWordObject);
+      if (!item || !("textStoryId" in item) || !item.textStoryId) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      close();
+      editStory(item.textStoryId, { x: event.clientX, y: event.clientY });
+    }, { signal, capture: true });
     root.addEventListener(
       "keydown",
       (event) => {
         if (
+          root.dataset.sdkWordTextStory ||
           !selected.length ||
           ![
             "ArrowLeft",
@@ -1083,6 +1117,7 @@ export function createWordDrawingControls(
   }
   return {
     selectedNodeIds: () => selected.filter((id) => drawings().some((d) => d.nodeId === id)),
+    editSelectedText,
     open,
     insertImage,
     bind,

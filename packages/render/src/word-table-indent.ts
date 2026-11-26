@@ -1,6 +1,6 @@
-import { DEFAULT_DOCUMENT_READ_LIMITS, SourceStyleResolver } from "@doffi/core";
-import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
+import type { ContentDocumentModel } from "@doffi/core";
 import { ownViewStyle } from "./view-nodes.js";
+import { wordTablePropertyResolver } from "./word-table-properties.js";
 
 /** Pre-2013 Word measures native table indentation at the leading cell text.
  * Keep the native value in source; project it to the physical CSS border edge. */
@@ -8,17 +8,12 @@ export function composeWordTableIndent(document: Document, model: ContentDocumen
   const snapshot = model.snapshot(), word = snapshot.metadata.word;
   if (!word || (word.compatibilityMode ?? 12) >= 15) return;
   const view = document.defaultView!;
-  const css = new SourceStyleResolver(snapshot.styles.map(sheet => sheet.css), DEFAULT_DOCUMENT_READ_LIMITS);
-  const project = (id: string): SourceStyleNode => {
-    const node = model.getNode(id)!;
-    return { tag: node.tagName, attrs: node.attributes,
-      parent: node.parentNodeId ? project(node.parentNodeId) : undefined };
-  };
+  const resolve = wordTablePropertyResolver(model);
   for (const table of document.querySelectorAll<HTMLTableElement>("table[data-node-id]")) {
     // This is a table's native semantic, never an inherited instruction for
     // nested tables which may still own ordinary physical CSS margins.
-    if (css.specified(project(table.dataset.nodeId!))["--word-table-indent-origin"] === undefined) continue;
-    const source = css.get(project(table.dataset.nodeId!));
+    const source = resolve(table);
+    if (source["--word-table-indent-origin"] !== "native") continue;
     if (source["margin-left"] === "auto" || source["margin-right"] === "auto") continue;
     const computed = view.getComputedStyle(table);
     if (computed.getPropertyValue("--word-table-indent-origin").trim() !== "native"

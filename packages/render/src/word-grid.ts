@@ -35,6 +35,7 @@ export function applyWordGrid(
   limits: Readonly<RenderLimits>,
   word?: DeepReadonly<WordMetadata>,
   diagnostic: (message: string) => void = () => {},
+  includeCharacters = true,
 ): { measure(): void; dispose(): void } | undefined {
   const grid = section.grid;
   if (!grid || grid.type === "default") return;
@@ -69,12 +70,13 @@ export function applyWordGrid(
     if (
       !pitch ||
       css.getPropertyValue("--word-paragraph-snap-to-grid").trim() === "0" ||
-      (!word?.adjustLineHeightInTable && paragraph.closest("td,th")) ||
+      (!word?.adjustLineHeightInTable && root.contains(paragraph.closest("td,th"))) ||
       rule === "exact" ||
       rule === "atLeast"
     )
       continue;
-    const multiple = wordAutoLineMultipliers.get(paragraph);
+    const savedMultiple = Number(paragraph.dataset.sdkWordAutoLineMultiple),
+      multiple = wordAutoLineMultipliers.get(paragraph) ?? (savedMultiple > 0 ? savedMultiple : undefined);
     for (const node of [
       paragraph,
       ...paragraph.querySelectorAll<HTMLElement>("span,strong,em,u,s,sub,sup,ins,del"),
@@ -82,7 +84,7 @@ export function applyWordGrid(
       const run = view.getComputedStyle(node),
         font = parseFloat(run.fontSize);
       if (
-        node.closest("[data-word-drawing],[data-word-native-object],[data-word-equation]") ||
+        root.contains(node.closest("[data-word-drawing],[data-word-native-object],[data-word-equation]")) ||
         (viewNodeRole(node) === "remove" && !isMeasuredViewContent(node)) ||
         font < 0.01
       )
@@ -99,7 +101,7 @@ export function applyWordGrid(
   }
   probe.remove();
   let characters: ReturnType<typeof wordCharacterGrid> | undefined;
-  if (grid.type === "snapToChars" || grid.type === "linesAndChars") {
+  if (includeCharacters && (grid.type === "snapToChars" || grid.type === "linesAndChars")) {
     const probe = document.createElement("span"),
       normal =
         word?.styles.find((style) => style.kind === "paragraph" && style.styleId === "Normal") ??

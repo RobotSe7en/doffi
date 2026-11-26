@@ -1,6 +1,7 @@
 import { SourceStyleResolver, DEFAULT_DOCUMENT_READ_LIMITS } from "@doffi/core";
 import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
 import { ownViewStyle, ownViewAttribute } from "./view-nodes.js";
+import { wordTablePropertyResolver } from "./word-table-properties.js";
 
 /** bidiVisual mirrors table geometry and logical sides, while paragraphs keep
  * their own writing direction and UTF-16 order. All changes are view-owned. */
@@ -20,6 +21,7 @@ export function composeWordTableBidi(document: Document, model: ContentDocumentM
         parent: node.parentNodeId ? project(node.parentNodeId) : undefined,
       };
     };
+  const effective = wordTablePropertyResolver(model);
   const tables = [...document.querySelectorAll<HTMLTableElement>("table")].flatMap((table) => {
     const id = table.dataset.nodeId;
     if (!id || !word.tables.some((item) => item.nodeId === id)) return [];
@@ -27,7 +29,7 @@ export function composeWordTableBidi(document: Document, model: ContentDocumentM
       bidi =
         css.specified(source)["--word-table-bidi"] !== undefined &&
         css.get(source)["--word-table-bidi"] === "1",
-      computed = css.get(source);
+      computed = effective(table);
     return [
       {
         table,

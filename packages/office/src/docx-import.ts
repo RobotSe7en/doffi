@@ -1450,7 +1450,7 @@ class Importer {
     this.auxiliary.push(root);
     return storyId;
   }
-  private readStoryContent(part: string, storyId: string, source: XmlNode): Html[] {
+  private readStoryContent(part: string, storyId: string, source: XmlNode, width?: number): Html[] {
     const {
       currentPart,
       currentStory,
@@ -1460,6 +1460,8 @@ class Importer {
       currentRun,
       paragraphRunClasses,
       moves,
+      activeTable,
+      tableAvailable,
     } = this;
     this.currentPart = part;
     this.currentStory = storyId;
@@ -1469,6 +1471,8 @@ class Importer {
     this.bookmarkStarts = new Map();
     this.currentRun = undefined;
     this.paragraphRunClasses = ["word-default-run"];
+    this.activeTable = undefined;
+    if (width !== undefined) this.tableAvailable = width;
     try {
       const content = this.blocks(this.compat(source));
       if (
@@ -1488,6 +1492,8 @@ class Importer {
       this.currentRun = currentRun;
       this.paragraphRunClasses = paragraphRunClasses;
       this.moves = moves;
+      this.activeTable = activeTable;
+      this.tableAvailable = tableAvailable;
     }
   }
   private control(
@@ -1713,11 +1719,11 @@ class Importer {
         this.assetSources.set(part, path);
         return path;
       },
-      story: (source) => {
+      story: (source, width) => {
         const id = "text-box-" + this.word.stories.length,
           root = this.story("textBox", id);
         root.attrs.class = "word-main";
-        root.children.push(...this.readStoryContent(this.currentPart, id, source));
+        root.children.push(...this.readStoryContent(this.currentPart, id, source, width));
         this.auxiliary.push(root);
         return id;
       },
@@ -1780,7 +1786,7 @@ class Importer {
       ...this.styles.table(properties),
     };
     const table = this.make("table", {
-      style: declarations({ "--word-table-indent-origin": "native", ...this.styles.table(properties) }),
+      style: declarations(this.styles.table(properties)),
       ...(styleId ? { "data-word-style": styleId, class: this.styles.styleClass(styleId) } : {}),
     });
     const gridSource = child(source, "tblGrid");

@@ -774,7 +774,10 @@ test.each(tableDefaultCases)("empty native table style $kind resolves its own de
     for (let pass = 0; pass < 3; pass++) {
       const table = session.snapshot().metadata.word!.tables[0]!.nodeId,
         cells = descendants(session, table).filter(node => node.tagName === "td");
-      expect(css(session, table)["margin-left"]).toBe("0pt");
+      const tableCss = css(session, table), nativeIndent = tableCss["--word-table-indent-origin"] === "native";
+      // A physical implicit zero margin acquires an explicit native text
+      // indentation on export when a cell supplies its own leading margin.
+      expect(tableCss["margin-left"]).toBe((pass > 0 && !padding && override && nativeIndent ? 7 : 0) + "pt");
       expect(css(session, cells[0]!.nodeId)["padding-left"]).toBe((override ? 7 : padding) + "pt");
       expect(css(session, cells[0]!.nodeId)["padding-right"]).toBe((override ? 9 : padding) + "pt");
       expect(css(session, cells[1]!.nodeId)["padding-right"]).toBe(padding + "pt");

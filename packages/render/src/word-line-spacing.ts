@@ -1,4 +1,4 @@
-import { ownViewStyle } from "./view-nodes.js";
+import { ownViewStyle, ownViewAttribute } from "./view-nodes.js";
 import { wordFontHasHan } from "./word-font-probe.js";
 
 /** Preserve the native multiplier for section grids after resolving it to pixels. */
@@ -110,9 +110,11 @@ export function composeWordAutoLineSpacing(document: Document, scope: ParentNode
     const multiple = autoLineMultiplier(paragraph, view);
     if (!Number.isFinite(multiple) || multiple <= 0) continue;
     wordAutoLineMultipliers.set(paragraph, multiple);
+    ownViewAttribute(paragraph, "data-sdk-word-auto-line-multiple");
+    paragraph.dataset.sdkWordAutoLineMultiple = String(multiple);
     const mark = paragraph.querySelector<HTMLElement>(':scope > [data-word-paragraph-mark="true"]');
     if (mark) applyParagraphMarkFont(paragraph, mark, view);
-    const nodes = [paragraph, ...paragraph.querySelectorAll<HTMLElement>("[data-word-script]")];
+    const nodes = [paragraph, ...paragraph.querySelectorAll<HTMLElement>("[data-word-run],[data-word-script]")];
     for (const node of nodes) {
       const height = single(view.getComputedStyle(node), node.dataset.wordScript === "eastAsia");
       ownViewStyle(node, "line-height");

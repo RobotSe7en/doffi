@@ -158,12 +158,21 @@ export function pageFlow(
     for (const [table, rows] of tableGaps) {
       const box = table.getBoundingClientRect(),
         parts: string[] = [];
+      // Legacy row alignment can paint outside the containing table's grid.
+      // Clip only the vertical page gaps, retaining those physical row boxes.
+      let left = -1, right = box.width + 1;
+      for (const content of table.querySelectorAll<HTMLElement>(".sdk-word-row-exception-content,.sdk-word-continuation-segment")) {
+        if (content.closest("table") !== table) continue;
+        const rect = content.getBoundingClientRect();
+        left = Math.min(left, rect.left - box.left - 1);
+        right = Math.max(right, rect.right - box.left + 1);
+      }
       // A single table stays in flow. Its spacer rows occupy space but should
       // never extend the table's perimeter or background into that space.
       let top = -1;
       const append = (bottom: number): void => {
         if (bottom > top)
-          parts.push(`M -1 ${top} h ${box.width + 2} v ${bottom - top} h ${-box.width - 2} Z`);
+          parts.push(`M ${left} ${top} h ${right - left} v ${bottom - top} h ${left - right} Z`);
       };
       const border = view.getComputedStyle(table).borderBottom;
       for (const { row, spanning } of rows) {

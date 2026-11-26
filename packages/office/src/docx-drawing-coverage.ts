@@ -22,7 +22,7 @@ rule(WP, "inline", "distT distB distL distR", [
 rule(
   WP,
   "anchor",
-  "distT distB distL distR simplePos relativeHeight behindDoc locked layoutInCell allowOverlap",
+  "distT distB distL distR simplePos relativeHeight behindDoc locked layoutInCell allowOverlap hidden",
   [
     ...names(
       WP,
@@ -37,8 +37,12 @@ rule(WP, "positionH positionV", "relativeFrom", names(WP, "align posOffset"));
 rule(WP, "align posOffset");
 rule(WP, "extent", "cx cy");
 rule(WP, "effectExtent", "l t r b");
-rule(WP, "docPr", "id name descr");
-rule(WP, "cNvGraphicFramePr wrapNone");
+rule(WP, "docPr", "id name descr hidden");
+rule(WP, "cNvGraphicFramePr", "", names(A, "graphicFrameLocks"));
+// Word emits this empty default container on resave; nonempty restrictions
+// still retain the native drawing through the attribute checks below.
+rule(A, "graphicFrameLocks");
+rule(WP, "wrapNone");
 rule(WP, "wrapTopAndBottom", "distT distB");
 rule(WP, "wrapSquare", "wrapText distT distB distL distR");
 rule(WP, "wrapTight wrapThrough", "wrapText distL distR", names(WP, "wrapPolygon"));
@@ -101,15 +105,16 @@ rule(PIC, "blipFill", "", names(A, "blip srcRect stretch"));
 rule(PIC, "spPr", "", names(A, "xfrm prstGeom noFill ln effectLst"));
 rule(WPS, "wsp", "", names(WPS, "cNvPr cNvSpPr cNvCnPr spPr style txbx bodyPr"));
 rule(WPS, "cNvPr", "id name descr");
-rule(WPS, "cNvSpPr", "txBox");
-rule(WPS, "cNvCnPr", "", names(A, "stCxn endCxn"));
-rule(WPS, "spPr", "", names(A, "xfrm prstGeom solidFill noFill gradFill ln effectLst"));
+rule(WPS, "cNvSpPr", "txBox", names(A, "spLocks"));
+rule(WPS, "cNvCnPr", "", names(A, "cxnSpLocks stCxn endCxn"));
+rule(A, "spLocks cxnSpLocks", "noChangeArrowheads noChangeShapeType");
+rule(WPS, "spPr", "bwMode", names(A, "xfrm prstGeom solidFill noFill gradFill ln effectLst"));
 rule(WPS, "style", "", names(A, "fillRef lnRef effectRef fontRef"));
 rule(WPS, "txbx", "", names(W, "txbxContent"));
 rule(
   WPS,
   "bodyPr",
-  "lIns tIns rIns bIns anchor vert wrap numCol rtlCol fromWordArt rot spcFirstLastPara vertOverflow horzOverflow spcCol anchorCtr forceAA compatLnSpc",
+  "lIns tIns rIns bIns anchor vert wrap numCol rtlCol fromWordArt rot spcFirstLastPara vertOverflow horzOverflow spcCol anchorCtr forceAA compatLnSpc upright",
   names(A, "noAutofit normAutofit spAutoFit"),
 );
 rule(WPG, "wgp grpSp", "", [
@@ -133,6 +138,8 @@ export function checkWordDrawingCoverage(source: XmlNode): void {
     const known = rules.get(node.uri + " " + node.name);
     if (!known)
       unsupported(node, "This nested drawing feature remains preserved with its native drawing.");
+    if (node.uri === WPS && node.name === "spPr" && [...node.attrs].some(([key, value]) => key === " bwMode" && value !== "auto"))
+      unsupported(node, "This black and white drawing mode remains native.");
     for (const [key, value] of node.attrs) {
       if (
         node.uri === WP &&
@@ -152,9 +159,9 @@ export function checkWordDrawingCoverage(source: XmlNode): void {
     if (
       node.uri === WP &&
       node.name === "effectExtent" &&
-      ["l", "t", "r", "b"].some((n) => integer(node, n, 0) !== 0)
+      ["l", "t", "r", "b"].some((n) => integer(node, n, 0) < 0)
     )
-      unsupported(node, "Drawing effect extents remain preserved with their native drawing.");
+      unsupported(node, "Negative drawing effect extents remain preserved with their native drawing.");
     if (node.uri === WP && node.name === "anchor" && bool(node, "simplePos", false))
       unsupported(node, "Absolute simple-position frames remain preserved as native drawings.");
     if (

@@ -175,6 +175,7 @@ export function writeWordDrawing(
       "<wps:bodyPr" +
       attributes({
         rot: integer(body?.rotation ?? 0, 60000),
+        upright: body?.upright === undefined ? undefined : body.upright ? 1 : 0,
         wrap: body?.wrap === false ? "none" : "square",
         lIns: emu(insets.left),
         rIns: emu(insets.right),
@@ -208,8 +209,9 @@ export function writeWordDrawing(
           )
         : "") +
       (connector
-        ? "<wps:cNvCnPr>" + connections + "</wps:cNvCnPr>"
-        : empty("wps:cNvSpPr", { txBox: item.kind === "textBox" ? 1 : 0 })) +
+        ? "<wps:cNvCnPr>" + (item.locks ? empty("a:cxnSpLocks", Object.fromEntries(Object.entries(item.locks).map(([key, value]) => [key, value ? 1 : 0]))) : "") + connections + "</wps:cNvCnPr>"
+        : "<wps:cNvSpPr" + attributes({ txBox: item.kind === "textBox" ? 1 : 0 }) + ">"
+          + (item.locks ? empty("a:spLocks", Object.fromEntries(Object.entries(item.locks).map(([key, value]) => [key, value ? 1 : 0]))) : "") + "</wps:cNvSpPr>") +
       "<wps:spPr>" +
       xfrm() +
       "<a:prstGeom" +
@@ -250,6 +252,7 @@ export function writeWordDrawing(
         simplePos: 0,
         relativeHeight: integer(layout.zOrder ?? 0, 1, 0, 4294967295),
         behindDoc: layout.behindText ? 1 : 0,
+        hidden: layout.hidden === undefined ? undefined : layout.hidden ? 1 : 0,
         locked: layout.locked ? 1 : 0,
         layoutInCell: layout.layoutInCell === false ? 0 : 1,
         allowOverlap: layout.allowOverlap === false ? 0 : 1,
@@ -269,7 +272,7 @@ export function writeWordDrawing(
       "</wp:positionV>";
   opening +=
     empty("wp:extent", { cx: emu(g.width, 0), cy: emu(g.height, 0) }) +
-    '<wp:effectExtent l="0" t="0" r="0" b="0"/>';
+    empty("wp:effectExtent", { l: emu(layout.effectExtent?.left ?? 0), t: emu(layout.effectExtent?.top ?? 0), r: emu(layout.effectExtent?.right ?? 0), b: emu(layout.effectExtent?.bottom ?? 0) });
   if (!inline) {
     const wrap = layout.wrap ?? "square";
     if (wrap === "none") opening += "<wp:wrapNone/>";
@@ -336,7 +339,7 @@ export function writeWordDrawing(
     opening +
     identity(
       "wp:docPr",
-      { id, name: drawing.name ?? "Drawing " + id, descr: node.attrs.alt ?? "" },
+      { id, name: drawing.name ?? "Drawing " + id, descr: node.attrs.alt ?? "", hidden: layout.hidden === undefined ? undefined : layout.hidden ? 1 : 0 },
       node,
     ) +
     "<wp:cNvGraphicFramePr/><a:graphic><a:graphicData" +
