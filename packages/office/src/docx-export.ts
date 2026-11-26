@@ -1672,6 +1672,21 @@ class Exporter {
     const grid = info?.grid ?? Array.from({ length: columns }, () => tableWidth / columns);
     if (grid.length !== columns)
       unsupported("The current table structure no longer matches its native column grid.");
+    const tablePropertiesCss = { ...this.tablePropertyDifference(node, css, "table") };
+    const leading = matrix[0]?.[0]?.node;
+    if ((this.snapshot.metadata.word?.compatibilityMode ?? 12) < 15
+      && !(this.css.specified(node)["--word-table-indent-origin"] !== undefined
+        && css["--word-table-indent-origin"] === "native")
+      && css["--word-table-floating"] !== "1"
+      && css["margin-left"] !== "auto" && css["margin-right"] !== "auto"
+      && leading && !leading.attrs["data-word-grid-gap"]) {
+      // Plain HTML/CSS owns a physical border margin. Legacy native Word owns
+      // the leading text position instead; make that conversion explicit.
+      const cellCss = this.css.get(leading);
+      const margin = css["margin-left"], padding = cellCss["padding-left"];
+      tablePropertiesCss["margin-left"] = (points(!margin || margin === "initial" ? "0pt" : margin, css, this.width)
+        + points(!padding || padding === "initial" ? "0pt" : padding, cellCss, tableWidth)) + "pt";
+    }
     this.add(
       "<w:tbl" +
         this.nativeMark(node.attrs["data-node-id"]) +
@@ -1685,7 +1700,7 @@ class Exporter {
             (info?.columnBandSize !== undefined
               ? value("tblStyleColBandSize", info.columnBandSize)
               : "") +
-            tableProperties(this.tablePropertyDifference(node, css, "table")) +
+            tableProperties(tablePropertiesCss) +
             (info?.lookMask !== undefined
               ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") })
               : "") +

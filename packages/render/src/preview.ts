@@ -16,6 +16,7 @@ import { composeWordTableLayout } from "./word-table-layout.js";
 import { composeWordContinuationCells } from "./word-continuation-cells.js";
 import { composeWordTableBidi } from "./word-table-bidi.js";
 import { composeWordTableSpacing } from "./word-table-spacing.js";
+import { composeWordTableIndent } from "./word-table-indent.js";
 import { composeWordRowSpacing } from "./word-row-spacing.js";
 import { composeWordParagraphMarks } from "./word-paragraph-marks.js";
 import { composeWordNative } from "./word-native.js";
@@ -634,6 +635,7 @@ export function mountPreview(
     const rowSpacing = composeWordRowSpacing(frame, model, limits);
     composeWordRowExceptions(frame, model, limits);
     composeWordTableBidi(frame, model);
+    composeWordTableIndent(frame, model);
     composeWordTableLayout(frame, limits, snapshot.metadata.word);
     continuationCells = composeWordContinuationCells(frame, model, limits, rowSpacing);
     floatingTables = composeWordFloatingTables(frame, model, limits);

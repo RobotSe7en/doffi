@@ -96,6 +96,23 @@ Word、PowerPoint、Excel 16.114.1 的选项卡、Home 命令顺序和字体／�
 
 扩展到同字体合并表格后，内置浏览器显示表格边界比 Word 向左约 4 px，三行高度也有小差异。另造无样式、空默认样式、自定义默认／显式样式、显式边距及更换样式 ID／名称的独立副本，直接查询 Word 的表格边距和行缩进：只有样式 ID 相同不足以确定内置默认，`Normal Table` 名称与普通自定义样式的未声明属性存在差异。仅按是否绑定样式选择 5.4pt 的候选修改无法覆盖这些情况，已撤回，未纳入本轮修复或验收通过项。后续需要统一处理样式有效值、继承／覆盖、缩进原点和兼容模式，再覆盖预览、编辑、原生导出重开；不能用这个样例的坐标补偿代替通用规则。
 
+### 原生表格缩进的通用映射
+
+进一步对四种样例实际插入文字并原生保存，Word 将缺失的默认值展开为显式 `tblInd`、`tblCellMar` 和兼容模式 12。这些规范化结果揭示了独立于文件名、样式 ID 和固定坐标的原点差异：旧兼容模式的原生缩进以首格文字为原点，CSS margin 以边框为原点。随后用两份仅兼容模式不同、缩进 12pt、首格边距 7pt 的独立 DOCX，在 Word 直接读取首格文字相对纸面的横坐标。
+
+| 兼容模式 | 独立输入在 Word 的文字横坐标 | SDK 导出件在 Word 的文字横坐标 |
+| --- | --- | --- |
+| 14 | 84.00pt | 84.00pt |
+| 15 | 90.95pt | 90.95pt |
+
+共享渲染已按兼容模式和实际生效的首格边距换算，支持从样式继承缩进、单元格覆盖及双向前导边。声明限于各表自身，嵌套表格不继承父表原点。源保留原生数值；输入、撤销和 DOCX 重开不叠加位移。普通 CSS 的 18pt 物理边距加 7pt 首格边距，导出为旧模式 25pt 原生缩进；Word 实际读到 25pt，文字横坐标为 97.25pt。`pct`／`auto` 缩进按 [原生定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.tableindentation)忽略，不覆盖有效继承值。
+
+内置浏览器和 Word 再次打开同一份模式 14 文件、使用 DengXian 和相同纸宽：首格文字相对参考段落均右移约 12pt；浏览器 DOM 实测为 11.9883pt。没有按文件名、样式 ID、文本内容或样例坐标设置渲染分支。自动回归有八组属性组合，另检查普通 CSS 边距的逆向导出、重置、输入及撤销。原始无声明样例的内置样式默认、行高、复杂行例外等仍未全部关闭，不能据此声明整体 Word 视觉一致。
+
+本机来源摘要：`native-indent-14.docx` 为 `8c629c0f72c46d7cfd22e5099eed1663733f0d865345107f20562768f9039f18`；`native-indent-15.docx` 为 `0b4fd603b4b68ec6bade138f21032c4ca0fdd53c55c4adcaec3e3c4835d62b2b`。公开合成源构造见 [表格缩进夹具](../packages/office/tests/table-indent-fixture.ts)，自动预览／编辑验证见 [浏览器用例](../tests/browser/word-table-indent-cases.ts)。
+
+### 批注证据与本轮检查
+
 四类部件 MIME 的依据为 Microsoft Open XML SDK 的原始元数据：[CommentsExtended](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingCommentsExPart.json)、[CommentsIds](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingCommentsIdsPart.json)、[CommentsExtensible](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordCommentsExtensiblePart.json)、[People](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingPeoplePart.json)。新增回归同时断言精确 MIME、根范围与回复引用，保留既有多次 SDK 重开及批注保留检查。
 
 | 实际原生编辑保存文件 | SHA-256 |
@@ -105,4 +122,4 @@ Word、PowerPoint、Excel 16.114.1 的选项卡、Home 命令顺序和字体／�
 
 另外修复 UI-02 的错误路由：绘图选择窗格显示当前故事的对象及组合子项，支持指针多选、键盘定位、属性窗口和删除。父组与子项同时选中时，移动、复制、组合和删除统一使用顶层选项，避免对子对象重复处理，事务可以撤销。只读查找、标题导航和统计已经接通工作区；定位使用当前修订的准确 UTF-16 范围，不触发编辑或新增历史。它们不代表完整 Word 大纲视图及全部选择窗格操作。
 
-定向验证：74 项相关 Office 单元测试、9 项 Chromium 浏览器测试通过，覆盖多个范围／点批注线程、字体导出、组合父子对象去重与撤销、既有拖动缩放、只读查找和导航、外部内容变化后定位刷新、完整工作区入口及独立 SDK 宿主的预览／编辑切换。SDK／Playground 构建、工具类型检查及架构边界通过。没有运行远程全量 CI。
+最终源定向验证：19 个 Office 测试文件共 223 项、18 项 Chromium 浏览器测试通过。表格用例含八组原生属性组合、普通 CSS 逆向映射及重置、预览／编辑／导出重开、输入与撤销，并复核省略网格、旧版自动宽度、样式切换和浮动表格。其余用例覆盖批注线程、字体、组合对象、导航及独立 SDK 宿主切换。SDK／Playground 构建、工具类型检查及架构边界通过。没有运行远程全量 CI。

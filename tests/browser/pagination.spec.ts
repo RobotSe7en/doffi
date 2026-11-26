@@ -1,4 +1,5 @@
 import { registerWordFloatingSectionTests } from "./word-floating-section-cases.js";
+import { registerWordTableIndentTests } from "./word-table-indent-cases.js";
 import { registerWordPunctuationTests } from "./word-punctuation-cases.js";
 import { registerWordDrawingSizeTests } from "./word-drawing-size-cases.js";
 import { registerWordDrawingWrapTests } from "./word-drawing-wrap-cases.js";
@@ -58,6 +59,7 @@ declare global {
   }
 }
 let code: string;
+registerWordTableIndentTests(mount);
 
 test("native style components preserve relative spacing in preview and editing after DOCX reopen", async ({ page }) => {
   const model = openWordDocument(importDocx(mutateDocx("04-styles-sections.docx", {}), { documentId: "relative-paragraph-style" }), { kind: "document" });

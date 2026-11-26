@@ -1009,7 +1009,13 @@ export class DocxStyles {
     } else if (align === "right") result["margin-left"] = "auto";
     else if (align && align !== "left" && align !== "start") unsupported(properties);
     const indent = child(properties, "tblInd");
-    if (indent) result["margin-left"] = this.width(indent, "margin-left")["margin-left"] ?? "0pt";
+    if (indent) {
+      const width = this.width(indent, "margin-left");
+      if (!["auto", "pct"].includes(attr(indent, "type") ?? "dxa")) {
+        result["margin-left"] = width["margin-left"] ?? "0pt";
+        result["--word-table-indent-origin"] = "native";
+      }
+    }
     const shade = child(properties, "shd");
     if (shade && attr(shade, "fill") !== "auto")
       result["background-color"] = this.color(shade, "fill") ?? "transparent";
@@ -1036,6 +1042,7 @@ export class DocxStyles {
       ),
     };
     const css = { ...this.table(current), ...this.margins(child(current, "tblCellMar")) };
+    delete css["--word-table-indent-origin"];
     delete css["border-collapse"];
     delete css["border-spacing"];
     for (const key of Object.keys(css))
