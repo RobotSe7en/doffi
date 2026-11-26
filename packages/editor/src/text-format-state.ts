@@ -10,6 +10,10 @@ export interface TextFormatState {
   readonly italic?: boolean;
   readonly underline?: boolean;
   readonly strikethrough?: boolean;
+  readonly doubleStrikethrough?: boolean;
+  readonly characterBorder?: boolean;
+  readonly inTable?: boolean;
+  readonly themeColors?: readonly string[];
   readonly verticalAlign?: string;
   readonly backgroundColor?: string;
   readonly fontSize?: number;
@@ -167,10 +171,77 @@ export function readTextFormat(
           }),
         );
   const characterProperties: Record<string, string> = {};
-  for (const key of ["letter-spacing", "text-decoration-style", "text-decoration-color", "--word-run-native-w", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-snap-to-grid", "--word-language-val", "--word-language-eastAsia", "--word-language-bidi"]) {
-    const value = range.collapsed && typing.has(key) ? typing.get(key) : uniform(style => style.getPropertyValue(key).trim() || (key === "--word-run-native-w" ? "100" : ""));
+  for (const key of [
+    "letter-spacing",
+    "text-decoration-style",
+    "text-decoration-color",
+    "font-variant",
+    "text-transform",
+    "--word-run-native-w",
+    "--word-dstrike",
+    "--word-underline-style",
+    "--word-run-native-vanish",
+    "--word-run-native-position",
+    "--word-run-native-em",
+    "--word-run-border",
+    "--word-opentype-ligatures",
+    "--word-opentype-num-spacing",
+    "--word-opentype-num-form",
+    "--word-opentype-stylistic-set",
+    "--word-opentype-contextual-alternates",
+    "--word-font-ascii",
+    "--word-font-hAnsi",
+    "--word-font-eastAsia",
+    "--word-font-cs",
+    "--word-font-size-cs",
+    "--word-bold-cs",
+    "--word-italic-cs",
+    "--word-kerning-threshold",
+    "--word-run-snap-to-grid",
+    "--word-language-val",
+    "--word-language-eastAsia",
+    "--word-language-bidi",
+  ]) {
+    const value =
+      range.collapsed && typing.has(key)
+        ? typing.get(key)
+        : uniform(
+            (style) =>
+              style.getPropertyValue(key).trim() || (key === "--word-run-native-w" ? "100" : ""),
+          );
     if (value) characterProperties[key] = value;
   }
+  const doubleStrikethrough =
+    range.collapsed && typing.has("--word-dstrike")
+      ? typing.get("--word-dstrike") === "1"
+      : same(styles.map((style) => style.getPropertyValue("--word-dstrike").trim() === "1"));
+  const characterBorder =
+    range.collapsed && typing.has("--word-run-border")
+      ? Boolean(typing.get("--word-run-border") && typing.get("--word-run-border") !== "none")
+      : same(
+          styles.map((style) => {
+            const border = style.getPropertyValue("--word-run-border").trim();
+            return Boolean(border && border !== "none");
+          }),
+        );
+  const inTable = elements.length > 0 && elements.every((element) => Boolean(element.closest("td,th")));
+  const themeOwner = root.closest<HTMLElement>('[data-office-kind="document"]') ?? root;
+  const rootStyle = view.getComputedStyle(themeOwner);
+  const themeSlots = [
+    "--office-theme-lt1",
+    "--office-theme-dk1",
+    "--office-theme-lt2",
+    "--office-theme-dk2",
+    "--office-theme-accent1",
+    "--office-theme-accent2",
+    "--office-theme-accent3",
+    "--office-theme-accent4",
+    "--office-theme-accent5",
+    "--office-theme-accent6",
+  ].map((slot) => rootStyle.getPropertyValue(slot).trim().toLowerCase());
+  const themeColors = themeSlots.every((color) => /^#[0-9a-f]{6}$/i.test(color))
+    ? themeSlots
+    : undefined;
   const paragraphStyleId = same(
     elements.map(
       (element) => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")?.dataset.wordStyle,
@@ -194,6 +265,10 @@ export function readTextFormat(
     ...(paragraphs.length ? { paragraphProperties } : {}),
     ...(paragraphStyleId === undefined ? {} : { paragraphStyleId }),
     ...(strike === undefined ? {} : { strikethrough: strike }),
+    ...(doubleStrikethrough === undefined ? {} : { doubleStrikethrough }),
+    ...(characterBorder === undefined ? {} : { characterBorder }),
+    ...(inTable ? { inTable: true } : {}),
+    ...(themeColors ? { themeColors } : {}),
     ...(verticalAlign === undefined ? {} : { verticalAlign }),
     ...(backgroundColor === undefined ? {} : { backgroundColor }),
     ...(weight === undefined ? {} : { bold: weight === "bold" || Number(weight) >= 600 }),

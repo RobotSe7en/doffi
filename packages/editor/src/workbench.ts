@@ -1,3 +1,5 @@
+import type { WordPageZoomMode } from "./viewport-zoom.js";
+import type { WordPasteMode } from "./clipboard-command.js";
 import type { TextFormatState } from "./text-format-state.js";
 import { DocumentError, parseContract } from "@doffi/core";
 import type {
@@ -56,9 +58,13 @@ export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
   readonly onEvent?: (event: DocumentWorkbenchEvent) => void;
 }
 export interface DocumentWorkbenchView extends DocumentInteractionView {
+  fitPage(mode: WordPageZoomMode): number;
+  stepAnnotation(direction: -1 | 1): void;
+  toggleActiveAnnotationResolved(): void;
+  removeActiveAnnotation(): void;
   setEditing(editing: boolean): Promise<void>;
   formatState(): TextFormatState;
-  clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
+  clipboard(action: "copy" | "cut" | "paste", options?: { readonly pasteMode?: WordPasteMode }): Promise<void>;
   executeTextCommand(command: DocumentTextCommand): void;
   updateFields(): void;
   request(): DocumentInteractionRequest | undefined;
@@ -285,6 +291,12 @@ function mountContentWorkbench(
     else interaction.setZoom(value);
     zoom = value;
   }
+  function fitPage(mode: WordPageZoomMode): number {
+    ensureActive();
+    const target = textEditor ? textEditor.fitPage(mode) : interaction.fitPage!(mode);
+    zoom = target;
+    return target;
+  }
   function setEditing(value: boolean): Promise<void> {
     ensureActive();
     if (value && options.editable === false)
@@ -304,6 +316,7 @@ function mountContentWorkbench(
           ? { onFormatStateChange: options.onFormatStateChange }
           : {}),
         ...(options.layout ? { layout: options.layout } : {}),
+        ...(options.draft ? { draft: options.draft } : {}),
         ...(options.limits ? { limits: options.limits } : {}),
         ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
         ...(options.appearance ? { appearance: options.appearance } : {}),
@@ -673,11 +686,11 @@ function mountContentWorkbench(
       return Promise.all([interaction.ready, candidateReady, textEditor?.ready]).then(() => {});
     },
     settled: () => (textEditor ? textEditor.settled() : interaction.settled()),
-    clipboard(action) {
+    clipboard(action, clipOptions) {
       ensureActive();
       if (!textEditor)
         return Promise.reject(new DocumentError("InvalidOperation", "请先进入正文编辑。"));
-      return textEditor.clipboard(action);
+      return textEditor.clipboard(action, clipOptions);
     },
     setEditing,
     updateFields,
@@ -703,8 +716,12 @@ function mountContentWorkbench(
       else interaction.openWordNavigation(action);
     },
     setZoom,
+    fitPage,
     goToPage: (page) => (textEditor ?? interaction).goToPage(page),
     focusAnnotation: interaction.focusAnnotation,
+    stepAnnotation: (direction) => interaction.stepAnnotation!(direction),
+    toggleActiveAnnotationResolved: () => interaction.toggleActiveAnnotationResolved!(),
+    removeActiveAnnotation: () => interaction.removeActiveAnnotation!(),
     startAnnotation: interaction.startAnnotation,
     request: () => activeRequest,
     buildRequest,

@@ -87,6 +87,17 @@ export function wordTextDefaults(
     "--word-run-snap-to-grid": "1",
     "--word-run-shading": "transparent",
     "--word-run-native-w": "100",
+    "--word-run-native-vanish": "0",
+    "--word-run-native-position": "0",
+    "--word-run-native-em": "none",
+    "--word-dstrike": "0",
+    "--word-underline-style": "none",
+    "--word-run-border": "none",
+    "--word-opentype-ligatures": "none",
+    "--word-opentype-num-spacing": "default",
+    "--word-opentype-num-form": "default",
+    "--word-opentype-stylistic-set": "none",
+    "--word-opentype-contextual-alternates": "0",
     "--word-font-hint": "default",
   }))
     properties[key] = css[key] ?? value;

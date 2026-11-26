@@ -28,6 +28,10 @@ export function createWordDrawingControls(
   open(action: WordDrawingAction): void;
   insertImage(file: File): Promise<void>;
   selectedNodeIds(): readonly string[];
+  selectByNodeId(nodeId: string): void;
+  reorderSelected(direction: "forward" | "backward"): void;
+  groupOrUngroupSelected(): void;
+  removeSelected(): void;
   editSelectedText(): void;
   bind(root: HTMLElement, projection: SourceProjection, signal: AbortSignal): void;
   dispose(): void;
@@ -42,6 +46,152 @@ export function createWordDrawingControls(
     paintSelection = (): void => {},
     updateSelectionPane: (() => void) | undefined;
   const drawings = () => session.snapshot().metadata.word?.drawings ?? [];
+  const storyDrawings = () => {
+    const all = drawings();
+    const storyRootId = boundRoot?.dataset.nodeId;
+    const inStory = all.filter((item) => {
+      if (storyRootId) {
+        for (
+          let current: string | null | undefined = item.nodeId;
+          current;
+          current = session.getNode(current)?.parentNodeId
+        )
+          if (current === storyRootId) return true;
+        return false;
+      }
+      return Boolean(boundRoot?.querySelector('[data-sdk-word-object="' + CSS.escape(item.nodeId) + '"]'));
+    });
+    const byId = new Map(inStory.map((item) => [item.nodeId, item]));
+    const childrenOf = new Map<string, typeof inStory>();
+    const roots: typeof inStory = [];
+    for (const item of inStory) {
+      let parentDrawing: string | undefined;
+      for (
+        let parentId = session.getNode(item.nodeId)?.parentNodeId;
+        parentId;
+        parentId = session.getNode(parentId)?.parentNodeId
+      ) {
+        if (byId.has(parentId)) {
+          parentDrawing = parentId;
+          break;
+        }
+      }
+      if (parentDrawing) {
+        const list = childrenOf.get(parentDrawing) ?? [];
+        list.push(item);
+        childrenOf.set(parentDrawing, list);
+      } else roots.push(item);
+    }
+    const ordered: { item: (typeof inStory)[number]; depth: number }[] = [];
+    const visit = (items: typeof inStory, depth: number) => {
+      const sorted =
+        depth === 0
+          ? [...items].sort((a, b) => (b.layout.zOrder ?? 0) - (a.layout.zOrder ?? 0))
+          : items;
+      for (const item of sorted) {
+        ordered.push({ item, depth });
+        const kids = childrenOf.get(item.nodeId);
+        if (kids?.length) visit(kids, depth + 1);
+      }
+    };
+    visit(roots, 0);
+    return ordered;
+  };
+  const selectByNodeId = (nodeId: string): void => {
+    if (!drawings().some((item) => item.nodeId === nodeId)) return;
+    selected = [nodeId];
+    paintSelection();
+    updateSelectionPane?.();
+  };
+  const reorderSelected = (direction: "forward" | "backward"): void => {
+    const roots = selectedRoots()
+      .map((id) => drawings().find((item) => item.nodeId === id))
+      .filter((item): item is WordDrawing => Boolean(item));
+    if (!roots.length)
+      throw new DocumentError("InvalidOperation", "请先选择一个绘图对象再调整层序。");
+    const siblings = storyDrawings()
+      .filter((entry) => entry.depth === 0)
+      .map((entry) => entry.item);
+    const ops: DocumentOperation[] = [];
+    for (const target of roots) {
+      const currentZ = target.layout.zOrder ?? 0;
+      const idx = siblings.findIndex((item) => item.nodeId === target.nodeId);
+      const neighbor = direction === "forward" ? siblings[idx - 1] : siblings[idx + 1];
+      let nextZ: number;
+      if (neighbor) {
+        const neighborZ = neighbor.layout.zOrder ?? 0;
+        if (direction === "forward") {
+          nextZ = Math.max(currentZ + 1, neighborZ + 1);
+        } else {
+          if (neighborZ > 0) {
+            nextZ = Math.max(0, Math.min(currentZ - 1, neighborZ - 1));
+          } else {
+            nextZ = 0;
+            ops.push({
+              op: "setWordDrawingLayout",
+              nodeId: neighbor.nodeId,
+              layout: { ...(JSON.parse(JSON.stringify(neighbor.layout)) as WordDrawingLayout), zOrder: 1 },
+            });
+          }
+        }
+      } else {
+        nextZ = direction === "forward" ? currentZ + 1 : Math.max(0, currentZ - 1);
+      }
+      if (nextZ !== currentZ || ops.length) {
+        ops.push({
+          op: "setWordDrawingLayout",
+          nodeId: target.nodeId,
+          layout: { ...(JSON.parse(JSON.stringify(target.layout)) as WordDrawingLayout), zOrder: nextZ },
+        });
+      }
+    }
+    if (ops.length) apply(ops);
+    updateSelectionPane?.();
+  };
+  const groupOrUngroupSelected = (): void => {
+    const roots = selectedRoots()
+      .map((id) => drawings().find((item) => item.nodeId === id))
+      .filter((item): item is WordDrawing => Boolean(item));
+    if (roots.length === 1 && roots[0]!.kind === "group") {
+      apply([
+        ...materialize([roots[0]!]),
+        { op: "ungroupWordDrawing", nodeId: roots[0]!.nodeId },
+      ]);
+      selected = [];
+      paintSelection();
+      updateSelectionPane?.();
+      return;
+    }
+    if (roots.length < 2)
+      throw new DocumentError("InvalidOperation", "请选择两个及以上浮动对象以组合，或选择一个组合以取消组合。");
+    const paragraphs = roots.map((item) => {
+      let current = session.getNode(item.nodeId)?.parentNodeId;
+      while (current) {
+        const node = session.getNode(current);
+        if (node && /^p$|^h[1-6]$/.test(node.tagName)) return current;
+        current = node?.parentNodeId;
+      }
+      return undefined;
+    });
+    const paragraphId = paragraphs[0];
+    if (!paragraphId || paragraphs.some((id) => id !== paragraphId))
+      throw new DocumentError("InvalidOperation", "仅支持组合同一段落下的浮动绘图对象。");
+    apply([
+      ...materialize(roots),
+      { op: "groupWordDrawings", nodeId: paragraphId, nodeIds: roots.map((item) => item.nodeId) },
+    ]);
+    selected = [];
+    paintSelection();
+    updateSelectionPane?.();
+  };
+  const removeSelected = (): void => {
+    const roots = selectedRoots();
+    if (!roots.length) return;
+    apply(roots.map((nodeId) => ({ op: "removeWordDrawing", nodeId })));
+    selected = [];
+    paintSelection();
+    updateSelectionPane?.();
+  };
   const selectedRoots = () => selected.filter(id => {
     for (let parentId = session.getNode(id)?.parentNodeId; parentId; parentId = session.getNode(parentId)?.parentNodeId)
       if (selected.includes(parentId)) return false;
@@ -191,14 +341,53 @@ export function createWordDrawingControls(
       panel = document.createElement("section");
       panel.setAttribute("role", "region");
       panel.setAttribute("aria-label", "选择窗格");
-      panel.style.cssText = "padding:12px;background:white;border:1px solid #dbe3ef;max-height:320px;overflow:auto";
-      const title = document.createElement("strong"), closeButton = document.createElement("button"), settings = document.createElement("button"), list = document.createElement("div");
+      panel.style.cssText =
+        "padding:12px;background:white;border:1px solid #dbe3ef;max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:8px";
+      const header = document.createElement("div");
+      header.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:6px";
+      const title = document.createElement("strong");
       title.textContent = "选择窗格";
-      closeButton.type = settings.type = "button";
-      closeButton.textContent = "关闭选择窗格";
-      settings.textContent = "对象属性";
-      closeButton.addEventListener("click", close, { signal });
-      settings.addEventListener("click", () => attempt(() => open("drawingSettings")), { signal });
+      title.style.marginRight = "auto";
+      const makeButton = (text: string, onClick: () => void): HTMLButtonElement => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = text;
+        btn.addEventListener("click", () => attempt(onClick), { signal });
+        return btn;
+      };
+      const showAll = makeButton("全部显示", () => {
+        const ops = storyDrawings()
+          .filter(({ item }) => item.layout.hidden)
+          .map(({ item }) => ({
+            op: "setWordDrawingLayout" as const,
+            nodeId: item.nodeId,
+            layout: { ...(JSON.parse(JSON.stringify(item.layout)) as WordDrawingLayout), hidden: false },
+          }));
+        if (ops.length) apply(ops);
+        updateSelectionPane?.();
+      });
+      const hideAll = makeButton("全部隐藏", () => {
+        const ops = storyDrawings()
+          .filter(({ item }) => !item.layout.hidden)
+          .map(({ item }) => ({
+            op: "setWordDrawingLayout" as const,
+            nodeId: item.nodeId,
+            layout: { ...(JSON.parse(JSON.stringify(item.layout)) as WordDrawingLayout), hidden: true },
+          }));
+        if (ops.length) apply(ops);
+        updateSelectionPane?.();
+      });
+      const moveUp = makeButton("上移一层", () => reorderSelected("forward"));
+      const moveDown = makeButton("下移一层", () => reorderSelected("backward"));
+      let renamingId: string | undefined;
+      const renameBtn = makeButton("重命名", () => {
+        if (selected.length !== 1) return;
+        renamingId = selected[0];
+        updateSelectionPane?.();
+      });
+      const settings = makeButton("对象属性", () => open("drawingSettings"));
+      const closeButton = makeButton("关闭选择窗格", close);
+      const list = document.createElement("div");
       list.setAttribute("role", "listbox");
       list.setAttribute("aria-label", "绘图对象");
       list.setAttribute("aria-multiselectable", "true");
@@ -213,18 +402,29 @@ export function createWordDrawingControls(
         if (focus) list.querySelector<HTMLButtonElement>('[data-word-selection-id="' + CSS.escape(id) + '"]')?.focus();
       };
       list.addEventListener("click", event => {
-        const id = (event.target as Element).closest<HTMLElement>("[data-word-selection-id]")?.dataset.wordSelectionId;
+        const targetEl = event.target as Element;
+        if (targetEl.closest("[data-word-selection-toggle]") || targetEl.closest("[data-word-selection-rename]")) return;
+        const id = targetEl.closest<HTMLElement>("[data-word-selection-id]")?.dataset.wordSelectionId;
         if (id) selectObject(id, event.shiftKey || event.ctrlKey || event.metaKey, true);
       }, { signal });
+      list.addEventListener("dblclick", event => {
+        const id = (event.target as Element).closest<HTMLElement>("[data-word-selection-id]")?.dataset.wordSelectionId;
+        if (id) {
+          selected = [id];
+          renamingId = id;
+          paintSelection();
+          updateSelectionPane?.();
+        }
+      }, { signal });
       list.addEventListener("keydown", event => {
-        if (event.key === "Delete" || event.key === "Backspace") {
+        if ((event.target as Element).closest("[data-word-selection-rename]")) return;
+        if (event.key === "F2" && selected.length === 1) {
           event.preventDefault();
-          attempt(() => {
-            if (selected.length) apply(selectedRoots().map(nodeId => ({ op: "removeWordDrawing", nodeId })));
-            selected = [];
-            paintSelection();
-            updateSelectionPane?.();
-          });
+          renamingId = selected[0];
+          updateSelectionPane?.();
+        } else if (event.key === "Delete" || event.key === "Backspace") {
+          event.preventDefault();
+          attempt(() => removeSelected());
         } else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
           event.preventDefault();
           const options = [...list.querySelectorAll<HTMLButtonElement>("[data-word-selection-id]")];
@@ -237,25 +437,80 @@ export function createWordDrawingControls(
       }, { signal });
       updateSelectionPane = () => {
         list.replaceChildren();
-        const visible = drawings().filter(item => boundRoot?.querySelector('[data-sdk-word-object="' + CSS.escape(item.nodeId) + '"]'));
-        for (const [index, item] of visible.entries()) {
-          const option = document.createElement("button");
-          option.type = "button";
-          option.setAttribute("role", "option");
-          option.setAttribute("aria-selected", String(selected.includes(item.nodeId)));
-          option.dataset.wordSelectionId = item.nodeId;
-          option.textContent = item.name || kinds[item.kind] + " " + (index + 1);
-          let depth = 0;
-          for (let parentId = session.getNode(item.nodeId)?.parentNodeId; parentId; parentId = session.getNode(parentId)?.parentNodeId)
-            if (visible.some(parent => parent.nodeId === parentId)) depth++;
-          option.style.cssText = "display:block;width:100%;text-align:left;padding:6px;padding-left:" + (6 + depth * 16) + "px;"
-            + (selected.includes(item.nodeId) ? "background:#dce9f9;color:#123456" : "");
-          list.append(option);
+        const visible = storyDrawings();
+        for (const [index, { item, depth }] of visible.entries()) {
+          const row = document.createElement("div");
+          row.style.cssText = "display:flex;align-items:center;gap:4px";
+          const displayName = item.name || kinds[item.kind] + " " + (index + 1);
+          if (renamingId === item.nodeId) {
+            const input = document.createElement("input");
+            input.type = "text";
+            input.value = displayName;
+            input.dataset.wordSelectionRename = item.nodeId;
+            input.setAttribute("aria-label", "对象名称");
+            input.style.cssText = "flex:1;padding:4px 6px;margin-left:" + (6 + depth * 16) + "px";
+            let finished = false;
+            const finish = (commit: boolean) => {
+              if (finished) return;
+              finished = true;
+              const nextName = input.value.trim();
+              renamingId = undefined;
+              if (commit && nextName !== (item.name ?? ""))
+                attempt(() => apply([{ op: "setWordDrawingName", nodeId: item.nodeId, name: nextName }]));
+              updateSelectionPane?.();
+            };
+            input.addEventListener("keydown", (event) => {
+              if (event.key === "Enter") { event.preventDefault(); finish(true); }
+              else if (event.key === "Escape") { event.preventDefault(); finish(false); }
+            }, { signal });
+            input.addEventListener("blur", () => finish(true), { signal });
+            row.append(input);
+            queueMicrotask(() => { input.focus(); input.select(); });
+          } else {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", String(selected.includes(item.nodeId)));
+            option.dataset.wordSelectionId = item.nodeId;
+            option.textContent = displayName + (item.layout.hidden ? "（已隐藏）" : "");
+            option.style.cssText =
+              "flex:1;text-align:left;padding:6px;padding-left:" +
+              (6 + depth * 16) +
+              "px;" +
+              (item.layout.hidden ? "opacity:.55;" : "") +
+              (selected.includes(item.nodeId) ? "background:#dce9f9;color:#123456" : "");
+            row.append(option);
+          }
+          const toggleVis = document.createElement("button");
+          toggleVis.type = "button";
+          toggleVis.dataset.wordSelectionToggle = item.nodeId;
+          toggleVis.setAttribute("aria-label", (item.layout.hidden ? "显示 " : "隐藏 ") + displayName);
+          toggleVis.setAttribute("aria-pressed", String(Boolean(item.layout.hidden)));
+          toggleVis.textContent = item.layout.hidden ? "显示" : "隐藏";
+          toggleVis.style.cssText = "padding:4px 8px;font-size:12px";
+          toggleVis.addEventListener("click", () => {
+            attempt(() => {
+              const nextLayout = JSON.parse(JSON.stringify(item.layout)) as WordDrawingLayout;
+              nextLayout.hidden = !item.layout.hidden;
+              apply([{ op: "setWordDrawingLayout", nodeId: item.nodeId, layout: nextLayout }]);
+              updateSelectionPane?.();
+            });
+          }, { signal });
+          row.append(toggleVis);
+          list.append(row);
         }
         if (!visible.length) list.textContent = "当前故事没有绘图对象。";
-        settings.disabled = !selected.length;
+        const hasAny = visible.length > 0;
+        const hasSelected = selected.some((id) => visible.some((entry) => entry.item.nodeId === id));
+        settings.disabled = !hasSelected;
+        moveUp.disabled = !hasSelected;
+        moveDown.disabled = !hasSelected;
+        renameBtn.disabled = selected.length !== 1 || !hasSelected;
+        showAll.disabled = !visible.some((entry) => entry.item.layout.hidden);
+        hideAll.disabled = !visible.some((entry) => !entry.item.layout.hidden) || !hasAny;
       };
-      panel.append(title, closeButton, settings, list);
+      header.append(title, showAll, hideAll, moveUp, moveDown, renameBtn, settings, closeButton);
+      panel.append(header, list);
       parent.insertBefore(panel, before);
       updateSelectionPane();
       return;
@@ -1117,6 +1372,10 @@ export function createWordDrawingControls(
   }
   return {
     selectedNodeIds: () => selected.filter((id) => drawings().some((d) => d.nodeId === id)),
+    selectByNodeId,
+    reorderSelected,
+    groupOrUngroupSelected,
+    removeSelected,
     editSelectedText,
     open,
     insertImage,

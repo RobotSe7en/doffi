@@ -4,6 +4,7 @@ import { composeWordContextualSpacing } from "./word-contextual-spacing.js";
 import { composeWordFloatingTables } from "./word-floating-tables.js";
 import { wordFloatingPlacement } from "./word-floating-placement.js";
 import { composeWordTextRuns } from "./word-text-runs.js";
+import { composeWordRunDecorations } from "./word-run-decorations.js";
 import { composeWordLanguages } from "./word-languages.js";
 import { composeWordTypography } from "./word-typography.js";
 import { wordPunctuationLayout } from "./word-punctuation.js";
@@ -65,6 +66,7 @@ export interface DocumentPreview {
 export interface DocumentPreviewOptions {
   readonly title?: string;
   readonly layout?: "pages" | "continuous";
+  readonly draft?: boolean;
   readonly limits?: Partial<RenderLimits>;
   readonly wordWebFonts?: readonly WordWebFont[];
   /** When provided, the input owner recomposes after new fonts load instead of
@@ -207,7 +209,11 @@ function releaseWordUrls(previous: ReadonlyMap<string, string>, next?: ReadonlyM
     if (next?.get(path) !== url) URL.revokeObjectURL(url);
 }
 
-function prepareDocument(input: ContentDocumentModel, previous?: PreparedWordPreview): PreparedWordPreview {
+function prepareDocument(
+  input: ContentDocumentModel,
+  previous?: PreparedWordPreview,
+  draft = false,
+): PreparedWordPreview {
   const model = captureContentModel(input, "document");
   const snapshot = model.snapshot();
   if (snapshot.manifest.kind !== "document" || snapshot.metadata.presentation !== undefined)
@@ -234,7 +240,8 @@ function prepareDocument(input: ContentDocumentModel, previous?: PreparedWordPre
   parsed.head.append(style);
   const frameStyle = parsed.createElement("style");
   const setup = snapshot.metadata.pageSetup;
-  frameStyle.textContent = `html{background:#eceef1}body{margin:0;padding:24px;font-size:12pt}article{box-sizing:border-box;margin:0 auto;width:${setup.width}pt;background:white;padding:${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt}p,h1,h2,h3,h4,h5,h6{margin:0;font-size:inherit;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}.sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-sdk-word-text-review="insert"]{color:#006400!important;text-decoration-line:var(--sdk-word-authored-insert-decoration,underline)!important}[data-sdk-word-text-review="delete"]{color:#a00000!important;text-decoration-line:var(--sdk-word-authored-delete-decoration,line-through)!important}[data-word-break="page"]{display:block;border-top:1px dashed #bbb;margin:18px 0}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}[data-word-native-boundary]{display:none!important}`;
+  frameStyle.textContent = `html{background:${draft ? "#fff" : "#eceef1"}}body{margin:0;padding:${draft ? "16px 28px" : "24px"};font-size:12pt}article{box-sizing:border-box;margin:${draft ? "0" : "0 auto"};width:${draft ? "100%" : setup.width + "pt"};background:white;padding:${draft ? "0" : `${setup.margins.top}pt ${setup.margins.right}pt ${setup.margins.bottom}pt ${setup.margins.left}pt`}}p,h1,h2,h3,h4,h5,h6{margin:0;font-size:inherit;font-weight:inherit;line-height:normal}td,th{padding:0;font-weight:inherit;text-align:inherit;vertical-align:top}p{min-height:1em}.sdk-section{box-sizing:border-box}${draft ? ".sdk-section{width:100%!important;margin:0!important;padding:0!important}.sdk-section+.sdk-section{border-top:2px double #7a869a;margin-top:16px!important;padding-top:14px!important;position:relative}.sdk-section+.sdk-section::before{content:'分节符';position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 8px;color:#5c687a;font:11px sans-serif}.sdk-story-label,.sdk-auxiliary{display:none!important}[data-word-break=\"page\"]{position:relative;border-top:1px dashed #7a869a!important;margin:16px 0!important}[data-word-break=\"page\"]::after{content:'分页符';position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 8px;color:#5c687a;font:11px sans-serif}" : ".sdk-story-label{font:600 12px sans-serif!important;color:#58606b!important;margin:24px 0 8px!important;padding:12px 0 0!important;border-top:1px solid #ccc!important}.sdk-auxiliary{border-left:2px solid #ddd;padding-left:12px}[data-word-break=\"page\"]{display:block;border-top:1px dashed #bbb;margin:18px 0}"}[data-word-field]{background:#f5f4ee}ins{color:#006400;text-decoration:underline}del{color:#a00000;text-decoration:line-through}[data-sdk-word-text-review="insert"]{color:#006400!important;text-decoration-line:var(--sdk-word-authored-insert-decoration,underline)!important}[data-sdk-word-text-review="delete"]{color:#a00000!important;text-decoration-line:var(--sdk-word-authored-delete-decoration,line-through)!important}.sdk-number-marker{pointer-events:none}[data-word-native-object]{display:inline-block;min-width:6em;min-height:1.5em;border:1px dashed #8290a5;background:#f1f4f8;color:transparent;position:relative;vertical-align:middle}[data-word-native-object]::after{content:attr(title);position:absolute;inset:0;padding:2px 5px;color:#526175;font:10pt sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}[data-sdk-native-preview]::after{display:none!important}[data-word-native-boundary]{display:none!important}[data-sdk-word-hidden="true"]{display:none}[data-doffi-show-marks] [data-sdk-word-hidden="true"]{display:inline;text-decoration-line:underline;text-decoration-style:dotted;text-decoration-color:#666}`;
+  if (draft) parsed.documentElement.dataset.wordView = "draft";
   parsed.head.insertBefore(frameStyle, style);
   const byId = new Map(
     [...parsed.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => [
@@ -350,7 +357,7 @@ export function mountPreview(
     );
   const limits = renderLimits({ maxPages: 512, maxNodes: 128_000, ...options.limits }),
     hostDocument = container.ownerDocument;
-  let prepared = prepareDocument(input),
+  let prepared = prepareDocument(input, undefined, Boolean(options.draft)),
     model = prepared.model;
   const iframe = hostDocument.createElement("iframe");
   iframe.title = options.title ?? "文档只读预览";
@@ -616,6 +623,7 @@ export function mountPreview(
     composeWordTextRuns(frame, model, limits);
     composeWordParagraphMarks(frame, model);
     composeWordLanguages(frame, model, limits);
+    composeWordRunDecorations(frame, model, limits);
     composeWordContextualSpacing(frame, model);
     const fontSelector = "[data-node-id],[data-sdk-word-script-view]";
     const hostedResolution = hostedFonts?.size
@@ -811,7 +819,7 @@ export function mountPreview(
           "Wait for renderer.ready before updating the view.",
         );
       const previous = prepared,
-        incoming = prepareDocument(next, previous);
+        incoming = prepareDocument(next, previous, Boolean(options.draft));
       generation++;
       observer?.disconnect();
       notes?.dispose();

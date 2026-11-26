@@ -355,6 +355,7 @@ class Exporter {
       }
     if (
       css["text-decoration-line"]?.includes("line-through") &&
+      !css["text-decoration-line"].includes("underline") &&
       !["solid", "double"].includes(css["text-decoration-style"] ?? "solid")
     )
       unsupported("This strike decoration has no supported native DOCX representation.");
@@ -2041,7 +2042,15 @@ class Exporter {
         this.width = this.sectionTextWidth(section, false);
         this.output = this.opc.part(info.path, contentType(info.kind));
         const tag = info.kind === "header" ? "hdr" : "ftr";
-        this.add(declaration + "<w:" + tag + namespaces + this.nativeMark(story.rootNodeId) + ">");
+        this.add(
+          declaration +
+            "<w:" +
+            tag +
+            namespaces +
+            ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"' +
+            this.nativeMark(story.rootNodeId) +
+            ">",
+        );
         this.blocks(this.tree.byId.get(story.rootNodeId)!.children);
         this.add("</w:" + tag + ">");
         this.output.finish();
@@ -2098,7 +2107,14 @@ class Exporter {
           path,
           "application/vnd.openxmlformats-officedocument.wordprocessingml." + kind + "s+xml",
         );
-        this.add(declaration + "<w:" + kind + "s" + namespaces + ">");
+        this.add(
+          declaration +
+            "<w:" +
+            kind +
+            "s" +
+            namespaces +
+            ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">',
+        );
         for (const [type, id, tag] of [
           ["separator", -1, "separator"],
           ["continuationSeparator", 0, "continuationSeparator"],

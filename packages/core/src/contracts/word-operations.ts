@@ -154,6 +154,12 @@ export const WordOperationSchema = z.discriminatedUnion("op", [
     rows: z.number().int().positive().safe(),
     columns: z.number().int().positive().safe(),
     width: z.number().positive().optional(),
+    cells: z.array(z.array(z.string())).optional(),
+  }),
+  z.strictObject({
+    op: z.literal("reorderWordNodes"),
+    nodeId: IdentifierSchema,
+    childNodeIds: z.array(IdentifierSchema).min(2),
   }),
   z.strictObject({ op: z.literal("deleteWordTable"), nodeId: IdentifierSchema }),
   z.strictObject({

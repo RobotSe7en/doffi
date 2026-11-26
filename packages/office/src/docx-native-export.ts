@@ -745,11 +745,16 @@ export function restoreDocxNative(
     "szCs",
     "highlight",
     "u",
+    "bdr",
     "vertAlign",
     "lang",
     "shd",
     "kern",
     "snapToGrid",
+    "vanish",
+    "position",
+    "em",
+    "w",
   ]);
   const applyProperty = (
     root: XmlNode,

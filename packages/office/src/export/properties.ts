@@ -4,6 +4,11 @@ import {
   passiveWordRunBooleans,
   passiveWordRunValues,
   passiveWordRunCss,
+  wordUnderlineValues,
+  wordEmphasisValues,
+  wordOpenTypeLigatures,
+  wordOpenTypeNumSpacings,
+  wordOpenTypeNumForms,
 } from "../ooxml/word-passive-run-properties.js";
 import {
   passiveWordParagraphBooleans,
@@ -43,6 +48,14 @@ export const runKeys: readonly string[] = [
   "--word-run-shading",
   "--word-run-snap-to-grid",
   "--word-run-native-w",
+  "--word-dstrike",
+  "--word-underline-style",
+  "--word-run-border",
+  "--word-opentype-ligatures",
+  "--word-opentype-num-spacing",
+  "--word-opentype-num-form",
+  "--word-opentype-stylistic-set",
+  "--word-opentype-contextual-alternates",
   ...["val", "eastAsia", "bidi"].map((role) => "--word-language-" + role),
 ];
 export const paragraphKeys: readonly string[] = [
@@ -161,12 +174,20 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
   for (const name of passiveWordRunValues) {
     const raw = css[passiveWordRunCss(name)];
     if (raw !== undefined) {
-      if (
-        raw !==
-        ({ position: "0", em: "none", effect: "none" } as const)[name]
-      )
-        unsupported("An active native run effect is outside the editable profile.");
-      out += value(name, raw);
+      if (name === "position") {
+        const parsed = Number(raw);
+        if (!/^-?\d+$/.test(raw) || parsed < -3170 || parsed > 3170)
+          unsupported("A native run character position must be an integer between -3170 and 3170.");
+        out += value(name, raw);
+      } else if (name === "em") {
+        if (!(wordEmphasisValues as readonly string[]).includes(raw))
+          unsupported("An emphasis mark style is outside the supported DOCX profile.");
+        out += value(name, raw);
+      } else {
+        if (raw !== "none")
+          unsupported("An active native run effect is outside the editable profile.");
+        out += value(name, raw);
+      }
     }
   }
   if (css["--word-run-snap-to-grid"] !== undefined)
@@ -192,17 +213,36 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
     ["--word-italic-cs", "iCs"],
   ])
     if (css[prop!] !== undefined) out += toggle(name!, css[prop!] === "1");
+  let emittedDstrike = false;
+  if (css["--word-dstrike"] !== undefined) {
+    if (css["--word-dstrike"] !== "0" && css["--word-dstrike"] !== "1")
+      unsupported("A native double-strikethrough value must be zero or one.");
+    const enabled = css["--word-dstrike"] === "1",
+      previous = inherited["--word-dstrike"] === "1";
+    if (!style || enabled !== previous) {
+      out += toggle("dstrike", style || enabled);
+      emittedDstrike = true;
+    }
+  }
   if (css["text-decoration-line"] !== undefined) {
     const lines = css["text-decoration-line"].split(/\s+/);
     if (lines.includes("overline")) unsupported("DOCX has no supported overline property.");
     const enabled = lines.includes("line-through"),
       previous = (inherited["text-decoration-line"] ?? "").includes("line-through");
     if (!style || enabled !== previous) {
-      if (!style && !enabled) out += toggle("strike", false) + toggle("dstrike", false);
-      else out += toggle(
-        css["text-decoration-style"] === "double" ? "dstrike" : "strike",
-        style || enabled,
-      );
+      if (!style && !enabled)
+        out += toggle("strike", false) + (emittedDstrike ? "" : toggle("dstrike", false));
+      else if (
+        css["--word-dstrike"] === undefined &&
+        !lines.includes("underline") &&
+        css["--word-underline-style"] === undefined &&
+        css["text-decoration-style"] === "double"
+      ) {
+        if (!emittedDstrike) {
+          out += toggle("dstrike", style || enabled);
+          emittedDstrike = true;
+        }
+      } else out += toggle("strike", style || enabled);
     }
   }
   if (css.color !== undefined)
@@ -260,7 +300,8 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
   if (
     css["text-decoration-line"] !== undefined ||
     css["text-decoration-style"] !== undefined ||
-    css["text-decoration-color"] !== undefined
+    css["text-decoration-color"] !== undefined ||
+    css["--word-underline-style"] !== undefined
   ) {
     const lines = css["text-decoration-line"] ?? inherited["text-decoration-line"] ?? "none";
     const styles: Record<string, string> = {
@@ -270,16 +311,132 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
       dashed: "dash",
       wavy: "wave",
     };
+    const directExplicit = css["--word-underline-style"],
+      inheritedExplicit = inherited["--word-underline-style"];
+    if (
+      directExplicit !== undefined &&
+      !(wordUnderlineValues as readonly string[]).includes(directExplicit)
+    )
+      unsupported("Unsupported native underline style.");
+    if (
+      inheritedExplicit !== undefined &&
+      !(wordUnderlineValues as readonly string[]).includes(inheritedExplicit)
+    )
+      unsupported("Unsupported native underline style.");
+    const actualCssStyle = css["text-decoration-style"] ?? inherited["text-decoration-style"] ?? "solid";
+    const fallbackStyle =
+      styles[actualCssStyle] ?? unsupported("Unsupported native underline style.");
+    const nativeCssStyle = (value: string): string =>
+      value === "double"
+        ? "double"
+        : value === "dotted" || value === "dottedHeavy"
+          ? "dotted"
+          : value === "wave" || value === "wavyHeavy" || value === "wavyDouble"
+            ? "wavy"
+            : [
+                  "dash",
+                  "dashedHeavy",
+                  "dashLong",
+                  "dashLongHeavy",
+                  "dotDash",
+                  "dashDotHeavy",
+                  "dotDotDash",
+                  "dashDotDotHeavy",
+                ].includes(value)
+              ? "dashed"
+              : "solid";
+    const explicit =
+      directExplicit !== undefined
+        ? directExplicit
+        : css["text-decoration-style"] !== undefined
+          ? undefined
+          : inheritedExplicit;
+    const underlineVal = !lines.includes("underline")
+      ? "none"
+      : explicit && explicit !== "none" && nativeCssStyle(explicit) === actualCssStyle
+        ? explicit
+        : fallbackStyle;
     out += empty("w:u", {
-      "w:val": lines.includes("underline")
-        ? (styles[css["text-decoration-style"] ?? inherited["text-decoration-style"] ?? "solid"] ??
-          unsupported("Unsupported native underline style."))
-        : "none",
+      "w:val": underlineVal,
       ...(css["text-decoration-color"] &&
       css["text-decoration-color"].toLowerCase() !== "currentcolor"
         ? { "w:color": color(css["text-decoration-color"], css.color ?? inherited.color) }
         : {}),
     });
+  }
+  const runBorder = css["--word-run-border"];
+  if (runBorder !== undefined) {
+    const trimmed = runBorder.trim();
+    if (trimmed === "none") out += empty("w:bdr", { "w:val": "none", "w:sz": 0, "w:space": 0, "w:color": "auto" });
+    else {
+      const match = /^(\S+)\s+(\S+)\s+(.+)$/.exec(trimmed);
+      if (!match) unsupported("Invalid native character border.");
+      const [, rawWidth, borderStyle, rawColor] = match!;
+      const borderStyles: Record<string, string> = {
+        none: "none",
+        hidden: "none",
+        solid: "single",
+        double: "double",
+        dotted: "dotted",
+        dashed: "dashed",
+      };
+      const widths: Record<string, number> = { thin: 0.75, medium: 2.25, thick: 3.75 };
+      const width = widths[rawWidth!] ?? points(rawWidth!, css);
+      const nativeStyle =
+        width === 0
+          ? "none"
+          : (borderStyles[borderStyle!] ??
+            unsupported("This character border style has no supported DOCX representation."));
+      out += empty("w:bdr", {
+        "w:val": nativeStyle,
+        "w:sz": nativeStyle === "none" ? 0 : Math.max(2, nativeInteger(width, 8, 0)),
+        "w:space": 0,
+        "w:color":
+          rawColor!.toLowerCase() === "currentcolor"
+            ? "auto"
+            : (color(rawColor!, css.color ?? inherited.color) ?? "auto"),
+      });
+    }
+  }
+  const ligatures = css["--word-opentype-ligatures"];
+  if (ligatures !== undefined) {
+    if (!(wordOpenTypeLigatures as readonly string[]).includes(ligatures))
+      unsupported("Unsupported OpenType ligature setting.");
+    out += empty("w14:ligatures", { "w14:val": ligatures });
+  }
+  const numForm = css["--word-opentype-num-form"];
+  if (numForm !== undefined) {
+    if (!(wordOpenTypeNumForms as readonly string[]).includes(numForm))
+      unsupported("Unsupported OpenType number form setting.");
+    out += empty("w14:numForm", { "w14:val": numForm });
+  }
+  const numSpacing = css["--word-opentype-num-spacing"];
+  if (numSpacing !== undefined) {
+    if (!(wordOpenTypeNumSpacings as readonly string[]).includes(numSpacing))
+      unsupported("Unsupported OpenType number spacing setting.");
+    out += empty("w14:numSpacing", { "w14:val": numSpacing });
+  }
+  const stylisticSet = css["--word-opentype-stylistic-set"];
+  if (stylisticSet !== undefined) {
+    const trimmed = stylisticSet.trim();
+    if (trimmed === "none" || trimmed === "0" || trimmed === "") out += empty("w14:stylisticSets");
+    else {
+      const ids = trimmed.split(",").map((part) => part.trim());
+      let items = "";
+      for (const rawId of ids) {
+        const id = Number(rawId);
+        if (!/^\d+$/.test(rawId) || id < 1 || id > 20)
+          unsupported("An OpenType stylistic set id must be between 1 and 20.");
+        items += empty("w14:styleSet", { "w14:id": id, "w14:val": "on" });
+      }
+      out += "<w14:stylisticSets>" + items + "</w14:stylisticSets>";
+    }
+  }
+  const contextualAlternates = css["--word-opentype-contextual-alternates"];
+  if (contextualAlternates !== undefined) {
+    if (contextualAlternates !== "0" && contextualAlternates !== "1")
+      unsupported("An OpenType contextual alternates value must be zero or one.");
+    out += empty("w14:cntxtAlts", { "w14:val": contextualAlternates });
   }
   if (base !== undefined || background !== undefined)
     out += shade({

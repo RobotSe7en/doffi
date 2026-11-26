@@ -103,7 +103,14 @@ export function wordCenterWrap(
     view = document.defaultView!;
   const spacers = new Map<
       HTMLElement,
-      { key: string; height: number; baseline: number; rtl: boolean; obstacle: Obstacle }
+      {
+        key: string;
+        height: number;
+        baseline: number;
+        rtl: boolean;
+        obstacle: Obstacle;
+        baseWidth: number;
+      }
     >(),
     paragraphStyles = new Map<
       HTMLElement,
@@ -291,10 +298,20 @@ export function wordCenterWrap(
         };
         add(table, id, distances, undefined, anchor);
       }
+      const unalign = (p: HTMLElement | null | undefined): void => {
+        if (!p || !aligned.has(p)) return;
+        for (const [spacer, entry] of spacers)
+          if (spacer.style.display !== "block" && spacer.closest("p,h1,h2,h3,h4,h5,h6") === p)
+            spacer.style.width = entry.baseWidth + "px";
+        ownViewStyle(p, "text-align");
+        p.style.textAlign = "left";
+        aligned.delete(p);
+      };
       const byKey = new Map(obstacles.map((item) => [item.key, item]));
       for (const [spacer, entry] of spacers) {
         if (storiesOnly && !entry.obstacle.story) continue;
         const connected = spacer.isConnected,
+          owner = spacer.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6"),
           box = spacer.getBoundingClientRect(),
           raw = byKey.get(entry.key),
           obstacle = raw
@@ -310,6 +327,7 @@ export function wordCenterWrap(
           box.top - entry.baseline + entry.height <= obstacle.top + 0.25 ||
           box.top - entry.baseline >= obstacle.bottom - 0.25
         ) {
+          unalign(owner);
           spacer.remove();
           spacers.delete(spacer);
           if (connected) markChange(entry.obstacle.story);
@@ -318,6 +336,7 @@ export function wordCenterWrap(
         if (spacer.style.display === "block") continue;
         const width = entry.rtl ? box.right - obstacle.left : obstacle.right - box.left;
         if (width <= 0) {
+          unalign(owner);
           spacer.remove();
           spacers.delete(spacer);
           markChange(entry.obstacle.story);
@@ -469,6 +488,11 @@ export function wordCenterWrap(
                     const glyph = charRect(text, at, end);
                     if (glyph.top >= line.bottom - 0.5) break;
                     if (overlaps(glyph, obstacle)) {
+                      if (aligned.has(p)) {
+                        unalign(p);
+                        markChange(story);
+                        return find();
+                      }
                       // Keep an ordinary Latin word together when it fits a side.
                       if (/[A-Za-z0-9]/.test(text.data[at] ?? "")) {
                         let start = at,
@@ -588,6 +612,7 @@ export function wordCenterWrap(
           const next = (parseFloat(previous.style.width) || 0) + Math.max(1, width);
           if (next < widthInFlow - 0.5) {
             previous.style.width = next + "px";
+            previousEntry.baseWidth = next;
             markChange(hit.obstacle.story);
             continue;
           }
@@ -638,6 +663,7 @@ export function wordCenterWrap(
           ),
           rtl: hit.rtl,
           obstacle: hit.obstacle,
+          baseWidth: Math.max(1, width),
         });
         markChange(hit.obstacle.story);
       }
@@ -648,22 +674,47 @@ export function wordCenterWrap(
           continue;
         }
         if (!old.right || aligned.has(p)) continue;
-        const gaps = [...spacers].filter(([spacer]) => spacer.closest("p,h1,h2,h3,h4,h5,h6") === p);
+        const pStyle = view.getComputedStyle(p),
+          pRect = p.getBoundingClientRect(),
+          pBounds = {
+            left:
+              pRect.left +
+              (parseFloat(pStyle.paddingLeft) || 0) +
+              (parseFloat(pStyle.borderLeftWidth) || 0),
+            right:
+              pRect.right -
+              (parseFloat(pStyle.paddingRight) || 0) -
+              (parseFloat(pStyle.borderRightWidth) || 0),
+          };
+        const gaps = [...spacers].filter(
+          ([spacer, entry]) =>
+            spacer.style.display !== "block" &&
+            byKey.has(entry.key) &&
+            spacer.closest("p,h1,h2,h3,h4,h5,h6") === p,
+        );
+        // Measure every wrapped line before mutating spacer widths so adjusting
+        // one line cannot shift or misattribute later lines in the paragraph.
+        const adjustments: { gap: HTMLElement; width: number }[] = [];
         for (const [gap, entry] of gaps) {
-          const obstacle = byKey.has(entry.key) ? entry.obstacle : undefined,
-            box = gap.getBoundingClientRect();
-          if (!obstacle || gap.style.display === "block") continue;
-          const top = box.top - entry.baseline,
+          const obstacle = entry.obstacle,
+            box = gap.getBoundingClientRect(),
+            top = box.top - entry.baseline,
             bottom = top + entry.height,
+            region = columnRegion(
+              p,
+              new DOMRect(box.left, top, box.right - box.left, bottom - top),
+              p,
+            ),
+            fragment = region?.fragment ?? region,
+            bounds = fragment ? { left: fragment.left, right: fragment.right } : pBounds,
             walker = document.createTreeWalker(p, 4);
-          let first: { text: Text; at: number } | undefined,
-            left = -Infinity,
-            right = -Infinity;
+          let rightEdge: number | undefined;
           for (let current = walker.nextNode(); current; current = walker.nextNode()) {
             reserve();
             const text = current as Text;
             if (
               !text.length ||
+              !(gap.compareDocumentPosition(text) & 4) ||
               text.parentElement?.closest("[data-sdk-word-object],[data-word-native-object]") ||
               view.getComputedStyle(text.parentElement!).visibility !== "visible"
             )
@@ -671,50 +722,46 @@ export function wordCenterWrap(
             const range = document.createRange();
             range.selectNodeContents(text);
             for (const rect of range.getClientRects()) {
-              if (rect.bottom <= top + 0.5 || rect.top >= bottom - 0.5 || rect.width < 0.1)
-                continue;
-              if (!first) {
+              const mid = (rect.top + rect.bottom) / 2;
+              if (mid < top - 0.5 || mid > bottom + 0.5 || rect.width < 0.1) continue;
+              if (rect.left >= box.right - 1) {
                 let low = 0,
                   high = text.length;
                 while (low < high) {
-                  const mid = Math.floor((low + high) / 2);
-                  if (charRect(text, mid, Math.min(text.length, mid + 1)).bottom <= top + 0.5)
-                    low = mid + 1;
-                  else high = mid;
+                  const midIndex = Math.floor((low + high) / 2),
+                    r = charRect(text, midIndex, Math.min(text.length, midIndex + 1));
+                  if ((r.top + r.bottom) / 2 < top - 0.5) low = midIndex + 1;
+                  else high = midIndex;
                 }
-                while (low > 0 && !isDocumentTextBoundary(text.data, low)) low--;
-                first = { text, at: low };
+                let endIndex = low;
+                while (endIndex < text.length) {
+                  let step = endIndex + 1;
+                  while (step < text.length && !isDocumentTextBoundary(text.data, step)) step++;
+                  const r = charRect(text, endIndex, step);
+                  if ((r.top + r.bottom) / 2 > bottom + 0.5) break;
+                  endIndex = step;
+                }
+                // Ignore trailing collapsible ASCII spaces that disappear under text-align:right.
+                let trimmed = endIndex;
+                while (trimmed > low && /[ \t]/.test(text.data[trimmed - 1]!)) trimmed--;
+                if (trimmed > low) {
+                  const edge = trimmed === endIndex ? rect.right : charRect(text, low, trimmed).right;
+                  rightEdge = Math.max(rightEdge ?? -Infinity, edge);
+                }
               }
-              if (rect.right <= obstacle.left + 0.5) left = Math.max(left, rect.right);
-              if (rect.left >= obstacle.right - 0.5) right = Math.max(right, rect.right);
             }
           }
-          const shift = Number.isFinite(left) ? Math.max(0, obstacle.left - left) : 0,
-            paragraph = view.getComputedStyle(p),
-            end =
-              p.getBoundingClientRect().right -
-              (parseFloat(paragraph.paddingRight) || 0) -
-              (parseFloat(paragraph.borderRightWidth) || 0),
-            trailing = Number.isFinite(right) ? Math.max(0, end - right) : 0;
-          if (first && shift > 0.1) {
-            if (++nodes > limits.maxNodes)
-              throw new DocumentError(
-                "ResourceLimitExceeded",
-                "Word wrapping alignment exceeds its render node budget.",
-              );
-            const filler = markViewNode(document.createElement("span"));
-            hideFromViewSelection(filler);
-            measureViewContent(filler);
-            filler.className = "sdk-word-center-alignment";
-            filler.contentEditable = "false";
-            filler.setAttribute("aria-hidden", "true");
-            filler.style.cssText = `display:inline-block;width:${shift}px;height:0;margin:0;padding:0;border:0;font-size:0;line-height:0;vertical-align:baseline;pointer-events:none;user-select:none`;
-            const tail = first.at ? first.text.splitText(first.at) : first.text;
-            tail.before(filler);
-            alignmentFillers.add(filler);
-          }
-          gap.style.width = Math.max(0, box.width - shift + trailing - 0.05) + "px";
+          const leftWidth = Math.max(0, box.left - bounds.left),
+            rightWidth = rightEdge !== undefined ? Math.max(0, rightEdge - box.right) : 0,
+            minGap = Math.max(0, obstacle.right - obstacle.left),
+            maxFit = Math.max(0, bounds.right - bounds.left - leftWidth - rightWidth - 0.25),
+            target =
+              leftWidth > 0.5
+                ? Math.min(maxFit, Math.max(minGap, bounds.right - rightWidth - obstacle.left + 0.5))
+                : maxFit;
+          adjustments.push({ gap, width: Math.max(0, target) });
         }
+        for (const { gap, width } of adjustments) gap.style.width = width + "px";
         if (old.align) p.style.setProperty("text-align", old.align, old.alignPriority);
         else p.style.removeProperty("text-align");
         aligned.add(p);

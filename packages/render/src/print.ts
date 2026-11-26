@@ -49,7 +49,7 @@ export function createPrintDocument(
   output.body.replaceChildren();
   const style = output.createElement("style");
   style.textContent =
-    "html,body{margin:0!important;padding:0!important;background:white!important}.sdk-print-page{position:relative;overflow:hidden;break-after:page;box-sizing:border-box}.sdk-print-page:last-child{break-after:auto}.sdk-page-number{display:none!important}";
+    "html,body{margin:0!important;padding:0!important;background:white!important}.sdk-print-page{position:relative;overflow:hidden;break-after:page;box-sizing:border-box}.sdk-print-page:last-child{break-after:auto}.sdk-page-number{display:none!important}[data-sdk-word-hidden=\"true\"]{display:none!important}";
   const surface = root.getBoundingClientRect(),
     origin = article.getBoundingClientRect();
   for (const page of pages) {

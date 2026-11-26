@@ -12,6 +12,7 @@ export const WP: string = "http://schemas.openxmlformats.org/drawingml/2006/word
 export const PIC: string = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 export const MC: string = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 export const PKG: string = "http://schemas.openxmlformats.org/package/2006/relationships";
+export const W14: string = "http://schemas.microsoft.com/office/word/2010/wordml";
 const aliases: Readonly<Record<string, string>> = {
   "http://purl.oclc.org/ooxml/wordprocessingml/main": W,
   "http://purl.oclc.org/ooxml/officeDocument/relationships": R,
@@ -38,7 +39,12 @@ export interface UnsupportedXmlSource {
   node: XmlNode;
   attribute?: string;
   elementType?: boolean;
-  collection?: { owner: XmlNode; names: readonly string[]; uri: string };
+  collection?: {
+    owner: XmlNode;
+    names: readonly string[];
+    uri: string;
+    extra?: readonly { readonly uri: string; readonly names: readonly string[] }[];
+  };
 }
 const unsupportedSources = new WeakMap<object, UnsupportedXmlSource>();
 export function unsupportedSource(error: unknown): UnsupportedXmlSource | undefined {
@@ -129,17 +135,28 @@ export function on(node: XmlNode | undefined): boolean {
   if (["0", "false", "off"].includes(value)) return false;
   return fail(node, "An OOXML on/off value is invalid.");
 }
-export function check(node: XmlNode | undefined, names: readonly string[], uri: string = W): void {
+export function check(
+  node: XmlNode | undefined,
+  names: readonly string[],
+  uri: string = W,
+  extra?: readonly { readonly uri: string; readonly names: readonly string[] }[],
+): void {
   if (!node) return;
   for (const item of node.content) {
     if (typeof item === "string") {
       if (item.trim()) fail(node, "Unexpected OOXML text content.");
-    } else if (item.uri !== uri || !names.includes(item.name)) {
+    } else if (
+      (item.uri !== uri || !names.includes(item.name)) &&
+      !extra?.some((group) => item.uri === group.uri && group.names.includes(item.name))
+    ) {
       try {
         unsupported(item);
       } catch (error) {
         if (typeof error === "object" && error)
-          unsupportedSources.set(error, { node: item, collection: { owner: node, names, uri } });
+          unsupportedSources.set(error, {
+            node: item,
+            collection: { owner: node, names, uri, ...(extra ? { extra } : {}) },
+          });
         throw error;
       }
     }

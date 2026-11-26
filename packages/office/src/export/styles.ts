@@ -294,7 +294,12 @@ export class ExportStyles {
   }
   write(opc: OutputOpc): void {
     const out = opc.part("word/styles.xml", contentType("styles"));
-    out.add(declaration + "<w:styles" + namespaces + ">");
+    out.add(
+      declaration +
+        "<w:styles" +
+        namespaces +
+        ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">',
+    );
     out.add(
       "<w:docDefaults><w:rPrDefault><w:rPr>" +
         runProperties({

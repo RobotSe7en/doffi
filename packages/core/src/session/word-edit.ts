@@ -69,6 +69,7 @@ export function isWordOperation(operation: { readonly op: string }): operation i
       "insertWordStory",
       "setWordStoryContent",
       "insertWordTable",
+      "reorderWordNodes",
       "deleteWordTable",
       "editWordTable",
       "formatWordTable",
@@ -533,6 +534,35 @@ export function applyWordOperation(
     else edit.removeSource(operation.nodeId);
     return;
   }
+  if (operation.op === "reorderWordNodes") {
+    const siblings = node.childNodeIds;
+    if (new Set(operation.childNodeIds).size !== operation.childNodeIds.length)
+      fail("Reordering requires unique child identities.");
+    const positions = operation.childNodeIds.map((id) => siblings.indexOf(id));
+    if (positions.some((index) => index < 0))
+      fail("All reordered nodes must be direct children of the target container.");
+    const min = Math.min(...positions),
+      max = Math.max(...positions);
+    if (max - min + 1 !== operation.childNodeIds.length)
+      fail("Reordered nodes must form a contiguous sibling range.");
+    const tags = operation.childNodeIds.map((id) => parse().peekNode(id)!.tagName);
+    const allRows = tags.every((tag) => tag === "tr");
+    const allParagraphs = tags.every((tag) => /^p$|^h[1-6]$/.test(tag));
+    if (!allRows && !allParagraphs)
+      fail("Only contiguous paragraphs or table rows can be reordered.");
+    if (allRows) {
+      for (const rowId of operation.childNodeIds) {
+        for (const cellId of parse().peekNode(rowId)!.childNodeIds) {
+          const cell = parse().peekNode(cellId);
+          if (cell && Number(cell.attributes.rowspan ?? 1) > 1)
+            fail("Rows containing vertically merged cells cannot be sorted.");
+        }
+      }
+    }
+    const beforeId = siblings[max + 1];
+    edit.moveSource(operation.childNodeIds, operation.nodeId, beforeId);
+    return;
+  }
   if (operation.op === "insertWordTable") {
     if (!/^p$|^h[1-6]$/.test(node.tagName)) fail("Insert a table beside an existing paragraph.");
     checkLimit(operation.rows * operation.columns * 3, limits.maxNodes);
@@ -544,6 +574,13 @@ export function applyWordOperation(
     );
     const escapeStyle = (value: string) =>
       value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const escapeCell = (value: string) =>
+      value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replace(/\r\n?/g, "\n")
+        .replaceAll("\n", "<br>");
     const source =
       "<table" +
       (tableStyle
@@ -558,16 +595,18 @@ export function applyWordOperation(
       'pt">' +
       Array.from(
         { length: operation.rows },
-        () =>
+        (_, r) =>
           "<tr>" +
           Array.from(
             { length: operation.columns },
-            () =>
+            (_, c) =>
               "<td" +
               (tableStyle
                 ? ""
                 : ' style="border:0.5pt solid #000000;padding:4pt;vertical-align:top"') +
-              "><p></p></td>",
+              "><p>" +
+              escapeCell(operation.cells?.[r]?.[c] ?? "") +
+              "</p></td>",
           ).join("") +
           "</tr>",
       ).join("") +

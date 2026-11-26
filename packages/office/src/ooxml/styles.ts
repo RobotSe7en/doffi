@@ -4,6 +4,11 @@ import {
   passiveWordRunBooleans,
   passiveWordRunValues,
   passiveWordRunCss,
+  wordUnderlineValues,
+  wordEmphasisValues,
+  wordOpenTypeLigatures,
+  wordOpenTypeNumSpacings,
+  wordOpenTypeNumForms,
 } from "./word-passive-run-properties.js";
 import {
   passiveWordParagraphBooleans,
@@ -17,6 +22,7 @@ import type { OpcPackage } from "./package.js";
 import {
   A,
   W,
+  W14,
   attr,
   check,
   child,
@@ -528,6 +534,11 @@ export class DocxStyles {
       "oMath",
       ...(allowRevision ? ["rPrChange"] : []),
       ...(paragraphMark ? ["ins", "del", "moveFrom", "moveTo"] : []),
+    ], W, [
+      {
+        uri: W14,
+        names: ["ligatures", "numForm", "numSpacing", "stylisticSets", "cntxtAlts"],
+      },
     ]);
     const css: Css = {};
     if (child(properties, "snapToGrid"))
@@ -610,7 +621,7 @@ export class DocxStyles {
       const item = child(properties, feature);
       if (item && (feature === "effect" ? val(item) !== "none" : on(item))) unsupported(item);
     }
-    for (const feature of ["vanish", "webHidden", "rtl", "cs", "specVanish"])
+    for (const feature of ["webHidden", "rtl", "cs", "specVanish"])
       if (on(child(properties, feature))) unsupported(child(properties, feature)!);
     const kerning = child(properties, "kern");
     if (kerning) css["--word-kerning-threshold"] = pt(number(val(kerning), kerning) / 2);
@@ -666,7 +677,13 @@ export class DocxStyles {
     const underline = child(properties, "u");
     const strike = child(properties, "strike"),
       doubleStrike = child(properties, "dstrike");
-    if (underline || strike || doubleStrike) {
+    if (doubleStrike) {
+      const enabled = on(doubleStrike);
+      if (!toggle || enabled)
+        css["--word-dstrike"] =
+          toggle && enabled && inherited["--word-dstrike"] === "1" ? "0" : enabled ? "1" : "0";
+    }
+    if (underline || strike) {
       const lines = new Set(
         (inherited["text-decoration-line"] ?? "")
           .split(/\s+/)
@@ -674,36 +691,38 @@ export class DocxStyles {
       );
       const type = val(underline) ?? "single";
       if (underline) {
-        if (!["none", "single", "double", "dotted", "dash", "wave"].includes(type))
-          unsupported(underline);
+        if (!(wordUnderlineValues as readonly string[]).includes(type)) unsupported(underline);
         if (type === "none") lines.delete("underline");
         else lines.add("underline");
+        css["--word-underline-style"] = type;
       }
-      const strikeNode = doubleStrike ?? strike;
-      if (strikeNode) {
-        const enabled = on(strikeNode);
+      if (strike) {
+        const enabled = on(strike);
         if (!toggle || enabled) {
           if (enabled && !(toggle && lines.has("line-through"))) lines.add("line-through");
           else lines.delete("line-through");
         }
       }
       css["text-decoration-line"] = [...lines].join(" ") || "none";
-      if (doubleStrike && on(doubleStrike) && underline && !["none", "double"].includes(type))
-        unsupported(
-          properties,
-          "Mixed underline and double-strike decoration styles are not supported.",
-        );
-      if (doubleStrike && on(doubleStrike)) css["text-decoration-style"] = "double";
-      else if (underline)
+      if (underline)
         css["text-decoration-style"] =
           type === "double"
             ? "double"
-            : type === "dotted"
+            : type === "dotted" || type === "dottedHeavy"
               ? "dotted"
-              : type === "dash"
-                ? "dashed"
-                : type === "wave"
-                  ? "wavy"
+              : type === "wave" || type === "wavyHeavy" || type === "wavyDouble"
+                ? "wavy"
+                : [
+                      "dash",
+                      "dashedHeavy",
+                      "dashLong",
+                      "dashLongHeavy",
+                      "dotDash",
+                      "dashDotHeavy",
+                      "dotDotDash",
+                      "dashDotDotHeavy",
+                    ].includes(type)
+                  ? "dashed"
                   : "solid";
       if (underline && (attr(underline, "color") || attr(underline, "themeColor")))
         css["text-decoration-color"] = this.color(underline, "color") ?? "currentColor";
@@ -724,14 +743,94 @@ export class DocxStyles {
         fail(width, "A run character scale must be a whole percent between 1 and 600.");
       css["--word-run-native-w"] = String(scale);
     }
-    for (const feature of ["position", "bdr", "em"]) {
-      const item = child(properties, feature);
+    const position = child(properties, "position");
+    if (position) {
+      const parsed = number(val(position), position);
+      if (parsed < -3170 || parsed > 3170)
+        fail(position, "A run character position must be between -3170 and 3170 half-points.");
+    }
+    const emphasis = child(properties, "em");
+    if (emphasis) {
+      const value = val(emphasis);
+      if (!value || !(wordEmphasisValues as readonly string[]).includes(value))
+        unsupported(emphasis, "An emphasis mark style is not supported.");
+    }
+    const runBorder = child(properties, "bdr");
+    if (runBorder) {
+      const style = attr(runBorder, "val") ?? "none";
+      const styles: Record<string, string> = {
+        none: "none",
+        nil: "none",
+        single: "solid",
+        double: "double",
+        dotted: "dotted",
+        dashed: "dashed",
+        dashSmallGap: "dashed",
+        thick: "solid",
+      };
       if (
-        item &&
-        !(feature === "position" && val(item) === "0") &&
-        !(feature === "em" && val(item) === "none")
+        !styles[style] ||
+        (attr(runBorder, "space") && number(attr(runBorder, "space"), runBorder) !== 0) ||
+        (attr(runBorder, "shadow") &&
+          !["0", "false", "off"].includes(attr(runBorder, "shadow")!)) ||
+        (attr(runBorder, "frame") && !["0", "false", "off"].includes(attr(runBorder, "frame")!))
       )
-        unsupported(item);
+        unsupported(runBorder, "A character border style is not supported.");
+      if (styles[style] === "none") css["--word-run-border"] = "none";
+      else {
+        const width = number(attr(runBorder, "sz"), runBorder, 4) / 8,
+          hasColor =
+            attr(runBorder, "color") !== undefined || attr(runBorder, "themeColor") !== undefined,
+          borderColor = !hasColor
+            ? "currentColor"
+            : (this.color(runBorder, "color") ?? "currentColor");
+        css["--word-run-border"] = pt(width) + " " + styles[style] + " " + borderColor;
+      }
+    }
+    const ligatures = child(properties, "ligatures", W14);
+    if (ligatures) {
+      const value = attr(ligatures, "val", W14);
+      if (!value || !(wordOpenTypeLigatures as readonly string[]).includes(value))
+        unsupported(ligatures, "An OpenType ligature setting is not supported.");
+      css["--word-opentype-ligatures"] = value;
+    }
+    const numSpacing = child(properties, "numSpacing", W14);
+    if (numSpacing) {
+      const value = attr(numSpacing, "val", W14);
+      if (!value || !(wordOpenTypeNumSpacings as readonly string[]).includes(value))
+        unsupported(numSpacing, "An OpenType number spacing setting is not supported.");
+      css["--word-opentype-num-spacing"] = value;
+    }
+    const numForm = child(properties, "numForm", W14);
+    if (numForm) {
+      const value = attr(numForm, "val", W14);
+      if (!value || !(wordOpenTypeNumForms as readonly string[]).includes(value))
+        unsupported(numForm, "An OpenType number form setting is not supported.");
+      css["--word-opentype-num-form"] = value;
+    }
+    const stylisticSets = child(properties, "stylisticSets", W14);
+    if (stylisticSets) {
+      check(stylisticSets, ["styleSet"], W14);
+      const active: number[] = [];
+      for (const item of elements(stylisticSets, "styleSet", W14)) {
+        const id = number(attr(item, "id", W14), item);
+        if (id < 1 || id > 20)
+          fail(item, "An OpenType stylistic set id must be between 1 and 20.");
+        const state = attr(item, "val", W14);
+        if (state !== undefined && !["on", "off", "1", "0", "true", "false"].includes(state))
+          fail(item, "An OpenType stylistic set value is invalid.");
+        if (state === undefined || ["on", "1", "true"].includes(state)) active.push(id);
+      }
+      const unique = [...new Set(active)].sort((a, b) => a - b);
+      css["--word-opentype-stylistic-set"] = unique.length ? unique.join(",") : "none";
+    }
+    const cntxtAlts = child(properties, "cntxtAlts", W14);
+    if (cntxtAlts) {
+      const state = attr(cntxtAlts, "val", W14);
+      if (state !== undefined && !["on", "off", "1", "0", "true", "false"].includes(state))
+        fail(cntxtAlts, "An OpenType contextual alternates value is invalid.");
+      css["--word-opentype-contextual-alternates"] =
+        state === undefined || ["on", "1", "true"].includes(state) ? "1" : "0";
     }
     for (const name of passiveWordRunBooleans) {
       const item = child(properties, name);

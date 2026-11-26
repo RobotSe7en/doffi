@@ -1,12 +1,15 @@
 import { DocumentError } from "@doffi/core";
 import { WORD_CLIPBOARD_BYTES } from "./rich-text/clipboard-images.js";
 
+export type WordPasteMode = "keepSource" | "mergeFormatting" | "plainText";
+
 /** The native copy/cut/paste listeners still serialize and validate source data. */
 export async function executeClipboard(
   root: HTMLElement,
   focus: () => void,
   action: "copy" | "cut" | "paste",
   current: () => boolean,
+  pasteMode?: WordPasteMode,
 ): Promise<void> {
   if (!current() || !root.isConnected)
     throw new DocumentError("InvalidOperation", "当前输入已失效。");
@@ -23,7 +26,7 @@ export async function executeClipboard(
   const items = await view.navigator.clipboard.read(),
     data = new view.DataTransfer();
   let bytes = 0;
-  for (const type of ["text/html", "text/plain"]) {
+  for (const type of pasteMode === "plainText" ? ["text/plain"] : ["text/html", "text/plain"]) {
     const item = items.find((item) => item.types.includes(type));
     if (!item) continue;
     const blob = await item.getType(type);

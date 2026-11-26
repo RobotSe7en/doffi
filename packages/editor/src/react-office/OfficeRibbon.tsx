@@ -4,7 +4,7 @@ import { OfficeComboBox } from "./OfficeComboBox.js";
 import { OfficeMenu, OfficeColorMenu } from "./OfficeMenu.js";
 import { OfficeDialog } from "./OfficeDialog.js";
 import type { ReactNode, ReactElement } from "react";
-import type { DocumentTextCommand, EditorCommandState, TextFormatState } from "../index.js";
+import type { DocumentTextCommand, EditorCommandState, TextFormatState, WordPageZoomMode } from "../index.js";
 import { OfficeIcon as Icon } from "./icons.js";
 import { officeRibbonStyles } from "./styles.js";
 import { loadWordWebFonts } from "@doffi/render";
@@ -73,6 +73,12 @@ export interface OfficeRibbonProps {
   zoom: number;
   onZoom(value: number): void;
   enableWorkbookZoom?: boolean;
+  pageZoomMode?: WordPageZoomMode | undefined;
+  onPageZoomMode?(mode: WordPageZoomMode): void;
+  draftMode?: boolean;
+  onDraftMode?(enabled: boolean): void;
+  focusMode?: boolean;
+  onFocusMode?(enabled: boolean): void;
 }
 
 /** Optional SDK chrome; hosts supply authorized file/export callbacks. */
@@ -95,7 +101,32 @@ export function OfficeRibbon({
   zoom,
   onZoom,
   enableWorkbookZoom = false,
+  pageZoomMode,
+  onPageZoomMode,
+  draftMode,
+  onDraftMode,
+  focusMode,
+  onFocusMode,
 }: OfficeRibbonProps): ReactElement {
+  const [localPageZoomMode, setLocalPageZoomMode] = useState<WordPageZoomMode>();
+  const effectivePageZoomMode = onPageZoomMode ? pageZoomMode : localPageZoomMode;
+  const handlePageZoomMode = (mode: WordPageZoomMode) => {
+    if (onPageZoomMode) {
+      onPageZoomMode(mode);
+      return;
+    }
+    setLocalPageZoomMode(mode);
+    onLayout("pages");
+    onZoom(mode === "pageWidth" ? 1.25 : mode === "singlePage" ? 0.65 : 0.45);
+  };
+  const handleZoom = (value: number) => {
+    if (!onPageZoomMode) setLocalPageZoomMode(undefined);
+    onZoom(value);
+  };
+  const handleLayout = (value: "pages" | "continuous") => {
+    if (!onPageZoomMode) setLocalPageZoomMode(undefined);
+    onLayout(value);
+  };
   const root = useRef<HTMLDivElement>(null), [compact, setCompact] = useState(false);
   useEffect(() => {
     const element = root.current!, observer = new ResizeObserver(() => setCompact(element.clientWidth <= 1400));
@@ -119,9 +150,23 @@ export function OfficeRibbon({
   const preview = mode === "preview",
     allowedPreviewTabs = ["开始", "文件", "审阅", "视图", "帮助"];
   const shapeSelected = word && !preview && !!format.drawingKind && ["shape", "textBox", "connector", "group"].includes(format.drawingKind);
-  const tab = preview && !allowedPreviewTabs.includes(requestedTab) || requestedTab === "形状格式" && !shapeSelected ? "开始" : requestedTab,
+  const imageSelected = word && !preview && format.drawingKind === "image";
+  const chartSelected = word && !preview && format.drawingKind === "chart";
+  const tableSelected = word && !preview && Boolean(format.inTable);
+  const contextualTabs = [
+    ...(shapeSelected ? ["形状格式"] : []),
+    ...(imageSelected ? ["图片格式"] : []),
+    ...(chartSelected ? ["图表设计"] : []),
+    ...(tableSelected ? ["表格设计", "表格布局"] : []),
+  ];
+  const contextualOnly = ["形状格式", "图片格式", "图表设计", "表格设计", "表格布局"];
+  const tab =
+    (preview && !allowedPreviewTabs.includes(requestedTab)) ||
+    (contextualOnly.includes(requestedTab) && !contextualTabs.includes(requestedTab))
+      ? "开始"
+      : requestedTab,
     collapsed = preview && tab === "开始";
-  const tabs = [...tabsByKind[kind].filter(name => showApplicationTabs || name !== "文件" && name !== "帮助"), ...(shapeSelected ? ["形状格式"] : [])],
+  const tabs = [...tabsByKind[kind].filter(name => showApplicationTabs || name !== "文件" && name !== "帮助"), ...contextualTabs],
     states = new Map(commands.map((command) => [command.id, command]));
   const canFormat = !preview && format.enabled && !busy;
   const command = (id: string, label: string, icon: Glyph, large = false) => {
@@ -275,8 +320,14 @@ export function OfficeRibbon({
         />
         {kind !== "workbook" && <>
         <OfficeMenu label="更改大小写" icon={<span className="ribbon-glyph">Aa</span>} disabled={!word || !canFormat}>
-          {close => <>{[["全部小写", "lowercase"], ["全部大写", "uppercase"], ["每个单词首字母大写", "capitalize"], ["取消大小写转换", "none"]].map(([label, value]) =>
-            <button key={value} role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "paintFormat", properties: { "text-transform": value! } }); close(); }}>{label}</button>)}</>}
+          {close => <>{([
+            ["句首字母大写", "sentence"],
+            ["全部小写", "lower"],
+            ["全部大写", "upper"],
+            ["每个单词首字母大写", "title"],
+            ["切换大小写", "toggle"],
+          ] as const).map(([label, mode]) =>
+            <button key={mode} role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "changeCase", mode }); close(); }}>{label}</button>)}</>}
         </OfficeMenu>
         <Tool
           label="清除所有格式"
@@ -285,15 +336,48 @@ export function OfficeRibbon({
           run={word ? () => wordCommand({ type: "word", action: "clearFormat" }) : undefined}
         />
         </>}
-        {word && <><Tool label="拼音指南" icon="pinyin" /><Tool label="字符边框" icon="fontBorder" /></>}
+        {word && <><Tool label="拼音指南" icon="pinyin" /><Tool label="字符边框" icon="fontBorder" disabled={!canFormat} active={format.characterBorder}
+          run={() => wordCommand({ type: "word", action: "paintFormat", properties: { "--word-run-border": format.characterBorder ? "none" : "0.5pt solid currentColor" } })} /></>}
       </div>
       <div className="ribbon-icon-row">
         {toggle("加粗", "bold", <b>B</b>)}
         {toggle("斜体", "italic", <i>I</i>)}
         <OfficeMenu label="下划线" active={format.underline} icon={<span className="ribbon-glyph"><u>U</u></span>} disabled={!canFormat}
           split={() => onTextCommand({ type: "toggle", property: "underline" })}>
-          {close => <>{[["单线", "solid"], ["双线", "double"], ["无", "none"]].map(([name, value]) => <button key={name} role="menuitem" type="button" disabled={!word && value === "double"}
-            onClick={() => { if (word) wordCommand({ type: "word", action: "paintFormat", properties: { "text-decoration-line": value === "none" ? "none" : "underline", "text-decoration-style": value === "none" ? "solid" : value! } }); else onTextCommand({ type: "format", property: "text-decoration", value: value === "none" ? "none" : "underline" }); close(); }}>{name}</button>)}
+          {close => <>{([
+            ["单线", "single", "solid"],
+            ["双线", "double", "double"],
+            ["粗线", "thick", "solid"],
+            ["点线", "dotted", "dotted"],
+            ["虚线", "dash", "dashed"],
+            ["点划线", "dotDash", "dashed"],
+            ["双点划线", "dotDotDash", "dashed"],
+            ["波浪线", "wave", "wavy"],
+            ["仅字下划线", "words", "solid"],
+            ["无", "none", "solid"],
+          ] as const).map(([name, nativeStyle, cssStyle]) => (
+            <button key={nativeStyle} role="menuitem" type="button" disabled={!word && nativeStyle !== "single" && nativeStyle !== "none"}
+              onClick={() => {
+                if (word) {
+                  const lines = [
+                    nativeStyle === "none" ? "" : "underline",
+                    format.strikethrough ? "line-through" : "",
+                  ].filter(Boolean).join(" ") || "none";
+                  wordCommand({
+                    type: "word",
+                    action: "paintFormat",
+                    properties: {
+                      "text-decoration-line": lines,
+                      "text-decoration-style": cssStyle,
+                      "--word-underline-style": nativeStyle,
+                    },
+                  });
+                } else {
+                  onTextCommand({ type: "format", property: "text-decoration", value: nativeStyle === "none" ? "none" : "underline" });
+                }
+                close();
+              }}>{name}</button>
+          ))}
             {word && <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "fontSettings" }); close(); }}>其他下划线…</button>}</>}
         </OfficeMenu>
         {kind !== "workbook" && <>
@@ -302,17 +386,22 @@ export function OfficeRibbon({
           glyph={<s>abc</s>}
           disabled={!canFormat}
           active={format.strikethrough}
-          run={() => onTextCommand({
-                    type: "format",
-                    property: "text-decoration",
-                    value:
-                      [
-                        format.underline ? "underline" : "",
-                        !format.strikethrough ? "line-through" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || "none",
-                  })}
+          run={() => {
+            const nextLine =
+              [format.underline ? "underline" : "", !format.strikethrough ? "line-through" : ""]
+                .filter(Boolean)
+                .join(" ") || "none";
+            if (word)
+              wordCommand({
+                type: "word",
+                action: "paintFormat",
+                properties: {
+                  "text-decoration-line": nextLine,
+                  ...(!format.strikethrough ? { "--word-dstrike": "0" } : {}),
+                },
+              });
+            else onTextCommand({ type: "format", property: "text-decoration", value: nextLine });
+          }}
         />
         <Tool
           label="下标"
@@ -353,7 +442,7 @@ export function OfficeRibbon({
           {close => <button role="menuitem" type="button" onClick={() => { onCommand("formatCells"); close(); }}>设置单元格格式…</button>}
         </OfficeMenu><OfficeColorMenu label="填充颜色" value="#ffff00" fill disabled={!canFormat}
           apply={value => onTextCommand({ type: "format", property: "background-color", value })} /></>}
-        <OfficeColorMenu label="字体颜色" value="#ff0000" disabled={!canFormat}
+        <OfficeColorMenu label="字体颜色" value="#ff0000" disabled={!canFormat} themeColors={format.themeColors}
           apply={value => onTextCommand({ type: "format", property: "color", value })} />
         {word && <><Tool label="字符底纹" glyph={<span style={{ background: "#ccc", padding: "0 2px" }}>A</span>}
           disabled={!canFormat} run={() => onTextCommand({ type: "format", property: "background-color", value: "#d9d9d9" })} />
@@ -390,7 +479,7 @@ export function OfficeRibbon({
           <Tool label="增加缩进量" icon="indent" disabled={!word || !canFormat} run={word ? () => wordCommand({ type: "word", action: "indent", direction: 1 }) : undefined} />
           {word ? <><OfficeMenu label="中文版式" icon={<Icon name="textDirection" size={17} />} disabled={!canFormat}>
             {close => <button role="menuitem" onClick={() => { setParagraphOpen(true); close(); }}>段落…</button>}
-          </OfficeMenu><Tool label="排序" icon="sort" />
+          </OfficeMenu><Tool label="排序" icon="sort" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sort" })} />
           <Tool label="显示编辑标记" glyph="¶" disabled={!canFormat} active={showMarks} run={() => { setShowMarks(!showMarks); wordCommand({ type: "word", action: "showMarks", visible: !showMarks }); }} /></> : <>
             <OfficeMenu label="行距" icon={<Icon name="lineSpacing" size={17} />} disabled={!states.get("paragraphSettings")?.enabled}>
               {close => <button role="menuitem" onClick={() => { onCommand("paragraphSettings"); close(); }}>行距选项…</button>}
@@ -408,7 +497,7 @@ export function OfficeRibbon({
             {close => <>{[1, 1.15, 1.5, 2, 2.5, 3].map(value => <button key={value} role="menuitem" onClick={() => { wordCommand({ type: "word", action: "paragraph", properties: { "line-height": String(value), "--word-line-rule": "auto" } }); close(); }}>{value.toFixed(1)}</button>)}
               <button role="menuitem" onClick={() => { setParagraphOpen(true); close(); }}>行距选项…</button></>}
           </OfficeMenu>
-          <OfficeColorMenu label="底纹" value="#ffffff" fill disabled={!canFormat} apply={value => wordCommand({ type: "word", action: "paragraph", properties: { "background-color": value } })} />
+          <OfficeColorMenu label="底纹" value="#ffffff" fill disabled={!canFormat} themeColors={format.themeColors} apply={value => wordCommand({ type: "word", action: "paragraph", properties: { "background-color": value } })} />
           <OfficeMenu label="边框" icon={<Icon name="table" size={17} />} disabled={!canFormat}>
             {close => <>{["下框线", "上框线", "左框线", "右框线", "无框线", "所有框线", "外侧框线"].map((label, i) => <button key={label} role="menuitem" onClick={() => {
               const sides = i < 4 ? [["bottom", "top", "left", "right"][i]!] : ["top", "right", "bottom", "left"];
@@ -439,7 +528,25 @@ export function OfficeRibbon({
   </Group>;
   const clipboard = (
     <Group title="剪贴板" className="clipboard-group">
-      {command("paste", "粘贴", "paste", true)}
+      {word ? (
+        <OfficeMenu
+          label="粘贴"
+          icon={<Icon name="paste" size={32} />}
+          large
+          disabled={busy || !actions.paste || Boolean(actions.paste.disabled)}
+          split={() => actions.paste?.run()}
+        >
+          {(close) => (
+            <>
+              <button role="menuitem" type="button" onClick={() => { actions.paste?.run(); close(); }}>保留源格式</button>
+              <button role="menuitem" type="button" disabled={!actions.pasteMerge || actions.pasteMerge.disabled} onClick={() => { actions.pasteMerge?.run(); close(); }}>合并格式</button>
+              <button role="menuitem" type="button" disabled={!actions.pastePlain || actions.pastePlain.disabled} onClick={() => { actions.pastePlain?.run(); close(); }}>仅保留文本</button>
+            </>
+          )}
+        </OfficeMenu>
+      ) : (
+        command("paste", "粘贴", "paste", true)
+      )}
       <div className="ribbon-tool-stack">
         {command("cut", "剪切", "cut")}
         {command("copy", "复制", "copy")}
@@ -574,13 +681,82 @@ export function OfficeRibbon({
     );
   else content = <Group title="帮助"><Tool label="帮助" icon="book" large /></Group>;
   if (!["开始", "文件", "帮助"].includes(tab)) content = <NativeOfficeTabs kind={kind} tab={tab} commands={commands} actions={actions} canFormat={canFormat} busy={busy}
-    onCommand={onCommand} onTextCommand={onTextCommand} onLayout={onLayout} onZoom={onZoom} paragraph={() => setParagraphOpen(true)} borders={() => setBorderOpen(true)} layout={layout} zoom={zoom} enableWorkbookZoom={enableWorkbookZoom} />;
+    onCommand={onCommand} onTextCommand={onTextCommand} onLayout={handleLayout} onZoom={handleZoom} paragraph={() => setParagraphOpen(true)} borders={() => setBorderOpen(true)} layout={layout} zoom={zoom} enableWorkbookZoom={enableWorkbookZoom}
+    pageZoomMode={effectivePageZoomMode} onPageZoomMode={word ? handlePageZoomMode : undefined} draftMode={draftMode} onDraftMode={onDraftMode} focusMode={focusMode} onFocusMode={onFocusMode} />;
   if (tab === "形状格式" && shapeSelected) content = <>
     <Group title="插入形状"><Tool label="形状" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "insertShape" })} /></Group>
     <Group title="文本"><Tool label="编辑文字" icon="textBox" large disabled={!canFormat || format.drawingCount !== 1 || !["shape", "textBox"].includes(format.drawingKind!) || !!format.editingInPlace} run={() => wordCommand({ type: "word", action: "editDrawingText" })} /></Group>
     <Group title="形状样式"><Tool label="填充与线条" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
-    <Group title="排列"><div className="ribbon-tool-stack"><Tool label="文字环绕" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /><Tool label="选择窗格" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} /></div></Group>
+    <Group title="排列">
+      <div className="ribbon-tool-stack">
+        <Tool label="文字环绕" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        <Tool label="前移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "bringForward" })} />
+        <Tool label="后移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sendBackward" })} />
+      </div>
+      <div className="ribbon-tool-stack">
+        <Tool label="选择窗格" icon="panel" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} />
+        <Tool label="组合" icon="grid" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "groupDrawings" })} />
+      </div>
+    </Group>
     <Group title="大小"><Tool label="大小和位置" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
+  </>;
+  if (tab === "图片格式" && imageSelected) content = <>
+    <Group title="调整"><Tool label="裁剪与属性" icon="image" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
+    <Group title="排列">
+      <div className="ribbon-tool-stack">
+        <Tool label="位置" icon="grid" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        <Tool label="自动换行" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        <Tool label="选择窗格" icon="panel" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} />
+      </div>
+      <div className="ribbon-tool-stack">
+        <Tool label="前移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "bringForward" })} />
+        <Tool label="后移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sendBackward" })} />
+      </div>
+    </Group>
+    <Group title="大小"><Tool label="大小和旋转" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
+  </>;
+  if (tab === "图表设计" && chartSelected) content = <>
+    <Group title="数据与类型"><Tool label="编辑图表" icon="chart" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "chartSettings" })} /></Group>
+    <Group title="排列">
+      <div className="ribbon-tool-stack">
+        <Tool label="文字环绕" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        <Tool label="前移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "bringForward" })} />
+        <Tool label="后移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sendBackward" })} />
+      </div>
+      <Tool label="选择窗格" icon="panel" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} />
+    </Group>
+  </>;
+  if (tab === "表格设计" && tableSelected) content = <>
+    <Group title="表格样式"><Tool label="表格属性与样式" icon="table" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} /></Group>
+    <Group title="边框与底纹">
+      <OfficeColorMenu label="单元格底纹" value="#f2f2f2" fill disabled={!canFormat} themeColors={format.themeColors} apply={value => wordCommand({ type: "word", action: "tableShading", color: value })} />
+      <Tool label="边框和底纹" icon="table" large disabled={!canFormat} run={() => setBorderOpen(true)} />
+    </Group>
+  </>;
+  if (tab === "表格布局" && tableSelected) content = <>
+    <Group title="表">
+      <Tool label="属性" icon="table" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} />
+      <Tool label="删除表格" icon="close" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "deleteTable" })} />
+    </Group>
+    <Group title="行和列">
+      <div className="ribbon-tool-stack">
+        <Tool label="在上方插入行" icon="insertCells" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "insertRowAbove" })} />
+        <Tool label="在下方插入行" icon="insertCells" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "insertRowBelow" })} />
+        <Tool label="删除行" icon="deleteCells" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "deleteRow" })} />
+      </div>
+      <div className="ribbon-tool-stack">
+        <Tool label="在左侧插入列" icon="insertCells" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "insertColLeft" })} />
+        <Tool label="在右侧插入列" icon="insertCells" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "insertColRight" })} />
+        <Tool label="删除列" icon="deleteCells" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "deleteCol" })} />
+      </div>
+    </Group>
+    <Group title="合并">
+      <Tool label="合并/拆分" icon="merge" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} />
+    </Group>
+    <Group title="数据">
+      <Tool label="排序" icon="sort" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sort" })} />
+      <Tool label="转换为文本" icon="textBox" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableToText" })} />
+    </Group>
   </>;
   return (
     <div ref={root} data-compact={compact} className="doffi-office-ribbon office-ribbon" data-kind={kind} data-mode={mode} data-collapsed={collapsed}>

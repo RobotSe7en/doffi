@@ -10,15 +10,25 @@ import { createWordListControls } from "./word-list-controls.js";
 import { wordStoryPreview } from "./word-story-preview.js";
 import { createWordTableControls } from "./word-table-controls.js";
 import { createWordDrawingControls } from "./word-drawing-controls.js";
+import { createWordToolsControls } from "./word-tools-controls.js";
+import type { WordTableQuickAction } from "./word-tools-controls.js";
+import { createWordContextMenu } from "./word-context-menu.js";
+import type { WordContextMenuItem } from "./word-context-menu.js";
 import { createWordReferenceControls } from "./word-reference-controls.js";
 import { createWordLinkControls } from "./word-link-controls.js";
 import { createWordMathControls } from "./word-math-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { bindWordSelectionScroll } from "./word-selection-scroll.js";
 import { showWordWhitespace } from "./word-marks.js";
-import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
-import type { ZoomAnchor } from "./viewport-zoom.js";
+import {
+  captureZoomAnchor,
+  computeWordFitZoom,
+  restoreZoomAnchor,
+  scrollToWordPage,
+} from "./viewport-zoom.js";
+import type { WordPageZoomMode, ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
+import type { WordPasteMode } from "./clipboard-command.js";
 import {
   copyClipboardImages,
   pasteClipboardImages,
@@ -123,6 +133,11 @@ export type DocumentTextCommand =
       readonly level?: number;
     }
   | { readonly type: "word"; readonly action: "clearFormat" }
+  | {
+      readonly type: "word";
+      readonly action: "changeCase";
+      readonly mode: "sentence" | "lower" | "upper" | "title" | "toggle";
+    }
   | { readonly type: "word"; readonly action: "indent"; readonly direction: -1 | 1 }
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | {
@@ -138,6 +153,16 @@ export type DocumentTextCommand =
     }
   | {
       readonly type: "word";
+      readonly action: "tableAction";
+      readonly operation: WordTableQuickAction;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "tableShading";
+      readonly color: string;
+    }
+  | {
+      readonly type: "word";
       readonly action:
         | "find"
         | "replace"
@@ -150,6 +175,8 @@ export type DocumentTextCommand =
         | "mainStory"
         | "sectionBreak"
         | "pageBreak"
+        | "insertBlankPage"
+        | "insertDateTime"
         | "pageNumber"
         | "insertImage"
         | "insertShape"
@@ -158,6 +185,12 @@ export type DocumentTextCommand =
         | "drawingSettings"
         | "editDrawingText"
         | "selectionPane"
+        | "bringForward"
+        | "sendBackward"
+        | "groupDrawings"
+        | "sort"
+        | "textToTable"
+        | "tableToText"
         | "insertFootnote"
         | "insertEndnote"
         | "referenceSettings"
@@ -186,10 +219,11 @@ export interface DocumentTextEditor {
   execute(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
   setZoom(zoom: number): void;
+  fitPage(mode: WordPageZoomMode): number;
   goToPage(page: number): Promise<void>;
   editStory(storyId?: string): void;
   selection(): DocumentSelection | undefined;
-  clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
+  clipboard(action: "copy" | "cut" | "paste", options?: { readonly pasteMode?: WordPasteMode }): Promise<void>;
   /** Core owns persistent state and history. Disposal releases only this view. */
   dispose(): void;
 }
@@ -400,6 +434,39 @@ export function mountDocumentTextEditor(
     stage,
     session,
     () => selectedParagraphs().map((node) => node.dataset.nodeId!),
+    report,
+  );
+  const contextMenu = createWordContextMenu(shadow, report);
+  let pendingPasteMode: WordPasteMode | undefined;
+  const toolsControls = createWordToolsControls(
+    shadow,
+    stage,
+    session,
+    () => {
+      const paragraphs = selectedParagraphs();
+      const range = selectedRange();
+      const focusNode = range
+        ? range.startContainer.nodeType === 1
+          ? (range.startContainer as Element)
+          : range.startContainer.parentElement
+        : paragraphs[0];
+      const table = focusNode?.closest<HTMLElement>("table");
+      const cell = focusNode?.closest<HTMLElement>("td,th");
+      const firstPara = paragraphs[0];
+      return {
+        paragraphIds: paragraphs.map((p) => p.dataset.nodeId!).filter(Boolean),
+        ...(table?.dataset.nodeId ? { tableId: table.dataset.nodeId } : {}),
+        ...(cell?.dataset.nodeId ? { cellId: cell.dataset.nodeId } : {}),
+        ...(firstPara?.dataset.nodeId && range
+          ? {
+              caret: {
+                nodeId: firstPara.dataset.nodeId,
+                offset: offsetAt(firstPara, range.startContainer, range.startOffset, projection.ignored),
+              },
+            }
+          : {}),
+      };
+    },
     report,
   );
   const drawingControls = createWordDrawingControls(
@@ -1506,6 +1573,46 @@ export function mountDocumentTextEditor(
       mathControls.open(command.action === "insertEquation");
       return;
     }
+    if (command.action === "bringForward") {
+      drawingControls.reorderSelected("forward");
+      return;
+    }
+    if (command.action === "sendBackward") {
+      drawingControls.reorderSelected("backward");
+      return;
+    }
+    if (command.action === "groupDrawings") {
+      drawingControls.groupOrUngroupSelected();
+      return;
+    }
+    if (command.action === "sort") {
+      toolsControls.openSort();
+      return;
+    }
+    if (command.action === "textToTable") {
+      toolsControls.openTextToTable();
+      return;
+    }
+    if (command.action === "tableToText") {
+      toolsControls.openTableToText();
+      return;
+    }
+    if (command.action === "insertBlankPage") {
+      toolsControls.insertBlankPage();
+      return;
+    }
+    if (command.action === "insertDateTime") {
+      toolsControls.openDateTime();
+      return;
+    }
+    if (command.action === "tableAction") {
+      toolsControls.runTableAction(command.operation);
+      return;
+    }
+    if (command.action === "tableShading") {
+      toolsControls.setTableCellShading(command.color);
+      return;
+    }
     if (command.action === "fontSettings") {
       fontControls.open();
       return;
@@ -1570,6 +1677,128 @@ export function mountDocumentTextEditor(
     if (command.action === "showMarks") {
       showMarks = command.visible;
       updateMarks();
+      if (root.querySelector('[data-sdk-word-hidden="true"]')) void preview.settled();
+      return;
+    }
+    if (command.action === "changeCase") {
+      const range = selectedRange();
+      if (!range) return;
+      savedSelection = bookmark(root, projection.ignored);
+      const transform = (text: string): string => {
+        if (command.mode === "lower") return text.toLocaleLowerCase();
+        if (command.mode === "upper") return text.toLocaleUpperCase();
+        if (command.mode === "toggle") {
+          let out = "";
+          for (const ch of text) {
+            const upper = ch.toLocaleUpperCase(),
+              lower = ch.toLocaleLowerCase();
+            out += ch === upper && upper !== lower ? lower : upper;
+          }
+          return out;
+        }
+        if (command.mode === "title") {
+          let out = "",
+            boundary = true;
+          for (const ch of text) {
+            if (/[\p{L}\p{N}]/u.test(ch)) {
+              out += boundary ? ch.toLocaleUpperCase() : ch.toLocaleLowerCase();
+              boundary = false;
+            } else {
+              out += ch;
+              boundary = true;
+            }
+          }
+          return out;
+        }
+        let out = "",
+          sentenceStart = true;
+        for (const ch of text) {
+          if (/[.!?。！？\n\t]/.test(ch)) {
+            out += ch;
+            sentenceStart = true;
+          } else if (/[\p{L}]/u.test(ch)) {
+            out += sentenceStart ? ch.toLocaleUpperCase() : ch.toLocaleLowerCase();
+            sentenceStart = false;
+          } else {
+            out += ch;
+          }
+        }
+        return out;
+      };
+      const snapshot = session.snapshot();
+      const targetRanges: { nodeId: string; from: number; to: number }[] = [];
+      if (range.collapsed) {
+        const paragraph = selectedParagraphs()[0];
+        if (!paragraph?.dataset.nodeId) return;
+        const full = session.getNode(paragraph.dataset.nodeId)?.text ?? "";
+        const caret = offsetAt(paragraph, range.startContainer, range.startOffset, projection.ignored);
+        let from = caret,
+          to = caret;
+        while (from > 0 && /[\p{L}\p{N}_]/u.test(full[from - 1]!)) from--;
+        while (to < full.length && /[\p{L}\p{N}_]/u.test(full[to]!)) to++;
+        if (from === to) return;
+        targetRanges.push({ nodeId: paragraph.dataset.nodeId, from, to });
+      } else {
+        const anchor = new PreviewSource(frame!, viewModel()).textAnchor(range, session);
+        if (!anchor || !(anchor.kind === "text" || anchor.kind === "text-set")) return;
+        for (const item of anchor.kind === "text" ? [anchor] : anchor.ranges)
+          if (item.to > item.from)
+            targetRanges.push({ nodeId: item.nodeId, from: item.from, to: item.to });
+      }
+      const ops: DocumentOperation[] = [];
+      for (const item of targetRanges) {
+        const nodeText = session.getNode(item.nodeId)?.text ?? "";
+        const original = nodeText.slice(item.from, item.to);
+        const replaced = transform(original);
+        if (replaced === original) continue;
+        // Split at inline DOM text-node boundaries within the paragraph and
+        // apply right-to-left so each run keeps its formatting cleanly.
+        const paragraphEl = root.querySelector<HTMLElement>(
+          '[data-node-id="' + CSS.escape(item.nodeId) + '"]',
+        );
+        const cuts = new Set<number>([item.from, item.to]);
+        if (paragraphEl) {
+          const walker = frame!.createTreeWalker(paragraphEl, 4);
+          let cursor = 0;
+          for (let textNode = walker.nextNode(); textNode; textNode = walker.nextNode()) {
+            if (projection.ignored(textNode)) continue;
+            const len = (textNode as Text).length;
+            if (cursor > item.from && cursor < item.to) cuts.add(cursor);
+            cursor += len;
+            if (cursor > item.from && cursor < item.to) cuts.add(cursor);
+          }
+        }
+        const sorted = [...cuts].sort((a, b) => a - b);
+        const mapped = sorted.map((cut) => cut - item.from);
+        if (replaced.length === original.length) {
+          for (let i = sorted.length - 1; i > 0; i--) {
+            const a = sorted[i - 1]!,
+              b = sorted[i]!;
+            const expectedText = nodeText.slice(a, b);
+            const nextText = replaced.slice(mapped[i - 1]!, mapped[i]!);
+            if (nextText !== expectedText)
+              ops.push({ op: "replaceText", nodeId: item.nodeId, from: a, to: b, expectedText, text: nextText });
+          }
+        } else {
+          ops.push({
+            op: "replaceText",
+            nodeId: item.nodeId,
+            from: item.from,
+            to: item.to,
+            expectedText: original,
+            text: replaced,
+          });
+        }
+      }
+      if (!ops.length) return;
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: snapshot.manifest.documentId,
+          baseRevision: snapshot.manifest.revision,
+          operations: ops,
+        }),
+      );
       return;
     }
     if (command.action === "clearFormat") {
@@ -1808,11 +2037,16 @@ export function mountDocumentTextEditor(
 
   function paste(event: ClipboardEvent): void {
     event.preventDefault();
+    const pasteMode = pendingPasteMode ?? "keepSource";
+    pendingPasteMode = undefined;
     if (!event.clipboardData || composing || !root) return;
-    const raw = event.clipboardData.getData("text/html"),
-      image = Array.from(event.clipboardData?.files ?? []).find((file) =>
-        /^image\/(?:png|jpeg|webp)$/.test(file.type),
-      );
+    const raw = pasteMode === "plainText" ? "" : event.clipboardData.getData("text/html"),
+      image =
+        pasteMode === "plainText"
+          ? undefined
+          : Array.from(event.clipboardData?.files ?? []).find((file) =>
+              /^image\/(?:png|jpeg|webp)$/.test(file.type),
+            );
     if (image && !raw) {
       event.preventDefault();
       void drawingControls.insertImage(image).catch(report);
@@ -1823,8 +2057,31 @@ export function mountDocumentTextEditor(
       if (raw.length > WORD_CLIPBOARD_BYTES || text.length > WORD_CLIPBOARD_BYTES)
         throw new DocumentError("ResourceLimitExceeded", "粘贴内容超过 64 MiB。");
       const template = document.createElement("template");
-      if (raw) template.innerHTML = raw;
-      else
+      if (raw) {
+        template.innerHTML = raw;
+        if (pasteMode === "mergeFormatting") {
+          for (const el of template.content.querySelectorAll<HTMLElement>("*")) {
+            el.removeAttribute("data-doffi-word-clipboard");
+            el.removeAttribute("data-doffi-word-node");
+            el.removeAttribute("data-word-style");
+            el.removeAttribute("class");
+            for (const prop of [
+              "font-family",
+              "font-size",
+              "color",
+              "background-color",
+              "--word-font-ascii",
+              "--word-font-hAnsi",
+              "--word-font-eastAsia",
+              "--word-font-cs",
+              "--word-font-size-cs",
+              "--word-run-shading",
+            ])
+              el.style.removeProperty(prop);
+            if (!el.getAttribute("style")?.trim()) el.removeAttribute("style");
+          }
+        }
+      } else
         text
           .replace(/\r\n?/g, "\n")
           .split("\n")
@@ -2598,6 +2855,92 @@ export function mountDocumentTextEditor(
       signal: viewControls.signal,
     });
     frame.addEventListener(
+      "contextmenu",
+      (event: MouseEvent) => {
+        if (event.shiftKey || composing || !root) return;
+        event.preventDefault();
+        const target = event.target as Element | null;
+        const objectEl = target?.closest<HTMLElement>("[data-sdk-word-object]");
+        const tableCell = target?.closest<HTMLElement>("td,th");
+        const iframeRect = preview.element.getBoundingClientRect();
+        const hostX = iframeRect.left + event.clientX * zoom;
+        const hostY = iframeRect.top + event.clientY * zoom;
+        const items: WordContextMenuItem[] = [];
+        const runClipboard = (action: "copy" | "cut" | "paste", pasteMode?: WordPasteMode) => {
+          const expected = revision,
+            sel = JSON.stringify(bookmark(root!, projection.ignored));
+          pendingPasteMode = action === "paste" ? pasteMode : undefined;
+          void executeClipboard(
+            root!,
+            () => {
+              root?.focus();
+              if (root) restoreBookmark(root, savedSelection, projection.ignored);
+            },
+            action,
+            () =>
+              !disposed &&
+              !composing &&
+              revision === expected &&
+              (!root || JSON.stringify(bookmark(root, projection.ignored)) === sel),
+            pasteMode,
+          ).catch((reason) => {
+            pendingPasteMode = undefined;
+            report(reason);
+          });
+        };
+        if (objectEl?.dataset.sdkWordObject) {
+          const id = objectEl.dataset.sdkWordObject;
+          if (!drawingControls.selectedNodeIds().includes(id)) drawingControls.selectByNodeId(id);
+          const drawing = session
+            .snapshot()
+            .metadata.word?.drawings?.find((item) => item.nodeId === id);
+          items.push(
+            { label: "剪切", run: () => runClipboard("cut") },
+            { label: "复制", run: () => runClipboard("copy") },
+            { label: "删除对象", run: () => drawingControls.removeSelected() },
+            { separator: true },
+          );
+          if (drawing?.kind === "chart")
+            items.push({ label: "编辑图表…", run: () => chartControls.open(false) });
+          if (drawing?.kind === "shape" || drawing?.kind === "textBox")
+            items.push({ label: "编辑文字", run: () => drawingControls.editSelectedText() });
+          items.push(
+            { label: "前移一层", run: () => drawingControls.reorderSelected("forward") },
+            { label: "后移一层", run: () => drawingControls.reorderSelected("backward") },
+            { label: "设置对象格式…", run: () => drawingControls.open("drawingSettings") },
+            { label: "选择窗格", run: () => drawingControls.open("selectionPane") },
+          );
+        } else {
+          const hasTextSelection = Boolean(selectedRange() && !selectedRange()!.collapsed);
+          items.push(
+            { label: "剪切", disabled: !hasTextSelection, run: () => runClipboard("cut") },
+            { label: "复制", disabled: !hasTextSelection, run: () => runClipboard("copy") },
+            { label: "粘贴（保留源格式）", run: () => runClipboard("paste", "keepSource") },
+            { label: "合并格式粘贴", run: () => runClipboard("paste", "mergeFormatting") },
+            { label: "仅保留文本粘贴", run: () => runClipboard("paste", "plainText") },
+            { separator: true },
+            { label: "字体…", run: () => fontControls.open() },
+            { label: "排序…", run: () => toolsControls.openSort() },
+          );
+          if (tableCell) {
+            items.push(
+              { separator: true },
+              { label: "在上方插入行", run: () => toolsControls.runTableAction("insertRowAbove") },
+              { label: "在下方插入行", run: () => toolsControls.runTableAction("insertRowBelow") },
+              { label: "在左侧插入列", run: () => toolsControls.runTableAction("insertColLeft") },
+              { label: "在右侧插入列", run: () => toolsControls.runTableAction("insertColRight") },
+              { label: "删除行", run: () => toolsControls.runTableAction("deleteRow") },
+              { label: "删除列", run: () => toolsControls.runTableAction("deleteCol") },
+              { label: "表格转换成文本…", run: () => toolsControls.openTableToText() },
+              { label: "表格属性…", run: () => tableControls.open(false) },
+            );
+          }
+        }
+        contextMenu.open(hostX, hostY, items);
+      },
+      { signal: viewControls.signal },
+    );
+    frame.addEventListener(
       "dblclick",
       (event) => {
         if (composing) return;
@@ -2761,11 +3104,18 @@ export function mountDocumentTextEditor(
     restoreZoomAnchor(stage, plane, zoom, anchor);
   }
   function setZoom(value: number): void {
-    if (disposed || !Number.isFinite(value) || value < 0.5 || value > 2)
-      throw new DocumentError("InvalidOperation", "缩放范围为 50% 至 200%。");
+    if (disposed || !Number.isFinite(value) || value < 0.25 || value > 4)
+      throw new DocumentError("InvalidOperation", "缩放范围为 25% 至 400%。");
     const anchor = captureZoomAnchor(stage, plane, zoom);
     zoom = value;
     resizePlane(anchor);
+  }
+  function fitPage(mode: WordPageZoomMode): number {
+    const metadata = wordMetadata();
+    const setup = preview.layout().pages[0]?.setup ?? metadata.pageSetup;
+    const target = computeWordFitZoom(stage, setup.width, setup.height, mode);
+    setZoom(target);
+    return target;
   }
   const geometryObserver = new ResizeObserver(() => resizePlane());
   geometryObserver.observe(stage);
@@ -2819,6 +3169,7 @@ export function mountDocumentTextEditor(
     },
     formatState,
     setZoom,
+    fitPage,
     async goToPage(page) {
       await ready;
       flushLayout();
@@ -2835,11 +3186,12 @@ export function mountDocumentTextEditor(
       const manifest = session.snapshot().manifest;
       return { documentId: manifest.documentId, baseRevision: manifest.revision, anchor };
     },
-    clipboard(action) {
+    clipboard(action, clipOptions) {
       if (!root || disposed || composing)
         return Promise.reject(new DocumentError("InvalidOperation", "正文尚不可编辑。"));
       const expected = revision,
         selection = JSON.stringify(bookmark(root, projection.ignored));
+      pendingPasteMode = action === "paste" ? clipOptions?.pasteMode : undefined;
       return executeClipboard(
         root,
         () => {
@@ -2852,7 +3204,11 @@ export function mountDocumentTextEditor(
           !composing &&
           revision === expected &&
           (!root || JSON.stringify(bookmark(root, projection.ignored)) === selection),
-      );
+        clipOptions?.pasteMode,
+      ).catch((reason) => {
+        pendingPasteMode = undefined;
+        throw reason;
+      });
     },
     layout(current = false) {
       if (current) flushLayout();
@@ -2910,6 +3266,8 @@ export function mountDocumentTextEditor(
       linkControls.dispose();
       referenceControls.dispose();
       drawingControls.dispose();
+      toolsControls.dispose();
+      contextMenu.dispose();
       listControls.dispose();
       styleControls.dispose();
       fontControls.dispose();

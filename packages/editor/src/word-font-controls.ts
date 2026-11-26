@@ -138,10 +138,22 @@ export function createWordFontControls(
       underline = choose("字符下划线", [
         ["none", "无"],
         ["solid", "单线"],
+        ["words", "仅字下划线"],
         ["double", "双线"],
+        ["thick", "粗线"],
         ["dotted", "点线"],
+        ["dottedHeavy", "粗点线"],
         ["dashed", "虚线"],
+        ["dashedHeavy", "粗虚线"],
+        ["dashLong", "长虚线"],
+        ["dashLongHeavy", "粗长虚线"],
+        ["dotDash", "点划线"],
+        ["dashDotHeavy", "粗点划线"],
+        ["dotDotDash", "双点划线"],
+        ["dashDotDotHeavy", "粗双点划线"],
         ["wavy", "波浪线"],
+        ["wavyHeavy", "粗波浪线"],
+        ["wavyDouble", "双波浪线"],
       ]),
       strike = choose("字符删除线", [
         ["none", "无"],
@@ -164,24 +176,107 @@ export function createWordFontControls(
     shape.value = state.bold ? state.italic ? "boldItalic" : "bold" : state.italic ? "italic" : "normal";
     shape.addEventListener("change", () => { weight.value = shape.value === "bold" || shape.value === "boldItalic" ? "700" : "400"; italic.value = shape.value === "italic" || shape.value === "boldItalic" ? "italic" : "normal"; changed.add(weight); changed.add(italic); }, { signal });
     fontGrid.append(shapeLabel);
-    const effect = (title: string, field: HTMLSelectElement, value: string, clear: string, checked = false) => {
-      const label = document.createElement("label"), checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = checked; label.append(checkbox, title);
-      checkbox.addEventListener("change", () => { field.value = checkbox.checked ? value : clear; changed.add(field); }, { signal }); effects.append(label);
+    const native = state.characterProperties ?? {};
+    const effect = (
+      title: string,
+      field: HTMLSelectElement,
+      value: string,
+      clear: string,
+      checked = false,
+      onToggle?: (isChecked: boolean) => void,
+    ): HTMLInputElement => {
+      const label = document.createElement("label"), checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = checked;
+      checkbox.setAttribute("aria-label", title);
+      label.append(checkbox, title);
+      checkbox.addEventListener(
+        "change",
+        () => {
+          field.value = checkbox.checked ? value : clear;
+          changed.add(field);
+          onToggle?.(checkbox.checked);
+        },
+        { signal },
+      );
+      effects.append(label);
+      return checkbox;
     };
     effects.style.cssText = "grid-template-columns:1fr 1fr;gap:4px 40px;margin-top:22px";
-    effect("删除线", strike, "line-through", "none", state.strikethrough);
-    effect("小型大写字母", caps, "small-caps", "none");
-    const doubleStrike = document.createElement("label"), doubleStrikeBox = document.createElement("input"); doubleStrikeBox.type = "checkbox"; doubleStrikeBox.disabled = true; doubleStrike.append(doubleStrikeBox, "双删除线"); effects.append(doubleStrike);
-    effect("全部大写字母", caps, "uppercase", "none");
-    effect("上标", vertical, "super", "baseline", state.verticalAlign === "super");
-    const hiddenLabel = document.createElement("label"), hiddenBox = document.createElement("input"); hiddenBox.type = "checkbox"; hiddenBox.disabled = true; hiddenLabel.append(hiddenBox, "隐藏"); effects.append(hiddenLabel);
-    effect("下标", vertical, "sub", "baseline", state.verticalAlign === "sub");
+    const doubleStrike = document.createElement("label"), doubleStrikeBox = document.createElement("input");
+    doubleStrikeBox.type = "checkbox";
+    doubleStrikeBox.setAttribute("aria-label", "双删除线");
+    doubleStrikeBox.checked = state.doubleStrikethrough === true || native["--word-dstrike"] === "1";
+    doubleStrike.append(doubleStrikeBox, "双删除线");
+    const strikeBox = effect("删除线", strike, "line-through", "none", state.strikethrough, (checked) => {
+      if (checked && doubleStrikeBox.checked) {
+        doubleStrikeBox.checked = false;
+        doubleStrikeBox.dataset.changed = "1";
+      }
+    });
+    const smallCapsBox = effect("小型大写字母", caps, "small-caps", "none", native["font-variant"] === "small-caps");
+    doubleStrikeBox.addEventListener(
+      "change",
+      () => {
+        doubleStrikeBox.dataset.changed = "1";
+        if (doubleStrikeBox.checked && strikeBox.checked) {
+          strikeBox.checked = false;
+          strike.value = "none";
+          changed.add(strike);
+        }
+      },
+      { signal },
+    );
+    effects.append(doubleStrike);
+    const allCapsBox = effect("全部大写字母", caps, "uppercase", "none", native["text-transform"] === "uppercase");
+    smallCapsBox.addEventListener(
+      "change",
+      () => {
+        if (smallCapsBox.checked) allCapsBox.checked = false;
+      },
+      { signal },
+    );
+    allCapsBox.addEventListener(
+      "change",
+      () => {
+        if (allCapsBox.checked) smallCapsBox.checked = false;
+      },
+      { signal },
+    );
+    const superBox = effect("上标", vertical, "super", "baseline", state.verticalAlign === "super");
+    const hiddenLabel = document.createElement("label"), hiddenBox = document.createElement("input");
+    hiddenBox.type = "checkbox";
+    hiddenBox.setAttribute("aria-label", "隐藏");
+    hiddenBox.checked = native["--word-run-native-vanish"] === "1";
+    hiddenBox.addEventListener("change", () => { hiddenBox.dataset.changed = "1"; }, { signal });
+    hiddenLabel.append(hiddenBox, "隐藏");
+    effects.append(hiddenLabel);
+    const subBox = effect("下标", vertical, "sub", "baseline", state.verticalAlign === "sub");
+    superBox.addEventListener("change", () => { if (superBox.checked) subBox.checked = false; }, { signal });
+    subBox.addEventListener("change", () => { if (subBox.checked) superBox.checked = false; }, { signal });
     weight.parentElement!.firstChild!.textContent = "字形:";
     weight.parentElement!.style.gridColumn = "2"; weight.parentElement!.style.gridRow = "1";
     weight.value = state.bold === undefined ? "" : state.bold ? "700" : "400";
     italic.value = state.italic === undefined ? "" : state.italic ? "italic" : "normal";
     italic.parentElement!.firstChild!.textContent = "倾斜:";
-    underline.value = state.underline === undefined ? "" : state.underline ? state.characterProperties?.["text-decoration-style"] ?? "solid" : "none";
+    const rawUnderline = native["--word-underline-style"];
+    const normalizedUnderline = rawUnderline
+      ? rawUnderline === "single"
+        ? "solid"
+        : rawUnderline === "dash"
+          ? "dashed"
+          : rawUnderline === "wave"
+            ? "wavy"
+            : rawUnderline
+      : undefined;
+    underline.value =
+      state.underline === undefined
+        ? ""
+        : state.underline
+          ? (normalizedUnderline && normalizedUnderline !== "none"
+              ? normalizedUnderline
+              : (native["text-decoration-style"] ?? "solid"))
+          : "none";
     underline.parentElement!.firstChild!.textContent = "下划线线型:";
     target = advancedTab;
     const spacing = field("字符间距（磅）", "number"),
@@ -199,12 +294,21 @@ export function createWordFontControls(
       kern = field("字距调整起始字号（磅）", "number");
     color.parentElement!.firstChild!.textContent = "字体颜色:";
     background.parentElement!.firstChild!.textContent = "文字底纹:";
-    const colors = document.createElement("fieldset"), colorsLegend = document.createElement("legend"); colorsLegend.textContent = "颜色和下划线"; colors.style.cssText = "grid-template-columns:1fr 1fr 1fr 70px;margin-top:20px";
+    const colors = document.createElement("fieldset"), colorsLegend = document.createElement("legend"); colorsLegend.textContent = "颜色和下划线"; colors.style.cssText = "grid-template-columns:1fr 1fr 1fr 1fr;margin-top:20px";
     const underlineColorInput = field("下划线颜色"), underlineColor = underlineColorInput.parentElement!;
     underlineColorInput.placeholder = "自动";
     underlineColorInput.value = state.characterProperties?.["text-decoration-color"] ?? "";
     underlineColorInput.addEventListener("input", () => underlineColorInput.setCustomValidity(""), { signal });
-    const emphasis = document.createElement("label"), emphasisInput = document.createElement("select"); emphasis.append("着重号:", emphasisInput); emphasisInput.disabled = true; const none = document.createElement("option"); none.textContent = "(无)"; emphasisInput.append(none);
+    const emphasisInput = choose("着重号", [
+      ["none", "(无)"],
+      ["dot", "圆点（下）"],
+      ["comma", "顿号（上）"],
+      ["circle", "空心圆（上）"],
+      ["underDot", "下圆点"],
+    ]);
+    emphasisInput.parentElement!.firstChild!.textContent = "着重号:";
+    emphasisInput.value = native["--word-run-native-em"] ?? "";
+    const emphasis = emphasisInput.parentElement!;
     const rgb = /^rgb\(\s*(\d+)[, ]+\s*(\d+)[, ]+\s*(\d+)\s*\)$/.exec(state.color ?? "");
     color.value = /^#[0-9a-f]{6}$/i.test(state.color ?? "") ? state.color! : rgb ? "#" + rgb.slice(1).map(value => Number(value).toString(16).padStart(2, "0")).join("") : "#000000"; color.type = "color"; color.style.width = "100%";
     colors.append(colorsLegend, color.parentElement!, underline.parentElement!, underlineColor, emphasis);
@@ -212,14 +316,62 @@ export function createWordFontControls(
     const previewLabel = document.createElement("div"); previewLabel.textContent = "预览"; previewLabel.style.cssText = "border-top:1px solid #ddd;padding-top:10px;margin-top:auto;font-weight:600";
     fontTab.insertBefore(previewLabel, preview);
     const updatePreview = () => {
-      preview.style.fontFamily = JSON.stringify(roles[2]!.input.value || roles[0]!.input.value);
-      const pointSize = (wordSizeNames[size.value] ?? Number(size.value)); if (pointSize) preview.style.fontSize = Math.min(pointSize, 40) + "pt";
-      preview.style.fontWeight = weight.value; preview.style.fontStyle = italic.value; preview.style.color = color.value;
-      preview.style.textDecoration = [underline.value && underline.value !== "none" ? "underline" : "", strike.value === "line-through" ? "line-through" : ""].filter(Boolean).join(" ");
-      preview.style.textDecorationStyle = underline.value === "none" ? "solid" : underline.value;
-      preview.style.textDecorationColor = underlineColorInput.value.trim() || "currentColor";
+      const cssUnderlineStyle = (value: string) =>
+        value === "double"
+          ? "double"
+          : value === "dotted" || value === "dottedHeavy"
+            ? "dotted"
+            : value === "wavy" || value === "wavyHeavy" || value === "wavyDouble"
+              ? "wavy"
+              : [
+                    "dashed",
+                    "dashedHeavy",
+                    "dashLong",
+                    "dashLongHeavy",
+                    "dotDash",
+                    "dashDotHeavy",
+                    "dotDotDash",
+                    "dashDotDotHeavy",
+                  ].includes(value)
+                ? "dashed"
+                : "solid";
+      for (const box of [preview, advancedPreview]) {
+        if (!box) continue;
+        box.style.fontFamily = JSON.stringify(roles[2]!.input.value || roles[0]!.input.value);
+        const pointSize = wordSizeNames[size.value] ?? Number(size.value);
+        if (pointSize) box.style.fontSize = Math.min(pointSize, 40) + "pt";
+        box.style.fontWeight = weight.value;
+        box.style.fontStyle = italic.value;
+        box.style.color = color.value;
+        box.style.textTransform = allCapsBox.checked ? "uppercase" : "none";
+        box.style.fontVariant = smallCapsBox.checked ? "small-caps" : "normal";
+        box.style.textDecoration = [
+          underline.value && underline.value !== "none" ? "underline" : "",
+          strike.value === "line-through" ? "line-through" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        box.style.textDecorationStyle =
+          underline.value && underline.value !== "none" ? cssUnderlineStyle(underline.value) : "solid";
+        box.style.textDecorationColor = underlineColorInput.value.trim() || "currentColor";
+        box.style.backgroundImage = doubleStrikeBox.checked
+          ? "linear-gradient(to bottom, transparent 40%, currentColor 40%, currentColor 46%, transparent 46%, transparent 56%, currentColor 56%, currentColor 62%, transparent 62%)"
+          : "";
+        box.style.opacity = hiddenBox.checked ? "0.45" : "1";
+        if (emphasisInput.value === "dot" || emphasisInput.value === "underDot") {
+          box.style.setProperty("text-emphasis-style", "filled dot");
+          box.style.setProperty("text-emphasis-position", "under right");
+        } else if (emphasisInput.value === "comma") {
+          box.style.setProperty("text-emphasis-style", "filled sesame");
+          box.style.setProperty("text-emphasis-position", "over right");
+        } else if (emphasisInput.value === "circle") {
+          box.style.setProperty("text-emphasis-style", "open circle");
+          box.style.setProperty("text-emphasis-position", "over right");
+        } else {
+          box.style.setProperty("text-emphasis-style", "none");
+        }
+      }
     };
-    for (const type of ["input", "change"]) panel.addEventListener(type, updatePreview, { signal }); updatePreview();
     const mark = field("仅设置段落标记", "checkbox");
     complexSize.min = ".5";
     kern.min = "0";
@@ -228,7 +380,6 @@ export function createWordFontControls(
       input: field(["西文语言", "东亚语言", "复杂文字语言"][index]!),
     }));
     const readName = (value: string) => { const match = /^\s*(?:"([^"]*)"|'([^']*)'|([^,]+))/.exec(value); return match?.[1] ?? match?.[2] ?? match?.[3] ?? ""; };
-    const native = state.characterProperties ?? {};
     for (const { role, input } of roles) if (native["--word-font-" + role]) input.value = readName(native["--word-font-" + role]!);
     for (const { role, input } of languages) if (native["--word-language-" + role]) input.value = readName(native["--word-language-" + role]!);
     const points = (value: string | undefined) => value && Number.isFinite(parseFloat(value)) ? String(parseFloat(value) * (value.endsWith("px") ? .75 : 1)) : "";
@@ -238,7 +389,6 @@ export function createWordFontControls(
     extraTitle.textContent = "其他语言设置"; extraFields.className = "dialog-options"; extra.append(extraTitle, extraFields);
     for (const node of [...advancedTab.children]) if (node !== spacing.parentElement && node !== kern.parentElement) extraFields.append(node);
     const intervalGroup = document.createElement("fieldset"), intervalTitle = document.createElement("legend"); intervalTitle.textContent = "字符间距"; intervalGroup.append(intervalTitle);
-    const disabledChoice = (group: HTMLElement, name: string, value: string) => { const label = document.createElement("label"), select = document.createElement("select"), option = document.createElement("option"); label.append(name, select); option.textContent = value; select.append(option); select.disabled = true; group.append(label); };
     const scale = field("字符缩放（百分比）", "number");
     scale.min = "1"; scale.max = "600"; scale.step = "1";
     scale.value = native["--word-run-native-w"] ?? (state.hasSelection ? "" : "100");
@@ -248,16 +398,107 @@ export function createWordFontControls(
     for (const [value, title] of [["normal", "标准"], ["expanded", "加宽"], ["condensed", "紧缩"]]) { const option = document.createElement("option"); option.value = value!; option.textContent = title!; interval.append(option); }
     spacing.parentElement!.firstChild!.textContent = "磅值:"; intervalGroup.append(spacing.parentElement!);
     interval.addEventListener("change", () => { spacing.value = interval.value === "normal" ? "0" : String((interval.value === "condensed" ? -1 : 1) * Math.abs(Number(spacing.value) || 1)); changed.add(spacing); }, { signal });
-    disabledChoice(intervalGroup, "位置:", "标准");
-    const positionLabel = document.createElement("label"), position = document.createElement("input"); position.type = "number"; position.disabled = true; positionLabel.append("磅值:", position); intervalGroup.append(positionLabel);
+    const posMode = choose("字符位置偏移", [
+      ["normal", "标准"],
+      ["raised", "提升"],
+      ["lowered", "降低"],
+    ]);
+    posMode.parentElement!.firstChild!.textContent = "位置:";
+    const posAmount = field("位置磅值", "number");
+    posAmount.min = "0";
+    posAmount.max = "1585";
+    posAmount.step = ".5";
+    posAmount.parentElement!.firstChild!.textContent = "磅值:";
+    const rawPos = Number(native["--word-run-native-position"] ?? "0");
+    if (Number.isFinite(rawPos) && rawPos > 0) {
+      posMode.value = "raised";
+      posAmount.value = String(rawPos / 2);
+    } else if (Number.isFinite(rawPos) && rawPos < 0) {
+      posMode.value = "lowered";
+      posAmount.value = String(Math.abs(rawPos) / 2);
+    } else {
+      posMode.value = native["--word-run-native-position"] !== undefined ? "normal" : "";
+      posAmount.value = native["--word-run-native-position"] !== undefined ? "0" : "";
+    }
+    posMode.addEventListener(
+      "change",
+      () => {
+        if (posMode.value === "normal") posAmount.value = "0";
+        else if ((posMode.value === "raised" || posMode.value === "lowered") && !(Number(posAmount.value) > 0))
+          posAmount.value = "3";
+        changed.add(posAmount);
+      },
+      { signal },
+    );
+    posAmount.addEventListener(
+      "input",
+      () => {
+        if (Number(posAmount.value) > 0 && (!posMode.value || posMode.value === "normal")) {
+          posMode.value = "raised";
+          changed.add(posMode);
+        }
+      },
+      { signal },
+    );
+    intervalGroup.append(posMode.parentElement!, posAmount.parentElement!);
     const kernLabel = document.createElement("label"), kernBox = document.createElement("input"); kernBox.type = "checkbox"; kernBox.checked = Number(kern.value) > 0; kernLabel.append(kernBox, "为字体调整字间距:"); intervalGroup.append(kernLabel, kern.parentElement!);
     kern.parentElement!.firstChild!.textContent = "磅或更大"; kernBox.addEventListener("change", () => { kern.value = kernBox.checked ? "12" : "0"; changed.add(kern); }, { signal });
     const snapLabel = document.createElement("label"), snap = document.createElement("input"); snap.type = "checkbox"; snap.checked = native["--word-run-snap-to-grid"] !== "0"; snap.addEventListener("change", () => { snap.dataset.changed = "1"; }, { signal }); snapLabel.append(snap, "定义文档网格时对齐网格"); snapLabel.style.gridColumn = "1/-1"; intervalGroup.append(snapLabel);
     const layoutGroup = document.createElement("fieldset"), layoutTitle = document.createElement("legend"); layoutTitle.textContent = "高级版式"; layoutGroup.append(layoutTitle);
-    for (const [name, value] of [["连字:", "无"], ["数字间距:", "默认"], ["数字形式:", "默认"], ["样式集:", "默认"]]) disabledChoice(layoutGroup, name!, value!);
-    const contextLabel = document.createElement("label"), context = document.createElement("input"); context.type = "checkbox"; context.disabled = true; contextLabel.append(context, "使用上下文替换"); layoutGroup.append(contextLabel);
+    const ligaturesOptions: [string, string][] = [
+      ["none", "无"],
+      ["standard", "仅标准"],
+      ["standardContextual", "标准和上下文"],
+      ["standardHistorical", "历史和自由"],
+      ["all", "全部"],
+    ];
+    const currentLigature = native["--word-opentype-ligatures"] ?? "";
+    if (currentLigature && !ligaturesOptions.some(([v]) => v === currentLigature))
+      ligaturesOptions.push([currentLigature, currentLigature]);
+    const ligaturesSelect = choose("连字", ligaturesOptions);
+    ligaturesSelect.parentElement!.firstChild!.textContent = "连字:";
+    ligaturesSelect.value = currentLigature;
+    const numSpacingSelect = choose("数字间距", [
+      ["default", "默认"],
+      ["proportional", "比例"],
+      ["tabular", "表格"],
+    ]);
+    numSpacingSelect.parentElement!.firstChild!.textContent = "数字间距:";
+    numSpacingSelect.value = native["--word-opentype-num-spacing"] ?? "";
+    const numFormSelect = choose("数字形式", [
+      ["default", "默认"],
+      ["lining", "齐线"],
+      ["oldStyle", "旧式"],
+    ]);
+    numFormSelect.parentElement!.firstChild!.textContent = "数字形式:";
+    numFormSelect.value = native["--word-opentype-num-form"] ?? "";
+    const stylisticOptions: [string, string][] = [
+      ["none", "默认"],
+      ...Array.from({ length: 20 }, (_, i) => [String(i + 1), `样式集 ${i + 1}`] as [string, string]),
+    ];
+    const currentStylistic = native["--word-opentype-stylistic-set"] ?? "";
+    if (currentStylistic && !stylisticOptions.some(([v]) => v === currentStylistic))
+      stylisticOptions.push([currentStylistic, `样式集 ${currentStylistic}`]);
+    const stylisticSelect = choose("样式集", stylisticOptions);
+    stylisticSelect.parentElement!.firstChild!.textContent = "样式集:";
+    stylisticSelect.value = currentStylistic;
+    layoutGroup.append(
+      ligaturesSelect.parentElement!,
+      numSpacingSelect.parentElement!,
+      numFormSelect.parentElement!,
+      stylisticSelect.parentElement!,
+    );
+    const contextLabel = document.createElement("label"), context = document.createElement("input");
+    context.type = "checkbox";
+    context.setAttribute("aria-label", "使用上下文替换");
+    context.checked = native["--word-opentype-contextual-alternates"] === "1";
+    context.addEventListener("change", () => { context.dataset.changed = "1"; }, { signal });
+    contextLabel.append(context, "使用上下文替换");
+    layoutGroup.append(contextLabel);
     const advancedPreview = document.createElement("div"); advancedPreview.className = "dialog-preview"; advancedPreview.textContent = "微软卓越　AaBbCc";
-    advancedTab.className = "dialog-stack"; interval.value = Number(spacing.value) < 0 ? "condensed" : Number(spacing.value) > 0 ? "expanded" : "normal"; updatePreview(); advancedTab.append(intervalGroup, layoutGroup, extra, advancedPreview);
+    advancedTab.className = "dialog-stack"; interval.value = Number(spacing.value) < 0 ? "condensed" : Number(spacing.value) > 0 ? "expanded" : "normal";
+    for (const type of ["input", "change"]) panel.addEventListener(type, updatePreview, { signal });
+    updatePreview(); advancedTab.append(intervalGroup, layoutGroup, extra, advancedPreview);
     button("确定", () => {
       if (changed.has(underlineColorInput) && underlineColorInput.value.trim()
         && !CSS.supports("color", underlineColorInput.value.trim())) {
@@ -268,6 +509,14 @@ export function createWordFontControls(
         const points = wordSizeNames[size.value] ?? Number(size.value);
         if (!Number.isFinite(points) || points < .5 || points > 1638 || !Number.isInteger(points * 2)) { size.setCustomValidity("请输入 0.5～1638 磅的有效字号。"); size.reportValidity(); return; }
         size.value = String(points);
+      }
+      if ((changed.has(posMode) || changed.has(posAmount)) && posMode.value && posMode.value !== "normal") {
+        const amount = Number(posAmount.value);
+        if (!Number.isFinite(amount) || amount < 0 || amount > 1585 || !Number.isInteger(amount * 2)) {
+          posAmount.setCustomValidity("请输入 0～1585 磅的有效偏移值（步长 0.5 磅）。");
+          posAmount.reportValidity();
+          return;
+        }
       }
       for (const field of allFields) if (!changed.has(field) && field.type !== "checkbox") field.value = "";
       const basis = mark.checked ? read(true) : state;
@@ -308,9 +557,60 @@ export function createWordFontControls(
               : []),
         ];
         properties.set("text-decoration-line", lines.join(" ") || "none");
-        if (underline.value && underline.value !== "none")
-          properties.set("text-decoration-style", underline.value);
+        if (underline.value) {
+          const ooxmlUnderline =
+            underline.value === "solid"
+              ? "single"
+              : underline.value === "dashed"
+                ? "dash"
+                : underline.value === "wavy"
+                  ? "wave"
+                  : underline.value;
+          const cssStyle =
+            underline.value === "double"
+              ? "double"
+              : underline.value === "dotted" || underline.value === "dottedHeavy"
+                ? "dotted"
+                : underline.value === "wavy" ||
+                    underline.value === "wavyHeavy" ||
+                    underline.value === "wavyDouble"
+                  ? "wavy"
+                  : [
+                        "dashed",
+                        "dashedHeavy",
+                        "dashLong",
+                        "dashLongHeavy",
+                        "dotDash",
+                        "dashDotHeavy",
+                        "dotDotDash",
+                        "dashDotDotHeavy",
+                      ].includes(underline.value)
+                    ? "dashed"
+                    : "solid";
+          properties.set("--word-underline-style", ooxmlUnderline);
+          if (underline.value !== "none") properties.set("text-decoration-style", cssStyle);
+        }
       }
+      if (doubleStrikeBox.dataset.changed)
+        properties.set("--word-dstrike", doubleStrikeBox.checked ? "1" : "0");
+      if (hiddenBox.dataset.changed)
+        properties.set("--word-run-native-vanish", hiddenBox.checked ? "1" : "0");
+      if (emphasisInput.value) properties.set("--word-run-native-em", emphasisInput.value);
+      if (posMode.value || posAmount.value) {
+        const mode = posMode.value || "normal";
+        const amount = Number(posAmount.value || "0");
+        const halfPoints =
+          mode === "normal" ? 0 : Math.round(amount * 2) * (mode === "lowered" ? -1 : 1);
+        properties.set("--word-run-native-position", String(halfPoints));
+      }
+      if (ligaturesSelect.value) properties.set("--word-opentype-ligatures", ligaturesSelect.value);
+      if (numSpacingSelect.value)
+        properties.set("--word-opentype-num-spacing", numSpacingSelect.value);
+      if (numFormSelect.value) properties.set("--word-opentype-num-form", numFormSelect.value);
+      if (stylisticSelect.value)
+        properties.set("--word-opentype-stylistic-set", stylisticSelect.value);
+      if (context.dataset.changed)
+        properties.set("--word-opentype-contextual-alternates", context.checked ? "1" : "0");
       if (caps.value) {
         properties.set("font-variant", caps.value === "small-caps" ? "small-caps" : "normal");
         properties.set("text-transform", caps.value === "uppercase" ? "uppercase" : "none");

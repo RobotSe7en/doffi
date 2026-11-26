@@ -21,6 +21,7 @@ import type {
   EditorCommandState,
   TextFormatState,
   DocumentTextCommand,
+  WordPageZoomMode,
 } from "@doffi/editor";
 import { DocumentWorkbench, PresentationWorkbench } from "@doffi/editor/react";
 import { reportFiles, sampleProposal, presentationFiles, presentationProposal } from "./samples.js";
@@ -96,6 +97,10 @@ export function App() {
   const workbookEditor = useRef<WorkbookRemoteEditorView>(undefined);
   const [changingMode, setChangingMode] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [pageZoomMode, setPageZoomMode] = useState<WordPageZoomMode>();
+  const [draftMode, setDraftMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const pendingFitRef = useRef<WordPageZoomMode>(undefined);
   const [slideShowStartId, setSlideShowStartId] = useState<string>();
   const [commentsVisible, setCommentsVisible] = useState(false);
   const [pageCount, setPageCount] = useState(0);
@@ -792,6 +797,9 @@ export function App() {
     presentationRef.current?.setReviewVisible(officeTab === "审阅");
   }, [officeTab, model]);
   function changeLayout(value: "pages" | "continuous"): void {
+    setDraftMode(false);
+    setPageZoomMode(undefined);
+    pendingFitRef.current = undefined;
     setLayout(value);
     setZoom(1);
     try {
@@ -800,11 +808,38 @@ export function App() {
       /* Optional host preference. */
     }
   }
+  function changeDraftMode(enabled: boolean): void {
+    setDraftMode(enabled);
+    setPageZoomMode(undefined);
+    pendingFitRef.current = undefined;
+    setLayout(enabled ? "continuous" : "pages");
+    setZoom(1);
+  }
+  function changePageZoomMode(mode: WordPageZoomMode): void {
+    try {
+      if (workbook || isPresentation) return;
+      if (layout !== "pages" || draftMode) {
+        pendingFitRef.current = mode;
+        setDraftMode(false);
+        setLayout("pages");
+        setPageZoomMode(mode);
+        return;
+      }
+      const view = workbenchRef.current;
+      if (!view) return;
+      const computed = view.fitPage(mode);
+      setZoom(computed);
+      setPageZoomMode(mode);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "页面缩放适配失败。");
+    }
+  }
   function changeZoom(value: number): void {
     try {
       if (workbook?.pendingInput) return;
       if (!workbook) (isPresentation ? presentationRef.current : workbenchRef.current)?.setZoom(value);
       setZoom(value);
+      setPageZoomMode(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "缩放失败。");
     }
@@ -905,13 +940,16 @@ export function App() {
       setError(reason instanceof Error ? reason.message : "格式命令失败。");
     }
   }
-  function clipboard(action: "copy" | "cut" | "paste"): void {
+  function clipboard(action: "copy" | "cut" | "paste", pasteMode?: "keepSource" | "mergeFormatting" | "plainText"): void {
     if (workbook) {
       runNative(action);
       return;
     }
-    const view = isPresentation ? presentationRef.current?.editor : workbenchRef.current;
-    void view?.clipboard(action).catch((reason) => setError(reason.message));
+    if (isPresentation) {
+      void presentationRef.current?.editor.clipboard(action).catch((reason) => setError(reason.message));
+      return;
+    }
+    void workbenchRef.current?.clipboard(action, pasteMode ? { pasteMode } : undefined).catch((reason) => setError(reason.message));
   }
   const history = workbook ? workbook.session.state().history : session?.history();
   const actions: OfficeActions = {
@@ -925,7 +963,7 @@ export function App() {
     },
     cut: { run: () => clipboard("cut"), disabled: !textFormat.enabled || !textFormat.hasSelection },
     paste: {
-      run: () => clipboard("paste"),
+      run: () => clipboard("paste", "keepSource"),
       disabled:
         !textFormat.enabled ||
         (isPresentation && !textFormat.editingText) ||
@@ -933,6 +971,58 @@ export function App() {
       reason: !navigator.clipboard?.read
         ? "浏览器限制读取剪贴板，请使用 Ctrl/⌘+V"
         : "请先进入文字编辑",
+    },
+    pasteMerge: {
+      run: () => clipboard("paste", "mergeFormatting"),
+      disabled: !textFormat.enabled || isPresentation || Boolean(workbook) || !navigator.clipboard?.read,
+    },
+    pastePlain: {
+      run: () => clipboard("paste", "plainText"),
+      disabled: !textFormat.enabled || isPresentation || Boolean(workbook) || !navigator.clipboard?.read,
+    },
+    prevComment: {
+      run: () => {
+        try {
+          setCommentsVisible(true);
+          workbenchRef.current?.stepAnnotation(-1);
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : "定位批注失败。");
+        }
+      },
+      disabled: isPresentation || Boolean(workbook) || !snapshot?.annotations.length,
+    },
+    nextComment: {
+      run: () => {
+        try {
+          setCommentsVisible(true);
+          workbenchRef.current?.stepAnnotation(1);
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : "定位批注失败。");
+        }
+      },
+      disabled: isPresentation || Boolean(workbook) || !snapshot?.annotations.length,
+    },
+    resolveComment: {
+      run: () => {
+        try {
+          setCommentsVisible(true);
+          workbenchRef.current?.toggleActiveAnnotationResolved();
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : "切换批注解决状态失败。");
+        }
+      },
+      disabled: isPresentation || Boolean(workbook) || !snapshot?.annotations.length,
+    },
+    deleteComment: {
+      run: () => {
+        try {
+          setCommentsVisible(true);
+          workbenchRef.current?.removeActiveAnnotation();
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : "删除批注失败。");
+        }
+      },
+      disabled: isPresentation || Boolean(workbook) || !snapshot?.annotations.length,
     },
     newComment: {
       run: () => {
@@ -1161,7 +1251,7 @@ export function App() {
           {error && <p role="alert">{error}</p>}
         </div>
       )}
-      <aside className="document-sidebar" aria-label="文档列表" hidden={home || !libraryVisible}>
+      <aside className="document-sidebar" aria-label="文档列表" hidden={home || !libraryVisible || focusMode}>
         <a className="brand" href="./" aria-label="doffi Playground">
           <img className="brand-logo" src={brandLogo} alt="" width="1150" height="572" />
           <small>Playground</small>
@@ -1254,9 +1344,11 @@ export function App() {
         inert={home}
       >
         <OfficeWorkspace
+          focusMode={focusMode}
+          onExitFocusMode={() => setFocusMode(false)}
           titleBar={{ title: activeFile?.name ?? "文档工作台", kind: workbook ? "workbook" : isPresentation ? "presentation" : "document", actions,
             busy: loading || changingMode, editing, commentsVisible,
-            onHome: () => { if (canLeaveWorkbook()) { leaveExport(); setHome(true); window.scrollTo(0, 0); } },
+            onHome: () => { if (canLeaveWorkbook()) { leaveExport(); setFocusMode(false); setHome(true); window.scrollTo(0, 0); } },
             onToggleDocuments: () => setLibraryVisible(value => !value), documentsVisible: libraryVisible,
             ...(!workbook && !isPresentation ? { onEditingChange: () => { void changeEditing(!editing); } } : {}),
             onNewWord: newWordDocument, onNewPresentation: newPresentation, onFile: () => setOfficeTab("文件"),
@@ -1265,6 +1357,7 @@ export function App() {
             mode: !workbook && !isPresentation && !editing ? "preview" : "edit", busy: loading || changingMode, actions, commands: nativeCommands, onCommand: runNative,
             formatState: textFormat, onTextCommand: runTextCommand,
             ...(isPresentation ? { onObjectFormat: (properties: Readonly<Record<string, string>>) => { try { presentationRef.current?.editor.formatObjects(properties); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } } } : {}), layout, onLayout: changeLayout, zoom, onZoom: changeZoom, enableWorkbookZoom: !workbook?.pendingInput,
+            ...(!workbook && !isPresentation ? { pageZoomMode, onPageZoomMode: changePageZoomMode, draftMode, onDraftMode: changeDraftMode, focusMode, onFocusMode: setFocusMode } : {}),
           }}
           statusBar={{ kind: workbook ? "workbook" : isPresentation ? "presentation" : "document", pageCount, zoom, onZoom: changeZoom,
             disabled: loading || changingMode || Boolean(workbook?.pendingInput), layout,
@@ -1515,6 +1608,7 @@ export function App() {
             appearance="workspace"
             annotationTrigger="command"
             layout={layout}
+            draft={draftMode}
             className="preview"
             onSelectionChange={(selection) => setHasDocumentSelection(Boolean(selection))}
             onFormatStateChange={setTextFormat}
@@ -1526,8 +1620,14 @@ export function App() {
                 void view.ready
                   .then(() => {
                     if (captureId) reportDocx(captureId, "preview", started, { annotations: session.getAnnotations().length });
-                    if (workbenchRef.current === view)
+                    if (workbenchRef.current === view) {
                       setPageCount(view.layout()?.pages.length ?? 0);
+                      const pendingFit = pendingFitRef.current;
+                      if (pendingFit && layout === "pages") {
+                        pendingFitRef.current = undefined;
+                        setZoom(view.fitPage(pendingFit));
+                      }
+                    }
                   })
                   .catch((reason) => {
                     if (captureId) reportDocx(captureId, "preview", started, { error: reason });

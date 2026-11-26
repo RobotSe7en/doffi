@@ -186,6 +186,11 @@ export const WordDrawingOperationSchema = z.discriminatedUnion("op", [
     layout: WordDrawingLayoutSchema,
   }),
   z.strictObject({
+    op: z.literal("setWordDrawingName"),
+    nodeId: IdentifierSchema,
+    name: z.string().max(256),
+  }),
+  z.strictObject({
     op: z.literal("setWordDrawingAppearance"),
     nodeId: IdentifierSchema,
     properties: z.record(z.string(), z.string()),

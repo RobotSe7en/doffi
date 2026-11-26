@@ -27,6 +27,7 @@ export const isWordDrawingOperation: (operation: {
     "insertWordDrawing",
     "setWordDrawingGeometry",
     "setWordDrawingLayout",
+    "setWordDrawingName",
     "setWordDrawingAppearance",
     "setWordDrawingCrop",
     "setWordDrawingPreset",
@@ -194,7 +195,11 @@ export function applyWordDrawing(
     Object.assign(drawing.chart, operation.changes);
   } else if (operation.op === "setWordDrawingGeometry") drawing.geometry = operation.geometry;
   else if (operation.op === "setWordDrawingLayout") drawing.layout = operation.layout;
-  else if (operation.op === "setWordDrawingAppearance")
+  else if (operation.op === "setWordDrawingName") {
+    const trimmed = operation.name.trim();
+    if (trimmed) drawing.name = trimmed;
+    else delete drawing.name;
+  } else if (operation.op === "setWordDrawingAppearance")
     for (const [property, value] of Object.entries(operation.properties))
       edit.sourceDrawingStyle(drawing.nodeId, property, value);
   else if (operation.op === "setWordDrawingCrop") {

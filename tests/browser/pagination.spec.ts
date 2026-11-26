@@ -10701,7 +10701,6 @@ for (const kind of ["table", "drawing", "image"] as const)
           expect(
             moved.rects.filter((r) => r.right > moved.box.left + 1 && r.left < moved.box.right - 1),
           ).toEqual([]);
-          await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
           await page.evaluate(() => window.paginationHost.session!.undo());
         }
         if (kind === "table") {

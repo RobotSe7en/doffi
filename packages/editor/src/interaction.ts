@@ -1,8 +1,13 @@
 import { createWordCommentControls } from "./word-comment-controls.js";
 import { createWordReadingControls } from "./word-reading-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
-import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
-import type { ZoomAnchor } from "./viewport-zoom.js";
+import {
+  captureZoomAnchor,
+  computeWordFitZoom,
+  restoreZoomAnchor,
+  scrollToWordPage,
+} from "./viewport-zoom.js";
+import type { WordPageZoomMode, ZoomAnchor } from "./viewport-zoom.js";
 import { AnchorSchema, createOpaqueId, DocumentError } from "@doffi/core";
 import type {
   Anchor,
@@ -44,11 +49,15 @@ export interface DocumentInteractionView {
   layout(): DocumentRenderReport | undefined;
   setMode(mode: DocumentInteractionMode): void;
   setZoom(zoom: number): void;
+  fitPage?(mode: WordPageZoomMode): number;
   /** Read-only Word find, heading navigation and statistics. */
   openWordNavigation(action: "find" | "outline" | "wordCount"): void;
   /** Scroll to a physical page in the current paginated view. */
   goToPage(page: number): Promise<void>;
   focusAnnotation(annotationId: string): void;
+  stepAnnotation?(direction: -1 | 1): void;
+  toggleActiveAnnotationResolved?(): void;
+  removeActiveAnnotation?(): void;
   startAnnotation(selection?: DocumentSelection): void;
   /** Releases only this view; the supplied session remains owned by the host. */
   dispose(): void;
@@ -601,6 +610,52 @@ export function mountDocumentInteraction(
       }
     }
   }
+  function stepAnnotation(direction: -1 | 1): void {
+    if (disposed) return;
+    const all = session.getAnnotations();
+    if (!all.length) throw new DocumentError("InvalidOperation", "当前文档没有批注。");
+    const currentIndex = activeAnnotation
+      ? all.findIndex((item) => item.annotationId === activeAnnotation)
+      : -1;
+    const nextIndex =
+      currentIndex < 0
+        ? direction > 0
+          ? 0
+          : all.length - 1
+        : (currentIndex + direction + all.length) % all.length;
+    const next = all[nextIndex]!;
+    activeAnnotation = next.annotationId;
+    if (next.status !== "needs_reanchor") focusAnnotation(next.annotationId);
+    else highlight();
+  }
+  function toggleActiveAnnotationResolved(): void {
+    if (disposed) return;
+    const all = session.getAnnotations();
+    if (!all.length) throw new DocumentError("InvalidOperation", "当前文档没有可解决的批注。");
+    const target =
+      (activeAnnotation ? all.find((item) => item.annotationId === activeAnnotation) : undefined) ??
+      all[0]!;
+    if (target.status === "needs_reanchor")
+      throw new DocumentError("InvalidOperation", "需要重新定位的批注请先重新定位。");
+    activeAnnotation = target.annotationId;
+    commit([
+      {
+        op: "updateAnnotation",
+        annotationId: target.annotationId,
+        changes: { status: target.status === "resolved" ? "open" : "resolved" },
+      },
+    ]);
+  }
+  function removeActiveAnnotation(): void {
+    if (disposed) return;
+    const all = session.getAnnotations();
+    if (!all.length) throw new DocumentError("InvalidOperation", "当前文档没有可删除的批注。");
+    const target =
+      (activeAnnotation ? all.find((item) => item.annotationId === activeAnnotation) : undefined) ??
+      all[0]!;
+    commit([{ op: "removeAnnotation", annotationId: target.annotationId }]);
+    activeAnnotation = undefined;
+  }
   function focusAnnotation(annotationId: string): void {
     if (disposed) return;
     const annotation = session.getAnnotations().find((item) => item.annotationId === annotationId);
@@ -622,8 +677,8 @@ export function mountDocumentInteraction(
   }
   function setZoom(value: number): void {
     if (disposed) return;
-    if (!Number.isFinite(value) || value < 0.5 || value > 2)
-      throw new DocumentError("InvalidOperation", "缩放范围为 50% 至 200%。");
+    if (!Number.isFinite(value) || value < 0.25 || value > 4)
+      throw new DocumentError("InvalidOperation", "缩放范围为 25% 至 400%。");
     const anchor = captureZoomAnchor(stage, plane, zoom);
     zoom = value;
     zoomSelect.querySelector("[data-custom-zoom]")?.remove();
@@ -637,6 +692,13 @@ export function mountDocumentInteraction(
     zoomSelect.value = String(value);
     resizePlane(anchor);
     highlight();
+  }
+  function fitPage(mode: WordPageZoomMode): number {
+    const metadata = session.snapshot().metadata;
+    const setup = preview?.layout().pages[0]?.setup ?? metadata.pageSetup ?? { width: 595.3, height: 841.9 };
+    const target = computeWordFitZoom(stage, setup.width, setup.height, mode);
+    setZoom(target);
+    return target;
   }
   function resizePlane(
     anchor: ZoomAnchor | undefined = captureZoomAnchor(stage, plane, zoom),
@@ -1003,6 +1065,7 @@ export function mountDocumentInteraction(
     layout: () => (needsVisibleRender ? undefined : preview?.layout()),
     setMode,
     setZoom,
+    fitPage,
     openWordNavigation(action) {
       if (disposed) throw new DocumentError("InvalidOperation", "文档视图已释放。");
       if (session.kind !== "document")
@@ -1014,6 +1077,9 @@ export function mountDocumentInteraction(
       scrollToWordPage(stage, preview!.element, report, page, zoom);
     },
     focusAnnotation,
+    stepAnnotation,
+    toggleActiveAnnotationResolved,
+    removeActiveAnnotation,
     startAnnotation(chosen) {
       if (chosen) {
         const manifest = session.snapshot().manifest;

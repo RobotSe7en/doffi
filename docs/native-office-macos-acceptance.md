@@ -183,3 +183,30 @@ Word 打开 SDK 输出后，五组样例的原生 PDF 边框与文字位置和�
 定向检查包含 60 文件 612 项 Office／事务单元测试，以及表格、行例外、浮动文字、网格、上下文工作台、鼠标逐字定位、正文选行、输入撤销和 RevisionConflict 浏览器回归。固定字网格比较的是字形中心及保留槽位，避免把不同回退字形宽度误作网格间距错误；跨栏续表夹具明确了自身行高，缺省行距另由独立样例验证。构建、类型、架构边界和差异空白检查通过。没有运行远程全量 CI。
 
 扩大检查仍有一项未关闭：`centered wrapping composes with paragraph alignment and character grids right` 在本机网页中仅使用形状右侧，而本机 Word 的同份 DOCX 在 x=160～260pt、y=48～120pt 的形状两侧均有文字。撤去本次阻塞行高度修正后仍可复现；没有把该失败掩盖为测试通过，也没有保留不收敛的试验性修正。复杂右对齐浮动组合继续列为 WORD-01 缺口，本轮不能宣称全部 Word 版式已经等价。
+
+## 2026-11-26 Word 差异能力补齐与实机对照
+
+继续在 macOS 27.2 上以 Microsoft Word 16.114.1、本机已授权字体与本机 Google Chrome（Chromium）进行对照。全部新能力均以通用规则和统一事务边界实现，不按文件名、样式 ID 或样例坐标分支。独立合成 DOCX、Word 16.114.1 原生 PDF 与实际编辑重存副本保存在本机忽略目录 `.cache/word-defaults-2026-11-26/`，测试文档在导出／重存后立即关闭。
+
+| 编号与主题 | 通用实现、官方 XSD 与 Word 16.114.1 实机证据 |
+| --- | --- |
+| WORD-01 右对齐绕居中对象 | 修正 [word-center-wrap.ts](../packages/render/src/word-center-wrap.ts) 的纵向行中点匹配、重排占位清理及恢复 `text-align: right` 下的列片区边界计算。5 项居中绕排（含 `right`、`center`、`snapToChars`、`linesAndChars` 与无空格长拉丁串跨侧换行）及 6 项两侧排除回归在预览与编辑双面全部通过，与本机 Word 16.114.1 PDF 对照一致。不因此宣称任意复杂浮动组合与跨平台像素相等。 |
+| WORD-03 字符排版与 OpenType | 接通独立双删除线（`w:dstrike`，经渐变独立绘制不与下划线／底纹冲突）、隐藏文字（`w:vanish`，常规隐藏、编辑标记开启时内联显示虚线下划线、打印／PDF 始终隐藏）、字符升降位置（`w:position`，-3170～3170 半磅）、着重号（`w:em`：`dot`/`comma`/`circle`/`underDot`）、全部 18 种 `ST_Underline` 下划线线型（含 `words` 仅字下划线与粗线型）、字符边框（`w:bdr`）、OpenType 五项（`w14:ligatures`/`numForm`/`numSpacing`/`stylisticSets`/`cntxtAlts`，导出带 `mc:Ignorable="w14"`）以及原子字符改写的 5 种 `更改大小写` 模式。字体窗口与开始功能区同步开放并支持撤销。`verify-word03.docx` 通过官方 Transitional `wml.xsd`（含标准 MCE 预处理）校验；Word 16.114.1 无修复提示打开，原生 API 读到 `dstrike=true`、`under=underline single`、`hidden=true`，原生 PDF 实测黑双删除线＋红下划线、隐藏文字不占宽、升降偏移、四类着重号、字符边框与扩展下划线均生效；原生插入 `[WordOK1]` 并保存后，SDK 严格重开完整保留全部属性与两端编辑。 |
+| UI-01 与 WORD-02 缩放与视图 | 修复 `单页`/`多页`/`页宽` 按钮，按真实画布和页面尺寸分别计算适配缩放并保持 `aria-pressed` 互斥（手动缩放或切换布局时清除适配态），缩放范围扩至 25%～400%。新增连续 `草稿` 视图（显示显式 `分页符`／`分节符` 标记）与 `专注` 模式（隐藏外框，支持 `Esc` 或悬浮按钮退出）。未宣称实现 Word 大纲编排视图或沉浸阅读器。 |
+| UI-02、COMMON-01 与编辑工具 | 选择窗格升级为列出当前故事全部绘图对象（含已隐藏对象，按 `zOrder` 降序及组合层次），补齐窗格内重命名（新增 `setWordDrawingName` 事务）、单项显示／隐藏、全部显示／隐藏及层序调整。补齐正文／表格／形状／图片／图表右键上下文菜单（按缩放换算定位）以及 `图片格式`、`图表设计`、`表格设计`、`表格布局` 上下文选项卡与布局层序／组合命令。补齐 Word 粘贴模式菜单（保留源格式／合并格式／仅保留文本）、段落与表格行排序（新增 `reorderWordNodes` 事务，保留节点身份与锚点并显式拒绝含纵合并单元的表格行）、文本↔表格互转、插入空白页及日期和时间（静态文字或 `DATE`/`TIME` 域）。`verify-ui02.docx` 通过官方 `wml.xsd` 校验；Word 16.114.1 读到两个命名对象及显隐态（`主徽标矩形:true`、`隐藏参考圆:false`），原生 PDF 仅绘制可见矩形且保留排序后正文与表格；原生编辑 `[WordOK2]` 重存后，SDK 严格重开通过。 |
+| COMP-01 与 WORD-06 批注解决／重开 | 审阅选项卡接通 `上一条批注`、`下一条批注`、`解决`、`删除`。生成同时含已解决线程（`w15:done="1"` 及回复）与未解决线程的 `verify-comp01.docx`，以及经 SDK 重新打开首条线程（`w15:done="0"`）的 `verify-comp01-reopened.docx`，两份文件的 `document.xml`／`styles.xml`／`comments.xml` 均通过官方 `wml.xsd` 校验。Word 16.114.1 无修复提示打开，原生 PDF 实测已解决线程及回复呈灰化态、未解决线程呈激活态；重新打开后首条线程及回复恢复激活态。两份文件分别在 Word 插入 `[WordOK3]`、`[WordReopenOK]` 并原生保存后，SDK 严格重开均精确保留解决／打开状态、回复与锚点。文档比较／合并与文档保护仍保持未实现。 |
+| COMMON-03 Word 动态主题色板 | 读取当前文档 `[data-office-kind="document"]` 的 `--office-theme-*` CSS 变量并通过 `@doffi/core` 的 `wordColorLuminance` 动态生成 5 级明暗色板。PPT／Excel 主题色板及完整系统字体枚举／悬停预览保留原有缺口。 |
+
+本轮官方 `wml.xsd`（`OfficeOpenXML-XMLSchema-Transitional.zip`）对四份 SDK 导出件的全部 10 个核心部件（`document.xml`、`styles.xml`、`comments.xml`）校验全部通过。下表记录与实机结论直接对应的文件 SHA-256（位于忽略目录 `.cache/word-defaults-2026-11-26/`）：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `verify-word03.docx`（SDK 导出） | `1ffb1ef204c37dd3a0feb98fcb42f8b99befba4fce26e5cd00568983676192e8` |
+| `verify-word03-resaved.docx`（Word 16.114.1 编辑重存） | `47c92152a9d3eb656aa44b584c6fd1034880df45eb3295b2d91a1e0f4900ccda` |
+| `verify-ui02.docx`（SDK 导出） | `4651cc255bcac03fc39d0328f466be4f05f1bbf3bf6bd99052fd755ca8daa5ba` |
+| `verify-ui02-resaved.docx`（Word 16.114.1 编辑重存） | `d578a18de958bbce97b84fb71196c1de93f1d71d9004b26eb4de3e58aa2bfb5f` |
+| `verify-comp01.docx`（SDK 导出，含已解决线程与回复） | `047319670439a6735c64dd5d9e35b1f396724db7e7a59c1d6b2ab3441f3ce2ab` |
+| `verify-comp01-resaved.docx`（Word 16.114.1 编辑重存） | `8b16f086fdc7775ccb7100dad18ace1359ffac1fa41edfb7a180c03f042b35d0` |
+| `verify-comp01-reopened.docx`（SDK 重开线程后 Word 16.114.1 编辑重存） | `cfe2efb7a936fbc79563b11d0e6b1f02ea103e24fac88da29a9192c942c55ac2` |
+
+自动回归验证：全部 58 个 DOCX 单元／集成测试文件共 576 项全部通过（含新增 [docx-word-gap-closure.test.ts](../packages/office/tests/docx-word-gap-closure.test.ts) 5 项往返与安全约束回归）；59 项 Chromium 浏览器回归全部通过（新增 [word-gap-closure.spec.ts](../tests/browser/word-gap-closure.spec.ts) 5 项、工作区与独立宿主 [workspace.spec.ts](../tests/browser/workspace.spec.ts) 41 项、居中绕排／字体窗口／选择窗格定向 [pagination.spec.ts](../tests/browser/pagination.spec.ts) 13 项）；`pnpm build`、`pnpm check:boundaries`、`pnpm typecheck` 与 `git diff --check` 全部通过。此次未运行远程全量 CI，也未改动 PPT／Excel 缺口范围。

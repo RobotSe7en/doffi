@@ -334,6 +334,7 @@ export class DocxNativeImport {
           parent?.name ?? "",
           collection.uri,
           ...collection.names,
+          ...(collection.extra?.flatMap((group) => [group.uri, ...group.names]) ?? []),
         ].join("\n"),
         seen = this.batched.get(key) ?? new WeakSet<XmlNode>();
       this.batched.set(key, seen);
@@ -349,7 +350,10 @@ export class DocxNativeImport {
           for (const child of node.content)
             if (
               typeof child !== "string" &&
-              (child.uri !== collection.uri || !collection.names.includes(child.name))
+              (child.uri !== collection.uri || !collection.names.includes(child.name)) &&
+              !collection.extra?.some(
+                (group) => child.uri === group.uri && group.names.includes(child.name),
+              )
             )
               targets.push(child);
         for (const child of node.content) if (typeof child !== "string") scan(child);
