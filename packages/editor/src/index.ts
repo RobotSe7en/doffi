@@ -1,4 +1,12 @@
 export type { TextFormatState } from "./text-format-state.js";
+export type { WordPageZoomMode } from "./viewport-zoom.js";
+export type { WordPasteMode } from "./clipboard-command.js";
+export {
+  loadStoredWordDefaultTemplate,
+  saveStoredWordDefaultTemplate,
+  WORD_DEFAULT_TEMPLATE_STORAGE_KEY,
+} from "./word-template-controls.js";
+export type { StoredWordDefaultTemplate } from "./word-template-controls.js";
 export type { EditorCommandState, EditorCommandTarget } from "./commands.js";
 export { mountDocumentPreview } from "./preview.js";
 export type { DocumentPreview, DocumentPreviewOptions } from "./preview.js";

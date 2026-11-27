@@ -62,6 +62,9 @@ export function isWordOperation(operation: { readonly op: string }): operation i
       "resetWordText",
       "cloneWordStory",
       "setWordOptions",
+      "insertWordRuby",
+      "removeWordRuby",
+      "splitWordTable",
       "setWordTabs",
       "insertWordField",
       "setWordSection",
@@ -69,6 +72,7 @@ export function isWordOperation(operation: { readonly op: string }): operation i
       "insertWordStory",
       "setWordStoryContent",
       "insertWordTable",
+      "reorderWordNodes",
       "deleteWordTable",
       "editWordTable",
       "formatWordTable",
@@ -321,6 +325,190 @@ export function applyWordOperation(
       word.automaticHyphenation = operation.automaticHyphenation;
     for (const key of ["bordersDoNotSurroundHeader", "bordersDoNotSurroundFooter"] as const)
       if (operation[key] !== undefined) word[key] = operation[key];
+    if (operation.pageBackground !== undefined) {
+      if (operation.pageBackground === null) delete word.pageBackground;
+      else word.pageBackground = operation.pageBackground;
+    }
+    if (operation.protection !== undefined) {
+      if (operation.protection === null) delete word.protection;
+      else word.protection = operation.protection;
+    }
+    if (operation.properties !== undefined) word.properties = operation.properties;
+    if (operation.bibliography !== undefined) word.bibliography = operation.bibliography;
+    if (operation.buildingBlocks !== undefined) word.buildingBlocks = operation.buildingBlocks;
+    if (operation.template !== undefined) {
+      if (operation.template === null) delete word.template;
+      else word.template = operation.template;
+      if (word.nativeContent)
+        word.nativeContent.fragments = word.nativeContent.fragments.filter(
+          (fragment) =>
+            !(
+              fragment.ownerName === "settings" &&
+              (fragment.propertyName ===
+                "http://schemas.openxmlformats.org/wordprocessingml/2006/main attachedTemplate" ||
+                fragment.propertyName ===
+                  "http://schemas.openxmlformats.org/wordprocessingml/2006/main linkStyles")
+            ),
+        );
+    }
+    if (operation.title !== undefined) metadata.title = operation.title;
+    if (operation.theme !== undefined) {
+      word.theme = { ...word.theme, ...operation.theme };
+      if (word.nativeContent?.relationships) {
+        word.nativeContent.relationships = word.nativeContent.relationships.filter(
+          (rel) => !(rel.root && rel.type.endsWith("/theme")),
+        );
+      }
+      if (operation.theme.colors) {
+        const aliases: Record<string, string> = {
+          dk1: "tx1",
+          lt1: "bg1",
+          dk2: "tx2",
+          lt2: "bg2",
+        };
+        for (const [role, hex] of Object.entries(operation.theme.colors)) {
+          if (!hex) continue;
+          const colorValue = "#" + hex.toLowerCase();
+          edit.sourceStyle(operation.nodeId, "--office-theme-" + role, colorValue);
+          if (aliases[role])
+            edit.sourceStyle(operation.nodeId, "--office-theme-" + aliases[role], colorValue);
+        }
+      }
+      if (operation.theme.minorLatin || operation.theme.minorEastAsia) {
+        const normal = word.styles.find(
+          (style) => style.kind === "paragraph" && (style.default || style.styleId === "Normal"),
+        );
+        const fontProps: Record<string, string> = {};
+        if (operation.theme.minorLatin) {
+          const quoted = JSON.stringify(operation.theme.minorLatin);
+          fontProps["font-family"] = quoted;
+          fontProps["--word-font-ascii"] = quoted;
+          fontProps["--word-font-hAnsi"] = quoted;
+        }
+        if (operation.theme.minorEastAsia)
+          fontProps["--word-font-eastAsia"] = JSON.stringify(operation.theme.minorEastAsia);
+        if (normal) styles.setClass(normal.runCssClass ?? normal.cssClass, fontProps);
+      }
+      if (operation.theme.majorLatin || operation.theme.majorEastAsia) {
+        const headingProps: Record<string, string> = {};
+        if (operation.theme.majorLatin) {
+          const quoted = JSON.stringify(operation.theme.majorLatin);
+          headingProps["font-family"] = quoted;
+          headingProps["--word-font-ascii"] = quoted;
+          headingProps["--word-font-hAnsi"] = quoted;
+        }
+        if (operation.theme.majorEastAsia)
+          headingProps["--word-font-eastAsia"] = JSON.stringify(operation.theme.majorEastAsia);
+        for (const style of word.styles)
+          if (style.kind === "paragraph" && /^Heading[1-9]$|^Title$|^Subtitle$/.test(style.styleId))
+            styles.setClass(style.runCssClass ?? style.cssClass, headingProps);
+      }
+    }
+    return;
+  }
+  if (operation.op === "insertWordRuby") {
+    if (!/^p$|^h[1-6]$/.test(node.tagName))
+      fail("Phonetic guide (ruby) requires a paragraph target.");
+    const source = parse(),
+      target = source.getNode(operation.nodeId)!;
+    if (target.text.slice(operation.from, operation.to) !== operation.expectedText)
+      fail("The ruby text range is stale.");
+    const wrapped = edit.wrapSourceText(operation.nodeId, operation.from, operation.to, "span");
+    if (!wrapped.length) fail("Ruby requires a nonempty text selection.");
+    const attrs: Record<string, string> = {
+      "data-word-ruby": "true",
+      "data-word-ruby-text": operation.rubyText,
+      "data-word-ruby-align": operation.align ?? "distributeSpace",
+      ...(operation.fontSize !== undefined ? { "data-word-ruby-size": String(operation.fontSize) } : {}),
+      ...(operation.raise !== undefined ? { "data-word-ruby-raise": String(operation.raise) } : {}),
+      ...(operation.baseSize !== undefined ? { "data-word-ruby-base-size": String(operation.baseSize) } : {}),
+      ...(operation.languageId ? { "data-word-ruby-lang": operation.languageId } : {}),
+    };
+    for (const id of wrapped) edit.attributes(id, attrs);
+    return;
+  }
+  if (operation.op === "removeWordRuby") {
+    if (!node.attributes["data-word-ruby"]) fail("The target node is not a ruby annotation.");
+    edit.attributes(operation.nodeId, {
+      "data-word-ruby": undefined,
+      "data-word-ruby-text": undefined,
+      "data-word-ruby-align": undefined,
+      "data-word-ruby-size": undefined,
+      "data-word-ruby-raise": undefined,
+      "data-word-ruby-base-size": undefined,
+      "data-word-ruby-lang": undefined,
+    });
+    return;
+  }
+  if (operation.op === "splitWordTable") {
+    const tableIndex = word.tables.findIndex((item) => item.nodeId === operation.nodeId);
+    if (tableIndex < 0 || node.tagName !== "table") fail("Splitting requires a Word table.");
+    const source = parse(),
+      info = word.tables[tableIndex]!,
+      rows = wordTableRows(source, operation.nodeId);
+    if (operation.atRow <= 0 || operation.atRow >= rows.length)
+      fail("Table split row must be inside the table body.");
+    for (let r = 0; r < operation.atRow; r++) {
+      for (const cellId of source.peekNode(rows[r]!)!.childNodeIds) {
+        const span = Number(source.peekNode(cellId)?.attributes.rowspan ?? 1);
+        if (r + span > operation.atRow)
+          fail("Cannot split a table across vertically merged cells.");
+      }
+    }
+    const parentId = node.parentNodeId;
+    if (!parentId) fail("A table must belong to a container.");
+    const siblings = source.peekNode(parentId)!.childNodeIds,
+      afterId = siblings[siblings.indexOf(operation.nodeId) + 1];
+    const escapeAttr = (value: string): string =>
+      value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const ownedContexts = new Set((info.styleContexts ?? []).map((item) => item.cssClass));
+    const cleanClass = (raw: string | undefined): string =>
+      (raw ?? "")
+        .split(/\s+/)
+        .filter((name) => name && !ownedContexts.has(name) && !name.startsWith("wt-"))
+        .join(" ");
+    const tableAttrs = [
+      ...(cleanClass(node.attributes.class)
+        ? [` class="${escapeAttr(cleanClass(node.attributes.class))}"`]
+        : []),
+      ...(node.attributes.style ? [` style="${escapeAttr(node.attributes.style)}"`] : []),
+      ...(node.attributes["data-word-style"]
+        ? [` data-word-style="${escapeAttr(node.attributes["data-word-style"])}"`]
+        : []),
+    ].join("");
+    const movedRows = rows.slice(operation.atRow);
+    const movedIds = new Set<string>();
+    const collectSubtree = (id: string): void => {
+      movedIds.add(id);
+      for (const childId of source.peekNode(id)?.childNodeIds ?? []) collectSubtree(childId);
+    };
+    for (const rowId of movedRows) collectSubtree(rowId);
+    if (info.styleContexts?.length) {
+      for (const ctx of info.styleContexts) {
+        if (!movedIds.has(ctx.nodeId)) continue;
+        const targetNode = source.peekNode(ctx.nodeId);
+        if (targetNode?.attributes.class) {
+          edit.attributes(ctx.nodeId, { class: cleanClass(targetNode.attributes.class) || undefined });
+        }
+      }
+      info.styleContexts = info.styleContexts.filter((ctx) => !movedIds.has(ctx.nodeId));
+    }
+    edit.insertSource(parentId, "<p></p>", afterId);
+    const created = edit.insertSource(
+      parentId,
+      "<table" + tableAttrs + "><tbody></tbody></table>",
+      afterId,
+    );
+    const newTableId = created.rootNodeIds[0]!;
+    const tbodyId = parse().peekNode(newTableId)!.childNodeIds[0]!;
+    edit.moveSource(movedRows, tbodyId);
+    word.tables.push({
+      nodeId: newTableId,
+      grid: [...info.grid],
+      ...(info.lookMask !== undefined ? { lookMask: info.lookMask } : {}),
+      ...(info.rowBandSize !== undefined ? { rowBandSize: info.rowBandSize } : {}),
+      ...(info.columnBandSize !== undefined ? { columnBandSize: info.columnBandSize } : {}),
+    });
     return;
   }
   if (operation.op === "setWordTabs") {
@@ -417,6 +605,7 @@ export function applyWordOperation(
       });
     }
     Object.assign(section, operation.changes);
+    if (operation.changes.lineNumbers === null) delete section.lineNumbers;
     return;
   }
   if (operation.op === "splitWordSection") {
@@ -533,6 +722,35 @@ export function applyWordOperation(
     else edit.removeSource(operation.nodeId);
     return;
   }
+  if (operation.op === "reorderWordNodes") {
+    const siblings = node.childNodeIds;
+    if (new Set(operation.childNodeIds).size !== operation.childNodeIds.length)
+      fail("Reordering requires unique child identities.");
+    const positions = operation.childNodeIds.map((id) => siblings.indexOf(id));
+    if (positions.some((index) => index < 0))
+      fail("All reordered nodes must be direct children of the target container.");
+    const min = Math.min(...positions),
+      max = Math.max(...positions);
+    if (max - min + 1 !== operation.childNodeIds.length)
+      fail("Reordered nodes must form a contiguous sibling range.");
+    const tags = operation.childNodeIds.map((id) => parse().peekNode(id)!.tagName);
+    const allRows = tags.every((tag) => tag === "tr");
+    const allParagraphs = tags.every((tag) => /^p$|^h[1-6]$/.test(tag));
+    if (!allRows && !allParagraphs)
+      fail("Only contiguous paragraphs or table rows can be reordered.");
+    if (allRows) {
+      for (const rowId of operation.childNodeIds) {
+        for (const cellId of parse().peekNode(rowId)!.childNodeIds) {
+          const cell = parse().peekNode(cellId);
+          if (cell && Number(cell.attributes.rowspan ?? 1) > 1)
+            fail("Rows containing vertically merged cells cannot be sorted.");
+        }
+      }
+    }
+    const beforeId = siblings[max + 1];
+    edit.moveSource(operation.childNodeIds, operation.nodeId, beforeId);
+    return;
+  }
   if (operation.op === "insertWordTable") {
     if (!/^p$|^h[1-6]$/.test(node.tagName)) fail("Insert a table beside an existing paragraph.");
     checkLimit(operation.rows * operation.columns * 3, limits.maxNodes);
@@ -544,6 +762,13 @@ export function applyWordOperation(
     );
     const escapeStyle = (value: string) =>
       value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const escapeCell = (value: string) =>
+      value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replace(/\r\n?/g, "\n")
+        .replaceAll("\n", "<br>");
     const source =
       "<table" +
       (tableStyle
@@ -558,16 +783,18 @@ export function applyWordOperation(
       'pt">' +
       Array.from(
         { length: operation.rows },
-        () =>
+        (_, r) =>
           "<tr>" +
           Array.from(
             { length: operation.columns },
-            () =>
+            (_, c) =>
               "<td" +
               (tableStyle
                 ? ""
                 : ' style="border:0.5pt solid #000000;padding:4pt;vertical-align:top"') +
-              "><p></p></td>",
+              "><p>" +
+              escapeCell(operation.cells?.[r]?.[c] ?? "") +
+              "</p></td>",
           ).join("") +
           "</tr>",
       ).join("") +
@@ -830,6 +1057,13 @@ export function applyWordOperation(
         { width: previousWidth, height: Math.max(1, rowIds.length) * 20 },
         operation.change,
       );
+      if (operation.change.kind === "resize" && (operation.change.rowHeights || operation.change.rowIndex !== undefined)) {
+        const resized = operation.change.rowHeights ? rowIds : [rowIds[operation.change.rowIndex!]!];
+        for (const id of resized) {
+          const rule = /--word-row-height-rule\s*:\s*(auto|atLeast|exact)/.exec(source.peekNode(id)!.attributes.style ?? "")?.[1];
+          if (rule !== "exact" && rule !== "atLeast") edit.sourceStyle(id, "--word-row-height-rule", "atLeast");
+        }
+      }
       if (previousCells) {
         const old = new Set(previousCells.map((cell) => cell.id)),
           added = result.cells.filter((cell) => !old.has(cell.id)),
@@ -1285,7 +1519,18 @@ export function applyWordOperation(
         styles.setClass(level.cssClass, item.properties);
       }
       const index = word.numbering.findIndex((n) => n.numberingId === operation.numberingId),
-        definition = { numberingId: operation.numberingId, levels: operation.levels };
+        definition = {
+          numberingId: operation.numberingId,
+          ...(operation.name !== undefined ? { name: operation.name } : {}),
+          ...(operation.multiLevelType !== undefined
+            ? { multiLevelType: operation.multiLevelType }
+            : {}),
+          ...(operation.styleLink !== undefined ? { styleLink: operation.styleLink } : {}),
+          ...(operation.numStyleLink !== undefined
+            ? { numStyleLink: operation.numStyleLink }
+            : {}),
+          levels: operation.levels,
+        };
       if (index < 0) word.numbering.push(definition);
       else word.numbering[index] = definition;
       return;

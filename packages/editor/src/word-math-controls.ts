@@ -1,5 +1,6 @@
 import { wordMathComponents } from "./word-math-components.js";
 import { DocumentError, parseWordMath } from "@doffi/core";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 import type {
   DocumentEditingSession,
   DocumentOperation,
@@ -40,12 +41,14 @@ export function createWordMathControls(
   dispose(): void;
 } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined,
+  let shell: HTMLElement | undefined,
+    panel: HTMLElement | undefined,
     controller: AbortController | undefined,
     selected: string | undefined;
   const close = (): void => {
     controller?.abort();
-    panel?.remove();
+    shell?.remove();
+    shell = undefined;
     panel = undefined;
   };
   function open(insert: boolean): void {
@@ -57,14 +60,21 @@ export function createWordMathControls(
     if (!insert && !equation)
       throw new DocumentError("InvalidOperation", "文档中还没有可编辑公式。");
     if (!insert) selected = equation!.nodeId;
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "公式编辑");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:330px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "公式编辑",
+      title: insert ? "插入公式" : "公式选项",
+      dock: "right",
+      closeLabel: "关闭公式编辑",
+      onClose: close,
+      signal,
+      width: "348px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    parent.insertBefore(shell, before);
     const apply = (operations: DocumentOperation[]): void => {
       const snapshot = session.snapshot();
       session.commit(
@@ -123,7 +133,6 @@ export function createWordMathControls(
       panel!.append(label);
       return input;
     };
-    button("关闭公式编辑", close);
     if (!insert) {
       const target = choose(
         "当前公式",

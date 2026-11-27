@@ -1,10 +1,9 @@
-import { wordRowExceptionBounds } from "./word-row-exceptions.js";
+import { wordRowExceptionBounds, wordRowGeometryProperties } from "./word-row-exceptions.js";
 import {
   SourceStyleResolver,
   DEFAULT_DOCUMENT_READ_LIMITS,
   DocumentError,
   wordTableCellProperties,
-  wordRowExceptionProperties,
 } from "@doffi/core";
 import type { ContentDocumentModel, SourceStyleNode } from "@doffi/core";
 import type { RenderLimits } from "./contracts.js";
@@ -57,7 +56,7 @@ export function composeWordContinuationCells(
           ),
           spacing = rowSpacing.get(info.nodeId),
           exceptions = rows.map((row) =>
-            wordRowExceptionProperties(css.get(project(row.dataset.nodeId!))),
+            wordRowGeometryProperties(css.specified(project(row.dataset.nodeId!))),
           ),
           hasExceptions = exceptions.some((item) => Object.keys(item).length > 0);
         rows.forEach((row, rowIndex) => {

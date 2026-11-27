@@ -30,6 +30,33 @@ export function wordRowExceptionCss(css: Readonly<Record<string, string>>): Reco
     ),
   );
 }
+/** Word treats width, indentation and fixed layout on the first physical row
+ * as table properties. Since Word 2013, alignment has the same scope; legacy
+ * alignment remains row-local. Keep the native declarations on their rows. */
+export function wordEffectiveTableProperties(
+  table: Readonly<Record<string, string>>,
+  firstRow: Readonly<Record<string, string>>,
+  compatibilityMode = 12,
+): Record<string, string> {
+  const exception = wordRowExceptionProperties(firstRow), result = { ...table };
+  if (exception.width !== undefined) {
+    result.width = /^0(?:\.0+)?(?:pt|%)?$/.test(exception.width) ? "auto" : exception.width;
+    if (exception["--word-table-width-type"] !== undefined)
+      result["--word-table-width-type"] = exception["--word-table-width-type"]!;
+  }
+  if (exception["table-layout"] === "fixed") result["table-layout"] = "fixed";
+  if (exception.indent !== undefined) {
+    result["margin-left"] = exception.indent;
+    result["--word-table-indent-origin"] = "native";
+  }
+  const alignment = firstRow["--word-row-alignment"] ?? exception.alignment;
+  if (compatibilityMode >= 15 && alignment) {
+    result["margin-left"] = alignment === "left" || alignment === "start"
+      ? exception.indent ?? "0pt" : "auto";
+    result["margin-right"] = alignment === "center" ? "auto" : "0pt";
+  }
+  return result;
+}
 /** Native cell properties (including style cells) override table exceptions. */
 export function wordRowExceptionCellProperties(
   css: Readonly<Record<string, string>>,

@@ -13,9 +13,12 @@ export function wordRunWidthLayout(document: Document, limits: Readonly<RenderLi
     overlays: HTMLElement[] = [];
   return {
     reset(): void {
-      for (const node of overlays.splice(0)) {
+      // Repeated stories and floating text clone the view tree, including
+      // ownership marks. Reset those projections when fonts/layout change too.
+      const owned = new Set([...overlays.splice(0), ...document.querySelectorAll<HTMLElement>(".sdk-word-run-width,.sdk-word-run-width-text,.sdk-word-kinsoku-boundary")]);
+      for (const node of owned) {
         if (viewNodeRole(node) === "unwrap") node.replaceWith(...node.childNodes);
-        else node.remove();
+        else if (viewNodeRole(node) === "remove") node.remove();
       }
     },
     measure(root: HTMLElement): void {
@@ -34,7 +37,7 @@ export function wordRunWidthLayout(document: Document, limits: Readonly<RenderLi
         return nodes;
       };
       for (const paragraph of root.querySelectorAll<HTMLElement>(paragraphs)) {
-        if (paragraph.querySelector(paragraphs) || !paragraph.getClientRects().length) continue;
+        if (paragraph.querySelector(paragraphs + ",.sdk-word-run-width") || !paragraph.getClientRects().length) continue;
         const sources = textNodes(paragraph),
           styles = new Map<HTMLElement, CSSStyleDeclaration>(),
           runs = sources.map((text) => {
@@ -48,7 +51,7 @@ export function wordRunWidthLayout(document: Document, limits: Readonly<RenderLi
             return scale >= 0.01 && scale <= 6 && scale !== 1 &&
               css.visibility === "visible" &&
               viewNodeRole(host) !== "remove" &&
-              !host.closest("[data-word-drawing],[data-word-native-object],[data-word-equation],.sdk-page-gap")
+              (!host.closest("[data-word-drawing],[data-word-native-object],[data-word-equation],.sdk-page-gap") || !!host.closest(".sdk-word-drawing-text"))
               ? scale : 1;
           });
         if (!runs.some((scale) => scale !== 1)) continue;
@@ -101,6 +104,7 @@ export function wordRunWidthLayout(document: Document, limits: Readonly<RenderLi
           if (scale !== 1) {
             const box = add("unwrap"), text = add("unwrap");
             box.className = "sdk-word-run-width";
+            text.className = "sdk-word-run-width-text";
             box.style.cssText =
               "display:inline-block;vertical-align:baseline;white-space:pre;text-indent:0";
             text.style.cssText =

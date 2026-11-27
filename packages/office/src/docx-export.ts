@@ -6,6 +6,7 @@ import { writeWordTypography } from "./ooxml/word-typography.js";
 import { writeWordConditionalFormat } from "./docx-conditional-format.js";
 import { ExportWordRevisions } from "./docx-revisions-export.js";
 import { writeWordPageBorders } from "./docx-page-borders.js";
+import { writeWordBibliography } from "./docx-bibliography.js";
 import { W15, CID, CEX } from "./docx-comments.js";
 import { WordChartWriter } from "./docx-chart-export.js";
 import { writeWordControlProperties } from "./docx-control.js";
@@ -124,6 +125,9 @@ const date = (raw: string | undefined): string | undefined => {
     unsupported("A comment or revision date cannot be represented as an XML dateTime.");
   return raw;
 };
+/** Microsoft Word rejects fractional seconds (.xxxZ) on tracked-change w:date attributes. */
+const revisionDate = (raw: string | undefined): string | undefined =>
+  date(raw)?.replace(/\.\d+(?=(?:Z|[+-]\d\d:\d\d)$)/, "");
 class Exporter {
   private readonly files: DocumentPackage;
   private readonly snapshot: ContentDocumentSnapshot & {
@@ -304,7 +308,7 @@ class Exporter {
         attributes({
           "w:id": id,
           "w:author": frame.revision.author ?? "",
-          "w:date": date(frame.revision.date),
+          "w:date": revisionDate(frame.revision.date),
         }) +
         ">",
     );
@@ -355,6 +359,7 @@ class Exporter {
       }
     if (
       css["text-decoration-line"]?.includes("line-through") &&
+      !css["text-decoration-line"].includes("underline") &&
       !["solid", "double"].includes(css["text-decoration-style"] ?? "solid")
     )
       unsupported("This strike decoration has no supported native DOCX representation.");
@@ -464,6 +469,17 @@ class Exporter {
       "w:gutter": nativeInteger(section.gutter ?? 0, 20, 0),
     });
     out += writeWordPageBorders(section.pageBorders);
+    if (section.lineNumbers) {
+      out += empty("w:lnNumType", {
+        "w:countBy": section.lineNumbers.countBy,
+        "w:start": section.lineNumbers.start,
+        "w:distance":
+          section.lineNumbers.distance === undefined
+            ? undefined
+            : nativeInteger(section.lineNumbers.distance, 20, 0),
+        "w:restart": section.lineNumbers.restart,
+      });
+    }
     if (section.pageNumberStart !== undefined || section.pageNumberFormat)
       out += empty("w:pgNumType", {
         "w:start": section.pageNumberStart,
@@ -492,6 +508,8 @@ class Exporter {
           "</w:cols>"
         : empty("w:cols", attrs);
     }
+    if (section.verticalAlign && section.verticalAlign !== "top")
+      out += value("vAlign", section.verticalAlign);
     if (section.noEndnote !== undefined) out += value("noEndnote", section.noEndnote ? 1 : 0);
     out += value("titlePg", section.differentFirstPage ? "1" : "0");
     if (section.gutterPosition === "right") out += value("rtlGutter", 1);
@@ -703,7 +721,7 @@ class Exporter {
           ? {
               "w:name": item.move.moveId,
               "w:author": item.move.author,
-              "w:date": date(item.move.date),
+              "w:date": revisionDate(item.move.date),
               "w:colFirst": item.move.columnFirst,
               "w:colLast": item.move.columnLast,
               "w:displacedByCustomXml": item.move.startDisplaced,
@@ -732,7 +750,7 @@ class Exporter {
           {
             "w:id": this.revisionIds.get(revision)!,
             "w:author": revision.author ?? "",
-            "w:date": date(revision.date),
+            "w:date": revisionDate(revision.date),
           },
         ),
       )
@@ -994,22 +1012,36 @@ class Exporter {
         unsupported("Unbalanced complex field controls cannot be exported.");
       if (!current.result) {
         this.instruction(current, end.instruction.length);
-        this.fieldControl("separate");
+        const endKind = (end.instruction.trim().split(/\s+/)[0] ?? "").toUpperCase();
+        if (!["XE", "TA", "SET", "TC"].includes(endKind)) this.fieldControl("separate");
       }
       this.fieldControl("end");
       return;
     }
     if (field) {
       if (!field.endNodeId) {
-        if (this.inlineRevisions.length) {
+        const trimmedInstr = field.instruction.trim();
+        const fieldKind = trimmedInstr.startsWith("=")
+          ? "FORMULA"
+          : (trimmedInstr.split(/\s+/)[0] ?? "").toUpperCase();
+        const markerOnly = ["XE", "TA", "SET", "TC"].includes(fieldKind);
+        const requireComplex =
+          markerOnly ||
+          !node.children.length ||
+          ["BIBLIOGRAPHY", "INDEX", "TOA", "TOC", "CITATION", "IF", "COMPARE", "SYMBOL"].includes(
+            fieldKind,
+          );
+        if (this.inlineRevisions.length || requireComplex) {
           this.fieldControl("begin", field);
           const state: FieldState = { definition: field, offset: 0, result: true };
           this.instruction(state, field.instruction.length);
-          this.fieldControl("separate");
-          this.fieldStack.push(state);
-          for (const child of node.children)
-            this.inline(child, paragraphStyle, character, role, language);
-          this.fieldStack.pop();
+          if (!markerOnly) {
+            this.fieldControl("separate");
+            this.fieldStack.push(state);
+            for (const child of node.children)
+              this.inline(child, paragraphStyle, character, role, language);
+            this.fieldStack.pop();
+          }
           this.fieldControl("end");
           return;
         }
@@ -1064,6 +1096,41 @@ class Exporter {
       this.openInlineRevision(frame, this.revisionIds.get(revision)!);
       this.inlineRevisions.push(frame);
       this.deleted = ["delete", "moveFrom"].includes(revision.kind);
+    }
+    if (node.attrs["data-word-ruby"] === "true") {
+      const rubyText = node.attrs["data-word-ruby-text"] ?? "";
+      const align = node.attrs["data-word-ruby-align"] ?? "distributeSpace";
+      const sizePt = Number(node.attrs["data-word-ruby-size"] ?? "6") || 6;
+      const basePt = Number(node.attrs["data-word-ruby-base-size"] ?? "12") || 12;
+      const raisePt = Number(node.attrs["data-word-ruby-raise"] ?? String(Math.max(1, basePt - 1))) || 11;
+      const lid = node.attrs["data-word-ruby-lang"] ?? "zh-CN";
+      const hps = Math.max(2, Math.round(sizePt * 2));
+      const hpsRaise = Math.max(0, Math.round(raisePt * 2));
+      const hpsBase = Math.max(2, Math.round(basePt * 2));
+      this.add(
+        "<w:r><w:ruby><w:rubyPr>" +
+          empty("w:rubyAlign", { "w:val": align }) +
+          empty("w:hps", { "w:val": hps }) +
+          empty("w:hpsRaise", { "w:val": hpsRaise }) +
+          empty("w:hpsBaseText", { "w:val": hpsBase }) +
+          empty("w:lid", { "w:val": lid }) +
+          "</w:rubyPr><w:rt><w:r><w:rPr>" +
+          empty("w:sz", { "w:val": hps }) +
+          empty("w:szCs", { "w:val": hps }) +
+          '</w:rPr><w:t xml:space="preserve">' +
+          escapeXml(rubyText) +
+          "</w:t></w:r></w:rt><w:rubyBase>",
+      );
+      for (const child of node.children)
+        this.inline(child, paragraphStyle, character, role, language);
+      this.add("</w:rubyBase></w:ruby></w:r>");
+      if (revision) {
+        this.inlineRevisions.pop();
+        this.deleted = previousDeleted;
+        this.add("</w:" + revisionTag + ">");
+      }
+      if (link) this.outsideInlineRevisions("</w:hyperlink>");
+      return;
     }
     if (node.tag === "br") {
       this.add(
@@ -1136,8 +1203,11 @@ class Exporter {
       if (segment === "..") parts.pop();
       else if (segment !== ".") parts.push(segment);
     }
-    const src = parts.join("/"),
-      descriptor = this.snapshot.manifest.assets.find((asset) => asset.path === src);
+    const src = parts.join("/");
+    return this.embedMediaAsset(src, this.part);
+  }
+  private embedMediaAsset(src: string, targetPart: string): string {
+    const descriptor = this.snapshot.manifest.assets.find((asset) => asset.path === src);
     if (!descriptor)
       throw new DocumentError("AssetUnavailable", "An exported image resource is missing.");
     let path = this.media.get(src);
@@ -1153,7 +1223,7 @@ class Exporter {
       this.media.set(src, path);
       this.opc.binary(path, descriptor.mimeType, this.files.get(src)!);
     }
-    return this.opc.relate(this.part, "image", path.slice(5));
+    return this.opc.relate(targetPart, "image", path.slice(5));
   }
   private captureStory(storyId: string, width: number): string {
     const story = this.snapshot.metadata.word!.stories.find((story) => story.storyId === storyId)!;
@@ -1294,6 +1364,107 @@ class Exporter {
     const css = this.flowStyles.get(node) ?? this.css.get(node),
       id = node.attrs["data-node-id"] ?? "",
       style = node.attrs["data-word-style"];
+    // Word represents Drop Caps as a dedicated 1-character framed paragraph (w:framePr w:dropCap)
+    // immediately followed by the continuation paragraph. Split multi-character Drop Cap paragraphs
+    // on export so desktop Microsoft Word renders a true multi-line dropped initial with text wrap.
+    const dropCapMode = css["--word-drop-cap"];
+    let dropCapTrimLeaf: SourceNode | undefined;
+    let dropCapTrimLength = 0;
+    let suppressDropCapProps = false;
+    if (dropCapMode === "drop" || dropCapMode === "margin") {
+      const plain = (function gather(n: SourceNode): string {
+        if (!element(n)) return n.text;
+        return n.children.map(gather).join("");
+      })(node);
+      if ([...plain.trim()].length > 1 && !this.annotations.at(node, 0)) {
+        const findFirstLeaf = (
+          n: SourceNode,
+        ): { leaf: Extract<SourceNode, { text: string }>; owner: SourceElement } | undefined => {
+          if (!element(n)) return n.text.trim().length > 0 ? { leaf: n, owner: n.parent } : undefined;
+          if (
+            n.tag === "ins" ||
+            n.tag === "del" ||
+            n.attrs["data-word-field"] ||
+            n.attrs["data-word-ruby"]
+          )
+            return undefined;
+          for (const ch of n.children) {
+            const hit = findFirstLeaf(ch);
+            if (hit) return hit;
+          }
+          return undefined;
+        };
+        const hit = findFirstLeaf(node);
+        if (hit) {
+          const leadSpaces = /^\s*/.exec(hit.leaf.text)?.[0].length ?? 0;
+          const firstChar = [...hit.leaf.text.slice(leadSpaces)][0] ?? "";
+          if (firstChar) {
+            const lines = Math.max(
+              1,
+              Math.min(10, Math.round(Number(css["--word-drop-cap-lines"] ?? "3")) || 3),
+            );
+            const hSpace = css["--word-drop-cap-space"]
+              ? nativeInteger(points(css["--word-drop-cap-space"], css), 20, 0)
+              : 0;
+            const bodyPt = points(css["font-size"] ?? "12pt", css) || 12;
+            const lhRaw = css["line-height"] ?? "";
+            const bodyLinePt =
+              lhRaw && /^[\d.]+(?:pt|px)?$/.test(lhRaw.trim())
+                ? /pt$|px$/.test(lhRaw.trim())
+                  ? points(lhRaw.trim(), css)
+                  : Number(lhRaw.trim()) * bodyPt
+                : bodyPt * 1.25;
+            const dropLineTwips = Math.max(240, Math.round(lines * bodyLinePt * 20));
+            const dropSz = Math.max(24, Math.round(lines * bodyLinePt * 0.88 * 2));
+            const leafCss = this.css.get(hit.owner);
+            const dropRunProps = runProperties(
+              {
+                ...pick(leafCss, [
+                  "font-family",
+                  "--word-font-ascii",
+                  "--word-font-hAnsi",
+                  "--word-font-eastAsia",
+                  "--word-font-cs",
+                  "color",
+                  "font-weight",
+                  "font-style",
+                ]),
+                "font-size": dropSz / 2 + "pt",
+              },
+              {},
+            );
+            const dropPPr = orderedProperties(
+              "pPr",
+              empty("w:framePr", {
+                "w:dropCap": dropCapMode,
+                "w:lines": lines,
+                ...(hSpace > 0 ? { "w:hSpace": hSpace } : {}),
+                "w:wrap": "around",
+                "w:vAnchor": "text",
+                "w:hAnchor": "text",
+              }) +
+                "<w:suppressLineNumbers/>" +
+                empty("w:spacing", { "w:line": dropLineTwips, "w:lineRule": "exact" }) +
+                "<w:rPr>" +
+                dropRunProps +
+                "</w:rPr>",
+            );
+            this.add(
+              "<w:p><w:pPr>" +
+                dropPPr +
+                "</w:pPr><w:r><w:rPr>" +
+                dropRunProps +
+                '</w:rPr><w:t xml:space="preserve">' +
+                escapeXml(firstChar) +
+                "</w:t></w:r></w:p>",
+            );
+            dropCapTrimLeaf = hit.leaf;
+            dropCapTrimLength = leadSpaces + firstChar.length;
+            suppressDropCapProps = true;
+          }
+        }
+      }
+    }
     this.add("<w:p" + this.nativeMark(id) + attributes({ "w14:paraId": paragraphId }) + ">");
     let props =
       this.conditionalFormat(node) +
@@ -1317,8 +1488,13 @@ class Exporter {
         ...(numberingId
           ? this.styles.numberingParagraph(numberingId, node.attrs["data-word-level"] ?? "0")
           : {}),
-      },
-      paragraphCss = { ...css };
+      };
+    const paragraphCss: Record<string, string> = { ...css };
+    if (suppressDropCapProps) {
+      delete paragraphCss["--word-drop-cap"];
+      delete paragraphCss["--word-drop-cap-lines"];
+      delete paragraphCss["--word-drop-cap-space"];
+    }
     for (const side of ["top", "right", "bottom", "left"])
       if (
         !paragraphCss["border-" + side + "-style"] &&
@@ -1390,7 +1566,17 @@ class Exporter {
     props += this.review.paragraph(node, this.width);
     this.add("<w:pPr>" + orderedProperties("pPr", props) + "</w:pPr>");
     this.add(this.annotations.at(node, 0));
-    for (const child of node.children) this.inline(child, style);
+    if (dropCapTrimLeaf && !element(dropCapTrimLeaf)) {
+      const saved = dropCapTrimLeaf.text;
+      (dropCapTrimLeaf as { text: string }).text = saved.slice(dropCapTrimLength);
+      try {
+        for (const child of node.children) this.inline(child, style);
+      } finally {
+        (dropCapTrimLeaf as { text: string }).text = saved;
+      }
+    } else {
+      for (const child of node.children) this.inline(child, style);
+    }
     this.add("</w:p>");
   }
   /** Group anonymous inline flow before writing paragraphs. Whitespace-only
@@ -1672,6 +1858,21 @@ class Exporter {
     const grid = info?.grid ?? Array.from({ length: columns }, () => tableWidth / columns);
     if (grid.length !== columns)
       unsupported("The current table structure no longer matches its native column grid.");
+    const tablePropertiesCss = { ...this.tablePropertyDifference(node, css, "table") };
+    const leading = matrix[0]?.[0]?.node;
+    if ((this.snapshot.metadata.word?.compatibilityMode ?? 12) < 15
+      && !(this.css.specified(node)["--word-table-indent-origin"] !== undefined
+        && css["--word-table-indent-origin"] === "native")
+      && css["--word-table-floating"] !== "1"
+      && css["margin-left"] !== "auto" && css["margin-right"] !== "auto"
+      && leading && !leading.attrs["data-word-grid-gap"]) {
+      // Plain HTML/CSS owns a physical border margin. Legacy native Word owns
+      // the leading text position instead; make that conversion explicit.
+      const cellCss = this.css.get(leading);
+      const margin = css["margin-left"], padding = cellCss["padding-left"];
+      tablePropertiesCss["margin-left"] = (points(!margin || margin === "initial" ? "0pt" : margin, css, this.width)
+        + points(!padding || padding === "initial" ? "0pt" : padding, cellCss, tableWidth)) + "pt";
+    }
     this.add(
       "<w:tbl" +
         this.nativeMark(node.attrs["data-node-id"]) +
@@ -1685,7 +1886,7 @@ class Exporter {
             (info?.columnBandSize !== undefined
               ? value("tblStyleColBandSize", info.columnBandSize)
               : "") +
-            tableProperties(this.tablePropertyDifference(node, css, "table")) +
+            tableProperties(tablePropertiesCss) +
             (info?.lookMask !== undefined
               ? empty("w:tblLook", { "w:val": info.lookMask.toString(16).padStart(4, "0") })
               : "") +
@@ -1995,12 +2196,15 @@ class Exporter {
       for (const child of node.children) collect(child);
     };
     this.mainStories.forEach(collect);
+    const pageBg = this.snapshot.metadata.word?.pageBackground?.color;
     this.add(
       declaration +
         "<w:document" +
         namespaces +
         this.nativeMark(this.tree.root.attrs["data-node-id"]) +
-        ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"><w:body>',
+        ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">' +
+        (pageBg ? empty("w:background", { "w:color": pageBg.toUpperCase() }) : "") +
+        "<w:body>",
     );
     sections.forEach(({ section, nodes }, index) => {
       this.width = this.sectionTextWidth(section);
@@ -2026,7 +2230,15 @@ class Exporter {
         this.width = this.sectionTextWidth(section, false);
         this.output = this.opc.part(info.path, contentType(info.kind));
         const tag = info.kind === "header" ? "hdr" : "ftr";
-        this.add(declaration + "<w:" + tag + namespaces + this.nativeMark(story.rootNodeId) + ">");
+        this.add(
+          declaration +
+            "<w:" +
+            tag +
+            namespaces +
+            ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"' +
+            this.nativeMark(story.rootNodeId) +
+            ">",
+        );
         this.blocks(this.tree.byId.get(story.rootNodeId)!.children);
         this.add("</w:" + tag + ">");
         this.output.finish();
@@ -2035,19 +2247,47 @@ class Exporter {
     this.writeNotes();
     this.writeComments();
     this.styles.write(this.opc);
-    this.styles.writeNumbering(this.opc, this.htmlLists);
+    this.styles.writeNumbering(this.opc, this.htmlLists, (assetPath, part) =>
+      this.embedMediaAsset(assetPath, part),
+    );
+    writeWordBibliography(this.opc, this.snapshot.metadata.word?.bibliography);
+    this.writeTheme();
     this.writeSettings();
     const core = this.opc.part(
       "docProps/core.xml",
       "application/vnd.openxmlformats-package.core-properties+xml",
     );
+    const props = this.snapshot.metadata.word?.properties;
     core.add(
       declaration +
         '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' +
         escapeXml(this.snapshot.metadata.title ?? "") +
-        "</dc:title></cp:coreProperties>",
+        "</dc:title>" +
+        (props?.subject ? "<dc:subject>" + escapeXml(props.subject) + "</dc:subject>" : "") +
+        (props?.creator ? "<dc:creator>" + escapeXml(props.creator) + "</dc:creator>" : "") +
+        (props?.keywords ? "<cp:keywords>" + escapeXml(props.keywords) + "</cp:keywords>" : "") +
+        (props?.description
+          ? "<dc:description>" + escapeXml(props.description) + "</dc:description>"
+          : "") +
+        (props?.category ? "<cp:category>" + escapeXml(props.category) + "</cp:category>" : "") +
+        "</cp:coreProperties>",
     );
     core.finish();
+    const templateName = this.snapshot.metadata.word?.template?.name;
+    if (templateName) {
+      const app = this.opc.part(
+        "docProps/app.xml",
+        "application/vnd.openxmlformats-officedocument.extended-properties+xml",
+      );
+      app.add(
+        declaration +
+          '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Template>' +
+          escapeXml(templateName) +
+          "</Template><Application>doffi</Application></Properties>",
+      );
+      app.finish();
+      this.opc.relate("", "extended-properties", "docProps/app.xml");
+    }
     this.opc.relate("", "officeDocument", "word/document.xml");
     this.opc.relate(
       "",
@@ -2083,7 +2323,14 @@ class Exporter {
           path,
           "application/vnd.openxmlformats-officedocument.wordprocessingml." + kind + "s+xml",
         );
-        this.add(declaration + "<w:" + kind + "s" + namespaces + ">");
+        this.add(
+          declaration +
+            "<w:" +
+            kind +
+            "s" +
+            namespaces +
+            ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">',
+        );
         for (const [type, id, tag] of [
           ["separator", -1, "separator"],
           ["continuationSeparator", 0, "continuationSeparator"],
@@ -2208,7 +2455,7 @@ class Exporter {
     };
     extension(
       "commentsExtended.xml",
-      "application/vnd.ms-word.commentsExtended+xml",
+      contentType("commentsExtended"),
       W15,
       "w15",
       "commentsEx",
@@ -2235,7 +2482,7 @@ class Exporter {
     );
     extension(
       "commentsIds.xml",
-      "application/vnd.ms-word.commentsIds+xml",
+      contentType("commentsIds"),
       CID,
       "w16cid",
       "commentsIds",
@@ -2259,7 +2506,7 @@ class Exporter {
     );
     extension(
       "commentsExtensible.xml",
-      "application/vnd.ms-word.commentsExtensible+xml",
+      contentType("commentsExtensible"),
       CEX,
       "w16cex",
       "commentsExtensible",
@@ -2319,7 +2566,7 @@ class Exporter {
       })
       .join("");
     if (!items) return;
-    const out = this.opc.part("word/people.xml", "application/vnd.ms-word.people+xml");
+    const out = this.opc.part("word/people.xml", contentType("people"));
     out.add(declaration + '<w15:people xmlns:w15="' + W15 + '">' + items + "</w15:people>");
     out.finish();
     this.opc.relate(
@@ -2349,6 +2596,76 @@ class Exporter {
         : [],
     );
   }
+  private writeTheme(): void {
+    const word = this.snapshot.metadata.word;
+    const theme = word?.theme;
+    if (!theme) return;
+    if (
+      word?.nativeContent?.relationships.some((rel) => rel.root && rel.type.endsWith("/theme"))
+    )
+      return;
+    const defaults: Record<string, string> = {
+      dk1: "000000",
+      lt1: "FFFFFF",
+      dk2: "44546A",
+      lt2: "E7E6E6",
+      accent1: "4472C4",
+      accent2: "ED7D31",
+      accent3: "A5A5A5",
+      accent4: "FFC000",
+      accent5: "5B9BD5",
+      accent6: "70AD47",
+      hlink: "0563C1",
+      folHlink: "954F72",
+    };
+    const colors = { ...defaults, ...(theme.colors ?? {}) };
+    const colorOrder = [
+      "dk1",
+      "lt1",
+      "dk2",
+      "lt2",
+      "accent1",
+      "accent2",
+      "accent3",
+      "accent4",
+      "accent5",
+      "accent6",
+      "hlink",
+      "folHlink",
+    ] as const;
+    const clrXml = colorOrder
+      .map((role) => `<a:${role}><a:srgbClr val="${(colors[role] ?? defaults[role]!).toUpperCase()}"/></a:${role}>`)
+      .join("");
+    const majorLatin = escapeXml(theme.majorLatin ?? "Calibri Light");
+    const minorLatin = escapeXml(theme.minorLatin ?? "Calibri");
+    const majorEa = escapeXml(theme.majorEastAsia ?? "等线 Light");
+    const minorEa = escapeXml(theme.minorEastAsia ?? "等线");
+    const out = this.opc.part(
+      "word/theme/theme1.xml",
+      "application/vnd.openxmlformats-officedocument.theme+xml",
+    );
+    out.add(
+      declaration +
+        `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="${escapeXml(theme.name ?? "Office 主题")}">` +
+        `<a:themeElements>` +
+        `<a:clrScheme name="${escapeXml(theme.colorSchemeName ?? "Office")}">${clrXml}</a:clrScheme>` +
+        `<a:fontScheme name="${escapeXml(theme.fontSchemeName ?? "Office")}">` +
+        `<a:majorFont><a:latin typeface="${majorLatin}"/><a:ea typeface="${majorEa}"/><a:cs typeface=""/>` +
+        `<a:font script="Hans" typeface="${majorEa}"/></a:majorFont>` +
+        `<a:minorFont><a:latin typeface="${minorLatin}"/><a:ea typeface="${minorEa}"/><a:cs typeface=""/>` +
+        `<a:font script="Hans" typeface="${minorEa}"/></a:minorFont>` +
+        `</a:fontScheme>` +
+        `<a:fmtScheme name="Office">` +
+        `<a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst>` +
+        `<a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="19050"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst>` +
+        `<a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst>` +
+        `<a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst>` +
+        `</a:fmtScheme>` +
+        `</a:themeElements></a:theme>`,
+    );
+    out.finish();
+    this.opc.relate("word/document.xml", "theme", "theme/theme1.xml");
+  }
   private writeSettings(): void {
     const out = this.opc.part("word/settings.xml", contentType("settings")),
       tabs = this.snapshot.metadata.word?.tabs ?? [],
@@ -2370,6 +2687,11 @@ class Exporter {
       unsupported(
         "DOCX gutterAtTop is document-wide; nonzero top and side gutters cannot be mixed.",
       );
+    const attachedTemplateXml = word?.template?.target
+      ? empty("w:attachedTemplate", {
+          "r:id": this.opc.relate("word/settings.xml", "attachedTemplate", word.template.target, true),
+        })
+      : "";
     out.add(
       declaration +
         "<w:settings" +
@@ -2377,10 +2699,19 @@ class Exporter {
         ">" +
         orderedProperties(
           "settings",
-          value(
-            "bordersDoNotSurroundHeader",
-            this.snapshot.metadata.word?.bordersDoNotSurroundHeader ? 1 : 0,
-          ) +
+          (word?.pageBackground?.color ? value("displayBackgroundShape", 1) : "") +
+            (word?.protection && word.protection.edit !== "none"
+              ? empty("w:documentProtection", {
+                  "w:edit": word.protection.edit,
+                  "w:enforcement": word.protection.enforcement ? 1 : 0,
+                })
+              : "") +
+            attachedTemplateXml +
+            (word?.template?.linkStyles ? value("linkStyles", 1) : "") +
+            value(
+              "bordersDoNotSurroundHeader",
+              this.snapshot.metadata.word?.bordersDoNotSurroundHeader ? 1 : 0,
+            ) +
             value(
               "bordersDoNotSurroundFooter",
               this.snapshot.metadata.word?.bordersDoNotSurroundFooter ? 1 : 0,

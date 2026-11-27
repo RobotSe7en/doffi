@@ -13,13 +13,14 @@ export const officeRibbonStyles: string = `
 :where(.doffi-office-ribbon) .office-tabs>button[aria-selected=true]:after{content:"";position:absolute;left:12px;right:12px;bottom:3px;height:3px;border-radius:2px;background:var(--office-accent)}
 :where(.doffi-office-ribbon) .office-ribbon-panel{display:flex;align-items:stretch;height:74px;min-height:74px;padding:5px 8px;margin:0 7px 6px;border:1px solid #e8e8e8;border-radius:13px;background:#fff;box-shadow:0 2px 4px #00000012;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
 :where(.doffi-office-ribbon) .ribbon-group{position:relative;display:flex;flex-direction:column;flex-shrink:0;padding:0 9px;border-right:1px solid #d9d9d9}
+:where(.doffi-office-ribbon) .ribbon-group:has(.ribbon-dialog-launcher):not(.font-group):not(.paragraph-group){padding-right:19px}
 :where(.doffi-office-ribbon) .ribbon-group:last-child{border-right:0}
 :where(.doffi-office-ribbon) .ribbon-group-content{display:flex;align-items:flex-start;justify-content:center;gap:4px;height:62px;min-height:0;flex:1}
 :where(.doffi-office-ribbon) .ribbon-group-caption{display:none}
 :where(.doffi-office-ribbon) .ribbon-tool{display:inline-flex;align-items:center;justify-content:flex-start;gap:4px;padding:3px;min-height:22px;border:1px solid transparent;border-radius:4px;font-size:11px;line-height:1.2;color:#333}
 :where(.doffi-office-ribbon) .ribbon-tool>svg{color:#595959;flex-shrink:0}
 :where(.doffi-office-ribbon) .ribbon-tool.large{flex-direction:column;justify-content:flex-start;min-width:43px;height:62px;padding:4px 3px 0;gap:4px}
-:where(.doffi-office-ribbon) .ribbon-tool.large>span:last-child{font-size:11px;white-space:normal;line-height:1.15;max-width:60px;text-align:center}
+:where(.doffi-office-ribbon) .ribbon-tool.large>span:last-child{font-size:11px;white-space:normal;line-height:1.15;max-width:74px;text-align:center}
 :where(.doffi-office-ribbon) .ribbon-tool[aria-pressed=true]{background:#e5e5e5;border-color:transparent;color:#292929}
 :where(.doffi-office-ribbon) .ribbon-tool-stack{display:flex;flex-direction:column;align-items:flex-start;gap:0;height:62px;justify-content:center}
 :where(.doffi-office-ribbon) .ribbon-tool-stack>.ribbon-tool{min-height:20px;padding-block:1px}
@@ -38,7 +39,8 @@ export const officeRibbonStyles: string = `
 :where(.doffi-office-ribbon) .ribbon-glyph{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:20px;font-family:Georgia,serif;font-size:15px;line-height:20px}
 :where(.doffi-office-ribbon) .ribbon-glyph sup,:where(.doffi-office-ribbon) .ribbon-glyph sub{font-size:9px}
 :where(.doffi-office-ribbon) .ribbon-divider{display:inline-block;width:1px;height:19px;background:#dfdfdf;margin-inline:3px}
-:where(.doffi-office-ribbon) .ribbon-dialog-launcher{position:absolute;right:0;bottom:0;z-index:1;width:10px;height:10px;min-height:0;padding:0}
+:where(.doffi-office-ribbon) .ribbon-dialog-launcher{position:absolute;right:3px;bottom:1px;z-index:1;width:13px;height:13px;min-height:0;padding:0;color:#666;border-radius:2px}
+:where(.doffi-office-ribbon) .ribbon-dialog-launcher:hover:not(:disabled){background:#e4e9f2;color:#185abd}
 :where(.doffi-office-ribbon) .ribbon-dialog-launcher>svg{width:9px;height:9px}:where(.doffi-office-ribbon) .ribbon-dialog-launcher>span{display:none}
 :where(.doffi-office-ribbon) .office-combo{display:flex;position:relative;border:1px solid #d2d2d2;border-radius:3px;background:#fff;height:24px;flex-shrink:0}
 :where(.doffi-office-ribbon) .office-combo input{border:0;border-radius:3px;min-width:0;padding:2px 5px;font-size:11px;width:100%;background:transparent;outline-offset:0}
@@ -52,36 +54,82 @@ export const officeRibbonStyles: string = `
 :where(.doffi-office-ribbon) .office-option-section,:where(.doffi-office-ribbon) .office-menu-heading{padding:5px 10px;color:#666;font-size:11px;text-align:left;font-weight:500;background:#f3f3f3}
 :where(.doffi-office-ribbon) .office-combo-options>span{display:block;padding:7px;color:#666;font-size:11px}
 :where(.doffi-office-ribbon) .office-combo-error{position:absolute;z-index:80;left:0;top:26px;width:220px;padding:7px;color:#9c3131;background:#fff1f0;border:1px solid #e6b7b2;font-size:11px}
-:where(.doffi-office-ribbon) .styles-group{flex:1;min-width:180px;overflow:hidden;padding-inline:9px 3px}
+:where(.doffi-office-ribbon) .styles-group{flex:1;min-width:180px;overflow:hidden;padding-inline:9px 5px}
 :where(.doffi-office-ribbon) .styles-group>.ribbon-group-content{align-items:center;min-width:0;gap:0}
-:where(.doffi-office-ribbon) .style-gallery{display:flex;align-items:center;gap:4px;height:58px;overflow:hidden;min-width:0;flex:1}
-:where(.doffi-office-ribbon) .style-gallery>button{display:flex;flex-direction:column;justify-content:center;gap:2px;height:52px;flex:0 0 76px;padding:4px 3px;border:1px solid #d0d0d0;border-radius:4px;background:linear-gradient(white,#f6f6f6);opacity:1;overflow:hidden}
-:where(.doffi-office-ribbon) .style-gallery>button[aria-pressed=true]{outline:2px solid #b1c7e6;outline-offset:1px;background:#edf2f9}
-:where(.doffi-office-ribbon) .style-gallery>button>span{display:block;width:100%;height:25px;border-bottom:1px solid #e3e3e3;overflow:hidden}
-:where(.doffi-office-ribbon) .style-gallery small{color:#333;font-size:10px;line-height:16px}
-:where(.doffi-office-ribbon) .style-gallery-menu>.ribbon-tool{width:16px;height:56px;padding:0;border:1px solid #ddd;border-radius:0 3px 3px 0}
-:where(.doffi-office-ribbon) .style-gallery-menu>.ribbon-tool>span:not(:first-child),:where(.doffi-office-ribbon) .style-gallery-menu .menu-arrow{display:none}
+:where(.doffi-office-ribbon) .style-gallery{display:flex;align-items:center;gap:4px;height:54px;padding:2px 4px;border:1px solid #d4d4d4;border-right:0;border-radius:4px 0 0 4px;background:#fbfbfb;overflow:hidden;min-width:0;flex:1}
+:where(.doffi-office-ribbon) .style-gallery>button{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:1px;height:48px;flex:0 0 76px;padding:2px 3px 3px;border:1px solid transparent;border-radius:3px;background:#fff;opacity:1;overflow:hidden}
+:where(.doffi-office-ribbon) .style-gallery>button:hover:not(:disabled){background:#f2f6fc;border-color:#c6d7ee}
+:where(.doffi-office-ribbon) .style-gallery>button[aria-pressed=true]{border-color:#185abd;box-shadow:inset 0 0 0 1px #185abd;background:#eef4fc}
+:where(.doffi-office-ribbon) .style-gallery>button>span{display:flex;align-items:flex-end;justify-content:center;width:100%;height:26px;padding-bottom:2px;line-height:1.08;white-space:nowrap;border-bottom:1px solid #ececec;overflow:hidden}
+:where(.doffi-office-ribbon) .style-gallery small{color:#333;font-size:10px;line-height:14px;max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:where(.doffi-office-ribbon) .style-gallery-menu{height:54px;align-self:center}
+:where(.doffi-office-ribbon) .style-gallery-menu>.ribbon-tool{width:18px;height:54px;padding:0;border:1px solid #d4d4d4;border-radius:0 4px 4px 0;background:#fafafa;color:#444;flex-direction:column;justify-content:center}
+:where(.doffi-office-ribbon) .style-gallery-menu>.ribbon-tool:hover:not(:disabled){background:#e9eef6;border-color:#b8cbe5}
+:where(.doffi-office-ribbon) .style-gallery-menu>.ribbon-tool>span:not(.gallery-chevron),:where(.doffi-office-ribbon) .style-gallery-menu .menu-arrow{display:none}
+:where(.doffi-office-ribbon) .style-gallery-menu .gallery-chevron{display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1;color:#555}
+:where(.doffi-office-ribbon) .office-style-grid{display:grid;grid-template-columns:repeat(4,98px);gap:6px;padding:8px 10px}
+:where(.doffi-office-ribbon) .office-menu-popup .office-style-grid>button{display:flex;flex-direction:column;align-items:center;justify-content:space-between;width:98px;height:54px;min-height:54px;padding:3px 4px 4px;border:1px solid #dcdcdc;border-radius:4px;background:#fff;overflow:hidden;gap:1px}
+:where(.doffi-office-ribbon) .office-menu-popup .office-style-grid>button:hover:not(:disabled){background:#eef4fc;border-color:#9dbbe5}
+:where(.doffi-office-ribbon) .office-menu-popup .office-style-grid>button[aria-checked=true]{border-color:#185abd;box-shadow:inset 0 0 0 1px #185abd;background:#eef4fc;font-weight:400;color:inherit}
+:where(.doffi-office-ribbon) .office-menu-popup .office-style-grid>button>span{display:flex;align-items:flex-end;justify-content:center;width:100%;height:28px;padding-bottom:2px;line-height:1.08;white-space:nowrap;border-bottom:1px solid #ececec;overflow:hidden}
+:where(.doffi-office-ribbon) .office-menu-popup .office-style-grid>button>small{color:#333;font-size:10px;line-height:14px;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 :where(.doffi-office-ribbon) .office-menu{position:relative;display:inline-flex;flex-shrink:0;align-items:stretch;height:24px}
 :where(.doffi-office-ribbon) .office-menu>.ribbon-tool{justify-content:center;padding:2px;gap:2px;height:24px;min-height:24px}
 :where(.doffi-office-ribbon) .ribbon-icon-row .office-menu>.ribbon-tool>span:last-of-type,:where(.doffi-office-ribbon) .ribbon-font-selects .office-menu>.ribbon-tool>span:last-of-type{display:none}
 :where(.doffi-office-ribbon) .office-menu.large{height:62px}:where(.doffi-office-ribbon) .office-menu.large>.ribbon-tool{height:62px;min-height:62px}
+:where(.doffi-office-ribbon) .office-menu.large>.ribbon-tool>.menu-arrow{position:absolute;right:2px;bottom:2px;line-height:10px}
+:where(.doffi-office-ribbon) .office-menu.large>.ribbon-tool{position:relative;padding-inline:5px}
 :where(.doffi-office-ribbon) .menu-arrow{font:10px system-ui;width:8px;line-height:16px}
 :where(.doffi-office-ribbon) .menu-split-arrow{width:9px;padding:0;border:0;font-size:10px;line-height:24px}
 :where(.doffi-office-ribbon) .office-menu:has(button[aria-expanded=true]){background:#e8e8e8;border-radius:4px}
 :where(.doffi-office-ribbon) .office-menu-popup{position:fixed;z-index:75;min-width:180px;width:max-content;max-width:calc(100vw - 16px);max-height:calc(100dvh - 155px);overflow:auto;padding:5px 0;border:1px solid #c0c0c0;border-radius:6px;background:#fff;box-shadow:0 7px 24px #0003;color:#222;font:12px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
-:where(.doffi-office-ribbon) .office-menu-popup>button{display:flex;justify-content:flex-start;width:100%;padding:5px 16px;min-height:25px;border:0;border-radius:0;text-align:left}
-:where(.doffi-office-ribbon) .office-menu-popup>button:hover:not(:disabled){background:#dce8f8}
+:where(.doffi-office-ribbon) .office-menu-popup button[role=menuitem],:where(.doffi-office-ribbon) .office-menu-popup button[role=menuitemradio]{display:flex;align-items:center;justify-content:flex-start;width:100%;padding:5px 14px;min-height:26px;border:0;border-radius:0;text-align:left;gap:6px}
+:where(.doffi-office-ribbon) .office-menu-popup button[role=menuitem]:hover:not(:disabled),:where(.doffi-office-ribbon) .office-menu-popup button[role=menuitemradio]:hover:not(:disabled){background:#dce8f8}
+:where(.doffi-office-ribbon) .office-menu-popup button[role=menuitemradio][aria-checked=true]{background:#edf3fc;font-weight:600;color:#185abd;box-shadow:inset 3px 0 0 #185abd}
+:where(.doffi-office-ribbon) .office-menu-divider{height:1px;background:#e5e5e5;margin:4px 0}
 :where(.doffi-office-ribbon) .office-color-symbol{display:inline-flex;height:19px;width:18px;align-items:center;justify-content:center;border-bottom:3px solid;font:16px Georgia,serif}
+:where(.doffi-office-ribbon) .office-color-symbol.large{height:32px;width:30px;border-bottom-width:4px}
 :where(.doffi-office-ribbon) .highlight-symbol{transform:rotate(-12deg);font-size:20px}:where(.doffi-office-ribbon) .fill-symbol{font-size:22px}
 :where(.doffi-office-ribbon) .color-menu .office-menu-popup{width:230px}
 :where(.doffi-office-ribbon) .office-color-grid{display:grid;grid-template-columns:repeat(10,17px);gap:3px;padding:7px 14px}
-:where(.doffi-office-ribbon) .office-color-grid>button{width:17px;height:17px;padding:0;border:1px solid #0002;border-radius:0}
-:where(.doffi-office-ribbon) .office-color-grid>button:hover{outline:2px solid #aaa;outline-offset:1px}
-:where(.doffi-office-ribbon) .office-custom-color{display:flex;align-items:center;justify-content:space-between;padding:5px 14px;border-top:1px solid #ddd}
-:where(.doffi-office-ribbon) .office-custom-color input{width:28px;height:24px;padding:0;opacity:0;position:absolute;inset:auto 0 0 0;width:100%;cursor:pointer}
+:where(.doffi-office-ribbon) .office-menu-popup .office-color-grid>button{width:17px;height:17px;min-height:17px;padding:0;border:1px solid #0002;border-radius:0}
+:where(.doffi-office-ribbon) .office-menu-popup .office-color-grid>button:hover{outline:2px solid #aaa;outline-offset:1px}
+:where(.doffi-office-ribbon) .office-highlight-grid{display:grid;grid-template-columns:repeat(5,32px);gap:6px;padding:8px 14px}
+:where(.doffi-office-ribbon) .office-menu-popup .office-highlight-grid>button{width:32px;height:20px;min-height:20px;padding:0;border:1px solid #0003;border-radius:2px}
+:where(.doffi-office-ribbon) .office-menu-popup .office-highlight-grid>button:hover{outline:2px solid #185abd;outline-offset:1px}
+:where(.doffi-office-ribbon) .office-custom-color{position:relative;display:flex;align-items:center;justify-content:space-between;padding:5px 14px;border-top:1px solid #ddd;cursor:pointer}
+:where(.doffi-office-ribbon) .office-custom-color:hover{background:#dce8f8}
+:where(.doffi-office-ribbon) .office-custom-color input{height:24px;padding:0;opacity:0;position:absolute;inset:0;width:100%;cursor:pointer}
 :where(.doffi-office-ribbon) .office-list-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:8px}
-:where(.doffi-office-ribbon) .office-list-gallery button{width:76px;height:64px;border:1px solid #ddd;display:flex;gap:4px;padding:5px;white-space:normal}
+:where(.doffi-office-ribbon) .office-menu-popup .office-list-gallery button{width:76px;height:64px;min-height:64px;border:1px solid #ddd;border-radius:3px;display:flex;gap:4px;padding:5px;white-space:normal}
+:where(.doffi-office-ribbon) .office-menu-popup .office-list-gallery button:hover:not(:disabled){border-color:#185abd;background:#eef4fc}
 :where(.doffi-office-ribbon) .office-list-gallery button>i{font-size:9px;font-style:normal;line-height:16px;color:#777}
+:where(.doffi-office-ribbon) .office-table-grid-wrap{padding:6px 10px 8px}
+:where(.doffi-office-ribbon) .office-table-grid-title{font-size:11px;font-weight:600;color:#333;margin-bottom:6px}
+:where(.doffi-office-ribbon) .office-table-grid{display:grid;grid-template-columns:repeat(8,18px);gap:3px}
+:where(.doffi-office-ribbon) .office-menu-popup .office-table-grid>button{width:18px;height:18px;min-height:18px;padding:0;border:1px solid #b8b8b8;border-radius:1px;background:#fff}
+:where(.doffi-office-ribbon) .office-menu-popup .office-table-grid>button[data-active=true]{border:1px solid #d8691e;background:#fde9d9}
+:where(.doffi-office-ribbon) .office-shape-grid{display:grid;grid-template-columns:repeat(4,34px);gap:4px;padding:4px 10px 8px}
+:where(.doffi-office-ribbon) .office-menu-popup .office-shape-grid>button{width:34px;height:30px;min-height:30px;padding:3px;border:1px solid transparent;border-radius:4px;justify-content:center;color:#2b579a}
+:where(.doffi-office-ribbon) .office-menu-popup .office-shape-grid>button:hover:not(:disabled){border-color:#a5c0e5;background:#eef4fc}
+:where(.doffi-office-ribbon) .ribbon-spin-stack{display:flex;flex-direction:column;justify-content:center;gap:4px;height:62px}
+:where(.doffi-office-ribbon) .ribbon-spin-field{display:inline-flex;align-items:center;justify-content:space-between;gap:5px;font-size:11px;color:#333}
+:where(.doffi-office-ribbon) .ribbon-spin-field>span{min-width:30px;text-align:right}
+:where(.doffi-office-ribbon) .ribbon-spin-box{display:inline-flex;align-items:stretch;height:22px;border:1px solid #d0d0d0;border-radius:3px;background:#fff;overflow:hidden}
+:where(.doffi-office-ribbon) .ribbon-spin-box>input{width:54px;height:100%;padding:1px 4px;border:0;background:transparent;font-size:11px;text-align:right;outline:0}
+:where(.doffi-office-ribbon) .ribbon-spin-box:focus-within{border-color:#185abd}
+:where(.doffi-office-ribbon) .ribbon-spin-arrows{display:flex;flex-direction:column;border-left:1px solid #e0e0e0;width:13px}
+:where(.doffi-office-ribbon) .ribbon-spin-arrows>button{flex:1;min-height:0;height:10px;padding:0;border:0;border-radius:0;font-size:7px;line-height:1;color:#666}
+:where(.doffi-office-ribbon) .ribbon-spin-arrows>button:hover:not(:disabled){background:#e7eef8;color:#185abd}
+:where(.doffi-office-ribbon) .ribbon-spin-box>input:disabled{opacity:.45;background:#f5f5f5}
+:where(.doffi-office-ribbon) .office-align-grid{display:grid;grid-template-columns:repeat(3,22px);grid-template-rows:repeat(3,19px);gap:1px;align-self:center;padding:1px;border:1px solid #e2e2e2;border-radius:4px;background:#fafafa}
+:where(.doffi-office-ribbon) .office-align-grid>button{width:22px;height:19px;padding:0;border-radius:2px;color:#444}
+:where(.doffi-office-ribbon) .office-align-grid>button:hover:not(:disabled){background:#dce8f8;color:#185abd}
+:where(.doffi-office-ribbon) .office-table-style-gallery{display:flex;align-items:center;gap:5px;height:58px}
+:where(.doffi-office-ribbon) .office-table-style-gallery>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:62px;height:54px;padding:3px;border:1px solid #d4d4d4;border-radius:4px;background:#fff}
+:where(.doffi-office-ribbon) .office-table-style-gallery>button:hover:not(:disabled){border-color:#185abd;background:#eef4fc}
+:where(.doffi-office-ribbon) .office-table-style-gallery small{font-size:10px;line-height:12px;color:#333}
+:where(.doffi-office-ribbon) .office-menu-sub{display:block;font-size:10px;color:#666;font-weight:400;margin-left:auto;padding-left:10px}
 :where(.doffi-office-ribbon) .ribbon-group-content>select{align-self:center;border:1px solid #d0d0d0;border-radius:4px;background:#fff;font-size:11px;padding:4px}
 :where(.doffi-office-ribbon) .ribbon-tool-stack>label{display:flex;align-items:center;gap:5px;font-size:11px;margin:2px 0}
 :where(.doffi-office-ribbon) .ribbon-tool-stack input[type=checkbox]{width:12px;height:12px;margin:0}
@@ -101,17 +149,19 @@ export const officeRibbonStyles: string = `
 :where(.doffi-office-ribbon[data-kind=workbook]) .font-group :is(.ribbon-font-selects,.ribbon-icon-row){width:100%;justify-content:space-between}
 :where(.doffi-office-ribbon) .style-gallery-menu>button>svg{display:none}
 :where(.doffi-office-ribbon) .office-combo-more{border-top:1px solid #ddd!important;margin-top:4px}
-:where(.doffi-office-ribbon) .native-command-gallery{display:flex;align-items:center;gap:5px;height:60px;max-width:680px;overflow:hidden}
-:where(.doffi-office-ribbon) .native-command-gallery>button{display:flex;flex-direction:column;width:78px;flex:0 0 78px;height:60px;padding:2px;gap:2px;opacity:.6}
-:where(.doffi-office-ribbon) .native-command-gallery>button>span{display:flex;align-items:center;justify-content:center;position:relative;width:72px;height:44px;background:#fff;border:1px solid #ccc;border-top:5px solid #4472c4;font:22px Georgia,serif}
-:where(.doffi-office-ribbon) .native-command-gallery>button>span>i{position:absolute;bottom:6px;left:9px;width:45px;height:3px;background:#c8c8c8}
-:where(.doffi-office-ribbon) .native-command-gallery small{font-size:10px;white-space:nowrap;max-width:78px;overflow:hidden;text-overflow:ellipsis}
+:where(.doffi-office-ribbon) .native-command-gallery{display:flex;align-items:center;gap:4px;height:60px;max-width:502px;overflow-x:auto;scrollbar-width:thin}
+:where(.doffi-office-ribbon) .native-command-gallery>button{display:flex;flex-direction:column;width:68px;flex:0 0 68px;height:60px;padding:2px;gap:2px;opacity:1}
+:where(.doffi-office-ribbon) .native-command-gallery>button:disabled{opacity:.45}
+:where(.doffi-office-ribbon) .native-command-gallery>button>span{display:flex;align-items:center;justify-content:center;position:relative;width:62px;height:42px;background:#fff;border:1px solid #ccc;border-top:5px solid #4472c4;font:20px Georgia,serif}
+:where(.doffi-office-ribbon) .native-command-gallery>button>span>i{position:absolute;bottom:6px;left:8px;width:40px;height:3px;background:#c8c8c8}
+:where(.doffi-office-ribbon) .native-command-gallery small{font-size:10px;white-space:nowrap;max-width:66px;overflow:hidden;text-overflow:ellipsis}
 :where(.doffi-office-ribbon) .native-command-gallery.transition>button>span{background:#e9f2f9;border-top:1px solid #ccc}
 :where(.doffi-office-ribbon) .native-pen-gallery{display:flex;align-items:center;gap:14px;height:60px;padding:0 8px}
 :where(.doffi-office-ribbon) .native-pen-gallery button{height:60px;align-items:flex-end;padding-bottom:2px;border-bottom:3px solid currentColor;opacity:.65}
 :where(.doffi-office-ribbon[data-compact=true]) .styles-group{min-width:55px;flex:0 0 55px;padding-inline:5px}
 :where(.doffi-office-ribbon[data-compact=true]) .style-gallery{display:none}
-:where(.doffi-office-ribbon[data-compact=true]) .style-gallery-menu>.ribbon-tool{width:44px;height:62px;border:0;flex-direction:column;gap:3px}
+:where(.doffi-office-ribbon[data-compact=true]) .style-gallery-menu{height:62px}
+:where(.doffi-office-ribbon[data-compact=true]) .style-gallery-menu>.ribbon-tool{width:44px;height:62px;border:0;background:transparent;flex-direction:column;gap:3px}
 :where(.doffi-office-ribbon[data-compact=true]) .style-gallery-menu>button>svg{display:block}
 :where(.doffi-office-ribbon[data-compact=true]) .style-gallery-menu .gallery-chevron{display:none}
 :where(.doffi-office-ribbon[data-compact=true]) .style-gallery-menu>button:after{content:"样式";font-size:11px}

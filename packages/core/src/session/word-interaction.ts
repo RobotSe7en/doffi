@@ -195,6 +195,9 @@ export function wordInteractionContext(
     if (node.tagName === "img")
       used.add(resolveReference(node.attributes.src!, state.snapshot.manifest.entrypoint));
   }
+  for (const definition of word.numbering)
+    for (const level of definition.levels)
+      if (level.pictureBulletAssetPath) used.add(level.pictureBulletAssetPath);
   return {
     metadata,
     assets: state.snapshot.manifest.assets.filter((asset) => used.has(asset.path)),

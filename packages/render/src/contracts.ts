@@ -53,7 +53,46 @@ export interface LayoutFieldResult {
   readonly fieldNodeId: string;
   readonly resultNodeIds: readonly string[];
   readonly value: string;
-  readonly kind: "PAGE" | "NUMPAGES" | "TOC" | "REF" | "PAGEREF" | "NOTEREF" | "SEQ";
+  readonly kind:
+    | "PAGE"
+    | "NUMPAGES"
+    | "TOC"
+    | "TOF"
+    | "INDEX"
+    | "TOA"
+    | "CITATION"
+    | "BIBLIOGRAPHY"
+    | "REF"
+    | "PAGEREF"
+    | "NOTEREF"
+    | "STYLEREF"
+    | "SEQ"
+    | "IF"
+    | "COMPARE"
+    | "SET"
+    | "QUOTE"
+    | "SYMBOL"
+    | "DATE"
+    | "TIME"
+    | "CREATEDATE"
+    | "SAVEDATE"
+    | "PRINTDATE"
+    | "EDITTIME"
+    | "AUTHOR"
+    | "TITLE"
+    | "SUBJECT"
+    | "KEYWORDS"
+    | "COMMENTS"
+    | "LASTSAVEDBY"
+    | "REVNUM"
+    | "DOCPROPERTY"
+    | "FILENAME"
+    | "TEMPLATE"
+    | "NUMWORDS"
+    | "NUMCHARS"
+    | "SECTION"
+    | "SECTIONPAGES"
+    | "FORMULA";
 }
 /** Derived geometry is bound to one immutable document revision. All values use points. */
 interface RenderReport {

@@ -42,7 +42,7 @@ view.dispose();
 
 界面提供开放批注复选、生成请求、下载请求 JSON、统一提交、提案 JSON 文件导入、逐处差异、候选预览、整批应用及拒绝。内容差异显示前后文字，并可展开查看结构和样式。应用后的文档包下载由宿主通过 `session.serialize()` 和 `office` ZIP 入口完成。
 
-公开视图保留 `selection/fonts/setMode/setZoom/focusAnnotation/ready/dispose`，并提供 `request/buildRequest/submitAnnotations/loadProposal/applyProposal/rejectProposal`。宿主可用 `await view.setEditing(true)` 切换正文输入，通过 `executeTextCommand` 执行字号、字重、斜体、下划线、文字颜色或左／中／右对齐；命令复用正文输入的选区、事务和撤销历史，未进入编辑或输入法组合期间明确拒绝。`formatState()` / `onFormatStateChange` 报告当前文字与混合格式；`clipboard("copy" | "cut" | "paste")` 复用原生输入的安全序列化，浏览器不允许读取剪贴板时可使用键盘粘贴。`updateFields()` 显式更新页码与目录。`ready` 等待当前正文及候选预览。卸载释放监听、候选、预览及资源 URL，不销毁外部会话；晚到提交和文件读取结果不重新挂载界面。
+公开视图保留 `selection/fonts/setMode/setZoom/openWordNavigation/focusAnnotation/ready/dispose`，并提供 `request/buildRequest/submitAnnotations/loadProposal/applyProposal/rejectProposal`。宿主可用 `await view.setEditing(true)` 切换正文输入，通过 `executeTextCommand` 执行字号、字重、斜体、下划线、文字颜色或左／中／右对齐；编辑命令复用正文输入的选区、事务和撤销历史，未进入编辑或输入法组合期间明确拒绝。Word 的 `find`、`outline`、`wordCount` 查询也可在预览模式执行；`openWordNavigation(action)` 随当前视图打开对应面板，不改变文档或历史。`formatState()` / `onFormatStateChange` 报告当前文字与混合格式；`clipboard("copy" | "cut" | "paste")` 复用原生输入的安全序列化，浏览器不允许读取剪贴板时可使用键盘粘贴。`updateFields()` 显式更新页码与目录。`ready` 等待当前正文及候选预览。卸载释放监听、候选、预览及资源 URL，不销毁外部会话；晚到提交和文件读取结果不重新挂载界面。
 
 工作台一次审阅一个候选；应用或拒绝当前提案后再生成新请求或载入下一份提案。界面在审阅期间禁用对应入口，公开 API 也返回明确的 `InvalidOperation`，保留当前候选。该流程只需一个候选的数量及字节预算，不会叠加未提交候选。
 

@@ -10,15 +10,39 @@ import { createWordListControls } from "./word-list-controls.js";
 import { wordStoryPreview } from "./word-story-preview.js";
 import { createWordTableControls } from "./word-table-controls.js";
 import { createWordDrawingControls } from "./word-drawing-controls.js";
+import { createWordToolsControls } from "./word-tools-controls.js";
+import type { WordTableQuickAction } from "./word-tools-controls.js";
+import { createWordParityControls } from "./word-parity-controls.js";
+import { createWordAcademicControls } from "./word-academic-controls.js";
+import { createWordTemplateControls } from "./word-template-controls.js";
+import { createWordDrawTableController } from "./word-draw-table.js";
+import type { WordTableToolMode } from "./word-draw-table.js";
+import { WordMultiSelection } from "./word-multi-selection.js";
+import { createOfficeDialog } from "./office-dialog.js";
+import { createWordDockedPane, replaceSameSideDock, wordPaneStyles } from "./word-pane-chrome.js";
+import {
+  WORD_COLOR_SCHEMES,
+  WORD_FONT_SCHEMES,
+  WORD_STYLE_SETS,
+  WORD_THEMES,
+} from "./word-theme-presets.js";
+import { createWordContextMenu } from "./word-context-menu.js";
+import type { WordContextMenuItem } from "./word-context-menu.js";
 import { createWordReferenceControls } from "./word-reference-controls.js";
 import { createWordLinkControls } from "./word-link-controls.js";
 import { createWordMathControls } from "./word-math-controls.js";
 import { bindWordLineSelection } from "./line-selection.js";
 import { bindWordSelectionScroll } from "./word-selection-scroll.js";
 import { showWordWhitespace } from "./word-marks.js";
-import { captureZoomAnchor, restoreZoomAnchor, scrollToWordPage } from "./viewport-zoom.js";
-import type { ZoomAnchor } from "./viewport-zoom.js";
+import {
+  captureZoomAnchor,
+  computeWordFitZoom,
+  restoreZoomAnchor,
+  scrollToWordPage,
+} from "./viewport-zoom.js";
+import type { WordPageZoomMode, ZoomAnchor } from "./viewport-zoom.js";
 import { executeClipboard } from "./clipboard-command.js";
+import type { WordPasteMode } from "./clipboard-command.js";
 import {
   copyClipboardImages,
   pasteClipboardImages,
@@ -86,6 +110,13 @@ export interface DocumentTextEditorOptions extends DocumentPreviewOptions {
   readonly storyId?: string;
   readonly onFormatStateChange?: (state: TextFormatState) => void;
   readonly onError?: (error: Error) => void;
+  readonly onPrint?: () => void;
+  readonly onUpdateFields?: () => void;
+  readonly onImportTemplateFile?: (file: File) => Promise<{
+    name: string;
+    theme?: import("@doffi/core").WordTheme;
+    pageSetup?: import("@doffi/core").PageSetup;
+  }>;
 }
 export type DocumentTextCommand =
   | { readonly type: "toggle"; readonly property: "bold" | "italic" | "underline" }
@@ -109,6 +140,7 @@ export type DocumentTextCommand =
       readonly type: "word";
       readonly action: "paragraph";
       readonly properties: Readonly<Record<string, string>>;
+      readonly outlineLevel?: number | null;
     }
   | {
       readonly type: "word";
@@ -118,17 +150,108 @@ export type DocumentTextCommand =
   | { readonly type: "word"; readonly action: "style"; readonly styleId: string }
   | {
       readonly type: "word";
+      readonly action: "setOutlineLevel";
+      readonly level: number | null;
+    }
+  | {
+      readonly type: "word";
       readonly action: "list";
       readonly kind: "bullet" | "numbering" | "none";
       readonly level?: number;
+      readonly preset?: "disc" | "circle" | "square" | "decimal" | "lowerLetter" | "upperRoman";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "insertTableGrid";
+      readonly rows: number;
+      readonly columns: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "quickShape";
+      readonly preset: Extract<import("@doffi/core").WordDrawing, { kind: "shape" }>["preset"];
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageMargins";
+      readonly top: number;
+      readonly right: number;
+      readonly bottom: number;
+      readonly left: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageOrientation";
+      readonly orientation: "portrait" | "landscape";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageSize";
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageColumns";
+      readonly count: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "insertSectionBreak";
+      readonly breakType: "nextPage" | "continuous" | "evenPage" | "oddPage";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "insertPageNumberAt";
+      readonly location: "header" | "footer" | "inline";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setDrawingWrap";
+      readonly mode: "inline" | "floating";
+      readonly wrap?: "square" | "tight" | "through" | "topAndBottom" | "none";
+      readonly behindText?: boolean;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "transformDrawing";
+      readonly mode: "rotateRight" | "rotateLeft" | "flipH" | "flipV";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableCellAlign";
+      readonly horizontal: "left" | "center" | "right";
+      readonly vertical: "top" | "middle" | "bottom";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableCellDirection";
+      readonly direction: "lrTb" | "tbRl" | "btLr";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "applyTableQuickStyle";
+      readonly preset: "grid" | "blueHeader" | "banded" | "academic3Line";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableStyleFlag";
+      readonly flag: "firstRow" | "lastRow" | "firstCol" | "lastCol" | "noHBand" | "noVBand";
+      readonly enabled: boolean;
     }
   | { readonly type: "word"; readonly action: "clearFormat" }
+  | {
+      readonly type: "word";
+      readonly action: "changeCase";
+      readonly mode: "sentence" | "lower" | "upper" | "title" | "toggle";
+    }
   | { readonly type: "word"; readonly action: "indent"; readonly direction: -1 | 1 }
   | { readonly type: "word"; readonly action: "showMarks"; readonly visible: boolean }
   | {
       readonly type: "word";
       readonly action: "paintFormat";
       readonly properties: Readonly<Record<string, string>>;
+      readonly paragraphProperties?: Readonly<Record<string, string>>;
     }
   | {
       readonly type: "word";
@@ -138,26 +261,152 @@ export type DocumentTextCommand =
     }
   | {
       readonly type: "word";
+      readonly action: "tableAction";
+      readonly operation: WordTableQuickAction;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "tableShading";
+      readonly color: string;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "tableDiagonalBorder";
+      readonly mode: "tl2br" | "tr2bl" | "none";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTheme";
+      readonly themeId: string;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setColorScheme";
+      readonly schemeId: string;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setFontScheme";
+      readonly schemeId: string;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setStyleSet";
+      readonly styleSetId: string;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageColor";
+      readonly color: string | null;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setHyphenation";
+      readonly enabled: boolean;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setLineNumbers";
+      readonly mode: "none" | "continuous" | "newPage" | "newSection";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setReviewDisplay";
+      readonly mode: WordRevisionDisplay;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "chineseLayout";
+      readonly mode: "combine" | "vert" | "fit";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "headerFooterOptions";
+      readonly differentFirstPage?: boolean;
+      readonly evenAndOddHeaders?: boolean;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setBibliographyStyle";
+      readonly style: "APA" | "MLA" | "GB7714" | "Chicago" | "IEEE";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableTool";
+      readonly mode: WordTableToolMode;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "livePreview";
+      readonly properties: Readonly<Record<string, string>> | null;
+      readonly scope?: "run" | "theme";
+      readonly themeColors?: Readonly<Record<string, string | undefined>>;
+    }
+  | {
+      readonly type: "word";
       readonly action:
         | "find"
         | "replace"
+        | "goTo"
         | "outline"
+        | "outlineView"
         | "wordCount"
         | "insertTable"
         | "tableSettings"
+        | "tableFormula"
         | "listSettings"
         | "pageSettings"
+        | "pageBorders"
+        | "toc"
+        | "insertTof"
+        | "ruby"
+        | "enclosedChar"
+        | "symbols"
+        | "dropCap"
+        | "docProperties"
+        | "protection"
+        | "citations"
+        | "insertCitation"
+        | "bibliography"
+        | "markIndexEntry"
+        | "insertIndex"
+        | "markToaCitation"
+        | "insertToa"
+        | "insertField"
+        | "coverPage"
+        | "removeCoverPage"
+        | "quickParts"
+        | "templateSettings"
+        | "saveDefaultTemplate"
+        | "wordArt"
+        | "pasteSpecial"
+        | "tabSettings"
+        | "clearMultiSelection"
+        | "editHeader"
+        | "editFooter"
         | "mainStory"
         | "sectionBreak"
         | "pageBreak"
+        | "insertBlankPage"
+        | "insertDateTime"
         | "pageNumber"
         | "insertImage"
         | "insertShape"
         | "insertTextBox"
         | "insertConnector"
         | "drawingSettings"
+        | "editDrawingText"
+        | "selectionPane"
+        | "bringForward"
+        | "sendBackward"
+        | "groupDrawings"
+        | "sort"
+        | "textToTable"
+        | "tableToText"
         | "insertFootnote"
         | "insertEndnote"
+        | "nextFootnote"
+        | "showNotes"
         | "referenceSettings"
         | "insertLink"
         | "bookmarks"
@@ -170,6 +419,13 @@ export type DocumentTextCommand =
         | "insertChart"
         | "chartSettings"
         | "review"
+        | "toggleTrackChanges"
+        | "prevRevision"
+        | "nextRevision"
+        | "acceptRevision"
+        | "rejectRevision"
+        | "acceptAllRevisions"
+        | "rejectAllRevisions"
         | "styleSettings"
         | "fontSettings"
         | "watermark";
@@ -184,10 +440,13 @@ export interface DocumentTextEditor {
   execute(command: DocumentTextCommand): void;
   formatState(): TextFormatState;
   setZoom(zoom: number): void;
+  fitPage(mode: WordPageZoomMode): number;
   goToPage(page: number): Promise<void>;
+  setShowGridlines(visible: boolean): void;
+  printDocument(): Document;
   editStory(storyId?: string): void;
   selection(): DocumentSelection | undefined;
-  clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
+  clipboard(action: "copy" | "cut" | "paste", options?: { readonly pasteMode?: WordPasteMode }): Promise<void>;
   /** Core owns persistent state and history. Disposal releases only this view. */
   dispose(): void;
 }
@@ -208,8 +467,10 @@ export function mountDocumentTextEditor(
   const document = container.ownerDocument,
     element = document.createElement("div"),
     shadow = element.attachShadow({ mode: "open" });
+  element.dataset.wordDockHost = "true";
   const style = document.createElement("style");
   style.textContent =
+    wordPaneStyles +
     ":host{display:block;font:14px system-ui}button,select{font:inherit;padding:6px 10px}.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.stage{max-height:70vh;overflow:auto;border:1px solid #ccd3dc}.error{color:#a00000}";
   if (options.appearance === "workspace")
     style.textContent +=
@@ -257,9 +518,26 @@ export function mountDocumentTextEditor(
   const typingStyles = new Map<string, string>();
   let typingAnchor: string | undefined;
   let activeStoryId = options.storyId;
+  const inPlaceStory = (id: string | undefined): boolean => !!id &&
+    (session.snapshot().metadata.word?.drawings ?? []).some(item =>
+      "textStoryId" in item && item.textStoryId === id && !item.layout.hidden);
   let revisionDisplay: WordRevisionDisplay = "all";
+  let showGridlines = Boolean(options.showGridlines);
+  let activeRevisionIndex = -1;
+  let activeNoteIndex = -1;
   let showMarks = false,
     clearMarks: () => void = () => {};
+  const isBodyProtected = (): boolean => {
+    const prot = session.snapshot().metadata.word?.protection;
+    return Boolean(prot?.enforcement && (prot.edit === "readOnly" || prot.edit === "comments" || prot.edit === "forms"));
+  };
+  const ensureBodyEditable = (): void => {
+    if (isBodyProtected())
+      throw new DocumentError(
+        "InvalidOperation",
+        "当前文档已启用保护，不允许直接修改正文内容。请在“审阅 → 保护”中取消保护。",
+      );
+  };
   let wordPanel: HTMLElement | undefined;
   const report = (reason: unknown): void => {
     if (disposed) return;
@@ -397,6 +675,350 @@ export function mountDocumentTextEditor(
     () => selectedParagraphs().map((node) => node.dataset.nodeId!),
     report,
   );
+  const contextMenu = createWordContextMenu(shadow, report);
+  let pendingPasteMode: WordPasteMode | undefined;
+  const toolsControls = createWordToolsControls(
+    shadow,
+    stage,
+    session,
+    () => {
+      const paragraphs = selectedParagraphs();
+      const range = selectedRange();
+      const focusNode = range
+        ? range.startContainer.nodeType === 1
+          ? (range.startContainer as Element)
+          : range.startContainer.parentElement
+        : paragraphs[0];
+      const table = focusNode?.closest<HTMLElement>("table");
+      const cell = focusNode?.closest<HTMLElement>("td,th");
+      const firstPara = paragraphs[0];
+      return {
+        paragraphIds: paragraphs.map((p) => p.dataset.nodeId!).filter(Boolean),
+        ...(table?.dataset.nodeId ? { tableId: table.dataset.nodeId } : {}),
+        ...(cell?.dataset.nodeId ? { cellId: cell.dataset.nodeId } : {}),
+        ...(firstPara?.dataset.nodeId && range
+          ? {
+              caret: {
+                nodeId: firstPara.dataset.nodeId,
+                offset: offsetAt(firstPara, range.startContainer, range.startOffset, projection.ignored),
+              },
+            }
+          : {}),
+      };
+    },
+    report,
+  );
+  const readParitySelection = () => {
+    const paragraphs = selectedParagraphs();
+    const range = selectedRange();
+    const firstPara = paragraphs[0];
+    const focusEl = range
+      ? range.startContainer.nodeType === 1
+        ? (range.startContainer as Element)
+        : range.startContainer.parentElement
+      : firstPara;
+    const rubyEl = focusEl?.closest<HTMLElement>('[data-word-ruby="true"]');
+    const tableEl = focusEl?.closest<HTMLElement>("table");
+    const cellEl = focusEl?.closest<HTMLElement>("td,th");
+    const from =
+      firstPara && range && firstPara.contains(range.startContainer)
+        ? offsetAt(firstPara, range.startContainer, range.startOffset, projection.ignored)
+        : 0;
+    const to =
+      firstPara && range && firstPara.contains(range.endContainer)
+        ? offsetAt(firstPara, range.endContainer, range.endOffset, projection.ignored)
+        : from;
+    const paraText = firstPara?.dataset.nodeId
+      ? (session.getNode(firstPara.dataset.nodeId)?.text ?? "")
+      : "";
+    return {
+      ...(firstPara?.dataset.nodeId ? { paragraphId: firstPara.dataset.nodeId } : {}),
+      paragraphIds: paragraphs.map((p) => p.dataset.nodeId!).filter(Boolean),
+      from,
+      to,
+      text: paraText.slice(from, to),
+      ...(rubyEl?.dataset.nodeId
+        ? { rubyNodeId: rubyEl.dataset.nodeId, rubyText: rubyEl.dataset.wordRubyText ?? "" }
+        : {}),
+      ...(tableEl?.dataset.nodeId ? { tableId: tableEl.dataset.nodeId } : {}),
+      ...(cellEl?.dataset.nodeId ? { cellId: cellEl.dataset.nodeId } : {}),
+      sectionRootId: currentSection(),
+    };
+  };
+  const parityControls = createWordParityControls(shadow, stage, session, readParitySelection, {
+    ...(options.onUpdateFields ? { onUpdateFields: options.onUpdateFields } : {}),
+    focusNode: (nodeId) => {
+      const node = root?.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(nodeId) + '"]');
+      if (node && root && frame) {
+        root.focus();
+        node.scrollIntoView({ block: "center" });
+        select(...caretAt(node, 0, projection.ignored));
+        savedSelection = bookmark(root, projection.ignored);
+        notifyFormat();
+      }
+    },
+    onError: report,
+  });
+  const academicControls = createWordAcademicControls(shadow, stage, session, readParitySelection, {
+    ...(options.onUpdateFields ? { onUpdateFields: options.onUpdateFields } : {}),
+    onError: report,
+  });
+  const templateControls = createWordTemplateControls(shadow, stage, session, readParitySelection, {
+    ...(options.onUpdateFields ? { onUpdateFields: options.onUpdateFields } : {}),
+    ...(options.onImportTemplateFile ? { onImportTemplateFile: options.onImportTemplateFile } : {}),
+    onError: report,
+  });
+  const drawTable = createWordDrawTableController(session, {
+    onModeChange: () => notifyFormat(),
+    onError: report,
+  });
+  const multiSelection = new WordMultiSelection();
+  let shortcutCopiedFormat:
+    | { run: Record<string, string>; paragraph: Record<string, string> }
+    | undefined;
+  let livePreviewStyle: HTMLStyleElement | undefined;
+  let tabStopDialog: ReturnType<typeof createOfficeDialog> | undefined;
+  let tabStopController: AbortController | undefined;
+
+  const clearLivePreview = (): void => {
+    livePreviewStyle?.remove();
+    livePreviewStyle = undefined;
+  };
+  const applyLivePreview = (
+    properties: Readonly<Record<string, string>> | null,
+    scope: "run" | "theme" = "run",
+    themeColors?: Readonly<Record<string, string | undefined>>,
+  ): void => {
+    clearLivePreview();
+    if (!frame || !root || !properties) return;
+    const style = frame.createElement("style");
+    style.dataset.sdkLivePreview = "true";
+    const rules: string[] = [];
+    if (scope === "theme") {
+      if (themeColors) {
+        const aliases: Record<string, string> = { dk1: "tx1", lt1: "bg1", dk2: "tx2", lt2: "bg2" };
+        const vars = Object.entries(themeColors)
+          .filter((entry): entry is [string, string] => Boolean(entry[1]))
+          .flatMap(([k, hex]) => {
+            const val = "#" + hex.replace(/^#/, "");
+            return [
+              `--office-theme-${k}:${val}!important`,
+              ...(aliases[k] ? [`--office-theme-${aliases[k]}:${val}!important`] : []),
+            ];
+          });
+        if (vars.length) rules.push(`[data-office-kind="document"]{${vars.join(";")}}`);
+      }
+      const decls = Object.entries(properties)
+        .map(([k, v]) => `${k}:${v}!important`)
+        .join(";");
+      if (decls) rules.push(`h1,h2,h3,p{${decls}}`);
+    } else {
+      const activeParas = selectedParagraphs(false)
+        .map((p) => p.dataset.nodeId)
+        .filter((id): id is string => Boolean(id));
+      const fallbackId = !activeParas.length && savedSelection?.anchor.nodeId
+        ? root
+            .querySelector<HTMLElement>(`[data-node-id="${CSS.escape(savedSelection.anchor.nodeId)}"]`)
+            ?.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")?.dataset.nodeId
+        : undefined;
+      const targetIds = multiSelection.size
+        ? [...new Set(multiSelection.ranges().map((r) => r.nodeId))]
+        : activeParas.length
+          ? activeParas
+          : fallbackId
+            ? [fallbackId]
+            : [];
+      const decls = Object.entries(properties)
+        .map(([k, v]) => `${k}:${v}!important`)
+        .join(";");
+      if (decls && targetIds.length) {
+        const selector = targetIds
+          .map((id) => `[data-node-id="${CSS.escape(id)}"],[data-node-id="${CSS.escape(id)}"] *`)
+          .join(",");
+        rules.push(`${selector}{${decls}}`);
+      }
+    }
+    if (!rules.length) return;
+    style.textContent = rules.join("\n");
+    frame.head.append(style);
+    livePreviewStyle = style;
+  };
+
+  const openTabStopsDialog = (): void => {
+    tabStopController?.abort();
+    tabStopDialog?.close();
+    tabStopDialog?.dialog.remove();
+    const para = selectedParagraphs()[0];
+    if (!para?.dataset.nodeId) throw new DocumentError("InvalidOperation", "请先选择正文段落。");
+    const paraId = para.dataset.nodeId;
+    const existing = session
+      .snapshot()
+      .metadata.word?.tabs.find((t) => t.paragraphNodeId === paraId);
+    const stops: {
+      position: number;
+      alignment: "left" | "center" | "right" | "decimal" | "clear";
+      leader: "none" | "dot" | "hyphen" | "underscore" | "heavy" | "middleDot";
+    }[] = existing ? existing.stops.map((s) => ({ ...s })) : [];
+    let defaultInterval = existing?.defaultInterval ?? 36;
+    tabStopController = new AbortController();
+    const signal = tabStopController.signal;
+    const ui = createOfficeDialog(document, "制表位");
+    ui.dialog.style.width = "460px";
+    ui.content.style.minHeight = "0";
+    tabStopDialog = ui;
+    shadow.insertBefore(ui.dialog, stage);
+    const closeTabs = () => {
+      tabStopController?.abort();
+      tabStopDialog?.close();
+      tabStopDialog?.dialog.remove();
+      tabStopDialog = undefined;
+    };
+    ui.dialog.addEventListener("cancel", (e) => { e.preventDefault(); closeTabs(); }, { signal });
+    const stack = document.createElement("div");
+    stack.className = "dialog-stack";
+    ui.content.append(stack);
+
+    const defLabel = document.createElement("label");
+    defLabel.textContent = "默认制表位（磅）";
+    const defInput = document.createElement("input");
+    defInput.type = "number";
+    defInput.min = "6";
+    defInput.max = "400";
+    defInput.value = String(defaultInterval);
+    defInput.setAttribute("aria-label", "默认制表位（磅）");
+    defLabel.append(defInput);
+
+    const posLabel = document.createElement("label");
+    posLabel.textContent = "制表位位置（磅）";
+    const posInput = document.createElement("input");
+    posInput.type = "number";
+    posInput.min = "0";
+    posInput.max = "1000";
+    posInput.value = "144";
+    posInput.setAttribute("aria-label", "制表位位置（磅）");
+    posLabel.append(posInput);
+
+    const alignLabel = document.createElement("label");
+    alignLabel.textContent = "对齐方式";
+    const alignSel = document.createElement("select");
+    alignSel.setAttribute("aria-label", "制表位对齐方式");
+    for (const [v, t] of [["left", "左对齐"], ["center", "居中"], ["right", "右对齐"], ["decimal", "小数点对齐"]] as const) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = t;
+      alignSel.append(o);
+    }
+    alignLabel.append(alignSel);
+
+    const leaderLabel = document.createElement("label");
+    leaderLabel.textContent = "前导符";
+    const leaderSel = document.createElement("select");
+    leaderSel.setAttribute("aria-label", "制表位前导符");
+    for (const [v, t] of [["none", "无"], ["dot", "…… (点)"], ["hyphen", "---- (短线)"], ["underscore", "____ (下划线)"]] as const) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = t;
+      leaderSel.append(o);
+    }
+    leaderLabel.append(leaderSel);
+
+    const listEl = document.createElement("div");
+    listEl.style.cssText = "border:1px solid #d5dce6;border-radius:4px;padding:6px;min-height:60px;max-height:120px;overflow:auto;display:flex;flex-direction:column;gap:4px";
+    const renderStops = () => {
+      listEl.replaceChildren();
+      if (!stops.length) {
+        listEl.textContent = "（暂无自定义制表位）";
+        return;
+      }
+      stops.sort((a, b) => a.position - b.position);
+      stops.forEach((s, idx) => {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;justify-content:space-between;font-size:12px";
+        row.textContent = `${s.position} pt — ${s.alignment} (${s.leader})`;
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.textContent = "清除";
+        rm.style.cssText = "font-size:11px;padding:2px 6px";
+        rm.addEventListener("click", () => {
+          stops.splice(idx, 1);
+          renderStops();
+        }, { signal });
+        row.append(rm);
+        listEl.append(row);
+      });
+    };
+    renderStops();
+
+    const addStopBtn = document.createElement("button");
+    addStopBtn.type = "button";
+    addStopBtn.textContent = "设置制表位";
+    addStopBtn.addEventListener("click", () => {
+      const pos = Number(posInput.value);
+      if (!Number.isFinite(pos) || pos < 0) return;
+      const existingIdx = stops.findIndex((s) => Math.abs(s.position - pos) < 0.01);
+      const next = {
+        position: pos,
+        alignment: alignSel.value as (typeof stops)[number]["alignment"],
+        leader: leaderSel.value as (typeof stops)[number]["leader"],
+      };
+      if (existingIdx >= 0) stops[existingIdx] = next;
+      else stops.push(next);
+      renderStops();
+    }, { signal });
+
+    const clearAllBtn = document.createElement("button");
+    clearAllBtn.type = "button";
+    clearAllBtn.textContent = "全部清除";
+    clearAllBtn.addEventListener("click", () => {
+      stops.length = 0;
+      renderStops();
+    }, { signal });
+
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:8px";
+    btnRow.append(addStopBtn, clearAllBtn);
+
+    const grid = document.createElement("div");
+    grid.className = "dialog-options";
+    grid.append(defLabel, posLabel, alignLabel, leaderLabel);
+    stack.append(grid, btnRow, listEl);
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", closeTabs, { signal });
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "primary";
+    ok.textContent = "确定";
+    ok.addEventListener("click", () => {
+      try {
+        defaultInterval = Math.max(6, Number(defInput.value) || 36);
+        const snap = session.snapshot();
+        session.commit(
+          session.prepare({
+            protocolVersion: 1,
+            documentId: snap.manifest.documentId,
+            baseRevision: snap.manifest.revision,
+            operations: [
+              {
+                op: "setWordTabs",
+                nodeId: paraId,
+                defaultInterval,
+                stops,
+              },
+            ],
+          }),
+        );
+        closeTabs();
+      } catch (err) {
+        ui.error(err);
+        report(err);
+      }
+    }, { signal });
+    ui.footer.append(cancel, ok);
+    ui.show();
+  };
   const drawingControls = createWordDrawingControls(
     shadow,
     stage,
@@ -412,6 +1034,7 @@ export function mountDocumentTextEditor(
     },
     editStory,
     report,
+    notifyFormat,
   );
   const referenceControls = createWordReferenceControls(
     shadow,
@@ -549,20 +1172,50 @@ export function mountDocumentTextEditor(
       cachedView.display === revisionDisplay
     )
       return cachedView.model;
-    const source = wordStoryPreview(session, activeStoryId),
+    const source = wordStoryPreview(session, inPlaceStory(activeStoryId) ? undefined : activeStoryId),
       model = revisionDisplay === "original" ? wordReviewPreview(source) : source;
     cachedView = { snapshot, storyId: activeStoryId, display: revisionDisplay, model };
     return model;
   };
-  function editStory(storyId?: string): void {
+  function editStory(storyId?: string, point?: { x: number; y: number }): void {
     if (composing) throw new DocumentError("InvalidOperation", "请先完成当前输入法组合。");
+    const leavingTextBox = !storyId && inPlaceStory(activeStoryId);
+    const sameCanvas = (!activeStoryId || inPlaceStory(activeStoryId)) && (!storyId || inPlaceStory(storyId));
     activeStoryId = storyId;
     savedSelection = undefined;
+    if (sameCanvas && frame && root) {
+      root.contentEditable = "false";
+      root.removeAttribute("data-office-editor"); root.removeAttribute("role");
+      viewControls.abort(); viewControls = new AbortController();
+      root = rootElement(frame);
+      projection = new SourceProjection();
+      activate(rootElement(sourceDocument()));
+      root.focus({ preventScroll: true });
+      let range = point ? frame.caretRangeFromPoint?.(point.x, point.y) : undefined;
+      const caret = !range && point ? frame.caretPositionFromPoint?.(point.x, point.y) : undefined;
+      if (caret) {
+        range = frame.createRange();
+        range.setStart(caret.offsetNode, caret.offset);
+        range.collapse(true);
+      }
+      if (range && root.contains(range.startContainer)) {
+        frame.getSelection()!.removeAllRanges(); frame.getSelection()!.addRange(range);
+      } else if (leavingTextBox) frame.getSelection()!.removeAllRanges();
+      else select(...caretAt(root, 0, projection.ignored));
+      savedSelection = bookmark(root, projection.ignored);
+      notifyFormat();
+      return;
+    }
     refresh();
   }
   const sourceDocument = (): Document =>
     new DOMParser().parseFromString(session.snapshot().html, "text/html");
   const rootElement = (source: Document): HTMLElement => {
+    if (source === frame && inPlaceStory(activeStoryId)) {
+      const instances = [...source.querySelectorAll<HTMLElement>('[data-sdk-word-text-story="' + CSS.escape(activeStoryId!) + '"]')];
+      const visible = instances.find(node => node.getClientRects().length && source.defaultView!.getComputedStyle(node).visibility === "visible");
+      if (visible) return visible;
+    }
     const main = session
       .snapshot()
       .metadata.word?.stories.find((story) =>
@@ -583,18 +1236,73 @@ export function mountDocumentTextEditor(
       : undefined;
   };
   function formatState(): TextFormatState {
-    return !root || composing || disposed
-      ? { enabled: false }
-      : {
-          ...readTextFormat(root, selectedRange(), typingStyles, projection.ignored),
-          editingText: true,
-          storyKind:
-            session
-              .snapshot()
-              .metadata.word?.stories.find((story) =>
-                activeStoryId ? story.storyId === activeStoryId : story.kind === "main",
-              )?.kind ?? "main",
-        };
+    const snap = session.snapshot();
+    const word = snap.metadata.word;
+    const selected = drawingControls.selectedNodeIds(),
+      drawing = word?.drawings?.find(item => selected.includes(item.nodeId) ||
+        !!activeStoryId && "textStoryId" in item && item.textStoryId === activeStoryId);
+    if (!root || composing || disposed) return { enabled: false };
+    const range = selectedRange();
+    const base = readTextFormat(root, range, typingStyles, projection.ignored);
+    const section = snap.metadata.sections?.find((s) => s.rootNodeId === currentSection()) ?? snap.metadata.sections?.[0];
+    const secSetup = section?.pageSetup ?? snap.metadata.pageSetup;
+    const focusEl = range
+      ? range.startContainer.nodeType === 1
+        ? (range.startContainer as Element)
+        : range.startContainer.parentElement
+      : undefined;
+    const tableEl = focusEl?.closest<HTMLElement>("table");
+    const tableMeta = tableEl?.dataset.nodeId
+      ? word?.tables.find((t) => t.nodeId === tableEl.dataset.nodeId)
+      : undefined;
+    const lookMask = tableMeta?.lookMask ?? 0x04a0;
+    const rubyActive = Boolean(focusEl?.closest('[data-word-ruby="true"]'));
+    const dropCapRaw = base.paragraphProperties?.["--word-drop-cap"];
+    const outlineRaw = base.paragraphProperties?.["--doffi-outline-level"];
+    return {
+      ...base,
+      editingText: true,
+      editingInPlace: !!root.dataset.sdkWordTextStory,
+      ...(drawing ? { drawingKind: drawing.kind, drawingCount: selected.length || 1 } : {}),
+      storyKind:
+        word?.stories.find((story) =>
+          activeStoryId ? story.storyId === activeStoryId : story.kind === "main",
+        )?.kind ?? "main",
+      wordState: {
+        trackChanges: Boolean(word?.trackChanges),
+        reviewDisplay: revisionDisplay,
+        ...(word?.protection ? { protectionEdit: word.protection.edit, protectionEnforced: word.protection.enforcement } : {}),
+        automaticHyphenation: Boolean(word?.automaticHyphenation),
+        ...(section?.lineNumbers ? { lineNumbersRestart: section.lineNumbers.restart ?? "newPage" } : {}),
+        ...(word?.pageBackground?.color ? { pageBackgroundColor: "#" + word.pageBackground.color } : {}),
+        ...(word?.theme?.name ? { themeName: word.theme.name } : {}),
+        differentFirstPage: Boolean(section?.differentFirstPage),
+        evenAndOddHeaders: Boolean(word?.evenAndOddHeaders),
+        ...(dropCapRaw === "drop" || dropCapRaw === "margin" ? { dropCap: dropCapRaw } : {}),
+        rubyActive,
+        outlineLevel: outlineRaw !== undefined && outlineRaw !== "" ? Number(outlineRaw) : null,
+        bibliographyStyle: word?.bibliography?.style ?? "APA",
+        tableToolMode: drawTable.mode(),
+        multiRangeCount: multiSelection.size,
+        ...(word?.theme?.majorLatin ? { themeMajorLatin: word.theme.majorLatin } : {}),
+        ...(word?.theme?.minorLatin ? { themeMinorLatin: word.theme.minorLatin } : {}),
+        ...(word?.theme?.majorEastAsia ? { themeMajorEastAsia: word.theme.majorEastAsia } : {}),
+        ...(word?.theme?.minorEastAsia ? { themeMinorEastAsia: word.theme.minorEastAsia } : {}),
+        ...(word?.template?.name ? { templateName: word.template.name } : {}),
+        ...(secSetup ? { pageOrientation: secSetup.width > secSetup.height ? "landscape" : "portrait" } : {}),
+        columnCount: section?.columns?.count ?? 1,
+        ...(tableMeta
+          ? {
+              tableFirstRow: Boolean(lookMask & 0x0020),
+              tableLastRow: Boolean(lookMask & 0x0040),
+              tableFirstCol: Boolean(lookMask & 0x0080),
+              tableLastCol: Boolean(lookMask & 0x0100),
+              tableBandedRows: !(lookMask & 0x0200),
+              tableBandedCols: !(lookMask & 0x0400),
+            }
+          : {}),
+      },
+    };
   }
   let lastFormatState = "";
   function notifyFormat(): void {
@@ -1071,6 +1779,32 @@ export function mountDocumentTextEditor(
   }
   function formatAppearance(properties: ReadonlyMap<string, string>): void {
     if (!root || composing) return;
+    ensureBodyEditable();
+    clearLivePreview();
+    if (multiSelection.size > 0) {
+      const snapshot = session.snapshot();
+      const ops = multiSelection.batchFormatOps(Object.fromEntries(properties), session);
+      if (ops.length) {
+        const candidate = session.prepare({
+          protocolVersion: 1,
+          documentId: snapshot.manifest.documentId,
+          baseRevision: snapshot.manifest.revision,
+          operations: ops,
+        });
+        committing = true;
+        try {
+          session.commit(candidate);
+        } catch (error) {
+          session.discard(candidate);
+          throw error;
+        } finally {
+          committing = false;
+        }
+        multiSelection.clear();
+        refresh();
+        return;
+      }
+    }
     root.focus();
     if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
     const range = selectedRange();
@@ -1161,6 +1895,7 @@ export function mountDocumentTextEditor(
   toolbar.append(size);
   function align(alignment: "left" | "center" | "right" | "justify"): void {
     if (!root || composing) return;
+    ensureBodyEditable();
     root.focus();
     if (!selectedRange()) restoreBookmark(root, savedSelection, projection.ignored);
     const range = selectedRange();
@@ -1187,21 +1922,51 @@ export function mountDocumentTextEditor(
       throw reason;
     }
   }
-  function openWordPanel(action: "find" | "replace" | "outline" | "wordCount"): void {
+  function openWordPanel(action: "find" | "replace" | "goTo" | "outline" | "wordCount"): void {
     wordPanel?.remove();
-    const panel = document.createElement("section");
+    const dock = action === "wordCount" ? "floating" : "left";
+    replaceSameSideDock(shadow, dock);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel:
+        action === "outline"
+          ? "文档大纲"
+          : action === "wordCount"
+            ? "字数统计"
+            : action === "goTo"
+              ? "定位"
+              : "查找和替换",
+      title:
+        action === "outline"
+          ? "导航"
+          : action === "wordCount"
+            ? "字数统计"
+            : action === "goTo"
+              ? "定位"
+              : action === "replace"
+                ? "查找和替换"
+                : "在文档中查找",
+      dock,
+      closeLabel: "关闭",
+      onClose: () => {
+        panel.remove();
+        wordPanel = undefined;
+      },
+      signal: controls.signal,
+      width: action === "wordCount" ? "300px" : "292px",
+    });
+    const panel = chrome.panel;
+    const body = chrome.body;
     wordPanel = panel;
-    panel.setAttribute("role", "region");
-    panel.setAttribute(
-      "aria-label",
-      action === "outline" ? "文档大纲" : action === "wordCount" ? "字数统计" : "查找和替换",
-    );
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:240px;overflow:auto;display:flex;flex-wrap:wrap;gap:8px";
-    const addButton = (label: string, run: () => void): HTMLButtonElement => {
+    const addButton = (
+      label: string,
+      run: () => void,
+      container: HTMLElement = body,
+      primary = false,
+    ): HTMLButtonElement => {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
+      if (primary) button.className = "word-btn-primary";
       button.addEventListener(
         "click",
         () => {
@@ -1213,13 +1978,9 @@ export function mountDocumentTextEditor(
         },
         { signal: controls.signal },
       );
-      panel.append(button);
+      container.append(button);
       return button;
     };
-    addButton("关闭", () => {
-      panel.remove();
-      wordPanel = undefined;
-    });
     const focus = (nodeId: string, from?: number, to?: number, endNodeId = nodeId): void => {
       const node = root?.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(nodeId) + '"]');
       if (!node || !root || !frame) return;
@@ -1244,45 +2005,204 @@ export function mountDocumentTextEditor(
       savedSelection = bookmark(root, projection.ignored);
       notifyFormat();
     };
-    if (action === "outline")
-      for (const heading of getWordOutline(session, { revisionView: revisionDisplay })) {
-        const button = addButton(heading.text || "空标题", () => focus(heading.nodeId));
-        button.style.marginLeft = (heading.level - 1) * 12 + "px";
+    if (action === "outline") {
+      const navTabs = document.createElement("div");
+      navTabs.className = "word-pane-tabs";
+      const listArea = document.createElement("div");
+      listArea.style.cssText = "display:flex;flex-direction:column;gap:4px";
+      let activeNav: "headings" | "pages" = "headings";
+      const setTabState = (mode: "headings" | "pages") => {
+        activeNav = mode;
+        headingTab.setAttribute("aria-selected", String(mode === "headings"));
+        pagesTab.setAttribute("aria-selected", String(mode === "pages"));
+      };
+      const showHeadings = () => {
+        setTabState("headings");
+        listArea.replaceChildren();
+        const headings = getWordOutline(session, { revisionView: revisionDisplay === "simple" ? "final" : revisionDisplay });
+        for (const heading of headings) {
+          const btn = addButton(heading.text || "空标题", () => focus(heading.nodeId), listArea);
+          btn.className = "word-style-item";
+          btn.style.paddingLeft = 8 + (heading.level - 1) * 14 + "px";
+        }
+        if (!headings.length) {
+          const empty = document.createElement("p");
+          empty.className = "word-pane-muted";
+          empty.textContent = "当前文档暂无标题。";
+          listArea.append(empty);
+        }
+      };
+      const showPages = () => {
+        setTabState("pages");
+        listArea.replaceChildren();
+        const grid = document.createElement("div");
+        grid.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px";
+        const report = preview.layout();
+        const total = Math.max(1, report.pages.length);
+        for (let p = 1; p <= total; p++) {
+          const btn = addButton(`第 ${p} 页`, () => {
+            scrollToWordPage(stage, preview.element, report, p, zoom);
+          }, grid);
+          btn.style.cssText = "height:96px;border:1px solid #d0d7e2;border-radius:5px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.06);font-weight:500";
+        }
+        listArea.append(grid);
+      };
+      const headingTab = addButton("标题", showHeadings, navTabs);
+      const pagesTab = addButton("页面缩略", showPages, navTabs);
+      addButton("查找", () => openWordPanel("find"), navTabs);
+      panel.insertBefore(navTabs, body);
+      const foot = document.createElement("div");
+      foot.className = "word-pane-row";
+      addButton("大纲编排…", () => {
+        panel.remove();
+        wordPanel = undefined;
+        parityControls.openOutlineView();
+      }, foot);
+      body.append(listArea, foot);
+      if (activeNav === "headings") showHeadings();
+    } else if (action === "goTo") {
+      const modeTabs = document.createElement("div");
+      modeTabs.className = "word-pane-tabs";
+      addButton("查找", () => openWordPanel("find"), modeTabs).setAttribute("aria-selected", "false");
+      addButton("替换", () => openWordPanel("replace"), modeTabs).setAttribute("aria-selected", "false");
+      addButton("定位", () => {}, modeTabs).setAttribute("aria-selected", "true");
+      panel.insertBefore(modeTabs, body);
+      const card = document.createElement("div");
+      card.className = "word-pane-section";
+      const kindLabel = document.createElement("label");
+      kindLabel.textContent = "定位目标";
+      const targetKind = document.createElement("select");
+      targetKind.setAttribute("aria-label", "定位目标");
+      for (const [val, label] of [
+        ["page", "页码"],
+        ["heading", "标题"],
+        ["bookmark", "书签"],
+      ] as const) {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = label;
+        targetKind.append(opt);
       }
-    else if (action === "wordCount") {
-      const stats = getWordTextStatistics(session, { revisionView: revisionDisplay }),
-        text = document.createElement("p");
+      kindLabel.append(targetKind);
+      const pageLabel = document.createElement("label");
+      pageLabel.textContent = "输入页号";
+      const pageInput = document.createElement("input");
+      pageInput.type = "number";
+      pageInput.min = "1";
+      pageInput.value = "1";
+      pageInput.setAttribute("aria-label", "定位页码");
+      pageLabel.append(pageInput);
+      const itemLabel = document.createElement("label");
+      itemLabel.textContent = "选择目标";
+      itemLabel.hidden = true;
+      const itemSelect = document.createElement("select");
+      itemSelect.setAttribute("aria-label", "定位条目");
+      itemSelect.hidden = true;
+      itemLabel.append(itemSelect);
+      const syncChoices = () => {
+        const kind = targetKind.value;
+        pageLabel.hidden = pageInput.hidden = kind !== "page";
+        itemLabel.hidden = itemSelect.hidden = kind === "page";
+        itemSelect.replaceChildren();
+        if (kind === "heading") {
+          for (const h of getWordOutline(session)) {
+            const opt = document.createElement("option");
+            opt.value = h.nodeId;
+            opt.textContent = "  ".repeat(h.level - 1) + (h.text || "空标题");
+            itemSelect.append(opt);
+          }
+        } else if (kind === "bookmark") {
+          for (const bm of session.snapshot().metadata.word?.bookmarks ?? []) {
+            const opt = document.createElement("option");
+            opt.value = bm.startNodeId;
+            opt.textContent = bm.name;
+            itemSelect.append(opt);
+          }
+        }
+      };
+      targetKind.addEventListener("change", syncChoices, { signal: controls.signal });
+      const goRow = document.createElement("div");
+      goRow.className = "word-pane-row";
+      goRow.style.justifyContent = "flex-end";
+      addButton("转到", () => {
+        if (targetKind.value === "page") {
+          const p = Math.max(1, Math.round(Number(pageInput.value) || 1));
+          const report = preview.layout();
+          scrollToWordPage(stage, preview.element, report, Math.min(p, Math.max(1, report.pages.length)), zoom);
+        } else if (itemSelect.value) {
+          focus(itemSelect.value);
+        }
+      }, goRow, true);
+      card.append(kindLabel, pageLabel, itemLabel, goRow);
+      body.append(card);
+    } else if (action === "wordCount") {
+      const stats = getWordTextStatistics(session, { revisionView: revisionDisplay === "simple" ? "final" : revisionDisplay });
+      const table = document.createElement("table");
+      table.className = "word-stat-table";
+      for (const [k, v] of [
+        ["字数", String(stats.words)],
+        ["字符数（计空格）", String(stats.characters)],
+        ["字符数（不计空格）", String(stats.charactersWithoutSpaces)],
+        ["段落数", String(stats.paragraphs)],
+      ]) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${k}</td><td>${v}</td>`;
+        table.append(tr);
+      }
+      const text = document.createElement("p");
+      text.className = "word-pane-muted";
       text.textContent = `字数 ${stats.words} · 字符数 ${stats.characters} · 不计空格 ${stats.charactersWithoutSpaces} · 段落 ${stats.paragraphs}`;
-      panel.append(text);
+      body.append(table, text);
     } else {
+      const modeTabs = document.createElement("div");
+      modeTabs.className = "word-pane-tabs";
+      addButton("查找", () => openWordPanel("find"), modeTabs).setAttribute("aria-selected", String(action === "find"));
+      addButton("替换", () => openWordPanel("replace"), modeTabs).setAttribute("aria-selected", String(action === "replace"));
+      addButton("定位", () => openWordPanel("goTo"), modeTabs).setAttribute("aria-selected", "false");
+      panel.insertBefore(modeTabs, body);
+
+      const card = document.createElement("div");
+      card.className = "word-pane-section";
       const query = document.createElement("input"),
         replacement = document.createElement("input"),
         matchCase = document.createElement("input"),
         wholeWord = document.createElement("input"),
+        wildcards = document.createElement("input"),
+        specialChars = document.createElement("input"),
         results = document.createElement("div"),
-        summary = document.createElement("span");
+        summary = document.createElement("p");
+      summary.className = "word-pane-muted";
+      results.style.cssText = "display:flex;flex-direction:column;gap:4px";
       query.setAttribute("aria-label", "查找内容");
-      query.placeholder = "查找内容";
+      query.placeholder = "查找内容（支持通配符或 ^t/^l）";
       replacement.setAttribute("aria-label", "替换为");
       replacement.placeholder = "替换为";
-      matchCase.type = wholeWord.type = "checkbox";
-      panel.append(query);
-      if (action === "replace") panel.append(replacement);
+      matchCase.type = wholeWord.type = wildcards.type = specialChars.type = "checkbox";
+      specialChars.checked = true;
+      card.append(query);
+      if (action === "replace") card.append(replacement);
+      const optGrid = document.createElement("div");
+      optGrid.className = "word-pane-grid";
       for (const [input, label] of [
         [matchCase, "区分大小写"],
         [wholeWord, "全字匹配"],
+        [wildcards, "使用通配符"],
+        [specialChars, "特殊字符(^t/^l)"],
       ] as const) {
         const wrapper = document.createElement("label");
         wrapper.append(input, label);
-        panel.append(wrapper);
+        optGrid.append(wrapper);
       }
+      card.append(optGrid);
       let matches: ReturnType<typeof findWordText> = [],
         current = 0;
       const search = (): void => {
         matches = findWordText(session, query.value, {
           matchCase: matchCase.checked,
           wholeWord: wholeWord.checked,
-          revisionView: revisionDisplay,
+          wildcards: wildcards.checked,
+          specialChars: specialChars.checked,
+          revisionView: revisionDisplay === "simple" ? "final" : revisionDisplay,
         });
         current = Math.min(current, Math.max(0, matches.length - 1));
         summary.textContent = matches.length + " 处匹配";
@@ -1290,6 +2210,7 @@ export function mountDocumentTextEditor(
         for (const [index, match] of matches.entries()) {
           const button = document.createElement("button");
           button.type = "button";
+          button.className = "word-style-item";
           button.textContent = index + 1 + " · " + match.expectedText;
           button.addEventListener(
             "click",
@@ -1322,6 +2243,8 @@ export function mountDocumentTextEditor(
       query.addEventListener("input", search, { signal: controls.signal });
       matchCase.addEventListener("change", search, { signal: controls.signal });
       wholeWord.addEventListener("change", search, { signal: controls.signal });
+      wildcards.addEventListener("change", search, { signal: controls.signal });
+      specialChars.addEventListener("change", search, { signal: controls.signal });
       query.addEventListener(
         "keydown",
         (event) => {
@@ -1332,9 +2255,13 @@ export function mountDocumentTextEditor(
         },
         { signal: controls.signal },
       );
-      addButton("上一处", () => next(-1));
-      addButton("下一处", () => next(1));
+      const navRow = document.createElement("div");
+      navRow.className = "word-pane-row";
+      addButton("上一处", () => next(-1), navRow);
+      addButton("下一处", () => next(1), navRow, true);
+      card.append(navRow);
       const replace = (all: boolean): void => {
+        ensureBodyEditable();
         search();
         const selected = all ? matches : matches.slice(current, current + 1);
         if (!selected.length) return;
@@ -1344,16 +2271,24 @@ export function mountDocumentTextEditor(
             protocolVersion: 1,
             documentId: snapshot.manifest.documentId,
             baseRevision: snapshot.manifest.revision,
-            operations: [...wordTextReplacementOperations(session, selected, replacement.value)],
+            operations: [
+              ...wordTextReplacementOperations(session, selected, replacement.value, {
+                specialChars: specialChars.checked,
+              }),
+            ],
           }),
         );
         search();
       };
       if (action === "replace") {
-        addButton("替换当前", () => replace(false));
-        addButton("全部替换", () => replace(true));
+        const repRow = document.createElement("div");
+        repRow.className = "word-pane-row";
+        addButton("替换当前", () => replace(false), repRow);
+        addButton("全部替换", () => replace(true), repRow);
+        card.append(repRow);
       }
-      panel.append(summary, results);
+      card.append(summary);
+      body.append(card, results);
       queueMicrotask(() => query.focus());
     }
     shadow.insertBefore(panel, stage);
@@ -1380,6 +2315,667 @@ export function mountDocumentTextEditor(
   }
   function wordCommand(command: Extract<DocumentTextCommand, { type: "word" }>): void {
     if (!root || composing) return;
+    const readOnlyAllowed = [
+      "find",
+      "goTo",
+      "outline",
+      "wordCount",
+      "protection",
+      "setReviewDisplay",
+      "prevRevision",
+      "nextRevision",
+      "review",
+      "showMarks",
+      "mainStory",
+      "nextFootnote",
+      "showNotes",
+      "docProperties",
+      "livePreview",
+    ].includes(command.action);
+    if (!readOnlyAllowed) ensureBodyEditable();
+    const getDocumentRootId = () =>
+      new DOMParser()
+        .parseFromString(session.snapshot().html, "text/html")
+        .querySelector<HTMLElement>('[data-office-kind="document"]')!.dataset.nodeId!;
+    const commitWord = (ops: DocumentOperation[]): void => {
+      const snap = session.snapshot();
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: snap.manifest.documentId,
+          baseRevision: snap.manifest.revision,
+          operations: ops,
+        }),
+      );
+    };
+    const openAuxiliaryHeaderFooter = (kind: "header" | "footer"): void => {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const idx = Math.max(0, snap.metadata.sections.findIndex((s) => s.rootNodeId === secId));
+      const key = kind === "header" ? "headers" : "footers";
+      let storyId: string | undefined;
+      for (let i = idx; i >= 0 && !storyId; i--) storyId = snap.metadata.sections[i]?.[key]?.default;
+      if (!storyId) {
+        commitWord([
+          {
+            op: "insertWordStory",
+            nodeId: snap.metadata.sections[idx]!.rootNodeId,
+            kind,
+            variant: "default",
+            html: "<p></p>",
+          },
+        ]);
+        const nextMeta = session.snapshot().metadata;
+        if (!nextMeta.presentation) storyId = nextMeta.sections[idx]?.[key]?.default;
+      }
+      if (storyId) editStory(storyId);
+    };
+    if (command.action === "pageBorders") {
+      parityControls.openPageBorders();
+      return;
+    }
+    if (command.action === "toc") {
+      parityControls.openTocDialog();
+      return;
+    }
+    if (command.action === "insertTof") {
+      const paragraph = selectedParagraphs()[0];
+      if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+      commitWord([
+        {
+          op: "insertWordField",
+          nodeId: paragraph.dataset.nodeId!,
+          instruction: ' TOC \\h \\z \\c "图" ',
+          cachedText: "插图目录",
+        },
+      ]);
+      queueMicrotask(() => {
+        try { options.onUpdateFields?.(); } catch { /* async layout */ }
+      });
+      return;
+    }
+    if (command.action === "ruby") {
+      parityControls.openRubyDialog();
+      return;
+    }
+    if (command.action === "enclosedChar") {
+      parityControls.openEnclosedCharDialog();
+      return;
+    }
+    if (command.action === "symbols") {
+      parityControls.openSymbolsDialog();
+      return;
+    }
+    if (command.action === "tableFormula") {
+      parityControls.openTableFormulaDialog();
+      return;
+    }
+    if (command.action === "dropCap") {
+      parityControls.openDropCapDialog();
+      return;
+    }
+    if (command.action === "chineseLayout") {
+      parityControls.openChineseLayoutDialog(command.mode);
+      return;
+    }
+    if (command.action === "docProperties") {
+      parityControls.openDocPropertiesDialog();
+      return;
+    }
+    if (command.action === "protection") {
+      parityControls.openProtectionDialog();
+      return;
+    }
+    if (command.action === "outlineView") {
+      parityControls.openOutlineView();
+      return;
+    }
+    if (command.action === "livePreview") {
+      applyLivePreview(command.properties, command.scope ?? "run", command.themeColors);
+      return;
+    }
+    if (command.action === "citations") {
+      academicControls.openCitationsManager();
+      return;
+    }
+    if (command.action === "insertCitation") {
+      academicControls.openInsertCitationDialog();
+      return;
+    }
+    if (command.action === "bibliography") {
+      academicControls.openBibliographyDialog();
+      return;
+    }
+    if (command.action === "setBibliographyStyle") {
+      academicControls.setBibliographyStyle(command.style);
+      return;
+    }
+    if (command.action === "markIndexEntry") {
+      academicControls.openMarkIndexEntryDialog();
+      return;
+    }
+    if (command.action === "insertIndex") {
+      academicControls.openInsertIndexDialog();
+      return;
+    }
+    if (command.action === "markToaCitation") {
+      academicControls.openMarkToaCitationDialog();
+      return;
+    }
+    if (command.action === "insertToa") {
+      academicControls.openInsertToaDialog();
+      return;
+    }
+    if (command.action === "insertField") {
+      academicControls.openInsertFieldDialog();
+      return;
+    }
+    if (command.action === "coverPage") {
+      templateControls.openCoverPageDialog();
+      return;
+    }
+    if (command.action === "removeCoverPage") {
+      templateControls.removeCoverPage();
+      return;
+    }
+    if (command.action === "quickParts") {
+      templateControls.openQuickPartsDialog();
+      return;
+    }
+    if (command.action === "templateSettings") {
+      templateControls.openTemplateDialog();
+      return;
+    }
+    if (command.action === "saveDefaultTemplate") {
+      templateControls.saveCurrentAsDefaultTemplate();
+      return;
+    }
+    if (command.action === "wordArt") {
+      templateControls.openWordArtDialog();
+      return;
+    }
+    if (command.action === "setTableTool") {
+      drawTable.setMode(command.mode);
+      return;
+    }
+    if (command.action === "tabSettings") {
+      openTabStopsDialog();
+      return;
+    }
+    if (command.action === "clearMultiSelection") {
+      multiSelection.clear();
+      notifyFormat();
+      return;
+    }
+    if (command.action === "pasteSpecial") {
+      parityControls.openPasteSpecialDialog(async (mode) => {
+        if (!root || disposed || composing) return;
+        if (mode === "image") {
+          const view = root.ownerDocument.defaultView!;
+          if (!view.navigator.clipboard?.read)
+            throw new DocumentError("UnsupportedFeature", "浏览器不允许读取系统剪贴板图片。");
+          const items = await view.navigator.clipboard.read();
+          for (const item of items) {
+            const imgType = item.types.find((t) => /^image\/(?:png|jpeg|webp)$/.test(t));
+            if (imgType) {
+              const blob = await item.getType(imgType);
+              const ext = imgType.split("/")[1] ?? "png";
+              const file = new File([blob], `pasted.${ext}`, { type: imgType });
+              await drawingControls.insertImage(file);
+              return;
+            }
+          }
+          throw new DocumentError("InvalidOperation", "系统剪贴板中没有可用的 PNG/JPEG/WebP 图片。");
+        }
+        pendingPasteMode = mode;
+        await executeClipboard(
+          root,
+          () => {
+            root?.focus();
+            if (root) restoreBookmark(root, savedSelection, projection.ignored);
+          },
+          "paste",
+          () => !disposed && !composing,
+          mode,
+        );
+      });
+      return;
+    }
+    if (command.action === "insertTableGrid") {
+      const paragraph =
+        selectedParagraphs()[0] ??
+        frame?.querySelector<HTMLElement>(
+          '[data-office-story="main"] [data-node-id]:is(p,h1,h2,h3,h4,h5,h6), [data-node-id]:is(p,h1,h2,h3,h4,h5,h6)',
+        );
+      if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+      commitWord([
+        {
+          op: "insertWordTable",
+          nodeId: paragraph.dataset.nodeId!,
+          position: "after",
+          rows: Math.max(1, Math.min(20, Math.round(command.rows))),
+          columns: Math.max(1, Math.min(12, Math.round(command.columns))),
+        },
+      ]);
+      return;
+    }
+    if (command.action === "quickShape") {
+      drawingControls.insertQuickShape(command.preset);
+      return;
+    }
+    if (command.action === "setPageMargins") {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const target = snap.metadata.sections.find((s) => s.rootNodeId === secId) ?? snap.metadata.sections[0];
+      if (!target) return;
+      const base = target.pageSetup ?? snap.metadata.pageSetup;
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            pageSetup: {
+              ...base,
+              margins: {
+                top: command.top,
+                right: command.right,
+                bottom: command.bottom,
+                left: command.left,
+              },
+            },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setPageOrientation") {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const target = snap.metadata.sections.find((s) => s.rootNodeId === secId) ?? snap.metadata.sections[0];
+      if (!target) return;
+      const base = target.pageSetup ?? snap.metadata.pageSetup;
+      const shortSide = Math.min(base.width, base.height);
+      const longSide = Math.max(base.width, base.height);
+      const nextWidth = command.orientation === "landscape" ? longSide : shortSide;
+      const nextHeight = command.orientation === "landscape" ? shortSide : longSide;
+      if (Math.abs(nextWidth - base.width) < 0.1 && Math.abs(nextHeight - base.height) < 0.1) return;
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            pageSetup: {
+              ...base,
+              width: nextWidth,
+              height: nextHeight,
+            },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setPageSize") {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const target = snap.metadata.sections.find((s) => s.rootNodeId === secId) ?? snap.metadata.sections[0];
+      if (!target) return;
+      const base = target.pageSetup ?? snap.metadata.pageSetup;
+      const isLandscape = base.width > base.height;
+      const shortSide = Math.min(command.width, command.height);
+      const longSide = Math.max(command.width, command.height);
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            pageSetup: {
+              ...base,
+              width: isLandscape ? longSide : shortSide,
+              height: isLandscape ? shortSide : longSide,
+            },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setPageColumns") {
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: currentSection(),
+          changes: {
+            columns: { count: Math.max(1, Math.min(6, Math.round(command.count))), gap: 21.25 },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "insertSectionBreak") {
+      const paragraph =
+        selectedParagraphs()[0] ??
+        frame?.querySelector<HTMLElement>(
+          '[data-office-story="main"] [data-node-id]:is(p,h1,h2,h3,h4,h5,h6), [data-node-id]:is(p,h1,h2,h3,h4,h5,h6)',
+        );
+      if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+      commitWord([
+        { op: "splitWordSection", nodeId: paragraph.dataset.nodeId!, breakType: command.breakType },
+      ]);
+      return;
+    }
+    if (command.action === "insertPageNumberAt") {
+      if (command.location === "inline") {
+        const paragraph = selectedParagraphs()[0];
+        if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+        commitWord([
+          {
+            op: "insertWordField",
+            nodeId: paragraph.dataset.nodeId!,
+            instruction: " PAGE ",
+            cachedText: "1",
+          },
+        ]);
+        return;
+      }
+      openAuxiliaryHeaderFooter(command.location);
+      const snap = session.snapshot();
+      const targetStory = snap.metadata.word?.stories.find((s) => s.storyId === activeStoryId);
+      const firstPara = targetStory
+        ? session.getNode(targetStory.rootNodeId)?.childNodeIds.find((id) => /^p$|^h[1-6]$/.test(session.getNode(id)?.tagName ?? ""))
+        : undefined;
+      if (firstPara) {
+        commitWord([
+          { op: "setWordParagraph", nodeId: firstPara, properties: { "text-align": "center" } },
+          { op: "insertWordField", nodeId: firstPara, instruction: " PAGE ", cachedText: "1" },
+        ]);
+      }
+      return;
+    }
+    if (command.action === "setDrawingWrap") {
+      drawingControls.setSelectedWrap({
+        mode: command.mode,
+        ...(command.wrap ? { wrap: command.wrap } : {}),
+        ...(command.behindText !== undefined ? { behindText: command.behindText } : {}),
+      });
+      return;
+    }
+    if (command.action === "transformDrawing") {
+      drawingControls.transformSelected(command.mode);
+      return;
+    }
+    if (command.action === "setTableCellAlign") {
+      toolsControls.setTableCellAlign(command.horizontal, command.vertical);
+      return;
+    }
+    if (command.action === "setTableCellDirection") {
+      toolsControls.setTableCellDirection(command.direction);
+      return;
+    }
+    if (command.action === "applyTableQuickStyle") {
+      toolsControls.applyTableQuickStyle(command.preset);
+      return;
+    }
+    if (command.action === "setTableStyleFlag") {
+      toolsControls.setTableStyleFlag(command.flag, command.enabled);
+      return;
+    }
+    if (command.action === "tableDiagonalBorder") {
+      toolsControls.setTableCellDiagonalBorder(command.mode);
+      return;
+    }
+    if (command.action === "editHeader" || command.action === "editFooter") {
+      openAuxiliaryHeaderFooter(command.action === "editHeader" ? "header" : "footer");
+      return;
+    }
+    if (command.action === "headerFooterOptions") {
+      const ops: DocumentOperation[] = [];
+      if (command.differentFirstPage !== undefined) {
+        ops.push({
+          op: "setWordSection",
+          nodeId: currentSection(),
+          changes: { differentFirstPage: command.differentFirstPage },
+        });
+      }
+      if (command.evenAndOddHeaders !== undefined) {
+        ops.push({
+          op: "setWordOptions",
+          nodeId: getDocumentRootId(),
+          evenAndOddHeaders: command.evenAndOddHeaders,
+        });
+      }
+      if (ops.length) commitWord(ops);
+      return;
+    }
+    if (command.action === "setTheme") {
+      const preset = WORD_THEMES.find((t) => t.id === command.themeId);
+      if (!preset) return;
+      commitWord([{ op: "setWordOptions", nodeId: getDocumentRootId(), theme: preset.theme }]);
+      return;
+    }
+    if (command.action === "setColorScheme") {
+      const preset = WORD_COLOR_SCHEMES.find((c) => c.id === command.schemeId);
+      if (!preset) return;
+      commitWord([
+        {
+          op: "setWordOptions",
+          nodeId: getDocumentRootId(),
+          theme: {
+            ...(session.snapshot().metadata.word?.theme ?? {}),
+            colorSchemeName: preset.label,
+            colors: preset.colors,
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setFontScheme") {
+      const preset = WORD_FONT_SCHEMES.find((f) => f.id === command.schemeId);
+      if (!preset) return;
+      commitWord([
+        {
+          op: "setWordOptions",
+          nodeId: getDocumentRootId(),
+          theme: {
+            ...(session.snapshot().metadata.word?.theme ?? {}),
+            fontSchemeName: preset.label,
+            majorLatin: preset.majorLatin,
+            minorLatin: preset.minorLatin,
+            majorEastAsia: preset.majorEastAsia,
+            minorEastAsia: preset.minorEastAsia,
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setStyleSet") {
+      const preset = WORD_STYLE_SETS.find((s) => s.id === command.styleSetId);
+      if (!preset) return;
+      const snap = session.snapshot();
+      const rootId = getDocumentRootId();
+      const stylesList = snap.metadata.word?.styles ?? [];
+      const ops: DocumentOperation[] = [];
+      const normal = stylesList.find((s) => s.kind === "paragraph" && (s.default || s.styleId === "Normal"));
+      ops.push({
+        op: "setWordStyle",
+        nodeId: rootId,
+        style: normal
+          ? WordStyleSchema.parse(normal)
+          : { styleId: "Normal", kind: "paragraph", cssClass: "word-style-normal", default: true },
+        paragraphProperties: { "line-height": preset.lineHeight, "margin-bottom": preset.spaceAfter },
+        runProperties: {
+          "font-family": JSON.stringify(preset.bodyFont),
+          "--word-font-eastAsia": JSON.stringify(preset.bodyFont),
+        },
+      });
+      for (const [id, size, level] of [
+        ["Heading1", "18pt", 0],
+        ["Heading2", "15pt", 1],
+        ["Heading3", "13pt", 2],
+        ["Title", "24pt", undefined],
+      ] as const) {
+        const existing = stylesList.find((s) => s.styleId === id);
+        ops.push({
+          op: "setWordStyle",
+          nodeId: rootId,
+          style: existing
+            ? WordStyleSchema.parse(existing)
+            : {
+                styleId: id,
+                kind: "paragraph",
+                cssClass: "word-style-" + id.toLowerCase(),
+                ...(level !== undefined ? { outlineLevel: level } : {}),
+              },
+          paragraphProperties: { "margin-top": "12pt", "margin-bottom": "6pt", "break-after": "avoid" },
+          runProperties: {
+            "font-family": JSON.stringify(preset.headingFont),
+            "--word-font-eastAsia": JSON.stringify(preset.headingFont),
+            "font-size": size,
+            "font-weight": "700",
+            color: preset.headingColor,
+            "font-style": preset.headingItalic ? "italic" : "normal",
+            "text-transform": preset.headingUppercase ? "uppercase" : "none",
+          },
+        });
+      }
+      commitWord(ops);
+      return;
+    }
+    if (command.action === "setPageColor") {
+      const hex = command.color ? command.color.replace(/^#/, "") : undefined;
+      commitWord([
+        {
+          op: "setWordOptions",
+          nodeId: getDocumentRootId(),
+          pageBackground: hex && /^[0-9a-f]{6}$/i.test(hex) ? { color: hex.toUpperCase() } : null,
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setHyphenation") {
+      commitWord([{ op: "setWordOptions", nodeId: getDocumentRootId(), automaticHyphenation: command.enabled }]);
+      return;
+    }
+    if (command.action === "setLineNumbers") {
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: currentSection(),
+          changes: {
+            lineNumbers:
+              command.mode === "none"
+                ? null
+                : { restart: command.mode, start: 1, countBy: 1, distance: 18 },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "toggleTrackChanges") {
+      const word = session.snapshot().metadata.word;
+      const next = !(word?.trackChanges ?? false);
+      if (!next && word?.protection?.enforcement && word.protection.edit === "trackedChanges") {
+        throw new DocumentError("InvalidOperation", "当前文档已启用强制修订保护，无法关闭修订记录。");
+      }
+      commitWord([
+        {
+          op: "setWordReview",
+          nodeId: getDocumentRootId(),
+          trackChanges: next,
+          author: word?.trackingAuthor || "审阅者",
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setReviewDisplay") {
+      revisionDisplay = command.mode;
+      refresh(savedSelection);
+      return;
+    }
+    if (command.action === "prevRevision" || command.action === "nextRevision") {
+      const revisions = session.snapshot().metadata.word?.revisions ?? [];
+      if (!revisions.length) return;
+      const dir = command.action === "nextRevision" ? 1 : -1;
+      activeRevisionIndex =
+        activeRevisionIndex < 0
+          ? dir > 0
+            ? 0
+            : revisions.length - 1
+          : (activeRevisionIndex + dir + revisions.length) % revisions.length;
+      const target = revisions[activeRevisionIndex]!;
+      const node = root.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(target.nodeId) + '"]');
+      if (node) node.scrollIntoView({ block: "center" });
+      return;
+    }
+    if (command.action === "acceptRevision" || command.action === "rejectRevision") {
+      const revisions = session.snapshot().metadata.word?.revisions ?? [];
+      if (!revisions.length) return;
+      const idx = activeRevisionIndex >= 0 && activeRevisionIndex < revisions.length ? activeRevisionIndex : 0;
+      const target = revisions[idx]!;
+      commitWord([
+        {
+          op: "reviewWordRevision",
+          nodeId: target.nodeId,
+          revisionId: target.revisionId ?? target.nodeId,
+          decision: command.action === "acceptRevision" ? "accept" : "reject",
+        },
+      ]);
+      const remaining = session.snapshot().metadata.word?.revisions ?? [];
+      if (remaining.length) {
+        activeRevisionIndex = idx % remaining.length;
+        const nextNode = root?.querySelector<HTMLElement>(
+          '[data-node-id="' + CSS.escape(remaining[activeRevisionIndex]!.nodeId) + '"]',
+        );
+        if (nextNode) nextNode.scrollIntoView({ block: "center" });
+      } else activeRevisionIndex = -1;
+      return;
+    }
+    if (command.action === "acceptAllRevisions" || command.action === "rejectAllRevisions") {
+      commitWord([
+        {
+          op: "reviewWordRevisions",
+          nodeId: getDocumentRootId(),
+          decision: command.action === "acceptAllRevisions" ? "accept" : "reject",
+        },
+      ]);
+      activeRevisionIndex = -1;
+      return;
+    }
+    if (command.action === "nextFootnote" || command.action === "showNotes") {
+      const word = session.snapshot().metadata.word;
+      const refs = word?.noteReferences ?? [];
+      if (!refs.length) throw new DocumentError("InvalidOperation", "当前文档中没有脚注或尾注。");
+      if (command.action === "nextFootnote") {
+        activeNoteIndex = (activeNoteIndex + 1) % refs.length;
+        const ref = refs[activeNoteIndex]!;
+        const node = root.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(ref.nodeId) + '"]');
+        if (node) node.scrollIntoView({ block: "center" });
+      } else {
+        const ref = refs[Math.max(0, activeNoteIndex) % refs.length]!;
+        const note = word?.notes?.find((n) => n.noteId === ref.noteId);
+        if (note) editStory(note.storyId);
+      }
+      return;
+    }
+    if (command.action === "setOutlineLevel") {
+      const paragraphs = selectedParagraphs();
+      if (!paragraphs.length) throw new DocumentError("InvalidOperation", "请先选择段落。");
+      commitWord(
+        paragraphs.map((p) => ({
+          op: "setWordParagraph",
+          nodeId: p.dataset.nodeId!,
+          outlineLevel: command.level,
+          ...(command.level !== null && command.level <= 5
+            ? { styleId: "Heading" + (command.level + 1) }
+            : command.level === null
+              ? { styleId: "Normal" }
+              : {}),
+        })),
+      );
+      return;
+    }
     if (command.action === "paragraphMark") {
       const paragraphs = selectedParagraphs(),
         snapshot = session.snapshot();
@@ -1407,12 +3003,17 @@ export function mountDocumentTextEditor(
       listControls.open();
       return;
     }
+    if (command.action === "editDrawingText") {
+      drawingControls.editSelectedText();
+      return;
+    }
     if (
       command.action === "insertImage" ||
       command.action === "insertShape" ||
       command.action === "insertTextBox" ||
       command.action === "insertConnector" ||
-      command.action === "drawingSettings"
+      command.action === "drawingSettings" ||
+      command.action === "selectionPane"
     ) {
       drawingControls.open(command.action);
       return;
@@ -1458,6 +3059,46 @@ export function mountDocumentTextEditor(
     }
     if (command.action === "insertEquation" || command.action === "equationSettings") {
       mathControls.open(command.action === "insertEquation");
+      return;
+    }
+    if (command.action === "bringForward") {
+      drawingControls.reorderSelected("forward");
+      return;
+    }
+    if (command.action === "sendBackward") {
+      drawingControls.reorderSelected("backward");
+      return;
+    }
+    if (command.action === "groupDrawings") {
+      drawingControls.groupOrUngroupSelected();
+      return;
+    }
+    if (command.action === "sort") {
+      toolsControls.openSort();
+      return;
+    }
+    if (command.action === "textToTable") {
+      toolsControls.openTextToTable();
+      return;
+    }
+    if (command.action === "tableToText") {
+      toolsControls.openTableToText();
+      return;
+    }
+    if (command.action === "insertBlankPage") {
+      toolsControls.insertBlankPage();
+      return;
+    }
+    if (command.action === "insertDateTime") {
+      toolsControls.openDateTime();
+      return;
+    }
+    if (command.action === "tableAction") {
+      toolsControls.runTableAction(command.operation);
+      return;
+    }
+    if (command.action === "tableShading") {
+      toolsControls.setTableCellShading(command.color);
       return;
     }
     if (command.action === "fontSettings") {
@@ -1517,16 +3158,169 @@ export function mountDocumentTextEditor(
       tableControls.open(command.action === "insertTable");
       return;
     }
-    if (["find", "replace", "outline", "wordCount"].includes(command.action)) {
-      openWordPanel(command.action as "find" | "replace" | "outline" | "wordCount");
+    if (["find", "replace", "goTo", "outline", "wordCount"].includes(command.action)) {
+      openWordPanel(command.action as "find" | "replace" | "goTo" | "outline" | "wordCount");
       return;
     }
     if (command.action === "showMarks") {
       showMarks = command.visible;
       updateMarks();
+      if (root.querySelector('[data-sdk-word-hidden="true"]')) void preview.settled();
+      return;
+    }
+    if (command.action === "changeCase") {
+      const range = selectedRange();
+      if (!range) return;
+      savedSelection = bookmark(root, projection.ignored);
+      const transform = (text: string): string => {
+        if (command.mode === "lower") return text.toLocaleLowerCase();
+        if (command.mode === "upper") return text.toLocaleUpperCase();
+        if (command.mode === "toggle") {
+          let out = "";
+          for (const ch of text) {
+            const upper = ch.toLocaleUpperCase(),
+              lower = ch.toLocaleLowerCase();
+            out += ch === upper && upper !== lower ? lower : upper;
+          }
+          return out;
+        }
+        if (command.mode === "title") {
+          let out = "",
+            boundary = true;
+          for (const ch of text) {
+            if (/[\p{L}\p{N}]/u.test(ch)) {
+              out += boundary ? ch.toLocaleUpperCase() : ch.toLocaleLowerCase();
+              boundary = false;
+            } else {
+              out += ch;
+              boundary = true;
+            }
+          }
+          return out;
+        }
+        let out = "",
+          sentenceStart = true;
+        for (const ch of text) {
+          if (/[.!?。！？\n\t]/.test(ch)) {
+            out += ch;
+            sentenceStart = true;
+          } else if (/[\p{L}]/u.test(ch)) {
+            out += sentenceStart ? ch.toLocaleUpperCase() : ch.toLocaleLowerCase();
+            sentenceStart = false;
+          } else {
+            out += ch;
+          }
+        }
+        return out;
+      };
+      const snapshot = session.snapshot();
+      if (multiSelection.size > 0) {
+        const multiOps = multiSelection.batchCaseOps(transform, session);
+        if (multiOps.length) {
+          session.commit(
+            session.prepare({
+              protocolVersion: 1,
+              documentId: snapshot.manifest.documentId,
+              baseRevision: snapshot.manifest.revision,
+              operations: multiOps,
+            }),
+          );
+          multiSelection.clear();
+        }
+        return;
+      }
+      const targetRanges: { nodeId: string; from: number; to: number }[] = [];
+      if (range.collapsed) {
+        const paragraph = selectedParagraphs()[0];
+        if (!paragraph?.dataset.nodeId) return;
+        const full = session.getNode(paragraph.dataset.nodeId)?.text ?? "";
+        const caret = offsetAt(paragraph, range.startContainer, range.startOffset, projection.ignored);
+        let from = caret,
+          to = caret;
+        while (from > 0 && /[\p{L}\p{N}_]/u.test(full[from - 1]!)) from--;
+        while (to < full.length && /[\p{L}\p{N}_]/u.test(full[to]!)) to++;
+        if (from === to) return;
+        targetRanges.push({ nodeId: paragraph.dataset.nodeId, from, to });
+      } else {
+        const anchor = new PreviewSource(frame!, viewModel()).textAnchor(range, session);
+        if (!anchor || !(anchor.kind === "text" || anchor.kind === "text-set")) return;
+        for (const item of anchor.kind === "text" ? [anchor] : anchor.ranges)
+          if (item.to > item.from)
+            targetRanges.push({ nodeId: item.nodeId, from: item.from, to: item.to });
+      }
+      const ops: DocumentOperation[] = [];
+      for (const item of targetRanges) {
+        const nodeText = session.getNode(item.nodeId)?.text ?? "";
+        const original = nodeText.slice(item.from, item.to);
+        const replaced = transform(original);
+        if (replaced === original) continue;
+        // Split at inline DOM text-node boundaries within the paragraph and
+        // apply right-to-left so each run keeps its formatting cleanly.
+        const paragraphEl = root.querySelector<HTMLElement>(
+          '[data-node-id="' + CSS.escape(item.nodeId) + '"]',
+        );
+        const cuts = new Set<number>([item.from, item.to]);
+        if (paragraphEl) {
+          const walker = frame!.createTreeWalker(paragraphEl, 4);
+          let cursor = 0;
+          for (let textNode = walker.nextNode(); textNode; textNode = walker.nextNode()) {
+            if (projection.ignored(textNode)) continue;
+            const len = (textNode as Text).length;
+            if (cursor > item.from && cursor < item.to) cuts.add(cursor);
+            cursor += len;
+            if (cursor > item.from && cursor < item.to) cuts.add(cursor);
+          }
+        }
+        const sorted = [...cuts].sort((a, b) => a - b);
+        const mapped = sorted.map((cut) => cut - item.from);
+        if (replaced.length === original.length) {
+          for (let i = sorted.length - 1; i > 0; i--) {
+            const a = sorted[i - 1]!,
+              b = sorted[i]!;
+            const expectedText = nodeText.slice(a, b);
+            const nextText = replaced.slice(mapped[i - 1]!, mapped[i]!);
+            if (nextText !== expectedText)
+              ops.push({ op: "replaceText", nodeId: item.nodeId, from: a, to: b, expectedText, text: nextText });
+          }
+        } else {
+          ops.push({
+            op: "replaceText",
+            nodeId: item.nodeId,
+            from: item.from,
+            to: item.to,
+            expectedText: original,
+            text: replaced,
+          });
+        }
+      }
+      if (!ops.length) return;
+      session.commit(
+        session.prepare({
+          protocolVersion: 1,
+          documentId: snapshot.manifest.documentId,
+          baseRevision: snapshot.manifest.revision,
+          operations: ops,
+        }),
+      );
       return;
     }
     if (command.action === "clearFormat") {
+      if (multiSelection.size > 0) {
+        const snapshot = session.snapshot();
+        const multiOps = multiSelection.batchResetOps(session);
+        if (multiOps.length) {
+          session.commit(
+            session.prepare({
+              protocolVersion: 1,
+              documentId: snapshot.manifest.documentId,
+              baseRevision: snapshot.manifest.revision,
+              operations: multiOps,
+            }),
+          );
+          multiSelection.clear();
+        }
+        return;
+      }
       const paragraph = selectedParagraphs()[0],
         range = selectedRange();
       if (!paragraph || !range) return;
@@ -1600,26 +3394,108 @@ export function mountDocumentTextEditor(
         (style) => style.styleId === command.styleId,
       );
       if (!known) {
-        const heading = /^Heading([1-9])$/.exec(command.styleId),
-          cssClass = "word-user-" + command.styleId.toLowerCase();
+        const accent1 = snapshot.metadata.word?.theme?.colors?.accent1
+          ? "#" + snapshot.metadata.word.theme.colors.accent1
+          : "#2f5496";
+        const heading = /^Heading([1-9])$/.exec(command.styleId);
+        const cssClass = "word-user-" + command.styleId.toLowerCase();
+        const builtinPresets: Readonly<
+          Record<
+            string,
+            {
+              name: string;
+              paragraph: Record<string, string>;
+              run: Record<string, string>;
+              outlineLevel?: number;
+            }
+          >
+        > = {
+          NoSpacing: {
+            name: "无间隔",
+            paragraph: { "margin-top": "0pt", "margin-bottom": "0pt", "line-height": "1" },
+            run: {},
+          },
+          Title: {
+            name: "标题",
+            paragraph: { "margin-top": "0pt", "margin-bottom": "6pt" },
+            run: { "font-size": "28pt", "font-weight": "400", color: "#1f1f1f" },
+          },
+          Subtitle: {
+            name: "副标题",
+            paragraph: { "margin-top": "0pt", "margin-bottom": "8pt" },
+            run: { "font-size": "12pt", color: "#595959", "letter-spacing": "0.75pt" },
+          },
+          SubtleEmphasis: {
+            name: "不明显强调",
+            paragraph: {},
+            run: { "font-style": "italic", color: "#595959" },
+          },
+          Emphasis: {
+            name: "强调",
+            paragraph: {},
+            run: { "font-style": "italic" },
+          },
+          IntenseEmphasis: {
+            name: "明显强调",
+            paragraph: {},
+            run: { "font-style": "italic", color: accent1 },
+          },
+          Strong: {
+            name: "要点",
+            paragraph: {},
+            run: { "font-weight": "700" },
+          },
+          Quote: {
+            name: "引用",
+            paragraph: { "margin-top": "10pt", "margin-bottom": "8pt", "text-align": "center" },
+            run: { "font-style": "italic", color: "#404040" },
+          },
+          IntenseQuote: {
+            name: "明显引用",
+            paragraph: {
+              "margin-top": "12pt",
+              "margin-bottom": "12pt",
+              "margin-left": "28pt",
+              "margin-right": "28pt",
+              "text-align": "center",
+              "border-top": `0.5pt solid ${accent1}`,
+              "border-bottom": `0.5pt solid ${accent1}`,
+            },
+            run: { "font-style": "italic", color: accent1 },
+          },
+          BookTitle: {
+            name: "书籍标题",
+            paragraph: {},
+            run: { "font-weight": "700", "font-style": "italic", "font-variant": "small-caps" },
+          },
+        };
+        const preset = builtinPresets[command.styleId];
         operations.push({
           op: "setWordStyle",
           nodeId: documentRoot,
           style: {
             styleId: command.styleId,
+            ...(preset ? { name: preset.name } : heading ? { name: "标题 " + heading[1] } : {}),
             kind: "paragraph",
             cssClass,
             ...(heading ? { outlineLevel: Number(heading[1]) - 1 } : {}),
           },
-          paragraphProperties: {
-            "margin-top": heading ? "12pt" : "0pt",
-            "margin-bottom": heading ? "6pt" : "0pt",
-            ...(heading ? { "break-after": "avoid" } : {}),
-          },
-          runProperties: {
-            "font-size": heading ? 20 - Number(heading[1]) * 2 + "pt" : "12pt",
-            "font-weight": heading ? "700" : "400",
-          },
+          paragraphProperties: preset
+            ? preset.paragraph
+            : {
+                "margin-top": heading ? "12pt" : "0pt",
+                "margin-bottom": heading ? "6pt" : "0pt",
+                ...(heading ? { "break-after": "avoid" } : {}),
+              },
+          runProperties: preset
+            ? preset.run
+            : heading
+              ? {
+                  "font-size": Math.max(11, 20 - Number(heading[1]) * 2) + "pt",
+                  "font-weight": "700",
+                  color: Number(heading[1]) <= 4 ? accent1 : "#222222",
+                }
+              : { "font-size": "12pt", "font-weight": "400" },
         });
       }
       for (const paragraph of paragraphs)
@@ -1634,14 +3510,33 @@ export function mountDocumentTextEditor(
         operations.push({
           op: "setWordParagraph",
           nodeId: paragraph.dataset.nodeId!,
-          properties: { ...command.properties },
+          ...(Object.keys(command.properties).length ? { properties: { ...command.properties } } : {}),
+          ...(command.outlineLevel !== undefined ? { outlineLevel: command.outlineLevel } : {}),
         });
     } else if (command.action === "list") {
-      const numberingId = command.kind === "none" ? null : "word-user-" + command.kind;
+      const presetKey = command.preset ?? (command.kind === "bullet" ? "disc" : "decimal");
+      const numberingId =
+        command.kind === "none"
+          ? null
+          : command.preset
+            ? "word-user-" + command.kind + "-" + presetKey
+            : "word-user-" + command.kind;
       if (
         numberingId &&
         !snapshot.metadata.word?.numbering.some((n) => n.numberingId === numberingId)
       ) {
+        const bulletSymbols: Record<string, readonly [string, string, string]> = {
+          disc: ["•", "◦", "▪"],
+          circle: ["◦", "▪", "•"],
+          square: ["▪", "•", "◦"],
+        };
+        const numFormats: Record<string, "decimal" | "lowerLetter" | "upperRoman"> = {
+          decimal: "decimal",
+          lowerLetter: "lowerLetter",
+          upperRoman: "upperRoman",
+        };
+        const chosenBullets = bulletSymbols[presetKey] ?? bulletSymbols.disc!;
+        const chosenNumFmt = numFormats[presetKey] ?? "decimal";
         operations.push({
           op: "setWordNumbering",
           nodeId: documentRoot,
@@ -1649,13 +3544,15 @@ export function mountDocumentTextEditor(
           levels: Array.from({ length: 9 }, (_, level) => ({
             level,
             start: 1,
-            format: command.kind === "bullet" ? ("bullet" as const) : ("decimal" as const),
+            format: command.kind === "bullet" ? ("bullet" as const) : chosenNumFmt,
             text:
               command.kind === "bullet"
-                ? ["•", "◦", "▪"][level % 3]!
-                : Array.from({ length: level + 1 }, (_, n) => "%" + (n + 1)).join(".") + ".",
+                ? chosenBullets[level % 3]!
+                : level === 0
+                  ? "%1."
+                  : Array.from({ length: level + 1 }, (_, n) => "%" + (n + 1)).join(".") + ".",
             suffix: "tab" as const,
-            cssClass: "word-list-" + command.kind + "-" + level,
+            cssClass: "word-list-" + command.kind + "-" + presetKey + "-" + level,
           })),
         });
       }
@@ -1681,21 +3578,41 @@ export function mountDocumentTextEditor(
           },
         });
     } else if (command.action === "paintFormat") {
-      formatAppearance(
-        new Map(
-          Object.entries({
-            ...command.properties,
-            ...(command.properties["font-family"]
-              ? Object.fromEntries(
-                  ["ascii", "hAnsi", "eastAsia", "cs"].map((role) => [
-                    "--word-font-" + role,
-                    command.properties["font-family"]!,
-                  ]),
-                )
-              : {}),
-          }),
-        ),
-      );
+      if (Object.keys(command.properties).length) {
+        formatAppearance(
+          new Map(
+            Object.entries({
+              ...command.properties,
+              ...(command.properties["font-family"]
+                ? Object.fromEntries(
+                    ["ascii", "hAnsi", "eastAsia", "cs"].map((role) => [
+                      "--word-font-" + role,
+                      command.properties["font-family"]!,
+                    ]),
+                  )
+                : {}),
+            }),
+          ),
+        );
+      }
+      if (command.paragraphProperties && Object.keys(command.paragraphProperties).length) {
+        const latest = session.snapshot();
+        const paraOps: DocumentOperation[] = paragraphs.map((p) => ({
+          op: "setWordParagraph",
+          nodeId: p.dataset.nodeId!,
+          properties: { ...command.paragraphProperties },
+        }));
+        if (paraOps.length) {
+          session.commit(
+            session.prepare({
+              protocolVersion: 1,
+              documentId: latest.manifest.documentId,
+              baseRevision: latest.manifest.revision,
+              operations: paraOps,
+            }),
+          );
+        }
+      }
       return;
     } else throw new DocumentError("InvalidOperation", "未知 Word 格式命令。");
     session.commit(
@@ -1762,11 +3679,22 @@ export function mountDocumentTextEditor(
 
   function paste(event: ClipboardEvent): void {
     event.preventDefault();
+    const pasteMode = pendingPasteMode ?? "keepSource";
+    pendingPasteMode = undefined;
     if (!event.clipboardData || composing || !root) return;
-    const raw = event.clipboardData.getData("text/html"),
-      image = Array.from(event.clipboardData?.files ?? []).find((file) =>
-        /^image\/(?:png|jpeg|webp)$/.test(file.type),
-      );
+    try {
+      ensureBodyEditable();
+    } catch (reason) {
+      report(reason);
+      return;
+    }
+    const raw = pasteMode === "plainText" ? "" : event.clipboardData.getData("text/html"),
+      image =
+        pasteMode === "plainText"
+          ? undefined
+          : Array.from(event.clipboardData?.files ?? []).find((file) =>
+              /^image\/(?:png|jpeg|webp)$/.test(file.type),
+            );
     if (image && !raw) {
       event.preventDefault();
       void drawingControls.insertImage(image).catch(report);
@@ -1777,8 +3705,31 @@ export function mountDocumentTextEditor(
       if (raw.length > WORD_CLIPBOARD_BYTES || text.length > WORD_CLIPBOARD_BYTES)
         throw new DocumentError("ResourceLimitExceeded", "粘贴内容超过 64 MiB。");
       const template = document.createElement("template");
-      if (raw) template.innerHTML = raw;
-      else
+      if (raw) {
+        template.innerHTML = raw;
+        if (pasteMode === "mergeFormatting") {
+          for (const el of template.content.querySelectorAll<HTMLElement>("*")) {
+            el.removeAttribute("data-doffi-word-clipboard");
+            el.removeAttribute("data-doffi-word-node");
+            el.removeAttribute("data-word-style");
+            el.removeAttribute("class");
+            for (const prop of [
+              "font-family",
+              "font-size",
+              "color",
+              "background-color",
+              "--word-font-ascii",
+              "--word-font-hAnsi",
+              "--word-font-eastAsia",
+              "--word-font-cs",
+              "--word-font-size-cs",
+              "--word-run-shading",
+            ])
+              el.style.removeProperty(prop);
+            if (!el.getAttribute("style")?.trim()) el.removeAttribute("style");
+          }
+        }
+      } else
         text
           .replace(/\r\n?/g, "\n")
           .split("\n")
@@ -2058,6 +4009,28 @@ export function mountDocumentTextEditor(
     if (!root || !frame || !event.clipboardData) return;
     event.preventDefault();
     if (composing) return;
+    if (multiSelection.size > 0) {
+      const combined = multiSelection.plainText(session);
+      if (combined) {
+        event.clipboardData.setData("text/plain", combined);
+        if (cut) {
+          const snap = session.snapshot();
+          const ops = multiSelection.batchDeleteOps(session);
+          if (ops.length) {
+            session.commit(
+              session.prepare({
+                protocolVersion: 1,
+                documentId: snap.manifest.documentId,
+                baseRevision: snap.manifest.revision,
+                operations: ops,
+              }),
+            );
+            multiSelection.clear();
+          }
+        }
+        return;
+      }
+    }
     let range = selectedRange();
     const objects =
       !range || range.collapsed
@@ -2283,18 +4256,197 @@ export function mountDocumentTextEditor(
   }
   function keydown(event: KeyboardEvent): void {
     if (!root || composing) return;
+    if (event.key === "Escape") {
+      if (multiSelection.size > 0) {
+        event.preventDefault();
+        multiSelection.clear();
+        notifyFormat();
+        return;
+      }
+      if (drawTable.mode() !== "off") {
+        event.preventDefault();
+        drawTable.setMode("off");
+        return;
+      }
+      if (root.dataset.sdkWordTextStory || activeStoryId) {
+        event.preventDefault();
+        editStory();
+        return;
+      }
+    }
+    if ((event.key === "Backspace" || event.key === "Delete") && multiSelection.size > 0) {
+      event.preventDefault();
+      try {
+        ensureBodyEditable();
+        const snap = session.snapshot();
+        const ops = multiSelection.batchDeleteOps(session);
+        if (ops.length) {
+          session.commit(
+            session.prepare({
+              protocolVersion: 1,
+              documentId: snap.manifest.documentId,
+              baseRevision: snap.manifest.revision,
+              operations: ops,
+            }),
+          );
+        }
+        multiSelection.clear();
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (event.key === "F9") {
+      event.preventDefault();
+      try {
+        options.onUpdateFields?.();
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
     const key = event.key.toLowerCase();
-    if (
-      (event.ctrlKey || event.metaKey) &&
-      ["z", "y", "b", "i", "u", "e", "l", "r"].includes(key)
-    ) {
+    const mod = event.ctrlKey || event.metaKey;
+    if (event.altKey && event.shiftKey && !mod && (key === "x" || key === "i")) {
+      event.preventDefault();
+      try {
+        if (key === "x") academicControls.openMarkIndexEntryDialog();
+        else academicControls.openMarkToaCitationDialog();
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && event.altKey && key === "v") {
+      event.preventDefault();
+      try {
+        wordCommand({ type: "word", action: "pasteSpecial" });
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && event.altKey && ["1", "2", "3"].includes(key)) {
+      event.preventDefault();
+      try {
+        wordCommand({ type: "word", action: "style", styleId: "Heading" + key });
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && event.shiftKey && key === "n") {
+      event.preventDefault();
+      try {
+        wordCommand({ type: "word", action: "style", styleId: "Normal" });
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && event.shiftKey && key === "c") {
+      event.preventDefault();
+      const st = formatState();
+      shortcutCopiedFormat = {
+        run: {
+          "font-weight": st.bold ? "700" : "400",
+          "font-style": st.italic ? "italic" : "normal",
+          ...(st.fontSize ? { "font-size": st.fontSize + "pt" } : {}),
+          ...(st.fontFamily ? { "font-family": st.fontFamily } : {}),
+          ...(st.color ? { color: st.color } : {}),
+        },
+        paragraph: st.alignment ? { "text-align": st.alignment } : {},
+      };
+      return;
+    }
+    if (mod && !event.altKey && !event.shiftKey && ["1", "2", "5"].includes(key)) {
+      event.preventDefault();
+      try {
+        const lh = key === "1" ? "1" : key === "2" ? "2" : "1.5";
+        wordCommand({
+          type: "word",
+          action: "paragraph",
+          properties: { "line-height": lh, "--word-line-rule": "auto" },
+        });
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && event.shiftKey && key === "v") {
+      event.preventDefault();
+      if (shortcutCopiedFormat) {
+        try {
+          const copied = shortcutCopiedFormat;
+          shortcutCopiedFormat = undefined;
+          wordCommand({
+            type: "word",
+            action: "paintFormat",
+            properties: copied.run,
+            ...(Object.keys(copied.paragraph).length ? { paragraphProperties: copied.paragraph } : {}),
+          });
+        } catch (reason) {
+          report(reason);
+        }
+        return;
+      }
+      pendingPasteMode = "plainText";
+      void executeClipboard(
+        root,
+        () => {
+          root?.focus();
+          if (root) restoreBookmark(root, savedSelection, projection.ignored);
+        },
+        "paste",
+        () => !disposed && !composing,
+        "plainText",
+      ).catch((reason) => {
+        pendingPasteMode = undefined;
+        report(reason);
+      });
+      return;
+    }
+    if (mod && event.key === "Enter") {
+      event.preventDefault();
+      try {
+        wordCommand({ type: "word", action: "pageBreak" });
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && ["f", "h", "g", "k", "p"].includes(key)) {
+      event.preventDefault();
+      try {
+        if (key === "f") openWordPanel("find");
+        else if (key === "h") openWordPanel("replace");
+        else if (key === "g") openWordPanel("goTo");
+        else if (key === "k") wordCommand({ type: "word", action: "insertLink" });
+        else if (key === "p") options.onPrint?.();
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && (event.key === "]" || event.key === "[")) {
+      event.preventDefault();
+      try {
+        const currentSize = formatState().fontSize ?? 12;
+        const nextSize = Math.max(1, Math.min(1638, currentSize + (event.key === "]" ? 1 : -1)));
+        format("font-size", nextSize + "pt");
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
+    if (mod && ["z", "y", "b", "i", "u", "e", "l", "r", "j"].includes(key)) {
       event.preventDefault();
       try {
         if (key === "z" || key === "y") {
           if (event.shiftKey || key === "y") session.redo();
           else session.undo();
-        } else if (["e", "l", "r"].includes(key))
-          align(key === "e" ? "center" : key === "l" ? "left" : "right");
+        } else if (["e", "l", "r", "j"].includes(key))
+          align(key === "e" ? "center" : key === "l" ? "left" : key === "r" ? "right" : "justify");
         else toggle(key === "b" ? "bold" : key === "i" ? "italic" : "underline");
       } catch (reason) {
         report(reason);
@@ -2305,6 +4457,12 @@ export function mountDocumentTextEditor(
     if (!range) return;
     if (event.key === "Enter") {
       event.preventDefault();
+      try {
+        ensureBodyEditable();
+      } catch (reason) {
+        report(reason);
+        return;
+      }
       mutate(
         range,
         () => (event.shiftKey ? lineBreak(range) : paragraphBreak(range)),
@@ -2317,16 +4475,52 @@ export function mountDocumentTextEditor(
           ? (range.startContainer as Element)
           : range.startContainer.parentElement;
       const cell = parent?.closest("td,th"),
+        table = cell?.closest<HTMLElement>("table"),
+        tableCells = table
+          ? [...table.querySelectorAll("td,th")].filter(
+              (node) => !projection.ignored(node) && !node.hasAttribute("data-word-grid-gap"),
+            )
+          : [],
         cells = [...root.querySelectorAll("td,th")].filter(
           (node) => !projection.ignored(node) && !node.hasAttribute("data-word-grid-gap"),
         );
       if (cell && cells.includes(cell)) {
         event.preventDefault();
+        if (!event.shiftKey && table?.dataset.nodeId && tableCells.at(-1) === cell) {
+          try {
+            ensureBodyEditable();
+            const rowCount = table.querySelectorAll("tr").length;
+            const snap = session.snapshot();
+            session.commit(
+              session.prepare({
+                protocolVersion: 1,
+                documentId: snap.manifest.documentId,
+                baseRevision: snap.manifest.revision,
+                operations: [
+                  {
+                    op: "editWordTable",
+                    nodeId: table.dataset.nodeId,
+                    change: { kind: "insertRows", at: rowCount, count: 1 },
+                  },
+                ],
+              }),
+            );
+            const updatedTable = root?.querySelector<HTMLElement>(
+              '[data-node-id="' + CSS.escape(table.dataset.nodeId) + '"]',
+            );
+            const lastRowFirstCell = updatedTable?.querySelector("tr:last-child > td, tr:last-child > th");
+            if (lastRowFirstCell) select(...caretAt(lastRowFirstCell, 0, projection.ignored));
+          } catch (error) {
+            report(error);
+          }
+          return;
+        }
         const next = cells[cells.indexOf(cell) + (event.shiftKey ? -1 : 1)];
         if (next) select(...caretAt(next, 0, projection.ignored));
       } else if (parent?.closest("[data-word-numbering]")) {
         event.preventDefault();
         try {
+          ensureBodyEditable();
           changeListLevel(event.shiftKey ? -1 : 1);
         } catch (error) {
           report(error);
@@ -2336,6 +4530,15 @@ export function mountDocumentTextEditor(
   }
   function beforeinput(event: InputEvent): void {
     if (!root) return;
+    if (isBodyProtected()) {
+      event.preventDefault();
+      try {
+        ensureBodyEditable();
+      } catch (reason) {
+        report(reason);
+      }
+      return;
+    }
     let range = selectedRange();
     const target = event.getTargetRanges?.()[0];
     if (target) {
@@ -2428,10 +4631,22 @@ export function mountDocumentTextEditor(
   }
   function activate(source: HTMLElement): void {
     if (!root || !frame) return;
+    const inPlace = !!root.dataset.sdkWordTextStory;
+    if (inPlace)
+      for (const node of [root, ...root.querySelectorAll<HTMLElement>("[data-sdk-word-text-node]")]) {
+        const id = node.dataset.sdkWordTextNode;
+        if (id) projection.setViewAttribute(node, "data-node-id", id);
+      }
     const reviewStyle = frame.createElement("style");
+    if (revisionDisplay === "simple") frame.documentElement.dataset.wordReviewView = "simple";
+    else delete frame.documentElement.dataset.wordReviewView;
+    for (const paper of frame.querySelectorAll<HTMLElement>(".sdk-paper")) {
+      if (showGridlines) paper.dataset.sdkGridlines = "true";
+      else delete paper.dataset.sdkGridlines;
+    }
     reviewStyle.textContent =
       '[data-sdk-word-revision="insert"]{background:#dff7e5;text-decoration:underline}[data-sdk-word-revision="delete"]{background:#ffe3e3;text-decoration:line-through}[data-sdk-word-revision="format"]{outline:1px dotted #827600}[data-sdk-word-text-review="insert"]{background:#dff7e5!important}[data-sdk-word-text-review="delete"]{background:#ffe3e3!important}' +
-      (revisionDisplay === "final"
+      (revisionDisplay === "final" || revisionDisplay === "simple"
         ? '[data-sdk-word-deleted]{display:none!important}[data-sdk-word-revision="insert"]{background:transparent;text-decoration:none}[data-sdk-word-text-review="insert"]{color:var(--sdk-word-authored-color)!important;background:var(--sdk-word-authored-background)!important;text-decoration-line:var(--sdk-word-authored-decoration)!important}'
         : revisionDisplay === "original"
           ? '[data-sdk-word-inserted]{display:none!important}[data-sdk-word-revision="delete"]{background:transparent;text-decoration:none}[data-sdk-word-text-review="delete"]{color:var(--sdk-word-authored-color)!important;background:var(--sdk-word-authored-background)!important;text-decoration-line:var(--sdk-word-authored-decoration)!important}'
@@ -2463,7 +4678,7 @@ export function mountDocumentTextEditor(
     projectWordColumnReview(
       root,
       session.snapshot().metadata.word,
-      revisionDisplay,
+      revisionDisplay === "simple" ? "final" : revisionDisplay,
       projection,
       options.limits?.maxNodes ?? DEFAULT_RENDER_LIMITS.maxNodes,
     );
@@ -2494,10 +4709,19 @@ export function mountDocumentTextEditor(
     // Keep the same visible label without adding text to the input DOM.
     for (const marker of root.querySelectorAll<HTMLElement>(".sdk-number-marker")) {
       if (!projection.ignored(marker)) continue;
+      const picBullet = marker.querySelector<HTMLImageElement>("img.sdk-picture-bullet");
+      if (picBullet) {
+        marker.replaceChildren(picBullet);
+        continue;
+      }
       marker.setAttribute("data-sdk-number-text", marker.textContent ?? "");
       marker.replaceChildren();
     }
-    projection.capture(root, source);
+    if (inPlace) projection.captureInstance(root, source);
+    else projection.capture(root, source);
+    if (inPlace) frame.addEventListener("pointerdown", event => {
+      if (!composing && root && !root.contains(event.target as Node)) editStory();
+    }, { signal: viewControls.signal, capture: true });
     updateMarks();
     bindWordLineSelection(frame, root, {
       signal: viewControls.signal,
@@ -2516,6 +4740,7 @@ export function mountDocumentTextEditor(
       viewStyle.textContent =
         '[data-office-editor][data-doffi-show-marks] :is(p,h1,h2,h3,h4,h5,h6)::after{content:"¶";color:var(--sdk-word-mark-color,#8a9ab0);font-family:var(--sdk-word-mark-font-family,inherit);font-size:var(--sdk-word-mark-font-size,inherit);font-weight:var(--sdk-word-mark-font-weight,normal);font-style:var(--sdk-word-mark-font-style,normal);text-decoration-line:var(--sdk-word-mark-text-decoration-line,none);text-decoration-style:var(--sdk-word-mark-text-decoration-style,solid);position:absolute;pointer-events:none}[data-office-editor] .sdk-space-mark{position:relative}[data-office-editor][data-doffi-show-marks] .sdk-space-mark::after{content:attr(data-sdk-space-mark);position:absolute;left:0;top:0;color:#8a9ab0;pointer-events:none}[data-office-editor][data-doffi-show-marks] [data-word-tab]::after{content:"→";color:#8a9ab0;position:absolute;left:0;pointer-events:none}[data-office-editor]:focus{outline:none}[data-office-editor]{min-height:100px}[data-office-editor] [data-word-tab]{user-select:all;position:relative}[data-office-editor] .sdk-number-marker::before{content:attr(data-sdk-number-text)}';
       frame.head.append(viewStyle);
+      viewStyle.textContent += '[data-sdk-word-text-story][data-office-editor]{min-height:0}';
     }
     if (!root.querySelector(blockSelector)) {
       const first = wordMetadata().sections[0]!.rootNodeId;
@@ -2536,12 +4761,133 @@ export function mountDocumentTextEditor(
       signal: viewControls.signal,
     });
     frame.addEventListener(
+      "contextmenu",
+      (event: MouseEvent) => {
+        if (event.shiftKey || composing || !root) return;
+        event.preventDefault();
+        const target = event.target as Element | null;
+        const objectEl = target?.closest<HTMLElement>("[data-sdk-word-object]");
+        const tableCell = target?.closest<HTMLElement>("td,th");
+        const iframeRect = preview.element.getBoundingClientRect();
+        const hostX = iframeRect.left + event.clientX * zoom;
+        const hostY = iframeRect.top + event.clientY * zoom;
+        const items: WordContextMenuItem[] = [];
+        const runClipboard = (action: "copy" | "cut" | "paste", pasteMode?: WordPasteMode) => {
+          const expected = revision,
+            sel = JSON.stringify(bookmark(root!, projection.ignored));
+          pendingPasteMode = action === "paste" ? pasteMode : undefined;
+          void executeClipboard(
+            root!,
+            () => {
+              root?.focus();
+              if (root) restoreBookmark(root, savedSelection, projection.ignored);
+            },
+            action,
+            () =>
+              !disposed &&
+              !composing &&
+              revision === expected &&
+              (!root || JSON.stringify(bookmark(root, projection.ignored)) === sel),
+            pasteMode,
+          ).catch((reason) => {
+            pendingPasteMode = undefined;
+            report(reason);
+          });
+        };
+        if (objectEl?.dataset.sdkWordObject) {
+          const id = objectEl.dataset.sdkWordObject;
+          if (!drawingControls.selectedNodeIds().includes(id)) drawingControls.selectByNodeId(id);
+          const drawing = session
+            .snapshot()
+            .metadata.word?.drawings?.find((item) => item.nodeId === id);
+          items.push(
+            { label: "剪切", run: () => runClipboard("cut") },
+            { label: "复制", run: () => runClipboard("copy") },
+            { label: "删除对象", run: () => drawingControls.removeSelected() },
+            { separator: true },
+          );
+          if (drawing?.kind === "chart")
+            items.push({ label: "编辑图表…", run: () => chartControls.open(false) });
+          if (drawing?.kind === "shape" || drawing?.kind === "textBox")
+            items.push({ label: "编辑文字", run: () => drawingControls.editSelectedText() });
+          items.push(
+            { label: "前移一层", run: () => drawingControls.reorderSelected("forward") },
+            { label: "后移一层", run: () => drawingControls.reorderSelected("backward") },
+            { label: "设置对象格式…", run: () => drawingControls.open("drawingSettings") },
+            { label: "选择窗格", run: () => drawingControls.open("selectionPane") },
+          );
+        } else {
+          const hasTextSelection = Boolean(selectedRange() && !selectedRange()!.collapsed);
+          items.push(
+            { label: "剪切", disabled: !hasTextSelection, run: () => runClipboard("cut") },
+            { label: "复制", disabled: !hasTextSelection, run: () => runClipboard("copy") },
+            { label: "粘贴（保留源格式）", run: () => runClipboard("paste", "keepSource") },
+            { label: "合并格式粘贴", run: () => runClipboard("paste", "mergeFormatting") },
+            { label: "仅保留文本粘贴", run: () => runClipboard("paste", "plainText") },
+            { separator: true },
+            { label: "字体…", run: () => fontControls.open() },
+            { label: "拼音指南…", disabled: !hasTextSelection, run: () => parityControls.openRubyDialog() },
+            { label: "带圈字符…", run: () => parityControls.openEnclosedCharDialog() },
+            { label: "首字下沉…", run: () => parityControls.openDropCapDialog() },
+            { label: "排序…", run: () => toolsControls.openSort() },
+          );
+          if (tableCell) {
+            items.push(
+              { separator: true },
+              { label: "在上方插入行", run: () => toolsControls.runTableAction("insertRowAbove") },
+              { label: "在下方插入行", run: () => toolsControls.runTableAction("insertRowBelow") },
+              { label: "在左侧插入列", run: () => toolsControls.runTableAction("insertColLeft") },
+              { label: "在右侧插入列", run: () => toolsControls.runTableAction("insertColRight") },
+              { label: "删除行", run: () => toolsControls.runTableAction("deleteRow") },
+              { label: "删除列", run: () => toolsControls.runTableAction("deleteCol") },
+              { label: "拆分表格", run: () => toolsControls.runTableAction("splitTable") },
+              { label: "插入公式…", run: () => parityControls.openTableFormulaDialog() },
+              { label: "表格转换成文本…", run: () => toolsControls.openTableToText() },
+              { label: "表格属性…", run: () => tableControls.open(false) },
+            );
+          }
+        }
+        contextMenu.open(hostX, hostY, items);
+      },
+      { signal: viewControls.signal },
+    );
+    frame.addEventListener(
       "dblclick",
       (event) => {
         if (composing) return;
-        const target = event.target as Element | null,
-          storyId = target?.closest<HTMLElement>("[data-sdk-word-note-story]")?.dataset
-            .sdkWordNoteStory;
+        const target = event.target as Element | null;
+        let pageStoryEl = target?.closest<HTMLElement>("[data-sdk-page-story-id]") ?? null;
+        if (!pageStoryEl && frame) {
+          for (const candidate of frame.querySelectorAll<HTMLElement>("[data-sdk-page-story-id]")) {
+            const rect = candidate.getBoundingClientRect();
+            if (
+              rect.width > 0 &&
+              rect.height > 0 &&
+              event.clientX >= rect.left &&
+              event.clientX <= rect.right &&
+              event.clientY >= rect.top &&
+              event.clientY <= rect.bottom
+            ) {
+              pageStoryEl = candidate;
+              break;
+            }
+          }
+        }
+        const pageStoryId = pageStoryEl?.dataset.sdkPageStoryId;
+        if (
+          pageStoryId &&
+          session
+            .snapshot()
+            .metadata.word?.stories.some(
+              (story) => story.storyId === pageStoryId && (story.kind === "header" || story.kind === "footer"),
+            )
+        ) {
+          event.preventDefault();
+          editStory(pageStoryId);
+          return;
+        }
+        const storyId = target?.closest<HTMLElement>("[data-sdk-word-note-story]")?.dataset
+          .sdkWordNoteStory;
         if (
           storyId &&
           session
@@ -2576,6 +4922,28 @@ export function mountDocumentTextEditor(
       { signal: viewControls.signal },
     );
     root.addEventListener("keydown", keydown, { signal: viewControls.signal });
+    drawTable.bind(frame, root, viewControls.signal);
+    root.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!event.ctrlKey && !event.metaKey && multiSelection.size > 0) {
+          multiSelection.clear();
+          notifyFormat();
+        }
+      },
+      { signal: viewControls.signal },
+    );
+    const captureMultiRange = (event: MouseEvent | PointerEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !frame || !root) return;
+      const range = selectedRange();
+      if (!range || range.collapsed) return;
+      if (multiSelection.addFromDomRange(range, frame, session, viewModel)) {
+        multiSelection.paint(frame, root, projection.ignored);
+        notifyFormat();
+      }
+    };
+    frame.addEventListener("pointerup", captureMultiRange, { signal: viewControls.signal });
+    frame.addEventListener("dblclick", captureMultiRange, { signal: viewControls.signal });
     root.addEventListener("paste", paste as EventListener, { signal: viewControls.signal });
     root.addEventListener(
       "copy",
@@ -2699,11 +5067,18 @@ export function mountDocumentTextEditor(
     restoreZoomAnchor(stage, plane, zoom, anchor);
   }
   function setZoom(value: number): void {
-    if (disposed || !Number.isFinite(value) || value < 0.5 || value > 2)
-      throw new DocumentError("InvalidOperation", "缩放范围为 50% 至 200%。");
+    if (disposed || !Number.isFinite(value) || value < 0.25 || value > 4)
+      throw new DocumentError("InvalidOperation", "缩放范围为 25% 至 400%。");
     const anchor = captureZoomAnchor(stage, plane, zoom);
     zoom = value;
     resizePlane(anchor);
+  }
+  function fitPage(mode: WordPageZoomMode): number {
+    const metadata = wordMetadata();
+    const setup = preview.layout().pages[0]?.setup ?? metadata.pageSetup;
+    const target = computeWordFitZoom(stage, setup.width, setup.height, mode);
+    setZoom(target);
+    return target;
   }
   const geometryObserver = new ResizeObserver(() => resizePlane());
   geometryObserver.observe(stage);
@@ -2757,12 +5132,26 @@ export function mountDocumentTextEditor(
     },
     formatState,
     setZoom,
+    fitPage,
     async goToPage(page) {
       await ready;
       flushLayout();
       const report = await preview.settled();
       resizePlane();
       scrollToWordPage(stage, preview.element, report, page, zoom);
+    },
+    setShowGridlines(visible) {
+      showGridlines = visible;
+      if (frame) {
+        for (const paper of frame.querySelectorAll<HTMLElement>(".sdk-paper")) {
+          if (visible) paper.dataset.sdkGridlines = "true";
+          else delete paper.dataset.sdkGridlines;
+        }
+      }
+    },
+    printDocument() {
+      flushLayout();
+      return preview.printDocument();
     },
     editStory,
     selection() {
@@ -2773,11 +5162,12 @@ export function mountDocumentTextEditor(
       const manifest = session.snapshot().manifest;
       return { documentId: manifest.documentId, baseRevision: manifest.revision, anchor };
     },
-    clipboard(action) {
+    clipboard(action, clipOptions) {
       if (!root || disposed || composing)
         return Promise.reject(new DocumentError("InvalidOperation", "正文尚不可编辑。"));
       const expected = revision,
         selection = JSON.stringify(bookmark(root, projection.ignored));
+      pendingPasteMode = action === "paste" ? clipOptions?.pasteMode : undefined;
       return executeClipboard(
         root,
         () => {
@@ -2790,7 +5180,11 @@ export function mountDocumentTextEditor(
           !composing &&
           revision === expected &&
           (!root || JSON.stringify(bookmark(root, projection.ignored)) === selection),
-      );
+        clipOptions?.pasteMode,
+      ).catch((reason) => {
+        pendingPasteMode = undefined;
+        throw reason;
+      });
     },
     layout(current = false) {
       if (current) flushLayout();
@@ -2848,6 +5242,16 @@ export function mountDocumentTextEditor(
       linkControls.dispose();
       referenceControls.dispose();
       drawingControls.dispose();
+      toolsControls.dispose();
+      parityControls.dispose();
+      academicControls.dispose();
+      templateControls.dispose();
+      multiSelection.clear();
+      clearLivePreview();
+      tabStopController?.abort();
+      tabStopDialog?.close();
+      tabStopDialog?.dialog.remove();
+      contextMenu.dispose();
       listControls.dispose();
       styleControls.dispose();
       fontControls.dispose();

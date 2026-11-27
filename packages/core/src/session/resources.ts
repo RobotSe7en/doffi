@@ -107,6 +107,9 @@ export function checkResourceUse(
   for (const drawing of metadata?.word?.drawings ?? [])
     if (drawing.kind === "chart" && after.hasNode(drawing.nodeId))
       for (const part of drawing.chart.native?.parts ?? []) unused.delete(part.assetPath);
+  for (const definition of metadata?.word?.numbering ?? [])
+    for (const level of definition.levels)
+      if (level.pictureBulletAssetPath) unused.delete(level.pictureBulletAssetPath);
   const native = metadata?.word?.nativeContent;
   if (native) {
     const pending: string[] = [],

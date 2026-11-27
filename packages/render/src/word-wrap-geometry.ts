@@ -19,6 +19,7 @@ export interface WrapInterval {
 export function wordDrawingCollisionBounds(
   position: { left: number; top: number },
   geometry: DeepReadonly<WordDrawing["geometry"]>,
+  extent?: DeepReadonly<NonNullable<WordDrawing["layout"]["effectExtent"]>>,
 ): WrapBounds {
   const points = wordWrapPoints(
     [
@@ -31,10 +32,10 @@ export function wordDrawingCollisionBounds(
     geometry,
   );
   return {
-    left: Math.min(...points.map(({ x }) => x)),
-    right: Math.max(...points.map(({ x }) => x)),
-    top: Math.min(...points.map(({ y }) => y)),
-    bottom: Math.max(...points.map(({ y }) => y)),
+    left: Math.min(...points.map(({ x }) => x)) - (extent?.left ?? 0) / .75,
+    right: Math.max(...points.map(({ x }) => x)) + (extent?.right ?? 0) / .75,
+    top: Math.min(...points.map(({ y }) => y)) - (extent?.top ?? 0) / .75,
+    bottom: Math.max(...points.map(({ y }) => y)) + (extent?.bottom ?? 0) / .75,
   };
 }
 

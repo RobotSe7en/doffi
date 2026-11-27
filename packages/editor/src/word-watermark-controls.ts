@@ -5,6 +5,7 @@ import type {
   DocumentOperation,
   TransactionPrepareOptions,
 } from "@doffi/core";
+import { createOfficeDialog } from "./office-dialog.js";
 export function createWordWatermarkControls(
   parent: ShadowRoot,
   before: HTMLElement,
@@ -16,9 +17,14 @@ export function createWordWatermarkControls(
   dispose(): void;
 } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let dialogUI: ReturnType<typeof createOfficeDialog> | undefined,
+    panel: HTMLElement | undefined,
+    controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
+    dialogUI?.close();
+    dialogUI?.dialog.remove();
+    dialogUI = undefined;
     panel?.remove();
     panel = undefined;
   };
@@ -26,12 +32,18 @@ export function createWordWatermarkControls(
     close();
     controller = new AbortController();
     const signal = controller.signal;
+    dialogUI = createOfficeDialog(document, "水印");
+    dialogUI.dialog.style.width = "480px";
+    dialogUI.content.style.minHeight = "0";
+    dialogUI.content.style.marginTop = "12px";
     panel = document.createElement("section");
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", "水印设置");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;display:flex;flex-wrap:wrap;gap:8px";
-    parent.insertBefore(panel, before);
+    panel.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px";
+    dialogUI.content.append(panel);
+    parent.insertBefore(dialogUI.dialog, before);
+    dialogUI.dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); }, { signal });
+    dialogUI.show();
     const field = (name: string, type: string, value: string): HTMLInputElement => {
       const label = document.createElement("label"),
         input = document.createElement("input");
@@ -59,7 +71,8 @@ export function createWordWatermarkControls(
         },
         { signal },
       );
-      panel!.append(button);
+      if (name === "关闭水印设置") dialogUI!.footer.append(button);
+      else panel!.append(button);
     };
     button("关闭水印设置", close);
     const text = field("水印文字", "text", "机密"),

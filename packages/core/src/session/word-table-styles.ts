@@ -95,7 +95,15 @@ export function refreshWordTableStyles(
         entries.push({ name, properties, weight: 5 });
     };
     const base = resolveWordTableStyle(word, read, styleId, []);
-    assign(info.nodeId, "table", { "margin-left": "-5.4pt", ...base.table });
+    // Context classes are the previous projection. Read the table's own
+    // declarations without them so direct native inside borders survive a
+    // row edit, and nested tables do not inherit an outer table's strokes.
+    const tableSource = project(info.nodeId),
+      ownTable = resolver.specified({ ...tableSource, attrs: { ...tableSource.attrs,
+        class: (table.attributes.class ?? "").split(/\s+/).filter(name => !ownClasses.has(name)).join(" "),
+      } }),
+      borders = { ...base.table, ...ownTable };
+    assign(info.nodeId, "table", { "margin-left": "0pt", ...base.table });
     const rows = table.childNodeIds.flatMap((id) => {
       const node = source.peekNode(id)!;
       return node.tagName === "tr"
@@ -148,13 +156,13 @@ export function refreshWordTableStyles(
           ),
           value = resolveWordTableStyle(word, read, styleId, regions),
           inner: Record<string, string> = {};
-        if (base.table["--word-border-inside-h"] && rowIndex > 0)
+        if (borders["--word-border-inside-h"] && rowIndex > 0)
           inner["border-top"] = "var(--word-border-inside-h)";
-        if (base.table["--word-border-inside-v"] && column > 0)
+        if (borders["--word-border-inside-v"] && column > 0)
           inner["border-left"] = "var(--word-border-inside-v)";
         assign(cellId, "cell", {
-          "padding-left": "5.4pt",
-          "padding-right": "5.4pt",
+          "padding-left": "0pt",
+          "padding-right": "0pt",
           ...inner,
           ...wordRowExceptionCellProperties(exception, column, span, info.grid.length),
           ...value.cell,

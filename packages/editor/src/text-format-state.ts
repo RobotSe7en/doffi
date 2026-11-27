@@ -1,12 +1,50 @@
+export interface WordEditorState {
+  readonly trackChanges?: boolean;
+  readonly reviewDisplay?: "all" | "simple" | "final" | "original";
+  readonly protectionEdit?: "none" | "readOnly" | "comments" | "trackedChanges" | "forms";
+  readonly protectionEnforced?: boolean;
+  readonly automaticHyphenation?: boolean;
+  readonly lineNumbersRestart?: "newPage" | "newSection" | "continuous";
+  readonly pageBackgroundColor?: string;
+  readonly themeName?: string;
+  readonly differentFirstPage?: boolean;
+  readonly evenAndOddHeaders?: boolean;
+  readonly dropCap?: "drop" | "margin";
+  readonly rubyActive?: boolean;
+  readonly outlineLevel?: number | null;
+  readonly bibliographyStyle?: "APA" | "MLA" | "GB7714" | "Chicago" | "IEEE";
+  readonly tableToolMode?: "off" | "draw" | "erase";
+  readonly multiRangeCount?: number;
+  readonly themeMajorLatin?: string;
+  readonly themeMinorLatin?: string;
+  readonly themeMajorEastAsia?: string;
+  readonly themeMinorEastAsia?: string;
+  readonly templateName?: string;
+  readonly pageOrientation?: "portrait" | "landscape";
+  readonly columnCount?: number;
+  readonly tableFirstRow?: boolean;
+  readonly tableLastRow?: boolean;
+  readonly tableFirstCol?: boolean;
+  readonly tableLastCol?: boolean;
+  readonly tableBandedRows?: boolean;
+  readonly tableBandedCols?: boolean;
+}
 export interface TextFormatState {
   readonly enabled: boolean;
   readonly hasSelection?: boolean;
   readonly editingText?: boolean;
+  readonly editingInPlace?: boolean;
+  readonly drawingKind?: string;
+  readonly drawingCount?: number;
   readonly storyKind?: string;
   readonly bold?: boolean;
   readonly italic?: boolean;
   readonly underline?: boolean;
   readonly strikethrough?: boolean;
+  readonly doubleStrikethrough?: boolean;
+  readonly characterBorder?: boolean;
+  readonly inTable?: boolean;
+  readonly themeColors?: readonly string[];
   readonly verticalAlign?: string;
   readonly backgroundColor?: string;
   readonly fontSize?: number;
@@ -16,6 +54,7 @@ export interface TextFormatState {
   readonly paragraphStyleId?: string;
   readonly characterProperties?: Readonly<Record<string, string>>;
   readonly paragraphProperties?: Readonly<Record<string, string>>;
+  readonly wordState?: WordEditorState;
   readonly numberPreview?: string;
   readonly numberFormatCode?: string;
   readonly numberFormatBuiltinId?: number;
@@ -164,9 +203,91 @@ export function readTextFormat(
           }),
         );
   const characterProperties: Record<string, string> = {};
-  for (const key of ["letter-spacing", "--word-font-ascii", "--word-font-hAnsi", "--word-font-eastAsia", "--word-font-cs", "--word-font-size-cs", "--word-bold-cs", "--word-italic-cs", "--word-kerning-threshold", "--word-run-snap-to-grid", "--word-language-val", "--word-language-eastAsia", "--word-language-bidi"]) {
-    const value = uniform(style => style.getPropertyValue(key).trim()); if (value) characterProperties[key] = value;
+  for (const key of [
+    "letter-spacing",
+    "text-decoration-style",
+    "text-decoration-color",
+    "font-variant",
+    "text-transform",
+    "--word-run-native-w",
+    "--word-dstrike",
+    "--word-underline-style",
+    "--word-run-native-vanish",
+    "--word-run-native-position",
+    "--word-run-native-em",
+    "--word-run-native-outline",
+    "--word-run-native-shadow",
+    "--word-run-native-emboss",
+    "--word-run-native-imprint",
+    "--word-text-glow",
+    "--word-text-outline",
+    "--word-text-shadow",
+    "--word-text-reflection",
+    "--word-text-fill-gradient",
+    "--word-text-bevel",
+    "--word-text-3d",
+    "--word-ea-combine",
+    "--word-ea-vert",
+    "--word-fit-text",
+    "--word-run-border",
+    "--word-opentype-ligatures",
+    "--word-opentype-num-spacing",
+    "--word-opentype-num-form",
+    "--word-opentype-stylistic-set",
+    "--word-opentype-contextual-alternates",
+    "--word-font-ascii",
+    "--word-font-hAnsi",
+    "--word-font-eastAsia",
+    "--word-font-cs",
+    "--word-font-size-cs",
+    "--word-bold-cs",
+    "--word-italic-cs",
+    "--word-kerning-threshold",
+    "--word-run-snap-to-grid",
+    "--word-language-val",
+    "--word-language-eastAsia",
+    "--word-language-bidi",
+  ]) {
+    const value =
+      range.collapsed && typing.has(key)
+        ? typing.get(key)
+        : uniform(
+            (style) =>
+              style.getPropertyValue(key).trim() || (key === "--word-run-native-w" ? "100" : ""),
+          );
+    if (value) characterProperties[key] = value;
   }
+  const doubleStrikethrough =
+    range.collapsed && typing.has("--word-dstrike")
+      ? typing.get("--word-dstrike") === "1"
+      : same(styles.map((style) => style.getPropertyValue("--word-dstrike").trim() === "1"));
+  const characterBorder =
+    range.collapsed && typing.has("--word-run-border")
+      ? Boolean(typing.get("--word-run-border") && typing.get("--word-run-border") !== "none")
+      : same(
+          styles.map((style) => {
+            const border = style.getPropertyValue("--word-run-border").trim();
+            return Boolean(border && border !== "none");
+          }),
+        );
+  const inTable = elements.length > 0 && elements.every((element) => Boolean(element.closest("td,th")));
+  const themeOwner = root.closest<HTMLElement>('[data-office-kind="document"]') ?? root;
+  const rootStyle = view.getComputedStyle(themeOwner);
+  const themeSlots = [
+    "--office-theme-lt1",
+    "--office-theme-dk1",
+    "--office-theme-lt2",
+    "--office-theme-dk2",
+    "--office-theme-accent1",
+    "--office-theme-accent2",
+    "--office-theme-accent3",
+    "--office-theme-accent4",
+    "--office-theme-accent5",
+    "--office-theme-accent6",
+  ].map((slot) => rootStyle.getPropertyValue(slot).trim().toLowerCase());
+  const themeColors = themeSlots.every((color) => /^#[0-9a-f]{6}$/i.test(color))
+    ? themeSlots
+    : undefined;
   const paragraphStyleId = same(
     elements.map(
       (element) => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")?.dataset.wordStyle,
@@ -174,10 +295,17 @@ export function readTextFormat(
   );
   const paragraphs = [...new Set(elements.map(element => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")).filter((element): element is HTMLElement => Boolean(element)))];
   const paragraphProperties: Record<string, string> = {};
-  for (const key of ["margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom", "line-height", "font-size", "text-align", "widows", "break-after", "break-inside", "break-before", "--word-line-rule", "--word-contextual-spacing", "--word-paragraph-snap-to-grid", "--word-kinsoku", "--word-word-wrap", "--word-overflow-punctuation", "--word-top-line-punctuation", "--word-auto-space-de", "--word-auto-space-dn"]) {
+  for (const key of ["margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom", "line-height", "font-size", "text-align", "background-color", "border-top", "border-right", "border-bottom", "border-left", "widows", "break-after", "break-inside", "break-before", "--word-line-rule", "--word-contextual-spacing", "--word-paragraph-snap-to-grid", "--word-kinsoku", "--word-word-wrap", "--word-overflow-punctuation", "--word-top-line-punctuation", "--word-auto-space-de", "--word-auto-space-dn", "--word-drop-cap", "--word-drop-cap-lines", "--word-drop-cap-space", "--word-distributed"]) {
     const value = same(paragraphs.map(paragraph => view.getComputedStyle(paragraph).getPropertyValue(key).trim()));
     if (value) paragraphProperties[key] = value;
   }
+  const outlineLevelAttr = same(paragraphs.map((paragraph) => {
+    const explicit = paragraph.getAttribute("data-word-outline-level");
+    if (explicit !== null) return explicit;
+    const h = /^h([1-6])$/i.exec(paragraph.tagName);
+    return h ? String(Number(h[1]) - 1) : "";
+  }));
+  if (outlineLevelAttr) paragraphProperties["--doffi-outline-level"] = outlineLevelAttr;
   const color =
       range.collapsed && typing.has("color")
         ? typing.get("color")
@@ -190,6 +318,10 @@ export function readTextFormat(
     ...(paragraphs.length ? { paragraphProperties } : {}),
     ...(paragraphStyleId === undefined ? {} : { paragraphStyleId }),
     ...(strike === undefined ? {} : { strikethrough: strike }),
+    ...(doubleStrikethrough === undefined ? {} : { doubleStrikethrough }),
+    ...(characterBorder === undefined ? {} : { characterBorder }),
+    ...(inTable ? { inTable: true } : {}),
+    ...(themeColors ? { themeColors } : {}),
     ...(verticalAlign === undefined ? {} : { verticalAlign }),
     ...(backgroundColor === undefined ? {} : { backgroundColor }),
     ...(weight === undefined ? {} : { bold: weight === "bold" || Number(weight) >= 600 }),

@@ -1,4 +1,5 @@
-import { ownViewStyle } from "./view-nodes.js";
+import { ownViewStyle, ownViewAttribute } from "./view-nodes.js";
+import { wordFontHasHan } from "./word-font-probe.js";
 
 /** Preserve the native multiplier for section grids after resolving it to pixels. */
 export const wordAutoLineMultipliers: WeakMap<HTMLElement, number> = new WeakMap();
@@ -82,21 +83,24 @@ export function composeWordAutoLineSpacing(document: Document, scope: ParentNode
       known = heights.get(key);
     if (known !== undefined) return known;
 
+    // A CJK face retains its native line metrics for Latin text too.
+    const sampleSize = 4096;
+    const cjkFace = context && wordFontHasHan(document, context, css);
+    if (context) context.font = `${fontStyle} ${fontWeight} ${sampleSize}px ${fontFamily}`;
+    const latin = context?.measureText("M"), han = context?.measureText("汉");
     let height: number;
-    if (eastAsian) {
+    if (eastAsian || cjkFace) {
       // Measure at a larger size to avoid rounding before scaling to the
       // authored size. Linux's Noto Sans CJK SC bounds already supply the
       // leading measured in the fixed native reference.
-      const sampleSize = 256;
-      if (context) context.font = `${fontStyle} ${fontWeight} ${sampleSize}px ${fontFamily}`;
-      const metrics = context?.measureText("汉"),
+      const metrics = eastAsian ? han : latin,
         measured = (metrics?.fontBoundingBoxAscent ?? 0) + (metrics?.fontBoundingBoxDescent ?? 0);
       const includesLeading = linux && measured > 0 && /^"?Noto Sans CJK SC"?(?:,|$)/i.test(fontFamily);
       height = (measured > 0 ? measured / sampleSize : 1) * size * (includesLeading ? 1 : 1.3);
     } else {
       if (!probe.isConnected) document.body.append(probe);
-      Object.assign(probe.style, { fontFamily, fontSize, fontWeight, fontStyle });
-      height = Math.max(probe.getBoundingClientRect().height, size * 1.15);
+      Object.assign(probe.style, { fontFamily, fontSize: sampleSize + "px", fontWeight, fontStyle });
+      height = Math.max(probe.getBoundingClientRect().height / sampleSize * size, size * 1.15);
     }
     heights.set(key, height);
     return height;
@@ -106,9 +110,11 @@ export function composeWordAutoLineSpacing(document: Document, scope: ParentNode
     const multiple = autoLineMultiplier(paragraph, view);
     if (!Number.isFinite(multiple) || multiple <= 0) continue;
     wordAutoLineMultipliers.set(paragraph, multiple);
+    ownViewAttribute(paragraph, "data-sdk-word-auto-line-multiple");
+    paragraph.dataset.sdkWordAutoLineMultiple = String(multiple);
     const mark = paragraph.querySelector<HTMLElement>(':scope > [data-word-paragraph-mark="true"]');
     if (mark) applyParagraphMarkFont(paragraph, mark, view);
-    const nodes = [paragraph, ...paragraph.querySelectorAll<HTMLElement>("[data-word-script]")];
+    const nodes = [paragraph, ...paragraph.querySelectorAll<HTMLElement>("[data-word-run],[data-word-script]")];
     for (const node of nodes) {
       const height = single(view.getComputedStyle(node), node.dataset.wordScript === "eastAsia");
       ownViewStyle(node, "line-height");

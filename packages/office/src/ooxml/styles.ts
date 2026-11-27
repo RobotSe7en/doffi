@@ -4,6 +4,11 @@ import {
   passiveWordRunBooleans,
   passiveWordRunValues,
   passiveWordRunCss,
+  wordUnderlineValues,
+  wordEmphasisValues,
+  wordOpenTypeLigatures,
+  wordOpenTypeNumSpacings,
+  wordOpenTypeNumForms,
 } from "./word-passive-run-properties.js";
 import {
   passiveWordParagraphBooleans,
@@ -16,7 +21,10 @@ import type { WordMetadata, WordNumberLevel } from "@doffi/core";
 import type { OpcPackage } from "./package.js";
 import {
   A,
+  R,
   W,
+  W14,
+  WP,
   attr,
   check,
   child,
@@ -25,7 +33,6 @@ import {
   number,
   on,
   unsupported,
-  unsupportedType,
 } from "./xml.js";
 import type { XmlNode } from "./xml.js";
 
@@ -139,11 +146,22 @@ export class DocxStyles {
   private readonly resolved = new Map<string, StyleValues>();
   private readonly themeColors = new Map<string, string>();
   private readonly themeFonts = new Map<string, string>();
+  private themeName: string | undefined;
+  private colorSchemeName: string | undefined;
+  private fontSchemeName: string | undefined;
   private readonly locale: string;
+  private readonly bidiLocale: string;
   readonly language: string | undefined;
 
   private readonly stylePart: string | undefined;
-  constructor(opc: OpcPackage, main: string, private readonly compatibleImport = false) {
+  private readonly opc: OpcPackage;
+  constructor(
+    opc: OpcPackage,
+    main: string,
+    private readonly compatibleImport = false,
+    private readonly onImage?: (part: string, source: XmlNode) => string,
+  ) {
+    this.opc = opc;
     this.stylePart = opc.related(main, "styles");
     const stylePath = opc.related(main, "styles");
     const styleRoot = stylePath ? opc.read(stylePath) : undefined;
@@ -152,18 +170,25 @@ export class DocxStyles {
       "lang",
     );
     this.language = attr(defaultLanguage, "val");
-    this.locale = attr(defaultLanguage, "eastAsia") ?? attr(defaultLanguage, "val") ?? "en-US";
+    const settingsPath = opc.related(main, "settings"),
+      themeLanguage = settingsPath ? child(opc.read(settingsPath), "themeFontLang") : undefined;
+    this.locale = attr(defaultLanguage, "eastAsia") ?? attr(themeLanguage, "eastAsia") ?? attr(defaultLanguage, "val") ?? "en-US";
+    this.bidiLocale = attr(defaultLanguage, "bidi") ?? attr(themeLanguage, "bidi") ?? "ar-SA";
     const themePath = opc.related(main, "theme");
     if (themePath) {
       const root = opc.read(themePath);
+      this.themeName = attr(root, "name", "");
       const theme = child(root, "themeElements", A);
-      for (const color of elements(child(theme, "clrScheme", A), undefined, A)) {
+      const clrScheme = child(theme, "clrScheme", A);
+      this.colorSchemeName = attr(clrScheme, "name", "");
+      for (const color of elements(clrScheme, undefined, A)) {
         const values = elements(color, undefined, A);
         const item = values[0];
         const value = attr(item, item?.name === "sysClr" ? "lastClr" : "val", "");
         if (value && /^[0-9a-f]{6}$/i.test(value)) this.themeColors.set(color.name, value);
       }
       const fonts = child(theme, "fontScheme", A);
+      this.fontSchemeName = attr(fonts, "name", "");
       for (const family of ["major", "minor"]) {
         const group = child(fonts, family + "Font", A);
         for (const [suffix, name] of [
@@ -178,7 +203,8 @@ export class DocxStyles {
         for (const font of elements(group, "font", A)) {
           const script = attr(font, "script", "");
           const face = attr(font, "typeface", "");
-          if (script && face) this.themeFonts.set(family + "EastAsia:" + script, face);
+          if (script && face) for (const role of ["EastAsia", "Bidi"])
+            this.themeFonts.set(family + role + ":" + script, face);
         }
       }
     }
@@ -188,6 +214,9 @@ export class DocxStyles {
     check(root, ["docDefaults", "latentStyles", "style"]);
     const docDefaults = child(root, "docDefaults");
     this.defaults = empty();
+    // Omitted native spacing means single automatic spacing independently of
+    // the browser's default paragraph line-height.
+    this.defaults.p["line-height"] = "1";
     Object.assign(this.defaults.r, this.run(child(child(docDefaults, "rPrDefault"), "rPr")));
     Object.assign(this.defaults.p, this.paragraph(child(child(docDefaults, "pPrDefault"), "pPr")));
     this.defaults.tabs = mergeTabs(
@@ -349,6 +378,10 @@ export class DocxStyles {
       const value = this.resolve(style.styleId);
       const definition = this.definitions.get(style.styleId)!;
       const parent = style.basedOn ? this.resolve(style.basedOn) : empty();
+      const intrinsic = this.intrinsicTableStyle(definition);
+      const fallback = (values: Css, inherited: Css): Css => Object.fromEntries(
+        Object.entries(values).filter(([key]) => inherited[key] === undefined),
+      );
       style.paragraphProperties = Object.keys(this.paragraph(child(definition, "pPr")));
       style.runProperties = Object.keys(
         this.run(child(definition, "rPr"), parent.r, style.kind !== "table"),
@@ -364,10 +397,11 @@ export class DocxStyles {
             ? {
                 table: this.component(
                   style.cssClass + "-table",
-                  this.table(child(definition, "tblPr")),
+                  { ...fallback(intrinsic.table, parent.table), ...this.table(child(definition, "tblPr")) },
                 ),
                 row: this.component(style.cssClass + "-row", this.row(child(definition, "trPr"))),
                 cell: this.component(style.cssClass + "-cell", {
+                  ...fallback(intrinsic.cell, parent.cell),
                   ...this.margins(child(child(definition, "tblPr"), "tblCellMar")),
                   ...this.cell(child(definition, "tcPr")),
                 }),
@@ -396,7 +430,7 @@ export class DocxStyles {
       }
     }
     const numPath = opc.related(main, "numbering");
-    if (numPath) this.readNumbering(opc.read(numPath));
+    if (numPath) this.readNumbering(opc.read(numPath), numPath);
   }
   private readonly componentValues = new Map<string, Css>();
   component(name: string, values: Css): string {
@@ -419,6 +453,42 @@ export class DocxStyles {
     return [...this.css, ...grouped].join("\n");
   }
   readComponent = (name: string): Css => this.componentValues.get(name) ?? {};
+  themeMetadata(): WordMetadata["theme"] {
+    if (!this.themeColors.size && !this.themeFonts.size) return undefined;
+    const allowed = new Set([
+      "dk1",
+      "lt1",
+      "dk2",
+      "lt2",
+      "accent1",
+      "accent2",
+      "accent3",
+      "accent4",
+      "accent5",
+      "accent6",
+      "hlink",
+      "folHlink",
+    ]);
+    const colors: Record<string, string> = {};
+    for (const [role, value] of this.themeColors)
+      if (allowed.has(role)) colors[role] = value.toUpperCase();
+    const majorLatin = this.themeFonts.get("majorAscii");
+    const minorLatin = this.themeFonts.get("minorAscii");
+    const majorEastAsia =
+      this.themeFonts.get("majorEastAsia") ?? this.themeFonts.get("majorEastAsia:Hans");
+    const minorEastAsia =
+      this.themeFonts.get("minorEastAsia") ?? this.themeFonts.get("minorEastAsia:Hans");
+    return {
+      ...(this.themeName ? { name: this.themeName } : {}),
+      ...(this.colorSchemeName ? { colorSchemeName: this.colorSchemeName } : {}),
+      ...(Object.keys(colors).length ? { colors } : {}),
+      ...(this.fontSchemeName ? { fontSchemeName: this.fontSchemeName } : {}),
+      ...(majorLatin ? { majorLatin } : {}),
+      ...(minorLatin ? { minorLatin } : {}),
+      ...(majorEastAsia ? { majorEastAsia } : {}),
+      ...(minorEastAsia ? { minorEastAsia } : {}),
+    };
+  }
   drawingThemeProperties(): Css {
     const result: Css = {};
     for (const [role, value] of this.themeColors) result["--office-theme-" + role] = "#" + value;
@@ -515,6 +585,24 @@ export class DocxStyles {
       "oMath",
       ...(allowRevision ? ["rPrChange"] : []),
       ...(paragraphMark ? ["ins", "del", "moveFrom", "moveTo"] : []),
+    ], W, [
+      {
+        uri: W14,
+        names: [
+          "glow",
+          "shadow",
+          "reflection",
+          "textOutline",
+          "textFill",
+          "scene3d",
+          "props3d",
+          "ligatures",
+          "numForm",
+          "numSpacing",
+          "stylisticSets",
+          "cntxtAlts",
+        ],
+      },
     ]);
     const css: Css = {};
     if (child(properties, "snapToGrid"))
@@ -537,19 +625,24 @@ export class DocxStyles {
         ["cs", "cstheme"],
       ]) {
         const role = attr(fonts, themeName!);
-        const language =
+        const language = name === "cs" ? attr(child(properties, "lang"), "bidi") ?? this.bidiLocale :
           attr(child(properties, "lang"), "eastAsia") ??
           attr(child(properties, "lang"), "val") ??
           this.locale;
-        const script = /^ja/i.test(language)
+        let script = /^ja/i.test(language)
           ? "Jpan"
           : /^ko/i.test(language)
             ? "Hang"
             : /^zh-(?:TW|HK|MO|Hant)/i.test(language)
               ? "Hant"
               : "Hans";
+        if (name === "cs") {
+          try { script = new Intl.Locale(language).maximize().script ?? "Arab"; }
+          catch { script = "Arab"; }
+        }
         const face = role
-          ? (this.themeFonts.get(role) ?? this.themeFonts.get(role + ":" + script))
+          ? (this.themeFonts.get(role) ?? this.themeFonts.get(role + ":" + script)
+            ?? (/^(major|minor)Bidi$/.test(role) ? this.themeFonts.get(role.replace("Bidi", "HAnsi")) : undefined))
           : attr(fonts, name!);
         if (role && !face) unsupported(fonts, "A theme font cannot be resolved.");
         if (face) {
@@ -579,20 +672,31 @@ export class DocxStyles {
           : inactive!;
       }
     }
-    if (child(properties, "fitText")) unsupportedType(child(properties, "fitText")!);
-    for (const feature of [
-      "outline",
-      "shadow",
-      "emboss",
-      "imprint",
-      "effect",
-      "eastAsianLayout",
-      "oMath",
-    ]) {
+    const fitText = child(properties, "fitText");
+    if (fitText) {
+      const twips = number(val(fitText), fitText);
+      if (twips <= 0) fail(fitText, "Fit text width must be positive.");
+      css["--word-fit-text"] = pt(twips / 20);
+    }
+    const eaLayout = child(properties, "eastAsianLayout");
+    if (eaLayout) {
+      const flagOn = (raw: string | undefined): boolean =>
+        raw === "1" || raw === "true" || raw === "on";
+      if (flagOn(attr(eaLayout, "combine"))) {
+        const brackets = attr(eaLayout, "combineBrackets") ?? "none";
+        if (!["none", "round", "square", "angle", "curly"].includes(brackets))
+          fail(eaLayout, "Invalid East Asian combine brackets.");
+        css["--word-ea-combine"] = brackets;
+      }
+      if (flagOn(attr(eaLayout, "vert"))) {
+        css["--word-ea-vert"] = flagOn(attr(eaLayout, "vertCompress")) ? "compress" : "1";
+      }
+    }
+    for (const feature of ["effect", "oMath"]) {
       const item = child(properties, feature);
       if (item && (feature === "effect" ? val(item) !== "none" : on(item))) unsupported(item);
     }
-    for (const feature of ["vanish", "webHidden", "rtl", "cs", "specVanish"])
+    for (const feature of ["webHidden", "rtl", "cs", "specVanish"])
       if (on(child(properties, feature))) unsupported(child(properties, feature)!);
     const kerning = child(properties, "kern");
     if (kerning) css["--word-kerning-threshold"] = pt(number(val(kerning), kerning) / 2);
@@ -648,7 +752,13 @@ export class DocxStyles {
     const underline = child(properties, "u");
     const strike = child(properties, "strike"),
       doubleStrike = child(properties, "dstrike");
-    if (underline || strike || doubleStrike) {
+    if (doubleStrike) {
+      const enabled = on(doubleStrike);
+      if (!toggle || enabled)
+        css["--word-dstrike"] =
+          toggle && enabled && inherited["--word-dstrike"] === "1" ? "0" : enabled ? "1" : "0";
+    }
+    if (underline || strike) {
       const lines = new Set(
         (inherited["text-decoration-line"] ?? "")
           .split(/\s+/)
@@ -656,36 +766,38 @@ export class DocxStyles {
       );
       const type = val(underline) ?? "single";
       if (underline) {
-        if (!["none", "single", "double", "dotted", "dash", "wave"].includes(type))
-          unsupported(underline);
+        if (!(wordUnderlineValues as readonly string[]).includes(type)) unsupported(underline);
         if (type === "none") lines.delete("underline");
         else lines.add("underline");
+        css["--word-underline-style"] = type;
       }
-      const strikeNode = doubleStrike ?? strike;
-      if (strikeNode) {
-        const enabled = on(strikeNode);
+      if (strike) {
+        const enabled = on(strike);
         if (!toggle || enabled) {
           if (enabled && !(toggle && lines.has("line-through"))) lines.add("line-through");
           else lines.delete("line-through");
         }
       }
       css["text-decoration-line"] = [...lines].join(" ") || "none";
-      if (doubleStrike && on(doubleStrike) && underline && !["none", "double"].includes(type))
-        unsupported(
-          properties,
-          "Mixed underline and double-strike decoration styles are not supported.",
-        );
-      if (doubleStrike && on(doubleStrike)) css["text-decoration-style"] = "double";
-      else if (underline)
+      if (underline)
         css["text-decoration-style"] =
           type === "double"
             ? "double"
-            : type === "dotted"
+            : type === "dotted" || type === "dottedHeavy"
               ? "dotted"
-              : type === "dash"
-                ? "dashed"
-                : type === "wave"
-                  ? "wavy"
+              : type === "wave" || type === "wavyHeavy" || type === "wavyDouble"
+                ? "wavy"
+                : [
+                      "dash",
+                      "dashedHeavy",
+                      "dashLong",
+                      "dashLongHeavy",
+                      "dotDash",
+                      "dashDotHeavy",
+                      "dotDotDash",
+                      "dashDotDotHeavy",
+                    ].includes(type)
+                  ? "dashed"
                   : "solid";
       if (underline && (attr(underline, "color") || attr(underline, "themeColor")))
         css["text-decoration-color"] = this.color(underline, "color") ?? "currentColor";
@@ -706,14 +818,163 @@ export class DocxStyles {
         fail(width, "A run character scale must be a whole percent between 1 and 600.");
       css["--word-run-native-w"] = String(scale);
     }
-    for (const feature of ["position", "bdr", "em"]) {
-      const item = child(properties, feature);
+    const position = child(properties, "position");
+    if (position) {
+      const parsed = number(val(position), position);
+      if (parsed < -3170 || parsed > 3170)
+        fail(position, "A run character position must be between -3170 and 3170 half-points.");
+    }
+    const emphasis = child(properties, "em");
+    if (emphasis) {
+      const value = val(emphasis);
+      if (!value || !(wordEmphasisValues as readonly string[]).includes(value))
+        unsupported(emphasis, "An emphasis mark style is not supported.");
+    }
+    const runBorder = child(properties, "bdr");
+    if (runBorder) {
+      const style = attr(runBorder, "val") ?? "none";
+      const styles: Record<string, string> = {
+        none: "none",
+        nil: "none",
+        single: "solid",
+        double: "double",
+        dotted: "dotted",
+        dashed: "dashed",
+        dashSmallGap: "dashed",
+        thick: "solid",
+      };
       if (
-        item &&
-        !(feature === "position" && val(item) === "0") &&
-        !(feature === "em" && val(item) === "none")
+        !styles[style] ||
+        (attr(runBorder, "space") && number(attr(runBorder, "space"), runBorder) !== 0) ||
+        (attr(runBorder, "shadow") &&
+          !["0", "false", "off"].includes(attr(runBorder, "shadow")!)) ||
+        (attr(runBorder, "frame") && !["0", "false", "off"].includes(attr(runBorder, "frame")!))
       )
-        unsupported(item);
+        unsupported(runBorder, "A character border style is not supported.");
+      if (styles[style] === "none") css["--word-run-border"] = "none";
+      else {
+        const width = number(attr(runBorder, "sz"), runBorder, 4) / 8,
+          hasColor =
+            attr(runBorder, "color") !== undefined || attr(runBorder, "themeColor") !== undefined,
+          borderColor = !hasColor
+            ? "currentColor"
+            : (this.color(runBorder, "color") ?? "currentColor");
+        css["--word-run-border"] = pt(width) + " " + styles[style] + " " + borderColor;
+      }
+    }
+    const w14Color = (container: XmlNode | undefined): string => {
+      if (!container) return "#4472c4";
+      const srgb = child(container, "srgbClr", W14) ?? child(container, "srgbClr", A);
+      const raw = attr(srgb, "val", W14) ?? attr(srgb, "val", "");
+      if (raw && /^[0-9a-f]{6}$/i.test(raw)) return "#" + raw.toLowerCase();
+      const scheme = child(container, "schemeClr", W14) ?? child(container, "schemeClr", A);
+      const key = attr(scheme, "val", W14) ?? attr(scheme, "val", "");
+      if (key) {
+        const mapped = this.themeColors.get(key) ?? this.themeColors.get(key === "tx1" ? "dk1" : key === "bg1" ? "lt1" : key);
+        if (mapped) return "#" + mapped.toLowerCase();
+      }
+      return "#4472c4";
+    };
+    const glow = child(properties, "glow", W14);
+    if (glow) {
+      const rad = Number(attr(glow, "rad", W14) ?? "63500");
+      if (!Number.isFinite(rad) || rad < 0) fail(glow, "Invalid w14 glow radius.");
+      css["--word-text-glow"] = pt(rad / 12700) + " " + w14Color(glow);
+    }
+    const textOutline = child(properties, "textOutline", W14);
+    if (textOutline) {
+      const w = Number(attr(textOutline, "w", W14) ?? "9525");
+      if (!Number.isFinite(w) || w < 0) fail(textOutline, "Invalid w14 textOutline width.");
+      const solidFill = child(textOutline, "solidFill", W14);
+      css["--word-text-outline"] = pt(w / 12700) + " " + w14Color(solidFill);
+    }
+    const w14Shadow = child(properties, "shadow", W14);
+    if (w14Shadow) {
+      const blur = Number(attr(w14Shadow, "blurRad", W14) ?? "38100") / 12700;
+      const dist = Number(attr(w14Shadow, "dist", W14) ?? "25400") / 12700;
+      const dir = Math.round(Number(attr(w14Shadow, "dir", W14) ?? "2700000") / 60000);
+      css["--word-text-shadow"] = `${pt(blur)} ${pt(dist)} ${dir} ${w14Color(w14Shadow)}`;
+    }
+    const reflection = child(properties, "reflection", W14);
+    if (reflection) css["--word-text-reflection"] = "1";
+    const textFill = child(properties, "textFill", W14);
+    if (textFill) {
+      const gradFill = child(textFill, "gradFill", W14);
+      const gsLst = child(gradFill, "gsLst", W14);
+      if (gradFill && gsLst) {
+        const stops = elements(gsLst, "gs", W14)
+          .map((gs) => {
+            const pos = Math.max(0, Math.min(100, Math.round(Number(attr(gs, "pos", W14) ?? "0") / 1000)));
+            return `${w14Color(gs)} ${pos}%`;
+          })
+          .filter(Boolean);
+        if (stops.length >= 2) {
+          const lin = child(gradFill, "lin", W14);
+          const ang = lin ? Math.round(Number(attr(lin, "ang", W14) ?? "5400000") / 60000) : 90;
+          css["--word-text-fill-gradient"] = `${ang}deg ${stops.join(" ")}`;
+        }
+      }
+    }
+    const props3d = child(properties, "props3d", W14);
+    if (props3d) {
+      const bevelT = child(props3d, "bevelT", W14);
+      if (bevelT) {
+        const prst = attr(bevelT, "prst", W14) ?? "circle";
+        const w = Number(attr(bevelT, "w", W14) ?? "38100") / 12700;
+        const h = Number(attr(bevelT, "h", W14) ?? "38100") / 12700;
+        css["--word-text-bevel"] = `${prst} ${pt(w)} ${pt(h)}`;
+      }
+    }
+    const scene3d = child(properties, "scene3d", W14);
+    if (scene3d) {
+      const camera = child(scene3d, "camera", W14);
+      const prst = attr(camera, "prst", W14);
+      if (prst) css["--word-text-3d"] = prst;
+    }
+    const ligatures = child(properties, "ligatures", W14);
+    if (ligatures) {
+      const value = attr(ligatures, "val", W14);
+      if (!value || !(wordOpenTypeLigatures as readonly string[]).includes(value))
+        unsupported(ligatures, "An OpenType ligature setting is not supported.");
+      css["--word-opentype-ligatures"] = value;
+    }
+    const numSpacing = child(properties, "numSpacing", W14);
+    if (numSpacing) {
+      const value = attr(numSpacing, "val", W14);
+      if (!value || !(wordOpenTypeNumSpacings as readonly string[]).includes(value))
+        unsupported(numSpacing, "An OpenType number spacing setting is not supported.");
+      css["--word-opentype-num-spacing"] = value;
+    }
+    const numForm = child(properties, "numForm", W14);
+    if (numForm) {
+      const value = attr(numForm, "val", W14);
+      if (!value || !(wordOpenTypeNumForms as readonly string[]).includes(value))
+        unsupported(numForm, "An OpenType number form setting is not supported.");
+      css["--word-opentype-num-form"] = value;
+    }
+    const stylisticSets = child(properties, "stylisticSets", W14);
+    if (stylisticSets) {
+      check(stylisticSets, ["styleSet"], W14);
+      const active: number[] = [];
+      for (const item of elements(stylisticSets, "styleSet", W14)) {
+        const id = number(attr(item, "id", W14), item);
+        if (id < 1 || id > 20)
+          fail(item, "An OpenType stylistic set id must be between 1 and 20.");
+        const state = attr(item, "val", W14);
+        if (state !== undefined && !["on", "off", "1", "0", "true", "false"].includes(state))
+          fail(item, "An OpenType stylistic set value is invalid.");
+        if (state === undefined || ["on", "1", "true"].includes(state)) active.push(id);
+      }
+      const unique = [...new Set(active)].sort((a, b) => a - b);
+      css["--word-opentype-stylistic-set"] = unique.length ? unique.join(",") : "none";
+    }
+    const cntxtAlts = child(properties, "cntxtAlts", W14);
+    if (cntxtAlts) {
+      const state = attr(cntxtAlts, "val", W14);
+      if (state !== undefined && !["on", "off", "1", "0", "true", "false"].includes(state))
+        fail(cntxtAlts, "An OpenType contextual alternates value is invalid.");
+      css["--word-opentype-contextual-alternates"] =
+        state === undefined || ["on", "1", "true"].includes(state) ? "1" : "0";
     }
     for (const name of passiveWordRunBooleans) {
       const item = child(properties, name);
@@ -875,15 +1136,27 @@ export class DocxStyles {
       css.widows = count;
       css.orphans = count;
     }
-    for (const name of ["framePr", "bidi", "textDirection"]) {
+    const frame = child(properties, "framePr");
+    if (frame) {
+      const dropCap = attr(frame, "dropCap");
+      if (dropCap === "drop" || dropCap === "margin") {
+        const lines = number(attr(frame, "lines"), frame, 3);
+        const hSpace = number(attr(frame, "hSpace"), frame, 0);
+        if (lines < 1 || lines > 10) fail(frame, "Drop cap lines must be between 1 and 10.");
+        css["--word-drop-cap"] = dropCap;
+        css["--word-drop-cap-lines"] = String(lines);
+        css["--word-drop-cap-space"] = pt(hSpace / 20);
+      } else {
+        unsupported(frame, "A paragraph frame is not supported.");
+      }
+    }
+    for (const name of ["bidi", "textDirection"]) {
       const item = child(properties, name);
       if (
         item &&
-        (name === "framePr" ||
-          (name === "bidi" && on(item)) ||
-          (name === "textDirection" && val(item) !== "lrTb"))
+        ((name === "bidi" && on(item)) || (name === "textDirection" && val(item) !== "lrTb"))
       )
-        unsupported(item, "A paragraph frame or writing direction is not supported.");
+        unsupported(item, "A paragraph writing direction is not supported.");
     }
     for (const name of passiveWordParagraphBooleans) {
       const item = child(properties, name);
@@ -917,7 +1190,8 @@ export class DocxStyles {
       };
       if (border.name === "between")
         return unsupported(border, "Between-paragraph borders are not yet supported.");
-      if (!sides[border.name] && !["insideH", "insideV"].includes(border.name)) unsupported(border);
+      if (!sides[border.name] && !["insideH", "insideV", "tl2br", "tr2bl"].includes(border.name))
+        unsupported(border);
       if (
         number(attr(border, "space"), border, 0) !== 0 ||
         ["shadow", "frame"].some((name) => ["true", "1", "on"].includes(attr(border, name) ?? ""))
@@ -946,7 +1220,11 @@ export class DocxStyles {
           ? "--word-border-inside-h"
           : border.name === "insideV"
             ? "--word-border-inside-v"
-            : "border-" + sides[border.name]
+            : border.name === "tl2br"
+              ? "--word-border-tl2br"
+              : border.name === "tr2bl"
+                ? "--word-border-tr2bl"
+                : "border-" + sides[border.name]
       ] = pt(width) + " " + styles[style] + " " + color;
     }
     return result;
@@ -1009,7 +1287,13 @@ export class DocxStyles {
     } else if (align === "right") result["margin-left"] = "auto";
     else if (align && align !== "left" && align !== "start") unsupported(properties);
     const indent = child(properties, "tblInd");
-    if (indent) result["margin-left"] = this.width(indent, "margin-left")["margin-left"] ?? "0pt";
+    if (indent) {
+      const width = this.width(indent, "margin-left");
+      if (!["auto", "pct"].includes(attr(indent, "type") ?? "dxa")) {
+        result["margin-left"] = width["margin-left"] ?? "0pt";
+        result["--word-table-indent-origin"] = "native";
+      }
+    }
     const shade = child(properties, "shd");
     if (shade && attr(shade, "fill") !== "auto")
       result["background-color"] = this.color(shade, "fill") ?? "transparent";
@@ -1036,6 +1320,7 @@ export class DocxStyles {
       ),
     };
     const css = { ...this.table(current), ...this.margins(child(current, "tblCellMar")) };
+    delete css["--word-table-indent-origin"];
     delete css["border-collapse"];
     delete css["border-spacing"];
     for (const key of Object.keys(css))
@@ -1075,7 +1360,6 @@ export class DocxStyles {
     ]);
     for (const name of [
       "hidden",
-      "jc",
       ...(shared
         ? [
             "gridBefore",
@@ -1095,6 +1379,13 @@ export class DocxStyles {
       if (value) unsupported(value, "This row property remains native.");
     }
     const result: Css = { ...this.cellSpacing(properties) };
+    const alignment = child(properties, "jc");
+    if (alignment) {
+      const value = val(alignment);
+      if (!value || !["left", "center", "right", "start"].includes(value))
+        unsupported(alignment, "This row alignment remains native.");
+      result["--word-row-alignment"] = value;
+    }
     const split = child(properties, "cantSplit");
     if (split) result["break-inside"] = on(split) ? "avoid" : "auto";
     const header = child(properties, "tblHeader");
@@ -1246,6 +1537,7 @@ export class DocxStyles {
         : undefined;
     const outline = child(pPr, "outlineLvl");
     const tableProperties = child(source, "tblPr");
+    const intrinsic = this.intrinsicTableStyle(source);
     this.cellSpacing(child(source, "trPr"));
     const result: StyleValues = {
       p: { ...parent.p, ...paragraph },
@@ -1253,8 +1545,9 @@ export class DocxStyles {
         ...parent.r,
         ...this.run(child(source, "rPr"), parent.r, attr(source, "type") !== "table"),
       },
-      table: { ...parent.table, ...this.table(tableProperties) },
+      table: { ...intrinsic.table, ...parent.table, ...this.table(tableProperties) },
       cell: {
+        ...intrinsic.cell,
         ...parent.cell,
         ...this.margins(child(tableProperties, "tblCellMar")),
         ...this.cell(child(source, "tcPr")),
@@ -1267,6 +1560,18 @@ export class DocxStyles {
     visiting.delete(id);
     this.resolved.set(id, result);
     return result;
+  }
+  /** Word identifies a stock style by its canonical/localized name, not its
+   * document-local styleId. Materialize its fallback before ordinary inheritance
+   * so core editing and export need no stock-name branches. */
+  private intrinsicTableStyle(source: XmlNode): { table: Css; cell: Css } {
+    const name = val(child(source, "name"))?.toLowerCase();
+    if (attr(source, "type") !== "table" || ["1", "true", "on"].includes(attr(source, "customStyle") ?? "")
+      || (name !== "normal table" && name !== "普通表格")) return { table: {}, cell: {} };
+    return {
+      table: { "margin-left": "0pt", "--word-table-indent-origin": "native" },
+      cell: { "padding-top": "0pt", "padding-bottom": "0pt", "padding-left": "5.4pt", "padding-right": "5.4pt" },
+    };
   }
   hasStyle(id: string, kind: string): boolean {
     return attr(this.definitions.get(id), "type") === kind;
@@ -1354,11 +1659,58 @@ export class DocxStyles {
       },
     };
   }
-  private readNumbering(root: XmlNode): void {
+  private readNumbering(root: XmlNode, numberingPart: string): void {
     check(root, ["numPicBullet", "abstractNum", "num", "numIdMacAtCleanup"]);
-    if (elements(root, "numPicBullet").length)
-      unsupported(root, "Picture bullets are not supported.");
+    const picBullets = new Map<string, { assetPath: string; widthPt?: number; heightPt?: number }>();
+    const findDescendant = (node: XmlNode, predicate: (item: XmlNode) => boolean): XmlNode | undefined => {
+      for (const item of node.content) {
+        if (typeof item === "string") continue;
+        if (predicate(item)) return item;
+        const found = findDescendant(item, predicate);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const numRels = this.opc.relationships(numberingPart);
+    for (const bullet of elements(root, "numPicBullet")) {
+      const bulletId = attr(bullet, "numPicBulletId");
+      if (!bulletId) continue;
+      if (!this.onImage) unsupported(bullet, "Picture bullets require image asset registration.");
+      let relId: string | undefined;
+      let widthPt: number | undefined;
+      let heightPt: number | undefined;
+      const drawing = child(bullet, "drawing");
+      if (drawing) {
+        const blip = findDescendant(drawing, (item) => item.uri === A && item.name === "blip");
+        relId = attr(blip, "embed", R) ?? attr(blip, "link", R);
+        const extent = findDescendant(drawing, (item) => item.uri === WP && item.name === "extent");
+        const cx = Number(attr(extent, "cx", ""));
+        const cy = Number(attr(extent, "cy", ""));
+        if (Number.isFinite(cx) && cx > 0) widthPt = Math.round((cx / 12700) * 100) / 100;
+        if (Number.isFinite(cy) && cy > 0) heightPt = Math.round((cy / 12700) * 100) / 100;
+      } else {
+        const pict = child(bullet, "pict");
+        const imagedata = pict ? findDescendant(pict, (item) => item.name === "imagedata") : undefined;
+        relId = attr(imagedata, "id", R);
+        const shape = pict ? findDescendant(pict, (item) => item.name === "shape") : undefined;
+        const styleText = attr(shape, "style", "") ?? "";
+        const wm = /width\s*:\s*([0-9.]+)pt/i.exec(styleText);
+        const hm = /height\s*:\s*([0-9.]+)pt/i.exec(styleText);
+        if (wm) widthPt = Number(wm[1]);
+        if (hm) heightPt = Number(hm[1]);
+      }
+      if (!relId) unsupported(bullet, "Picture bullet image reference is missing.");
+      const rel = numRels.get(relId);
+      if (!rel || rel.external) unsupported(bullet, "External or missing picture bullet image.");
+      const assetPath = this.onImage(rel.target, bullet);
+      picBullets.set(bulletId, {
+        assetPath,
+        ...(widthPt && widthPt > 0 && widthPt <= 144 ? { widthPt } : {}),
+        ...(heightPt && heightPt > 0 && heightPt <= 144 ? { heightPt } : {}),
+      });
+    }
     const abstract = new Map<string, XmlNode>();
+    const abstractByStyleLink = new Map<string, XmlNode>();
     for (const definition of elements(root, "abstractNum")) {
       const id = attr(definition, "abstractNumId");
       if (!id || abstract.has(id)) fail(definition, "An abstract numbering identity is invalid.");
@@ -1371,9 +1723,9 @@ export class DocxStyles {
         "numStyleLink",
         "lvl",
       ]);
-      if (child(definition, "numStyleLink"))
-        unsupported(definition, "Numbering style links are not supported.");
       abstract.set(id, definition);
+      const styleLink = val(child(definition, "styleLink"));
+      if (styleLink) abstractByStyleLink.set(styleLink, definition);
     }
     const seen = new Set<string>();
     for (const definition of elements(root, "num")) {
@@ -1382,8 +1734,23 @@ export class DocxStyles {
       if (!id || seen.has(id) || !ref || !abstract.has(ref))
         fail(definition, "A numbering instance is invalid.");
       seen.add(id);
+      const absNode = abstract.get(ref)!;
+      const numStyleLink = val(child(absNode, "numStyleLink"));
+      const styleLink = val(child(absNode, "styleLink"));
+      const name = val(child(absNode, "name"));
+      const rawMulti = val(child(absNode, "multiLevelType"));
+      const multiLevelType =
+        rawMulti === "singleLevel" || rawMulti === "multilevel" || rawMulti === "hybridMultilevel"
+          ? rawMulti
+          : undefined;
+      const levelOwner =
+        elements(absNode, "lvl").length > 0
+          ? absNode
+          : numStyleLink && abstractByStyleLink.has(numStyleLink)
+            ? abstractByStyleLink.get(numStyleLink)!
+            : absNode;
       const levels: WordNumberLevel[] = [];
-      for (const source of elements(abstract.get(ref), "lvl")) {
+      for (const source of elements(levelOwner, "lvl")) {
         check(source, [
           "start",
           "numFmt",
@@ -1398,12 +1765,7 @@ export class DocxStyles {
           "pPr",
           "rPr",
         ]);
-        if (
-          child(source, "lvlPicBulletId") ||
-          child(source, "legacy") ||
-          on(child(source, "isLgl"))
-        )
-          unsupported(source);
+        if (child(source, "legacy")) unsupported(source);
         const level = number(attr(source, "ilvl"), source);
         const override = elements(definition, "lvlOverride").find(
           (item) => number(attr(item, "ilvl"), item) === level,
@@ -1439,6 +1801,9 @@ export class DocxStyles {
             "}",
         );
         const restart = child(source, "lvlRestart");
+        const picBulletRef = val(child(source, "lvlPicBulletId"));
+        const picBullet = picBulletRef !== undefined ? picBullets.get(picBulletRef) : undefined;
+        const isLgl = on(child(source, "isLgl")) ? true : undefined;
         levels.push({
           level,
           start: number(
@@ -1451,9 +1816,30 @@ export class DocxStyles {
           suffix: (val(child(source, "suff")) ?? "tab") as WordNumberLevel["suffix"],
           cssClass,
           ...(restart ? { restart: number(val(restart), restart) } : {}),
+          ...(picBullet
+            ? {
+                pictureBulletAssetPath: picBullet.assetPath,
+                ...(picBullet.widthPt !== undefined
+                  ? { pictureBulletWidthPt: picBullet.widthPt }
+                  : {}),
+                ...(picBullet.heightPt !== undefined
+                  ? { pictureBulletHeightPt: picBullet.heightPt }
+                  : {}),
+              }
+            : {}),
+          ...(styleId ? { pStyle: styleId } : {}),
+          ...(isLgl ? { isLgl: true } : {}),
         });
       }
-      this.numbering.push({ numberingId: id, levels });
+      if (!levels.length) continue;
+      this.numbering.push({
+        numberingId: id,
+        ...(name ? { name } : {}),
+        ...(multiLevelType ? { multiLevelType } : {}),
+        ...(styleLink ? { styleLink } : {}),
+        ...(numStyleLink ? { numStyleLink } : {}),
+        levels,
+      });
     }
   }
 }

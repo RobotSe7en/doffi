@@ -41,7 +41,7 @@ export interface WordDrawingReadContext {
   make(tag: string, attrs: Record<string, string>): WordDrawingHtml;
   asset(part: string, type: string): string;
   image(part: string, source: XmlNode): string;
-  story(source: XmlNode): string;
+  story(source: XmlNode, width: number): string;
   native(source: XmlNode, node: WordDrawingHtml): void;
   identity(source: XmlNode, id: string, nativeId: string | undefined): void;
   connector(
@@ -86,15 +86,16 @@ function textBody(
     autoFit = child(body, "spAutoFit", A) ? "shape" : fitting ? "normal" : "none";
   return {
     insets: {
-      top: points(body, "tIns", 3.6),
-      right: points(body, "rIns", 7.2),
-      bottom: points(body, "bIns", 3.6),
-      left: points(body, "lIns", 7.2),
+      top: points(body, "tIns", 45720),
+      right: points(body, "rIns", 91440),
+      bottom: points(body, "bIns", 45720),
+      left: points(body, "lIns", 91440),
     },
     vertical: vertical === "ctr" ? "middle" : vertical === "b" ? "bottom" : "top",
     direction:
       direction === "vert" ? "vertical" : direction === "vert270" ? "vertical270" : "horizontal",
     rotation: integer(body, "rot", 0) / 60000,
+    ...(attr(body, "upright", "") !== undefined ? { upright: valueBool(body, "upright") } : {}),
     wrap: wrap !== "none",
     autoFit,
     ...(fitting
@@ -302,6 +303,9 @@ export function importWordDrawing(
       left: points(frame, "distL", 0),
     },
   };
+  const effectExtent = child(frame, "effectExtent", WP);
+  if (effectExtent && ["l", "t", "r", "b"].some(key => integer(effectExtent, key, 0) !== 0))
+    layout.effectExtent = { left: points(effectExtent, "l", 0), top: points(effectExtent, "t", 0), right: points(effectExtent, "r", 0), bottom: points(effectExtent, "b", 0) };
   let x = 0,
     y = 0;
   if (anchor) {
@@ -377,6 +381,9 @@ export function importWordDrawing(
     layout.locked = valueBool(anchor, "locked");
     layout.zOrder = integer(anchor, "relativeHeight", 0);
   }
+  const nonvisual = child(frame, "docPr", WP);
+  if (attr(frame, "hidden", "") !== undefined || attr(nonvisual, "hidden", "") !== undefined)
+    layout.hidden = valueBool(frame, "hidden") || (nonvisual ? valueBool(nonvisual, "hidden") : false);
   const data = child(child(frame, "graphic", A), "graphicData", A),
     objects = data?.content.filter((node): node is XmlNode => typeof node !== "string") ?? [];
   if (objects.length !== 1) unsupported(source, "A drawing graphic requires one supported object.");
@@ -568,7 +575,9 @@ export function importWordDrawing(
         );
       } else {
         const body = child(child(native, "txbx", WPS), "txbxContent", W),
-          storyId = body ? context.story(body) : undefined;
+          bodyLayout = textBody(child(native, "bodyPr", WPS), source),
+          insets = bodyLayout.insets ?? { left: 7.2, right: 7.2 },
+          storyId = body ? context.story(body, Math.max(.01, g.width - insets.left - insets.right)) : undefined;
         if (kind === "textBox" && !storyId) fail(native, "A text box is missing its Word content.");
         definition =
           kind === "textBox"
@@ -602,6 +611,9 @@ export function importWordDrawing(
       );
       if (definition.kind === "shape" || definition.kind === "textBox")
         definition.text = textBody(child(native, "bodyPr", WPS), source);
+      const locks = child(child(native, connector ? "cNvCnPr" : "cNvSpPr", WPS), connector ? "cxnSpLocks" : "spLocks", A);
+      if (locks) definition.locks = Object.fromEntries(["noChangeArrowheads", "noChangeShapeType"]
+        .filter(key => attr(locks, key, "") !== undefined).map(key => [key, valueBool(locks, key)]));
     } else return unsupported(source, "This drawing object is preserved as native content.");
     const parsed = WordDrawingSchema.safeParse(definition);
     if (!parsed.success)

@@ -1,3 +1,5 @@
+import type { WordPageZoomMode } from "./viewport-zoom.js";
+import type { WordPasteMode } from "./clipboard-command.js";
 import type { TextFormatState } from "./text-format-state.js";
 import { DocumentError, parseContract } from "@doffi/core";
 import type {
@@ -48,6 +50,8 @@ export type DocumentWorkbenchEvent =
     };
 export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
   readonly onFormatStateChange?: (state: TextFormatState) => void;
+  readonly onPrint?: () => void;
+  readonly onImportTemplateFile?: import("./rich-text.js").DocumentTextEditorOptions["onImportTemplateFile"];
   readonly format?: "document";
   readonly editable?: boolean;
   readonly onSubmitAnnotations?: AnnotationSubmissionHandler;
@@ -56,9 +60,15 @@ export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
   readonly onEvent?: (event: DocumentWorkbenchEvent) => void;
 }
 export interface DocumentWorkbenchView extends DocumentInteractionView {
+  fitPage(mode: WordPageZoomMode): number;
+  setShowGridlines(visible: boolean): void;
+  printDocument(): Document;
+  stepAnnotation(direction: -1 | 1): void;
+  toggleActiveAnnotationResolved(): void;
+  removeActiveAnnotation(): void;
   setEditing(editing: boolean): Promise<void>;
   formatState(): TextFormatState;
-  clipboard(action: "copy" | "cut" | "paste"): Promise<void>;
+  clipboard(action: "copy" | "cut" | "paste", options?: { readonly pasteMode?: WordPasteMode }): Promise<void>;
   executeTextCommand(command: DocumentTextCommand): void;
   updateFields(): void;
   request(): DocumentInteractionRequest | undefined;
@@ -242,6 +252,8 @@ function mountContentWorkbench(
   }
   const interaction = mountDocumentInteraction(interactionHost, session, {
     ...(options.layout ? { layout: options.layout } : {}),
+    ...(options.draft ? { draft: options.draft } : {}),
+    ...(options.showGridlines ? { showGridlines: options.showGridlines } : {}),
     ...(options.limits ? { limits: options.limits } : {}),
     ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
     ...(options.title ? { title: options.title } : {}),
@@ -278,12 +290,31 @@ function mountContentWorkbench(
         }),
   });
   let edit: HTMLButtonElement | undefined,
-    zoom = 1;
+    zoom = 1,
+    showGridlines = Boolean(options.showGridlines);
+  function setShowGridlines(visible: boolean): void {
+    ensureActive();
+    showGridlines = visible;
+    textEditor?.setShowGridlines(visible);
+    interaction.setShowGridlines?.(visible);
+  }
+  function printDocument(): Document {
+    ensureActive();
+    if (textEditor) return textEditor.printDocument();
+    if (interaction.printDocument) return interaction.printDocument();
+    throw new DocumentError("InvalidOperation", "当前视图不支持打印。");
+  }
   function setZoom(value: number): void {
     ensureActive();
     if (textEditor) textEditor.setZoom(value);
     else interaction.setZoom(value);
     zoom = value;
+  }
+  function fitPage(mode: WordPageZoomMode): number {
+    ensureActive();
+    const target = textEditor ? textEditor.fitPage(mode) : interaction.fitPage!(mode);
+    zoom = target;
+    return target;
   }
   function setEditing(value: boolean): Promise<void> {
     ensureActive();
@@ -303,7 +334,14 @@ function mountContentWorkbench(
         ...(options.onFormatStateChange
           ? { onFormatStateChange: options.onFormatStateChange }
           : {}),
+        ...(options.onPrint ? { onPrint: options.onPrint } : {}),
+        ...(options.onImportTemplateFile
+          ? { onImportTemplateFile: options.onImportTemplateFile }
+          : {}),
+        onUpdateFields: updateFields,
         ...(options.layout ? { layout: options.layout } : {}),
+        ...(options.draft ? { draft: options.draft } : {}),
+        ...(showGridlines ? { showGridlines: true } : {}),
         ...(options.limits ? { limits: options.limits } : {}),
         ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
         ...(options.appearance ? { appearance: options.appearance } : {}),
@@ -673,27 +711,44 @@ function mountContentWorkbench(
       return Promise.all([interaction.ready, candidateReady, textEditor?.ready]).then(() => {});
     },
     settled: () => (textEditor ? textEditor.settled() : interaction.settled()),
-    clipboard(action) {
+    clipboard(action, clipOptions) {
       ensureActive();
       if (!textEditor)
         return Promise.reject(new DocumentError("InvalidOperation", "请先进入正文编辑。"));
-      return textEditor.clipboard(action);
+      return textEditor.clipboard(action, clipOptions);
     },
     setEditing,
     updateFields,
     formatState: () => textEditor?.formatState() ?? { enabled: false },
     executeTextCommand(command) {
       ensureActive();
-      if (!textEditor) throw new DocumentError("InvalidOperation", "请先进入正文编辑模式。");
+      if (!textEditor) {
+        if (command.type === "word" && (command.action === "find" || command.action === "outline" || command.action === "wordCount")) {
+          interaction.openWordNavigation(command.action);
+          return;
+        }
+        throw new DocumentError("InvalidOperation", "请先进入正文编辑模式。");
+      }
       textEditor.execute(command);
     },
     selection: () => (textEditor ? textEditor.selection() : interaction.selection()),
     fonts: interaction.fonts,
     layout: () => textEditor?.layout() ?? interaction.layout(),
     setMode: interaction.setMode,
+    openWordNavigation(action) {
+      ensureActive();
+      if (textEditor) textEditor.execute({ type: "word", action });
+      else interaction.openWordNavigation(action);
+    },
     setZoom,
+    fitPage,
+    setShowGridlines,
+    printDocument,
     goToPage: (page) => (textEditor ?? interaction).goToPage(page),
     focusAnnotation: interaction.focusAnnotation,
+    stepAnnotation: (direction) => interaction.stepAnnotation!(direction),
+    toggleActiveAnnotationResolved: () => interaction.toggleActiveAnnotationResolved!(),
+    removeActiveAnnotation: () => interaction.removeActiveAnnotation!(),
     startAnnotation: interaction.startAnnotation,
     request: () => activeRequest,
     buildRequest,

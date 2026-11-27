@@ -9,7 +9,7 @@
 | 应用与样例 | 实机结果 |
 | --- | --- |
 | Word，`02-table-merges.docx` | 无修复提示打开，插入文字并原生保存。SDK 严格重开，新增文字和三行合并表格保留。两边 PDF 均为一页 A4；横纵合并正确，行高有可见差异。 |
-| Word，`08-comments-revisions.docx` | SDK 导出件在 Word 打开时出现“发现无法读取的内容”及恢复提示。该项未通过；原始输入对照与恢复后差异尚未取得可用结果。 |
+| Word，`08-comments-revisions.docx` | 11 月 24 日 SDK 导出件出现恢复提示；11 月 26 日已定位并修复，见本页 Word 补充验收。保留首次失败记录。 |
 | PowerPoint，`01-rich-text.pptx` | 无修复提示打开，通过键盘选中文字对象，追加文字并原生保存。SDK 严格重开并读到新增文字。原生打印及 doffi 幻灯片输出都可读，但纸面尺寸不同，doffi PDF 中列表标记和扩展字存在可见差异。 |
 | PowerPoint，`12-modern-comments.pptx` | 原生打开三张幻灯片，评论面板显示线程和回复。此次只检查原生可见性，尚无原生编辑重存线程的结论。 |
 | Excel，`04-formulas-names.xlsx` | 原生打开，录入 `D50=123` 和 `E50 = D50*2`。原生保存后，SDK 严格重开，读到公式及 Excel 计算的缓存值 `246`。 |
@@ -80,3 +80,175 @@ Word、PowerPoint、Excel 16.114.1 的选项卡、Home 命令顺序和字体／�
 自动验证共 55 项 Chromium 用例通过：完整工作区及 Word／PPT 独立闭环 45 项，延迟字体、字体窗口与 Excel 格式事务 10 项；另有 12 项单元测试覆盖直接与 Worker 命令共享的数字格式、原生 XLSX 重开和撤销。独立宿主用例不加载 Playground CSS，检查外框与分组尺寸、32 px 图标、菜单定位、窄窗口样式库和多实例隔离。最终 PPT 外观调整后重跑 5 项功能区、批注、字体、放映及独立宿主用例。
 
 构建、工具类型检查、架构边界和差异空白检查通过。浏览器使用本机 Google Chrome，PDF／PNG 验证使用同一 Chromium 和运行环境附带的 Poppler。原始 11 页用户 PPT 再次在内置浏览器打开，保留原文件；缩略图选中框为 PowerPoint 橙色，画布按工作区剩余高度布局。
+
+## 2026-11-26 Word 批注字体和内置浏览器对照
+
+继续使用本机 Word 16.114.1、macOS 27.2。用户明确授权 AppleScript 控制 Word，只操作仓库合成样例的副本。网页使用 Codex 内置浏览器打开本分支 Playground，同文件上传，不连接云端服务。原生文件和调试副本在忽略目录 `.cache/word-gap-2026-11-26/`；包含 Office 本地元数据，不提交为公开夹具。
+
+| 项目 | 原生观测与修复 |
+| --- | --- |
+| 批注与文字修订，COMP-01 | 独立 `08-comments-revisions.docx` 正常打开；旧 SDK 导出触发恢复。四类批注扩展部件的 MIME 错写为 `application/vnd.ms-word.*+xml`，更正为 `application/vnd.openxmlformats-officedocument.wordprocessingml.*+xml`。新 SDK 导出无恢复提示，Word 读到一条批注、两条修订；插入 `Native Word verification: ` 并实际原生保存后，SDK 严格重开保留这些内容。 |
+| 根批注与回复 | 单独合成线程含 Reviewer A 根消息和 Reviewer B 回复。只有父级元数据而没有回复正文引用时，Word 只显示根消息并在重存中删除回复。为每条回复补点引用，根批注仍独占文字范围。Word 窗格实际显示两条消息；插入 `Native reply roundtrip: ` 并保存后，SDK 严格重开仍有一个线程、一条回复和原文字锚点。没有执行原生解决／重新打开线程，不将其计为通过。 |
+| 字体窗口，WORD-03 | 新编辑入口使用已有字符格式事务。合成 DOCX 在 Word 无恢复提示打开，原生字体 API 读到横向缩放 75%、双下划线、下划线 RGB 16 位值 `52428,13107,0`，对应 #CC3300。自动回归另检查预览和编辑的缩放与颜色、无效值不提交、原生导出重开及撤销。 |
+| 内置浏览器视觉抽样，WORD-01 | 将独立批注修订样例的字体声明换成两端实际可用的 DengXian，其他内容保留。Word 与网页均使用最终修订视图；按相同纸张显示宽度比较，Word 100%、网页 75%（两者屏幕点换算不同）。1120×728 窗口下纸宽均约 595 px，正文距纸张左侧均约 72 px，两个段落的文字顶端相隔约 26 px；页内首行顶端仍有约 2 px 差异。此为同机视觉抽样，没有跨平台像素相等结论。 |
+
+原样例请求 Noto Sans CJK SC，本机 Word 与网页回退字体不同；两端默认修订显示方式也不同。先统一字体、纸面宽度及修订显示，再比较正文。浏览器预览与编辑切换后的修订视图偏好尚未统一；复杂表格、浮动组合、公式与多页文档没有因这一页样例而获得整体验收。
+
+扩展到同字体合并表格后，内置浏览器显示表格边界比 Word 向左约 4 px，三行高度也有小差异。另造无样式、空默认样式、自定义默认／显式样式、显式边距及更换样式 ID／名称的独立副本，直接查询 Word 的表格边距和行缩进：只有样式 ID 相同不足以确定内置默认，`Normal Table` 名称与普通自定义样式的未声明属性存在差异。仅按是否绑定样式选择 5.4pt 的候选修改无法覆盖这些情况，已撤回，未纳入本轮修复或验收通过项。后续需要统一处理样式有效值、继承／覆盖、缩进原点和兼容模式，再覆盖预览、编辑、原生导出重开；不能用这个样例的坐标补偿代替通用规则。
+
+### 原生表格缩进的通用映射
+
+进一步对四种样例实际插入文字并原生保存，Word 将缺失的默认值展开为显式 `tblInd`、`tblCellMar` 和兼容模式 12。这些规范化结果揭示了独立于文件名、样式 ID 和固定坐标的原点差异：旧兼容模式的原生缩进以首格文字为原点，CSS margin 以边框为原点。随后用两份仅兼容模式不同、缩进 12pt、首格边距 7pt 的独立 DOCX，在 Word 直接读取首格文字相对纸面的横坐标。
+
+| 兼容模式 | 独立输入在 Word 的文字横坐标 | SDK 导出件在 Word 的文字横坐标 |
+| --- | --- | --- |
+| 14 | 84.00pt | 84.00pt |
+| 15 | 90.95pt | 90.95pt |
+
+共享渲染已按兼容模式和实际生效的首格边距换算，支持从样式继承缩进、单元格覆盖及双向前导边。声明限于各表自身，嵌套表格不继承父表原点。源保留原生数值；输入、撤销和 DOCX 重开不叠加位移。普通 CSS 的 18pt 物理边距加 7pt 首格边距，导出为旧模式 25pt 原生缩进；Word 实际读到 25pt，文字横坐标为 97.25pt。`pct`／`auto` 缩进按 [原生定义](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.tableindentation)忽略，不覆盖有效继承值。
+
+内置浏览器和 Word 再次打开同一份模式 14 文件、使用 DengXian 和相同纸宽：首格文字相对参考段落均右移约 12pt；浏览器 DOM 实测为 11.9883pt。没有按文件名、样式 ID、文本内容或样例坐标设置渲染分支。自动回归有八组属性组合，另检查普通 CSS 边距的逆向导出、重置、输入及撤销。原始无声明样例的内置样式默认、行高、复杂行例外等仍未全部关闭，不能据此声明整体 Word 视觉一致。
+
+本机来源摘要：`native-indent-14.docx` 为 `8c629c0f72c46d7cfd22e5099eed1663733f0d865345107f20562768f9039f18`；`native-indent-15.docx` 为 `0b4fd603b4b68ec6bade138f21032c4ca0fdd53c55c4adcaec3e3c4835d62b2b`。公开合成源构造见 [表格缩进夹具](../packages/office/tests/table-indent-fixture.ts)，自动预览／编辑验证见 [浏览器用例](../tests/browser/word-table-indent-cases.ts)。
+
+### 批注证据与本轮检查
+
+四类部件 MIME 的依据为 Microsoft Open XML SDK 的原始元数据：[CommentsExtended](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingCommentsExPart.json)、[CommentsIds](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingCommentsIdsPart.json)、[CommentsExtensible](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordCommentsExtensiblePart.json)、[People](https://raw.githubusercontent.com/dotnet/Open-XML-SDK/main/data/parts/WordprocessingPeoplePart.json)。新增回归同时断言精确 MIME、根范围与回复引用，保留既有多次 SDK 重开及批注保留检查。
+
+| 实际原生编辑保存文件 | SHA-256 |
+| --- | --- |
+| `export-fixed.docx` | `0ea9dfd74d6d9491950e0aacebee484f1604f3c089fd90972d9024c338c49b9f` |
+| `thread-reference-fixed.docx` | `dfcd8cc24e5fd2b1a0cc52a3ca8e727eaa3d3cab4f9174518c2fd9b37a319e52` |
+
+另外修复 UI-02 的错误路由：绘图选择窗格显示当前故事的对象及组合子项，支持指针多选、键盘定位、属性窗口和删除。父组与子项同时选中时，移动、复制、组合和删除统一使用顶层选项，避免对子对象重复处理，事务可以撤销。只读查找、标题导航和统计已经接通工作区；定位使用当前修订的准确 UTF-16 范围，不触发编辑或新增历史。它们不代表完整 Word 大纲视图及全部选择窗格操作。
+
+最终源定向验证：19 个 Office 测试文件共 223 项、18 项 Chromium 浏览器测试通过。表格用例含八组原生属性组合、普通 CSS 逆向映射及重置、预览／编辑／导出重开、输入与撤销，并复核省略网格、旧版自动宽度、样式切换和浮动表格。其余用例覆盖批注线程、字体、组合对象、导航及独立 SDK 宿主切换。SDK／Playground 构建、工具类型检查及架构边界通过。没有运行远程全量 CI。
+
+## 2026-11-26 默认表格样式与行高规则
+
+继续使用 Word 16.114.1 与 Codex 内置浏览器。独立 ZIP/XML 合成源、Word 原生 PDF、SDK 导出及实际编辑重存副本保存在本机忽略目录 `.cache/word-defaults-2026-11-26/`。字体复用本地已授权文件，没有下载或提交字体。
+
+| 项目 | 原生观测与通用实现 |
+| --- | --- |
+| 空表格样式 | 分别改变样式名称、ID、默认绑定、customStyle 和 basedOn，共十种组合。Word 的内置 `Normal Table`／`普通表格` 缺省左右边距为 5.4pt；空自定义样式、只有相同 ID 的其他名称、明确 customStyle 的同名样式以及没有生效样式的表格不套用该值。内置默认在 Office 导入层物化，随后按继承和直接覆盖统一组合，核心编辑与渲染不按文件名或样例文字分支。 |
+| 未声明缩进 | 显式 tblInd 和生效的内置普通表格默认保留原生缩进原点；没有 tblInd、也没有内置默认的表格按物理边距处理。该区别由下方独立无边框样例进一步修正。普通 CSS 表格继续走物理边距的导出换算。居中判断读取源中的 auto 声明，避免浏览器解析成像素后重复转换。 |
+| 字体自动行距 | 等线的纯英文与中文采用同一字体行框；Arial 保持西文计算。新增判定通过第一方单字探针检测字体本身是否包含汉字，避免把系统回退字形误当成该字体的覆盖。字号前先放大测量，减少小字号取整误差。独立固定字体回归还将同一字体改成无关名称，检查预览、编辑、输入、撤销及 DOCX 重开。 |
+| 整行上下边距 | Word 将同一行各格最大的上边距和最大的下边距分别用于全行。直接声明继续原样保留；共享渲染层只对显示应用最大值。相反方向的不等边距也有原生和自动回归。 |
+| 最小行高 | 在原生最小值之外计入整行上下边距及水平边框。60pt、上边距 7pt、下边距 11pt、1pt 边框的原生 PDF 为 78.96pt，内置浏览器约 79pt。 |
+| 固定行高 | 在原生值之外加整行最大的下边距。40pt 加 11pt 下边距的原生 PDF 为 50.88pt，内置浏览器为 51pt。与 [Microsoft 对 trHeight 的实现说明](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/5919e0bd-e6ce-477e-8d66-0e5282f5c506)一致；固定裁切与源中的完整内容继续分离。模式 12／14 与 15 均作对应检查。 |
+| 行高编辑 | 行高手柄将显示高度换回原生值；自动行在显式调整后改为最小值，固定行保留固定规则。修改、格式历史和撤销共享事务，派生边距与高度不写回源。 |
+
+不同字体的两行间距，以原生 PDF 文字基线差和网页行框逐项核对：
+
+| 字体与文字 | 8pt Word／网页 | 12pt Word／网页 | 18pt Word／网页 |
+| --- | --- | --- | --- |
+| DengXian 中文 | 13.44／13.55 | 20.40／20.32 | 30.48／30.48 |
+| DengXian 英文 | 13.68／13.55 | 20.40／20.32 | 30.48／30.48 |
+| Arial 英文 | 11.52／11.50 | 17.28／17.25 | 25.92／25.88 |
+| SimSun 中文 | 13.20／13.00 | 19.44／19.50 | 29.04／29.25 |
+
+单位均为磅，倍数行距为 1.25，未启用文档网格。混合单元格边距样例的最小／固定／自动行高，Word PDF 为 78.96／50.88／65.76pt，内置浏览器预览和编辑均为约 79.00／51.00／65.38pt。原生 PDF 的这些坐标呈 0.24pt 步长，浏览器另有设备像素边框吸附；保留观测的小量差异，不声明跨平台逐像素相等。
+
+Word 打开 SDK 输出后，五组样例的原生 PDF 边框与文字位置和独立输入对应一致。随后在内置默认样式及行高矩阵的 SDK 副本中实际插入 `Word 验证 ` 并由 Word 保存，SDK 严格重开确认新增文字和表格保留。复杂浮动组合、全部多页文档及复杂行例外没有因本轮规则获得整体验收。
+
+最终源另通过一次原子事务，将矩阵的固定行高改为 45pt、最小行高改为 65pt，再交 Word 打开导出；保留 11pt 下边距和 7pt 上边距。Word PDF 分别为 55.92pt、84.00pt，符合共享规则。行高重算原先丢失直接内部边框的问题也已修复并有源样式、两次原生重开及撤销回归。原生 PDF 摘要、几何比较和内置浏览器读值记录在本机 `final-verification.json`。
+
+最终定向验证：19 文件 244 项单元测试、82 项 Chromium 回归通过；SDK／Playground 构建、应用／工具类型、架构边界及 diff 空白检查通过。内置浏览器逐项检查十种默认样式和字体／行高矩阵的预览与编辑。重复表头夹具补足了跨页多栏数据；macOS 原生输入检查使用对应的行尾快捷键，避免 End 键的整页滚动影响拖动坐标。此次没有运行远程全量 CI，也没有新增 Firefox／WebKit 实机结论。
+
+## 2026-11-26 复杂表格、浮动文字与形状上下文
+
+本轮仍以 Word 16.114.1、本机已授权字体及 Codex 内置浏览器对照。独立 ZIP/XML 源、原生 PDF 和重存副本存于 `.cache/word-defaults-2026-11-26/`，不提交用户文档或字体。测试文档在导出／重存后立即关闭；保留用户自行打开的原文件。
+
+| 通用规则 | 实现和实机证据 |
+| --- | --- |
+| 行例外作用范围 | `tblPrEx/tblW`、`tblInd` 只取首个物理行并作用于整表；后续行声明保留但不用于整表几何。首行 fixed 布局作用于整表。模式 14 的对齐按行，模式 15 取首行作用于整表。原生重存写入 `trPr/jc` 时沿用同一规则。原声明保存在源中，删首行后重新解析，撤销恢复。 |
+| 复杂行与跨页 | 独立合并／未合并矩阵覆盖两种兼容模式、原生两种对齐声明、预览、编辑和 DOCX 重开；延伸分页绘制区域，避免旧模式中偏移行被表格原网格裁掉。没有把全部复杂行例外宣告为完成。 |
+| 省略缩进 | 无内置样式且省略 tblInd 的无边框表格，不扣首格边距；显式 tblInd=0 的旧模式会扣边距。撤回此前对全部原生表格添加 native 原点的过宽处理。普通 CSS 的逆向导出仍按有效格边距换算。 |
+| 单元格浮动锚点 | 模式 15 按单元格内布局处理，原始 layoutInCell=false 仍保留；模式 14 尊重 false。旧模式的格外段落垂直原点使用所在行，而非格内前置段落底部。原生独立样例：格内 x=43、y=52pt，旧模式格外 x=130、y=48pt；前置固定行后 y=92pt。 |
+| 边距与环绕 | 水平限制采用单元格网格范围，允许负偏移进入文字内边距；过宽对象保留原位置。全宽阻塞行仅补实际剩余高度，避免重复计入原锚点行。effectExtent 纳入绘制／环绕边界，隐藏对象不占环绕空间。 |
+| 对象文字默认值 | 修复 DrawingML 默认内边距把磅误作 EMU 的错误。左右 7.2pt、上下 3.6pt 与显式零值分别保留。旧输出曾使 Word 写出截断 VML 属性；修正后所选七份 SDK 编辑输出均由 Word 编辑保存并严格重开。 |
+| 生产者属性 | 识别所声明的 hidden、非负 effectExtent、upright、两个形状／连接线锁及空 graphicFrameLocks；未知限制、负效果外延及其他未建模内容仍完整原生保留。读取文本框时隔离外层表格上下文，避免把辅助段落登记到外表。 |
+| 主题字体与文字缩放 | 空主题 EastAsia／Bidi 字体通过声明语言解析 supplemental script 字体；不能解析的角色继续保留并诊断。浮动文字使用同一 w:w 缩放测量和来源投影，重复测量、输入与撤销不把派生包裹写回源。 |
+| 缺省行距 | 未声明行距按单倍自动行距处理，西文 run 和东亚 script 均使用各自实际字号度量。缺省／显式单倍的独立表格＋文本框样例在 Word 中均为两页，所比较文字坐标一致；Single／Second 行差 25.92pt。固定字体自动回归覆盖预览、编辑和原生重开。 |
+| 文本框节行网格 | 文本框是独立文字域，继承所在节的行网格，不把外部表格或绘图当成自身文字限制。原生 35pt 合成样例：无网格 45.36pt、15.6pt 网格 46.80pt、关闭吸附 45.36pt、固定 20pt 行距的 PDF 量化结果 19.92pt。网页使用同一网格算法，显式固定行距与关闭吸附保持独立；重复故事保留自动倍数的派生测量信息。 |
+| 形状交互 | 单击显示对象选框，并提供“形状格式”上下文选项卡；双击在原页面绑定该文字故事输入，Escape 或点击外部退出。文字键盘移动不会拖动对象。常用命令通过上下文功能区进入，详细属性只在显式命令后打开模态对话框，不再自动铺开参数表或切换为独立辅助画布。 |
+| 鼠标文字定位 | 文本框不绑定正文左侧选行区。此前以文本框左边界再加页面左边距，把开头文字误判为页边距；现在前三个中文字符间单击均为折叠光标，可准确插字并撤销。正文页边距的单击、双击、拖动选行和缩放另行回归，继续保留。 |
+
+行例外依据还包括 Microsoft 对 [tblInd](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/eec0c73c-18c2-4176-99e6-14501f3a4ad7)、[tblW](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/9b01c51f-fe5d-472c-ba38-bc12ce971ad2)、[tblLayout](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/b27e9e3a-fa72-4ac0-9929-2b5971588b2b) 的实现说明，原生观测记录兼容模式的实际差异。
+
+用户提供的会议模板在本机只操作仓库内副本。红头是带文字故事的原生文本框，红线是连接线；没有把红头转成图片。导入识别三项绘图，Word 打开 SDK 输出仍为两页，正文抽样坐标保持一致；红头原生导出相对参考 x 约差 0.11pt、y 约差 0.24pt。内置浏览器确认正确两行换行、原位输入并撤销、上下文选项卡及两页主画布。补齐节网格后，网页红头两行间距为约 46.80pt（CSS 行高 62.4px），与 Word 参考一致；这不代表全部字形和位置逐像素等价。字符单位缩进等未建模声明仍依赖原生保留及已有固定值回退。
+
+浏览器实际原位输入输出另外交 Word 打开、插入 WORDNATIVE 并保存；SDK 严格重开同时保留两端编辑和可编辑文本框。该验收与七份复杂表格／浮动输出的原生编辑重存相互独立。具体自动检查入口是 `row-exception-scope-fixture.ts`、`floating-compatibility-fixture.ts`、`word-producer-drawing-fixture.ts` 及对应浏览器用例，全部为独立合成内容。
+
+定向检查包含 60 文件 612 项 Office／事务单元测试，以及表格、行例外、浮动文字、网格、上下文工作台、鼠标逐字定位、正文选行、输入撤销和 RevisionConflict 浏览器回归。固定字网格比较的是字形中心及保留槽位，避免把不同回退字形宽度误作网格间距错误；跨栏续表夹具明确了自身行高，缺省行距另由独立样例验证。构建、类型、架构边界和差异空白检查通过。没有运行远程全量 CI。
+
+扩大检查仍有一项未关闭：`centered wrapping composes with paragraph alignment and character grids right` 在本机网页中仅使用形状右侧，而本机 Word 的同份 DOCX 在 x=160～260pt、y=48～120pt 的形状两侧均有文字。撤去本次阻塞行高度修正后仍可复现；没有把该失败掩盖为测试通过，也没有保留不收敛的试验性修正。复杂右对齐浮动组合继续列为 WORD-01 缺口，本轮不能宣称全部 Word 版式已经等价。
+
+## 2026-11-26 Word 差异能力补齐与实机对照
+
+继续在 macOS 27.2 上以 Microsoft Word 16.114.1、本机已授权字体与本机 Google Chrome（Chromium）进行对照。全部新能力均以通用规则和统一事务边界实现，不按文件名、样式 ID 或样例坐标分支。独立合成 DOCX、Word 16.114.1 原生 PDF 与实际编辑重存副本保存在本机忽略目录 `.cache/word-defaults-2026-11-26/`，测试文档在导出／重存后立即关闭。
+
+| 编号与主题 | 通用实现、官方 XSD 与 Word 16.114.1 实机证据 |
+| --- | --- |
+| WORD-01 右对齐绕居中对象 | 修正 [word-center-wrap.ts](../packages/render/src/word-center-wrap.ts) 的纵向行中点匹配、重排占位清理及恢复 `text-align: right` 下的列片区边界计算。5 项居中绕排（含 `right`、`center`、`snapToChars`、`linesAndChars` 与无空格长拉丁串跨侧换行）及 6 项两侧排除回归在预览与编辑双面全部通过，与本机 Word 16.114.1 PDF 对照一致。不因此宣称任意复杂浮动组合与跨平台像素相等。 |
+| WORD-03 字符排版与 OpenType | 接通独立双删除线（`w:dstrike`，经渐变独立绘制不与下划线／底纹冲突）、隐藏文字（`w:vanish`，常规隐藏、编辑标记开启时内联显示虚线下划线、打印／PDF 始终隐藏）、字符升降位置（`w:position`，-3170～3170 半磅）、着重号（`w:em`：`dot`/`comma`/`circle`/`underDot`）、全部 18 种 `ST_Underline` 下划线线型（含 `words` 仅字下划线与粗线型）、字符边框（`w:bdr`）、OpenType 五项（`w14:ligatures`/`numForm`/`numSpacing`/`stylisticSets`/`cntxtAlts`，导出带 `mc:Ignorable="w14"`）以及原子字符改写的 5 种 `更改大小写` 模式。字体窗口与开始功能区同步开放并支持撤销。`verify-word03.docx` 通过官方 Transitional `wml.xsd`（含标准 MCE 预处理）校验；Word 16.114.1 无修复提示打开，原生 API 读到 `dstrike=true`、`under=underline single`、`hidden=true`，原生 PDF 实测黑双删除线＋红下划线、隐藏文字不占宽、升降偏移、四类着重号、字符边框与扩展下划线均生效；原生插入 `[WordOK1]` 并保存后，SDK 严格重开完整保留全部属性与两端编辑。 |
+| UI-01 与 WORD-02 缩放与视图 | 修复 `单页`/`多页`/`页宽` 按钮，按真实画布和页面尺寸分别计算适配缩放并保持 `aria-pressed` 互斥（手动缩放或切换布局时清除适配态），缩放范围扩至 25%～400%。新增连续 `草稿` 视图（显示显式 `分页符`／`分节符` 标记）与 `专注` 模式（隐藏外框，支持 `Esc` 或悬浮按钮退出）。未宣称实现 Word 大纲编排视图或沉浸阅读器。 |
+| UI-02、COMMON-01 与编辑工具 | 选择窗格升级为列出当前故事全部绘图对象（含已隐藏对象，按 `zOrder` 降序及组合层次），补齐窗格内重命名（新增 `setWordDrawingName` 事务）、单项显示／隐藏、全部显示／隐藏及层序调整。补齐正文／表格／形状／图片／图表右键上下文菜单（按缩放换算定位）以及 `图片格式`、`图表设计`、`表格设计`、`表格布局` 上下文选项卡与布局层序／组合命令。补齐 Word 粘贴模式菜单（保留源格式／合并格式／仅保留文本）、段落与表格行排序（新增 `reorderWordNodes` 事务，保留节点身份与锚点并显式拒绝含纵合并单元的表格行）、文本↔表格互转、插入空白页及日期和时间（静态文字或 `DATE`/`TIME` 域）。`verify-ui02.docx` 通过官方 `wml.xsd` 校验；Word 16.114.1 读到两个命名对象及显隐态（`主徽标矩形:true`、`隐藏参考圆:false`），原生 PDF 仅绘制可见矩形且保留排序后正文与表格；原生编辑 `[WordOK2]` 重存后，SDK 严格重开通过。 |
+| COMP-01 与 WORD-06 批注解决／重开 | 审阅选项卡接通 `上一条批注`、`下一条批注`、`解决`、`删除`。生成同时含已解决线程（`w15:done="1"` 及回复）与未解决线程的 `verify-comp01.docx`，以及经 SDK 重新打开首条线程（`w15:done="0"`）的 `verify-comp01-reopened.docx`，两份文件的 `document.xml`／`styles.xml`／`comments.xml` 均通过官方 `wml.xsd` 校验。Word 16.114.1 无修复提示打开，原生 PDF 实测已解决线程及回复呈灰化态、未解决线程呈激活态；重新打开后首条线程及回复恢复激活态。两份文件分别在 Word 插入 `[WordOK3]`、`[WordReopenOK]` 并原生保存后，SDK 严格重开均精确保留解决／打开状态、回复与锚点。文档比较／合并与文档保护仍保持未实现。 |
+| COMMON-03 Word 动态主题色板 | 读取当前文档 `[data-office-kind="document"]` 的 `--office-theme-*` CSS 变量并通过 `@doffi/core` 的 `wordColorLuminance` 动态生成 5 级明暗色板。PPT／Excel 主题色板及完整系统字体枚举／悬停预览保留原有缺口。 |
+
+本轮官方 `wml.xsd`（`OfficeOpenXML-XMLSchema-Transitional.zip`）对四份 SDK 导出件的全部 10 个核心部件（`document.xml`、`styles.xml`、`comments.xml`）校验全部通过。下表记录与实机结论直接对应的文件 SHA-256（位于忽略目录 `.cache/word-defaults-2026-11-26/`）：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `verify-word03.docx`（SDK 导出） | `1ffb1ef204c37dd3a0feb98fcb42f8b99befba4fce26e5cd00568983676192e8` |
+| `verify-word03-resaved.docx`（Word 16.114.1 编辑重存） | `47c92152a9d3eb656aa44b584c6fd1034880df45eb3295b2d91a1e0f4900ccda` |
+| `verify-ui02.docx`（SDK 导出） | `4651cc255bcac03fc39d0328f466be4f05f1bbf3bf6bd99052fd755ca8daa5ba` |
+| `verify-ui02-resaved.docx`（Word 16.114.1 编辑重存） | `d578a18de958bbce97b84fb71196c1de93f1d71d9004b26eb4de3e58aa2bfb5f` |
+| `verify-comp01.docx`（SDK 导出，含已解决线程与回复） | `047319670439a6735c64dd5d9e35b1f396724db7e7a59c1d6b2ab3441f3ce2ab` |
+| `verify-comp01-resaved.docx`（Word 16.114.1 编辑重存） | `8b16f086fdc7775ccb7100dad18ace1359ffac1fa41edfb7a180c03f042b35d0` |
+| `verify-comp01-reopened.docx`（SDK 重开线程后 Word 16.114.1 编辑重存） | `cfe2efb7a936fbc79563b11d0e6b1f02ea103e24fac88da29a9192c942c55ac2` |
+
+自动回归验证：全部 58 个 DOCX 单元／集成测试文件共 576 项全部通过（含新增 [docx-word-gap-closure.test.ts](../packages/office/tests/docx-word-gap-closure.test.ts) 5 项往返与安全约束回归）；59 项 Chromium 浏览器回归全部通过（新增 [word-gap-closure.spec.ts](../tests/browser/word-gap-closure.spec.ts) 5 项、工作区与独立宿主 [workspace.spec.ts](../tests/browser/workspace.spec.ts) 41 项、居中绕排／字体窗口／选择窗格定向 [pagination.spec.ts](../tests/browser/pagination.spec.ts) 13 项）；`pnpm build`、`pnpm check:boundaries`、`pnpm typecheck` 与 `git diff --check` 全部通过。此次未运行远程全量 CI，也未改动 PPT／Excel 缺口范围。
+
+## 2026-11-27 Word 1:1 视觉对齐与缺口深度收口
+
+在 macOS 上以 **Microsoft Word 16.114.1**、本机 Google Chrome（Chromium）以及内置浏览器（Playground `http://127.0.0.1:5174/`）完成 1:1 双向视觉与 OOXML 对照。全部测试文件、Word 原生 PDF／2x PNG 与原生编辑重存件均保存在忽略目录 `.cache/word-parity-2026-11-27/`，不进入提交。
+
+| 能力领域 | 通用实现、官方 Transitional XSD 与 Word 16.114.1 ＋ 内置浏览器实机对照 |
+| --- | --- |
+| 中文排版与文字特效（`WORD-03`） | 实现原生拼音指南（`<w:r><w:ruby>` 严格符合 `EG_RunInnerContent`，支持 `insertWordRuby`/`removeWordRuby`、基文纯 UTF-16 锚点隔离与撤销）、带圈字符（`EQ \o\ac(○/□/◇/△,字)`）、首字下沉（导出自动按 Word 规范拆分为 1 字符 `<w:framePr w:dropCap>` + `<w:suppressLineNumbers/>` 框段落与续接段落，编辑与预览均支持单段内与双段原生渲染）、经典文字特效（轮廓空心描边／阴影／阳文／阴文）、`w14` 现代特效（`w14:glow`/`textOutline`/`shadow`/`reflection`）、东亚版式（`w:eastAsianLayout` 双行合一括号、纵横混排竖向旋转）及 `w:fitText` 调整宽度。内置浏览器对照 Word 16.114.1 PDF 后进一步修正了 3 行首字下沉 CJK 自动行距高度、空心轮廓填充、倒影 `inline-block` 渲染、双行合一括号与纵横旋转及拼音间距。 |
+| 设计、主题、样式集与页面背景 | 接通 Word 主题（`word/theme/theme1.xml` 读写与同步更新 `--office-theme-*` 动态色板）、主题颜色／字体方案与全部 10 套样式集、页面背景色（`w:background` + `w:displayBackgroundShape`）、独立「页面边框」对话框（修正 `设计 → 页面边框` 误开段落边框的问题，读写 `w:pgBorders`）、页面垂直对齐（`w:vAlign`）、页面行号（`w:lnNumType` 渲染与跳过表格／首字下沉框）及 `docProps/core.xml` 文档属性。 |
+| 表格增强、表内公式与动态域（`WORD-04`） | 实现第一方表内公式求值器（`packages/render/src/word-table-formulas.ts`：`=SUM/AVERAGE/COUNT/MIN/MAX/PRODUCT/ABS/INT/ROUND/MOD/IF`、`ABOVE/BELOW/LEFT/RIGHT`、A1 单元格引用与 `\#` 格式）、动态域实时求值（`DATE`/`TIME`/`AUTHOR`/`TITLE`/`SUBJECT`/`KEYWORDS`/`SECTION`/`SECTIONPAGES`/`TOF`）、表格斜线表头（`w:tl2br`/`w:tr2bl` SVG 渲染与读写）、拆分表格（`splitWordTable` 并清理迁移行 `wt-*` 样式上下文、显式拒绝跨越纵合并拆表）、平均分布行列、根据内容／窗口自动调整及表格末格 `Tab` 自动增行。Word 16.114.1 实机打开 `parity-showcase.docx` 更新域后，`=SUM(ABOVE)` 实测返回 `200` 与 `300`，与内置浏览器完全一致。 |
+| 审阅比较、保护、查找与视图（`WORD-02` / `WORD-06`） | 实现第一方文档比较引擎（`compareWordDocuments`，段落＋词／CJK LCS 差分生成原生 `<w:ins>`/`<w:del>` 修订；实机发现并修复了 Word 拒绝 `w:date` 毫秒小数的问题，统一规范为整秒 UTC ISO 8601）、文档保护（`w:documentProtection` 只读／仅修订／仅批注／仅填表及编辑拦截，并修复了 `replaceTextLeaf` 绕过锁定／保护的隐患）、一键修订开关、简单标记视图（左侧红竖线）、通配符与特殊字符查找替换（`*`/`?`/`^t`/`^l`/`^s`）与定位、大纲编排视图（升降级／折叠展开／整节移动）、沉浸式阅读器、网格线、拆分窗口、双击画布页眉／页脚进入 `页眉和页脚` 上下文选项卡、400% 状态栏缩放、增强格式刷（含双击锁定与 Esc 退出）以及原生系统打印入口（`COMMON-04`）。 |
+
+官方 Transitional XSD（`OfficeOpenXML-XMLSchema-Transitional.zip`）对三份导出件全部 12 个部件（`parity-showcase.docx` 的 `document.xml`/`styles.xml`/`settings.xml`/`header1.xml`/`footer2.xml` 及 `dml-main.xsd` 校验 `word/theme/theme1.xml`，`parity-compare.docx` 与 `parity-protected.docx` 的 `document.xml`/`styles.xml`/`settings.xml`）校验全部通过。Microsoft Word 16.114.1 实机结论：
+- `parity-showcase.docx`：无修复提示打开（仅确认更新脏域），原生 API 读到 1 页、1 表、1 节、表内 `=SUM(ABOVE)` 为 `200`/`300`；导出原生 PDF 实测 3 行首字下沉、蓝页面边框、页眉页脚、行号、拼音、带圈字符、轮廓／阴影／发光／倒影、双行合一括号／纵横旋转／调整宽度、动态域及斜线表头全部生效；Word 原生插入 `（Word16实机已验）` 重存后，SDK 严格重开完整保留全部属性与两端编辑。
+- `parity-compare.docx`：无修复提示打开，Word 原生 API 读到全部 6 条修订（`revisions=6`），原生 PDF 显示正文红色下划线插入与右侧批注栏 3 条删除气泡。
+- `parity-protected.docx`：无修复提示打开，Word 原生 API 识别保护类型为 `allow only revisions`。
+
+本轮验收文件 SHA-256（位于忽略目录 `.cache/word-parity-2026-11-27/`）：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `parity-showcase.docx`（SDK 导出） | `60632879d985bcf42cc0bc2bffaf54776c3050fec71d88b715ae2caa07c0cb04` |
+| `parity-showcase.word-resaved.docx`（Word 16.114.1 编辑重存） | `961a434c9363f69ffe76e1e177db4cc871e85d591bb03ed9b23dc12bc60308c` |
+| `parity-compare.docx`（SDK 文档比较导出） | `14ee5043d659d3b6865ed501eff75bd8692ddecb023a9070e0b12dc8eb934f6f` |
+| `parity-protected.docx`（SDK 强制修订保护导出） | `15eddf671134af57b8133fad396b7b5bc4b36e27303884cab37ddefc234e93b4` |
+
+### 第二阶段补齐：学术引用、渐变三维艺术字与艺术边框、模板／部件、并发绕排与 Key Tips
+
+同日继续在 macOS 上以 **Microsoft Word 16.114.1**、官方 Transitional XSD 与内置浏览器（Playground `http://127.0.0.1:5176/`）完成第二阶段 1:1 补齐与视觉对齐。
+
+| 能力领域 | 通用实现、官方 XSD 与 Word 16.114.1 ＋ 内置浏览器实机对照 |
+| --- | --- |
+| 学术引用与高级域求值（`WORD-04`） | 实现 `customXml/item*.xml` `<b:Sources>` 读写与「管理源」弹窗（支持 APA / MLA / Chicago / IEEE / GB/T 7714 五种格式）、`CITATION`／`BIBLIOGRAPHY` 实时求值、`XE`／`INDEX`（双栏与字母／字头分组、页码区间压缩）与 `TA`／`TOA`（分类标题、18pt 悬挂缩进、点状前导符与 `passim`），以及 `IF`、`COMPARE`、`SET`、`QUOTE`、`SYMBOL`、`STYLEREF`、`TEMPLATE`、`DOCPROPERTY`、`FILENAME`、`NUMWORDS`、`NUMCHARS`、`\#` 数字格式、`\* CHINESENUM3/CHINESENUM2/ROMAN/CARDTEXT/ORDTEXT/UPPER/LOWER/FIRSTCAP/CAPS` 及嵌套子域求值。按 Word 16.114.1 实机结果，将隐藏标记域（`XE`/`TA`/`SET`/`TC`）与结构域统一按复杂 `<w:fldChar>` 导出（隐藏标记不写 `<w:fldChar w:fldCharType="separate"/>`），避免 `<w:fldSimple>` 导致段落流失步。 |
+| 艺术字、艺术页面边框与图片项目符号（`WORD-03` / `WORD-05`） | 实现 17 种原生艺术页面边框（`stars`/`hearts`/`apples`/`trees` 等，遵循 ECMA-376 艺术边框整磅 `1～31pt` `w:sz` 规则及预览 CSP 内联 SVG `<pattern>` 渲染）、`w14:textFill/gradFill` + `w14:bevel` + `w14:scene3d` 渐变三维艺术字与「艺术字」图库弹窗，以及 `<w:numPicBullet>`（现代 `<w:drawing>` 写出＋经典 VML `<w:pict>` 兼容导入）与 `w:pStyle`/`w:isLgl`/`w:styleLink`。内置浏览器对照 Word 16.114.1 PDF 后进一步修正了艺术边框四角重叠与整格排布、渐变艺术字改用 `filter: drop-shadow` 防 `text-shadow` 遮盖透明渐变，以及 TOA 引文目录点状前导符。 |
+| 封面、部件、模板与交互对齐（`COMMON-02` / `COMMON-03` / `COMMON-05`） | 实现内置 4 套封面页插入／删除／撤销、文档部件与自动图文集库、附加文档模板（`settings.xml` `<w:attachedTemplate>` ＋ 外部 URI 安全校验）与本地默认模板管理、绘制表格交互态（`Esc` 退出）、分组字体菜单（主题字体／最近使用／常用中文字体／常用西文字体）及零修订增量可逆悬停实时预览、完整「选择性粘贴」弹窗、段落弹窗「制表位…」直达按钮、表格属性／对象布局多选项卡面板，以及 `Alt` Key Tips 键盘导航徽标。 |
+| 自动调整列宽与多浮动并发绕排（`WORD-01`） | 实现基于内容宽度的 `tblLayout=autofit` `<colgroup>` 列宽分配；增强 [word-center-wrap.ts](../packages/render/src/word-center-wrap.ts) 对同垂直高度相邻浮动对象的合并排除与稳定收敛（修复邻接浮动合并后重排不收敛报错并补充回归）。 |
+
+官方 Transitional XSD（`OfficeOpenXML-XMLSchema-Transitional.zip`）对 `wave2-showcase.docx` 全部 5 个部件（`word/document.xml`、`word/numbering.xml`、`word/settings.xml`、`word/styles.xml` 经 `wml.xsd`，`customXml/item1.xml` 经 `shared-bibliography.xsd`）校验全部通过。Microsoft Word 16.114.1 实机结论：
+- `wave2-showcase.docx`（`sha256=3c0ce5d4affb4e17e26f80ad9ba9ef8860065944280a6b577471fe83a314ccd1`）：无修复提示打开（按 Word 机制确认更新脏域后，原生 API 读到 `pages=1, paras=28, fields=10, tables=1, sections=3`），原生 PDF 与内置浏览器在星形艺术边框、渐变三维艺术字、图片项目符号、动态域求值、双栏索引、引文目录、双浮动并发右侧 3 行绕排与自动调整列宽表格上布局一致；Word 原生重存 `wave2-showcase.word-resaved.docx` 后，SDK 重开完整保留 2 条引文源、16pt `stars` 艺术边框、图片项目符号 `assets/image-1.png`、10 个域与 `w14` 渐变／棱台／三维属性。
+- 已记录的非缺陷差异：macOS Word 缺少内置 `GB.XSL` 时将 `GB7714` 样式回退为 APA（`doffi` 按声明输出 GB/T 7714）；CJK 索引标题按字头分组而 Word 中文版按笔画（如 `十一划`）分组；本地未安装专有字体时浏览器使用开源回退字体的字形宽度差异。
+
+仍明确保留的边界与排除项：按用户 2026-11-27 明确决定不做内置多语言自动断字词典（保留 `w:autoHyphenation` 开关与浏览器词典回退）；密码加密 OOXML 容器加解密、多作者文档合并、非连续多段文本选区、多窗口并排（新建窗口／全部重排）、SmartArt／3D／OLE 内部编辑、自由曲线与形状布尔运算、旧格式 `.doc`/`.rtf`/`.odt` 转换、完整系统字体枚举及既定排除项（标尺、VBA、邮件合并、智能校对、云协作）不宣称已覆盖。

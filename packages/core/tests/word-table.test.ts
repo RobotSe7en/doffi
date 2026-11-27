@@ -402,3 +402,18 @@ test("merge and split reject incomplete inverse histories atomically but allow u
   ]);
   expect(session.snapshot().metadata.word!.revisions).toHaveLength(1);
 });
+
+test("resizing an automatic Word row enables its native minimum while exact rows keep their rule and undo restores auto", () => {
+  const { session, apply, tableId } = create();
+  const table = session.getNode(tableId)!, group = session.getNode(table.childNodeIds[0]!)!;
+  const rows = group.tagName === "tr" ? table.childNodeIds : group.childNodeIds;
+  apply([{ op: "formatWordTable", nodeId: tableId, rowHeightRule: "auto" }]);
+  const before = session.snapshot().html;
+  apply([{ op: "editWordTable", nodeId: tableId, change: { kind: "resize", rowIndex: 0, rowHeight: 36 } }]);
+  expect(session.getNode(rows[0]!)!.attributes.style).toContain("--word-row-height-rule:atLeast");
+  expect(session.getNode(rows[1]!)!.attributes.style).toContain("--word-row-height-rule:auto");
+  session.undo(); expect(session.snapshot().html).toBe(before);
+  apply([{ op: "formatWordTable", nodeId: tableId, rowHeightRule: "exact" }]);
+  apply([{ op: "editWordTable", nodeId: tableId, change: { kind: "resize", rowIndex: 0, rowHeight: 36 } }]);
+  expect(session.getNode(rows[0]!)!.attributes.style).toContain("--word-row-height-rule:exact");
+});

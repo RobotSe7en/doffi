@@ -20,9 +20,9 @@ function fixture(opaque = false) {
       body(
         source,
         '<w:p><w:pPr><w:rPr><w:rStyle w:val="Mark"/><w:sz w:val="28"/>' +
-          (opaque ? "<w:emboss/>" : "") +
+          (opaque ? '<w:effect w:val="shimmer"/>' : "") +
           '<w:rPrChange w:id="7" w:author="A"><w:rPr><w:color w:val="000088"/><w:sz w:val="20"/>' +
-          (opaque ? "<w:outline/>" : "") +
+          (opaque ? '<w:effect w:val="lights"/>' : "") +
           "</w:rPr></w:rPrChange></w:rPr></w:pPr><w:r><w:t>BODY</w:t></w:r></w:p>",
       ),
   });
@@ -139,7 +139,7 @@ for (const decision of ["accept", "reject"] as const)
           ),
       ).toBe(true);
       const pending = strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!);
-      expect(pending.indexOf("<w:emboss")).toBeLessThan(pending.indexOf("<w:rPrChange"));
+      expect(pending.indexOf('w:val="shimmer"')).toBeLessThan(pending.indexOf("<w:rPrChange"));
       session.commit(
         session.prepare({
           protocolVersion: 1,
@@ -156,8 +156,8 @@ for (const decision of ["accept", "reject"] as const)
         }),
       );
       const xml = strFromU8(unzipSync(exportDocx(session).bytes)["word/document.xml"]!);
-      expect(xml.includes("<w:emboss")).toBe(decision === "accept");
-      expect(xml.includes("<w:outline")).toBe(decision === "reject");
+      expect(xml.includes('w:val="shimmer"')).toBe(decision === "accept");
+      expect(xml.includes('w:val="lights"')).toBe(decision === "reject");
       expect(xml).not.toContain("rPrChange");
       reopened(session, true);
     },
@@ -203,7 +203,7 @@ test("editing an imported paragraph mark keeps its earliest original formatting 
   );
   expect(appearance(native)).toMatchObject({ "font-size": "10pt", color: "#000088" });
   expect(strFromU8(unzipSync(exportDocx(native).bytes)["word/document.xml"]!)).toContain(
-    "w:outline",
+    'w:val="lights"',
   );
   expect(native.getNode(native.snapshot().metadata.word!.stories[0]!.rootNodeId)!.text).toBe(
     "BODY",
@@ -392,7 +392,7 @@ test("legacy whole native paragraph-mark properties contribute current effects t
     metadata = JSON.parse(JSON.stringify(snapshot.metadata)),
     fragment = metadata.word.nativeContent.fragments.find(
       (item: { propertyName?: string }) =>
-        item.propertyName === "http://schemas.openxmlformats.org/wordprocessingml/2006/main emboss",
+        item.propertyName === "http://schemas.openxmlformats.org/wordprocessingml/2006/main effect",
     ),
     path = fragment.assetPath,
     collection = JSON.parse(strFromU8(files.get(path)!));
@@ -429,7 +429,7 @@ test("legacy whole native paragraph-mark properties contribute current effects t
   const output = exportDocx(session).bytes,
     native = strFromU8(unzipSync(output)["word/document.xml"]!);
   expect(native.match(/<w:rPrChange\b/g)).toHaveLength(1);
-  expect(native.match(/<w:emboss\b/g)).toHaveLength(2);
+  expect(native.match(/w:val="shimmer"/g)).toHaveLength(2);
   const nativeModel = reopened(session, true);
   expect(
     nativeModel.snapshot().metadata.word!.revisions.filter((item) => item.kind === "format"),
@@ -600,7 +600,7 @@ for (const tracking of [false, true])
         for (const marker of nativeMarks)
           expect(appearance(native, marker)["font-size"]).toBe("14pt");
         const xml = strFromU8(unzipSync(exportDocx(native).bytes)["word/document.xml"]!);
-        expect(xml.match(/<w:emboss\b/g)).toHaveLength(2);
+        expect(xml.match(/w:val="shimmer"/g)).toHaveLength(2);
         expect(xml.match(/<w:rPrChange\b/g)).toHaveLength(1);
         if (tracking) {
           const reviewer = createDocumentSession(native),

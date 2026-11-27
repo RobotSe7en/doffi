@@ -1,4 +1,10 @@
 import { registerWordFloatingSectionTests } from "./word-floating-section-cases.js";
+import { registerWordTableIndentTests } from "./word-table-indent-cases.js";
+import { registerWordTableDefaultTests } from "./word-table-default-cases.js";
+import { registerWordRowExceptionScopeTests } from "./word-row-exception-scope-cases.js";
+import { registerWordFloatingCompatibilityTests } from "./word-floating-compatibility-cases.js";
+import { nativeSingleSpacingFixture, nativeTextBoxGridFixture } from "../../packages/office/tests/word-producer-drawing-fixture.js";
+import { fontLineFixture, rowHeightCases, rowHeightFixture } from "../../packages/office/tests/table-default-fixture.js";
 import { registerWordPunctuationTests } from "./word-punctuation-cases.js";
 import { registerWordDrawingSizeTests } from "./word-drawing-size-cases.js";
 import { registerWordDrawingWrapTests } from "./word-drawing-wrap-cases.js";
@@ -58,6 +64,129 @@ declare global {
   }
 }
 let code: string;
+registerWordTableIndentTests(mount);
+registerWordTableDefaultTests(mount);
+
+test("floating text inherits its physical section line grid while exact spacing and snap-off stay independent", async ({ page }) => {
+  const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "SimSun" }));
+  let baseline = 0;
+  for (const options of [{}, { grid: true }, { grid: true, snap: false }, { grid: true, exact: 20 }]) {
+    const files = importDocx(nativeTextBoxGridFixture(options), { documentId: "box-line-grid" }),
+      reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "grid-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, {}, fonts);
+      const p = page.frameLocator("iframe").locator('.sdk-word-floating-layer [data-sdk-word-text-story] p'),
+        pitch = await p.evaluate(p => {
+          const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT), tops: number[] = [];
+          for (let text = walker.nextNode(); text; text = walker.nextNode()) if (text.textContent === "Single" || text.textContent === "Second") {
+            const range = document.createRange(); range.selectNodeContents(text); tops.push(range.getBoundingClientRect().top);
+          }
+          if (tops.length !== 2) throw new Error("Two source lines are required.");
+          return (tops[1]! - tops[0]!) * .75;
+        });
+      if (!("grid" in options)) baseline = pitch;
+      else if ("exact" in options) expect(pitch).toBeCloseTo(20, 1);
+      else if ("snap" in options) expect(pitch).toBeCloseTo(baseline, 1);
+      else {
+        expect(pitch).toBeCloseTo(Math.round(pitch / 15.6) * 15.6, 1);
+        expect(Math.abs(pitch - baseline)).toBeGreaterThan(.5);
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
+
+test("omitted native single spacing matches explicit automatic spacing in table text and floating text on both surfaces", async ({ page }) => {
+  const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "SimSun" }));
+  let reference: { height: number; line: number }[] | undefined;
+  for (const explicit of [false, true]) {
+    const files = importDocx(nativeSingleSpacingFixture(explicit), { documentId: "single-default" }),
+      reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "single-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, {}, fonts);
+      const frame = page.frameLocator("iframe"), boxes = await frame.locator('p[data-node-id],p[data-sdk-word-text-node]').evaluateAll(ps => ps.filter(p => p.getClientRects().length && getComputedStyle(p).visibility === "visible").map(p => ({ height: p.getBoundingClientRect().height, line: Math.max(...[p, ...p.querySelectorAll('[data-word-run],[data-word-script]')].map(node => parseFloat(getComputedStyle(node).lineHeight)).filter(Number.isFinite)) })));
+      expect(boxes.length).toBeGreaterThan(2);
+      expect(boxes.every(box => Number.isFinite(box.line) && box.line > 30), JSON.stringify(boxes)).toBe(true);
+      if (!reference) reference = boxes;
+      else for (const [index, box] of boxes.entries()) {
+        expect(box.height).toBeCloseTo(reference[index]!.height, 1);
+        expect(box.line).toBeCloseTo(reference[index]!.line, 1);
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
+
+test("native automatic row height follows a CJK face for Latin too, with proportional metrics across sizes and clean input undo", async ({ page }) => {
+  const fonts = (await wordLayoutFont(page)).map(font => ({ ...font, family: "Layout Coverage Fixture" }));
+  // Use the same licensed fixture under an unrelated family name: behavior
+  // depends on actual Han coverage, never a list of font names.
+  for (const family of ["Layout Coverage Fixture", "serif"]) {
+    const files = importDocx(fontLineFixture(family), { documentId: "native-row-metrics" });
+    const reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "native-row-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, { layout: "continuous" }, fonts);
+      const frame = page.frameLocator("iframe"), rows = frame.locator("tr"),
+        heights = await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height)),
+        lines = await frame.locator("p").evaluateAll(ps => ps.map(p => parseFloat(getComputedStyle(p).lineHeight)));
+      for (const index of [0, 2, 4]) {
+        expect(heights[index]).toBeCloseTo(lines[index]! * 2, 0);
+        if (family === "Layout Coverage Fixture") {
+          expect(heights[index]).toBeCloseTo(heights[index + 1]!, 1);
+          expect(lines[index]).toBeCloseTo(lines[index + 1]!, 2);
+        }
+      }
+      expect(lines[2]! / lines[0]!).toBeCloseTo(1.5, 2);
+      expect(lines[4]! / lines[2]!).toBeCloseTo(1.5, 2);
+      if (surface === "edit" && source === files && family === "Layout Coverage Fixture") {
+        const before = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
+        const paragraph = frame.locator("p").first();
+        await paragraph.click(); await paragraph.press("End"); await paragraph.press("X");
+        await page.evaluate(() => window.paginationHost.session!.undo());
+        expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
+
+test("Word exact row heights add the largest bottom margin and minimum heights reserve margins and collapsed borders", async ({ page }) => {
+  const fonts = await wordLayoutFont(page);
+  for (const nativeMode of [14, 15] as const) {
+    const files = importDocx(rowHeightFixture(nativeMode), { documentId: "native-row-heights" });
+    const reopened = importDocx(exportDocx(openWordDocument(files, { kind: "document" })).bytes, { documentId: "native-row-reopen" });
+    for (const source of [files, reopened]) for (const surface of ["preview", "edit"] as const) {
+      await mount(page, source, surface, { layout: "continuous" }, fonts);
+      const rows = page.frameLocator("iframe").locator("tr"),
+        heights = await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height * 0.75));
+      for (const [index, spec] of rowHeightCases.entries()) {
+        const top = Math.max(spec.top, "otherTop" in spec ? spec.otherTop : 0);
+        if (spec.rule === "auto") expect(heights[index]).toBeLessThan(spec.height);
+        else expect(heights[index]).toBeCloseTo(spec.height + spec.bottom + (spec.rule === "atLeast" ? top + 1 : 0), 1);
+        if ("otherTop" in spec) {
+          expect(await rows.nth(index).locator("td").first().evaluate(cell => parseFloat(getComputedStyle(cell).paddingTop))).toBeCloseTo(top * 4 / 3, 3);
+          expect(await rows.nth(index).locator("td").last().evaluate(cell => parseFloat(getComputedStyle(cell).paddingBottom))).toBeCloseTo(spec.bottom * 4 / 3, 3);
+        }
+      }
+      if (surface === "edit" && source === files) {
+        const before = await page.evaluate(() => window.paginationHost.session!.snapshot().html);
+        const paragraph = rows.last().locator("p").first();
+        await paragraph.click(); await paragraph.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End"); await paragraph.press("X");
+        await page.evaluate(() => window.paginationHost.session!.undo());
+        expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+        for (const index of [0, 2, 6]) {
+          const row = rows.nth(index), height = await row.evaluate(node => node.getBoundingClientRect().height * 0.75);
+          await row.locator("td").first().hover();
+          await page.frameLocator("iframe").getByRole("button", { name: "调整第 " + (index + 1) + " 行高度", exact: true }).press("ArrowDown");
+          expect(await row.evaluate(node => node.getBoundingClientRect().height * 0.75)).toBeCloseTo(height + 1, 1);
+          await page.evaluate(() => window.paginationHost.session!.undo());
+          expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before);
+        }
+      }
+      expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+    }
+  }
+});
 
 test("native style components preserve relative spacing in preview and editing after DOCX reopen", async ({ page }) => {
   const model = openWordDocument(importDocx(mutateDocx("04-styles-sections.docx", {}), { documentId: "relative-paragraph-style" }), { kind: "document" });
@@ -415,7 +544,10 @@ test("fixed character grids use Normal pitch across font sizes and preserve supp
             const range = document.createRange();
             range.setStart(text, offset);
             range.setEnd(text, offset + (text.data.codePointAt(offset)! > 65535 ? 2 : 1));
-            return range.getBoundingClientRect().x;
+            const rect = range.getBoundingClientRect(), spacing = parseFloat(getComputedStyle(text.parentElement!).letterSpacing) || 0;
+            // Fixed grid slots center fallback glyphs of different advances;
+            // their painted left edges need not be equally spaced.
+            return rect.left + (rect.width - spacing) / 2;
           }
           offset -= text.length;
         }
@@ -647,6 +779,9 @@ test("automatic spacing without a grid uses run metrics and preserves the paragr
 });
 for (const platform of ["Linux x86_64", "MacIntel"]) {
   test("Noto Sans CJK SC automatic spacing preserves the platform metrics on " + platform, async ({ page }) => {
+    const url = "/word-layout-sans.woff2";
+    await page.route("**" + url, route => route.fulfill({ path: "apps/playground/src/assets/word-fonts/sans-regular.woff2", contentType: "font/woff2" }));
+    const fonts = [{ family: "Noto Sans CJK SC", aliases: [], url }];
     await page.addInitScript(platform => {
       Object.defineProperty(Navigator.prototype, "platform", { configurable: true, get: () => platform });
     }, platform);
@@ -656,15 +791,15 @@ for (const platform of ["Linux x86_64", "MacIntel"]) {
         '<w:rFonts w:eastAsia="Noto Sans CJK SC"/><w:sz w:val="24"/></w:rPr><w:t>正文行距</w:t></w:r></w:p>'),
     }), { documentId: "native-noto-leading" });
     for (const mode of ["preview", "edit"] as const) {
-      await mount(page, files, mode);
+      await mount(page, files, mode, {}, fonts);
       const run = page.frameLocator("iframe").locator('[data-sdk-word-script-view][data-word-script="eastAsia"]')
         .filter({ hasText: "正文行距" });
       const geometry = await run.evaluate(node => {
         const css = getComputedStyle(node);
         const canvas = document.createElement("canvas").getContext("2d")!;
-        canvas.font = `${css.fontStyle} ${css.fontWeight} 256px ${css.fontFamily}`;
+        canvas.font = `${css.fontStyle} ${css.fontWeight} 4096px ${css.fontFamily}`;
         const font = canvas.measureText("汉");
-        const em = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 256;
+        const em = (font.fontBoundingBoxAscent + font.fontBoundingBoxDescent) / 4096;
         return {
           platform: navigator.platform, family: css.fontFamily,
           runHeight: parseFloat(css.lineHeight), nativeHeight: em * parseFloat(css.fontSize) * 1.25,
@@ -1649,7 +1784,7 @@ test("fixed table row heights clip long source text, avoid phantom pages and edi
       .locator("tr")
       .first()
       .evaluate((row) => row.getBoundingClientRect().height * 0.75),
-  ).toBeCloseTo(24, 0);
+  ).toBeCloseTo(28, 0);
   expect((await page.evaluate(() => window.paginationHost.layout())).pages).toHaveLength(1);
   expect(await frame.locator(".sdk-word-row-clip").count()).toBe(4);
   expect(
@@ -2351,7 +2486,7 @@ function columnFiles(table = false): DocumentPackage {
   const content = table
     ? '<table style="width:100pt;border-collapse:collapse"><tr data-word-repeat-header="true"><th style="border:1pt solid black"><p>HEADER</p></th></tr>' +
       Array.from(
-        { length: 32 },
+        { length: 48 },
         (_, n) => '<tr><td style="border:1pt solid black;padding:0"><p>ROW-' + n + "</p></td></tr>",
       ).join("") +
       "</table>"
@@ -3836,11 +3971,11 @@ test("Word objects drag and resize through one-step history and edit their text 
   expect((await page.evaluate(() => window.paginationHost.session!.snapshot())).html).toBe(
     before.html,
   );
-  await shape.click({ position: { x: 10, y: 10 } });
-  await page.getByRole("button", { name: "编辑对象文字", exact: true }).click();
+  await shape.dblclick({ position: { x: 10, y: 10 } });
+  await expect(shape.locator("[data-office-editor]")).toHaveCount(1);
   const text = frame.locator("[data-office-editor] p").first();
   await text.click();
-  await page.keyboard.press("End");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
   await page.keyboard.insertText("编辑");
   await page.evaluate(() =>
     (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({
@@ -3887,8 +4022,10 @@ test("moving an aligned floating object starts at its displayed position and rel
     before = await shape.boundingBox();
   expect(before).not.toBeNull();
   await shape.click({ position: { x: 15, y: 15 } });
+  await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "drawingSettings" }));
   await expect(page.getByLabel("对象水平对齐", { exact: true })).toHaveValue("center");
   await expect(page.getByLabel("对象垂直对齐", { exact: true })).toHaveValue("center");
+  await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
   await shape.scrollIntoViewIfNeeded();
   const position = await shape.evaluate((node) => {
       const r = node.getBoundingClientRect(),
@@ -6143,12 +6280,12 @@ test("tracked native Enter and Backspace preserve paragraph marks and fold a new
     }),
   );
   await mount(page, session.serialize(), "edit");
-  const frame = page.frameLocator("iframe");
+  const frame = page.frameLocator("iframe"), body = frame.getByRole("textbox", { name: "文档正文" });
   await frame.locator('[data-node-id="paragraph-1"]').click();
   await page.keyboard.press("Home");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
-  await expect(frame.locator("p")).toHaveCount(2);
+  await expect(body.locator("p")).toHaveCount(2);
   expect(
     await page.evaluate(() =>
       window.paginationHost
@@ -6157,13 +6294,13 @@ test("tracked native Enter and Backspace preserve paragraph marks and fold a new
     ),
   ).toEqual(["paragraphInsert"]);
   await page.keyboard.press("Backspace");
-  await expect(frame.locator("p")).toHaveCount(1);
-  await expect(frame.locator("p")).toHaveText("AB");
+  await expect(body.locator("p")).toHaveCount(1);
+  await expect(body.locator("p")).toHaveText("AB");
   expect(
     await page.evaluate(() => window.paginationHost.session!.snapshot().metadata.word!.revisions),
   ).toEqual([]);
   await page.evaluate(() => window.paginationHost.session!.undo());
-  await expect(frame.locator("p")).toHaveCount(2);
+  await expect(body.locator("p")).toHaveCount(2);
   expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
 
@@ -6600,6 +6737,150 @@ test("mirrored physical pages swap text, header and gutter margins independently
   expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).not.toContain(
     "sdk-column",
   );
+});
+
+test("Word reading navigation keeps precise UTF-16 ranges and leaves history unchanged", async ({ page }) => {
+  const session = createDocumentSession(openWordDocument(createWordDocument({ documentId: "reading-navigation" }), { kind: "document" }));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "reading-navigation", baseRevision: 0,
+    operations: [{ op: "replaceFragment", nodeId: "section-root-1", html: '<h2>阅读标题</h2><p class="reading"><span>😀 Alpha </span><span style="font-weight:bold">Beta alpha</span></p>' }] }));
+  const before = session.snapshot();
+  await mount(page, session.serialize(), "interaction");
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("find"));
+  const pane = page.getByRole("region", { name: "全文查找", exact: true });
+  await pane.getByRole("searchbox", { name: "查找内容" }).fill("Alpha Beta");
+  await pane.getByRole("button", { name: "下一处", exact: true }).click();
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection()!.anchor)).toMatchObject({
+    kind: "text", from: 3, to: 13, quote: "Alpha Beta",
+  });
+  await expect(page.getByRole("dialog", { name: "新建批注", exact: true })).toHaveCount(0);
+  await pane.getByRole("searchbox", { name: "查找内容" }).fill("alpha");
+  await pane.getByRole("button", { name: "上一处", exact: true }).click();
+  await expect(pane).toContainText("2 处匹配 · 第 2 处");
+  await pane.getByLabel("区分大小写", { exact: true }).check();
+  await pane.getByRole("searchbox", { name: "查找内容" }).press("Enter");
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection()!.anchor)).toMatchObject({
+    kind: "text", from: 14, to: 19, quote: "alpha",
+  });
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("outline"));
+  await page.getByRole("region", { name: "文档导航", exact: true }).getByRole("button", { name: "阅读标题", exact: true }).click();
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection()!.anchor.kind)).toBe("node");
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("wordCount"));
+  await expect(page.getByRole("region", { name: "字数统计", exact: true })).toContainText("段落 2");
+  expect(await page.evaluate(() => ({ html: window.paginationHost.session!.snapshot().html,
+    revision: window.paginationHost.session!.snapshot().manifest.revision, undoSteps: window.paginationHost.session!.history().undoSteps })))
+    .toEqual({ html: before.html, revision: before.manifest.revision, undoSteps: 0 });
+  await page.evaluate(() => window.paginationHost.interaction!.openWordNavigation("find"));
+  await pane.getByRole("searchbox", { name: "查找内容" }).fill("Alpha");
+  const id = await page.frameLocator("iframe").locator(".reading").getAttribute("data-node-id");
+  await page.evaluate(id => {
+    const session = window.paginationHost.session!;
+    session.commit(session.prepare({ protocolVersion: 1, documentId: session.snapshot().manifest.documentId,
+      baseRevision: session.snapshot().manifest.revision,
+      operations: [{ op: "replaceText", nodeId: id!, from: 3, to: 8, expectedText: "Alpha", text: "Gamma" }] }));
+  }, id);
+  await page.evaluate(() => window.paginationHost.view!.settled());
+  await expect(pane).toContainText("1 处匹配");
+  await pane.getByRole("button", { name: "下一处", exact: true }).click();
+  expect(await page.evaluate(() => window.paginationHost.interaction!.selection())).toMatchObject({
+    baseRevision: before.manifest.revision + 1, anchor: { kind: "text", from: 14, to: 19, quote: "alpha" },
+  });
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("Word selection pane selects grouped objects and deletes ancestors once with atomic undo", async ({ page }) => {
+  const session = createDocumentSession(openWordDocument(createWordDocument({ documentId: "selection-pane" }), { kind: "document" }));
+  const apply = (operations: import("@doffi/core").DocumentOperation[]) => session.commit(session.prepare({
+    protocolVersion: 1, documentId: "selection-pane", baseRevision: session.snapshot().manifest.revision, operations,
+  }));
+  apply([{ op: "replaceText", nodeId: "paragraph-1", from: 0, to: 0, expectedText: "", text: "AB" },
+    ...[0, 1].map(index => ({ op: "insertWordDrawing" as const, nodeId: "paragraph-1", offset: 1,
+      object: { kind: "shape" as const, preset: "rect" as const },
+      geometry: { x: index * 110, y: 0, width: 100, height: 50, rotation: 0, flipH: false, flipV: false },
+      layout: { mode: "floating" as const, wrap: "none" as const },
+    })),
+  ]);
+  apply([{ op: "groupWordDrawings", nodeId: "paragraph-1", nodeIds: session.snapshot().metadata.word!.drawings!.map(item => item.nodeId) }]);
+  const before = session.snapshot(), group = before.metadata.word!.drawings!.find(item => item.kind === "group")!;
+  await mount(page, session.serialize(), "edit");
+  await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "selectionPane" }));
+  const pane = page.getByRole("region", { name: "选择窗格", exact: true });
+  await expect(pane.getByRole("option")).toHaveCount(3);
+  const groupOption = pane.getByRole("option", { name: /^组合/ });
+  await groupOption.click();
+  await expect(groupOption).toHaveAttribute("aria-selected", "true");
+  await expect(page.frameLocator("iframe").locator('[data-sdk-word-object="' + group.nodeId + '"]').first()).toHaveAttribute("data-sdk-word-selected", "");
+  await pane.getByRole("option", { name: /^形状/ }).first().click({ modifiers: ["Shift"] });
+  await expect(pane.locator('[aria-selected="true"]')).toHaveCount(2);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().manifest.revision)).toBe(before.manifest.revision);
+  await page.frameLocator("iframe").getByRole("textbox", { name: "文档正文", exact: true }).press("ArrowRight");
+  const moved = await page.evaluate(() => window.paginationHost.session!.snapshot().metadata.word!.drawings!);
+  expect(moved.find(item => item.nodeId === group.nodeId)!.geometry.x).toBe(group.geometry.x + 1);
+  for (const child of before.metadata.word!.drawings!.filter(item => item.kind !== "group"))
+    expect(moved.find(item => item.nodeId === child.nodeId)!.geometry).toEqual(child.geometry);
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before.html);
+  await groupOption.press("Delete");
+  await expect(pane.getByRole("option")).toHaveCount(0);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().metadata.word!.drawings)).toHaveLength(0);
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  await expect(pane.getByRole("option")).toHaveCount(3);
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(before.html);
+  await pane.getByRole("option").first().click();
+  await pane.getByRole("option").first().press("ArrowDown");
+  await expect(pane.getByRole("option").nth(1)).toHaveAttribute("aria-selected", "true");
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
+});
+
+test("font dialog edits underline color and character scale with native reopen, preview and undo", async ({ page }) => {
+  const session = createDocumentSession(openWordDocument(createWordDocument({ documentId: "font-scale-color" }), { kind: "document" }));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "font-scale-color", baseRevision: 0,
+    operations: [{ op: "replaceFragment", nodeId: "section-root-1", html: '<p class="sample"><span style="text-decoration-line:underline;text-decoration-style:double;text-decoration-color:#224466;--word-run-native-w:125">ScaleColor</span></p>' }] }));
+  await mount(page, session.serialize(), "edit", { layout: "continuous" });
+  const paragraph = page.frameLocator("iframe").locator(".sample");
+  const select = async () => {
+    await paragraph.click();
+    await paragraph.evaluate(node => {
+      const range = node.ownerDocument.createRange(); range.selectNodeContents(node);
+      const selection = node.ownerDocument.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    });
+  };
+  const open = () => page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "fontSettings" }));
+  await select(); await open();
+  const panel = page.getByRole("dialog", { name: "字体", exact: true });
+  await expect(panel.getByLabel("字符下划线", { exact: true })).toHaveValue("double");
+  await expect(panel.getByLabel("下划线颜色", { exact: true })).toHaveValue("rgb(34, 68, 102)");
+  await panel.getByLabel("下划线颜色", { exact: true }).fill("#cc3300");
+  await panel.getByRole("tab", { name: "高级", exact: true }).click();
+  await expect(panel.getByLabel("字符缩放（百分比）", { exact: true })).toHaveValue("125");
+  await panel.getByLabel("字符缩放（百分比）", { exact: true }).fill("601");
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
+  await expect(panel).toBeVisible();
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().manifest.revision)).toBe(session.snapshot().manifest.revision);
+  await panel.getByLabel("字符缩放（百分比）", { exact: true }).fill("75");
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
+  await page.evaluate(() => window.paginationHost.view!.settled());
+  await expect(paragraph.locator(".sdk-word-run-width").first()).toBeVisible();
+  const source = await page.evaluate(() => [...window.paginationHost.session!.serialize()].map(([path, bytes]) => [path, [...bytes]] as [string, number[]]));
+  const native = exportDocx(openWordDocument(new Map(source.map(([path, bytes]) => [path, new Uint8Array(bytes)])), { kind: "document" }));
+  const xml = new TextDecoder().decode(readDocumentZip(native.bytes).get("word/document.xml"));
+  expect(xml).toContain('w:w w:val="75"'); expect(xml.toLowerCase()).toContain('w:val="double" w:color="cc3300"');
+  for (const properties of xml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/g) ?? [])
+    expect((properties.match(/<w:dstrike\b/g) ?? []).length).toBeLessThanOrEqual(1);
+  const reopened = importDocx(native.bytes, { documentId: "font-scale-color-reopen", unsupportedContent: "reject" });
+  for (const mode of ["preview", "edit"] as const) {
+    await mount(page, reopened, mode, { layout: "continuous" });
+    const span = page.frameLocator("iframe").locator(".sdk-word-run-width > span").first();
+    await expect(span).toHaveCSS("text-decoration-color", "rgb(204, 51, 0)");
+    await expect(span).toHaveCSS("transform", "matrix(0.75, 0, 0, 1, 0, 0)");
+  }
+  await mount(page, session.serialize(), "edit", { layout: "continuous" });
+  await select(); await open();
+  await panel.getByRole("tab", { name: "高级", exact: true }).click();
+  await panel.getByLabel("字符缩放（百分比）", { exact: true }).fill("80");
+  await panel.getByRole("button", { name: "确定", exact: true }).click();
+  await page.evaluate(() => window.paginationHost.session!.undo());
+  expect(await page.evaluate(() => window.paginationHost.session!.snapshot().html)).toBe(session.snapshot().html);
+  expect(await page.evaluate(() => window.paginationHost.errors)).toEqual([]);
 });
 
 test("font controls apply script roles, complex size and language in one tracked undoable source change", async ({
@@ -9886,6 +10167,8 @@ registerWordNoteClipboardTests(mount);
 registerWordCommentClipboardTests(mount);
 
 registerWordNativeClipboardTests(mount);
+registerWordRowExceptionScopeTests(mount);
+registerWordFloatingCompatibilityTests(mount);
 
 for (const count of [3, 60])
   test(
@@ -9923,7 +10206,7 @@ for (const count of [3, 60])
           (await page.evaluate(() => window.paginationHost.layout())).pages.length,
         ).toBeGreaterThan(1);
       await paragraph.click();
-      await page.keyboard.press("End");
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
       await page.keyboard.insertText("EDIT");
       await expect
         .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
@@ -10002,7 +10285,7 @@ for (const [grid, span] of [
         p = table.locator("p").first();
       await expect(p).toHaveText("DYNAMIC");
       await p.click();
-      await page.keyboard.press("End");
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End");
       await page.keyboard.insertText("EDIT");
       await expect
         .poll(() => page.evaluate(() => window.paginationHost.session!.snapshot().html))
@@ -10011,6 +10294,7 @@ for (const [grid, span] of [
         () => window.paginationHost.session!.snapshot().metadata.word!.tables[0]!.grid,
       );
       await p.click();
+      await page.evaluate(() => window.paginationHost.view!.settled());
       const handle = frame.getByRole("button", { name: "调整第 " + span + " 列宽度", exact: true });
       await expect(handle).toBeVisible();
       const r = (await handle.boundingBox())!;
@@ -10395,7 +10679,9 @@ for (const kind of ["table", "drawing", "image"] as const)
         await target.evaluate((p) => p.ownerDocument.getSelection()?.removeAllRanges());
         if (kind === "drawing" && layout === "pages") {
           await object.click({ position: { x: 15, y: 15 } });
+          await page.evaluate(() => (window.paginationHost.view as import("@doffi/editor").DocumentTextEditor).execute({ type: "word", action: "drawingSettings" }));
           await expect(page.getByLabel("对象水平对齐", { exact: true })).toHaveValue("center");
+          await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
           const rect = (await object.boundingBox())!;
           await page.mouse.move(rect.x + 20, rect.y + 20);
           await page.mouse.down();
@@ -10415,7 +10701,6 @@ for (const kind of ["table", "drawing", "image"] as const)
           expect(
             moved.rects.filter((r) => r.right > moved.box.left + 1 && r.left < moved.box.right - 1),
           ).toEqual([]);
-          await page.getByRole("button", { name: "关闭绘图设置", exact: true }).click();
           await page.evaluate(() => window.paginationHost.session!.undo());
         }
         if (kind === "table") {
@@ -10554,7 +10839,7 @@ test("centered wrapping breaks a long unspaced Latin run safely across both side
 for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as const)
   test(
     "centered wrapping composes with paragraph alignment and character grids " + variant,
-    async ({ page }) => {
+    async ({ page }, info) => {
       const { centerWrapFixture } = await import(
         "../../packages/office/tests/center-wrap-fixture.js"
       );
@@ -10595,6 +10880,7 @@ for (const variant of ["center", "right", "snapToChars", "linesAndChars"] as con
         }),
       );
       const before = session.snapshot().html;
+      writeFileSync(info.outputPath("wrapped-alignment.docx"), exportDocx(session).bytes);
       await mount(page, session.serialize(), "edit");
       const result = await page
         .frameLocator("iframe")

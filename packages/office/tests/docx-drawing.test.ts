@@ -5,6 +5,38 @@ import { unzipSync, strFromU8, zipSync, strToU8 } from "fflate";
 import { createWordDocument, openDocument, createDocumentSession } from "@doffi/core";
 import type { DocumentOperation, WordDrawing } from "@doffi/core";
 import { exportDocx, importDocx, importDocxWithReport } from "@doffi/office";
+import { drawingBodyDefaultsFixture } from "./floating-compatibility-fixture.js";
+import { wordProducerDrawingFixture } from "./word-producer-drawing-fixture.js";
+
+test.each([{}, { hidden: true }, { connector: true }, { scale: 75, rotation: 30 }])("producer drawing properties remain editable and isolated from the containing table: %j", options => {
+  let bytes = wordProducerDrawingFixture(options);
+  for (let pass = 0; pass < 3; pass++) {
+    const model = openDocument(importDocx(bytes, { documentId: "producer-properties", unsupportedContent: "reject" }), { kind: "document" }),
+      word = model.snapshot().metadata.word!, drawing = word.drawings![0]!;
+    expect(drawing.layout.hidden).toBe("hidden" in options ? options.hidden : false);
+    expect(drawing.layout.effectExtent).toEqual({ top: 2.25, right: 3, bottom: 5.5, left: 1 });
+    expect(drawing.locks).toEqual("connector" in options ? { noChangeShapeType: true } : { noChangeArrowheads: true });
+    if (drawing.kind === "textBox") {
+      expect(drawing.text?.upright).toBe(true);
+      const story = word.stories.find(story => story.storyId === drawing.textStoryId)!;
+      expect(word.tables.flatMap(table => table.styleContexts ?? []).some(context => context.nodeId === story.rootNodeId)).toBe(false);
+    } else expect(drawing.geometry.height).toBe(0);
+    bytes = exportDocx(model).bytes;
+  }
+});
+
+test.each(["", 'lIns="0" tIns="25400"'])("native shape text body defaults use EMU units before export: %s", body => {
+  let bytes = drawingBodyDefaultsFixture(body);
+  for (let pass = 0; pass < 3; pass++) {
+    const model = openDocument(importDocx(bytes, { documentId: "shape-defaults", unsupportedContent: "reject" }), { kind: "document" }),
+      drawing = model.snapshot().metadata.word!.drawings![0]!;
+    expect("text" in drawing && drawing.text?.insets).toEqual({ top: body ? 2 : 3.6, right: 7.2, bottom: 3.6, left: body ? 0 : 7.2 });
+    bytes = exportDocx(model).bytes;
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    expect(xml).toContain('rIns="91440"');
+    expect(xml).toContain('bIns="45720"');
+  }
+});
 const geometry = { x: 24, y: 15, width: 120, height: 75, rotation: 25, flipH: true, flipV: false },
   layout = {
     mode: "floating" as const,

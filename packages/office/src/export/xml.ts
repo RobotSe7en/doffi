@@ -71,13 +71,28 @@ const propertyOrder: Readonly<Record<string, readonly string[]>> = {
     "highlight",
     "u",
     "effect",
+    "bdr",
     "shd",
+    "fitText",
     "vertAlign",
     "rtl",
     "cs",
     "em",
     "lang",
+    "eastAsianLayout",
     "specVanish",
+    "w14:glow",
+    "w14:shadow",
+    "w14:reflection",
+    "w14:textOutline",
+    "w14:textFill",
+    "w14:scene3d",
+    "w14:props3d",
+    "w14:ligatures",
+    "w14:numForm",
+    "w14:numSpacing",
+    "w14:stylisticSets",
+    "w14:cntxtAlts",
     "rPrChange",
   ],
   pPr: wordParagraphPropertyOrder,
@@ -141,7 +156,8 @@ export function orderedProperties(kind: string, source: string): string {
     const token = match[0];
     if (depth === 0) {
       start = match.index;
-      name = /^<w:([^\s/>]+)/.exec(token)?.[1] ?? "";
+      const wTag = /^<w:([^\s/>]+)/.exec(token)?.[1];
+      name = wTag ?? (/^<(w14:[^\s/>]+)/.exec(token)?.[1] ?? "");
     }
     if (token.startsWith("</")) depth--;
     else if (!token.endsWith("/>")) depth++;

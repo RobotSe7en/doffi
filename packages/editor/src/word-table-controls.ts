@@ -6,6 +6,7 @@ import {
   DEFAULT_DOCUMENT_READ_LIMITS,
 } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 export interface WordTableSelection {
   readonly paragraphId?: string;
   readonly tableId?: string;
@@ -20,11 +21,12 @@ export function createWordTableControls(
   onError: (error: unknown) => void,
 ): { open(insert: boolean): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let shell: HTMLElement | undefined, panel: HTMLElement | undefined, controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
     controller = undefined;
-    panel?.remove();
+    shell?.remove();
+    shell = undefined;
     panel = undefined;
   };
   function open(insert: boolean, fixed?: WordTableSelection): void {
@@ -34,14 +36,25 @@ export function createWordTableControls(
       throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
     if (!insert && !selected.tableId)
       throw new DocumentError("InvalidOperation", "请先选择表格中的单元格。");
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", insert ? "插入表格" : "表格设置");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: insert ? "插入表格" : "表格设置",
+      title: insert ? "插入表格" : "表格属性",
+      dock: "right",
+      closeLabel: "关闭表格设置",
+      onClose: close,
+      signal,
+      width: "340px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    panel.style.display = "grid";
+    panel.style.gridTemplateColumns = "repeat(2,minmax(0,1fr))";
+    panel.style.alignContent = "start";
+    panel.style.gap = "8px 10px";
+    parent.insertBefore(shell, before);
     const apply = (operations: DocumentOperation[]): void => {
       const snapshot = session.snapshot();
       session.commit(
@@ -57,7 +70,14 @@ export function createWordTableControls(
           if (panel && session.getNode(selected.tableId!)) open(false, selected);
         });
     };
-    const button = (name: string, run: () => void): void => {
+    let currentGroup = "common";
+    const groupItems: { node: HTMLElement; group: string }[] = [];
+    const register = <T extends HTMLElement>(node: T, group = currentGroup): T => {
+      node.dataset.wordTabGroup = group;
+      groupItems.push({ node, group });
+      return node;
+    };
+    const button = (name: string, run: () => void, group?: string): void => {
       const node = document.createElement("button");
       node.type = "button";
       node.textContent = name;
@@ -72,7 +92,7 @@ export function createWordTableControls(
         },
         { signal },
       );
-      panel!.append(node);
+      panel!.append(register(node, group));
     };
     const field = (name: string, value: number | string, type = "number"): HTMLInputElement => {
       const label = document.createElement("label"),
@@ -87,7 +107,7 @@ export function createWordTableControls(
         input.step = "1";
       }
       label.append(input);
-      panel!.append(label);
+      panel!.append(register(label));
       return input;
     };
     const choose = (
@@ -107,10 +127,9 @@ export function createWordTableControls(
       }
       input.value = value;
       label.append(input);
-      panel!.append(label);
+      panel!.append(register(label));
       return input;
     };
-    button("关闭表格设置", close);
     if (insert) {
       const rows = field("表格行数", 3),
         columns = field("表格列数", 3);
@@ -154,11 +173,44 @@ export function createWordTableControls(
         columnCount = Math.max(columnCount, c + columns);
       }
     const active = cells.find((cell) => cell.id === selected.cellId) ?? cells[0]!;
+    const tabBar = document.createElement("div");
+    tabBar.className = "word-pane-tabs";
+    tabBar.setAttribute("role", "tablist");
+    tabBar.setAttribute("aria-label", "表格属性选项卡");
+    let activeTab = "all";
+    const tabButtons: { id: string; btn: HTMLButtonElement }[] = [];
+    const applyTabFilter = (next: string): void => {
+      activeTab = next;
+      for (const item of tabButtons) {
+        item.btn.setAttribute("aria-selected", String(item.id === activeTab));
+      }
+      for (const entry of groupItems) {
+        entry.node.hidden = activeTab !== "all" && entry.group !== "common" && entry.group !== activeTab;
+      }
+    };
+    for (const [id, label] of [
+      ["all", "全部"],
+      ["table", "表格"],
+      ["rows", "行与列"],
+      ["cell", "单元格"],
+      ["style", "定位与样式"],
+    ] as const) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("role", "tab");
+      btn.textContent = label;
+      btn.addEventListener("click", () => applyTabFilter(id), { signal });
+      tabButtons.push({ id, btn });
+      tabBar.append(btn);
+    }
+    shell.insertBefore(tabBar, panel);
+    currentGroup = "common";
     const row = field("起始行", active.row + 1),
       column = field("起始列", active.column + 1),
       rows = field("选区行数", active.rows),
       columns = field("选区列数", active.columns);
     row.min = column.min = rows.min = columns.min = "1";
+    currentGroup = "rows";
     const change = (value: Extract<DocumentOperation, { op: "editWordTable" }>["change"]): void => {
       apply([{ op: "editWordTable", nodeId: tableId, change: value }]);
     };
@@ -166,7 +218,7 @@ export function createWordTableControls(
     mergeNotice.textContent =
       "记录修订时，合并或拆分单元格不会记录为修订；可通过撤销恢复。若已有相关修订导致冲突，请先接受或拒绝。";
     mergeNotice.style.cssText = "width:100%;margin:0;color:#715100";
-    panel.append(mergeNotice);
+    panel.append(register(mergeNotice, "rows"));
     button("在上方插入行", () =>
       change({ kind: "insertRows", at: Number(row.value) - 1, count: Number(rows.value) }),
     );
@@ -283,6 +335,7 @@ export function createWordTableControls(
         break;
       headerCount++;
     }
+    currentGroup = "table";
     const tableDirection = choose(
       "表格排列方向",
       [
@@ -351,6 +404,7 @@ export function createWordTableControls(
         },
       ]);
     });
+    currentGroup = "style";
     const position = rowStyleResolver.get(projectRow(tableId)),
       floating = choose(
         "表格文字环绕",
@@ -450,6 +504,7 @@ export function createWordTableControls(
       }
       apply([{ op: "formatWordTable", nodeId: tableId, properties }]);
     });
+    currentGroup = "table";
     const cellSpacing = field(
       "表格单元格间距（磅）",
       parseFloat(rowStyleResolver.get(projectRow(tableId))["--word-table-cell-spacing"] ?? "0"),
@@ -473,6 +528,7 @@ export function createWordTableControls(
         },
       ]);
     });
+    currentGroup = "rows";
     const currentRow = session.getNode(rowIds[active.row]!)!,
       currentRowCss = rowStyleResolver.get(projectRow(currentRow.nodeId)),
       currentRowSpacing =
@@ -583,6 +639,7 @@ export function createWordTableControls(
     button("设置跨页断行", () =>
       apply([{ op: "formatWordTable", nodeId: tableId, allowRowSplit: split.value === "allow" }]),
     );
+    currentGroup = "cell";
     const alignment = choose(
         "单元格垂直对齐",
         [
@@ -632,6 +689,7 @@ export function createWordTableControls(
         })),
       );
     });
+    currentGroup = "style";
     const styles =
       session.snapshot().metadata.word?.styles.filter((style) => style.kind === "table") ?? [];
     if (styles.length) {
@@ -702,7 +760,8 @@ export function createWordTableControls(
     button("删除表格", () => {
       apply([{ op: "deleteWordTable", nodeId: tableId }]);
       close();
-    });
+    }, "common");
+    applyTabFilter("all");
   }
   return { open, dispose: close };
 }

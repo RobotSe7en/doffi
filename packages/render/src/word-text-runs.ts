@@ -24,6 +24,10 @@ export function composeWordTextRuns(
         ["insert", "moveTo"].includes(revision.kind) ? "insert" : "delete",
       ]),
   );
+  const snapshot = model.snapshot();
+  const hasWordsUnderline =
+    snapshot.html.includes("--word-underline-style") ||
+    snapshot.styles.some((style) => style.css.includes("--word-underline-style"));
   const paragraphs = new Set(
     [
       ...document.querySelectorAll<HTMLElement>(
@@ -36,6 +40,22 @@ export function composeWordTextRuns(
       return paragraph ? [paragraph] : [];
     }),
   );
+  if (hasWordsUnderline) {
+    const view = document.defaultView!;
+    for (const candidate of document.querySelectorAll<HTMLElement>("p,h1,h2,h3,h4,h5,h6")) {
+      if (paragraphs.has(candidate)) continue;
+      if (
+        view.getComputedStyle(candidate).getPropertyValue("--word-underline-style").trim() ===
+          "words" ||
+        [...candidate.querySelectorAll<HTMLElement>("*")].some(
+          (child) =>
+            view.getComputedStyle(child).getPropertyValue("--word-underline-style").trim() ===
+            "words",
+        )
+      )
+        paragraphs.add(candidate);
+    }
+  }
   if (!paragraphs.size) return;
   const resolver = createSourceStyleResolver(document, new Set(revisions.keys())),
     projections = new WeakMap<HTMLElement, SourceStyleNode>();

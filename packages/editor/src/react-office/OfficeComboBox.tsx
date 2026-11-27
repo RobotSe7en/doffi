@@ -2,18 +2,20 @@ import { Fragment, useEffect, useLayoutEffect, useId, useRef, useState } from 'r
 import type { ReactElement } from 'react';
 
 /** Editable Office fields keep the document selection while committing one value. */
-export function OfficeComboBox({ label, value, options, disabled, commit, hint, className = '', section, previewFamily, preview, displayValue, more }: {
+export function OfficeComboBox({ label, value, options, disabled, commit, hint, className = '', section, previewFamily, preview, onPreviewEnd, displayValue, more }: {
   label: string; value: string; options: readonly string[]; disabled: boolean; commit(value: string): string | void | Promise<void>; className?: string; hint?: string | undefined;
   section?(value: string): string;
   previewFamily?(value: string): string;
   preview?(value: string): void;
+  onPreviewEnd?(): void;
   displayValue?(value: string): string;
   more?: { label: string; run(): void } | undefined;
 }): ReactElement {
   const [draft, setDraft] = useState(value), [open, setOpen] = useState(false), [active, setActive] = useState(-1), [error, setError] = useState(''), [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 320 });
   const [pendingFocus, setPendingFocus] = useState<HTMLElement | null>(null);
   const optionsId = useId();
-  const dirty = useRef(false), input = useRef<HTMLInputElement>(null), holder = useRef<HTMLDivElement>(null);
+  const dirty = useRef(false), input = useRef<HTMLInputElement>(null), holder = useRef<HTMLDivElement>(null), previewEndRef = useRef(onPreviewEnd);
+  previewEndRef.current = onPreviewEnd;
   useEffect(() => { if (!dirty.current) setDraft(value); }, [value]);
   useEffect(() => { if (pendingFocus && !disabled && !pendingFocus.matches(':disabled')) { if (pendingFocus.isConnected) { window.focus(); pendingFocus.focus({ preventScroll: true }); } setPendingFocus(null); } }, [pendingFocus, disabled]);
   useLayoutEffect(() => {
@@ -22,11 +24,16 @@ export function OfficeComboBox({ label, value, options, disabled, commit, hint, 
     const below = window.innerHeight - rect.bottom - 8, above = rect.top - 8;
     const upwards = below < 160 && above > below, maxHeight = Math.min(360, upwards ? above : below);
     setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: upwards ? rect.top - maxHeight : rect.bottom, width, maxHeight });
-    const dismiss = (event: Event) => { if (event.target instanceof Element && event.target.closest('[role=listbox]')) return; setOpen(false); };
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && holder.current?.contains(event.target)) return;
+      if (event.target instanceof Element && event.target.closest('[role=listbox]')) return;
+      setOpen(false);
+    };
     const outside = (event: Event) => { if (!holder.current?.contains(event.target as Node)) setOpen(false); };
     document.addEventListener('scroll', dismiss, true); window.addEventListener('resize', dismiss); document.addEventListener('pointerdown', outside);
     return () => { document.removeEventListener('scroll', dismiss, true); window.removeEventListener('resize', dismiss); document.removeEventListener('pointerdown', outside); };
   }, [open, label]);
+  useEffect(() => { if (!open) previewEndRef.current?.(); }, [open]);
   useEffect(() => { if (open && active >= 0) holder.current?.querySelector('[role=listbox] [aria-selected=true]')?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
   const choices = options.filter(option => !dirty.current || option.toLowerCase().includes(draft.toLowerCase()));
   function apply(next = draft): boolean | Promise<void> {
@@ -59,7 +66,7 @@ export function OfficeComboBox({ label, value, options, disabled, commit, hint, 
       }} />
     <button type="button" disabled={disabled} aria-label={'展开' + label} aria-expanded={open} tabIndex={-1}
       onMouseDown={event => event.preventDefault()} onClick={() => { dirty.current = false; setDraft(value); setOpen(!open); setActive(-1); input.current?.focus(); }}>▾</button>
-    {open && <div role="listbox" aria-label={label + '选项'} id={optionsId} className={'office-combo-options' + (previewFamily ? ' font-options' : '')} style={{ position: "fixed", left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }}>
+    {open && <div role="listbox" aria-label={label + '选项'} id={optionsId} className={'office-combo-options' + (previewFamily ? ' font-options' : '')} style={{ position: "fixed", left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onPointerLeave={() => onPreviewEnd?.()}>
       {choices.map((option, index) => <Fragment key={option}>
         {section && (!index || section(option) !== section(choices[index - 1]!)) && <div className="office-option-section">{section(option)}</div>}
         <button type="button" role="option" tabIndex={-1} id={optionsId + '-' + index} aria-selected={index === active || active < 0 && option === value}

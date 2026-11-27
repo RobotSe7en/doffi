@@ -12,7 +12,7 @@ function fixture(activeStyle = false) {
       styles(
         '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"/>' +
           (activeStyle
-            ? '<w:style w:type="character" w:styleId="Effects"><w:rPr><w:outline/><w:shadow/><w:emboss/><w:vanish/></w:rPr></w:style>'
+            ? '<w:style w:type="character" w:styleId="Effects"><w:rPr><w:outline/><w:shadow/><w:emboss/><w:vanish/><w:webHidden/><w:effect w:val="shimmer"/></w:rPr></w:style>'
             : ""),
       ),
     "word/document.xml": (source) =>

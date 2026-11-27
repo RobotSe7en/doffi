@@ -1,5 +1,6 @@
-import { DocumentError } from "@doffi/core";
+import { createOpaqueId, DocumentError, getWordOutline } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
+import { createOfficeDialog } from "./office-dialog.js";
 export interface WordReferenceRange {
   paragraphId: string;
   endNodeId?: string;
@@ -16,9 +17,14 @@ export function createWordLinkControls(
   onError: (error: unknown) => void,
 ): { open(kind: "link" | "bookmark" | "reference" | "caption"): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let dialogUI: ReturnType<typeof createOfficeDialog> | undefined,
+    panel: HTMLElement | undefined,
+    controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
+    dialogUI?.close();
+    dialogUI?.dialog.remove();
+    dialogUI = undefined;
     panel?.remove();
     panel = undefined;
   };
@@ -28,12 +34,26 @@ export function createWordLinkControls(
     if (!range) throw new DocumentError("InvalidOperation", "请先在段落中选择文字或放置光标。");
     controller = new AbortController();
     const signal = controller.signal;
+    const title =
+      kind === "bookmark"
+        ? "书签"
+        : kind === "reference"
+          ? "交叉引用"
+          : kind === "caption"
+            ? "题注"
+            : "插入超链接";
+    dialogUI = createOfficeDialog(document, title);
+    dialogUI.dialog.style.width = "480px";
+    dialogUI.content.style.minHeight = "0";
+    dialogUI.content.style.marginTop = "12px";
     panel = document.createElement("section");
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", "链接和引用");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    panel.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    dialogUI.content.append(panel);
+    parent.insertBefore(dialogUI.dialog, before);
+    dialogUI.dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); }, { signal });
+    dialogUI.show();
     const apply = (operations: DocumentOperation[]): void => {
       const snapshot = session.snapshot();
       session.commit(
@@ -60,7 +80,8 @@ export function createWordLinkControls(
         },
         { signal },
       );
-      panel!.append(node);
+      if (name === "关闭链接和引用") dialogUI!.footer.append(node);
+      else panel!.append(node);
     };
     const field = (name: string, value = ""): HTMLInputElement => {
       const label = document.createElement("label"),
@@ -139,31 +160,107 @@ export function createWordLinkControls(
       return;
     }
     if (kind === "reference") {
-      if (!bookmarks.length) throw new DocumentError("InvalidOperation", "请先添加一个书签。");
-      const name = choose(
-          "引用书签",
-          bookmarks.map((bookmark) => [bookmark.name, bookmark.name]),
-          bookmarks[0]!.name,
-        ),
-        type = choose(
-          "引用内容",
-          [
-            ["REF", "书签文字"],
-            ["PAGEREF", "书签页码"],
-            ["NOTEREF", "注释编号"],
-          ],
-          "REF",
-        );
+      const headings = getWordOutline(session);
+      const captions = (word.fields ?? [])
+        .filter((f) => /^\s*SEQ\b/i.test(f.instruction))
+        .map((f) => {
+          let pId: string | null = f.nodeId;
+          while (pId && !/^p$|^h[1-6]$/.test(session.getNode(pId)?.tagName ?? "")) {
+            pId = session.getNode(pId)?.parentNodeId ?? null;
+          }
+          const node = pId ? session.getNode(pId) : undefined;
+          return pId && node ? { nodeId: pId, text: node.text.trim() || "题注" } : undefined;
+        })
+        .filter((item): item is { nodeId: string; text: string } => Boolean(item));
+      const notes = (word.noteReferences ?? []).map((ref, idx) => {
+        const note = word.notes?.find((n) => n.noteId === ref.noteId);
+        const story = note ? word.stories.find((s) => s.storyId === note.storyId) : undefined;
+        const text = story ? session.getNode(story.rootNodeId)?.text.replace(/^\ufffc\s*/, "").trim().slice(0, 40) : "";
+        return {
+          nodeId: ref.nodeId,
+          label: `${note?.kind === "endnote" ? "尾注" : "脚注"} ${idx + 1}${text ? " · " + text : ""}`,
+        };
+      });
+      const sourceTypes: [string, string][] = [];
+      if (headings.length) sourceTypes.push(["heading", "标题"]);
+      if (bookmarks.length) sourceTypes.push(["bookmark", "书签"]);
+      if (captions.length) sourceTypes.push(["caption", "题注"]);
+      if (notes.length) sourceTypes.push(["note", "脚注/尾注"]);
+      if (!sourceTypes.length)
+        throw new DocumentError("InvalidOperation", "文档中暂无可引用的标题、书签、题注或注释。");
+
+      const refKind = choose("引用类型", sourceTypes, sourceTypes[0]![0]);
+      const targetSelect = choose("引用哪一个目标", [], "");
+      const contentSelect = choose(
+        "引用内容",
+        [
+          ["REF", "目标文字"],
+          ["PAGEREF", "页码"],
+          ["NOTEREF", "注释编号"],
+        ],
+        "REF",
+      );
+      const populateTargets = () => {
+        targetSelect.replaceChildren();
+        const items: [string, string][] =
+          refKind.value === "bookmark"
+            ? bookmarks.map((b) => [b.name, b.name])
+            : refKind.value === "heading"
+              ? headings.map((h) => [h.nodeId, "  ".repeat(Math.max(0, h.level - 1)) + (h.text || "空标题")])
+              : refKind.value === "caption"
+                ? captions.map((c) => [c.nodeId, c.text.slice(0, 50)])
+                : notes.map((n) => [n.nodeId, n.label]);
+        for (const [val, label] of items) {
+          const opt = document.createElement("option");
+          opt.value = val;
+          opt.textContent = label;
+          targetSelect.append(opt);
+        }
+        if (items.length) targetSelect.value = items[0]![0];
+        if (refKind.value === "note") contentSelect.value = "NOTEREF";
+        else if (contentSelect.value === "NOTEREF") contentSelect.value = "REF";
+      };
+      populateTargets();
+      refKind.addEventListener("change", populateTargets, { signal });
+
       button("插入交叉引用", () => {
-        apply([
-          {
-            op: "insertWordField",
-            nodeId: range.paragraphId,
-            offset: range.from,
-            instruction: type.value + " " + name.value + " \\h",
-            cachedText: "1",
-          },
-        ]);
+        const selectedVal = targetSelect.value;
+        if (!selectedVal) throw new DocumentError("InvalidOperation", "请选择交叉引用目标。");
+        const ops: DocumentOperation[] = [];
+        let bookmarkName = selectedVal;
+        let cachedText = "1";
+        if (refKind.value === "bookmark") {
+          const bm = bookmarks.find((b) => b.name === selectedVal);
+          const startNode = bm ? session.getNode(bm.startNodeId) : undefined;
+          cachedText = contentSelect.value === "PAGEREF" ? "1" : (startNode?.text.trim() || selectedVal);
+        } else {
+          const targetNode = session.getNode(selectedVal);
+          if (!targetNode) throw new DocumentError("InvalidOperation", "目标节点已不存在。");
+          const existing = bookmarks.find((b) => b.startNodeId === selectedVal);
+          if (existing) {
+            bookmarkName = existing.name;
+          } else {
+            bookmarkName = "_Ref" + createOpaqueId().replace(/[^a-zA-Z0-9]/g, "").slice(0, 9);
+            const targetText = targetNode.text;
+            ops.push({
+              op: "insertWordBookmark",
+              nodeId: selectedVal,
+              from: 0,
+              to: targetText.length,
+              expectedText: targetText,
+              name: bookmarkName,
+            });
+          }
+          cachedText = contentSelect.value === "PAGEREF" ? "1" : (targetNode.text.trim() || "1");
+        }
+        ops.push({
+          op: "insertWordField",
+          nodeId: range.paragraphId,
+          offset: range.from,
+          instruction: ` ${contentSelect.value} ${bookmarkName} \\h `,
+          cachedText,
+        });
+        apply(ops);
         close();
       });
       return;

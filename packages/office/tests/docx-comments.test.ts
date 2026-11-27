@@ -61,6 +61,15 @@ test("modern Word threads retain precise anchors, rich replies, authors, UTC dat
   let durable: string[] | undefined;
   for (let pass = 0; pass < 2; pass++) {
     const files = unzipSync(bytes);
+    // Word's loader dispatches these parts by their exact content type. The
+    // ms-word prefix belongs to other Office extensions and triggers repair.
+    const types = strFromU8(files["[Content_Types].xml"]!);
+    for (const part of ["commentsExtended", "commentsIds", "commentsExtensible", "people"])
+      expect(types).toContain('PartName="/word/' + part + '.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' + part + '+xml"');
+    const document = strFromU8(files["word/document.xml"]!);
+    expect(document).toContain('<w:commentReference w:id="0"/>');
+    expect(document).toContain('<w:commentReference w:id="1"/>');
+    expect(document.match(/<w:commentRangeStart\b/g)).toHaveLength(1);
     expect(strFromU8(files["word/commentsExtended.xml"]!)).toContain("paraIdParent");
     expect(strFromU8(files["word/commentsIds.xml"]!)).toContain("durableId");
     const model = openDocument(
@@ -132,6 +141,30 @@ test("unknown modern message properties remain attached to their own extension t
     expect(xml).not.toContain("urn:doffi:transient:native");
   }
   expect(() => importDocx(exportDocx(model).bytes, { documentId: "again" })).not.toThrow();
+});
+test("every message in multiple ranged and point threads gets one reference without duplicating the root range", () => {
+  const session = fixture();
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "comments", baseRevision: session.snapshot().manifest.revision,
+    operations: [
+      { op: "addWordCommentReply", nodeId: "paragraph-1", annotationId: "a", html: "<p>另一个回复</p>", author: { name: "丙" } },
+      { op: "addAnnotation", annotation: { annotationId: "point", documentId: "comments",
+        baseRevision: session.snapshot().manifest.revision, status: "open", instruction: "点批注",
+        anchor: { kind: "text", nodeId: "paragraph-1", from: 2, to: 2, quote: "" } } },
+    ] }));
+  session.commit(session.prepare({ protocolVersion: 1, documentId: "comments", baseRevision: session.snapshot().manifest.revision,
+    operations: [{ op: "addWordCommentReply", nodeId: "paragraph-1", annotationId: "point", html: "<p>点批注回复</p>" }] }));
+  let bytes = exportDocx(session).bytes;
+  for (let pass = 0; pass < 2; pass++) {
+    const parts = unzipSync(bytes), document = strFromU8(parts["word/document.xml"]!);
+    const references = [...document.matchAll(/<w:commentReference w:id="([^"]+)"\/>/g)].map(match => match[1]);
+    expect(references).toHaveLength(5);
+    expect(new Set(references).size).toBe(5);
+    expect(document.match(/<w:commentRangeStart\b/g)).toHaveLength(2);
+    expect(document.match(/<w:commentRangeEnd\b/g)).toHaveLength(2);
+    const reopened = openDocument(importDocx(bytes, { documentId: "multiple-threads", unsupportedContent: "reject" }), { kind: "document" });
+    expect(reopened.snapshot().annotations.map(item => item.replies?.length ?? 0).sort()).toEqual([1, 2]);
+    bytes = exportDocx(reopened).bytes;
+  }
 });
 test("reply parent cycles are malformed data rather than a compatibility recovery retry", () => {
   const files = unzipSync(exportDocx(fixture()).bytes);

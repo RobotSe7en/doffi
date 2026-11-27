@@ -16,6 +16,7 @@ import {
 } from "@doffi/core";
 import { WordMoveReader } from "./docx-moves.js";
 import { readWordPageBorders } from "./docx-page-borders.js";
+import { readWordBibliography } from "./docx-bibliography.js";
 import { readWordFormatRevision } from "./docx-revisions-import.js";
 import { readWordCommentExtensions, wordCommentAnnotations } from "./docx-comments.js";
 import type { WordCommentState as CommentState } from "./docx-comments.js";
@@ -172,7 +173,9 @@ class Importer {
     private readonly native?: DocxNativeImport,
   ) {
     this.currentPart = main;
-    this.styles = new DocxStyles(opc, main, !!native);
+    this.styles = new DocxStyles(opc, main, !!native, (part, source) =>
+      this.registerImage(part, source),
+    );
     this.word.evenAndOddHeaders = on(
       child(
         opc.related(main, "settings") ? opc.read(opc.related(main, "settings")!) : undefined,
@@ -182,6 +185,8 @@ class Importer {
     this.word.defaultRunCssClass = "word-default-run";
     this.word.styles = this.styles.styles;
     this.word.numbering = this.styles.numbering;
+    const importedTheme = this.styles.themeMetadata();
+    if (importedTheme) this.word.theme = importedTheme;
     this.root = this.make("article", {
       "data-office-kind": "document",
       style: declarations(this.styles.drawingThemeProperties()),
@@ -218,7 +223,57 @@ class Importer {
     this.word.automaticHyphenation = on(child(this.settings, "autoHyphenation"));
     const typography = readWordTypography(this.settings);
     if (typography) this.word.typography = typography;
-    for (const name of ["documentProtection", "writeProtection", "mailMerge", "attachedTemplate"]) {
+    const docProtect = child(this.settings, "documentProtection");
+    if (docProtect) {
+      const hasCrypto =
+        attr(docProtect, "hash") !== undefined || attr(docProtect, "cryptProviderType") !== undefined;
+      const editMode = attr(docProtect, "edit") ?? "none";
+      const enforcementRaw = attr(docProtect, "enforcement");
+      if (
+        !hasCrypto &&
+        ["none", "readOnly", "comments", "trackedChanges", "forms"].includes(editMode)
+      ) {
+        this.word.protection = {
+          edit: editMode as "none" | "readOnly" | "comments" | "trackedChanges" | "forms",
+          enforcement:
+            enforcementRaw === undefined ||
+            enforcementRaw === "1" ||
+            enforcementRaw === "true" ||
+            enforcementRaw === "on",
+        };
+      } else {
+        unsupported(
+          docProtect,
+          "Password-protected document protection settings are not supported.",
+        );
+      }
+    }
+    const attachedTemplate = child(this.settings, "attachedTemplate");
+    const linkStyles = on(child(this.settings, "linkStyles"));
+    let templateTarget: string | undefined;
+    if (attachedTemplate && settingsPath) {
+      const relId = attr(attachedTemplate, "id", R);
+      if (relId) {
+        const rel = opc.relationships(settingsPath).get(relId);
+        if (rel?.target) {
+          if (
+            /^\s*(?:javascript|vbscript|data):/i.test(rel.target) ||
+            /[\u0000-\u001f\u007f]/.test(rel.target)
+          )
+            unsupported(attachedTemplate, "Unsafe attached template target.");
+          templateTarget = rel.target;
+        }
+      }
+    }
+    if (templateTarget || linkStyles) {
+      this.word.template = {
+        ...(templateTarget ? { target: templateTarget } : {}),
+        ...(linkStyles ? { linkStyles: true } : {}),
+      };
+    }
+    const bibliography = readWordBibliography(opc, main);
+    if (bibliography) this.word.bibliography = bibliography;
+    for (const name of ["writeProtection", "mailMerge"]) {
       if (child(this.settings, name))
         unsupported(
           child(this.settings, name)!,
@@ -438,8 +493,17 @@ class Importer {
     if (source.uri !== W || source.name !== "document")
       fail(source, "The main part is not a Word document.");
     check(source, ["background", "body"]);
-    if (child(source, "background"))
-      unsupported(child(source, "background")!, "Document backgrounds are not supported.");
+    const background = child(source, "background");
+    if (background) {
+      if (elements(background).length) {
+        unsupported(background, "Drawing document backgrounds are not supported.");
+      } else {
+        const bgColor = this.styles.color(background, "color");
+        if (bgColor && /^#[0-9a-f]{6}$/i.test(bgColor)) {
+          this.word.pageBackground = { color: bgColor.slice(1).toUpperCase() };
+        }
+      }
+    }
     const fontTable = this.opc.related(this.main, "fontTable");
     if (fontTable) {
       const table = this.opc.read(fontTable);
@@ -519,10 +583,38 @@ class Importer {
     const core = this.opc.related("", "metadata/core-properties");
     if (core) {
       const properties = this.opc.read(core);
-      const title = elements(properties, "title", "http://purl.org/dc/elements/1.1/")[0];
+      const DC = "http://purl.org/dc/elements/1.1/";
+      const CP = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
+      const title = elements(properties, "title", DC)[0];
       if (title) metadata.title = text(title);
-      const language = elements(properties, "language", "http://purl.org/dc/elements/1.1/")[0];
+      const language = elements(properties, "language", DC)[0];
       if (language && text(language)) metadata.locale = text(language);
+      const docProps: NonNullable<WordMetadata["properties"]> = {};
+      const creator = elements(properties, "creator", DC)[0];
+      if (creator && text(creator)) docProps.creator = text(creator);
+      const subject = elements(properties, "subject", DC)[0];
+      if (subject && text(subject)) docProps.subject = text(subject);
+      const keywords = elements(properties, "keywords", CP)[0];
+      if (keywords && text(keywords)) docProps.keywords = text(keywords);
+      const description = elements(properties, "description", DC)[0];
+      if (description && text(description)) docProps.description = text(description);
+      const category = elements(properties, "category", CP)[0];
+      if (category && text(category)) docProps.category = text(category);
+      if (Object.keys(docProps).length) this.word.properties = docProps;
+    }
+    const appProps = this.opc.related("", "extended-properties");
+    if (appProps) {
+      try {
+        const properties = this.opc.read(appProps);
+        const EP = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties";
+        const templateNode = elements(properties, "Template", EP)[0];
+        const templateName = templateNode ? text(templateNode).trim() : "";
+        if (templateName && templateName.length <= 256) {
+          this.word.template = { ...this.word.template, name: templateName };
+        }
+      } catch {
+        // Ignore non-standard extended properties cleanly.
+      }
     }
     const manifest: ContentDocumentManifest = {
       format: "doffi",
@@ -561,6 +653,25 @@ class Importer {
       TextEncoder: new () => { encode(value: string): Uint8Array };
     };
     this.files.set(path, new codecs.TextEncoder().encode(value));
+  }
+  private registerImage(part: string, source: XmlNode): string {
+    let path = this.assetSources.get(part);
+    if (path) return path;
+    const mime = this.opc.contentType(part),
+      extensions: Record<string, string> = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/webp": "webp",
+      };
+    if (!mime || !extensions[mime])
+      unsupported(source, "This image encoding is preserved as native content.");
+    path = "assets/image-" + (this.assets.length + 1) + "." + extensions[mime];
+    const bytes = this.opc.files.get(part);
+    if (!bytes) fail(source, "An embedded image resource is missing.");
+    this.files.set(path, new Uint8Array(bytes));
+    this.assets.push(createAssetDescriptor(path, mime, bytes));
+    this.assetSources.set(part, path);
+    return path;
   }
   private blocks(
     items: readonly XmlNode[],
@@ -903,6 +1014,7 @@ class Importer {
           "drawing",
           "fldChar",
           "instrText",
+          "ruby",
           "commentReference",
           "lastRenderedPageBreak",
           "annotationRef",
@@ -984,6 +1096,34 @@ class Importer {
         parent.children.push(image);
         this.fieldResult(image);
         this.record(parent, offset, content);
+        break;
+      }
+      case "ruby": {
+        const rubyPr = child(source, "rubyPr");
+        const rt = child(source, "rt");
+        const rubyBase = child(source, "rubyBase");
+        if (!rt || !rubyBase) fail(source, "A ruby annotation requires rt and rubyBase.");
+        const rubyText = text(rt);
+        const alignVal = attr(child(rubyPr, "rubyAlign"), "val") ?? "distributeSpace";
+        const hps = attr(child(rubyPr, "hps"), "val");
+        const hpsRaise = attr(child(rubyPr, "hpsRaise"), "val");
+        const hpsBase = attr(child(rubyPr, "hpsBaseText"), "val");
+        const lid = attr(child(rubyPr, "lid"), "val");
+        const span = this.make("span", {
+          "data-word-ruby": "true",
+          "data-word-ruby-text": rubyText,
+          "data-word-ruby-align": alignVal,
+          ...(hps && /^\d+$/.test(hps) ? { "data-word-ruby-size": String(Number(hps) / 2) } : {}),
+          ...(hpsRaise && /^\d+$/.test(hpsRaise)
+            ? { "data-word-ruby-raise": String(Number(hpsRaise) / 2) }
+            : {}),
+          ...(hpsBase && /^\d+$/.test(hpsBase)
+            ? { "data-word-ruby-base-size": String(Number(hpsBase) / 2) }
+            : {}),
+          ...(lid ? { "data-word-ruby-lang": lid } : {}),
+        });
+        parent.children.push(span);
+        for (const item of this.compat(rubyBase)) this.inline(item, span, paragraphStyle);
         break;
       }
       case "hyperlink": {
@@ -1237,12 +1377,28 @@ class Importer {
       "printerSettings",
       "sectPrChange",
     ]);
-    for (const feature of ["lnNumType"]) {
-      if (child(source, feature)) unsupported(child(source, feature)!);
+    const lnNum = child(source, "lnNumType");
+    let lineNumbers: DocumentSection["lineNumbers"];
+    if (lnNum) {
+      const countBy = attr(lnNum, "countBy");
+      const start = attr(lnNum, "start");
+      const distance = attr(lnNum, "distance");
+      const restart = attr(lnNum, "restart");
+      if (restart && !["newPage", "newSection", "continuous"].includes(restart))
+        fail(lnNum, "Invalid line number restart rule.");
+      lineNumbers = {
+        ...(countBy !== undefined ? { countBy: number(countBy, lnNum) } : {}),
+        ...(start !== undefined ? { start: number(start, lnNum) } : {}),
+        ...(distance !== undefined ? { distance: number(distance, lnNum) / 20 } : {}),
+        ...(restart ? { restart: restart as "newPage" | "newSection" | "continuous" } : {}),
+      };
     }
+    const vAlignNode = child(source, "vAlign");
+    const vAlignVal = attr(vAlignNode, "val");
+    if (vAlignVal && !["top", "center", "both", "bottom"].includes(vAlignVal))
+      fail(vAlignNode!, "Invalid section vertical alignment.");
     if (
       (child(source, "textDirection") && attr(child(source, "textDirection"), "val") !== "lrTb") ||
-      (child(source, "vAlign") && attr(child(source, "vAlign"), "val") !== "top") ||
       on(child(source, "bidi")) ||
       on(child(source, "formProt"))
     )
@@ -1327,6 +1483,10 @@ class Importer {
       ...(child(source, "pgBorders")
         ? { pageBorders: readWordPageBorders(child(source, "pgBorders"))! }
         : {}),
+      ...(vAlignVal && vAlignVal !== "top"
+        ? { verticalAlign: vAlignVal as "top" | "center" | "both" | "bottom" }
+        : {}),
+      ...(lineNumbers ? { lineNumbers } : {}),
       ...(columns
         ? {
             columns: {
@@ -1450,7 +1610,7 @@ class Importer {
     this.auxiliary.push(root);
     return storyId;
   }
-  private readStoryContent(part: string, storyId: string, source: XmlNode): Html[] {
+  private readStoryContent(part: string, storyId: string, source: XmlNode, width?: number): Html[] {
     const {
       currentPart,
       currentStory,
@@ -1460,6 +1620,8 @@ class Importer {
       currentRun,
       paragraphRunClasses,
       moves,
+      activeTable,
+      tableAvailable,
     } = this;
     this.currentPart = part;
     this.currentStory = storyId;
@@ -1469,6 +1631,8 @@ class Importer {
     this.bookmarkStarts = new Map();
     this.currentRun = undefined;
     this.paragraphRunClasses = ["word-default-run"];
+    this.activeTable = undefined;
+    if (width !== undefined) this.tableAvailable = width;
     try {
       const content = this.blocks(this.compat(source));
       if (
@@ -1488,6 +1652,8 @@ class Importer {
       this.currentRun = currentRun;
       this.paragraphRunClasses = paragraphRunClasses;
       this.moves = moves;
+      this.activeTable = activeTable;
+      this.tableAvailable = tableAvailable;
     }
   }
   private control(
@@ -1694,30 +1860,12 @@ class Importer {
         this.assetSources.set(part, path);
         return path;
       },
-      image: (part, source) => {
-        let path = this.assetSources.get(part);
-        if (path) return path;
-        const mime = this.opc.contentType(part),
-          extensions: Record<string, string> = {
-            "image/png": "png",
-            "image/jpeg": "jpg",
-            "image/webp": "webp",
-          };
-        if (!mime || !extensions[mime])
-          unsupported(source, "This image encoding is preserved as native content.");
-        path = "assets/image-" + (this.assets.length + 1) + "." + extensions[mime];
-        const bytes = this.opc.files.get(part);
-        if (!bytes) fail(source, "An embedded image resource is missing.");
-        this.files.set(path, new Uint8Array(bytes));
-        this.assets.push(createAssetDescriptor(path, mime, bytes));
-        this.assetSources.set(part, path);
-        return path;
-      },
-      story: (source) => {
+      image: (part, source) => this.registerImage(part, source),
+      story: (source, width) => {
         const id = "text-box-" + this.word.stories.length,
           root = this.story("textBox", id);
         root.attrs.class = "word-main";
-        root.children.push(...this.readStoryContent(this.currentPart, id, source));
+        root.children.push(...this.readStoryContent(this.currentPart, id, source, width));
         this.auxiliary.push(root);
         return id;
       },
@@ -1774,7 +1922,7 @@ class Importer {
     const styleId = attr(child(properties, "tblStyle"), "val") ?? this.styles.defaultTable;
     const style = this.styles.get(styleId);
     const tableCss: Css = {
-      "margin-left": "-5.4pt",
+      "margin-left": "0pt",
       ...style.table,
       ...resolveWordTableStyle(this.word, this.styles.readComponent, styleId, []).table,
       ...this.styles.table(properties),
@@ -1803,7 +1951,7 @@ class Importer {
       table,
       "table",
       {
-        "margin-left": "-5.4pt",
+        "margin-left": "0pt",
         ...style.table,
         ...resolveWordTableStyle(this.word, this.styles.readComponent, styleId, []).table,
       },
@@ -1996,8 +2144,8 @@ class Importer {
             htmlCell,
             "cell",
             {
-              "padding-left": "5.4pt",
-              "padding-right": "5.4pt",
+              "padding-left": "0pt",
+              "padding-right": "0pt",
               ...inner,
               ...wordRowExceptionCellProperties(
                 wordRowExceptionProperties(exceptionCss),

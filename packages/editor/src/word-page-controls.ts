@@ -2,6 +2,7 @@ import { DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
 import { addWordPageBorderControls } from "./word-page-border-controls.js";
 import { addWordSectionNoteControls } from "./word-page-note-controls.js";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 /** Page forms edit native section definitions; auxiliary stories use the same
  * rich-text adapter over a temporary view projection of the original session. */
 export function createWordPageControls(
@@ -13,23 +14,35 @@ export function createWordPageControls(
   onError: (error: unknown) => void,
 ): { open(): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let shell: HTMLElement | undefined, panel: HTMLElement | undefined, controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
-    panel?.remove();
+    shell?.remove();
     controller = undefined;
+    shell = undefined;
     panel = undefined;
   };
   function open(): void {
     close();
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "页面设置");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "页面设置",
+      title: "页面设置",
+      dock: "right",
+      closeLabel: "关闭页面设置",
+      onClose: close,
+      signal,
+      width: "344px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    panel.style.display = "grid";
+    panel.style.gridTemplateColumns = "repeat(2,minmax(0,1fr))";
+    panel.style.alignContent = "start";
+    panel.style.gap = "8px 10px";
+    parent.insertBefore(shell, before);
     const metadata = session.snapshot().metadata;
     if (metadata.presentation)
       throw new DocumentError("InvalidOperation", "页面设置需要 Word 文档。");
@@ -104,7 +117,6 @@ export function createWordPageControls(
         { op: "setWordOptions", nodeId: root.dataset.nodeId!, mirrorMargins: mirror.checked },
       ]);
     });
-    button("关闭页面设置", close);
     button("返回正文", () => editStory());
     const section = choose(
       "当前节",
@@ -606,6 +618,67 @@ export function createWordPageControls(
         },
       ]),
     );
+    const vAlign = choose(
+      "页面垂直对齐",
+      [
+        ["top", "顶端对齐"],
+        ["center", "居中对齐"],
+        ["both", "两端对齐"],
+        ["bottom", "底端对齐"],
+      ],
+      selected().target.verticalAlign ?? "top",
+    );
+    button("应用垂直对齐", () => {
+      const latest = selected(),
+        targets = scope.value === "all" ? latest.metadata.sections : [latest.target];
+      apply(
+        targets.map((target) => ({
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            verticalAlign: vAlign.value as "top" | "center" | "both" | "bottom",
+          },
+        })),
+      );
+    });
+    const lineNumMode = choose(
+        "页面行号",
+        [
+          ["none", "无"],
+          ["continuous", "连续"],
+          ["newPage", "每页重新编号"],
+          ["newSection", "每节重新编号"],
+        ],
+        selected().target.lineNumbers ? (selected().target.lineNumbers?.restart ?? "newPage") : "none",
+      ),
+      lineNumStart = field("行号起始编号", selected().target.lineNumbers?.start ?? 1),
+      lineNumStep = field("行号间隔", selected().target.lineNumbers?.countBy ?? 1),
+      lineNumDistance = field("行号距正文（磅）", selected().target.lineNumbers?.distance ?? 18);
+    lineNumStart.min = "1";
+    lineNumStart.step = "1";
+    lineNumStep.min = "1";
+    lineNumStep.step = "1";
+    button("应用行号", () => {
+      const latest = selected(),
+        targets = scope.value === "all" ? latest.metadata.sections : [latest.target];
+      apply(
+        targets.map((target) => ({
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            lineNumbers:
+              lineNumMode.value === "none"
+                ? null
+                : {
+                    restart: lineNumMode.value as "continuous" | "newPage" | "newSection",
+                    start: Math.max(1, Math.round(Number(lineNumStart.value) || 1)),
+                    countBy: Math.max(1, Math.round(Number(lineNumStep.value) || 1)),
+                    distance: Math.max(0, Number(lineNumDistance.value) || 18),
+                  },
+          },
+        })),
+      );
+    });
     const load = (): void => {
       const setup = selected().target.pageSetup ?? selected().metadata.pageSetup;
       width.value = String(mm(setup.width));
@@ -632,6 +705,11 @@ export function createWordPageControls(
       footerDistance.value = String(mm(target.footerDistance ?? 36));
       start.value = String(target.pageNumberStart ?? 1);
       numberFormat.value = target.pageNumberFormat ?? "decimal";
+      vAlign.value = target.verticalAlign ?? "top";
+      lineNumMode.value = target.lineNumbers ? (target.lineNumbers.restart ?? "newPage") : "none";
+      lineNumStart.value = String(target.lineNumbers?.start ?? 1);
+      lineNumStep.value = String(target.lineNumbers?.countBy ?? 1);
+      lineNumDistance.value = String(target.lineNumbers?.distance ?? 18);
     };
     section.addEventListener("change", load, { signal });
   }

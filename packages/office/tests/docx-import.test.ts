@@ -9,6 +9,18 @@ import { styleNumberingFixture } from "./style-numbering-fixture.js";
 const importDocx: typeof importNativeDocx = (bytes, options) =>
   importNativeDocx(bytes, { ...options, unsupportedContent: "reject" });
 import { zipSync, unzipSync, strFromU8, strToU8 } from "fflate";
+import { nativeSingleSpacingFixture } from "./word-producer-drawing-fixture.js";
+
+test("omitted native paragraph spacing uses inherited single automatic spacing, including text boxes", () => {
+  for (const explicit of [false, true]) {
+    const model = openDocument(importDocx(nativeSingleSpacingFixture(explicit), { documentId: "single-default" }));
+    expect(new TextDecoder().decode(model.serialize().get("styles.css"))).toContain("line-height:1");
+    const paragraphs = model.snapshot().html.match(/<(?:p|h[1-6])\b[^>]*>/g)!;
+    expect(paragraphs.length).toBeGreaterThan(2);
+    expect(paragraphs.every(p => p.includes('data-word-line-rule="auto"'))).toBe(true);
+    expect(exportDocx(model).bytes.length).toBeGreaterThan(0);
+  }
+});
 
 const directory = new URL("../../../examples/docx/", import.meta.url);
 const cases = JSON.parse(readFileSync(new URL("expected.json", directory), "utf8")) as {
@@ -360,6 +372,22 @@ test("maps Word theme tints and Chinese theme fonts using source language", () =
   expect(source).not.toContain("OldHAnsi");
   expect(source).not.toContain("OldFace");
   expect(source).not.toContain("Japanese fixture face");
+});
+
+test("empty theme EA and CS faces resolve supplemental scripts and preserve the other default font roles", () => {
+  const files = unzipSync(fixture());
+  files["word/theme/theme.xml"] = strToU8('<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme name="Independent"><a:minorFont><a:latin typeface="Latin Fixture"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Hans" typeface="Chinese Fixture"/><a:font script="Arab" typeface="Arabic Fixture"/><a:font script="Hebr" typeface="Hebrew Fixture"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>');
+  files["word/_rels/document.xml.rels"] = strToU8(strFromU8(files["word/_rels/document.xml.rels"]!).replace("</Relationships>", '<Relationship Id="theme" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme.xml"/></Relationships>'));
+  files["word/styles.xml"] = strToU8(strFromU8(files["word/styles.xml"]!).replace(/<w:rFonts[^>]*\/>/g, '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:cstheme="minorBidi"/>'));
+  let bytes: Uint8Array = zipSync(files);
+  for (let pass = 0; pass < 3; pass++) {
+    const model = openDocument(importDocx(bytes, { documentId: "supplemental-theme", unsupportedContent: "reject" }));
+    const css = model.snapshot().styles.map(sheet => sheet.css).join("\n");
+    expect(css).toContain("Latin Fixture");
+    expect(css).toContain("Chinese Fixture");
+    expect(css).toContain("Arabic Fixture");
+    bytes = exportDocx(model).bytes;
+  }
 });
 
 for (const item of cases) {

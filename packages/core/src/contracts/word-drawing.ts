@@ -41,6 +41,8 @@ export const WordDrawingLayoutSchema = z.strictObject({
     })
     .optional(),
   behindText: z.boolean().optional(),
+  hidden: z.boolean().optional(),
+  effectExtent: z.strictObject({ top: z.number().nonnegative(), right: z.number().nonnegative(), bottom: z.number().nonnegative(), left: z.number().nonnegative() }).optional(),
   allowOverlap: z.boolean().optional(),
   layoutInCell: z.boolean().optional(),
   locked: z.boolean().optional(),
@@ -97,6 +99,7 @@ export const WordDrawingTextSchema = z.strictObject({
   vertical: z.enum(["top", "middle", "bottom"]).optional(),
   direction: z.enum(["horizontal", "vertical", "vertical270"]).optional(),
   rotation: z.number().optional(),
+  upright: z.boolean().optional(),
   wrap: z.boolean().optional(),
   autoFit: z.enum(["none", "normal", "shape"]).optional(),
   fontScale: z.number().positive().max(1).optional(),
@@ -108,6 +111,7 @@ const base = {
   layout: WordDrawingLayoutSchema,
   name: z.string().optional(),
   watermark: z.boolean().optional(),
+  locks: z.strictObject({ noChangeArrowheads: z.boolean().optional(), noChangeShapeType: z.boolean().optional() }).optional(),
 };
 export const WordDrawingSchema = z.discriminatedUnion("kind", [
   z.strictObject({ ...base, kind: z.literal("chart"), chart: WordChartSchema }),
@@ -180,6 +184,11 @@ export const WordDrawingOperationSchema = z.discriminatedUnion("op", [
     op: z.literal("setWordDrawingLayout"),
     nodeId: IdentifierSchema,
     layout: WordDrawingLayoutSchema,
+  }),
+  z.strictObject({
+    op: z.literal("setWordDrawingName"),
+    nodeId: IdentifierSchema,
+    name: z.string().max(256),
   }),
   z.strictObject({
     op: z.literal("setWordDrawingAppearance"),

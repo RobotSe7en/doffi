@@ -3,8 +3,8 @@ import type { ReactElement } from "react";
 import { OfficeDialog } from "./OfficeDialog.js";
 
 /** Draft values become one source transaction on confirmation. */
-export function WordParagraphDialog({ apply, close, variant = "paragraph", current = {} }: {
-  apply(properties: Record<string, string>): void | Promise<void>; close(): void; variant?: "paragraph" | "borders"; current?: Readonly<Record<string, string>>;
+export function WordParagraphDialog({ apply, close, variant = "paragraph", current = {}, onTabs }: {
+  apply(properties: Record<string, string>, outlineLevel?: number | null): void | Promise<void>; close(): void; variant?: "paragraph" | "borders"; current?: Readonly<Record<string, string>>; onTabs?(): void;
 }): ReactElement {
   const [numbers, setNumbers] = useState<Record<string, string>>({}), [choices, setChoices] = useState<Record<string, string>>({});
   const [color, setColor] = useState("#000000"), [fill, setFill] = useState("#ffffff"), [borderWidth, setBorderWidth] = useState("0.5");
@@ -28,6 +28,7 @@ export function WordParagraphDialog({ apply, close, variant = "paragraph", curre
     setError("");
     try {
     const properties: Record<string, string> = {};
+    let outlineLevel: number | null | undefined;
     if (border) {
       if (choices.border) for (const side of ["top", "right", "bottom", "left"]) properties["border-" + side] = choices.border === "none" ? "0pt none " + color : borderWidth + "pt " + choices.border + " " + color;
       if (choices.fill) properties["background-color"] = choices.fill === "none" ? "transparent" : fill;
@@ -38,17 +39,20 @@ export function WordParagraphDialog({ apply, close, variant = "paragraph", curre
         properties[key] = key === "line-height" ? (choices.rule ?? current["--word-line-rule"] ?? "auto") === "auto" ? String(n) : n + "pt" : n * fontSize + "pt";
       }
       if (numbers["line-height"] || choices.rule) properties["--word-line-rule"] = choices.rule || current["--word-line-rule"] || "auto";
-      for (const [key, value] of Object.entries(choices)) if (key !== "rule" && key !== "special") properties[key] = value;
+      for (const [key, value] of Object.entries(choices)) if (key !== "rule" && key !== "special" && key !== "outlineLevel") properties[key] = value;
+      if (choices.outlineLevel !== undefined && choices.outlineLevel !== "") {
+        outlineLevel = choices.outlineLevel === "body" ? null : Number(choices.outlineLevel);
+      }
       if (choices.special === "hanging" && properties["text-indent"]) properties["text-indent"] = -Math.abs(parseFloat(properties["text-indent"])) + "pt";
       if (choices.special === "none") properties["text-indent"] = "0pt";
       if (choices.widows) properties.orphans = choices.widows;
     }
-    if (Object.keys(properties).length) await apply(properties);
+    if (Object.keys(properties).length || outlineLevel !== undefined) await apply(properties, outlineLevel);
     close();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
   return <OfficeDialog className="word-paragraph-dialog" title={border ? "边框和底纹" : "段落"} tabs={border ? ["边框", "底纹"] : ["缩进和间距", "换行和分页", "中文版式"]} close={close}
-    footer={<><button type="button" onClick={close}>取消</button><button type="button" className="primary" onClick={() => { void commit(); }}>确定</button></>}>
+    footer={<>{!border && onTabs && <button type="button" style={{ marginRight: "auto" }} onClick={onTabs}>制表位…</button>}<button type="button" onClick={close}>取消</button><button type="button" className="primary" onClick={() => { void commit(); }}>确定</button></>}>
     {tab => <><style>{`.word-paragraph-dialog{width:580px}.word-paragraph-dialog .paragraph-flags{grid-template-columns:1fr}.word-paragraph-dialog .dialog-content{min-height:485px}.word-paragraph-dialog fieldset{margin-bottom:8px}.word-paragraph-dialog .dialog-stack{gap:8px}`}</style>{error && <p role="alert">{error}</p>}{border ? <>
       <div hidden={tab !== 0} className="dialog-stack">
         <fieldset><legend>设置</legend>{choose("设置", "border", [["none", "无"], ["solid", "方框"], ["double", "双线"], ["dotted", "点线"], ["dashed", "虚线"]])}
@@ -64,7 +68,7 @@ export function WordParagraphDialog({ apply, close, variant = "paragraph", curre
     </> : <>
       <div hidden={tab !== 0} className="dialog-stack">
         <fieldset><legend>常规</legend>{choose("对齐方式:", "text-align", [["left", "左对齐"], ["center", "居中"], ["right", "右对齐"], ["justify", "两端对齐"]])}
-          <label>大纲级别:<select disabled aria-label="大纲级别"><option>正文文本</option></select></label></fieldset>
+          {choose("大纲级别:", "outlineLevel", [["body", "正文文本"], ...Array.from({ length: 9 }, (_, i) => [String(i), `${i + 1} 级`] as const)], current["--doffi-outline-level"] ?? "body")}</fieldset>
         <fieldset><legend>缩进</legend>{number("左侧（字符）", "margin-left")}{number("右侧（字符）", "margin-right")}
           {choose("特殊格式:", "special", [["none", "无"], ["firstLine", "首行缩进"], ["hanging", "悬挂缩进"]])}{number("缩进值（字符）", "text-indent")}</fieldset>
         <fieldset><legend>间距</legend>{number("段前（行）", "margin-top")}{number("段后（行）", "margin-bottom")}

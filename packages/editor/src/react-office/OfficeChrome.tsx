@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { OfficeIcon as Icon } from "./icons.js";
 import { OfficeMenu } from "./OfficeMenu.js";
@@ -12,7 +13,7 @@ const chromeStyles = `
 .doffi-office-titlebar .title-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.doffi-office-titlebar .title-mode{border:1px solid #d5d5d5;border-radius:15px;padding:4px 11px;background:#fafafa}.doffi-office-titlebar .title-primary{color:white;background:#185abd;border-radius:15px;padding:4px 12px}.doffi-office-titlebar[data-kind=presentation] .title-primary{background:#b7472a}.doffi-office-titlebar[data-kind=workbook] .title-primary{background:#107c41}.doffi-office-titlebar .title-primary:hover:not(:disabled){filter:brightness(.95);background:#185abd}
 .doffi-office-titlebar .office-menu>.ribbon-tool>span:not(:first-child),.doffi-office-titlebar .menu-arrow{display:none}.doffi-office-titlebar .office-menu>.ribbon-tool{min-width:28px}.doffi-office-titlebar .autosave{display:flex;align-items:center;gap:7px;margin-right:4px;font-size:11px}.doffi-office-titlebar .autosave button{width:34px;height:17px;padding:1px;border-radius:12px;background:#d9d9d9;justify-content:flex-start}.doffi-office-titlebar .autosave button[aria-checked=true]{background:#185abd;justify-content:flex-end}.doffi-office-titlebar .autosave i{width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0003}
 .doffi-office-statusbar{min-height:25px;height:25px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 16px;border-top:1px solid #ddd;background:#f5f5f5;color:#666;box-sizing:border-box;font:11px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;white-space:nowrap}.doffi-office-statusbar .status-summary{display:flex;align-items:center;gap:18px;min-width:0;overflow:hidden}.doffi-office-statusbar .status-controls{display:flex;align-items:center;gap:2px}.doffi-office-statusbar button{display:inline-flex;align-items:center;justify-content:center;padding:3px 6px;border:0;border-radius:0;background:transparent;font:inherit;color:inherit;cursor:pointer}.doffi-office-statusbar button[aria-pressed=true]{background:#dedede}.doffi-office-statusbar button:disabled{opacity:.35}.doffi-office-statusbar input[type=range]{appearance:none;width:120px;height:2px;background:#bbb;margin:0 4px}.doffi-office-statusbar input[type=range]::-webkit-slider-thumb{appearance:none;width:13px;height:13px;border:1px solid #ccc;background:#fff;border-radius:50%;box-shadow:0 1px 3px #0002}.doffi-office-statusbar input[type=range]::-moz-range-thumb{width:12px;height:12px;border:1px solid #ccc;background:white;border-radius:50%}.doffi-office-statusbar .zoom-number{min-width:42px;text-align:right}.doffi-office-statusbar .status-page-input{display:flex;align-items:center;gap:2px}.doffi-office-statusbar .status-page-input input{font:inherit;width:35px;min-height:0;border:1px solid #ccc;border-radius:3px;padding:1px 3px}
-.doffi-office-workspace{display:flex;flex-direction:column;min-width:0;min-height:100dvh;height:100%;background:#f5f5f5}.doffi-office-workspace>.office-workspace-content{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+.doffi-office-workspace{display:flex;flex-direction:column;min-width:0;min-height:100dvh;height:100%;background:#f5f5f5;position:relative}.doffi-office-workspace>.office-workspace-content{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}.doffi-office-focus-exit{position:fixed;top:12px;right:18px;z-index:20;padding:6px 12px;border:1px solid #d0d7e2;border-radius:16px;background:rgba(255,255,255,.94);color:#243041;font:12px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;cursor:pointer;box-shadow:0 2px 8px #0002}.doffi-office-focus-exit:hover{background:#eef3fa}
 @media(max-width:680px){.doffi-office-titlebar{padding-inline:7px;gap:3px}.doffi-office-titlebar .title-heading{position:static;transform:none;max-width:none;flex:1;justify-content:flex-start}.doffi-office-titlebar .title-quick{gap:0}.doffi-office-titlebar .title-actions{gap:3px}.doffi-office-titlebar .title-primary{font-size:0;padding:4px}.doffi-office-titlebar .title-primary svg{width:15px}.doffi-office-titlebar .autosave{display:none}.doffi-office-statusbar{padding-inline:8px;gap:3px;font-size:10px}.doffi-office-statusbar .status-summary{gap:7px}.doffi-office-statusbar input[type=range]{width:65px}.doffi-office-statusbar .status-page-input{display:none}}
 `;
 
@@ -63,23 +64,38 @@ export function OfficeStatusBar({ kind, pageCount = 0, currentPage, wordCount, l
     {kind === "workbook" && <button type="button" aria-label="普通视图" title="普通视图" aria-pressed="true"><Icon name="grid" size={14} /></button>}
     {onPage && pageCount > 1 && <form className="status-page-input" aria-label="转到页面" onSubmit={event => { event.preventDefault(); onPage(Number(new FormData(event.currentTarget).get("page"))); }}><input name="page" type="number" aria-label="目标页码" required min={1} max={pageCount} defaultValue={1} /><button type="submit">转到</button></form>}
     {onSlideShow && <button type="button" aria-label="从当前幻灯片放映" title="从当前幻灯片放映" disabled={disabled} onClick={onSlideShow}><Icon name="slides" size={15} /></button>}
-    <button type="button" aria-label="缩小" disabled={disabled || zoom <= .5} onClick={() => onZoom(Math.max(.5, zoom - .25))}>−</button>
-    <input type="range" aria-label="文档缩放" disabled={disabled} min="50" max="200" step="1" value={zoom * 100} onChange={event => onZoom(Number(event.currentTarget.value) / 100)} />
-    <button type="button" aria-label="放大" disabled={disabled || zoom >= 2} onClick={() => onZoom(Math.min(2, zoom + .25))}>＋</button><span className="zoom-number">{Math.round(zoom * 100)}%</span>
+    <button type="button" aria-label="缩小" disabled={disabled || zoom <= .25} onClick={() => onZoom(Math.max(.25, Math.round((zoom - .25) * 100) / 100))}>−</button>
+    <input type="range" aria-label="文档缩放" disabled={disabled} min="25" max="400" step="1" value={Math.min(400, Math.max(25, Math.round(zoom * 100)))} onChange={event => onZoom(Number(event.currentTarget.value) / 100)} />
+    <button type="button" aria-label="放大" disabled={disabled || zoom >= 4} onClick={() => onZoom(Math.min(4, Math.round((zoom + .25) * 100) / 100))}>＋</button><span className="zoom-number">{Math.round(zoom * 100)}%</span>
     {onFit && <button type="button" aria-label="幻灯片适应窗口" title="幻灯片适应窗口" disabled={disabled} onClick={onFit}><Icon name="slides" size={14} /></button>}
   </div></footer>;
 }
 
 /** Hosts provide actions and the native editor; all shared Office chrome ships in the SDK. */
 export interface OfficeWorkspaceProps {
-  titleBar: OfficeTitleBarProps; ribbon: OfficeRibbonProps; statusBar: OfficeStatusBarProps; children: ReactNode;
+  titleBar: OfficeTitleBarProps; ribbon: OfficeRibbonProps; statusBar: OfficeStatusBarProps;
+  focusMode?: boolean; onExitFocusMode?(): void; children: ReactNode;
 }
-export function OfficeWorkspace({ titleBar, ribbon, statusBar, children }: OfficeWorkspaceProps): ReactElement {
+export function OfficeWorkspace({ titleBar, ribbon, statusBar, focusMode, onExitFocusMode, children }: OfficeWorkspaceProps): ReactElement {
+  useEffect(() => {
+    if (!focusMode || !onExitFocusMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onExitFocusMode();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focusMode, onExitFocusMode]);
   const style = {
-    "--doffi-text-controls": "none", "--doffi-editing-controls": "none", "--doffi-interaction-controls": "none", "--doffi-collaboration-controls": ribbon.tab === "审阅" ? "flex" : "none",
+    "--doffi-text-controls": "none", "--doffi-editing-controls": "none", "--doffi-interaction-controls": "none", "--doffi-collaboration-controls": !focusMode && ribbon.tab === "审阅" ? "flex" : "none",
     "--doffi-presentation-controls": "none", "--doffi-workbook-tools": "none", "--doffi-workbook-search": "none", "--doffi-workbook-panels": "none", "--doffi-workbook-mode-label": "none", "--doffi-workbook-preview-toolbar": "none",
-    "--doffi-canvas-height": "calc(100dvh - 190px)", "--doffi-presentation-canvas-height": "calc(100dvh - 220px)", "--doffi-annotations-display": titleBar.commentsVisible ? "block" : "none", "--doffi-annotations-width": titleBar.commentsVisible ? "280px" : "0px",
-    "--doffi-presentation-comments-display": titleBar.commentsVisible ? "block" : "none", "--doffi-presentation-comments-width": titleBar.commentsVisible ? "260px" : "0px",
+    "--doffi-canvas-height": focusMode ? "100dvh" : "calc(100dvh - 190px)", "--doffi-presentation-canvas-height": focusMode ? "100dvh" : "calc(100dvh - 220px)", "--doffi-annotations-display": !focusMode && titleBar.commentsVisible ? "block" : "none", "--doffi-annotations-width": !focusMode && titleBar.commentsVisible ? "280px" : "0px",
+    "--doffi-presentation-comments-display": !focusMode && titleBar.commentsVisible ? "block" : "none", "--doffi-presentation-comments-width": !focusMode && titleBar.commentsVisible ? "260px" : "0px",
   } as CSSProperties;
-  return <div className="doffi-office-workspace" style={style}><style>{chromeStyles}</style><OfficeTitleBar {...titleBar} /><OfficeRibbon {...ribbon} /><div className="office-workspace-content">{children}</div><OfficeStatusBar {...statusBar} /></div>;
+  return <div className="doffi-office-workspace" data-focus-mode={focusMode ? "true" : undefined} style={style}><style>{chromeStyles}</style>
+    {focusMode && onExitFocusMode && <button type="button" className="doffi-office-focus-exit" onClick={onExitFocusMode}>退出专注模式 (Esc)</button>}
+    {!focusMode && <OfficeTitleBar {...titleBar} />}
+    {!focusMode && <OfficeRibbon {...ribbon} />}
+    <div className="office-workspace-content">{children}</div>
+    {!focusMode && <OfficeStatusBar {...statusBar} />}
+  </div>;
 }

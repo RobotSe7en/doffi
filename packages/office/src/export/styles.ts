@@ -294,7 +294,12 @@ export class ExportStyles {
   }
   write(opc: OutputOpc): void {
     const out = opc.part("word/styles.xml", contentType("styles"));
-    out.add(declaration + "<w:styles" + namespaces + ">");
+    out.add(
+      declaration +
+        "<w:styles" +
+        namespaces +
+        ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">',
+    );
     out.add(
       "<w:docDefaults><w:rPrDefault><w:rPr>" +
         runProperties({
@@ -429,20 +434,64 @@ export class ExportStyles {
     out.finish();
     opc.relate("word/document.xml", "styles", "styles.xml");
   }
-  writeNumbering(opc: OutputOpc, html: readonly HtmlNumbering[] = []): void {
+  writeNumbering(
+    opc: OutputOpc,
+    html: readonly HtmlNumbering[] = [],
+    embedImage?: (assetPath: string, part: string) => string,
+  ): void {
     if (!this.word?.numbering.length && !html.length) return;
     const out = opc.part("word/numbering.xml", contentType("numbering"));
     out.add(declaration + "<w:numbering" + namespaces + ">");
+    const picBulletIds = new Map<string, number>();
+    let nextPicBulletId = 0;
+    let picDocPrId = 1000;
+    for (const definition of this.word?.numbering ?? []) {
+      for (const level of definition.levels) {
+        if (!level.pictureBulletAssetPath || !embedImage) continue;
+        const key = `${level.pictureBulletAssetPath}|${level.pictureBulletWidthPt ?? 9}|${level.pictureBulletHeightPt ?? 9}`;
+        if (picBulletIds.has(key)) continue;
+        const bulletId = nextPicBulletId++;
+        picBulletIds.set(key, bulletId);
+        const relId = embedImage(level.pictureBulletAssetPath, "word/numbering.xml");
+        const cx = Math.max(12700, Math.round((level.pictureBulletWidthPt ?? 9) * 12700));
+        const cy = Math.max(12700, Math.round((level.pictureBulletHeightPt ?? 9) * 12700));
+        const docPrId = picDocPrId++;
+        out.add(
+          `<w:numPicBullet w:numPicBulletId="${bulletId}">` +
+            `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
+            `<wp:extent cx="${cx}" cy="${cy}"/>` +
+            `<wp:docPr id="${docPrId}" name="Picture Bullet ${bulletId}"/>` +
+            `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
+            `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+            `<pic:pic><pic:nvPicPr><pic:cNvPr id="${docPrId}" name="bullet${bulletId}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+            `<pic:blipFill><a:blip r:embed="${escapeXml(relId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+            `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+            `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+            `</pic:pic></a:graphicData></a:graphic>` +
+            `</wp:inline></w:drawing></w:numPicBullet>`,
+        );
+      }
+    }
     for (const definition of this.word?.numbering ?? []) {
       const id = this.numberingIds.get(definition.numberingId)!;
       out.add(
-        '<w:abstractNum w:abstractNumId="' + id + '">' + value("multiLevelType", "multilevel"),
+        '<w:abstractNum w:abstractNumId="' +
+          id +
+          '">' +
+          value("multiLevelType", definition.multiLevelType ?? "multilevel") +
+          (definition.name ? value("name", definition.name) : "") +
+          (definition.styleLink ? value("styleLink", definition.styleLink) : "") +
+          (definition.numStyleLink ? value("numStyleLink", definition.numStyleLink) : ""),
       );
       for (const level of definition.levels) {
         const css = pick(
           this.css.classStyle(level.cssClass, this.defaults),
           this.css.classKeys(level.cssClass),
         );
+        const picKey = level.pictureBulletAssetPath
+          ? `${level.pictureBulletAssetPath}|${level.pictureBulletWidthPt ?? 9}|${level.pictureBulletHeightPt ?? 9}`
+          : undefined;
+        const picId = picKey ? picBulletIds.get(picKey) : undefined;
         out.add(
           '<w:lvl w:ilvl="' +
             level.level +
@@ -450,8 +499,11 @@ export class ExportStyles {
             value("start", level.start) +
             value("numFmt", level.format) +
             (level.restart !== undefined ? value("lvlRestart", level.restart) : "") +
+            (level.pStyle ? value("pStyle", level.pStyle) : "") +
+            (level.isLgl ? empty("w:isLgl") : "") +
             value("suff", level.suffix) +
             value("lvlText", level.text) +
+            (picId !== undefined ? value("lvlPicBulletId", picId) : "") +
             "<w:pPr>" +
             paragraphProperties(
               pick(

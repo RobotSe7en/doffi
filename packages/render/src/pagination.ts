@@ -216,7 +216,7 @@ export function paginate(
   article.style.zIndex = "1";
   const layoutStyle = document.createElement("style");
   layoutStyle.textContent =
-    ".sdk-page-group{position:relative;box-sizing:border-box;margin:0 auto 18pt}.sdk-page-group:last-child{margin-bottom:0}.sdk-page-flow{position:relative;display:flow-root}.sdk-page-flow .sdk-section{display:flow-root}.sdk-page-layer{position:absolute;pointer-events:none;z-index:0}.sdk-paper{position:absolute;box-sizing:border-box;background:white;box-shadow:0 1px 5px #0003}.sdk-page-story{position:absolute;box-sizing:border-box;overflow:hidden}.sdk-page-story p{min-height:0}.sdk-page-story .sdk-auxiliary{display:block;border:0;padding:0}.sdk-story-label,.sdk-auxiliary{display:none}.sdk-page-story{display:block}.sdk-page-number{position:absolute;right:0;bottom:-14pt;color:#68717b;font:9px system-ui}[data-word-break]{border:0!important;margin:0!important;height:0;line-height:0;display:block}";
+    ".sdk-page-group{position:relative;box-sizing:border-box;margin:0 auto 18pt}.sdk-page-group:last-child{margin-bottom:0}.sdk-page-flow{position:relative;display:flow-root}.sdk-page-flow .sdk-section{display:flow-root}.sdk-page-layer{position:absolute;pointer-events:none;z-index:0}.sdk-paper{position:absolute;box-sizing:border-box;background:white;box-shadow:0 1px 5px #0003}.sdk-paper[data-sdk-gridlines='true']::after{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(70,114,196,.12) 1px,transparent 1px),linear-gradient(to bottom,rgba(70,114,196,.12) 1px,transparent 1px);background-size:18pt 18pt;z-index:2}.sdk-line-numbers{position:absolute;left:0;top:0;bottom:0;pointer-events:none;z-index:2;font:9pt system-ui,sans-serif;color:#5c687a}.sdk-line-number{position:absolute;text-align:right;line-height:1}.sdk-page-story{position:absolute;box-sizing:border-box;overflow:hidden;pointer-events:auto}.sdk-page-story p{min-height:0}.sdk-page-story .sdk-auxiliary{display:block;border:0;padding:0}.sdk-story-label,.sdk-auxiliary{display:none}.sdk-page-story{display:block}.sdk-page-number{position:absolute;right:0;bottom:-14pt;color:#68717b;font:9px system-ui}[data-word-break]{border:0!important;margin:0!important;height:0;line-height:0;display:block}";
   document.head.append(layoutStyle);
   for (const section of mainSections) {
     const previousSection = mainSections[mainSections.indexOf(section) - 1];
@@ -276,9 +276,24 @@ export function paginate(
       );
     let group = groups.at(-1);
     const columns = variableSections.has(section) ? "sections" : "regular";
+    const samePaperContinuousMargins =
+      Boolean(group) &&
+      section.definition.breakType === "continuous" &&
+      group!.columns === columns &&
+      group!.setup.width === setup.width &&
+      group!.setup.height === setup.height &&
+      group!.setup.margins.top === setup.margins.top &&
+      group!.setup.margins.bottom === setup.margins.bottom &&
+      (group!.setup.margins.left !== setup.margins.left ||
+        group!.setup.margins.right !== setup.margins.right);
+    if (samePaperContinuousMargins && group) {
+      ownViewStyle(section.element, "margin-left", "margin-right");
+      section.element.style.marginLeft = setup.margins.left - group.setup.margins.left + "pt";
+      section.element.style.marginRight = setup.margins.right - group.setup.margins.right + "pt";
+    }
     if (
       !group ||
-      JSON.stringify(group.setup) !== JSON.stringify(setup) ||
+      (!samePaperContinuousMargins && JSON.stringify(group.setup) !== JSON.stringify(setup)) ||
       group.columns !== columns
     ) {
       if (changedPageGeometry && section.definition.breakType === "continuous")
@@ -532,7 +547,12 @@ export function paginate(
         paper.className = "sdk-paper";
         paper.dataset.pageId = page.pageId;
         paper.setAttribute("aria-hidden", "true");
-        paper.style.cssText = `left:${page.rect.x}pt;top:${page.rect.y}pt;width:${setup.width}pt;height:${setup.height}pt`;
+        const bgColor = metadata.word?.pageBackground?.color
+          ? "#" + metadata.word.pageBackground.color
+          : "white";
+        paper.style.cssText = `left:${page.rect.x}pt;top:${page.rect.y}pt;width:${setup.width}pt;height:${setup.height}pt;background:${bgColor}`;
+        if (document.documentElement.dataset.wordGridlines === "true")
+          paper.dataset.sdkGridlines = "true";
         layer.append(paper);
         let storyPaint: HTMLElement | undefined;
         const paint = (node: HTMLElement, story: HTMLElement): void => {
@@ -575,6 +595,8 @@ export function paginate(
           story.classList.remove("sdk-auxiliary");
           story.classList.add("sdk-page-story");
           story.dataset.sdkAuxiliary = "true";
+          if (reference) story.dataset.sdkPageStoryId = reference;
+          story.dataset.sdkPageStoryKind = kind === "headers" ? "header" : "footer";
           const distance =
             kind === "headers"
               ? (definition.headerDistance ?? 36)
@@ -630,6 +652,104 @@ export function paginate(
         paper.append(label);
         layer.append(paper);
       }
+    }
+    // Paint page line numbers (w:lnNumType) and section vertical alignment (w:vAlign).
+    let runningLineNumber = 1;
+    let lastSectionId = "";
+    for (let pageIdx = 0; pageIdx < result.length; pageIdx++) {
+      const page = result[pageIdx]!;
+      if (page.blank) continue;
+      const sectionDef = mainSections.find((s) => s.definition.sectionId === page.sectionId)?.definition;
+      if (!sectionDef) continue;
+      if (sectionDef.verticalAlign && sectionDef.verticalAlign !== "top" && result.length === 1) {
+        const group = groups[0];
+        if (group) {
+          const printablePt = page.setup.height - page.setup.margins.top - page.setup.margins.bottom;
+          const usedPt = Math.max(0, group.paginator.bottom(0) * 0.75);
+          const sparePt = Math.max(0, printablePt - usedPt);
+          if (sparePt > 1) {
+            ownViewStyle(group.flow, "padding-top");
+            group.flow.style.paddingTop =
+              sectionDef.verticalAlign === "center"
+                ? sparePt / 2 + "pt"
+                : sectionDef.verticalAlign === "bottom"
+                  ? sparePt + "pt"
+                  : "0pt";
+          }
+        }
+      }
+      if (sectionDef.lineNumbers) {
+        const ln = sectionDef.lineNumbers;
+        const restart = ln.restart ?? "newPage";
+        const start = ln.start ?? 1;
+        const countBy = Math.max(1, ln.countBy ?? 1);
+        const distance = ln.distance ?? 18;
+        if (restart === "newPage" || (restart === "newSection" && page.sectionId !== lastSectionId) || !lastSectionId) {
+          runningLineNumber = start;
+        }
+        const paper = layer.querySelector<HTMLElement>(`.sdk-paper[data-page-id="${CSS.escape(page.pageId)}"]`);
+        if (paper) {
+          const topPx = surface.top + px(page.rect.y + page.setup.margins.top) - 1;
+          const bottomPx = surface.top + px(page.rect.y + page.setup.height - page.setup.margins.bottom) + 1;
+          const lineBands: { top: number; bottom: number }[] = [];
+          const range = document.createRange();
+          const walker = document.createTreeWalker(root, 4);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const el = n.parentElement;
+            if (
+              !n.textContent?.trim() ||
+              !el ||
+              el.closest(
+                ".sdk-auxiliary,.sdk-number-marker,.sdk-word-ruby-rt,.sdk-word-enclosed,.sdk-word-drop-cap,[data-sdk-word-drop-cap=\"drop\"],[data-sdk-word-drop-cap=\"margin\"],table",
+              )
+            )
+              continue;
+            const paraBlock = el.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6");
+            if (
+              paraBlock &&
+              document.defaultView!.getComputedStyle(paraBlock).getPropertyValue("--word-paragraph-native-suppressLineNumbers").trim() === "1"
+            )
+              continue;
+            range.selectNodeContents(n);
+            for (const rect of range.getClientRects()) {
+              if (rect.height < 2 || rect.width < 1 || rect.top < topPx || rect.bottom > bottomPx) continue;
+              const match = lineBands.find((band) => {
+                const overlap = Math.min(band.bottom, rect.bottom) - Math.max(band.top, rect.top);
+                const minH = Math.min(band.bottom - band.top, rect.bottom - rect.top);
+                return overlap > minH * 0.35;
+              });
+              if (match) {
+                match.top = Math.min(match.top, rect.top);
+                match.bottom = Math.max(match.bottom, rect.bottom);
+              } else {
+                lineBands.push({ top: rect.top, bottom: rect.bottom });
+              }
+            }
+          }
+          lineBands.sort((a, b) => a.top - b.top);
+          if (lineBands.length) {
+            const container = markViewNode(document.createElement("div"));
+            container.className = "sdk-line-numbers";
+            const rightEdge = Math.max(8, page.setup.margins.left - distance);
+            container.style.width = rightEdge + "pt";
+            const paperTop = surface.top + px(page.rect.y);
+            for (const band of lineBands) {
+              const num = runningLineNumber++;
+              if (num % countBy === 0) {
+                const span = document.createElement("span");
+                span.className = "sdk-line-number";
+                span.textContent = String(num);
+                const mid = (band.top + band.bottom) / 2;
+                span.style.top = pt(mid - paperTop - 5) + "pt";
+                span.style.right = "0pt";
+                container.append(span);
+              }
+            }
+            paper.append(container);
+          }
+        }
+      }
+      lastSectionId = page.sectionId;
     }
     pages = Object.freeze(result);
     repeated.project(pages);

@@ -1,8 +1,10 @@
-import { WordPageBordersSchema } from "@doffi/core";
+import { WORD_ART_PAGE_BORDER_STYLES, WordPageBordersSchema } from "@doffi/core";
 import type { DeepReadonly, WordPageBorders } from "@doffi/core";
 import { W, R, attr, check, elements, number, unsupported } from "./ooxml/xml.js";
 import type { XmlNode } from "./ooxml/xml.js";
 import { attributes, empty } from "./export/xml.js";
+
+const ART_BORDER_STYLES = new Set<string>(WORD_ART_PAGE_BORDER_STYLES);
 export function readWordPageBorders(source: XmlNode | undefined): WordPageBorders | undefined {
   if (!source) return;
   check(source, ["top", "left", "bottom", "right"]);
@@ -23,9 +25,12 @@ export function readWordPageBorders(source: XmlNode | undefined): WordPageBorder
       )
     )
       unsupported(source, "Art page borders retain their native resources.");
+    const borderStyle = attr(border, "val") ?? "single";
     const value: Record<string, unknown> = {
-      style: attr(border, "val") ?? "single",
-      width: number(attr(border, "sz"), border, 4) / 8,
+      style: borderStyle,
+      width: ART_BORDER_STYLES.has(borderStyle)
+        ? number(attr(border, "sz"), border, 12)
+        : number(attr(border, "sz"), border, 4) / 8,
       space: number(attr(border, "space"), border, 0),
       color: attr(border, "color") ?? "auto",
     };
@@ -60,7 +65,9 @@ export function writeWordPageBorders(borders: DeepReadonly<WordPageBorders> | un
         return border
           ? empty("w:" + side, {
               "w:val": border.style,
-              "w:sz": Math.round(border.width * 8),
+              "w:sz": ART_BORDER_STYLES.has(border.style)
+                ? Math.max(1, Math.min(31, Math.round(border.width)))
+                : Math.round(border.width * 8),
               "w:space": border.space,
               "w:color": border.color,
               "w:themeColor": border.themeColor,
