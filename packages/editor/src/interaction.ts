@@ -54,6 +54,8 @@ export interface DocumentInteractionView {
   openWordNavigation(action: "find" | "outline" | "wordCount"): void;
   /** Scroll to a physical page in the current paginated view. */
   goToPage(page: number): Promise<void>;
+  setShowGridlines?(visible: boolean): void;
+  printDocument?(): Document;
   focusAnnotation(annotationId: string): void;
   stepAnnotation?(direction: -1 | 1): void;
   toggleActiveAnnotationResolved?(): void;
@@ -1075,6 +1077,18 @@ export function mountDocumentInteraction(
     async goToPage(page) {
       const report = await settled();
       scrollToWordPage(stage, preview!.element, report, page, zoom);
+    },
+    setShowGridlines(visible) {
+      const doc = preview?.element.contentDocument;
+      if (!doc) return;
+      for (const paper of doc.querySelectorAll<HTMLElement>(".sdk-paper")) {
+        if (visible) paper.dataset.sdkGridlines = "true";
+        else delete paper.dataset.sdkGridlines;
+      }
+    },
+    printDocument() {
+      if (!preview) throw new DocumentError("InvalidOperation", "请等待文档预览就绪。");
+      return preview.printDocument();
     },
     focusAnnotation,
     stepAnnotation,

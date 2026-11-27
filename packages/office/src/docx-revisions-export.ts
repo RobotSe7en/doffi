@@ -104,7 +104,7 @@ export class ExportWordRevisions {
         !Number.isFinite(Date.parse(date)))
     )
       throw new DocumentError("UnsupportedFeature", "A revision date is not an XML dateTime.");
-    return date;
+    return date?.replace(/\.\d+(?=(?:Z|[+-]\d\d:\d\d)$)/, "");
   }
   private change(
     revision: DeepReadonly<WordRevision>,
@@ -158,7 +158,7 @@ export class ExportWordRevisions {
         "w:id": this.next++,
         ...(name === "tblGrid"
           ? {}
-          : { "w:author": revision.author ?? "", "w:date": revision.date }),
+          : { "w:author": revision.author ?? "", "w:date": this.revisionDate(revision) }),
       }) +
       "><w:" +
       name +

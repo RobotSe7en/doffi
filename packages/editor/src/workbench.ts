@@ -50,6 +50,8 @@ export type DocumentWorkbenchEvent =
     };
 export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
   readonly onFormatStateChange?: (state: TextFormatState) => void;
+  readonly onPrint?: () => void;
+  readonly onImportTemplateFile?: import("./rich-text.js").DocumentTextEditorOptions["onImportTemplateFile"];
   readonly format?: "document";
   readonly editable?: boolean;
   readonly onSubmitAnnotations?: AnnotationSubmissionHandler;
@@ -59,6 +61,8 @@ export interface DocumentWorkbenchOptions extends DocumentInteractionOptions {
 }
 export interface DocumentWorkbenchView extends DocumentInteractionView {
   fitPage(mode: WordPageZoomMode): number;
+  setShowGridlines(visible: boolean): void;
+  printDocument(): Document;
   stepAnnotation(direction: -1 | 1): void;
   toggleActiveAnnotationResolved(): void;
   removeActiveAnnotation(): void;
@@ -248,6 +252,8 @@ function mountContentWorkbench(
   }
   const interaction = mountDocumentInteraction(interactionHost, session, {
     ...(options.layout ? { layout: options.layout } : {}),
+    ...(options.draft ? { draft: options.draft } : {}),
+    ...(options.showGridlines ? { showGridlines: options.showGridlines } : {}),
     ...(options.limits ? { limits: options.limits } : {}),
     ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
     ...(options.title ? { title: options.title } : {}),
@@ -284,7 +290,20 @@ function mountContentWorkbench(
         }),
   });
   let edit: HTMLButtonElement | undefined,
-    zoom = 1;
+    zoom = 1,
+    showGridlines = Boolean(options.showGridlines);
+  function setShowGridlines(visible: boolean): void {
+    ensureActive();
+    showGridlines = visible;
+    textEditor?.setShowGridlines(visible);
+    interaction.setShowGridlines?.(visible);
+  }
+  function printDocument(): Document {
+    ensureActive();
+    if (textEditor) return textEditor.printDocument();
+    if (interaction.printDocument) return interaction.printDocument();
+    throw new DocumentError("InvalidOperation", "当前视图不支持打印。");
+  }
   function setZoom(value: number): void {
     ensureActive();
     if (textEditor) textEditor.setZoom(value);
@@ -315,8 +334,14 @@ function mountContentWorkbench(
         ...(options.onFormatStateChange
           ? { onFormatStateChange: options.onFormatStateChange }
           : {}),
+        ...(options.onPrint ? { onPrint: options.onPrint } : {}),
+        ...(options.onImportTemplateFile
+          ? { onImportTemplateFile: options.onImportTemplateFile }
+          : {}),
+        onUpdateFields: updateFields,
         ...(options.layout ? { layout: options.layout } : {}),
         ...(options.draft ? { draft: options.draft } : {}),
+        ...(showGridlines ? { showGridlines: true } : {}),
         ...(options.limits ? { limits: options.limits } : {}),
         ...(options.wordWebFonts ? { wordWebFonts: options.wordWebFonts } : {}),
         ...(options.appearance ? { appearance: options.appearance } : {}),
@@ -717,6 +742,8 @@ function mountContentWorkbench(
     },
     setZoom,
     fitPage,
+    setShowGridlines,
+    printDocument,
     goToPage: (page) => (textEditor ?? interaction).goToPage(page),
     focusAnnotation: interaction.focusAnnotation,
     stepAnnotation: (direction) => interaction.stepAnnotation!(direction),

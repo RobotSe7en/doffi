@@ -1,6 +1,6 @@
 import { expandWordRevisionGroups } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
-export type WordRevisionDisplay = "all" | "final" | "original";
+export type WordRevisionDisplay = "all" | "simple" | "final" | "original";
 export function createWordReviewControls(
   parent: ShadowRoot,
   before: HTMLElement,
@@ -86,7 +86,8 @@ export function createWordReviewControls(
     mode.setAttribute("aria-label", "修订显示");
     for (const [value, name] of [
       ["all", "显示所有标记"],
-      ["final", "显示最终状态"],
+      ["simple", "显示简单标记"],
+      ["final", "无标记（最终状态）"],
       ["original", "显示原始状态"],
     ] as const) {
       const option = document.createElement("option");

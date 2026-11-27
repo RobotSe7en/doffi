@@ -530,17 +530,64 @@ export function createWordDrawingControls(
       "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px";
     formatDialog = createOfficeDialog(document, action === "drawingSettings" ? "形状格式" : "插入绘图对象");
     formatDialog.content.style.cssText = "min-height:0;max-height:65dvh;overflow:auto;margin-top:12px";
+    let currentGroup = "size";
+    const groupItems: { node: HTMLElement; group: string }[] = [];
+    const register = <T extends HTMLElement>(node: T, group = currentGroup): T => {
+      node.dataset.wordTabGroup = group;
+      groupItems.push({ node, group });
+      return node;
+    };
+    let applyTabFilter = (_next: string): void => {};
+    if (action === "drawingSettings") {
+      const tabBar = document.createElement("div");
+      tabBar.setAttribute("role", "tablist");
+      tabBar.setAttribute("aria-label", "形状格式选项卡");
+      tabBar.style.cssText = "display:flex;gap:4px;border-bottom:1px solid #dbe3ef;padding-bottom:6px;margin-bottom:10px";
+      let activeTab = "all";
+      const tabButtons: { id: string; btn: HTMLButtonElement }[] = [];
+      applyTabFilter = (next: string): void => {
+        activeTab = next;
+        for (const item of tabButtons) {
+          const on = item.id === activeTab;
+          item.btn.setAttribute("aria-selected", String(on));
+          item.btn.style.background = on ? "#e8f1ff" : "#f8fafc";
+          item.btn.style.borderColor = on ? "#185abd" : "#d5dce6";
+          item.btn.style.color = on ? "#185abd" : "#334155";
+          item.btn.style.fontWeight = on ? "600" : "400";
+        }
+        for (const entry of groupItems) {
+          entry.node.hidden = activeTab !== "all" && entry.group !== "common" && entry.group !== activeTab;
+        }
+      };
+      for (const [id, label] of [
+        ["all", "全部"],
+        ["size", "大小与位置"],
+        ["wrap", "文字环绕"],
+        ["style", "填充与线条"],
+        ["text", "文本与裁剪"],
+      ] as const) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("role", "tab");
+        btn.textContent = label;
+        btn.style.cssText = "padding:3px 10px;border-radius:4px;border:1px solid #d5dce6;font-size:12px;cursor:pointer";
+        btn.addEventListener("click", () => applyTabFilter(id), { signal });
+        tabButtons.push({ id, btn });
+        tabBar.append(btn);
+      }
+      formatDialog.content.append(tabBar);
+    }
     formatDialog.content.append(panel);
     parent.insertBefore(formatDialog.dialog, before);
     formatDialog.dialog.addEventListener("cancel", event => { event.preventDefault(); close(); }, { signal });
     formatDialog.show();
-    const button = (label: string, run: () => void): void => {
+    const button = (label: string, run: () => void, group?: string): void => {
       const node = document.createElement("button");
       node.type = "button";
       node.textContent = label;
       node.addEventListener("click", () => attempt(run), { signal });
       if (label === "关闭绘图设置") formatDialog!.footer.append(node);
-      else panel!.append(node);
+      else panel!.append(register(node, group));
     };
     const field = (name: string, value: number | string, type = "number"): HTMLInputElement => {
       const label = document.createElement("label"),
@@ -552,7 +599,7 @@ export function createWordDrawingControls(
       input.style.width = type === "number" ? "100px" : "100%";
       if (type === "number") input.step = "0.5";
       label.append(input);
-      panel!.append(label);
+      panel!.append(register(label));
       return input;
     };
     const choose = (
@@ -572,7 +619,7 @@ export function createWordDrawingControls(
       }
       input.value = value;
       label.append(input);
-      panel!.append(label);
+      panel!.append(register(label));
       return input;
     };
     button("关闭绘图设置", close);
@@ -594,6 +641,7 @@ export function createWordDrawingControls(
       width = field("对象宽度（磅）", g.width),
       height = field("对象高度（磅）", g.height),
       rotation = field("对象旋转角度", g.rotation);
+    currentGroup = "wrap";
     const mode = choose(
         "对象布局",
         [
@@ -723,6 +771,7 @@ export function createWordDrawingControls(
     for (const input of Object.values(wrapDistances)) input.min = "0";
     layer.min = "0";
     layer.step = "1";
+    currentGroup = "size";
     const sizeModeW = choose(
         "对象宽度方式",
         [
@@ -772,7 +821,7 @@ export function createWordDrawingControls(
     }
     const sizeHint = document.createElement("span");
     sizeHint.textContent = "移动保留百分比；拖动右下角缩放会改为固定尺寸，可撤销。";
-    panel.append(sizeHint);
+    panel.append(register(sizeHint, "size"));
     const syncSizeFields = (): void => {
       const floating = mode.value === "floating",
         relativeW = floating && sizeModeW.value === "relative",
@@ -786,6 +835,7 @@ export function createWordDrawingControls(
     for (const input of [mode, sizeModeW, sizeModeH, percentW, percentH])
       input.addEventListener("input", syncSizeFields, { signal });
     syncSizeFields();
+    currentGroup = "wrap";
     const polygonText = (l.wrapPolygon ?? []).map((point) => point.x + "," + point.y).join("; "),
       polygon = field("环绕边界点（x,y；21600 为完整宽高）", polygonText, "text");
     polygon.style.width = "320px";
@@ -794,7 +844,7 @@ export function createWordDrawingControls(
     contourTitle.textContent = "自定义环绕边界";
     contour.style.gridColumn = "1 / -1";
     contour.append(contourTitle, polygon.parentElement!);
-    panel.append(contour);
+    panel.append(register(contour, "wrap"));
     const polygonLayout = (): Pick<WordDrawingLayout, "wrapPolygon" | "wrapPolygonEdited"> => {
       if (polygon.value === polygonText)
         return {
@@ -945,7 +995,8 @@ export function createWordDrawingControls(
         ]),
       );
       open("drawingSettings");
-    });
+    }, "common");
+    currentGroup = "size";
     button("水平翻转", () => {
       apply(
         selected.map((nodeId) => ({
@@ -972,6 +1023,7 @@ export function createWordDrawingControls(
       );
       open("drawingSettings");
     });
+    currentGroup = "style";
     const fill = field("对象填充颜色", "#4472c4", "color"),
       line = field("对象边框颜色", "#224466", "color"),
       lineWidth = field("对象边框宽度（磅）", 1);
@@ -990,6 +1042,7 @@ export function createWordDrawingControls(
         })),
       ),
     );
+    currentGroup = "text";
     if (current?.kind === "image") {
       const crop = current.crop ?? { left: 0, top: 0, right: 0, bottom: 0 },
         fields = Object.fromEntries(
@@ -1115,12 +1168,12 @@ export function createWordDrawingControls(
     }
     button("复制对象", () => {
       apply(selectedRoots().map((nodeId) => ({ op: "copyWordDrawing", nodeId })));
-    });
+    }, "common");
     button("删除对象", () => {
       apply(selectedRoots().map((nodeId) => ({ op: "removeWordDrawing", nodeId })));
       selected = [];
       close();
-    });
+    }, "common");
     if (selectedRoots().length > 1)
       button("组合对象", () => {
         const roots = selectedRoots(), id = roots[0]!,
@@ -1145,13 +1198,14 @@ export function createWordDrawingControls(
         );
         selected = group ? [group.nodeId] : [];
         open("drawingSettings");
-      });
+      }, "common");
     if (current?.kind === "group")
       button("取消组合", () => {
         apply([...materialize([current]), { op: "ungroupWordDrawing", nodeId: current.nodeId }]);
         selected = [];
         close();
-      });
+      }, "common");
+    applyTabFilter("all");
   }
   function bind(root: HTMLElement, projection: SourceProjection, signal: AbortSignal): void {
     boundRoot = root;

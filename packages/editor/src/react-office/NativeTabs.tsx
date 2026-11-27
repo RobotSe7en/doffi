@@ -1,10 +1,16 @@
 import type { ReactElement, ReactNode } from "react";
-import type { DocumentTextCommand, EditorCommandState, WordPageZoomMode } from "../index.js";
+import type { DocumentTextCommand, EditorCommandState, TextFormatState, WordPageZoomMode } from "../index.js";
 import type { OfficeActions } from "./OfficeRibbon.js";
 import { Group, Tool } from "./ribbon-controls.js";
 import type { Glyph } from "./ribbon-controls.js";
-import { OfficeMenu } from "./OfficeMenu.js";
+import { OfficeColorMenu, OfficeMenu } from "./OfficeMenu.js";
 import { OfficeIcon as Icon } from "./icons.js";
+import {
+  WORD_COLOR_SCHEMES,
+  WORD_FONT_SCHEMES,
+  WORD_STYLE_SETS,
+  WORD_THEMES,
+} from "../word-theme-presets.js";
 
 type Item = readonly [label: string, icon: Glyph, command?: string];
 type Column = Item | { readonly stack: readonly Item[] } | { readonly gallery: readonly string[]; readonly category?: "theme" | "transition" | "pen" };
@@ -15,33 +21,33 @@ const gallery = (names: readonly string[], category: "theme" | "transition" | "p
 /** Recorded macOS Office command order. Unsupported commands remain disabled. */
 const word: Readonly<Record<string, readonly Section[]>> = {
   插入: [
-    ["页面", ["封面", "file"], stack(["空白页", "file", "w:insertBlankPage"], ["分页符", "pageBreak", "w:pageBreak"])],
+    ["页面", ["封面", "file", "w:coverPage"], stack(["空白页", "file", "w:insertBlankPage"], ["分页符", "pageBreak", "w:pageBreak"])],
     ["表格", ["表格", "table", "wordTableMenu"]],
     ["插图", ["图片", "image", "w:insertImage"], ["形状", "shapes", "w:insertShape"], ["图标", "shapes"], ["3D 模型", "shapes"], ["SmartArt", "diagram"], ["图表", "chart", "w:insertChart"], ["屏幕截图", "image"]],
     ["媒体", ["媒体", "slides"]],
     ["链接", ["链接", "link", "w:insertLink"], stack(["书签", "bookmark", "w:bookmarks"], ["交叉引用", "file", "w:crossReference"])],
     ["批注", ["批注", "comment", "newComment"]],
-    ["页眉和页脚", ["页眉", "header", "w:pageSettings"], ["页脚", "footer", "w:pageSettings"], ["页码", "numbering", "w:pageNumber"]],
-    ["文本", ["文本框", "textBox", "w:insertTextBox"], ["艺术字", "textBox"], ["首字下沉", "textBox"], stack(["域", "file", "w:referenceSettings"], ["日期和时间", "file", "w:insertDateTime"], ["对象", "file"])],
-    ["符号", ["公式", "textBox", "w:insertEquation"], stack(["高级符号", "textBox"], ["数字", "numbering"])],
+    ["页眉和页脚", ["页眉", "header", "w:editHeader"], ["页脚", "footer", "w:editFooter"], ["页码", "numbering", "w:pageNumber"]],
+    ["文本", ["文本框", "textBox", "w:insertTextBox"], ["文档部件", "file", "w:quickParts"], ["艺术字", "textEffects", "w:wordArt"], ["首字下沉", "textBox", "w:dropCap"], stack(["域", "file", "w:insertField"], ["日期和时间", "file", "w:insertDateTime"], ["文档属性", "file", "w:docProperties"]), ["内容控件", "edit", "wordControlMenu"]],
+    ["符号", ["公式", "textBox", "w:insertEquation"], stack(["高级符号", "textBox", "w:symbols"], ["拼音指南", "pinyin", "w:ruby"])],
   ],
   布局: [
-    ["页面设置", ["文本方向", "textDirection", "w:pageSettings"], ["页边距", "margins", "w:pageSettings"], ["方向", "orientation", "w:pageSettings"], ["大小", "file", "w:pageSettings"], ["栏", "columns", "w:pageSettings"], stack(["分隔符", "pageBreak", "w:sectionBreak"], ["行号", "numbering"], ["断字", "file"])],
+    ["页面设置", ["文本方向", "textDirection", "w:pageSettings"], ["页边距", "margins", "w:pageSettings"], ["方向", "orientation", "w:pageSettings"], ["大小", "file", "w:pageSettings"], ["栏", "columns", "w:pageSettings"], stack(["分隔符", "pageBreak", "w:sectionBreak"], ["行号", "numbering", "wordLineNumbersMenu"], ["断字", "file", "wordHyphenationMenu"])],
     ["缩进和间距", stack(["左侧缩进", "outdent", "paragraph"], ["右侧缩进", "indent", "paragraph"]), stack(["段前间距", "lineSpacing", "paragraph"], ["段后间距", "lineSpacing", "paragraph"])],
     ["排列", ["位置", "grid", "w:drawingSettings"], ["自动换行", "lineSpacing", "w:drawingSettings"], stack(["前移一层", "arrow", "w:bringForward"], ["后移一层", "arrow", "w:sendBackward"], ["选择窗格", "panel", "w:selectionPane"]), stack(["对齐", "left", "w:drawingSettings"], ["组合", "grid", "w:groupDrawings"], ["旋转", "refresh", "w:drawingSettings"])],
   ],
   引用: [
-    ["目录", ["目录", "list", "w:referenceSettings"], stack(["添加文字", "textBox", "w:referenceSettings"], ["更新目录", "refresh", "fields"])],
-    ["脚注", ["插入脚注", "file", "w:insertFootnote"], ["插入尾注", "file", "w:insertEndnote"], stack(["下一条脚注", "arrow", "w:referenceSettings"], ["显示备注", "file", "w:referenceSettings"])],
-    ["引文与书目", ["插入引文", "book"], stack(["引文", "book"], ["样式", "file"], ["书目", "book"])],
-    ["题注", ["插入题注", "image", "w:caption"], stack(["插入表目录", "list"], ["更新表格", "refresh"], ["交叉引用", "file", "w:crossReference"])],
-    ["索引", ["标记条目", "bookmark"], stack(["插入索引", "list"], ["更新索引", "refresh"])],
-    ["引文目录", ["标记引文", "bookmark"], stack(["插入引文目录", "list"], ["更新表格", "refresh"])],
+    ["目录", ["目录", "list", "w:toc"], stack(["添加文字", "textBox", "wordAddTextMenu"], ["更新目录", "refresh", "fields"])],
+    ["脚注", ["插入脚注", "file", "w:insertFootnote"], ["插入尾注", "file", "w:insertEndnote"], stack(["下一条脚注", "arrow", "w:nextFootnote"], ["显示备注", "file", "w:showNotes"])],
+    ["引文与书目", ["插入引文", "book", "w:insertCitation"], stack(["引文", "book", "w:citations"], ["样式", "file", "wordBibStyleMenu"], ["书目", "book", "w:bibliography"])],
+    ["题注", ["插入题注", "image", "w:caption"], stack(["插入表目录", "list", "w:insertTof"], ["更新表格", "refresh", "fields"], ["交叉引用", "file", "w:crossReference"])],
+    ["索引", ["标记条目", "bookmark", "w:markIndexEntry"], stack(["插入索引", "list", "w:insertIndex"], ["更新索引", "refresh", "fields"])],
+    ["引文目录", ["标记引文", "bookmark", "w:markToaCitation"], stack(["插入引文目录", "list", "w:insertToa"], ["更新表格", "refresh", "fields"])],
   ],
-  设计: [["文档格式", ["主题", "palette"], gallery(["文档", "独特", "典雅型", "流行", "正式", "手稿", "现代", "新闻纸", "透视", "简单"]), stack(["颜色", "palette"], ["字体", "textBox"], ["段落间距", "lineSpacing", "paragraph"]), ["设为默认值", "check"]], ["页面背景", ["水印", "image", "w:watermark"], ["页面颜色", "fill", "w:pageSettings"], ["页面边框", "table", "borders"]]],
+  设计: [["文档格式", ["主题", "palette", "wordThemeMenu"], gallery(WORD_STYLE_SETS.map(item => item.label)), stack(["颜色", "palette", "wordColorSchemeMenu"], ["字体", "textBox", "wordFontSchemeMenu"], ["段落间距", "lineSpacing", "paragraph"]), stack(["设为默认值", "check", "w:saveDefaultTemplate"], ["文档模板", "file", "w:templateSettings"])], ["页面背景", ["水印", "image", "w:watermark"], ["页面颜色", "fill", "wordPageColorMenu"], ["页面边框", "table", "w:pageBorders"]]],
   邮件: [["创建", ["信封", "file"], ["标签", "file"]], ["开始邮件合并", ["开始邮件合并", "file"], ["选择收件人", "book"], stack(["编辑收件人列表", "edit"], ["筛选收件人", "list"])], ["编写和插入域", ["插入合并域", "textBox"], stack(["规则", "list"], ["更新标签", "refresh"])], ["预览结果", ["预览结果", "book"], stack(["第一条记录", "arrow"], ["上一条记录", "arrow"], ["查找收件人", "search"])], ["完成", ["完成并合并", "check"]]],
-  审阅: [["校对", ["编辑器", "editor"], stack(["拼写和语法", "proof"], ["同义词库", "book"], ["字数统计", "numbering", "w:wordCount"])], ["语音", ["大声朗读", "book"]], ["辅助功能", ["检查辅助功能", "proof"]], ["语言", ["翻译", "globe"], ["语言", "globe", "w:fontSettings"]], ["批注", ["新建批注", "comment", "newComment"], stack(["删除", "close", "deleteComment"], ["解决", "check", "resolveComment"], ["上一条批注", "arrow", "prevComment"]), stack(["下一条批注", "arrow", "nextComment"], ["显示批注", "comment", "comments"])], ["修订", ["修订", "edit", "w:review"], ["审阅", "file", "w:review"]], ["更改", ["接受", "check", "w:review"], ["拒绝", "close", "w:review"], stack(["上一条修订", "arrow", "w:review"], ["下一条修订", "arrow", "w:review"])], ["比较", ["比较", "file"]], ["保护", ["保护", "shield"]], ["墨迹", ["隐藏墨迹", "pen"]], ["协作", ["载入固定示例提案", "sparkles", "proposal"]]],
-  视图: [["视图", ["页面视图", "file", "view:pages"], ["Web 版式", "globe", "view:continuous"], stack(["大纲", "list", "w:outline"], ["草稿", "file", "view:draft"])], ["沉浸式", ["专注", "file", "focusMode"], ["沉浸式阅读器", "book"]], ["显示", stack(["标尺", "margins"], ["网格线", "grid"], ["导航窗格", "panel", "w:outline"])], ["缩放", ["缩放", "search", "zoom"], ["100%", "search", "zoom100"], stack(["单页", "file", "zoom:singlePage"], ["多页", "file", "zoom:multiplePages"], ["页宽", "file", "zoom:pageWidth"])], ["窗口", ["新建窗口", "file"], ["全部重排", "grid"], ["拆分", "columns"], ["切换窗口", "file"]], ["宏", ["宏", "file"]]],
+  审阅: [["校对", ["编辑器", "editor"], stack(["拼写和语法", "proof"], ["同义词库", "book"], ["字数统计", "numbering", "w:wordCount"])], ["语音", ["大声朗读", "book"]], ["辅助功能", ["检查辅助功能", "proof"]], ["语言", ["翻译", "globe"], ["语言", "globe", "w:fontSettings"]], ["批注", ["新建批注", "comment", "newComment"], stack(["删除", "close", "deleteComment"], ["解决", "check", "resolveComment"], ["上一条批注", "arrow", "prevComment"]), stack(["下一条批注", "arrow", "nextComment"], ["显示批注", "comment", "comments"])], ["修订", ["修订", "edit", "w:toggleTrackChanges"], ["审阅", "file", "wordReviewDisplayMenu"]], ["更改", ["接受", "check", "wordAcceptMenu"], ["拒绝", "close", "wordRejectMenu"], stack(["上一条修订", "arrow", "w:prevRevision"], ["下一条修订", "arrow", "w:nextRevision"])], ["比较", ["比较", "file", "compareDocx"]], ["保护", ["保护", "shield", "w:protection"]], ["墨迹", ["隐藏墨迹", "pen"]], ["协作", ["载入固定示例提案", "sparkles", "proposal"]]],
+  视图: [["视图", ["页面视图", "file", "view:pages"], ["Web 版式", "globe", "view:continuous"], stack(["大纲", "list", "w:outlineView"], ["草稿", "file", "view:draft"])], ["沉浸式", ["专注", "file", "focusMode"], ["沉浸式阅读器", "book", "immersiveReader"]], ["显示", stack(["网格线", "grid", "gridlines"], ["导航窗格", "panel", "w:outline"])], ["缩放", ["缩放", "search", "zoom"], ["100%", "search", "zoom100"], stack(["单页", "file", "zoom:singlePage"], ["多页", "file", "zoom:multiplePages"], ["页宽", "file", "zoom:pageWidth"])], ["窗口", ["拆分", "columns", "splitWindow"]]],
 };
 const ppt: Readonly<Record<string, readonly Section[]>> = {
   插入: [["幻灯片", ["新建幻灯片", "newSlide", "newSlide"]], ["表格", ["表格", "table", "insertTable"]], ["图像", ["图片", "image", "insertImage"], ["屏幕截图", "image"]], ["Cameo", ["Cameo", "image"]], ["插图", ["形状", "shapes", "insertShape"], ["图标", "shapes"], ["3D 模型", "shapes"], ["SmartArt", "diagram"], ["图表", "chart", "insertChart"]], ["链接", ["缩放定位", "slides"], stack(["链接", "link"], ["动作", "arrow"])], ["批注", ["批注", "comment", "newComment"]], ["文本", ["文本框", "textBox", "insertTextBox"], ["页眉和页脚", "header", "definitions"], ["艺术字", "textBox"], stack(["日期和时间", "file"], ["幻灯片编号", "numbering", "definitions"], ["对象", "file"])], ["符号", ["公式", "textBox"], ["符号", "textBox"]], ["媒体", ["视频", "slides"], ["音频", "mic"]]],
@@ -63,21 +69,28 @@ const excel: Readonly<Record<string, readonly Section[]>> = {
   自动化: [["Office 脚本", ["新脚本", "file"], ["查看脚本", "file"], gallery(["取消隐藏所有行和列", "冻结所选内容", "从所选内容中创建子表", "空行计数"])]] ,
 };
 
-export function NativeOfficeTabs({ kind, tab, commands, actions, canFormat, busy, onCommand, onTextCommand, onLayout, onZoom, paragraph, borders, layout, zoom, enableWorkbookZoom, pageZoomMode, onPageZoomMode, draftMode, onDraftMode, focusMode, onFocusMode }: {
+export function NativeOfficeTabs({ kind, tab, commands, actions, canFormat, busy, format, onCommand, onTextCommand, onLayout, onZoom, paragraph, borders, layout, zoom, enableWorkbookZoom, pageZoomMode, onPageZoomMode, draftMode, onDraftMode, focusMode, onFocusMode, showGridlines, onToggleGridlines, immersiveReader, onToggleImmersiveReader, splitWindow, onToggleSplitWindow }: {
   kind: "document" | "presentation" | "workbook"; tab: string; commands: readonly EditorCommandState[]; actions: OfficeActions; canFormat: boolean; busy: boolean;
+  format?: TextFormatState | undefined;
   onCommand(id: string): void; onTextCommand(command: DocumentTextCommand): void | Promise<void>; onLayout(value: "pages" | "continuous"): void; onZoom(value: number): void;
   paragraph(): void; borders(): void;
   layout: "pages" | "continuous"; zoom: number; enableWorkbookZoom: boolean;
   pageZoomMode?: WordPageZoomMode | undefined; onPageZoomMode?: ((mode: WordPageZoomMode) => void) | undefined;
   draftMode?: boolean | undefined; onDraftMode?: ((enabled: boolean) => void) | undefined;
   focusMode?: boolean | undefined; onFocusMode?: ((enabled: boolean) => void) | undefined;
+  showGridlines?: boolean | undefined; onToggleGridlines?: (() => void) | undefined;
+  immersiveReader?: boolean | undefined; onToggleImmersiveReader?: (() => void) | undefined;
+  splitWindow?: boolean | undefined; onToggleSplitWindow?: (() => void) | undefined;
 }): ReactElement {
   const states = new Map(commands.map(command => [command.id, command]));
   const invoke = (key: string): (() => void) | undefined => {
-    if (key.startsWith("w:")) return canFormat || kind === "document" && !busy && ["w:find", "w:outline", "w:wordCount"].includes(key) ? () => onTextCommand({ type: "word", action: key.slice(2) } as DocumentTextCommand) : undefined;
+    if (key.startsWith("w:")) return canFormat || kind === "document" && !busy && ["w:find", "w:goTo", "w:outline", "w:wordCount", "w:protection"].includes(key) ? () => onTextCommand({ type: "word", action: key.slice(2) } as DocumentTextCommand) : undefined;
     if (key === "view:pages" || key === "view:continuous") return !busy ? () => { onDraftMode?.(false); onLayout(key.slice(5) as "pages" | "continuous"); } : undefined;
     if (key === "view:draft") return !busy && onDraftMode ? () => onDraftMode(true) : undefined;
     if (key === "focusMode") return !busy && onFocusMode ? () => onFocusMode(!focusMode) : undefined;
+    if (key === "gridlines") return !busy && onToggleGridlines ? onToggleGridlines : undefined;
+    if (key === "immersiveReader") return !busy && onToggleImmersiveReader ? onToggleImmersiveReader : undefined;
+    if (key === "splitWindow") return !busy && onToggleSplitWindow ? onToggleSplitWindow : undefined;
     if (key === "zoom:singlePage" || key === "zoom:multiplePages" || key === "zoom:pageWidth")
       return !busy && onPageZoomMode ? () => onPageZoomMode(key.slice(5) as WordPageZoomMode) : undefined;
     if (key === "zoom100") return !busy && (kind !== "workbook" || enableWorkbookZoom) ? () => onZoom(1) : undefined;
@@ -91,15 +104,113 @@ export function NativeOfficeTabs({ kind, tab, commands, actions, canFormat, busy
     if (command === "wordTableMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!canFormat} split={() => onTextCommand({ type: "word", action: "insertTable" })}>
       {close => <>
         <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "insertTable" }); close(); }}>插入表格…</button>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "setTableTool", mode: format?.wordState?.tableToolMode === "draw" ? "off" : "draw" }); close(); }}>绘制表格</button>
         <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "textToTable" }); close(); }}>将文字转换成表格…</button>
         <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "tableToText" }); close(); }}>表格转换成文本…</button>
+      </>}
+    </OfficeMenu>;
+    if (command === "wordBibStyleMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={17} />} disabled={!canFormat}>
+      {close => <>{([
+        ["APA", "APA (第 7 版)"],
+        ["MLA", "MLA (第 9 版)"],
+        ["GB7714", "GB/T 7714-2015"],
+        ["Chicago", "Chicago (第 17 版)"],
+        ["IEEE", "IEEE"],
+      ] as const).map(([style, text]) => (
+        <button key={style} role="menuitemradio" type="button" aria-checked={(format?.wordState?.bibliographyStyle ?? "APA") === style}
+          onClick={() => { onTextCommand({ type: "word", action: "setBibliographyStyle", style }); close(); }}>{text}</button>
+      ))}</>}
+    </OfficeMenu>;
+    if (command === "wordControlMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!canFormat} split={() => onTextCommand({ type: "word", action: "insertControl" })}>
+      {close => <>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "insertControl" }); close(); }}>插入内容控件…</button>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "controlSettings" }); close(); }}>内容控件属性…</button>
+      </>}
+    </OfficeMenu>;
+    if (command === "wordThemeMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!canFormat}>
+      {close => <div onPointerLeave={() => onTextCommand({ type: "word", action: "livePreview", properties: null })}>{WORD_THEMES.map(preset => (
+        <button key={preset.id} role="menuitemradio" type="button" aria-checked={format?.wordState?.themeName === preset.theme.name}
+          onPointerEnter={() => onTextCommand({ type: "word", action: "livePreview", scope: "theme", properties: {}, ...(preset.theme.colors ? { themeColors: preset.theme.colors } : {}) })}
+          onClick={() => { onTextCommand({ type: "word", action: "livePreview", properties: null }); onTextCommand({ type: "word", action: "setTheme", themeId: preset.id }); close(); }}>{preset.label}</button>
+      ))}</div>}
+    </OfficeMenu>;
+    if (command === "wordColorSchemeMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={17} />} disabled={!canFormat}>
+      {close => <div onPointerLeave={() => onTextCommand({ type: "word", action: "livePreview", properties: null })}>{WORD_COLOR_SCHEMES.map(preset => (
+        <button key={preset.id} role="menuitem" type="button"
+          onPointerEnter={() => onTextCommand({ type: "word", action: "livePreview", scope: "theme", properties: {}, themeColors: preset.colors })}
+          onClick={() => { onTextCommand({ type: "word", action: "livePreview", properties: null }); onTextCommand({ type: "word", action: "setColorScheme", schemeId: preset.id }); close(); }}>
+          <span style={{ display: "inline-flex", gap: 2, marginRight: 8 }}>{[preset.colors.accent1, preset.colors.accent2, preset.colors.accent4, preset.colors.accent6].map((c, idx) => <i key={idx} style={{ width: 9, height: 9, background: "#" + c, display: "inline-block" }} />)}</span>
+          {preset.label}
+        </button>
+      ))}</div>}
+    </OfficeMenu>;
+    if (command === "wordFontSchemeMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={17} />} disabled={!canFormat}>
+      {close => <>{WORD_FONT_SCHEMES.map(preset => (
+        <button key={preset.id} role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "setFontScheme", schemeId: preset.id }); close(); }}>{preset.label}</button>
+      ))}</>}
+    </OfficeMenu>;
+    if (command === "wordPageColorMenu") return <OfficeColorMenu key={key} label={label} value={format?.wordState?.pageBackgroundColor ?? "#ffffff"} fill disabled={!canFormat} themeColors={format?.themeColors}
+      apply={value => onTextCommand({ type: "word", action: "setPageColor", color: value === "#ffffff" || value === "transparent" ? null : value })} />;
+    if (command === "wordLineNumbersMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={17} />} disabled={!canFormat}>
+      {close => <>{([
+        ["none", "无"],
+        ["continuous", "连续"],
+        ["newPage", "每页重新编号"],
+        ["newSection", "每节重新编号"],
+      ] as const).map(([mode, text]) => (
+        <button key={mode} role="menuitemradio" type="button" aria-checked={(format?.wordState?.lineNumbersRestart ?? "none") === mode}
+          onClick={() => { onTextCommand({ type: "word", action: "setLineNumbers", mode }); close(); }}>{text}</button>
+      ))}
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "pageSettings" }); close(); }}>行号选项…</button>
+      </>}
+    </OfficeMenu>;
+    if (command === "wordHyphenationMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={17} />} disabled={!canFormat}>
+      {close => <>
+        <button role="menuitemradio" type="button" aria-checked={!format?.wordState?.automaticHyphenation} onClick={() => { onTextCommand({ type: "word", action: "setHyphenation", enabled: false }); close(); }}>无</button>
+        <button role="menuitemradio" type="button" aria-checked={Boolean(format?.wordState?.automaticHyphenation)} onClick={() => { onTextCommand({ type: "word", action: "setHyphenation", enabled: true }); close(); }}>自动</button>
+      </>}
+    </OfficeMenu>;
+    if (command === "wordAddTextMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={17} />} disabled={!canFormat}>
+      {close => <>
+        <button role="menuitemradio" type="button" aria-checked={format?.wordState?.outlineLevel === null} onClick={() => { onTextCommand({ type: "word", action: "setOutlineLevel", level: null }); close(); }}>不显示在目录中</button>
+        {[0, 1, 2, 3].map(level => (
+          <button key={level} role="menuitemradio" type="button" aria-checked={format?.wordState?.outlineLevel === level}
+            onClick={() => { onTextCommand({ type: "word", action: "setOutlineLevel", level }); close(); }}>{level + 1} 级</button>
+        ))}
+      </>}
+    </OfficeMenu>;
+    if (command === "wordReviewDisplayMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!canFormat}>
+      {close => <>{([
+        ["simple", "简单标记"],
+        ["all", "所有标记"],
+        ["final", "无标记"],
+        ["original", "原始状态"],
+      ] as const).map(([mode, text]) => (
+        <button key={mode} role="menuitemradio" type="button" aria-checked={(format?.wordState?.reviewDisplay ?? "all") === mode}
+          onClick={() => { onTextCommand({ type: "word", action: "setReviewDisplay", mode }); close(); }}>{text}</button>
+      ))}
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "review" }); close(); }}>审阅窗格…</button>
+      </>}
+    </OfficeMenu>;
+    if (command === "wordAcceptMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!canFormat} split={() => onTextCommand({ type: "word", action: "acceptRevision" })}>
+      {close => <>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "acceptRevision" }); close(); }}>接受并移至下一处</button>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "acceptAllRevisions" }); close(); }}>接受所有修订</button>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "review" }); close(); }}>审阅窗格…</button>
+      </>}
+    </OfficeMenu>;
+    if (command === "wordRejectMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!canFormat} split={() => onTextCommand({ type: "word", action: "rejectRevision" })}>
+      {close => <>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "rejectRevision" }); close(); }}>拒绝并移至下一处</button>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "rejectAllRevisions" }); close(); }}>拒绝所有修订</button>
+        <button role="menuitem" type="button" onClick={() => { onTextCommand({ type: "word", action: "review" }); close(); }}>审阅窗格…</button>
       </>}
     </OfficeMenu>;
     if (command === "freezeMenu") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={!states.get("freezePanes")?.enabled}>
       {close => <>{[["freezePanes", "冻结窗格"], ["unfreezePanes", "取消冻结窗格"]].map(([id, label]) => <button key={id} role="menuitem" disabled={!invoke(id!)} onClick={() => { invoke(id!)?.(); close(); }}>{label}</button>)}</>}
     </OfficeMenu>;
     if (command === "zoom") return <OfficeMenu key={key} label={label} icon={<Icon name={icon} size={32} />} large disabled={busy || kind === "workbook" && !enableWorkbookZoom}>
-      {close => <>{[.5, .75, 1, 1.25, 1.5, 2].map(value => <button key={value} role="menuitemradio" aria-checked={zoom === value} onClick={() => { onZoom(value); close(); }}>{value * 100}%</button>)}</>}
+      {close => <>{[.5, .75, 1, 1.25, 1.5, 2, 3, 4].map(value => <button key={value} role="menuitemradio" aria-checked={zoom === value} onClick={() => { onZoom(value); close(); }}>{value * 100}%</button>)}</>}
     </OfficeMenu>;
     const active =
       command === "view:pages"
@@ -110,16 +221,39 @@ export function NativeOfficeTabs({ kind, tab, commands, actions, canFormat, busy
             ? Boolean(draftMode)
             : command === "focusMode"
               ? Boolean(focusMode)
-              : command?.startsWith("zoom:")
-                ? pageZoomMode === command.slice(5)
-                : undefined;
+              : command === "gridlines"
+                ? Boolean(showGridlines)
+                : command === "immersiveReader"
+                  ? Boolean(immersiveReader)
+                  : command === "splitWindow"
+                    ? Boolean(splitWindow)
+                    : command === "w:toggleTrackChanges"
+                      ? Boolean(format?.wordState?.trackChanges)
+                      : command === "w:protection"
+                        ? Boolean(format?.wordState?.protectionEnforced)
+                        : command?.startsWith("zoom:")
+                          ? pageZoomMode === command.slice(5)
+                          : undefined;
     return <Tool key={key} label={label} icon={icon} large={large} active={active} run={command ? invoke(command) : undefined} />;
   };
   if (tab === "绘图") return <><Group title="工具"><Tool label="绘图" icon="pen" large /><Tool label="橡皮擦" icon="eraser" large />{kind !== "document" && <Tool label="套索选择" icon="cursor" large />}</Group><Group title="笔"><div className="native-pen-gallery">{["#161616", "#d21b23", "#888888", "#ffff00", "#e9cf73"].map((color, index) => <button key={color} type="button" disabled aria-label={["黑色笔", "红色笔", "铅笔", "黄色荧光笔", "荧光笔"][index]} style={{ color }}><Icon name="pen" size={37} /></button>)}</div><Tool label="添加" icon="plus" /></Group>{kind === "presentation" && <Group title="转换"><Tool label="墨迹转换为文本" icon="textBox" large /><Tool label="将墨迹转换为形状" icon="shapes" large /><Tool label="将墨迹转换为数学公式" icon="numbering" large /></Group>}<Group title="触控板"><Tool label="使用触控板绘图" icon="pen" large /></Group></>;
   const sections = (kind === "document" ? word : kind === "presentation" ? ppt : excel)[tab] ?? [];
   return <>{sections.map(([title, ...columns]) => <Group key={title} title={title}>{columns.map((column, index) => {
     if ("stack" in column) return <div key={index} className="ribbon-tool-stack">{column.stack.map((item, index) => drawItem(item, false, index))}</div>;
-    if ("gallery" in column) return <div key={index} className={"native-command-gallery " + (column.category ?? "theme")}>{column.gallery.map((label, index) => <button key={label} disabled type="button" title={label} aria-label={label}><span style={{ borderTopColor: ["#4472c4", "#b7472a", "#107c41", "#767171"][index % 4] }}>{column.category === "transition" ? <Icon name="slides" size={26} /> : <><b>Aa</b><i /></>}</span><small>{label}</small></button>)}</div>;
+    if ("gallery" in column) {
+      const styleSetInteractive = kind === "document" && tab === "设计";
+      return <div key={index} className={"native-command-gallery " + (column.category ?? "theme")}
+        onPointerLeave={styleSetInteractive ? () => onTextCommand({ type: "word", action: "livePreview", properties: null }) : undefined}>{column.gallery.map((label, idx) => {
+        const preset = styleSetInteractive ? WORD_STYLE_SETS.find(s => s.label === label) : undefined;
+        return <button key={label} disabled={styleSetInteractive ? !canFormat : true} type="button" title={label} aria-label={label}
+          style={styleSetInteractive ? { opacity: 1 } : undefined}
+          onPointerEnter={styleSetInteractive && preset ? () => onTextCommand({ type: "word", action: "livePreview", scope: "theme", properties: { "line-height": preset.lineHeight, color: preset.headingColor } }) : undefined}
+          onMouseDown={styleSetInteractive ? event => event.preventDefault() : undefined}
+          onClick={styleSetInteractive ? () => { onTextCommand({ type: "word", action: "livePreview", properties: null }); onTextCommand({ type: "word", action: "setStyleSet", styleSetId: label }); } : undefined}>
+          <span style={{ borderTopColor: preset?.accent ?? ["#4472c4", "#b7472a", "#107c41", "#767171"][idx % 4] }}>{column.category === "transition" ? <Icon name="slides" size={26} /> : <><b style={preset ? { color: preset.headingColor, fontStyle: preset.headingItalic ? "italic" : "normal" } : undefined}>Aa</b><i /></>}</span><small>{label}</small>
+        </button>;
+      })}</div>;
+    }
     return drawItem(column as Item, true, index);
   })}</Group>)}{tab === "审阅" && actions.objectSelection && <Group title="选择"><OfficeMenu label="选择" icon={<Icon name="cursor" size={32} />} large disabled={busy}>
     {close => <>{[["textSelection", "文字选择"], ["objectSelection", "对象选择"], ["regionSelection", "矩形框选"]].map(([id, label]) => <button role="menuitem" key={id} disabled={!invoke(id!)} onClick={() => { invoke(id!)?.(); close(); }}>{label}</button>)}</>}

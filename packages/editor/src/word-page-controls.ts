@@ -606,6 +606,67 @@ export function createWordPageControls(
         },
       ]),
     );
+    const vAlign = choose(
+      "页面垂直对齐",
+      [
+        ["top", "顶端对齐"],
+        ["center", "居中对齐"],
+        ["both", "两端对齐"],
+        ["bottom", "底端对齐"],
+      ],
+      selected().target.verticalAlign ?? "top",
+    );
+    button("应用垂直对齐", () => {
+      const latest = selected(),
+        targets = scope.value === "all" ? latest.metadata.sections : [latest.target];
+      apply(
+        targets.map((target) => ({
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            verticalAlign: vAlign.value as "top" | "center" | "both" | "bottom",
+          },
+        })),
+      );
+    });
+    const lineNumMode = choose(
+        "页面行号",
+        [
+          ["none", "无"],
+          ["continuous", "连续"],
+          ["newPage", "每页重新编号"],
+          ["newSection", "每节重新编号"],
+        ],
+        selected().target.lineNumbers ? (selected().target.lineNumbers?.restart ?? "newPage") : "none",
+      ),
+      lineNumStart = field("行号起始编号", selected().target.lineNumbers?.start ?? 1),
+      lineNumStep = field("行号间隔", selected().target.lineNumbers?.countBy ?? 1),
+      lineNumDistance = field("行号距正文（磅）", selected().target.lineNumbers?.distance ?? 18);
+    lineNumStart.min = "1";
+    lineNumStart.step = "1";
+    lineNumStep.min = "1";
+    lineNumStep.step = "1";
+    button("应用行号", () => {
+      const latest = selected(),
+        targets = scope.value === "all" ? latest.metadata.sections : [latest.target];
+      apply(
+        targets.map((target) => ({
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            lineNumbers:
+              lineNumMode.value === "none"
+                ? null
+                : {
+                    restart: lineNumMode.value as "continuous" | "newPage" | "newSection",
+                    start: Math.max(1, Math.round(Number(lineNumStart.value) || 1)),
+                    countBy: Math.max(1, Math.round(Number(lineNumStep.value) || 1)),
+                    distance: Math.max(0, Number(lineNumDistance.value) || 18),
+                  },
+          },
+        })),
+      );
+    });
     const load = (): void => {
       const setup = selected().target.pageSetup ?? selected().metadata.pageSetup;
       width.value = String(mm(setup.width));
@@ -632,6 +693,11 @@ export function createWordPageControls(
       footerDistance.value = String(mm(target.footerDistance ?? 36));
       start.value = String(target.pageNumberStart ?? 1);
       numberFormat.value = target.pageNumberFormat ?? "decimal";
+      vAlign.value = target.verticalAlign ?? "top";
+      lineNumMode.value = target.lineNumbers ? (target.lineNumbers.restart ?? "newPage") : "none";
+      lineNumStart.value = String(target.lineNumbers?.start ?? 1);
+      lineNumStep.value = String(target.lineNumbers?.countBy ?? 1);
+      lineNumDistance.value = String(target.lineNumbers?.distance ?? 18);
     };
     section.addEventListener("change", load, { signal });
   }

@@ -9,7 +9,12 @@ export type WordTableQuickAction =
   | "insertColRight"
   | "deleteRow"
   | "deleteCol"
-  | "deleteTable";
+  | "deleteTable"
+  | "splitTable"
+  | "distributeRows"
+  | "distributeCols"
+  | "autoFitContents"
+  | "autoFitWindow";
 
 export interface WordToolsSelection {
   readonly paragraphIds: readonly string[];
@@ -97,6 +102,7 @@ export function createWordToolsControls(
   insertBlankPage(): void;
   runTableAction(action: WordTableQuickAction): void;
   setTableCellShading(color: string): void;
+  setTableCellDiagonalBorder(mode: "tl2br" | "tr2bl" | "none"): void;
   dispose(): void;
 } {
   const document = before.ownerDocument;
@@ -591,6 +597,44 @@ export function createWordToolsControls(
     }
     const info = tableGeometry(session, sel.tableId);
     const active = info.cells.find((cell) => cell.id === sel.cellId) ?? info.cells[0]!;
+    if (action === "splitTable") {
+      if (active.row <= 0)
+        throw new DocumentError("InvalidOperation", "请将光标放在表格第 2 行或之后再拆分表格。");
+      commit([{ op: "splitWordTable", nodeId: sel.tableId, atRow: active.row }]);
+      return;
+    }
+    if (action === "distributeCols") {
+      const tableMeta = session.snapshot().metadata.word?.tables.find((t) => t.nodeId === sel.tableId);
+      const grid = tableMeta?.grid ?? Array.from({ length: info.columnCount }, () => 120);
+      const total = grid.reduce((a, b) => a + b, 0);
+      const even = Math.round((total / grid.length) * 100) / 100;
+      commit([{ op: "editWordTable", nodeId: sel.tableId, change: { kind: "resize", grid: grid.map(() => even) } }]);
+      return;
+    }
+    if (action === "distributeRows") {
+      commit([
+        {
+          op: "editWordTable",
+          nodeId: sel.tableId,
+          change: { kind: "resize", rowHeights: info.rowIds.map(() => 24) },
+        },
+        { op: "formatWordTable", nodeId: sel.tableId, rowHeightRule: "atLeast" },
+      ]);
+      return;
+    }
+    if (action === "autoFitContents" || action === "autoFitWindow") {
+      commit([
+        {
+          op: "formatWordTable",
+          nodeId: sel.tableId,
+          properties:
+            action === "autoFitWindow"
+              ? { "table-layout": "fixed", width: "100%", "--word-table-width-type": "pct" }
+              : { "table-layout": "auto", width: "auto", "--word-table-width-type": "auto" },
+        },
+      ]);
+      return;
+    }
     const change: Extract<DocumentOperation, { op: "editWordTable" }>["change"] =
       action === "insertRowAbove"
         ? { kind: "insertRows", at: active.row, count: 1 }
@@ -619,6 +663,24 @@ export function createWordToolsControls(
     ]);
   }
 
+  function setTableCellDiagonalBorder(mode: "tl2br" | "tr2bl" | "none"): void {
+    const sel = readSelection();
+    if (!sel.cellId)
+      throw new DocumentError("InvalidOperation", "请先选择表格单元格。");
+    commit([
+      {
+        op: "formatWordCell",
+        nodeId: sel.cellId,
+        properties:
+          mode === "none"
+            ? { "--word-border-tl2br": "none", "--word-border-tr2bl": "none" }
+            : mode === "tl2br"
+              ? { "--word-border-tl2br": "0.5pt solid #000000" }
+              : { "--word-border-tr2bl": "0.5pt solid #000000" },
+      },
+    ]);
+  }
+
   return {
     openSort,
     openTextToTable,
@@ -627,6 +689,7 @@ export function createWordToolsControls(
     insertBlankPage,
     runTableAction,
     setTableCellShading,
+    setTableCellDiagonalBorder,
     dispose: close,
   };
 }

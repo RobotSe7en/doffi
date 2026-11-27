@@ -137,7 +137,7 @@ test("invalid character position fails with InvalidDocument and unknown w14 elem
       withW14(
         body(
           source,
-          '<w:p><w:r><w:rPr><w14:ligatures w14:val="all"/><w14:glow w14:rad="63500"/></w:rPr><w:t>MixedW14</w:t></w:r></w:p>',
+          '<w:p><w:r><w:rPr><w14:ligatures w14:val="all"/><w14:unknownEffect/></w:rPr><w:t>MixedW14</w:t></w:r></w:p>',
         ),
       ),
   });
@@ -150,7 +150,7 @@ test("invalid character position fails with InvalidDocument and unknown w14 elem
   });
   const roundtripXml = strFromU8(unzipSync(exportDocx(compat).bytes)["word/document.xml"]!);
   expect(roundtripXml).toMatch(/<w14:ligatures\b[^>]*w14:val="all"/);
-  expect(roundtripXml).toContain("w14:glow");
+  expect(roundtripXml).toContain("w14:unknownEffect");
 });
 
 test("selection pane rename, hide/show, and z-order reorder roundtrip cleanly to DOCX and undo", () => {

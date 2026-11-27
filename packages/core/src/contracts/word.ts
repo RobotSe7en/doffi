@@ -16,6 +16,7 @@ import { WordCommentSchema, WordPersonSchema } from "./word-comment.js";
 import { WordRevisionSchema, WordMoveRangeSchema } from "./word-revision.js";
 
 import { WordTableEmptyParagraphSchema } from "./word-table-continuation.js";
+import { WordBibliographySchema } from "../word-bibliography.js";
 
 export const WordTableRegionSchema = z.enum([
   "wholeTable",
@@ -193,6 +194,11 @@ export const WordNumberLevelSchema = z.strictObject({
   suffix: z.enum(["tab", "space", "nothing"]),
   restart: z.number().int().min(0).max(8).optional(),
   cssClass: IdentifierSchema,
+  pictureBulletAssetPath: PackagePathSchema.optional(),
+  pictureBulletWidthPt: z.number().positive().max(144).optional(),
+  pictureBulletHeightPt: z.number().positive().max(144).optional(),
+  pStyle: IdentifierSchema.optional(),
+  isLgl: z.boolean().optional(),
 });
 const WordKinsokuRuleSchema = z.strictObject({
   language: z
@@ -213,9 +219,74 @@ export const WordTypographySchema = z.strictObject({
   noLineBreaksBefore: WordKinsokuRuleSchema.optional(),
 });
 export type WordTypography = z.infer<typeof WordTypographySchema>;
+export const WordPageBackgroundSchema = z.strictObject({
+  color: z.string().regex(/^[a-fA-F0-9]{6}$/),
+});
+export type WordPageBackground = z.infer<typeof WordPageBackgroundSchema>;
+export const WordProtectionSchema = z.strictObject({
+  edit: z.enum(["none", "readOnly", "comments", "trackedChanges", "forms"]),
+  enforcement: z.boolean(),
+});
+export type WordProtection = z.infer<typeof WordProtectionSchema>;
+export const WordThemeSchema = z.strictObject({
+  name: z.string().min(1).max(128).optional(),
+  colorSchemeName: z.string().min(1).max(128).optional(),
+  colors: z
+    .strictObject({
+      dk1: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      lt1: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      dk2: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      lt2: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      accent1: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      accent2: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      accent3: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      accent4: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      accent5: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      accent6: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      hlink: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+      folHlink: z.string().regex(/^[a-fA-F0-9]{6}$/).optional(),
+    })
+    .optional(),
+  fontSchemeName: z.string().min(1).max(128).optional(),
+  majorLatin: z.string().min(1).max(128).optional(),
+  minorLatin: z.string().min(1).max(128).optional(),
+  majorEastAsia: z.string().min(1).max(128).optional(),
+  minorEastAsia: z.string().min(1).max(128).optional(),
+});
+export type WordTheme = z.infer<typeof WordThemeSchema>;
+export const WordDocumentPropertiesSchema = z.strictObject({
+  creator: z.string().max(512).optional(),
+  subject: z.string().max(512).optional(),
+  keywords: z.string().max(512).optional(),
+  description: z.string().max(2048).optional(),
+  category: z.string().max(256).optional(),
+});
+export type WordDocumentProperties = z.infer<typeof WordDocumentPropertiesSchema>;
+export const WordTemplateSchema = z.strictObject({
+  name: z.string().min(1).max(256).optional(),
+  target: z.string().min(1).max(1024).optional(),
+  linkStyles: z.boolean().optional(),
+});
+export type WordTemplate = z.infer<typeof WordTemplateSchema>;
+export const WordBuildingBlockSchema = z.strictObject({
+  id: IdentifierSchema,
+  name: z.string().min(1).max(128),
+  gallery: z.enum(["autoText", "quickParts", "coverPages", "headers", "footers"]),
+  category: z.string().max(128).optional(),
+  description: z.string().max(512).optional(),
+  html: z.string().min(1).max(65536),
+});
+export type WordBuildingBlock = z.infer<typeof WordBuildingBlockSchema>;
 export const WordMetadataSchema = z.strictObject({
   conditionalFormats: z.array(WordConditionalFormatSchema).optional(),
   compatibilityMode: z.number().int().min(1).max(2147483647).optional(),
+  pageBackground: WordPageBackgroundSchema.nullable().optional(),
+  protection: WordProtectionSchema.nullable().optional(),
+  theme: WordThemeSchema.optional(),
+  properties: WordDocumentPropertiesSchema.optional(),
+  bibliography: WordBibliographySchema.optional(),
+  template: WordTemplateSchema.nullable().optional(),
+  buildingBlocks: z.array(WordBuildingBlockSchema).max(256).optional(),
   bordersDoNotSurroundHeader: z.boolean().optional(),
   bordersDoNotSurroundFooter: z.boolean().optional(),
   comments: z.array(WordCommentSchema).optional(),
@@ -244,6 +315,10 @@ export const WordMetadataSchema = z.strictObject({
   numbering: z.array(
     z.strictObject({
       numberingId: IdentifierSchema,
+      name: z.string().max(128).optional(),
+      multiLevelType: z.enum(["singleLevel", "multilevel", "hybridMultilevel"]).optional(),
+      styleLink: IdentifierSchema.optional(),
+      numStyleLink: IdentifierSchema.optional(),
       levels: z.array(WordNumberLevelSchema).min(1).max(9),
     }),
   ),

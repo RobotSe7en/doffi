@@ -52,6 +52,7 @@ export { getWordRowHeightInset } from "./word-row-heights.js";
 export { SourceProjection } from "./projection.js";
 export { sourceSelectionText, stripClipboardIdentities } from "./clipboard.js";
 export { createLayoutFieldTransaction } from "./fields.js";
+export { evaluateWordTableFormula, formatWordDatePicture } from "./word-table-formulas.js";
 export { DEFAULT_RENDER_LIMITS, renderLimits } from "./contracts.js";
 export type {
   DocumentRenderReport,

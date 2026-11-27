@@ -86,7 +86,7 @@ test("WORD-03 renders double-strike+underline, hidden text, position, emphasis, 
   for (const mode of ["preview", "edit"] as const) {
     await openWordPlayground(page, bytes, "word03-render.docx", mode, "continuous");
     const frame = page.frameLocator(mode === "edit" ? 'iframe[title="正文编辑"]' : 'iframe[title="文档只读预览"]');
-    await expect(frame.locator("p").first()).toBeVisible();
+    await expect(frame.locator(".sdk-word-run-decoration").first()).toBeVisible();
 
     const metrics = await frame.locator("p").first().evaluate((p) => {
       const findByText = (needle: string): HTMLElement | undefined => {

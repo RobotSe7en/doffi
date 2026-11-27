@@ -79,6 +79,12 @@ export interface OfficeRibbonProps {
   onDraftMode?(enabled: boolean): void;
   focusMode?: boolean;
   onFocusMode?(enabled: boolean): void;
+  showGridlines?: boolean;
+  onToggleGridlines?(): void;
+  immersiveReader?: boolean;
+  onToggleImmersiveReader?(): void;
+  splitWindow?: boolean;
+  onToggleSplitWindow?(): void;
 }
 
 /** Optional SDK chrome; hosts supply authorized file/export callbacks. */
@@ -107,6 +113,12 @@ export function OfficeRibbon({
   onDraftMode,
   focusMode,
   onFocusMode,
+  showGridlines,
+  onToggleGridlines,
+  immersiveReader,
+  onToggleImmersiveReader,
+  splitWindow,
+  onToggleSplitWindow,
 }: OfficeRibbonProps): ReactElement {
   const [localPageZoomMode, setLocalPageZoomMode] = useState<WordPageZoomMode>();
   const effectivePageZoomMode = onPageZoomMode ? pageZoomMode : localPageZoomMode;
@@ -136,13 +148,84 @@ export function OfficeRibbon({
     panelId = id + "-panel";
   const [paragraphOpen, setParagraphOpen] = useState(false),
     [showMarks, setShowMarks] = useState(false);
-  const [paint, setPaint] = useState<Record<string, string>>();
+  const [paint, setPaint] = useState<{
+    run: Record<string, string>;
+    paragraph: Record<string, string>;
+    sticky: boolean;
+  }>();
+  useEffect(() => {
+    if (!paint) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPaint(undefined);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paint]);
   const [styleName, setStyleName] = useState("");
   const [customStyles, setCustomStyles] = useState<string[]>([]);
   const [styleCreatorOpen, setStyleCreatorOpen] = useState(false);
   const [borderOpen, setBorderOpen] = useState(false);
   const [recentFonts, setRecentFonts] = useState<string[]>([]);
+  const [localOsFonts, setLocalOsFonts] = useState<string[]>([]);
+  const [keyTips, setKeyTips] = useState(false);
   const word = kind === "document";
+
+  const TAB_KEY_TIPS: Readonly<Record<string, string>> = {
+    文件: "F",
+    开始: "H",
+    插入: "N",
+    绘图: "JI",
+    设计: "G",
+    布局: "P",
+    引用: "S",
+    邮件: "M",
+    审阅: "R",
+    视图: "W",
+    帮助: "Y",
+  };
+
+  useEffect(() => {
+    const nav = navigator as Navigator & {
+      permissions?: { query(desc: { name: string }): Promise<{ state: string }> };
+    };
+    const win = window as Window & {
+      queryLocalFonts?: () => Promise<readonly { readonly family: string }[]>;
+    };
+    if (!win.queryLocalFonts) return;
+    let active = true;
+    void (async () => {
+      try {
+        const perm = await nav.permissions?.query({ name: "local-fonts" });
+        if (perm && perm.state !== "granted") return;
+        const list = await win.queryLocalFonts!();
+        if (!active) return;
+        setLocalOsFonts([...new Set(list.map((f) => f.family).filter(Boolean))].slice(0, 120));
+      } catch {
+        // Local font access is optional; gracefully fall back to web + built-in fonts.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loadOsFontsOnDemand = () => {
+    const win = window as Window & {
+      queryLocalFonts?: () => Promise<readonly { readonly family: string }[]>;
+    };
+    if (!win.queryLocalFonts || localOsFonts.length) return;
+    void win
+      .queryLocalFonts()
+      .then((list) =>
+        setLocalOsFonts([...new Set(list.map((f) => f.family).filter(Boolean))].slice(0, 120)),
+      )
+      .catch(() => {});
+  };
+
+  const previewRun = (properties: Readonly<Record<string, string>> | null) => {
+    if (!word || !canFormat) return;
+    wordCommand({ type: "word", action: "livePreview", scope: "run", properties });
+  };
   const styleIds = ["Normal", "NoSpacing", "Heading1", "Heading2", "Heading3", "Heading4", "Title", "Subtitle", "SubtleEmphasis", "Emphasis", "IntenseEmphasis", "Strong", "Quote", "IntenseQuote", "BookTitle", ...customStyles];
   const wordCommand = (value: Extract<DocumentTextCommand, { type: "word" }>) =>
     onTextCommand(value);
@@ -153,13 +236,15 @@ export function OfficeRibbon({
   const imageSelected = word && !preview && format.drawingKind === "image";
   const chartSelected = word && !preview && format.drawingKind === "chart";
   const tableSelected = word && !preview && Boolean(format.inTable);
+  const headerFooterSelected = word && !preview && (format.storyKind === "header" || format.storyKind === "footer");
   const contextualTabs = [
     ...(shapeSelected ? ["形状格式"] : []),
     ...(imageSelected ? ["图片格式"] : []),
     ...(chartSelected ? ["图表设计"] : []),
     ...(tableSelected ? ["表格设计", "表格布局"] : []),
+    ...(headerFooterSelected ? ["页眉和页脚"] : []),
   ];
-  const contextualOnly = ["形状格式", "图片格式", "图表设计", "表格设计", "表格布局"];
+  const contextualOnly = ["形状格式", "图片格式", "图表设计", "表格设计", "表格布局", "页眉和页脚"];
   const tab =
     (preview && !allowedPreviewTabs.includes(requestedTab)) ||
     (contextualOnly.includes(requestedTab) && !contextualTabs.includes(requestedTab))
@@ -168,6 +253,44 @@ export function OfficeRibbon({
     collapsed = preview && tab === "开始";
   const tabs = [...tabsByKind[kind].filter(name => showApplicationTabs || name !== "文件" && name !== "帮助"), ...contextualTabs],
     states = new Map(commands.map((command) => [command.id, command]));
+  useEffect(() => {
+    if (!word) return;
+    let altAlone = false;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Alt" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        altAlone = true;
+        return;
+      }
+      altAlone = false;
+      if (!keyTips) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setKeyTips(false);
+        return;
+      }
+      const upper = event.key.toUpperCase();
+      const matchedTab = tabs.find((name) => TAB_KEY_TIPS[name] === upper);
+      if (matchedTab) {
+        event.preventDefault();
+        onTab(matchedTab);
+        setKeyTips(false);
+      } else {
+        setKeyTips(false);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Alt" && altAlone) {
+        altAlone = false;
+        setKeyTips((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [word, keyTips, tabs, onTab]);
   const canFormat = !preview && format.enabled && !busy;
   const command = (id: string, label: string, icon: Glyph, large = false) => {
     const native = states.get(id),
@@ -194,28 +317,49 @@ export function OfficeRibbon({
       run={() => onTextCommand({ type: "toggle", property })}
     />
   );
+  const rawThemeFonts = [
+    format.wordState?.themeMajorEastAsia,
+    format.wordState?.themeMinorEastAsia,
+    format.wordState?.themeMajorLatin,
+    format.wordState?.themeMinorLatin,
+  ].filter((v): v is string => Boolean(v));
+  const themeFontList = [
+    ...new Set(rawThemeFonts.length ? rawThemeFonts : word ? ["等线", "Calibri"] : []),
+  ];
+  const cjkFonts = [
+    "等线",
+    "宋体",
+    "黑体",
+    "楷体",
+    "仿宋",
+    "微软雅黑",
+    "PingFang SC",
+    "Noto Sans CJK SC",
+    "Noto Serif CJK SC",
+    "FandolSong",
+    "FandolHei",
+    "FandolKai",
+    "FandolFang",
+    "LXGW WenKai",
+  ];
+  const cjkFontSet = new Set(cjkFonts.map((f) => f.toLowerCase()));
   const families = [
     ...new Set(
       [
+        ...themeFontList,
+        ...recentFonts,
         fontName(format.fontFamily),
+        ...cjkFonts,
         ...(webFonts?.filter(font => !font.fallbackOnly).flatMap(font => [font.family, ...font.aliases]) ?? []),
-        "等线",
-        "宋体",
-        "微软雅黑",
         "Arial",
         "Calibri",
         "Aptos",
         "Times New Roman",
-        "Noto Sans CJK SC",
-        "Noto Serif CJK SC",
-        "FandolSong",
-        "FandolHei",
-        "FandolKai",
-        "FandolFang",
-        "LXGW WenKai",
+        "Georgia",
         "Liberation Serif",
         "Liberation Sans",
         "Liberation Mono",
+        ...localOsFonts,
       ].filter(Boolean),
     ),
   ];
@@ -233,15 +377,36 @@ export function OfficeRibbon({
           className="font-family-field"
           disabled={!canFormat}
           value={fontName(format.fontFamily)}
-          options={[...new Set([...recentFonts, ...families])]}
-          more={kind !== "workbook" ? { label: "字体…", run: () => kind === "document" ? wordCommand({ type: "word", action: "fontSettings" }) : onCommand("fontSettings") } : undefined}
-          section={(name) => recentFonts.includes(name) ? "最近使用的字体" : "所有字体"}
+          options={families}
+          more={kind !== "workbook" ? { label: "字体…", run: () => { loadOsFontsOnDemand(); if (kind === "document") wordCommand({ type: "word", action: "fontSettings" }); else onCommand("fontSettings"); } } : undefined}
+          section={(name) =>
+            themeFontList.includes(name)
+              ? "主题字体"
+              : recentFonts.includes(name)
+                ? "最近使用的字体"
+                : cjkFontSet.has(name.toLowerCase())
+                  ? "常用中文字体"
+                  : "西文与系统字体"
+          }
           previewFamily={(name) => {
             const face = webFonts?.find(font => !font.fallbackOnly && [font.family, ...font.aliases].some(alias => alias.toLowerCase() === name.toLowerCase()));
             return face?.family ?? name;
           }}
-          preview={(name) => { if (webFonts?.length) void loadWordWebFonts(document, webFonts, new Set([name.toLowerCase()])); }}
+          preview={(name) => {
+            loadOsFontsOnDemand();
+            if (webFonts?.length) void loadWordWebFonts(document, webFonts, new Set([name.toLowerCase()]));
+            const quoted = JSON.stringify(name);
+            previewRun({
+              "font-family": quoted,
+              "--word-font-ascii": quoted,
+              "--word-font-hAnsi": quoted,
+              "--word-font-eastAsia": quoted,
+              "--word-font-cs": quoted,
+            });
+          }}
+          onPreviewEnd={() => previewRun(null)}
           commit={(value) => {
+            previewRun(null);
             if (!value || value.length > 256) return "请输入有效的字体名称。";
             setRecentFonts(current => [value, ...current.filter(name => name !== value)].slice(0, 6));
             return onTextCommand({
@@ -258,7 +423,14 @@ export function OfficeRibbon({
           value={officeSizeLabel(kind, format.fontSize)}
           displayValue={(value) => officeSizeLabel(kind, wordSizeNames[value] ?? Number(value))}
           options={kind === "document" ? [...Object.keys(wordSizeNames), ...officeSizePresets.document.map(String)] : officeSizePresets[kind].map(String)}
+          preview={(value) => {
+            const size = kind === "document" && wordSizeNames[value] !== undefined ? wordSizeNames[value]! : Number(value);
+            if (Number.isFinite(size) && size >= 1 && size <= 1638)
+              previewRun({ "font-size": size + "pt" });
+          }}
+          onPreviewEnd={() => previewRun(null)}
           commit={(value) => {
+            previewRun(null);
             const size = kind === "document" && wordSizeNames[value] !== undefined ? wordSizeNames[value]! : Number(value),
               maximum = kind === "document" ? 1638 : kind === "workbook" ? 409 : 3600,
               step = kind === "presentation" ? 10 : 2;
@@ -336,7 +508,7 @@ export function OfficeRibbon({
           run={word ? () => wordCommand({ type: "word", action: "clearFormat" }) : undefined}
         />
         </>}
-        {word && <><Tool label="拼音指南" icon="pinyin" /><Tool label="字符边框" icon="fontBorder" disabled={!canFormat} active={format.characterBorder}
+        {word && <><Tool label="拼音指南" icon="pinyin" disabled={!canFormat} active={format.wordState?.rubyActive} run={() => wordCommand({ type: "word", action: "ruby" })} /><Tool label="字符边框" icon="fontBorder" disabled={!canFormat} active={format.characterBorder}
           run={() => wordCommand({ type: "word", action: "paintFormat", properties: { "--word-run-border": format.characterBorder ? "none" : "0.5pt solid currentColor" } })} /></>}
       </div>
       <div className="ribbon-icon-row">
@@ -435,18 +607,44 @@ export function OfficeRibbon({
         />
         </>}
         <span className="ribbon-divider" />
-        {word && <Tool label="文本效果" icon="textEffects" />}
+        {word && <OfficeMenu label="文本效果" icon={<Icon name="textEffects" size={17} />} disabled={!canFormat}>
+          {close => <div onPointerLeave={() => previewRun(null)}>
+            <div className="office-menu-heading">文本效果和版式</div>
+            {([
+              ["无效果", { "--word-run-native-outline": "0", "--word-run-native-shadow": "0", "--word-run-native-emboss": "0", "--word-run-native-imprint": "0", "--word-text-glow": "none", "--word-text-outline": "none", "--word-text-shadow": "none", "--word-text-reflection": "0", "--word-text-fill-gradient": "none", "--word-text-bevel": "none", "--word-text-3d": "none" }],
+              ["空心轮廓", { "--word-run-native-outline": "1" }],
+              ["文字阴影", { "--word-run-native-shadow": "1" }],
+              ["阳文浮雕", { "--word-run-native-emboss": "1" }],
+              ["阴文雕刻", { "--word-run-native-imprint": "1" }],
+              ["蓝色发光", { "--word-text-glow": "6pt #4472c4" }],
+              ["橙色发光", { "--word-text-glow": "6pt #ed7d31" }],
+              ["深蓝轮廓", { "--word-text-outline": "1pt #2f5496" }],
+              ["柔和投影", { "--word-text-shadow": "2pt 2pt 45 #44546a" }],
+              ["文字倒影", { "--word-text-reflection": "1" }],
+              ["蓝色渐变填充", { "--word-text-fill-gradient": "90deg #5b9bd5 0% #1f4e79 100%" }],
+              ["橙金渐变·三维棱台", { "--word-text-fill-gradient": "135deg #ffc000 0% #ed7d31 55% #c00000 100%", "--word-text-bevel": "circle 3pt 3pt", "--word-text-3d": "orthographicFront" }],
+              ["三维浮雕棱台", { "--word-text-bevel": "relaxedInset 4pt 4pt", "--word-text-3d": "perspectiveFront" }],
+            ] as const).map(([label, properties]) => (
+              <button key={label} role="menuitem" type="button"
+                onPointerEnter={() => previewRun(properties)}
+                onClick={() => { previewRun(null); wordCommand({ type: "word", action: "paintFormat", properties }); close(); }}>{label}</button>
+            ))}
+            <button role="menuitem" type="button" onClick={() => { previewRun(null); wordCommand({ type: "word", action: "wordArt" }); close(); }}>插入艺术字库…</button>
+          </div>}
+        </OfficeMenu>}
         {kind !== "workbook" && <OfficeColorMenu label="文本突出显示颜色" value="#ffff00" highlight disabled={!word || !canFormat}
+          onHover={c => previewRun(c ? { "background-color": c } : null)}
           apply={value => onTextCommand({ type: "format", property: "background-color", value })} />}
         {kind === "workbook" && <><OfficeMenu label="边框" icon={<Icon name="table" size={17} />} disabled={!canFormat}>
           {close => <button role="menuitem" type="button" onClick={() => { onCommand("formatCells"); close(); }}>设置单元格格式…</button>}
         </OfficeMenu><OfficeColorMenu label="填充颜色" value="#ffff00" fill disabled={!canFormat}
           apply={value => onTextCommand({ type: "format", property: "background-color", value })} /></>}
         <OfficeColorMenu label="字体颜色" value="#ff0000" disabled={!canFormat} themeColors={format.themeColors}
+          onHover={c => previewRun(c ? { color: c } : null)}
           apply={value => onTextCommand({ type: "format", property: "color", value })} />
         {word && <><Tool label="字符底纹" glyph={<span style={{ background: "#ccc", padding: "0 2px" }}>A</span>}
           disabled={!canFormat} run={() => onTextCommand({ type: "format", property: "background-color", value: "#d9d9d9" })} />
-          <Tool label="带圈字符" icon="enclose" /></>}
+          <Tool label="带圈字符" icon="enclose" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "enclosedChar" })} /></>}
         {kind === "workbook" && <Tool label="显示拼音字段" icon="pinyin" />}
       </div>
     </Group>
@@ -478,7 +676,14 @@ export function OfficeRibbon({
           <Tool label="减少缩进量" icon="outdent" disabled={!word || !canFormat} run={word ? () => wordCommand({ type: "word", action: "indent", direction: -1 }) : undefined} />
           <Tool label="增加缩进量" icon="indent" disabled={!word || !canFormat} run={word ? () => wordCommand({ type: "word", action: "indent", direction: 1 }) : undefined} />
           {word ? <><OfficeMenu label="中文版式" icon={<Icon name="textDirection" size={17} />} disabled={!canFormat}>
-            {close => <button role="menuitem" onClick={() => { setParagraphOpen(true); close(); }}>段落…</button>}
+            {close => <>
+              <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "ruby" }); close(); }}>拼音指南…</button>
+              <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "enclosedChar" }); close(); }}>带圈字符…</button>
+              <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "chineseLayout", mode: "combine" }); close(); }}>双行合一…</button>
+              <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "chineseLayout", mode: "vert" }); close(); }}>纵横混排…</button>
+              <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "chineseLayout", mode: "fit" }); close(); }}>调整宽度…</button>
+              <button role="menuitem" type="button" onClick={() => { setParagraphOpen(true); close(); }}>段落…</button>
+            </>}
           </OfficeMenu><Tool label="排序" icon="sort" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sort" })} />
           <Tool label="显示编辑标记" glyph="¶" disabled={!canFormat} active={showMarks} run={() => { setShowMarks(!showMarks); wordCommand({ type: "word", action: "showMarks", visible: !showMarks }); }} /></> : <>
             <OfficeMenu label="行距" icon={<Icon name="lineSpacing" size={17} />} disabled={!states.get("paragraphSettings")?.enabled}>
@@ -533,7 +738,7 @@ export function OfficeRibbon({
           label="粘贴"
           icon={<Icon name="paste" size={32} />}
           large
-          disabled={busy || !actions.paste || Boolean(actions.paste.disabled)}
+          disabled={busy || (!canFormat && (!actions.paste || Boolean(actions.paste.disabled)))}
           split={() => actions.paste?.run()}
         >
           {(close) => (
@@ -541,6 +746,7 @@ export function OfficeRibbon({
               <button role="menuitem" type="button" onClick={() => { actions.paste?.run(); close(); }}>保留源格式</button>
               <button role="menuitem" type="button" disabled={!actions.pasteMerge || actions.pasteMerge.disabled} onClick={() => { actions.pasteMerge?.run(); close(); }}>合并格式</button>
               <button role="menuitem" type="button" disabled={!actions.pastePlain || actions.pastePlain.disabled} onClick={() => { actions.pastePlain?.run(); close(); }}>仅保留文本</button>
+              <button role="menuitem" type="button" disabled={!canFormat} onClick={() => { wordCommand({ type: "word", action: "pasteSpecial" }); close(); }}>选择性粘贴…</button>
             </>
           )}
         </OfficeMenu>
@@ -551,22 +757,67 @@ export function OfficeRibbon({
         {command("cut", "剪切", "cut")}
         {command("copy", "复制", "copy")}
         <Tool
-          label="格式刷"
+          label={paint?.sticky ? "格式刷（已锁定，按 Esc 退出）" : "格式刷"}
           icon="brush"
           disabled={!word || !canFormat}
           active={Boolean(paint)}
-          reason="先选择文字，再点击格式刷复制；选择目标文字后再次点击应用"
+          reason="单击复制格式并应用一次；双击锁定连续应用（按 Esc 退出）"
+          onDoubleClick={
+            word
+              ? () => {
+                  const charProps = format.characterProperties ?? {};
+                  const paraProps = format.paragraphProperties ?? {};
+                  const run: Record<string, string> = {
+                    "font-weight": format.bold ? "700" : "400",
+                    "font-style": format.italic ? "italic" : "normal",
+                    "text-decoration-line":
+                      [
+                        format.underline ? "underline" : "",
+                        format.strikethrough ? "line-through" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || "none",
+                    ...(format.fontSize ? { "font-size": format.fontSize + "pt" } : {}),
+                    ...(format.fontFamily ? { "font-family": format.fontFamily } : {}),
+                    ...(format.color ? { color: format.color } : {}),
+                    ...(format.backgroundColor && format.backgroundColor !== "rgba(0, 0, 0, 0)"
+                      ? { "background-color": format.backgroundColor }
+                      : {}),
+                    ...(format.verticalAlign && ["sub", "super", "baseline"].includes(format.verticalAlign)
+                      ? { "vertical-align": format.verticalAlign }
+                      : {}),
+                    ...(charProps["text-decoration-style"] ? { "text-decoration-style": charProps["text-decoration-style"] } : {}),
+                    ...(charProps["text-decoration-color"] ? { "text-decoration-color": charProps["text-decoration-color"] } : {}),
+                    ...(charProps["--word-underline-style"] ? { "--word-underline-style": charProps["--word-underline-style"] } : {}),
+                    ...(charProps["--word-dstrike"] ? { "--word-dstrike": charProps["--word-dstrike"] } : {}),
+                    ...(charProps["--word-run-border"] ? { "--word-run-border": charProps["--word-run-border"] } : {}),
+                  };
+                  const paragraph: Record<string, string> = {};
+                  for (const key of ["text-align", "line-height", "--word-line-rule", "margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom"]) {
+                    if (paraProps[key]) paragraph[key] = paraProps[key]!;
+                  }
+                  setPaint({ run, paragraph, sticky: true });
+                }
+              : undefined
+          }
           run={
             word
               ? () => {
                   if (paint) {
-                    wordCommand({ type: "word", action: "paintFormat", properties: paint });
-                    setPaint(undefined);
-                  } else
-                    setPaint({
+                    wordCommand({
+                      type: "word",
+                      action: "paintFormat",
+                      properties: paint.run,
+                      ...(Object.keys(paint.paragraph).length ? { paragraphProperties: paint.paragraph } : {}),
+                    });
+                    if (!paint.sticky) setPaint(undefined);
+                  } else {
+                    const charProps = format.characterProperties ?? {};
+                    const paraProps = format.paragraphProperties ?? {};
+                    const run: Record<string, string> = {
                       "font-weight": format.bold ? "700" : "400",
                       "font-style": format.italic ? "italic" : "normal",
-                      "text-decoration":
+                      "text-decoration-line":
                         [
                           format.underline ? "underline" : "",
                           format.strikethrough ? "line-through" : "",
@@ -576,7 +827,24 @@ export function OfficeRibbon({
                       ...(format.fontSize ? { "font-size": format.fontSize + "pt" } : {}),
                       ...(format.fontFamily ? { "font-family": format.fontFamily } : {}),
                       ...(format.color ? { color: format.color } : {}),
-                    });
+                      ...(format.backgroundColor && format.backgroundColor !== "rgba(0, 0, 0, 0)"
+                        ? { "background-color": format.backgroundColor }
+                        : {}),
+                      ...(format.verticalAlign && ["sub", "super", "baseline"].includes(format.verticalAlign)
+                        ? { "vertical-align": format.verticalAlign }
+                        : {}),
+                      ...(charProps["text-decoration-style"] ? { "text-decoration-style": charProps["text-decoration-style"] } : {}),
+                      ...(charProps["text-decoration-color"] ? { "text-decoration-color": charProps["text-decoration-color"] } : {}),
+                      ...(charProps["--word-underline-style"] ? { "--word-underline-style": charProps["--word-underline-style"] } : {}),
+                      ...(charProps["--word-dstrike"] ? { "--word-dstrike": charProps["--word-dstrike"] } : {}),
+                      ...(charProps["--word-run-border"] ? { "--word-run-border": charProps["--word-run-border"] } : {}),
+                    };
+                    const paragraph: Record<string, string> = {};
+                    for (const key of ["text-align", "line-height", "--word-line-rule", "margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom"]) {
+                      if (paraProps[key]) paragraph[key] = paraProps[key]!;
+                    }
+                    setPaint({ run, paragraph, sticky: false });
+                  }
                 }
               : undefined
           }
@@ -603,7 +871,7 @@ export function OfficeRibbon({
           {command("png", "导出 PNG", "image", true)}
         </Group>
         <Group title="打印">
-          <Tool label="打印" icon="print" large />
+          {command("print", "打印", "print", true)}
         </Group>
       </>
     );
@@ -671,6 +939,13 @@ export function OfficeRibbon({
         </>}
         {word ? <>
           <Group title="样式窗格"><Tool label="样式窗格" icon="styles" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "styleSettings" })} /></Group>
+          <Group title="编辑">
+            <div className="ribbon-tool-stack">
+              <Tool label="查找" icon="search" disabled={busy} run={() => wordCommand({ type: "word", action: "find" })} />
+              <Tool label="替换" icon="edit" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "replace" })} />
+              <Tool label="定位" icon="arrow" disabled={busy} run={() => wordCommand({ type: "word", action: "goTo" })} />
+            </div>
+          </Group>
           <Group title="听写"><Tool label="听写" icon="mic" large /></Group>
           <Group title="加载项"><Tool label="加载项" icon="addins" large /></Group>
           <Group title="编辑器"><Tool label="编辑器" icon="editor" large /></Group>
@@ -680,9 +955,10 @@ export function OfficeRibbon({
       </>
     );
   else content = <Group title="帮助"><Tool label="帮助" icon="book" large /></Group>;
-  if (!["开始", "文件", "帮助"].includes(tab)) content = <NativeOfficeTabs kind={kind} tab={tab} commands={commands} actions={actions} canFormat={canFormat} busy={busy}
+  if (!["开始", "文件", "帮助"].includes(tab)) content = <NativeOfficeTabs kind={kind} tab={tab} commands={commands} actions={actions} canFormat={canFormat} busy={busy} format={format}
     onCommand={onCommand} onTextCommand={onTextCommand} onLayout={handleLayout} onZoom={handleZoom} paragraph={() => setParagraphOpen(true)} borders={() => setBorderOpen(true)} layout={layout} zoom={zoom} enableWorkbookZoom={enableWorkbookZoom}
-    pageZoomMode={effectivePageZoomMode} onPageZoomMode={word ? handlePageZoomMode : undefined} draftMode={draftMode} onDraftMode={onDraftMode} focusMode={focusMode} onFocusMode={onFocusMode} />;
+    pageZoomMode={effectivePageZoomMode} onPageZoomMode={word ? handlePageZoomMode : undefined} draftMode={draftMode} onDraftMode={onDraftMode} focusMode={focusMode} onFocusMode={onFocusMode}
+    showGridlines={showGridlines} onToggleGridlines={onToggleGridlines} immersiveReader={immersiveReader} onToggleImmersiveReader={onToggleImmersiveReader} splitWindow={splitWindow} onToggleSplitWindow={onToggleSplitWindow} />;
   if (tab === "形状格式" && shapeSelected) content = <>
     <Group title="插入形状"><Tool label="形状" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "insertShape" })} /></Group>
     <Group title="文本"><Tool label="编辑文字" icon="textBox" large disabled={!canFormat || format.drawingCount !== 1 || !["shape", "textBox"].includes(format.drawingKind!) || !!format.editingInPlace} run={() => wordCommand({ type: "word", action: "editDrawingText" })} /></Group>
@@ -730,6 +1006,13 @@ export function OfficeRibbon({
     <Group title="表格样式"><Tool label="表格属性与样式" icon="table" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} /></Group>
     <Group title="边框与底纹">
       <OfficeColorMenu label="单元格底纹" value="#f2f2f2" fill disabled={!canFormat} themeColors={format.themeColors} apply={value => wordCommand({ type: "word", action: "tableShading", color: value })} />
+      <OfficeMenu label="斜线表头" icon={<Icon name="table" size={32} />} large disabled={!canFormat}>
+        {close => <>
+          <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "tableDiagonalBorder", mode: "tl2br" }); close(); }}>下斜框线（左上→右下）</button>
+          <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "tableDiagonalBorder", mode: "tr2bl" }); close(); }}>上斜框线（右上→左下）</button>
+          <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "tableDiagonalBorder", mode: "none" }); close(); }}>清除斜框线</button>
+        </>}
+      </OfficeMenu>
       <Tool label="边框和底纹" icon="table" large disabled={!canFormat} run={() => setBorderOpen(true)} />
     </Group>
   </>;
@@ -737,6 +1020,10 @@ export function OfficeRibbon({
     <Group title="表">
       <Tool label="属性" icon="table" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} />
       <Tool label="删除表格" icon="close" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "deleteTable" })} />
+    </Group>
+    <Group title="绘制">
+      <Tool label="绘制表格" icon="pen" large disabled={!canFormat} active={format.wordState?.tableToolMode === "draw"} run={() => wordCommand({ type: "word", action: "setTableTool", mode: format.wordState?.tableToolMode === "draw" ? "off" : "draw" })} />
+      <Tool label="擦除" icon="eraser" large disabled={!canFormat} active={format.wordState?.tableToolMode === "erase"} run={() => wordCommand({ type: "word", action: "setTableTool", mode: format.wordState?.tableToolMode === "erase" ? "off" : "erase" })} />
     </Group>
     <Group title="行和列">
       <div className="ribbon-tool-stack">
@@ -752,10 +1039,43 @@ export function OfficeRibbon({
     </Group>
     <Group title="合并">
       <Tool label="合并/拆分" icon="merge" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} />
+      <Tool label="拆分表格" icon="columns" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "splitTable" })} />
+    </Group>
+    <Group title="单元格大小">
+      <div className="ribbon-tool-stack">
+        <Tool label="分布行" icon="lineSpacing" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "distributeRows" })} />
+        <Tool label="分布列" icon="columns" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableAction", operation: "distributeCols" })} />
+        <OfficeMenu label="自动调整" icon={<Icon name="table" size={17} />} disabled={!canFormat}>
+          {close => <>
+            <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "tableAction", operation: "autoFitContents" }); close(); }}>根据内容自动调整表格</button>
+            <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "tableAction", operation: "autoFitWindow" }); close(); }}>根据窗口自动调整表格</button>
+          </>}
+        </OfficeMenu>
+      </div>
     </Group>
     <Group title="数据">
       <Tool label="排序" icon="sort" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sort" })} />
       <Tool label="转换为文本" icon="textBox" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableToText" })} />
+      <Tool label="公式" icon="numbering" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableFormula" })} />
+    </Group>
+  </>;
+  if (tab === "页眉和页脚" && headerFooterSelected) content = <>
+    <Group title="页眉和页脚">
+      <Tool label="页眉" icon="header" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "editHeader" })} />
+      <Tool label="页脚" icon="footer" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "editFooter" })} />
+      <Tool label="页码" icon="numbering" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "pageNumber" })} />
+    </Group>
+    <Group title="选项">
+      <div className="ribbon-tool-stack">
+        <label><input type="checkbox" checked={Boolean(format.wordState?.differentFirstPage)} disabled={!canFormat} onChange={event => wordCommand({ type: "word", action: "headerFooterOptions", differentFirstPage: event.currentTarget.checked })} />首页不同</label>
+        <label><input type="checkbox" checked={Boolean(format.wordState?.evenAndOddHeaders)} disabled={!canFormat} onChange={event => wordCommand({ type: "word", action: "headerFooterOptions", evenAndOddHeaders: event.currentTarget.checked })} />奇偶页不同</label>
+      </div>
+    </Group>
+    <Group title="位置">
+      <Tool label="页眉页脚设置" icon="margins" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "pageSettings" })} />
+    </Group>
+    <Group title="关闭">
+      <Tool label="关闭页眉和页脚" icon="close" large disabled={busy} run={() => wordCommand({ type: "word", action: "mainStory" })} />
     </Group>
   </>;
   return (
@@ -800,6 +1120,11 @@ export function OfficeRibbon({
             }}
           >
             {name}
+            {keyTips && TAB_KEY_TIPS[name] && (
+              <kbd className="office-keytip" style={{ marginLeft: 4, padding: "0 4px", fontSize: 10, lineHeight: "14px", borderRadius: 2, background: "#24292f", color: "#fff", fontFamily: "system-ui" }}>
+                {TAB_KEY_TIPS[name]}
+              </kbd>
+            )}
           </button>
         ))}
       </div>
@@ -821,7 +1146,8 @@ export function OfficeRibbon({
       )}
       {paragraphOpen && (
         <WordParagraphDialog current={format.paragraphProperties ?? {}}
-          apply={(properties) => wordCommand({ type: "word", action: "paragraph", properties })}
+          apply={(properties, outlineLevel) => wordCommand({ type: "word", action: "paragraph", properties, ...(outlineLevel !== undefined ? { outlineLevel } : {}) })}
+          onTabs={() => { setParagraphOpen(false); wordCommand({ type: "word", action: "tabSettings" }); }}
           close={() => setParagraphOpen(false)}
         />
       )}

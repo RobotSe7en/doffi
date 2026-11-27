@@ -23,6 +23,7 @@ export function Tool({
   glyph,
   large,
   run,
+  onDoubleClick,
   disabled = !run,
   active,
   reason,
@@ -33,6 +34,7 @@ export function Tool({
   glyph?: ReactNode;
   large?: boolean;
   run?: (() => void) | undefined;
+  onDoubleClick?: (() => void) | undefined;
   disabled?: boolean;
   active?: boolean | undefined;
   reason?: string | undefined;
@@ -55,6 +57,7 @@ export function Tool({
         event.preventDefault();
       }}
       onClick={run}
+      onDoubleClick={onDoubleClick}
     >
       {glyph ? (
         <span className="ribbon-glyph" aria-hidden="true">

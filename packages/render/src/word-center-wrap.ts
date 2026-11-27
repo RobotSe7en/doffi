@@ -308,19 +308,38 @@ export function wordCenterWrap(
         aligned.delete(p);
       };
       const byKey = new Map(obstacles.map((item) => [item.key, item]));
+      const resolveTrackedObstacle = (key: string): Obstacle | undefined => {
+        const parts = key.split("\u001f");
+        let combined: Obstacle | undefined;
+        for (const part of parts) {
+          const raw = byKey.get(part);
+          if (!raw) return undefined;
+          const expanded: Obstacle = {
+            ...raw,
+            top: raw.top - (raw.layout?.distances?.top ?? 0) / 0.75,
+            bottom: raw.bottom + (raw.layout?.distances?.bottom ?? 0) / 0.75,
+          };
+          if (!combined) {
+            combined = expanded;
+          } else {
+            combined = {
+              ...combined,
+              left: Math.min(combined.left, expanded.left),
+              right: Math.max(combined.right, expanded.right),
+              top: Math.min(combined.top, expanded.top),
+              bottom: Math.max(combined.bottom, expanded.bottom),
+              key,
+            };
+          }
+        }
+        return combined;
+      };
       for (const [spacer, entry] of spacers) {
         if (storiesOnly && !entry.obstacle.story) continue;
         const connected = spacer.isConnected,
           owner = spacer.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6"),
           box = spacer.getBoundingClientRect(),
-          raw = byKey.get(entry.key),
-          obstacle = raw
-            ? {
-                ...raw,
-                top: raw.top - (raw.layout?.distances?.top ?? 0) / 0.75,
-                bottom: raw.bottom + (raw.layout?.distances?.bottom ?? 0) / 0.75,
-              }
-            : undefined;
+          obstacle = resolveTrackedObstacle(entry.key);
         if (
           !spacer.isConnected ||
           !obstacle ||
@@ -440,6 +459,7 @@ export function wordCenterWrap(
               const region = columnRegion(p, line, p),
                 fragment = region?.fragment ?? region,
                 bounds = fragment ? { left: fragment.left, right: fragment.right } : paragraphBox;
+              const bandObstacles: Obstacle[] = [];
               for (const original of relevant) {
                 reserve();
                 if (
@@ -465,12 +485,38 @@ export function wordCenterWrap(
                       reserve,
                     )
                   : [original]) {
-                  const obstacle: Obstacle = {
+                  bandObstacles.push({
                     ...original,
                     ...span,
                     top: original.top - (original.layout?.distances?.top ?? 0) / 0.75,
                     bottom: original.bottom + (original.layout?.distances?.bottom ?? 0) / 0.75,
-                  };
+                  });
+                }
+              }
+              if (!bandObstacles.length) continue;
+              // Merge overlapping/adjacent concurrent floating obstacles on the same line band
+              // and process them in reading order so multi-object wraps remain stable.
+              bandObstacles.sort((a, b) => (rtl ? b.right - a.right : a.left - b.left));
+              const mergedObstacles: Obstacle[] = [];
+              for (const item of bandObstacles) {
+                const prev = mergedObstacles.at(-1);
+                if (
+                  prev &&
+                  prev.layout &&
+                  item.layout &&
+                  prev.layout.wrapSide === item.layout.wrapSide &&
+                  (rtl ? item.right >= prev.left - 2 : item.left <= prev.right + 2)
+                ) {
+                  prev.left = Math.min(prev.left, item.left);
+                  prev.right = Math.max(prev.right, item.right);
+                  prev.top = Math.min(prev.top, item.top);
+                  prev.bottom = Math.max(prev.bottom, item.bottom);
+                  prev.key = prev.key + "\u001f" + item.key;
+                } else {
+                  mergedObstacles.push({ ...item });
+                }
+              }
+              for (const obstacle of mergedObstacles) {
                   if (!overlaps(line, obstacle)) continue;
                   let low = 0,
                     high = text.length;
@@ -583,7 +629,6 @@ export function wordCenterWrap(
                     }
                     at = end;
                   }
-                }
               }
             }
           }
@@ -689,7 +734,7 @@ export function wordCenterWrap(
         const gaps = [...spacers].filter(
           ([spacer, entry]) =>
             spacer.style.display !== "block" &&
-            byKey.has(entry.key) &&
+            Boolean(resolveTrackedObstacle(entry.key)) &&
             spacer.closest("p,h1,h2,h3,h4,h5,h6") === p,
         );
         // Measure every wrapped line before mutating spacer widths so adjusting

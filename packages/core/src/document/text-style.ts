@@ -51,7 +51,7 @@ export function styleSourceText(
       !/^(?:color|background-color|font-(?:family|size|weight|style|variant)|text-transform|text-decoration(?:-(?:line|style|color))?|vertical-align|letter-spacing|--office-(?:font|text)-[a-z0-9-]+)$/.test(
         property,
       ) &&
-      !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs|hint)|bold-cs|italic-cs|kerning-threshold|dstrike|underline-style|run-(?:snap-to-grid|shading|border|native-(?:w|vanish|position|em))|opentype-(?:ligatures|num-spacing|num-form|stylistic-set|contextual-alternates)|language-(?:val|eastAsia|bidi))$/.test(
+      !/^--word-(?:font-(?:ascii|hAnsi|eastAsia|cs|size-cs|hint)|bold-cs|italic-cs|kerning-threshold|dstrike|underline-style|run-(?:snap-to-grid|shading|border|native-(?:w|vanish|position|em|outline|shadow|emboss|imprint))|text-(?:glow|outline|shadow|reflection|fill-gradient|bevel|3d)|ea-(?:combine|vert)|fit-text|opentype-(?:ligatures|num-spacing|num-form|stylistic-set|contextual-alternates)|language-(?:val|eastAsia|bidi))$/.test(
         property,
       ) &&
       !(

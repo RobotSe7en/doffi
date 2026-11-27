@@ -65,8 +65,8 @@ export function OfficeStatusBar({ kind, pageCount = 0, currentPage, wordCount, l
     {onPage && pageCount > 1 && <form className="status-page-input" aria-label="转到页面" onSubmit={event => { event.preventDefault(); onPage(Number(new FormData(event.currentTarget).get("page"))); }}><input name="page" type="number" aria-label="目标页码" required min={1} max={pageCount} defaultValue={1} /><button type="submit">转到</button></form>}
     {onSlideShow && <button type="button" aria-label="从当前幻灯片放映" title="从当前幻灯片放映" disabled={disabled} onClick={onSlideShow}><Icon name="slides" size={15} /></button>}
     <button type="button" aria-label="缩小" disabled={disabled || zoom <= .25} onClick={() => onZoom(Math.max(.25, Math.round((zoom - .25) * 100) / 100))}>−</button>
-    <input type="range" aria-label="文档缩放" disabled={disabled} min="25" max="200" step="1" value={Math.min(200, Math.max(25, Math.round(zoom * 100)))} onChange={event => onZoom(Number(event.currentTarget.value) / 100)} />
-    <button type="button" aria-label="放大" disabled={disabled || zoom >= 2} onClick={() => onZoom(Math.min(2, Math.round((zoom + .25) * 100) / 100))}>＋</button><span className="zoom-number">{Math.round(zoom * 100)}%</span>
+    <input type="range" aria-label="文档缩放" disabled={disabled} min="25" max="400" step="1" value={Math.min(400, Math.max(25, Math.round(zoom * 100)))} onChange={event => onZoom(Number(event.currentTarget.value) / 100)} />
+    <button type="button" aria-label="放大" disabled={disabled || zoom >= 4} onClick={() => onZoom(Math.min(4, Math.round((zoom + .25) * 100) / 100))}>＋</button><span className="zoom-number">{Math.round(zoom * 100)}%</span>
     {onFit && <button type="button" aria-label="幻灯片适应窗口" title="幻灯片适应窗口" disabled={disabled} onClick={onFit}><Icon name="slides" size={14} /></button>}
   </div></footer>;
 }

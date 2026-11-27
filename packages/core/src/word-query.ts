@@ -21,6 +21,54 @@ export interface WordTextMatch extends WordTextRange {
 export interface WordTextFindOptions extends WordTextQueryOptions {
   readonly matchCase?: boolean;
   readonly wholeWord?: boolean;
+  readonly wildcards?: boolean;
+  readonly specialChars?: boolean;
+}
+function expandWordSpecials(raw: string): string {
+  return raw.replace(/\^([tls^])/g, (_, code: string) =>
+    code === "t" ? "\t" : code === "l" ? "\n" : code === "s" ? "\u00a0" : "^",
+  );
+}
+function buildWordFindPattern(query: string, options: WordTextFindOptions): RegExp {
+  const expanded = options.specialChars ? expandWordSpecials(query) : query;
+  if (!options.wildcards) {
+    return new RegExp(
+      expanded.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      options.matchCase ? "gu" : "giu",
+    );
+  }
+  let pattern = "";
+  for (let i = 0; i < expanded.length; i++) {
+    const ch = expanded[i]!;
+    if (ch === "\\" && i + 1 < expanded.length) {
+      const next = expanded[++i]!;
+      pattern += next === "<" || next === ">" ? "\\b" : next.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    } else if (ch === "*") {
+      pattern += ".*?";
+    } else if (ch === "?") {
+      pattern += ".";
+    } else if (ch === "<") {
+      pattern += "\\b";
+    } else if (ch === ">") {
+      pattern += "\\b";
+    } else if (ch === "[") {
+      const end = expanded.indexOf("]", i + 1);
+      if (end > i + 1) {
+        const body = expanded.slice(i + 1, end).replace(/^!/, "^");
+        pattern += "[" + body + "]";
+        i = end;
+      } else {
+        pattern += "\\[";
+      }
+    } else {
+      pattern += ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  try {
+    return new RegExp(pattern, options.matchCase ? "gu" : "giu");
+  } catch {
+    throw new DocumentError("InvalidOperation", "查找通配符表达式无效。");
+  }
 }
 export interface WordOutlineEntry {
   readonly nodeId: string;
@@ -41,13 +89,11 @@ export function findWordText(
   options: WordTextFindOptions = {},
 ): readonly WordTextMatch[] {
   if (!query) return [];
-  const regex = new RegExp(
-      query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-      options.matchCase ? "gu" : "giu",
-    ),
+  const regex = buildWordFindPattern(query, options),
     result: WordTextMatch[] = [];
   for (const paragraph of wordQueryParagraphs(model, options))
     for (const match of paragraph.text.matchAll(regex)) {
+      if (!match[0].length) continue;
       const from = match.index,
         to = from + match[0].length;
       if (options.wholeWord) {
@@ -138,8 +184,9 @@ export function wordTextReplacementOperations(
   model: ContentDocumentModel,
   matches: readonly WordTextMatch[],
   text: string,
-  options: Pick<WordTextQueryOptions, "limits"> = {},
+  options: Pick<WordTextQueryOptions, "limits"> & { readonly specialChars?: boolean } = {},
 ): readonly DocumentOperation[] {
+  const replacementText = options.specialChars ? expandWordSpecials(text) : text;
   const nodes = new Map(
       wordQueryParagraphs(model, options).map((entry, index) => [
         entry.node.nodeId,
@@ -181,7 +228,7 @@ export function wordTextReplacementOperations(
           "A Word match must quote its source pieces in reading order.",
         );
       previous = { index: entry.index, to: range.to };
-      edits.push({ range, text: index === 0 ? text : "", index: entry.index });
+      edits.push({ range, text: index === 0 ? replacementText : "", index: entry.index });
     }
   }
   edits.sort((a, b) => b.index - a.index || b.range.from - a.range.from);

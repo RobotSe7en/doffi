@@ -19,7 +19,7 @@ export const officeRibbonStyles: string = `
 :where(.doffi-office-ribbon) .ribbon-tool{display:inline-flex;align-items:center;justify-content:flex-start;gap:4px;padding:3px;min-height:22px;border:1px solid transparent;border-radius:4px;font-size:11px;line-height:1.2;color:#333}
 :where(.doffi-office-ribbon) .ribbon-tool>svg{color:#595959;flex-shrink:0}
 :where(.doffi-office-ribbon) .ribbon-tool.large{flex-direction:column;justify-content:flex-start;min-width:43px;height:62px;padding:4px 3px 0;gap:4px}
-:where(.doffi-office-ribbon) .ribbon-tool.large>span:last-child{font-size:11px;white-space:normal;line-height:1.15;max-width:60px;text-align:center}
+:where(.doffi-office-ribbon) .ribbon-tool.large>span:last-child{font-size:11px;white-space:normal;line-height:1.15;max-width:74px;text-align:center}
 :where(.doffi-office-ribbon) .ribbon-tool[aria-pressed=true]{background:#e5e5e5;border-color:transparent;color:#292929}
 :where(.doffi-office-ribbon) .ribbon-tool-stack{display:flex;flex-direction:column;align-items:flex-start;gap:0;height:62px;justify-content:center}
 :where(.doffi-office-ribbon) .ribbon-tool-stack>.ribbon-tool{min-height:20px;padding-block:1px}
@@ -101,11 +101,12 @@ export const officeRibbonStyles: string = `
 :where(.doffi-office-ribbon[data-kind=workbook]) .font-group :is(.ribbon-font-selects,.ribbon-icon-row){width:100%;justify-content:space-between}
 :where(.doffi-office-ribbon) .style-gallery-menu>button>svg{display:none}
 :where(.doffi-office-ribbon) .office-combo-more{border-top:1px solid #ddd!important;margin-top:4px}
-:where(.doffi-office-ribbon) .native-command-gallery{display:flex;align-items:center;gap:5px;height:60px;max-width:680px;overflow:hidden}
-:where(.doffi-office-ribbon) .native-command-gallery>button{display:flex;flex-direction:column;width:78px;flex:0 0 78px;height:60px;padding:2px;gap:2px;opacity:.6}
-:where(.doffi-office-ribbon) .native-command-gallery>button>span{display:flex;align-items:center;justify-content:center;position:relative;width:72px;height:44px;background:#fff;border:1px solid #ccc;border-top:5px solid #4472c4;font:22px Georgia,serif}
-:where(.doffi-office-ribbon) .native-command-gallery>button>span>i{position:absolute;bottom:6px;left:9px;width:45px;height:3px;background:#c8c8c8}
-:where(.doffi-office-ribbon) .native-command-gallery small{font-size:10px;white-space:nowrap;max-width:78px;overflow:hidden;text-overflow:ellipsis}
+:where(.doffi-office-ribbon) .native-command-gallery{display:flex;align-items:center;gap:4px;height:60px;max-width:460px;overflow-x:auto;scrollbar-width:thin}
+:where(.doffi-office-ribbon) .native-command-gallery>button{display:flex;flex-direction:column;width:68px;flex:0 0 68px;height:60px;padding:2px;gap:2px;opacity:1}
+:where(.doffi-office-ribbon) .native-command-gallery>button:disabled{opacity:.45}
+:where(.doffi-office-ribbon) .native-command-gallery>button>span{display:flex;align-items:center;justify-content:center;position:relative;width:62px;height:42px;background:#fff;border:1px solid #ccc;border-top:5px solid #4472c4;font:20px Georgia,serif}
+:where(.doffi-office-ribbon) .native-command-gallery>button>span>i{position:absolute;bottom:6px;left:8px;width:40px;height:3px;background:#c8c8c8}
+:where(.doffi-office-ribbon) .native-command-gallery small{font-size:10px;white-space:nowrap;max-width:66px;overflow:hidden;text-overflow:ellipsis}
 :where(.doffi-office-ribbon) .native-command-gallery.transition>button>span{background:#e9f2f9;border-top:1px solid #ccc}
 :where(.doffi-office-ribbon) .native-pen-gallery{display:flex;align-items:center;gap:14px;height:60px;padding:0 8px}
 :where(.doffi-office-ribbon) .native-pen-gallery button{height:60px;align-items:flex-end;padding-bottom:2px;border-bottom:3px solid currentColor;opacity:.65}

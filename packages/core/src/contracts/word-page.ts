@@ -1,9 +1,45 @@
 import { IdentifierSchema } from "./primitives.js";
 import { WordNoteOptionsSchema } from "./word-reference.js";
 import { z } from "zod";
+export const WORD_ART_PAGE_BORDER_STYLES = [
+  "apples",
+  "stars",
+  "starsBlack",
+  "hearts",
+  "trees",
+  "checkered",
+  "classicalWave",
+  "diamondsGray",
+  "doubleDiamonds",
+  "flowersBlockPrint",
+  "basicBlackSquares",
+  "basicBlackDots",
+  "mapleLeaf",
+  "christmasTree",
+  "palmsColor",
+  "confetti",
+] as const;
+export type WordArtPageBorderStyle = (typeof WORD_ART_PAGE_BORDER_STYLES)[number];
 export const WordPageBorderSchema = z.strictObject({
-  style: z.enum(["nil", "none", "single", "double", "dotted", "dashed", "dashSmallGap", "thick"]),
-  width: z.number().nonnegative().max(12),
+  style: z.enum([
+    "nil",
+    "none",
+    "single",
+    "double",
+    "dotted",
+    "dashed",
+    "dashSmallGap",
+    "thick",
+    "triple",
+    "wave",
+    "doubleWave",
+    "dotDash",
+    "dotDotDash",
+    "threeDEmboss",
+    "threeDEngrave",
+    ...WORD_ART_PAGE_BORDER_STYLES,
+  ]),
+  width: z.number().nonnegative().max(31),
   space: z.number().int().nonnegative().max(31),
   color: z.string().regex(/^(?:auto|[a-fA-F0-9]{6})$/),
   themeColor: z
@@ -49,6 +85,13 @@ export const WordPageBordersSchema = z.strictObject({
 });
 export type WordPageBorder = z.infer<typeof WordPageBorderSchema>;
 export type WordPageBorders = z.infer<typeof WordPageBordersSchema>;
+export const WordLineNumbersSchema = z.strictObject({
+  countBy: z.number().int().positive().max(100).optional(),
+  start: z.number().int().min(0).max(32767).optional(),
+  distance: z.number().nonnegative().max(1584).optional(),
+  restart: z.enum(["newPage", "newSection", "continuous"]).optional(),
+});
+export type WordLineNumbers = z.infer<typeof WordLineNumbersSchema>;
 export const PageSetupSchema = z.strictObject({
   unit: z.literal("pt"),
   width: z.number().positive(),
@@ -84,6 +127,8 @@ export const DocumentSectionSchema = z.strictObject({
     })
     .optional(),
   pageBorders: WordPageBordersSchema.optional(),
+  verticalAlign: z.enum(["top", "center", "both", "bottom"]).optional(),
+  lineNumbers: WordLineNumbersSchema.nullable().optional(),
   grid: z
     .strictObject({
       type: z.enum(["default", "lines", "linesAndChars", "snapToChars"]),

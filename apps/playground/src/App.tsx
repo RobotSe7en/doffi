@@ -11,9 +11,12 @@ import type {
   ContentDocumentModel as DocumentModel,
   DocumentSession,
   DocumentSnapshot,
+  PageSetup,
+  WordTheme,
 } from "@doffi/core";
 import { importDocx, importPptx, DEFAULT_MAX_ZIP_BYTES, writeDocumentZip } from "@doffi/office";
 import type { DocxExportReport, OfficeImportProgress, PptxExportReport, XlsxExportProgress } from "@doffi/office";
+import { loadStoredWordDefaultTemplate } from "@doffi/editor";
 import type {
   DocumentWorkbenchView,
   PresentationWorkbenchView,
@@ -42,6 +45,12 @@ import { WelcomeScreen } from "./WelcomeScreen.js";
 import { OfficeWorkspace } from "@doffi/editor/react";
 import type { OfficeActions } from "@doffi/editor/react";
 import { brandLogo } from "./brand.js";
+import {
+  ImmersiveReaderOverlay,
+  SplitDocumentPane,
+  WordCompareDialog,
+  printHtmlDocument,
+} from "./WordParityOverlays.js";
 type WorkspaceFile = {
   id: string;
   name: string;
@@ -100,6 +109,10 @@ export function App() {
   const [pageZoomMode, setPageZoomMode] = useState<WordPageZoomMode>();
   const [draftMode, setDraftMode] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [showGridlines, setShowGridlines] = useState(false);
+  const [immersiveReader, setImmersiveReader] = useState(false);
+  const [splitWindow, setSplitWindow] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const pendingFitRef = useRef<WordPageZoomMode>(undefined);
   const [slideShowStartId, setSlideShowStartId] = useState<string>();
   const [commentsVisible, setCommentsVisible] = useState(false);
@@ -951,8 +964,35 @@ export function App() {
     }
     void workbenchRef.current?.clipboard(action, pasteMode ? { pasteMode } : undefined).catch((reason) => setError(reason.message));
   }
+  function triggerNativePrint(): void {
+    try {
+      if (workbook) {
+        printWorkbook("pdf");
+        return;
+      }
+      if (isPresentation) {
+        void downloadRendered("pdf");
+        return;
+      }
+      const view = workbenchRef.current;
+      if (!view) throw new Error("请等待文档加载完成。");
+      printHtmlDocument(view.printDocument());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "打印失败。");
+    }
+  }
+  function toggleGridlines(): void {
+    const next = !showGridlines;
+    setShowGridlines(next);
+    workbenchRef.current?.setShowGridlines(next);
+  }
   const history = workbook ? workbook.session.state().history : session?.history();
   const actions: OfficeActions = {
+    print: { run: triggerNativePrint, disabled: loading || (!session && !workbook) },
+    compareDocx: {
+      run: () => setCompareOpen(true),
+      disabled: loading || isPresentation || Boolean(workbook) || !session,
+    },
     find: { run: () => { if (workbook || isPresentation) runNative("find"); else void runTextCommand({ type: "word", action: "find" }); }, disabled: loading || (workbook || isPresentation ? !nativeCommands.some(command => command.id === "find" && command.enabled) : !session) },
     fitSlide: { run: fitSlide, disabled: !isPresentation || !session || !pageCount },
     slideShowFromStart: { run: () => startSlideShow(false), disabled: !isPresentation || !session || !pageCount },
@@ -1177,11 +1217,81 @@ export function App() {
     leaveExport();
     loadRef.current?.abort();
     loadRef.current = undefined;
-    activate(
-      openDocument(createWordDocument({ documentId: createOpaqueId() }), { kind: "document" }),
-      { id: createOpaqueId(), name: "未命名文档", kind: "word", detail: "新建 Word 文档" },
-    );
+    let nextModel = openDocument(createWordDocument({ documentId: createOpaqueId() }), {
+      kind: "document",
+    });
+    const savedTpl = loadStoredWordDefaultTemplate();
+    if (savedTpl && (savedTpl.theme || savedTpl.pageSetup || savedTpl.name)) {
+      const tempSession = createDocumentSession(nextModel);
+      try {
+        const snap = tempSession.snapshot();
+        const rootMatch = /data-office-kind="document"[^>]*data-node-id="([^"]+)"|data-node-id="([^"]+)"[^>]*data-office-kind="document"/.exec(
+          snap.html,
+        );
+        const rootId = rootMatch?.[1] ?? rootMatch?.[2];
+        const ops: Parameters<typeof tempSession.prepare>[0]["operations"] = [];
+        if (rootId && (savedTpl.theme || savedTpl.name)) {
+          ops.push({
+            op: "setWordOptions",
+            nodeId: rootId,
+            ...(savedTpl.theme ? { theme: savedTpl.theme } : {}),
+            ...(savedTpl.name ? { template: { name: savedTpl.name } } : {}),
+          });
+        }
+        if (savedTpl.pageSetup && !snap.metadata.presentation) {
+          for (const section of snap.metadata.sections) {
+            ops.push({
+              op: "setWordSection",
+              nodeId: section.rootNodeId,
+              changes: { pageSetup: savedTpl.pageSetup },
+            });
+          }
+        }
+        if (ops.length) {
+          tempSession.commit(
+            tempSession.prepare({
+              protocolVersion: 1,
+              documentId: snap.manifest.documentId,
+              baseRevision: snap.manifest.revision,
+              operations: ops,
+            }),
+          );
+          nextModel = openDocument(tempSession.serialize(), { kind: "document" });
+        }
+      } catch {
+        // Ignore corrupt stored template and fall back to blank Word document.
+      } finally {
+        tempSession.dispose();
+      }
+    }
+    activate(nextModel, {
+      id: createOpaqueId(),
+      name: "未命名文档",
+      kind: "word",
+      detail: "新建 Word 文档",
+    });
     setError("");
+  }
+  async function importWordTemplateFile(file: File): Promise<{
+    name: string;
+    theme?: WordTheme;
+    pageSetup?: PageSetup;
+  }> {
+    if (file.size > DEFAULT_MAX_ZIP_BYTES) {
+      throw new DocumentError("InvalidOperation", "模板文件超过 64 MiB。");
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const pkg = importDocx(bytes, { documentId: createOpaqueId() });
+    const parsed = openDocument(pkg, { kind: "document" });
+    const meta = parsed.snapshot().metadata;
+    if (meta.presentation) {
+      return { name: file.name };
+    }
+    return {
+      name: file.name,
+      ...(meta.word?.theme ? { theme: JSON.parse(JSON.stringify(meta.word.theme)) as WordTheme } : {}),
+      pageSetup: JSON.parse(JSON.stringify(meta.pageSetup)) as PageSetup,
+    };
   }
   function newPresentation(): void {
     if (!canLeaveWorkbook()) return;
@@ -1357,7 +1467,22 @@ export function App() {
             mode: !workbook && !isPresentation && !editing ? "preview" : "edit", busy: loading || changingMode, actions, commands: nativeCommands, onCommand: runNative,
             formatState: textFormat, onTextCommand: runTextCommand,
             ...(isPresentation ? { onObjectFormat: (properties: Readonly<Record<string, string>>) => { try { presentationRef.current?.editor.formatObjects(properties); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } } } : {}), layout, onLayout: changeLayout, zoom, onZoom: changeZoom, enableWorkbookZoom: !workbook?.pendingInput,
-            ...(!workbook && !isPresentation ? { pageZoomMode, onPageZoomMode: changePageZoomMode, draftMode, onDraftMode: changeDraftMode, focusMode, onFocusMode: setFocusMode } : {}),
+            ...(!workbook && !isPresentation
+              ? {
+                  pageZoomMode,
+                  onPageZoomMode: changePageZoomMode,
+                  draftMode,
+                  onDraftMode: changeDraftMode,
+                  focusMode,
+                  onFocusMode: setFocusMode,
+                  showGridlines,
+                  onToggleGridlines: toggleGridlines,
+                  immersiveReader,
+                  onToggleImmersiveReader: () => setImmersiveReader((v) => !v),
+                  splitWindow,
+                  onToggleSplitWindow: () => setSplitWindow((v) => !v),
+                }
+              : {}),
           }}
           statusBar={{ kind: workbook ? "workbook" : isPresentation ? "presentation" : "document", pageCount, zoom, onZoom: changeZoom,
             disabled: loading || changingMode || Boolean(workbook?.pendingInput), layout,
@@ -1602,43 +1727,78 @@ export function App() {
           <SlideShow session={session} startId={slideShowStartId} onClose={() => setSlideShowStartId(undefined)} />
         )}
         {model && session && !isPresentation && (
-          <DocumentWorkbench
-            session={session}
-            wordWebFonts={wordWebFonts}
-            appearance="workspace"
-            annotationTrigger="command"
-            layout={layout}
-            draft={draftMode}
-            className="preview"
-            onSelectionChange={(selection) => setHasDocumentSelection(Boolean(selection))}
-            onFormatStateChange={setTextFormat}
-            onViewChange={(view) => {
-              workbenchRef.current = view;
-              if (view) {
-                const captureId = docxCaptures.current.get(model), started = performance.now();
-                if (editing) void view.setEditing(true).catch((reason) => setError(reason.message));
-                void view.ready
-                  .then(() => {
-                    if (captureId) reportDocx(captureId, "preview", started, { annotations: session.getAnnotations().length });
-                    if (workbenchRef.current === view) {
-                      setPageCount(view.layout()?.pages.length ?? 0);
-                      const pendingFit = pendingFitRef.current;
-                      if (pendingFit && layout === "pages") {
-                        pendingFitRef.current = undefined;
-                        setZoom(view.fitPage(pendingFit));
+          <>
+            <DocumentWorkbench
+              session={session}
+              wordWebFonts={wordWebFonts}
+              appearance="workspace"
+              annotationTrigger="command"
+              layout={layout}
+              draft={draftMode}
+              showGridlines={showGridlines}
+              onPrint={triggerNativePrint}
+              onImportTemplateFile={importWordTemplateFile}
+              className="preview"
+              onSelectionChange={(selection) => setHasDocumentSelection(Boolean(selection))}
+              onFormatStateChange={setTextFormat}
+              onViewChange={(view) => {
+                workbenchRef.current = view;
+                if (view) {
+                  const captureId = docxCaptures.current.get(model), started = performance.now();
+                  if (editing) void view.setEditing(true).catch((reason) => setError(reason.message));
+                  void view.ready
+                    .then(() => {
+                      if (captureId) reportDocx(captureId, "preview", started, { annotations: session.getAnnotations().length });
+                      if (workbenchRef.current === view) {
+                        setPageCount(view.layout()?.pages.length ?? 0);
+                        const pendingFit = pendingFitRef.current;
+                        if (pendingFit && layout === "pages") {
+                          pendingFitRef.current = undefined;
+                          setZoom(view.fitPage(pendingFit));
+                        }
                       }
-                    }
-                  })
-                  .catch((reason) => {
-                    if (captureId) reportDocx(captureId, "preview", started, { error: reason });
+                    })
+                    .catch((reason) => {
+                      if (captureId) reportDocx(captureId, "preview", started, { error: reason });
+                    });
+                }
+              }}
+              onSubmitAnnotations={() => {
+                setSubmitted(true);
+              }}
+              onError={(reason) => setError(reason.message)}
+            />
+            {splitWindow && snapshot && (
+              <SplitDocumentPane
+                model={session}
+                revision={snapshot.manifest.revision}
+                onClose={() => setSplitWindow(false)}
+              />
+            )}
+            {immersiveReader && snapshot && (
+              <ImmersiveReaderOverlay
+                snapshot={snapshot}
+                title={activeFile?.name ?? "当前文档"}
+                onClose={() => setImmersiveReader(false)}
+              />
+            )}
+            {compareOpen && (
+              <WordCompareDialog
+                currentModel={session}
+                currentName={activeFile?.name ?? "当前文档"}
+                onClose={() => setCompareOpen(false)}
+                onResult={(comparedModel, label) => {
+                  activate(comparedModel, {
+                    id: createOpaqueId(),
+                    name: label,
+                    kind: "word",
+                    detail: "文档比较 · 原生修订",
                   });
-              }
-            }}
-            onSubmitAnnotations={() => {
-              setSubmitted(true);
-            }}
-            onError={(reason) => setError(reason.message)}
-          />
+                  setOfficeTab("审阅");
+                }}
+              />
+            )}
+          </>
         )}
 
         </OfficeWorkspace>

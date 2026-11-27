@@ -1,3 +1,26 @@
+export interface WordEditorState {
+  readonly trackChanges?: boolean;
+  readonly reviewDisplay?: "all" | "simple" | "final" | "original";
+  readonly protectionEdit?: "none" | "readOnly" | "comments" | "trackedChanges" | "forms";
+  readonly protectionEnforced?: boolean;
+  readonly automaticHyphenation?: boolean;
+  readonly lineNumbersRestart?: "newPage" | "newSection" | "continuous";
+  readonly pageBackgroundColor?: string;
+  readonly themeName?: string;
+  readonly differentFirstPage?: boolean;
+  readonly evenAndOddHeaders?: boolean;
+  readonly dropCap?: "drop" | "margin";
+  readonly rubyActive?: boolean;
+  readonly outlineLevel?: number | null;
+  readonly bibliographyStyle?: "APA" | "MLA" | "GB7714" | "Chicago" | "IEEE";
+  readonly tableToolMode?: "off" | "draw" | "erase";
+  readonly multiRangeCount?: number;
+  readonly themeMajorLatin?: string;
+  readonly themeMinorLatin?: string;
+  readonly themeMajorEastAsia?: string;
+  readonly themeMinorEastAsia?: string;
+  readonly templateName?: string;
+}
 export interface TextFormatState {
   readonly enabled: boolean;
   readonly hasSelection?: boolean;
@@ -23,6 +46,7 @@ export interface TextFormatState {
   readonly paragraphStyleId?: string;
   readonly characterProperties?: Readonly<Record<string, string>>;
   readonly paragraphProperties?: Readonly<Record<string, string>>;
+  readonly wordState?: WordEditorState;
   readonly numberPreview?: string;
   readonly numberFormatCode?: string;
   readonly numberFormatBuiltinId?: number;
@@ -183,6 +207,20 @@ export function readTextFormat(
     "--word-run-native-vanish",
     "--word-run-native-position",
     "--word-run-native-em",
+    "--word-run-native-outline",
+    "--word-run-native-shadow",
+    "--word-run-native-emboss",
+    "--word-run-native-imprint",
+    "--word-text-glow",
+    "--word-text-outline",
+    "--word-text-shadow",
+    "--word-text-reflection",
+    "--word-text-fill-gradient",
+    "--word-text-bevel",
+    "--word-text-3d",
+    "--word-ea-combine",
+    "--word-ea-vert",
+    "--word-fit-text",
     "--word-run-border",
     "--word-opentype-ligatures",
     "--word-opentype-num-spacing",
@@ -249,10 +287,17 @@ export function readTextFormat(
   );
   const paragraphs = [...new Set(elements.map(element => element.closest<HTMLElement>("p,h1,h2,h3,h4,h5,h6,li")).filter((element): element is HTMLElement => Boolean(element)))];
   const paragraphProperties: Record<string, string> = {};
-  for (const key of ["margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom", "line-height", "font-size", "text-align", "widows", "break-after", "break-inside", "break-before", "--word-line-rule", "--word-contextual-spacing", "--word-paragraph-snap-to-grid", "--word-kinsoku", "--word-word-wrap", "--word-overflow-punctuation", "--word-top-line-punctuation", "--word-auto-space-de", "--word-auto-space-dn"]) {
+  for (const key of ["margin-left", "margin-right", "text-indent", "margin-top", "margin-bottom", "line-height", "font-size", "text-align", "background-color", "border-top", "border-right", "border-bottom", "border-left", "widows", "break-after", "break-inside", "break-before", "--word-line-rule", "--word-contextual-spacing", "--word-paragraph-snap-to-grid", "--word-kinsoku", "--word-word-wrap", "--word-overflow-punctuation", "--word-top-line-punctuation", "--word-auto-space-de", "--word-auto-space-dn", "--word-drop-cap", "--word-drop-cap-lines", "--word-drop-cap-space", "--word-distributed"]) {
     const value = same(paragraphs.map(paragraph => view.getComputedStyle(paragraph).getPropertyValue(key).trim()));
     if (value) paragraphProperties[key] = value;
   }
+  const outlineLevelAttr = same(paragraphs.map((paragraph) => {
+    const explicit = paragraph.getAttribute("data-word-outline-level");
+    if (explicit !== null) return explicit;
+    const h = /^h([1-6])$/i.exec(paragraph.tagName);
+    return h ? String(Number(h[1]) - 1) : "";
+  }));
+  if (outlineLevelAttr) paragraphProperties["--doffi-outline-level"] = outlineLevelAttr;
   const color =
       range.collapsed && typing.has("color")
         ? typing.get("color")

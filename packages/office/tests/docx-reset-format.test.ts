@@ -268,7 +268,10 @@ for (const previousSize of [32, 24])
         native = unzipSync(exportDocx(initial).bytes),
         namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
       native["word/document.xml"] = strToU8(
-        strFromU8(native["word/document.xml"]!).replace("<w:r><w:rPr>", "<w:r><w:rPr><w:emboss/>"),
+        strFromU8(native["word/document.xml"]!).replace(
+          "<w:r><w:rPr>",
+          '<w:r><w:rPr><w:effect w:val="shimmer"/>',
+        ),
       );
       const xml = strFromU8(native["word/document.xml"]!),
         model = openDocument(importDocx(zipSync(native), { documentId: "old-run" }), {
@@ -278,7 +281,7 @@ for (const previousSize of [32, 24])
         files = new Map(model.serialize()),
         metadata = JSON.parse(JSON.stringify(snapshot.metadata));
       const fragment = metadata.word.nativeContent.fragments.find(
-          (item: { propertyName?: string }) => item.propertyName === namespace + " emboss",
+          (item: { propertyName?: string }) => item.propertyName === namespace + " effect",
         ),
         path = fragment.assetPath,
         collection = JSON.parse(strFromU8(files.get(path)!));
@@ -335,7 +338,7 @@ for (const previousSize of [32, 24])
         }),
       );
       const output = exportDocx(session).bytes;
-      expect(strFromU8(unzipSync(output)["word/document.xml"]!)).toContain("emboss");
+      expect(strFromU8(unzipSync(output)["word/document.xml"]!)).toContain('w:val="shimmer"');
       const reopened = createDocumentSession(
         openDocument(importDocx(output, { documentId: "old-run-review" }), { kind: "document" }),
       );
@@ -366,7 +369,7 @@ for (const previousSize of [32, 24])
           "font-style": "italic",
         });
       const rejectedBytes = exportDocx(reopened).bytes;
-      expect(strFromU8(unzipSync(rejectedBytes)["word/document.xml"]!)).toContain("emboss");
+      expect(strFromU8(unzipSync(rejectedBytes)["word/document.xml"]!)).toContain('w:val="shimmer"');
       const rejected = openDocument(importDocx(rejectedBytes, { documentId: "old-run-rejected" }), {
         kind: "document",
       });

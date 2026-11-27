@@ -44,7 +44,7 @@ export function replaceTextLeaf(
 ): { state: DocumentState; textEdits: readonly TextOffsetMapping[] } | undefined {
   const { metadata, manifest, annotations } = state.snapshot, word = metadata.word;
   if (annotations.length || (!word && !metadata.presentation) ||
-    word && (word.trackChanges || word.fields.length || word.revisions.length || word.bookmarks.length)) return;
+    word && (word.trackChanges || word.fields.length || word.revisions.length || word.bookmarks.length || word.controls?.length || (word.protection?.enforcement && word.protection.edit !== "none"))) return;
   const { nodeId, from, to, expectedText, text } = operation;
   if (expectedText === text || /[\u0000-\u001f\u007f-\u009f\ud800-\udfff\ufdd0-\ufdef]/u.test(text) ||
     [...text].some(character => (character.codePointAt(0)! & 0xffff) >= 0xfffe)) return;

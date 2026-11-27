@@ -69,31 +69,31 @@ function themeVariation(color: string, row: number): string {
     ).toLowerCase()
   );
 }
-export function OfficeColorMenu({ label, value, disabled, apply, highlight = false, fill = false, themeColors }: {
-  label: string; value: string; disabled: boolean; apply(color: string): void; highlight?: boolean; fill?: boolean; themeColors?: readonly string[] | undefined;
+export function OfficeColorMenu({ label, value, disabled, apply, onHover, highlight = false, fill = false, themeColors }: {
+  label: string; value: string; disabled: boolean; apply(color: string): void; onHover?(color: string | null): void; highlight?: boolean; fill?: boolean; themeColors?: readonly string[] | undefined;
 }): ReactElement {
   const palette = themeColors && themeColors.length === 10 ? themeColors : defaultThemeColors;
   const [color, setColor] = useState(value);
   const icon = <span className={"office-color-symbol " + (highlight ? "highlight-symbol" : fill ? "fill-symbol" : "")}
     style={{ borderBottomColor: color }}>{highlight ? <Icon name="highlight" size={18} /> : fill ? <Icon name="fill" size={18} /> : "A"}</span>;
-  const select = (next: string, close: () => void) => { setColor(next); apply(next); close(); };
+  const select = (next: string, close: () => void) => { onHover?.(null); setColor(next); apply(next); close(); };
   return <OfficeMenu label={label} icon={icon} disabled={disabled} split={() => apply(color)} className="color-menu">
-    {close => <>
-      {!highlight && <button type="button" role="menuitem" onClick={() => select("#000000", close)}>自动</button>}
+    {close => <div onPointerLeave={() => onHover?.(null)}>
+      {!highlight && <button type="button" role="menuitem" onPointerEnter={() => onHover?.("#000000")} onClick={() => select("#000000", close)}>自动</button>}
       <div className="office-menu-heading">{highlight ? "突出显示颜色" : "主题颜色"}</div>
       <div className="office-color-grid">
         {(highlight ? standardColors : palette).map((swatch, index) => <button key={index + swatch} role="menuitem" type="button" aria-label={swatch} title={swatch}
-          style={{ backgroundColor: swatch }} onClick={() => select(swatch, close)} />)}
+          style={{ backgroundColor: swatch }} onPointerEnter={() => onHover?.(swatch)} onClick={() => select(swatch, close)} />)}
         {!highlight && [0, 1, 2, 3, 4].flatMap(row => palette.map((swatch, col) => {
           const next = themeVariation(swatch, row); return <button key={`${row}-${col}-${next}`} role="menuitem" type="button" aria-label={next} title={next}
-            style={{ backgroundColor: next }} onClick={() => select(next, close)} />;
+            style={{ backgroundColor: next }} onPointerEnter={() => onHover?.(next)} onClick={() => select(next, close)} />;
         }))}
       </div>
       {!highlight && <><div className="office-menu-heading">标准色</div><div className="office-color-grid">{standardColors.map(swatch =>
-        <button key={swatch} role="menuitem" type="button" aria-label={swatch} title={swatch} style={{ backgroundColor: swatch }} onClick={() => select(swatch, close)} />)}</div></>}
-      {highlight && <button type="button" role="menuitem" onClick={() => select("transparent", close)}>无颜色</button>}
+        <button key={swatch} role="menuitem" type="button" aria-label={swatch} title={swatch} style={{ backgroundColor: swatch }} onPointerEnter={() => onHover?.(swatch)} onClick={() => select(swatch, close)} />)}</div></>}
+      {highlight && <button type="button" role="menuitem" onPointerEnter={() => onHover?.("transparent")} onClick={() => select("transparent", close)}>无颜色</button>}
       <label className="office-custom-color">其他颜色…<input type="color" aria-label={label} value={/^#[0-9a-f]{6}$/i.test(color) ? color : "#000000"}
         onChange={event => select(event.currentTarget.value, close)} /></label>
-    </>}
+    </div>}
   </OfficeMenu>;
 }

@@ -63,7 +63,9 @@ export function createPrintDocument(
     if (background) {
       const clone = output.importNode(background, true);
       clone.removeAttribute("aria-hidden");
-      clone.style.cssText = `position:absolute;left:0;top:0;width:${page.setup.width}pt;height:${page.setup.height}pt;box-shadow:none;background:white`;
+      const bg = background.style.background || "white";
+      clone.style.cssText = `position:absolute;left:0;top:0;width:${page.setup.width}pt;height:${page.setup.height}pt;box-shadow:none;background:${bg}`;
+      clone.removeAttribute("data-sdk-gridlines");
       paper.append(clone);
     }
     const content = output.importNode(article, true);

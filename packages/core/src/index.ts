@@ -251,8 +251,54 @@ export {
   getWordTextDefaults,
   wordTextReplacementOperations,
 } from "./word-query.js";
-export { WordPageBorderSchema, WordPageBordersSchema } from "./contracts/word-page.js";
-export type { WordPageBorder, WordPageBorders } from "./contracts/word-page.js";
+export {
+  WORD_ART_PAGE_BORDER_STYLES,
+  WordPageBorderSchema,
+  WordPageBordersSchema,
+  WordLineNumbersSchema,
+} from "./contracts/word-page.js";
+export type {
+  WordArtPageBorderStyle,
+  WordPageBorder,
+  WordPageBorders,
+  WordLineNumbers,
+} from "./contracts/word-page.js";
+export {
+  WordPageBackgroundSchema,
+  WordProtectionSchema,
+  WordThemeSchema,
+  WordDocumentPropertiesSchema,
+  WordTemplateSchema,
+  WordBuildingBlockSchema,
+} from "./contracts/word.js";
+export type {
+  WordPageBackground,
+  WordProtection,
+  WordTheme,
+  WordDocumentProperties,
+  WordTemplate,
+  WordBuildingBlock,
+} from "./contracts/word.js";
+export {
+  WordCitationSourceTypeSchema,
+  WordCitationAuthorSchema,
+  WordCitationSourceSchema,
+  WordBibliographyStyleSchema,
+  WordBibliographySchema,
+  formatWordCitation,
+  formatWordBibliographyEntry,
+  formatWordBibliography,
+} from "./word-bibliography.js";
+export type {
+  WordCitationSourceType,
+  WordCitationAuthor,
+  WordCitationSource,
+  WordBibliographyStyle,
+  WordBibliography,
+  WordCitationFormatOptions,
+} from "./word-bibliography.js";
+export { compareWordDocuments } from "./word-compare.js";
+export type { CompareWordDocumentsOptions } from "./word-compare.js";
 export { wordColorLuminance } from "./word-color.js";
 export type {
   WordTextMatch,

@@ -401,8 +401,12 @@ export function pageFlow(
           lineBottom = fragmentTop === undefined
             ? rect.bottom + Math.max(0, height - rect.height) / 2
             : lineTop + exactHeight;
+        const blockTop = element.getBoundingClientRect().top;
+        const topFits =
+          lineTop >= pageStart + inset - 5 ||
+          (blockTop >= pageStart + inset - 5 && current === page(blockTop, flowTop));
         if (
-          lineTop >= pageStart + inset - 5 &&
+          topFits &&
           lineBottom <= end + 0.5
         ) {
           ensure(current, lineBottom, flowTop);

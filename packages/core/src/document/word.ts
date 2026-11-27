@@ -610,8 +610,22 @@ export function validateWord(
       for (const id of chain) visited.add(id);
     }
     const numbering = unique(word.numbering, (item) => item.numberingId);
-    for (const definition of word.numbering)
+    for (const definition of word.numbering) {
       unique(definition.levels, (level) => String(level.level));
+      for (const level of definition.levels) {
+        if (
+          level.pictureBulletAssetPath &&
+          !assets.some(
+            (asset) =>
+              asset.path === level.pictureBulletAssetPath &&
+              ["image/png", "image/jpeg", "image/webp"].includes(asset.mimeType),
+          )
+        )
+          invalid("A picture bullet requires a declared raster image resource.");
+      }
+    }
+    if (word.bibliography) unique(word.bibliography.sources, (source) => source.tag);
+    if (word.buildingBlocks) unique(word.buildingBlocks, (block) => block.id);
     const links = unique(word.hyperlinks, (item) => item.nodeId);
     const linkEnds = new Map(
       word.hyperlinks.filter((link) => link.endNodeId).map((link) => [link.endNodeId!, link]),

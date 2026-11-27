@@ -94,6 +94,7 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
   const container = useRef<HTMLDivElement>(null), latest = useRef(props);
   latest.current = props;
   const hasSubmission = Boolean(props.onSubmitAnnotations);
+  const hasImportTemplate = Boolean(props.onImportTemplateFile);
   useEffect(() => {
     if (!container.current) return;
     const workbenchOptions:DocumentWorkbenchOptions={
@@ -103,11 +104,14 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
       ...(props.title ? { title: props.title } : {}),
       ...(props.layout ? { layout: props.layout } : {}),
       ...(props.draft ? { draft: props.draft } : {}),
+      ...(props.showGridlines ? { showGridlines: props.showGridlines } : {}),
       ...(props.limits ? { limits: props.limits } : {}),
       ...(props.wordWebFonts ? { wordWebFonts: props.wordWebFonts } : {}),
       ...(props.supportedOperations ? { supportedOperations: props.supportedOperations } : {}),
       ...(props.contextLimits ? { contextLimits: props.contextLimits } : {}),
       ...(hasSubmission ? { onSubmitAnnotations: (request) => latest.current.onSubmitAnnotations?.(request) } : {}),
+      ...(hasImportTemplate ? { onImportTemplateFile: (file) => latest.current.onImportTemplateFile!(file) } : {}),
+      onPrint: () => latest.current.onPrint?.(),
       onFormatStateChange: state => latest.current.onFormatStateChange?.(state),
       onSelectionChange: (selection) => latest.current.onSelectionChange?.(selection),
       onError: (error) => latest.current.onError?.(error),
@@ -118,7 +122,7 @@ export function DocumentWorkbench(props: DocumentWorkbenchProps): ReactElement {
     let active = true;
     void view.ready.catch((error: unknown) => { if (active) latest.current.onError?.(error instanceof Error ? error : new Error("Preview failed.")); });
     return () => { active = false; view.dispose(); latest.current.onViewChange?.(undefined); };
-  }, [props.session, props.title, props.layout, props.draft, props.limits, props.wordWebFonts, props.supportedOperations, props.contextLimits, props.editable, props.appearance, props.annotationTrigger, hasSubmission]);
+  }, [props.session, props.title, props.layout, props.draft, props.limits, props.wordWebFonts, props.supportedOperations, props.contextLimits, props.editable, props.appearance, props.annotationTrigger, hasSubmission, hasImportTemplate]);
   return createElement("div", { ref: container, className: props.className });
 }
 
@@ -126,5 +130,6 @@ export { OfficeRibbon } from "./react-office/OfficeRibbon.js";
 export type { OfficeActions, OfficeRibbonProps } from "./react-office/OfficeRibbon.js";
 export { OfficeIcon } from "./react-office/icons.js";
 export { OfficeMenu } from "./react-office/OfficeMenu.js";
+export { OfficeDialog } from "./react-office/OfficeDialog.js";
 export { OfficeTitleBar, OfficeStatusBar, OfficeWorkspace } from "./react-office/OfficeChrome.js";
 export type { OfficeTitleBarProps, OfficeStatusBarProps, OfficeWorkspaceProps } from "./react-office/OfficeChrome.js";

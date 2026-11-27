@@ -51,6 +51,16 @@ export const runKeys: readonly string[] = [
   "--word-dstrike",
   "--word-underline-style",
   "--word-run-border",
+  "--word-text-glow",
+  "--word-text-outline",
+  "--word-text-shadow",
+  "--word-text-reflection",
+  "--word-text-fill-gradient",
+  "--word-text-bevel",
+  "--word-text-3d",
+  "--word-ea-combine",
+  "--word-ea-vert",
+  "--word-fit-text",
   "--word-opentype-ligatures",
   "--word-opentype-num-spacing",
   "--word-opentype-num-form",
@@ -85,6 +95,9 @@ export const paragraphKeys: readonly string[] = [
   "--word-paragraph-snap-to-grid",
   "--word-distributed",
   "--word-line-rule",
+  "--word-drop-cap",
+  "--word-drop-cap-lines",
+  "--word-drop-cap-space",
   ...["top", "right", "bottom", "left"].flatMap((side) =>
     ["width", "style", "color"].map((part) => "border-" + side + "-" + part),
   ),
@@ -398,6 +411,104 @@ export function runProperties(css: Css, inherited: Css = {}, style = false, role
       });
     }
   }
+  const fitText = css["--word-fit-text"];
+  if (fitText !== undefined && fitText.trim() !== "none") {
+    const valTwips = nativeInteger(points(fitText, css), 20, 1);
+    out += empty("w:fitText", { "w:val": valTwips });
+  }
+  const eaCombine = css["--word-ea-combine"];
+  const eaVert = css["--word-ea-vert"];
+  if (
+    (eaCombine && eaCombine !== "none") ||
+    (eaVert && eaVert !== "0")
+  ) {
+    out += empty("w:eastAsianLayout", {
+      ...(eaCombine && eaCombine !== "none"
+        ? { "w:combine": 1, "w:combineBrackets": eaCombine }
+        : {}),
+      ...(eaVert && eaVert !== "0"
+        ? { "w:vert": 1, ...(eaVert === "compress" ? { "w:vertCompress": 1 } : {}) }
+        : {}),
+    });
+  }
+  const textGlow = css["--word-text-glow"];
+  if (textGlow && textGlow.trim() !== "none") {
+    const m = /^(\S+)\s+(.+)$/.exec(textGlow.trim());
+    if (m) {
+      const rad = Math.max(0, Math.round(points(m[1]!, css) * 12700));
+      const hex = (color(m[2]!, css.color) ?? "4472C4").toUpperCase();
+      out += `<w14:glow w14:rad="${rad}"><w14:srgbClr w14:val="${hex}"/></w14:glow>`;
+    }
+  }
+  const textOutline = css["--word-text-outline"];
+  if (textOutline && textOutline.trim() !== "none") {
+    const m = /^(\S+)\s+(.+)$/.exec(textOutline.trim());
+    if (m) {
+      const w = Math.max(0, Math.round(points(m[1]!, css) * 12700));
+      const hex = (color(m[2]!, css.color) ?? "1F4E79").toUpperCase();
+      out += `<w14:textOutline w14:w="${w}" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:solidFill><w14:srgbClr w14:val="${hex}"/></w14:solidFill><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline>`;
+    }
+  }
+  const textShadow = css["--word-text-shadow"];
+  if (textShadow && textShadow.trim() !== "none") {
+    const m = /^(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/.exec(textShadow.trim());
+    if (m) {
+      const blur = Math.max(0, Math.round(points(m[1]!, css) * 12700));
+      const dist = Math.max(0, Math.round(points(m[2]!, css) * 12700));
+      const dir = Math.max(0, Math.round(Number(m[3]) * 60000));
+      const hex = (color(m[4]!, css.color) ?? "000000").toUpperCase();
+      out += `<w14:shadow w14:blurRad="${blur}" w14:dist="${dist}" w14:dir="${dir}" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:srgbClr w14:val="${hex}"><w14:alpha w14:val="40000"/></w14:srgbClr></w14:shadow>`;
+    }
+  }
+  if (css["--word-text-reflection"] === "1") {
+    out +=
+      '<w14:reflection w14:blurRad="6350" w14:stA="50000" w14:stPos="0" w14:endA="300" w14:endPos="35000" w14:dist="0" w14:dir="5400000" w14:fadeDir="5400000" w14:sx="100000" w14:sy="-100000" w14:kx="0" w14:ky="0" w14:algn="bl"/>';
+  }
+  const textGradient = css["--word-text-fill-gradient"];
+  if (textGradient && textGradient.trim() !== "none") {
+    const raw = textGradient.trim();
+    const angleMatch = /^(-?\d+(?:\.\d+)?)deg\b/i.exec(raw);
+    const angleDeg = angleMatch ? Number(angleMatch[1]) : 90;
+    const body = angleMatch ? raw.slice(angleMatch[0].length) : raw;
+    const stops: { hex: string; pos: number }[] = [];
+    const stopRegex = /(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|[a-zA-Z]+)\s*(\d+(?:\.\d+)?%)?/g;
+    let m: RegExpExecArray | null;
+    while ((m = stopRegex.exec(body)) !== null) {
+      const c = color(m[1]!, css.color);
+      if (!c) continue;
+      const pos = m[2]
+        ? Math.max(0, Math.min(100, Math.round(Number(m[2].slice(0, -1)))))
+        : stops.length === 0
+          ? 0
+          : 100;
+      stops.push({ hex: c.toUpperCase(), pos });
+    }
+    if (stops.length >= 2) {
+      const ang = (((Math.round(angleDeg) % 360) + 360) % 360) * 60000;
+      out +=
+        "<w14:textFill><w14:gradFill><w14:gsLst>" +
+        stops
+          .map(
+            (stop) =>
+              `<w14:gs w14:pos="${stop.pos * 1000}"><w14:srgbClr w14:val="${stop.hex}"/></w14:gs>`,
+          )
+          .join("") +
+        `</w14:gsLst><w14:lin w14:ang="${ang}" w14:scaled="1"/></w14:gradFill></w14:textFill>`;
+    }
+  }
+  const text3d = css["--word-text-3d"];
+  if (text3d && text3d.trim() !== "none") {
+    const prst = /^[A-Za-z0-9]+$/.test(text3d.trim()) ? text3d.trim() : "orthographicFront";
+    out += `<w14:scene3d><w14:camera w14:prst="${prst}"/><w14:lightRig w14:rig="threePt" w14:dir="t"/></w14:scene3d>`;
+  }
+  const textBevel = css["--word-text-bevel"];
+  if (textBevel && textBevel.trim() !== "none") {
+    const parts = textBevel.trim().split(/\s+/);
+    const prst = /^[A-Za-z0-9]+$/.test(parts[0] ?? "") ? parts[0]! : "circle";
+    const w = parts[1] ? Math.max(0, Math.round(points(parts[1], css) * 12700)) : 38100;
+    const h = parts[2] ? Math.max(0, Math.round(points(parts[2], css) * 12700)) : 38100;
+    out += `<w14:props3d><w14:bevelT w14:w="${w}" w14:h="${h}" w14:prst="${prst}"/></w14:props3d>`;
+  }
   const ligatures = css["--word-opentype-ligatures"];
   if (ligatures !== undefined) {
     if (!(wordOpenTypeLigatures as readonly string[]).includes(ligatures))
@@ -473,6 +584,7 @@ export function borders(css: Css, container: string, inside = false): string {
     "bottom",
     "right",
     ...(inside ? ["insideH", "insideV"] : []),
+    ...(container === "tcBorders" ? ["tl2br", "tr2bl"] : []),
   ]) {
     let style = css["border-" + side + "-style"],
       rawWidth = css["border-" + side + "-width"],
@@ -482,7 +594,11 @@ export function borders(css: Css, container: string, inside = false): string {
         ? css["--word-border-inside-h"]
         : side === "insideV"
           ? css["--word-border-inside-v"]
-          : undefined;
+          : side === "tl2br"
+            ? css["--word-border-tl2br"]
+            : side === "tr2bl"
+              ? css["--word-border-tr2bl"]
+              : undefined;
     if (custom) {
       const match = /^(\S+)\s+(\S+)\s+(.+)$/.exec(custom);
       if (!match) unsupported("Invalid native table border.");
@@ -556,6 +672,21 @@ export function paragraphProperties(css: Css, width = 468): string {
     )
       unsupported("DOCX widow control supports one or two lines in this profile.");
     out += toggle("widowControl", css.widows !== "1" && css.orphans !== "1");
+  }
+  const dropCap = css["--word-drop-cap"];
+  if (dropCap === "drop" || dropCap === "margin") {
+    const lines = Math.max(1, Math.min(10, Math.round(Number(css["--word-drop-cap-lines"] ?? "3")) || 3));
+    const space = css["--word-drop-cap-space"] ? nativeInteger(points(css["--word-drop-cap-space"], css), 20, 0) : 0;
+    out += empty("w:framePr", {
+      "w:dropCap": dropCap,
+      "w:lines": lines,
+      "w:hSpace": space,
+      "w:wrap": "around",
+      "w:vAnchor": "text",
+      "w:hAnchor": "text",
+    });
+    if (css["--word-paragraph-native-suppressLineNumbers"] === undefined)
+      out += "<w:suppressLineNumbers/>";
   }
   if (css["--word-paragraph-snap-to-grid"] !== undefined)
     out += toggle("snapToGrid", css["--word-paragraph-snap-to-grid"] === "1");

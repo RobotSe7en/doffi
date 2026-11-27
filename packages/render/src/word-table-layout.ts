@@ -39,6 +39,26 @@ export function composeWordTableLayout(
     }
   }
   for (const table of document.querySelectorAll<HTMLTableElement>("table")) {
+    const tableInfo = tables.get(table.dataset.nodeId ?? "");
+    const tableCss = view.getComputedStyle(table);
+    if (
+      tableInfo &&
+      tableInfo.grid.length > 1 &&
+      tableCss.tableLayout === "auto" &&
+      !table.querySelector(":scope > colgroup")
+    ) {
+      const total = tableInfo.grid.reduce((a, b) => a + b, 0);
+      if (total > 0 && count + tableInfo.grid.length + 1 <= limits.maxNodes) {
+        const colgroup = markViewNode(document.createElement("colgroup"));
+        for (const widthPt of tableInfo.grid) {
+          const col = document.createElement("col");
+          col.style.width = `${((widthPt / total) * 100).toFixed(3)}%`;
+          colgroup.append(col);
+        }
+        table.prepend(colgroup);
+        count += tableInfo.grid.length + 1;
+      }
+    }
     const rows = [...table.rows],
       heights = rows.map(row => exactHeights.get(row));
     if (!heights.some((height) => height !== undefined)) continue;
