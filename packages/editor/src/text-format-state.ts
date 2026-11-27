@@ -20,6 +20,14 @@ export interface WordEditorState {
   readonly themeMajorEastAsia?: string;
   readonly themeMinorEastAsia?: string;
   readonly templateName?: string;
+  readonly pageOrientation?: "portrait" | "landscape";
+  readonly columnCount?: number;
+  readonly tableFirstRow?: boolean;
+  readonly tableLastRow?: boolean;
+  readonly tableFirstCol?: boolean;
+  readonly tableLastCol?: boolean;
+  readonly tableBandedRows?: boolean;
+  readonly tableBandedCols?: boolean;
 }
 export interface TextFormatState {
   readonly enabled: boolean;

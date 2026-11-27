@@ -1,5 +1,6 @@
 import { DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation, WordChart } from "@doffi/core";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 const kinds = [
   ["column", "柱状图"],
   ["line", "折线图"],
@@ -27,12 +28,14 @@ export function createWordChartControls(
   dispose(): void;
 } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined,
+  let shell: HTMLElement | undefined,
+    panel: HTMLElement | undefined,
     controller: AbortController | undefined,
     selected: string | undefined;
   const close = (): void => {
     controller?.abort();
-    panel?.remove();
+    shell?.remove();
+    shell = undefined;
     panel = undefined;
   };
   const attempt = (run: () => void): void => {
@@ -77,14 +80,21 @@ export function createWordChartControls(
           ],
         }
       : (JSON.parse(JSON.stringify(drawing!.chart)) as WordChart);
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "图表编辑");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:430px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "图表编辑",
+      title: insert ? "插入图表" : "设置图表格式",
+      dock: "right",
+      closeLabel: "关闭图表编辑",
+      onClose: close,
+      signal,
+      width: "348px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    parent.insertBefore(shell, before);
     const button = (
       name: string,
       run: () => void,
@@ -142,7 +152,6 @@ export function createWordChartControls(
         throw new DocumentError("InvalidOperation", "图表数据和轴范围必须是有限数值。");
       return number;
     };
-    button("关闭图表编辑", close);
     if (!insert) {
       selected = drawing!.nodeId;
       const target = choose(

@@ -19,6 +19,7 @@ import { createWordDrawTableController } from "./word-draw-table.js";
 import type { WordTableToolMode } from "./word-draw-table.js";
 import { WordMultiSelection } from "./word-multi-selection.js";
 import { createOfficeDialog } from "./office-dialog.js";
+import { createWordDockedPane, replaceSameSideDock, wordPaneStyles } from "./word-pane-chrome.js";
 import {
   WORD_COLOR_SCHEMES,
   WORD_FONT_SCHEMES,
@@ -157,6 +158,86 @@ export type DocumentTextCommand =
       readonly action: "list";
       readonly kind: "bullet" | "numbering" | "none";
       readonly level?: number;
+      readonly preset?: "disc" | "circle" | "square" | "decimal" | "lowerLetter" | "upperRoman";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "insertTableGrid";
+      readonly rows: number;
+      readonly columns: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "quickShape";
+      readonly preset: Extract<import("@doffi/core").WordDrawing, { kind: "shape" }>["preset"];
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageMargins";
+      readonly top: number;
+      readonly right: number;
+      readonly bottom: number;
+      readonly left: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageOrientation";
+      readonly orientation: "portrait" | "landscape";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageSize";
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setPageColumns";
+      readonly count: number;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "insertSectionBreak";
+      readonly breakType: "nextPage" | "continuous" | "evenPage" | "oddPage";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "insertPageNumberAt";
+      readonly location: "header" | "footer" | "inline";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setDrawingWrap";
+      readonly mode: "inline" | "floating";
+      readonly wrap?: "square" | "tight" | "through" | "topAndBottom" | "none";
+      readonly behindText?: boolean;
+    }
+  | {
+      readonly type: "word";
+      readonly action: "transformDrawing";
+      readonly mode: "rotateRight" | "rotateLeft" | "flipH" | "flipV";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableCellAlign";
+      readonly horizontal: "left" | "center" | "right";
+      readonly vertical: "top" | "middle" | "bottom";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableCellDirection";
+      readonly direction: "lrTb" | "tbRl" | "btLr";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "applyTableQuickStyle";
+      readonly preset: "grid" | "blueHeader" | "banded" | "academic3Line";
+    }
+  | {
+      readonly type: "word";
+      readonly action: "setTableStyleFlag";
+      readonly flag: "firstRow" | "lastRow" | "firstCol" | "lastCol" | "noHBand" | "noVBand";
+      readonly enabled: boolean;
     }
   | { readonly type: "word"; readonly action: "clearFormat" }
   | {
@@ -386,8 +467,10 @@ export function mountDocumentTextEditor(
   const document = container.ownerDocument,
     element = document.createElement("div"),
     shadow = element.attachShadow({ mode: "open" });
+  element.dataset.wordDockHost = "true";
   const style = document.createElement("style");
   style.textContent =
+    wordPaneStyles +
     ":host{display:block;font:14px system-ui}button,select{font:inherit;padding:6px 10px}.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.stage{max-height:70vh;overflow:auto;border:1px solid #ccd3dc}.error{color:#a00000}";
   if (options.appearance === "workspace")
     style.textContent +=
@@ -1162,11 +1245,17 @@ export function mountDocumentTextEditor(
     const range = selectedRange();
     const base = readTextFormat(root, range, typingStyles, projection.ignored);
     const section = snap.metadata.sections?.find((s) => s.rootNodeId === currentSection()) ?? snap.metadata.sections?.[0];
+    const secSetup = section?.pageSetup ?? snap.metadata.pageSetup;
     const focusEl = range
       ? range.startContainer.nodeType === 1
         ? (range.startContainer as Element)
         : range.startContainer.parentElement
       : undefined;
+    const tableEl = focusEl?.closest<HTMLElement>("table");
+    const tableMeta = tableEl?.dataset.nodeId
+      ? word?.tables.find((t) => t.nodeId === tableEl.dataset.nodeId)
+      : undefined;
+    const lookMask = tableMeta?.lookMask ?? 0x04a0;
     const rubyActive = Boolean(focusEl?.closest('[data-word-ruby="true"]'));
     const dropCapRaw = base.paragraphProperties?.["--word-drop-cap"];
     const outlineRaw = base.paragraphProperties?.["--doffi-outline-level"];
@@ -1200,6 +1289,18 @@ export function mountDocumentTextEditor(
         ...(word?.theme?.majorEastAsia ? { themeMajorEastAsia: word.theme.majorEastAsia } : {}),
         ...(word?.theme?.minorEastAsia ? { themeMinorEastAsia: word.theme.minorEastAsia } : {}),
         ...(word?.template?.name ? { templateName: word.template.name } : {}),
+        ...(secSetup ? { pageOrientation: secSetup.width > secSetup.height ? "landscape" : "portrait" } : {}),
+        columnCount: section?.columns?.count ?? 1,
+        ...(tableMeta
+          ? {
+              tableFirstRow: Boolean(lookMask & 0x0020),
+              tableLastRow: Boolean(lookMask & 0x0040),
+              tableFirstCol: Boolean(lookMask & 0x0080),
+              tableLastCol: Boolean(lookMask & 0x0100),
+              tableBandedRows: !(lookMask & 0x0200),
+              tableBandedCols: !(lookMask & 0x0400),
+            }
+          : {}),
       },
     };
   }
@@ -1823,25 +1924,49 @@ export function mountDocumentTextEditor(
   }
   function openWordPanel(action: "find" | "replace" | "goTo" | "outline" | "wordCount"): void {
     wordPanel?.remove();
-    const panel = document.createElement("section");
+    const dock = action === "wordCount" ? "floating" : "left";
+    replaceSameSideDock(shadow, dock);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel:
+        action === "outline"
+          ? "文档大纲"
+          : action === "wordCount"
+            ? "字数统计"
+            : action === "goTo"
+              ? "定位"
+              : "查找和替换",
+      title:
+        action === "outline"
+          ? "导航"
+          : action === "wordCount"
+            ? "字数统计"
+            : action === "goTo"
+              ? "定位"
+              : action === "replace"
+                ? "查找和替换"
+                : "在文档中查找",
+      dock,
+      closeLabel: "关闭",
+      onClose: () => {
+        panel.remove();
+        wordPanel = undefined;
+      },
+      signal: controls.signal,
+      width: action === "wordCount" ? "300px" : "292px",
+    });
+    const panel = chrome.panel;
+    const body = chrome.body;
     wordPanel = panel;
-    panel.setAttribute("role", "region");
-    panel.setAttribute(
-      "aria-label",
-      action === "outline"
-        ? "文档大纲"
-        : action === "wordCount"
-          ? "字数统计"
-          : action === "goTo"
-            ? "定位"
-            : "查找和替换",
-    );
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:260px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    const addButton = (label: string, run: () => void, container: HTMLElement = panel): HTMLButtonElement => {
+    const addButton = (
+      label: string,
+      run: () => void,
+      container: HTMLElement = body,
+      primary = false,
+    ): HTMLButtonElement => {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
+      if (primary) button.className = "word-btn-primary";
       button.addEventListener(
         "click",
         () => {
@@ -1856,10 +1981,6 @@ export function mountDocumentTextEditor(
       container.append(button);
       return button;
     };
-    addButton("关闭", () => {
-      panel.remove();
-      wordPanel = undefined;
-    });
     const focus = (nodeId: string, from?: number, to?: number, endNodeId = nodeId): void => {
       const node = root?.querySelector<HTMLElement>('[data-node-id="' + CSS.escape(nodeId) + '"]');
       if (!node || !root || !frame) return;
@@ -1885,39 +2006,71 @@ export function mountDocumentTextEditor(
       notifyFormat();
     };
     if (action === "outline") {
-      const body = document.createElement("div");
-      body.style.cssText = "width:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start";
+      const navTabs = document.createElement("div");
+      navTabs.className = "word-pane-tabs";
+      const listArea = document.createElement("div");
+      listArea.style.cssText = "display:flex;flex-direction:column;gap:4px";
+      let activeNav: "headings" | "pages" = "headings";
+      const setTabState = (mode: "headings" | "pages") => {
+        activeNav = mode;
+        headingTab.setAttribute("aria-selected", String(mode === "headings"));
+        pagesTab.setAttribute("aria-selected", String(mode === "pages"));
+      };
       const showHeadings = () => {
-        body.replaceChildren();
+        setTabState("headings");
+        listArea.replaceChildren();
         const headings = getWordOutline(session, { revisionView: revisionDisplay === "simple" ? "final" : revisionDisplay });
         for (const heading of headings) {
-          const btn = addButton(heading.text || "空标题", () => focus(heading.nodeId), body);
-          btn.style.marginLeft = (heading.level - 1) * 12 + "px";
+          const btn = addButton(heading.text || "空标题", () => focus(heading.nodeId), listArea);
+          btn.className = "word-style-item";
+          btn.style.paddingLeft = 8 + (heading.level - 1) * 14 + "px";
         }
-        if (!headings.length) body.textContent = "当前文档暂无标题。";
+        if (!headings.length) {
+          const empty = document.createElement("p");
+          empty.className = "word-pane-muted";
+          empty.textContent = "当前文档暂无标题。";
+          listArea.append(empty);
+        }
       };
       const showPages = () => {
-        body.replaceChildren();
+        setTabState("pages");
+        listArea.replaceChildren();
+        const grid = document.createElement("div");
+        grid.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px";
         const report = preview.layout();
         const total = Math.max(1, report.pages.length);
         for (let p = 1; p <= total; p++) {
           const btn = addButton(`第 ${p} 页`, () => {
             scrollToWordPage(stage, preview.element, report, p, zoom);
-          }, body);
-          btn.style.cssText = "min-width:72px;height:44px;border:1px solid #cfd8e3;border-radius:4px;background:#f8fafc";
+          }, grid);
+          btn.style.cssText = "height:96px;border:1px solid #d0d7e2;border-radius:5px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.06);font-weight:500";
         }
+        listArea.append(grid);
       };
-      addButton("标题", showHeadings);
-      addButton("页面缩略", showPages);
-      addButton("查找", () => openWordPanel("find"));
+      const headingTab = addButton("标题", showHeadings, navTabs);
+      const pagesTab = addButton("页面缩略", showPages, navTabs);
+      addButton("查找", () => openWordPanel("find"), navTabs);
+      panel.insertBefore(navTabs, body);
+      const foot = document.createElement("div");
+      foot.className = "word-pane-row";
       addButton("大纲编排…", () => {
         panel.remove();
         wordPanel = undefined;
         parityControls.openOutlineView();
-      });
-      panel.append(body);
-      showHeadings();
+      }, foot);
+      body.append(listArea, foot);
+      if (activeNav === "headings") showHeadings();
     } else if (action === "goTo") {
+      const modeTabs = document.createElement("div");
+      modeTabs.className = "word-pane-tabs";
+      addButton("查找", () => openWordPanel("find"), modeTabs).setAttribute("aria-selected", "false");
+      addButton("替换", () => openWordPanel("replace"), modeTabs).setAttribute("aria-selected", "false");
+      addButton("定位", () => {}, modeTabs).setAttribute("aria-selected", "true");
+      panel.insertBefore(modeTabs, body);
+      const card = document.createElement("div");
+      card.className = "word-pane-section";
+      const kindLabel = document.createElement("label");
+      kindLabel.textContent = "定位目标";
       const targetKind = document.createElement("select");
       targetKind.setAttribute("aria-label", "定位目标");
       for (const [val, label] of [
@@ -1930,18 +2083,26 @@ export function mountDocumentTextEditor(
         opt.textContent = label;
         targetKind.append(opt);
       }
+      kindLabel.append(targetKind);
+      const pageLabel = document.createElement("label");
+      pageLabel.textContent = "输入页号";
       const pageInput = document.createElement("input");
       pageInput.type = "number";
       pageInput.min = "1";
       pageInput.value = "1";
       pageInput.setAttribute("aria-label", "定位页码");
+      pageLabel.append(pageInput);
+      const itemLabel = document.createElement("label");
+      itemLabel.textContent = "选择目标";
+      itemLabel.hidden = true;
       const itemSelect = document.createElement("select");
       itemSelect.setAttribute("aria-label", "定位条目");
       itemSelect.hidden = true;
+      itemLabel.append(itemSelect);
       const syncChoices = () => {
         const kind = targetKind.value;
-        pageInput.hidden = kind !== "page";
-        itemSelect.hidden = kind === "page";
+        pageLabel.hidden = pageInput.hidden = kind !== "page";
+        itemLabel.hidden = itemSelect.hidden = kind === "page";
         itemSelect.replaceChildren();
         if (kind === "heading") {
           for (const h of getWordOutline(session)) {
@@ -1960,7 +2121,9 @@ export function mountDocumentTextEditor(
         }
       };
       targetKind.addEventListener("change", syncChoices, { signal: controls.signal });
-      panel.append(targetKind, pageInput, itemSelect);
+      const goRow = document.createElement("div");
+      goRow.className = "word-pane-row";
+      goRow.style.justifyContent = "flex-end";
       addButton("转到", () => {
         if (targetKind.value === "page") {
           const p = Math.max(1, Math.round(Number(pageInput.value) || 1));
@@ -1969,13 +2132,37 @@ export function mountDocumentTextEditor(
         } else if (itemSelect.value) {
           focus(itemSelect.value);
         }
-      });
+      }, goRow, true);
+      card.append(kindLabel, pageLabel, itemLabel, goRow);
+      body.append(card);
     } else if (action === "wordCount") {
-      const stats = getWordTextStatistics(session, { revisionView: revisionDisplay === "simple" ? "final" : revisionDisplay }),
-        text = document.createElement("p");
+      const stats = getWordTextStatistics(session, { revisionView: revisionDisplay === "simple" ? "final" : revisionDisplay });
+      const table = document.createElement("table");
+      table.className = "word-stat-table";
+      for (const [k, v] of [
+        ["字数", String(stats.words)],
+        ["字符数（计空格）", String(stats.characters)],
+        ["字符数（不计空格）", String(stats.charactersWithoutSpaces)],
+        ["段落数", String(stats.paragraphs)],
+      ]) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${k}</td><td>${v}</td>`;
+        table.append(tr);
+      }
+      const text = document.createElement("p");
+      text.className = "word-pane-muted";
       text.textContent = `字数 ${stats.words} · 字符数 ${stats.characters} · 不计空格 ${stats.charactersWithoutSpaces} · 段落 ${stats.paragraphs}`;
-      panel.append(text);
+      body.append(table, text);
     } else {
+      const modeTabs = document.createElement("div");
+      modeTabs.className = "word-pane-tabs";
+      addButton("查找", () => openWordPanel("find"), modeTabs).setAttribute("aria-selected", String(action === "find"));
+      addButton("替换", () => openWordPanel("replace"), modeTabs).setAttribute("aria-selected", String(action === "replace"));
+      addButton("定位", () => openWordPanel("goTo"), modeTabs).setAttribute("aria-selected", "false");
+      panel.insertBefore(modeTabs, body);
+
+      const card = document.createElement("div");
+      card.className = "word-pane-section";
       const query = document.createElement("input"),
         replacement = document.createElement("input"),
         matchCase = document.createElement("input"),
@@ -1983,15 +2170,19 @@ export function mountDocumentTextEditor(
         wildcards = document.createElement("input"),
         specialChars = document.createElement("input"),
         results = document.createElement("div"),
-        summary = document.createElement("span");
+        summary = document.createElement("p");
+      summary.className = "word-pane-muted";
+      results.style.cssText = "display:flex;flex-direction:column;gap:4px";
       query.setAttribute("aria-label", "查找内容");
       query.placeholder = "查找内容（支持通配符或 ^t/^l）";
       replacement.setAttribute("aria-label", "替换为");
       replacement.placeholder = "替换为";
       matchCase.type = wholeWord.type = wildcards.type = specialChars.type = "checkbox";
       specialChars.checked = true;
-      panel.append(query);
-      if (action === "replace") panel.append(replacement);
+      card.append(query);
+      if (action === "replace") card.append(replacement);
+      const optGrid = document.createElement("div");
+      optGrid.className = "word-pane-grid";
       for (const [input, label] of [
         [matchCase, "区分大小写"],
         [wholeWord, "全字匹配"],
@@ -2000,8 +2191,9 @@ export function mountDocumentTextEditor(
       ] as const) {
         const wrapper = document.createElement("label");
         wrapper.append(input, label);
-        panel.append(wrapper);
+        optGrid.append(wrapper);
       }
+      card.append(optGrid);
       let matches: ReturnType<typeof findWordText> = [],
         current = 0;
       const search = (): void => {
@@ -2018,6 +2210,7 @@ export function mountDocumentTextEditor(
         for (const [index, match] of matches.entries()) {
           const button = document.createElement("button");
           button.type = "button";
+          button.className = "word-style-item";
           button.textContent = index + 1 + " · " + match.expectedText;
           button.addEventListener(
             "click",
@@ -2062,8 +2255,11 @@ export function mountDocumentTextEditor(
         },
         { signal: controls.signal },
       );
-      addButton("上一处", () => next(-1));
-      addButton("下一处", () => next(1));
+      const navRow = document.createElement("div");
+      navRow.className = "word-pane-row";
+      addButton("上一处", () => next(-1), navRow);
+      addButton("下一处", () => next(1), navRow, true);
+      card.append(navRow);
       const replace = (all: boolean): void => {
         ensureBodyEditable();
         search();
@@ -2085,10 +2281,14 @@ export function mountDocumentTextEditor(
         search();
       };
       if (action === "replace") {
-        addButton("替换当前", () => replace(false));
-        addButton("全部替换", () => replace(true));
+        const repRow = document.createElement("div");
+        repRow.className = "word-pane-row";
+        addButton("替换当前", () => replace(false), repRow);
+        addButton("全部替换", () => replace(true), repRow);
+        card.append(repRow);
       }
-      panel.append(summary, results);
+      card.append(summary);
+      body.append(card, results);
       queueMicrotask(() => query.focus());
     }
     shadow.insertBefore(panel, stage);
@@ -2340,6 +2540,186 @@ export function mountDocumentTextEditor(
           mode,
         );
       });
+      return;
+    }
+    if (command.action === "insertTableGrid") {
+      const paragraph =
+        selectedParagraphs()[0] ??
+        frame?.querySelector<HTMLElement>(
+          '[data-office-story="main"] [data-node-id]:is(p,h1,h2,h3,h4,h5,h6), [data-node-id]:is(p,h1,h2,h3,h4,h5,h6)',
+        );
+      if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+      commitWord([
+        {
+          op: "insertWordTable",
+          nodeId: paragraph.dataset.nodeId!,
+          position: "after",
+          rows: Math.max(1, Math.min(20, Math.round(command.rows))),
+          columns: Math.max(1, Math.min(12, Math.round(command.columns))),
+        },
+      ]);
+      return;
+    }
+    if (command.action === "quickShape") {
+      drawingControls.insertQuickShape(command.preset);
+      return;
+    }
+    if (command.action === "setPageMargins") {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const target = snap.metadata.sections.find((s) => s.rootNodeId === secId) ?? snap.metadata.sections[0];
+      if (!target) return;
+      const base = target.pageSetup ?? snap.metadata.pageSetup;
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            pageSetup: {
+              ...base,
+              margins: {
+                top: command.top,
+                right: command.right,
+                bottom: command.bottom,
+                left: command.left,
+              },
+            },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setPageOrientation") {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const target = snap.metadata.sections.find((s) => s.rootNodeId === secId) ?? snap.metadata.sections[0];
+      if (!target) return;
+      const base = target.pageSetup ?? snap.metadata.pageSetup;
+      const shortSide = Math.min(base.width, base.height);
+      const longSide = Math.max(base.width, base.height);
+      const nextWidth = command.orientation === "landscape" ? longSide : shortSide;
+      const nextHeight = command.orientation === "landscape" ? shortSide : longSide;
+      if (Math.abs(nextWidth - base.width) < 0.1 && Math.abs(nextHeight - base.height) < 0.1) return;
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            pageSetup: {
+              ...base,
+              width: nextWidth,
+              height: nextHeight,
+            },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setPageSize") {
+      const snap = session.snapshot();
+      if (snap.metadata.presentation) return;
+      const secId = currentSection();
+      const target = snap.metadata.sections.find((s) => s.rootNodeId === secId) ?? snap.metadata.sections[0];
+      if (!target) return;
+      const base = target.pageSetup ?? snap.metadata.pageSetup;
+      const isLandscape = base.width > base.height;
+      const shortSide = Math.min(command.width, command.height);
+      const longSide = Math.max(command.width, command.height);
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: target.rootNodeId,
+          changes: {
+            pageSetup: {
+              ...base,
+              width: isLandscape ? longSide : shortSide,
+              height: isLandscape ? shortSide : longSide,
+            },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "setPageColumns") {
+      commitWord([
+        {
+          op: "setWordSection",
+          nodeId: currentSection(),
+          changes: {
+            columns: { count: Math.max(1, Math.min(6, Math.round(command.count))), gap: 21.25 },
+          },
+        },
+      ]);
+      return;
+    }
+    if (command.action === "insertSectionBreak") {
+      const paragraph =
+        selectedParagraphs()[0] ??
+        frame?.querySelector<HTMLElement>(
+          '[data-office-story="main"] [data-node-id]:is(p,h1,h2,h3,h4,h5,h6), [data-node-id]:is(p,h1,h2,h3,h4,h5,h6)',
+        );
+      if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+      commitWord([
+        { op: "splitWordSection", nodeId: paragraph.dataset.nodeId!, breakType: command.breakType },
+      ]);
+      return;
+    }
+    if (command.action === "insertPageNumberAt") {
+      if (command.location === "inline") {
+        const paragraph = selectedParagraphs()[0];
+        if (!paragraph) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+        commitWord([
+          {
+            op: "insertWordField",
+            nodeId: paragraph.dataset.nodeId!,
+            instruction: " PAGE ",
+            cachedText: "1",
+          },
+        ]);
+        return;
+      }
+      openAuxiliaryHeaderFooter(command.location);
+      const snap = session.snapshot();
+      const targetStory = snap.metadata.word?.stories.find((s) => s.storyId === activeStoryId);
+      const firstPara = targetStory
+        ? session.getNode(targetStory.rootNodeId)?.childNodeIds.find((id) => /^p$|^h[1-6]$/.test(session.getNode(id)?.tagName ?? ""))
+        : undefined;
+      if (firstPara) {
+        commitWord([
+          { op: "setWordParagraph", nodeId: firstPara, properties: { "text-align": "center" } },
+          { op: "insertWordField", nodeId: firstPara, instruction: " PAGE ", cachedText: "1" },
+        ]);
+      }
+      return;
+    }
+    if (command.action === "setDrawingWrap") {
+      drawingControls.setSelectedWrap({
+        mode: command.mode,
+        ...(command.wrap ? { wrap: command.wrap } : {}),
+        ...(command.behindText !== undefined ? { behindText: command.behindText } : {}),
+      });
+      return;
+    }
+    if (command.action === "transformDrawing") {
+      drawingControls.transformSelected(command.mode);
+      return;
+    }
+    if (command.action === "setTableCellAlign") {
+      toolsControls.setTableCellAlign(command.horizontal, command.vertical);
+      return;
+    }
+    if (command.action === "setTableCellDirection") {
+      toolsControls.setTableCellDirection(command.direction);
+      return;
+    }
+    if (command.action === "applyTableQuickStyle") {
+      toolsControls.applyTableQuickStyle(command.preset);
+      return;
+    }
+    if (command.action === "setTableStyleFlag") {
+      toolsControls.setTableStyleFlag(command.flag, command.enabled);
       return;
     }
     if (command.action === "tableDiagonalBorder") {
@@ -3014,26 +3394,108 @@ export function mountDocumentTextEditor(
         (style) => style.styleId === command.styleId,
       );
       if (!known) {
-        const heading = /^Heading([1-9])$/.exec(command.styleId),
-          cssClass = "word-user-" + command.styleId.toLowerCase();
+        const accent1 = snapshot.metadata.word?.theme?.colors?.accent1
+          ? "#" + snapshot.metadata.word.theme.colors.accent1
+          : "#2f5496";
+        const heading = /^Heading([1-9])$/.exec(command.styleId);
+        const cssClass = "word-user-" + command.styleId.toLowerCase();
+        const builtinPresets: Readonly<
+          Record<
+            string,
+            {
+              name: string;
+              paragraph: Record<string, string>;
+              run: Record<string, string>;
+              outlineLevel?: number;
+            }
+          >
+        > = {
+          NoSpacing: {
+            name: "无间隔",
+            paragraph: { "margin-top": "0pt", "margin-bottom": "0pt", "line-height": "1" },
+            run: {},
+          },
+          Title: {
+            name: "标题",
+            paragraph: { "margin-top": "0pt", "margin-bottom": "6pt" },
+            run: { "font-size": "28pt", "font-weight": "400", color: "#1f1f1f" },
+          },
+          Subtitle: {
+            name: "副标题",
+            paragraph: { "margin-top": "0pt", "margin-bottom": "8pt" },
+            run: { "font-size": "12pt", color: "#595959", "letter-spacing": "0.75pt" },
+          },
+          SubtleEmphasis: {
+            name: "不明显强调",
+            paragraph: {},
+            run: { "font-style": "italic", color: "#595959" },
+          },
+          Emphasis: {
+            name: "强调",
+            paragraph: {},
+            run: { "font-style": "italic" },
+          },
+          IntenseEmphasis: {
+            name: "明显强调",
+            paragraph: {},
+            run: { "font-style": "italic", color: accent1 },
+          },
+          Strong: {
+            name: "要点",
+            paragraph: {},
+            run: { "font-weight": "700" },
+          },
+          Quote: {
+            name: "引用",
+            paragraph: { "margin-top": "10pt", "margin-bottom": "8pt", "text-align": "center" },
+            run: { "font-style": "italic", color: "#404040" },
+          },
+          IntenseQuote: {
+            name: "明显引用",
+            paragraph: {
+              "margin-top": "12pt",
+              "margin-bottom": "12pt",
+              "margin-left": "28pt",
+              "margin-right": "28pt",
+              "text-align": "center",
+              "border-top": `0.5pt solid ${accent1}`,
+              "border-bottom": `0.5pt solid ${accent1}`,
+            },
+            run: { "font-style": "italic", color: accent1 },
+          },
+          BookTitle: {
+            name: "书籍标题",
+            paragraph: {},
+            run: { "font-weight": "700", "font-style": "italic", "font-variant": "small-caps" },
+          },
+        };
+        const preset = builtinPresets[command.styleId];
         operations.push({
           op: "setWordStyle",
           nodeId: documentRoot,
           style: {
             styleId: command.styleId,
+            ...(preset ? { name: preset.name } : heading ? { name: "标题 " + heading[1] } : {}),
             kind: "paragraph",
             cssClass,
             ...(heading ? { outlineLevel: Number(heading[1]) - 1 } : {}),
           },
-          paragraphProperties: {
-            "margin-top": heading ? "12pt" : "0pt",
-            "margin-bottom": heading ? "6pt" : "0pt",
-            ...(heading ? { "break-after": "avoid" } : {}),
-          },
-          runProperties: {
-            "font-size": heading ? 20 - Number(heading[1]) * 2 + "pt" : "12pt",
-            "font-weight": heading ? "700" : "400",
-          },
+          paragraphProperties: preset
+            ? preset.paragraph
+            : {
+                "margin-top": heading ? "12pt" : "0pt",
+                "margin-bottom": heading ? "6pt" : "0pt",
+                ...(heading ? { "break-after": "avoid" } : {}),
+              },
+          runProperties: preset
+            ? preset.run
+            : heading
+              ? {
+                  "font-size": Math.max(11, 20 - Number(heading[1]) * 2) + "pt",
+                  "font-weight": "700",
+                  color: Number(heading[1]) <= 4 ? accent1 : "#222222",
+                }
+              : { "font-size": "12pt", "font-weight": "400" },
         });
       }
       for (const paragraph of paragraphs)
@@ -3052,11 +3514,29 @@ export function mountDocumentTextEditor(
           ...(command.outlineLevel !== undefined ? { outlineLevel: command.outlineLevel } : {}),
         });
     } else if (command.action === "list") {
-      const numberingId = command.kind === "none" ? null : "word-user-" + command.kind;
+      const presetKey = command.preset ?? (command.kind === "bullet" ? "disc" : "decimal");
+      const numberingId =
+        command.kind === "none"
+          ? null
+          : command.preset
+            ? "word-user-" + command.kind + "-" + presetKey
+            : "word-user-" + command.kind;
       if (
         numberingId &&
         !snapshot.metadata.word?.numbering.some((n) => n.numberingId === numberingId)
       ) {
+        const bulletSymbols: Record<string, readonly [string, string, string]> = {
+          disc: ["•", "◦", "▪"],
+          circle: ["◦", "▪", "•"],
+          square: ["▪", "•", "◦"],
+        };
+        const numFormats: Record<string, "decimal" | "lowerLetter" | "upperRoman"> = {
+          decimal: "decimal",
+          lowerLetter: "lowerLetter",
+          upperRoman: "upperRoman",
+        };
+        const chosenBullets = bulletSymbols[presetKey] ?? bulletSymbols.disc!;
+        const chosenNumFmt = numFormats[presetKey] ?? "decimal";
         operations.push({
           op: "setWordNumbering",
           nodeId: documentRoot,
@@ -3064,13 +3544,15 @@ export function mountDocumentTextEditor(
           levels: Array.from({ length: 9 }, (_, level) => ({
             level,
             start: 1,
-            format: command.kind === "bullet" ? ("bullet" as const) : ("decimal" as const),
+            format: command.kind === "bullet" ? ("bullet" as const) : chosenNumFmt,
             text:
               command.kind === "bullet"
-                ? ["•", "◦", "▪"][level % 3]!
-                : Array.from({ length: level + 1 }, (_, n) => "%" + (n + 1)).join(".") + ".",
+                ? chosenBullets[level % 3]!
+                : level === 0
+                  ? "%1."
+                  : Array.from({ length: level + 1 }, (_, n) => "%" + (n + 1)).join(".") + ".",
             suffix: "tab" as const,
-            cssClass: "word-list-" + command.kind + "-" + level,
+            cssClass: "word-list-" + command.kind + "-" + presetKey + "-" + level,
           })),
         });
       }

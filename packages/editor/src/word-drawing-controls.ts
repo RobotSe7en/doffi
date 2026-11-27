@@ -9,6 +9,7 @@ import type {
 } from "@doffi/core";
 import type { SourceProjection } from "@doffi/render";
 import { createOfficeDialog } from "./office-dialog.js";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 export type WordDrawingAction =
   | "insertImage"
   | "insertShape"
@@ -30,6 +31,13 @@ export function createWordDrawingControls(
   selectedNodeIds(): readonly string[];
   selectByNodeId(nodeId: string): void;
   reorderSelected(direction: "forward" | "backward"): void;
+  setSelectedWrap(options: {
+    readonly mode: "inline" | "floating";
+    readonly wrap?: "square" | "tight" | "through" | "topAndBottom" | "none";
+    readonly behindText?: boolean;
+  }): void;
+  transformSelected(mode: "rotateRight" | "rotateLeft" | "flipH" | "flipV"): void;
+  insertQuickShape(preset: Extract<WordDrawing, { kind: "shape" }>["preset"]): void;
   groupOrUngroupSelected(): void;
   removeSelected(): void;
   editSelectedText(): void;
@@ -147,6 +155,89 @@ export function createWordDrawingControls(
     }
     if (ops.length) apply(ops);
     updateSelectionPane?.();
+  };
+  const setSelectedWrap = (options: {
+    readonly mode: "inline" | "floating";
+    readonly wrap?: "square" | "tight" | "through" | "topAndBottom" | "none";
+    readonly behindText?: boolean;
+  }): void => {
+    const roots = selectedRoots()
+      .map((id) => drawings().find((item) => item.nodeId === id))
+      .filter((item): item is WordDrawing => Boolean(item));
+    if (!roots.length) throw new DocumentError("InvalidOperation", "请先选择一个图片或形状对象。");
+    apply(
+      roots.map((target) => {
+        const next = JSON.parse(JSON.stringify(target.layout)) as WordDrawingLayout;
+        next.mode = options.mode;
+        if (options.mode === "floating") {
+          next.wrap = options.wrap ?? "square";
+          next.behindText = Boolean(options.behindText);
+          next.horizontal ??= "column";
+          next.vertical ??= "paragraph";
+        }
+        return { op: "setWordDrawingLayout" as const, nodeId: target.nodeId, layout: next };
+      }),
+    );
+  };
+  const transformSelected = (mode: "rotateRight" | "rotateLeft" | "flipH" | "flipV"): void => {
+    const roots = selectedRoots()
+      .map((id) => drawings().find((item) => item.nodeId === id))
+      .filter((item): item is WordDrawing => Boolean(item));
+    if (!roots.length) throw new DocumentError("InvalidOperation", "请先选择一个图片或形状对象。");
+    apply(
+      roots.map((target) => {
+        const g = displayed(target);
+        return {
+          op: "setWordDrawingGeometry" as const,
+          nodeId: target.nodeId,
+          geometry: {
+            ...g,
+            rotation:
+              mode === "rotateRight"
+                ? (g.rotation + 90) % 360
+                : mode === "rotateLeft"
+                  ? (g.rotation + 270) % 360
+                  : g.rotation,
+            flipH: mode === "flipH" ? !g.flipH : g.flipH,
+            flipV: mode === "flipV" ? !g.flipV : g.flipV,
+          },
+        };
+      }),
+    );
+  };
+  const insertQuickShape = (preset: Extract<WordDrawing, { kind: "shape" }>["preset"]): void => {
+    const location = selection();
+    if (!location) throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
+    const previous = new Set(drawings().map((item) => item.nodeId));
+    apply([
+      {
+        op: "insertWordDrawing",
+        nodeId: location.paragraphId,
+        offset: location.offset,
+        geometry: {
+          x: 0,
+          y: 0,
+          width: preset === "line" ? 160 : 120,
+          height: preset === "line" ? 2 : 72,
+          rotation: 0,
+          flipH: false,
+          flipV: false,
+        },
+        layout: {
+          mode: "floating",
+          wrap: "square",
+          horizontal: "column",
+          vertical: "paragraph",
+          distances: { top: 4, right: 9, bottom: 4, left: 9 },
+        },
+        object: { kind: "shape", preset, text: preset === "line" ? "" : "" },
+      },
+    ]);
+    selected = drawings()
+      .filter((item) => !previous.has(item.nodeId))
+      .map((item) => item.nodeId);
+    paintSelection();
+    selectionChanged();
   };
   const groupOrUngroupSelected = (): void => {
     const roots = selectedRoots()
@@ -336,18 +427,23 @@ export function createWordDrawingControls(
   function open(action: WordDrawingAction): void {
     close();
     if (action === "selectionPane") {
+      replaceSameSideDock(parent, "right");
       controller = new AbortController();
       const signal = controller.signal;
-      panel = document.createElement("section");
-      panel.setAttribute("role", "region");
-      panel.setAttribute("aria-label", "选择窗格");
-      panel.style.cssText =
-        "padding:12px;background:white;border:1px solid #dbe3ef;max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:8px";
-      const header = document.createElement("div");
-      header.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:6px";
-      const title = document.createElement("strong");
-      title.textContent = "选择窗格";
-      title.style.marginRight = "auto";
+      const chrome = createWordDockedPane(document, {
+        ariaLabel: "选择窗格",
+        title: "选择窗格",
+        dock: "right",
+        closeLabel: "关闭选择窗格",
+        onClose: close,
+        signal,
+        width: "286px",
+      });
+      panel = chrome.panel;
+      const body = chrome.body;
+      const topBar = document.createElement("div");
+      topBar.className = "word-pane-row";
+      topBar.style.justifyContent = "space-between";
       const makeButton = (text: string, onClick: () => void): HTMLButtonElement => {
         const btn = document.createElement("button");
         btn.type = "button";
@@ -386,8 +482,10 @@ export function createWordDrawingControls(
         updateSelectionPane?.();
       });
       const settings = makeButton("对象属性", () => open("drawingSettings"));
-      const closeButton = makeButton("关闭选择窗格", close);
       const list = document.createElement("div");
+      list.className = "word-pane-list";
+      list.style.maxHeight = "none";
+      list.style.flex = "1";
       list.setAttribute("role", "listbox");
       list.setAttribute("aria-label", "绘图对象");
       list.setAttribute("aria-multiselectable", "true");
@@ -509,8 +607,11 @@ export function createWordDrawingControls(
         showAll.disabled = !visible.some((entry) => entry.item.layout.hidden);
         hideAll.disabled = !visible.some((entry) => !entry.item.layout.hidden) || !hasAny;
       };
-      header.append(title, showAll, hideAll, moveUp, moveDown, renameBtn, settings, closeButton);
-      panel.append(header, list);
+      topBar.append(showAll, hideAll);
+      const bottomBar = document.createElement("div");
+      bottomBar.className = "word-pane-row";
+      bottomBar.append(moveUp, moveDown, renameBtn, settings);
+      body.append(topBar, list, bottomBar);
       parent.insertBefore(panel, before);
       updateSelectionPane();
       return;
@@ -1428,6 +1529,9 @@ export function createWordDrawingControls(
     selectedNodeIds: () => selected.filter((id) => drawings().some((d) => d.nodeId === id)),
     selectByNodeId,
     reorderSelected,
+    setSelectedWrap,
+    transformSelected,
+    insertQuickShape,
     groupOrUngroupSelected,
     removeSelected,
     editSelectedText,

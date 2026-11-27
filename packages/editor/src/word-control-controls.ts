@@ -6,6 +6,7 @@ import type {
   WordControl,
 } from "@doffi/core";
 import { wordImageResource } from "./word-image-resource.js";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 export function createWordControlControls(
   parent: ShadowRoot,
   before: HTMLElement,
@@ -23,7 +24,8 @@ export function createWordControlControls(
   dispose(): void;
 } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined,
+  let shell: HTMLElement | undefined,
+    panel: HTMLElement | undefined,
     controller: AbortController | undefined,
     selected: string | undefined;
   const apply = (operations: DocumentOperation[], options?: TransactionPrepareOptions): void => {
@@ -42,7 +44,8 @@ export function createWordControlControls(
   };
   const close = (): void => {
     controller?.abort();
-    panel?.remove();
+    shell?.remove();
+    shell = undefined;
     panel = undefined;
   };
   const attempt = (run: () => void): void => {
@@ -60,14 +63,25 @@ export function createWordControlControls(
     if (insert && !location) throw new DocumentError("InvalidOperation", "请先在段落中放置光标。");
     if (!insert && !control) throw new DocumentError("InvalidOperation", "文档中还没有内容控件。");
     if (!insert) selected = control!.nodeId;
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "内容控件设置");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:330px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "内容控件设置",
+      title: insert ? "插入内容控件" : "内容控件属性",
+      dock: "right",
+      closeLabel: "关闭内容控件设置",
+      onClose: close,
+      signal,
+      width: "332px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    panel.style.display = "grid";
+    panel.style.gridTemplateColumns = "repeat(2,minmax(0,1fr))";
+    panel.style.alignContent = "start";
+    panel.style.gap = "8px 10px";
+    parent.insertBefore(shell, before);
     const field = (name: string, value: string, type = "text"): HTMLInputElement => {
       const label = document.createElement("label"),
         input = document.createElement("input");
@@ -106,7 +120,6 @@ export function createWordControlControls(
       node.addEventListener("click", () => attempt(run), { signal });
       panel!.append(node);
     };
-    button("关闭内容控件设置", close);
     if (!insert) {
       const target = choose(
         "当前内容控件",

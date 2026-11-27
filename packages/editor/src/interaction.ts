@@ -28,6 +28,7 @@ import {
   createAnnotationPopover,
   workspaceControls,
 } from "./workspace.js";
+import { wordPaneStyles } from "./word-pane-chrome.js";
 import type { AnnotationPopover } from "./workspace.js";
 
 export type DocumentInteractionMode = "text" | "node" | "region";
@@ -114,9 +115,10 @@ export function mountDocumentInteraction(
     );
   const document = container.ownerDocument;
   const element = document.createElement("div");
+  element.dataset.wordDockHost = "true";
   const shadow = element.attachShadow({ mode: "open" });
   const style = document.createElement("style");
-  style.textContent = `:host{display:block;color:#20252b;font:14px system-ui,sans-serif}*{box-sizing:border-box}button,select,textarea{font:inherit}button,select{padding:6px 10px}button{cursor:pointer}button:disabled{cursor:default}button[aria-pressed=true]{background:#e5efff;border-color:#245aa5}button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #245aa5;outline-offset:2px}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.stage{overflow:auto;max-height:70vh;border:1px solid #d5dbe2}.panel{padding:12px 0}.composer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}textarea{display:block;width:100%;min-height:64px;padding:8px}.selection{white-space:pre-wrap;overflow-wrap:anywhere}.card{padding:12px;margin-top:10px;border:1px solid #d5dbe2;border-radius:4px}.card p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.error{color:#a00000}.summary{margin:8px 0}h2{font-size:16px;margin:12px 0}`;
+  style.textContent = wordPaneStyles + `:host{display:block;color:#20252b;font:14px system-ui,sans-serif}*{box-sizing:border-box}button,select,textarea{font:inherit}button,select{padding:6px 10px}button{cursor:pointer}button:disabled{cursor:default}button[aria-pressed=true]{background:#e5efff;border-color:#245aa5}button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #245aa5;outline-offset:2px}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.stage{overflow:auto;max-height:70vh;border:1px solid #d5dbe2}.panel{padding:12px 0}.composer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}textarea{display:block;width:100%;min-height:64px;padding:8px}.selection{white-space:pre-wrap;overflow-wrap:anywhere}.card{padding:12px;margin-top:10px;border:1px solid #d5dbe2;border-radius:4px}.card p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.error{color:#a00000}.summary{margin:8px 0}h2{font-size:16px;margin:12px 0}`;
   const workspace = options.appearance === "workspace";
   if (workspace)
     style.textContent +=

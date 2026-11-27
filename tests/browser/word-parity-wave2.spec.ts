@@ -508,3 +508,79 @@ test("Wave 2 editing workflows: grouped font menu, reversible live hover preview
   await expect(page.getByRole("tab", { name: "插入", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".office-keytip")).toHaveCount(0);
 });
+
+test("Word Ribbon 1:1 galleries, docked side panes, table grid, shapes, layout menus, and contextual tabs", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await openWordPlayground(page, buildWave2ShowcaseDocx(), "ribbon-1to1.docx", "edit", "pages");
+  const frame = page.frameLocator('iframe[title="正文编辑"]');
+  await expect(frame.locator("p").first()).toBeVisible();
+
+  // 1. Style Gallery cards unclipped, chevron visible, zero-revision live preview, right-docked Styles Pane keeps canvas y unchanged
+  const chevron = page.locator(".style-gallery-menu .gallery-chevron");
+  await expect(chevron).toBeVisible();
+  const galleryClipped = await page.locator(".style-gallery > button > span").evaluateAll((spans) =>
+    spans.slice(0, 3).some((el) => el.scrollWidth > el.clientWidth + 1),
+  );
+  expect(galleryClipped).toBe(false);
+
+  const stageYBefore = (await page.locator('iframe[title="正文编辑"]').boundingBox())!.y;
+  const revBefore = await page.locator(".office-app").getAttribute("data-revision");
+  await page.locator(".style-gallery > button").nth(2).hover();
+  expect(await page.locator(".office-app").getAttribute("data-revision")).toBe(revBefore);
+
+  await page.getByRole("button", { name: "样式窗格", exact: true }).click();
+  const stylePane = page.getByRole("region", { name: "样式管理", exact: true });
+  await expect(stylePane).toBeVisible();
+  expect(await stylePane.getAttribute("data-word-dock")).toBe("right");
+  expect(await stylePane.getByRole("option").count()).toBeGreaterThanOrEqual(10);
+  const stageYAfter = (await page.locator('iframe[title="正文编辑"]').boundingBox())!.y;
+  expect(Math.abs(stageYAfter - stageYBefore)).toBeLessThanOrEqual(2);
+  await stylePane.getByRole("button", { name: "关闭样式管理", exact: true }).click();
+
+  // 2. Insert 8x8 Table Grid has visible cell borders and inserts 3x4 table cleanly even without clicking a paragraph first
+  const tablesBefore = await frame.locator("table").count();
+  await page.getByRole("tab", { name: "插入", exact: true }).click();
+  await page.getByRole("button", { name: "表格", exact: true }).click();
+  const cell34 = page.getByRole("menuitem", { name: "插入 3 行 4 列表格", exact: true });
+  await expect(cell34).toBeVisible();
+  await expect(cell34).toHaveCSS("border-top-width", "1px");
+  await cell34.hover();
+  await expect(page.locator(".office-table-grid-title")).toHaveText("插入 3 × 4 表格");
+  await cell34.click();
+  await expect(frame.locator("table")).toHaveCount(tablesBefore + 1);
+  await expect(frame.locator("table").first().locator("tr")).toHaveCount(3);
+  await expect(frame.locator("table").first().locator("tr").first().locator("td")).toHaveCount(4);
+
+  // 3. Insert 16-shape SVG gallery
+  await page.getByRole("button", { name: "形状", exact: true }).click();
+  await expect(page.locator(".office-shape-grid > button")).toHaveCount(16);
+  await page.keyboard.press("Escape");
+
+  // 4. Contextual Table Design & Table Layout (checkboxes, 4 quick styles, large shading, 3x3 align grid)
+  await frame.locator("table td").first().click();
+  await page.getByRole("tab", { name: "表格设计", exact: true }).click();
+  await expect(page.getByRole("button", { name: "单元格底纹", exact: true })).toHaveCSS("height", "62px");
+  await expect(page.getByRole("button", { name: "蓝色表头", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "表格布局", exact: true }).click();
+  await expect(page.getByRole("group", { name: "单元格九宫格对齐", exact: true }).locator("button")).toHaveCount(9);
+
+  // 5. Design tab large Page Color & Paragraph Spacing presets
+  await page.getByRole("tab", { name: "设计", exact: true }).click();
+  await expect(page.getByRole("button", { name: "页面颜色", exact: true })).toHaveCSS("height", "62px");
+  await page.getByRole("button", { name: "段落间距", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /宽松/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // 6. Layout tab Margins/Orientation/Columns dropdowns & inline Indent/Spacing inputs with no launcher overlap
+  await page.getByRole("tab", { name: "布局", exact: true }).click();
+  const afterBox = (await page.getByLabel("段后", { exact: true }).boundingBox())!;
+  const launcherBox = (await page.getByRole("button", { name: "段落对话框", exact: true }).boundingBox())!;
+  expect(launcherBox.x).toBeGreaterThanOrEqual(afterBox.x + afterBox.width);
+  await page.getByRole("button", { name: "页边距", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /窄/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  expect(errors).toEqual([]);
+});

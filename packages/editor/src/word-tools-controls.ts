@@ -103,6 +103,13 @@ export function createWordToolsControls(
   runTableAction(action: WordTableQuickAction): void;
   setTableCellShading(color: string): void;
   setTableCellDiagonalBorder(mode: "tl2br" | "tr2bl" | "none"): void;
+  setTableCellAlign(horizontal: "left" | "center" | "right", vertical: "top" | "middle" | "bottom"): void;
+  setTableCellDirection(direction: "lrTb" | "tbRl" | "btLr"): void;
+  applyTableQuickStyle(preset: "grid" | "blueHeader" | "banded" | "academic3Line"): void;
+  setTableStyleFlag(
+    flag: "firstRow" | "lastRow" | "firstCol" | "lastCol" | "noHBand" | "noVBand",
+    enabled: boolean,
+  ): void;
   dispose(): void;
 } {
   const document = before.ownerDocument;
@@ -681,6 +688,139 @@ export function createWordToolsControls(
     ]);
   }
 
+  function setTableCellAlign(
+    horizontal: "left" | "center" | "right",
+    vertical: "top" | "middle" | "bottom",
+  ): void {
+    const sel = readSelection();
+    if (!sel.cellId) throw new DocumentError("InvalidOperation", "请先选择表格单元格。");
+    const cellNode = session.getNode(sel.cellId);
+    const paraOps: DocumentOperation[] = (cellNode?.childNodeIds ?? [])
+      .filter((id) => /^p$|^h[1-6]$/.test(session.getNode(id)?.tagName ?? ""))
+      .map((nodeId) => ({
+        op: "setWordParagraph" as const,
+        nodeId,
+        properties: { "text-align": horizontal },
+      }));
+    commit([
+      { op: "formatWordCell", nodeId: sel.cellId, properties: { "vertical-align": vertical } },
+      ...paraOps,
+    ]);
+  }
+
+  function setTableCellDirection(direction: "lrTb" | "tbRl" | "btLr"): void {
+    const sel = readSelection();
+    if (!sel.cellId) throw new DocumentError("InvalidOperation", "请先选择表格单元格。");
+    commit([
+      {
+        op: "formatWordCell",
+        nodeId: sel.cellId,
+        properties:
+          direction === "lrTb"
+            ? { "writing-mode": "horizontal-tb" }
+            : direction === "tbRl"
+              ? { "writing-mode": "vertical-rl" }
+              : { "writing-mode": "vertical-lr" },
+      },
+    ]);
+  }
+
+  function applyTableQuickStyle(preset: "grid" | "blueHeader" | "banded" | "academic3Line"): void {
+    const sel = readSelection();
+    if (!sel.tableId) throw new DocumentError("InvalidOperation", "请先将光标放在表格中。");
+    const info = tableGeometry(session, sel.tableId);
+    const ops: DocumentOperation[] = [];
+    for (const [rIdx, rowId] of info.rowIds.entries()) {
+      const isFirst = rIdx === 0;
+      const isLast = rIdx === info.rowIds.length - 1;
+      for (const cellId of session.getNode(rowId)!.childNodeIds) {
+        if (preset === "grid") {
+          ops.push({
+            op: "formatWordCell",
+            nodeId: cellId,
+            properties: {
+              "background-color": "transparent",
+              "border-top": "0.5pt solid #808080",
+              "border-bottom": "0.5pt solid #808080",
+              "border-left": "0.5pt solid #808080",
+              "border-right": "0.5pt solid #808080",
+            },
+          });
+        } else if (preset === "blueHeader") {
+          ops.push({
+            op: "formatWordCell",
+            nodeId: cellId,
+            properties: {
+              "background-color": isFirst ? "#4472c4" : rIdx % 2 === 1 ? "#d9e2f3" : "#ffffff",
+              "border-top": "0.5pt solid #8eaadb",
+              "border-bottom": "0.5pt solid #8eaadb",
+              "border-left": "0.5pt solid #8eaadb",
+              "border-right": "0.5pt solid #8eaadb",
+              ...(isFirst ? { color: "#ffffff" } : { color: "#222222" }),
+            },
+          });
+        } else if (preset === "banded") {
+          ops.push({
+            op: "formatWordCell",
+            nodeId: cellId,
+            properties: {
+              "background-color": isFirst ? "#f2f2f2" : rIdx % 2 === 0 ? "#f9f9f9" : "#ffffff",
+              "border-top": isFirst ? "1pt solid #595959" : "0.5pt solid #d9d9d9",
+              "border-bottom": isFirst || isLast ? "1pt solid #595959" : "0.5pt solid #d9d9d9",
+              "border-left": "0pt none #000000",
+              "border-right": "0pt none #000000",
+            },
+          });
+        } else {
+          // academic3Line: Chinese standard three-line table (1.5pt top/bottom, 0.75pt header divider, no vertical lines)
+          ops.push({
+            op: "formatWordCell",
+            nodeId: cellId,
+            properties: {
+              "background-color": "transparent",
+              "border-top": isFirst ? "1.5pt solid #000000" : "0pt none #000000",
+              "border-bottom": isFirst
+                ? "0.75pt solid #000000"
+                : isLast
+                  ? "1.5pt solid #000000"
+                  : "0pt none #000000",
+              "border-left": "0pt none #000000",
+              "border-right": "0pt none #000000",
+            },
+          });
+        }
+      }
+    }
+    if (ops.length) commit(ops);
+  }
+
+  function setTableStyleFlag(
+    flag: "firstRow" | "lastRow" | "firstCol" | "lastCol" | "noHBand" | "noVBand",
+    enabled: boolean,
+  ): void {
+    const sel = readSelection();
+    if (!sel.tableId) throw new DocumentError("InvalidOperation", "请先将光标放在表格中。");
+    const bits: Readonly<Record<typeof flag, number>> = {
+      firstRow: 0x0020,
+      lastRow: 0x0040,
+      firstCol: 0x0080,
+      lastCol: 0x0100,
+      noHBand: 0x0200,
+      noVBand: 0x0400,
+    };
+    const tableMeta = session.snapshot().metadata.word?.tables.find((t) => t.nodeId === sel.tableId);
+    const current = tableMeta?.lookMask ?? 0x04a0; // Word default: firstRow + firstCol + noVBand
+    const bit = bits[flag];
+    const nextMask = enabled ? current | bit : current & ~bit;
+    commit([
+      {
+        op: "formatWordTable",
+        nodeId: sel.tableId,
+        lookMask: nextMask,
+      },
+    ]);
+  }
+
   return {
     openSort,
     openTextToTable,
@@ -690,6 +830,10 @@ export function createWordToolsControls(
     runTableAction,
     setTableCellShading,
     setTableCellDiagonalBorder,
+    setTableCellAlign,
+    setTableCellDirection,
+    applyTableQuickStyle,
+    setTableStyleFlag,
     dispose: close,
   };
 }

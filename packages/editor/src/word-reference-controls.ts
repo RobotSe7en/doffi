@@ -1,6 +1,7 @@
 import { wordNoteSeparatorControls } from "./word-note-separator-controls.js";
 import { DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
+import { createOfficeDialog } from "./office-dialog.js";
 export function createWordReferenceControls(
   parent: ShadowRoot,
   before: HTMLElement,
@@ -10,9 +11,14 @@ export function createWordReferenceControls(
   onError: (error: unknown) => void,
 ): { open(kind: "footnote" | "endnote" | "settings"): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let dialogUI: ReturnType<typeof createOfficeDialog> | undefined,
+    panel: HTMLElement | undefined,
+    controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
+    dialogUI?.close();
+    dialogUI?.dialog.remove();
+    dialogUI = undefined;
     panel?.remove();
     panel = undefined;
   };
@@ -23,12 +29,19 @@ export function createWordReferenceControls(
       throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
     controller = new AbortController();
     const signal = controller.signal;
+    const title = kind === "footnote" ? "插入脚注" : kind === "endnote" ? "插入尾注" : "脚注和尾注";
+    dialogUI = createOfficeDialog(document, title);
+    dialogUI.dialog.style.width = "500px";
+    dialogUI.content.style.minHeight = "0";
+    dialogUI.content.style.marginTop = "12px";
     panel = document.createElement("section");
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", "脚注和尾注");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    panel.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    dialogUI.content.append(panel);
+    parent.insertBefore(dialogUI.dialog, before);
+    dialogUI.dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); }, { signal });
+    dialogUI.show();
     const apply = (operations: DocumentOperation[]): void => {
       const snapshot = session.snapshot();
       session.commit(
@@ -55,7 +68,8 @@ export function createWordReferenceControls(
         },
         { signal },
       );
-      panel!.append(node);
+      if (name === "关闭注释设置") dialogUI!.footer.append(node);
+      else panel!.append(node);
     };
     button("关闭注释设置", close);
     if (kind !== "settings") {

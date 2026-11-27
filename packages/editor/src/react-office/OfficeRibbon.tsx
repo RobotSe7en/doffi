@@ -141,8 +141,17 @@ export function OfficeRibbon({
   };
   const root = useRef<HTMLDivElement>(null), [compact, setCompact] = useState(false);
   useEffect(() => {
-    const element = root.current!, observer = new ResizeObserver(() => setCompact(element.clientWidth <= 1400));
-    observer.observe(element); return () => observer.disconnect();
+    const element = root.current!;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setCompact(element.clientWidth <= 1400));
+    });
+    observer.observe(element);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
   const id = useId(),
     panelId = id + "-panel";
@@ -226,7 +235,42 @@ export function OfficeRibbon({
     if (!word || !canFormat) return;
     wordCommand({ type: "word", action: "livePreview", scope: "run", properties });
   };
-  const styleIds = ["Normal", "NoSpacing", "Heading1", "Heading2", "Heading3", "Heading4", "Title", "Subtitle", "SubtleEmphasis", "Emphasis", "IntenseEmphasis", "Strong", "Quote", "IntenseQuote", "BookTitle", ...customStyles];
+  const styleGalleryItems = (() => {
+    const accent = format.themeColors?.[4] ?? "#2f5496";
+    const sub = format.themeColors?.[3] ?? "#595959";
+    const builtIns: readonly {
+      readonly id: string;
+      readonly label: string;
+      readonly sampleStyle: Record<string, string | number>;
+      readonly preview: Readonly<Record<string, string>>;
+    }[] = [
+      { id: "Normal", label: "正文", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 12, fontWeight: 400, color: "#1f1f1f" }, preview: { "font-size": "10.5pt", "font-weight": "400", "font-style": "normal", color: "#1f1f1f" } },
+      { id: "NoSpacing", label: "无间隔", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 12, fontWeight: 400, color: "#1f1f1f" }, preview: { "font-size": "10.5pt", "font-weight": "400", "font-style": "normal", color: "#1f1f1f" } },
+      { id: "Heading1", label: "标题 1", sampleStyle: { fontFamily: "等线 Light,Arial,sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: "-0.35px", color: accent }, preview: { "font-size": "16pt", "font-weight": "700", "font-style": "normal", color: accent } },
+      { id: "Heading2", label: "标题 2", sampleStyle: { fontFamily: "等线 Light,Arial,sans-serif", fontSize: 12.5, fontWeight: 700, letterSpacing: "-0.3px", color: accent }, preview: { "font-size": "13pt", "font-weight": "700", "font-style": "normal", color: accent } },
+      { id: "Heading3", label: "标题 3", sampleStyle: { fontFamily: "等线 Light,Arial,sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: "-0.2px", color: "#1f3763" }, preview: { "font-size": "12pt", "font-weight": "600", "font-style": "normal", color: "#1f3763" } },
+      { id: "Heading4", label: "标题 4", sampleStyle: { fontFamily: "等线 Light,Arial,sans-serif", fontSize: 11.5, fontWeight: 600, fontStyle: "italic", letterSpacing: "-0.2px", color: accent }, preview: { "font-size": "11pt", "font-weight": "600", "font-style": "italic", color: accent } },
+      { id: "Title", label: "标题", sampleStyle: { fontFamily: "等线 Light,Arial,sans-serif", fontSize: 14, fontWeight: 300, letterSpacing: "-0.4px", color: "#171717" }, preview: { "font-size": "24pt", "font-weight": "300", "font-style": "normal", color: "#171717" } },
+      { id: "Subtitle", label: "副标题", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 12, fontWeight: 400, color: sub }, preview: { "font-size": "12pt", "font-weight": "400", "font-style": "normal", color: sub } },
+      { id: "SubtleEmphasis", label: "不明显强调", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 11.5, fontStyle: "italic", color: sub }, preview: { "font-style": "italic", color: sub } },
+      { id: "Emphasis", label: "强调", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 11.5, fontStyle: "italic", color: "#1f1f1f" }, preview: { "font-style": "italic", color: "#1f1f1f" } },
+      { id: "IntenseEmphasis", label: "明显强调", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 11.5, fontStyle: "italic", color: accent }, preview: { "font-style": "italic", color: accent } },
+      { id: "Strong", label: "要点", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 11.5, fontWeight: 700, letterSpacing: "-0.2px", color: "#1f1f1f" }, preview: { "font-weight": "700", color: "#1f1f1f" } },
+      { id: "Quote", label: "引用", sampleStyle: { fontFamily: "Georgia,serif", fontSize: 11.5, fontStyle: "italic", color: "#404040" }, preview: { "font-style": "italic", color: "#404040" } },
+      { id: "IntenseQuote", label: "明显引用", sampleStyle: { fontFamily: "Georgia,serif", fontSize: 11.5, fontStyle: "italic", color: accent, borderBottom: `1px solid ${accent}` }, preview: { "font-style": "italic", color: accent } },
+      { id: "BookTitle", label: "书籍标题", sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 11, fontWeight: 700, fontVariant: "small-caps", letterSpacing: "0.2px", color: "#1f1f1f" }, preview: { "font-weight": "700", "letter-spacing": "0.5pt", color: "#1f1f1f" } },
+    ];
+    return [
+      ...builtIns,
+      ...customStyles.map((name) => ({
+        id: name,
+        label: name,
+        sampleStyle: { fontFamily: "等线,Calibri,sans-serif", fontSize: 12.5, fontWeight: 600, color: accent },
+        preview: { "font-weight": "600", color: accent },
+      })),
+    ];
+  })();
+  const activeStyleId = format.paragraphStyleId || "Normal";
   const wordCommand = (value: Extract<DocumentTextCommand, { type: "word" }>) =>
     onTextCommand(value);
 
@@ -370,7 +414,22 @@ export function OfficeRibbon({
     ]),
   ].sort((a, b) => a - b);
   const fontGroup = (
-    <Group title="字体" className="font-group">
+    <Group
+      title="字体"
+      className="font-group"
+      launcher={
+        word
+          ? {
+              label: "字体设置",
+              disabled: !canFormat,
+              run: () => {
+                loadOsFontsOnDemand();
+                wordCommand({ type: "word", action: "fontSettings" });
+              },
+            }
+          : undefined
+      }
+    >
       <div className="ribbon-font-selects">
         <OfficeComboBox
           label="字体"
@@ -650,7 +709,19 @@ export function OfficeRibbon({
     </Group>
   );
   const paragraph = (
-    <Group title={kind === "workbook" ? "对齐方式" : "段落"} className="paragraph-group">
+    <Group
+      title={kind === "workbook" ? "对齐方式" : "段落"}
+      className="paragraph-group"
+      launcher={
+        word
+          ? {
+              label: "段落设置",
+              disabled: !canFormat,
+              run: () => setParagraphOpen(true),
+            }
+          : undefined
+      }
+    >
       <div className="ribbon-icon-row">
         {kind === "workbook" ? <>
           {command("verticalTop", "顶端对齐", "verticalTop")}
@@ -661,10 +732,13 @@ export function OfficeRibbon({
           </OfficeMenu>
           {command("wrapText", "自动换行", "lineSpacing")}
         </> : <>
-          {(["bullet", "numbering"] as const).map((kind, index) => <OfficeMenu key={kind} label={index ? "编号" : "项目符号"} icon={<Icon name={index ? "numbering" : "list"} size={17} />}
-            disabled={!canFormat} split={() => word ? wordCommand({ type: "word", action: "list", kind }) : onCommand(index ? "numbering" : "bullets")}>
-            {close => <><div className="office-menu-heading">{index ? "编号库" : "项目符号库"}</div><div className="office-list-gallery">{(index ? ["1. 2. 3.", "a. b. c.", "I. II. III."] : ["•", "○", "▪"]).map((sample, i) => <button key={sample} role="menuitem" type="button"
-              disabled={i > 0 && !word} onClick={() => { if (word && i > 0) wordCommand({ type: "word", action: "listSettings" }); else if (word) wordCommand({ type: "word", action: "list", kind }); else onCommand(index ? "numbering" : "bullets"); close(); }}><span>{sample}</span><i>━━━━<br />━━━━<br />━━━━</i></button>)}</div>
+          {(["bullet", "numbering"] as const).map((listKind, index) => <OfficeMenu key={listKind} label={index ? "编号" : "项目符号"} icon={<Icon name={index ? "numbering" : "list"} size={17} />}
+            disabled={!canFormat} split={() => word ? wordCommand({ type: "word", action: "list", kind: listKind }) : onCommand(index ? "numbering" : "bullets")}>
+            {close => <><div className="office-menu-heading">{index ? "编号库" : "项目符号库"}</div><div className="office-list-gallery">{(index
+              ? ([["1. 2. 3.", "decimal"], ["a. b. c.", "lowerLetter"], ["I. II. III.", "upperRoman"]] as const)
+              : ([["•", "disc"], ["○", "circle"], ["▪", "square"]] as const)
+            ).map(([sample, preset], i) => <button key={sample} role="menuitem" type="button"
+              disabled={i > 0 && !word} onClick={() => { if (word) wordCommand({ type: "word", action: "list", kind: listKind, preset }); else onCommand(index ? "numbering" : "bullets"); close(); }}><span>{sample}</span><i>━━━━<br />━━━━<br />━━━━</i></button>)}</div>
               {word && <button role="menuitem" onClick={() => { wordCommand({ type: "word", action: "list", kind: "none" }); close(); }}>无</button>}
               {word && <button role="menuitem" onClick={() => { wordCommand({ type: "word", action: "listSettings" }); close(); }}>定义新的{index ? "编号格式" : "项目符号"}…</button>}</>}
           </OfficeMenu>)}
@@ -694,8 +768,8 @@ export function OfficeRibbon({
       </div>
       <div className="ribbon-icon-row">
         {(["left", "center", "right"] as const).map((value, index) => <Tool key={value} label={["左对齐", "居中", "右对齐"][index]!} icon={value} disabled={!canFormat} active={format.alignment === value} run={() => onTextCommand({ type: "align", value })} />)}
-        {kind !== "workbook" && <><Tool label="两端对齐" icon="justify" disabled={!word || !canFormat} active={format.alignment === "justify"} run={word ? () => onTextCommand({ type: "align", value: "justify" }) : undefined} />
-          <Tool label="分散对齐" icon="distributed" disabled={!word || !canFormat} run={word ? () => wordCommand({ type: "word", action: "paragraph", properties: { "text-align": "justify", "--word-distributed": "1" } }) : undefined} /></>}
+        {kind !== "workbook" && <><Tool label="两端对齐" icon="justify" disabled={!word || !canFormat} active={format.alignment === "justify" && format.paragraphProperties?.["--word-distributed"] !== "1"} run={word ? () => onTextCommand({ type: "align", value: "justify" }) : undefined} />
+          <Tool label="分散对齐" icon="distributed" disabled={!word || !canFormat} active={format.paragraphProperties?.["--word-distributed"] === "1"} run={word ? () => wordCommand({ type: "word", action: "paragraph", properties: { "text-align": "justify", "--word-distributed": "1" } }) : undefined} /></>}
         <span className="ribbon-divider" />
         {word ? <>
           <OfficeMenu label="行和段落间距" icon={<Icon name="lineSpacing" size={17} />} disabled={!canFormat}>
@@ -892,18 +966,55 @@ export function OfficeRibbon({
         {kind === "workbook" ? workbookAlignment : paragraph}
         {kind === "document" && (
           <Group title="样式" className="styles-group">
-            <div className="style-gallery">
-              {["正文", "无间隔", "标题 1", "标题 2", "标题 3", "标题 4", "标题", "副标题", "不明显强调", "强调", "明显强调", "要点", "引用", "明显引用", "书籍标题", ...customStyles].map((name, index) => (
-                <button key={name} disabled={!canFormat} title={name} aria-label={name} aria-pressed={format.paragraphStyleId === styleIds[index]}
-                  onMouseDown={event => event.preventDefault()} onClick={() => wordCommand({ type: "word", action: "style", styleId: styleIds[index]! })}>
-                  <span style={{ fontFamily: index < 2 || index > 7 ? "Georgia,serif" : "Arial,sans-serif", fontSize: index === 2 || index === 6 ? 17 : 14, fontWeight: index >= 2 && index <= 6 ? 700 : 400, fontStyle: index >= 7 ? "italic" : "normal", color: index === 4 || index === 5 ? "#5485bd" : "#171717" }}>AaBbCcDdEe</span><small>{name}</small>
+            <div className="style-gallery" onPointerLeave={() => previewRun(null)}>
+              {styleGalleryItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={!canFormat}
+                  title={item.label}
+                  aria-label={item.label}
+                  aria-pressed={activeStyleId === item.id}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onPointerEnter={() => previewRun(item.preview)}
+                  onClick={() => {
+                    previewRun(null);
+                    wordCommand({ type: "word", action: "style", styleId: item.id });
+                  }}
+                >
+                  <span style={item.sampleStyle}>AaBbCcDd</span>
+                  <small>{item.label}</small>
                 </button>
               ))}
             </div>
-            <OfficeMenu label="更多样式" icon={<><Icon name="styles" size={32} /><span className="gallery-chevron">⌄</span></>} disabled={!canFormat} className="style-gallery-menu">
-              {close => <><div className="office-menu-heading">样式</div>{["正文", "标题 1", "标题 2", "标题 3", "标题 4", ...customStyles].map((name, index) => <button key={name} role="menuitem" onClick={() => { wordCommand({ type: "word", action: "style", styleId: index === 0 ? "Normal" : index < 5 ? "Heading" + index : name }); close(); }}>{name}</button>)}
-                <button role="menuitem" onClick={() => { setStyleCreatorOpen(true); close(); }}>创建样式…</button>
-                <button role="menuitem" onClick={() => { wordCommand({ type: "word", action: "styleSettings" }); close(); }}>管理样式…</button></>}
+            <OfficeMenu label="更多样式" icon={<><Icon name="styles" size={32} /><span className="gallery-chevron" aria-hidden="true">⌄</span></>} disabled={!canFormat} className="style-gallery-menu">
+              {close => <div onPointerLeave={() => previewRun(null)}>
+                <div className="office-menu-heading">样式</div>
+                <div className="office-style-grid">
+                  {styleGalleryItems.map((item) => (
+                    <button
+                      key={item.id}
+                      role="menuitemradio"
+                      type="button"
+                      aria-label={item.label}
+                      aria-checked={activeStyleId === item.id}
+                      onPointerEnter={() => previewRun(item.preview)}
+                      onClick={() => {
+                        previewRun(null);
+                        wordCommand({ type: "word", action: "style", styleId: item.id });
+                        close();
+                      }}
+                    >
+                      <span style={item.sampleStyle}>AaBbCcDd</span>
+                      <small>{item.label}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="office-menu-divider" />
+                <button role="menuitem" type="button" onClick={() => { previewRun(null); wordCommand({ type: "word", action: "clearFormat" }); close(); }}>清除格式</button>
+                <button role="menuitem" type="button" onClick={() => { previewRun(null); setStyleCreatorOpen(true); close(); }}>创建样式…</button>
+                <button role="menuitem" type="button" onClick={() => { previewRun(null); wordCommand({ type: "word", action: "styleSettings" }); close(); }}>管理样式…</button>
+              </div>}
             </OfficeMenu>
           </Group>
         )}
@@ -959,19 +1070,47 @@ export function OfficeRibbon({
     onCommand={onCommand} onTextCommand={onTextCommand} onLayout={handleLayout} onZoom={handleZoom} paragraph={() => setParagraphOpen(true)} borders={() => setBorderOpen(true)} layout={layout} zoom={zoom} enableWorkbookZoom={enableWorkbookZoom}
     pageZoomMode={effectivePageZoomMode} onPageZoomMode={word ? handlePageZoomMode : undefined} draftMode={draftMode} onDraftMode={onDraftMode} focusMode={focusMode} onFocusMode={onFocusMode}
     showGridlines={showGridlines} onToggleGridlines={onToggleGridlines} immersiveReader={immersiveReader} onToggleImmersiveReader={onToggleImmersiveReader} splitWindow={splitWindow} onToggleSplitWindow={onToggleSplitWindow} />;
+  const renderWrapMenu = (menuLabel: string) => (
+    <OfficeMenu label={menuLabel} icon={<Icon name="arrange" size={17} />} disabled={!canFormat}>
+      {close => <>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "inline" }); close(); }}>嵌入型</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "floating", wrap: "square", behindText: false }); close(); }}>四周型环绕</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "floating", wrap: "tight", behindText: false }); close(); }}>紧密型环绕</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "floating", wrap: "through", behindText: false }); close(); }}>穿越型环绕</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "floating", wrap: "topAndBottom", behindText: false }); close(); }}>上下型环绕</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "floating", wrap: "none", behindText: true }); close(); }}>衬于文字下方</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setDrawingWrap", mode: "floating", wrap: "none", behindText: false }); close(); }}>浮于文字上方</button>
+        <div className="office-menu-divider" />
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "drawingSettings" }); close(); }}>其他布局选项…</button>
+      </>}
+    </OfficeMenu>
+  );
+  const renderRotateMenu = () => (
+    <OfficeMenu label="旋转" icon={<Icon name="refresh" size={17} />} disabled={!canFormat}>
+      {close => <>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "transformDrawing", mode: "rotateRight" }); close(); }}>向右旋转 90°</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "transformDrawing", mode: "rotateLeft" }); close(); }}>向左旋转 90°</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "transformDrawing", mode: "flipV" }); close(); }}>垂直翻转</button>
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "transformDrawing", mode: "flipH" }); close(); }}>水平翻转</button>
+        <div className="office-menu-divider" />
+        <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "drawingSettings" }); close(); }}>其他旋转选项…</button>
+      </>}
+    </OfficeMenu>
+  );
   if (tab === "形状格式" && shapeSelected) content = <>
     <Group title="插入形状"><Tool label="形状" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "insertShape" })} /></Group>
     <Group title="文本"><Tool label="编辑文字" icon="textBox" large disabled={!canFormat || format.drawingCount !== 1 || !["shape", "textBox"].includes(format.drawingKind!) || !!format.editingInPlace} run={() => wordCommand({ type: "word", action: "editDrawingText" })} /></Group>
     <Group title="形状样式"><Tool label="填充与线条" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
     <Group title="排列">
       <div className="ribbon-tool-stack">
-        <Tool label="文字环绕" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        {renderWrapMenu("文字环绕")}
         <Tool label="前移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "bringForward" })} />
         <Tool label="后移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sendBackward" })} />
       </div>
       <div className="ribbon-tool-stack">
         <Tool label="选择窗格" icon="panel" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} />
         <Tool label="组合" icon="grid" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "groupDrawings" })} />
+        {renderRotateMenu()}
       </div>
     </Group>
     <Group title="大小"><Tool label="大小和位置" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
@@ -981,12 +1120,13 @@ export function OfficeRibbon({
     <Group title="排列">
       <div className="ribbon-tool-stack">
         <Tool label="位置" icon="grid" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
-        <Tool label="自动换行" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        {renderWrapMenu("自动换行")}
         <Tool label="选择窗格" icon="panel" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "selectionPane" })} />
       </div>
       <div className="ribbon-tool-stack">
         <Tool label="前移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "bringForward" })} />
         <Tool label="后移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sendBackward" })} />
+        {renderRotateMenu()}
       </div>
     </Group>
     <Group title="大小"><Tool label="大小和旋转" icon="shapes" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} /></Group>
@@ -995,7 +1135,7 @@ export function OfficeRibbon({
     <Group title="数据与类型"><Tool label="编辑图表" icon="chart" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "chartSettings" })} /></Group>
     <Group title="排列">
       <div className="ribbon-tool-stack">
-        <Tool label="文字环绕" icon="arrange" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "drawingSettings" })} />
+        {renderWrapMenu("文字环绕")}
         <Tool label="前移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "bringForward" })} />
         <Tool label="后移一层" icon="arrow" disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sendBackward" })} />
       </div>
@@ -1003,9 +1143,45 @@ export function OfficeRibbon({
     </Group>
   </>;
   if (tab === "表格设计" && tableSelected) content = <>
-    <Group title="表格样式"><Tool label="表格属性与样式" icon="table" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} /></Group>
+    <Group title="表格样式选项">
+      <div className="ribbon-tool-stack">
+        <label><input type="checkbox" checked={format.wordState?.tableFirstRow ?? true} disabled={!canFormat} onChange={e => wordCommand({ type: "word", action: "setTableStyleFlag", flag: "firstRow", enabled: e.currentTarget.checked })} />标题行</label>
+        <label><input type="checkbox" checked={Boolean(format.wordState?.tableLastRow)} disabled={!canFormat} onChange={e => wordCommand({ type: "word", action: "setTableStyleFlag", flag: "lastRow", enabled: e.currentTarget.checked })} />汇总行</label>
+        <label><input type="checkbox" checked={format.wordState?.tableBandedRows ?? true} disabled={!canFormat} onChange={e => wordCommand({ type: "word", action: "setTableStyleFlag", flag: "noHBand", enabled: !e.currentTarget.checked })} />镶边行</label>
+      </div>
+      <div className="ribbon-tool-stack">
+        <label><input type="checkbox" checked={Boolean(format.wordState?.tableFirstCol)} disabled={!canFormat} onChange={e => wordCommand({ type: "word", action: "setTableStyleFlag", flag: "firstCol", enabled: e.currentTarget.checked })} />第一列</label>
+        <label><input type="checkbox" checked={Boolean(format.wordState?.tableLastCol)} disabled={!canFormat} onChange={e => wordCommand({ type: "word", action: "setTableStyleFlag", flag: "lastCol", enabled: e.currentTarget.checked })} />最后一列</label>
+        <label><input type="checkbox" checked={Boolean(format.wordState?.tableBandedCols)} disabled={!canFormat} onChange={e => wordCommand({ type: "word", action: "setTableStyleFlag", flag: "noVBand", enabled: !e.currentTarget.checked })} />镶边列</label>
+      </div>
+    </Group>
+    <Group title="表格样式">
+      <div className="office-table-style-gallery">
+        {([
+          ["grid", "普通网格", "#fff", "#fff", "#999", "#999"],
+          ["blueHeader", "蓝色表头", "#2f5496", "#edf2f8", "#8eaadb", "#8eaadb"],
+          ["banded", "浅色条带", "#4472c4", "#f2f5fb", "#d0d7e5", "#d0d7e5"],
+          ["academic3Line", "三线表", "#fff", "#fff", "#111", "transparent"],
+        ] as const).map(([preset, title, hdr, alt, stroke, inner]) => (
+          <button key={preset} type="button" disabled={!canFormat} title={title} aria-label={title}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => wordCommand({ type: "word", action: "applyTableQuickStyle", preset })}>
+            <svg width="46" height="30" viewBox="0 0 46 30" aria-hidden="true">
+              <rect x="1" y="1" width="44" height="9" fill={hdr} stroke={stroke} strokeWidth="1" />
+              <rect x="1" y="10" width="44" height="9" fill={alt} stroke={inner} strokeWidth="0.7" />
+              <rect x="1" y="19" width="44" height="10" fill="#fff" stroke={inner} strokeWidth="0.7" />
+              <line x1="1" y1="29" x2="45" y2="29" stroke={stroke} strokeWidth={preset === "academic3Line" ? "1.4" : "1"} />
+              <line x1="1" y1="1" x2="45" y2="1" stroke={stroke} strokeWidth={preset === "academic3Line" ? "1.4" : "1"} />
+              {inner !== "transparent" && <><line x1="16" y1="1" x2="16" y2="29" stroke={inner} strokeWidth="0.7" /><line x1="31" y1="1" x2="31" y2="29" stroke={inner} strokeWidth="0.7" /></>}
+            </svg>
+            <small>{title}</small>
+          </button>
+        ))}
+      </div>
+      <Tool label="表格属性" icon="table" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "tableSettings" })} />
+    </Group>
     <Group title="边框与底纹">
-      <OfficeColorMenu label="单元格底纹" value="#f2f2f2" fill disabled={!canFormat} themeColors={format.themeColors} apply={value => wordCommand({ type: "word", action: "tableShading", color: value })} />
+      <OfficeColorMenu label="单元格底纹" value="#f2f2f2" fill large disabled={!canFormat} themeColors={format.themeColors} apply={value => wordCommand({ type: "word", action: "tableShading", color: value })} />
       <OfficeMenu label="斜线表头" icon={<Icon name="table" size={32} />} large disabled={!canFormat}>
         {close => <>
           <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "tableDiagonalBorder", mode: "tl2br" }); close(); }}>下斜框线（左上→右下）</button>
@@ -1052,6 +1228,37 @@ export function OfficeRibbon({
           </>}
         </OfficeMenu>
       </div>
+    </Group>
+    <Group title="对齐方式">
+      <div className="office-align-grid" role="group" aria-label="单元格九宫格对齐">
+        {([
+          ["left", "top", "靠上左对齐", 3, 4],
+          ["center", "top", "靠上居中", 6, 4],
+          ["right", "top", "靠上右对齐", 9, 4],
+          ["left", "middle", "水平左对齐", 3, 9],
+          ["center", "middle", "水平居中", 6, 9],
+          ["right", "middle", "水平右对齐", 9, 9],
+          ["left", "bottom", "靠下左对齐", 3, 14],
+          ["center", "bottom", "靠下居中", 6, 14],
+          ["right", "bottom", "靠下右对齐", 9, 14],
+        ] as const).map(([horizontal, vertical, title, x, y]) => (
+          <button key={title} type="button" disabled={!canFormat} title={title} aria-label={title}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => wordCommand({ type: "word", action: "setTableCellAlign", horizontal, vertical })}>
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+              <line x1={x} y1={y - 1.5} x2={x + 6} y2={y - 1.5} />
+              <line x1={horizontal === "right" ? x + 2 : horizontal === "center" ? x + 1 : x} y1={y + 1.5} x2={horizontal === "left" ? x + 4 : horizontal === "center" ? x + 5 : x + 6} y2={y + 1.5} />
+            </svg>
+          </button>
+        ))}
+      </div>
+      <OfficeMenu label="文字方向" icon={<Icon name="textDirection" size={32} />} large disabled={!canFormat}>
+        {close => <>
+          <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setTableCellDirection", direction: "lrTb" }); close(); }}>水平（从左到右）</button>
+          <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setTableCellDirection", direction: "tbRl" }); close(); }}>垂直（自右向左）</button>
+          <button role="menuitem" type="button" onClick={() => { wordCommand({ type: "word", action: "setTableCellDirection", direction: "btLr" }); close(); }}>垂直（自左向右）</button>
+        </>}
+      </OfficeMenu>
     </Group>
     <Group title="数据">
       <Tool label="排序" icon="sort" large disabled={!canFormat} run={() => wordCommand({ type: "word", action: "sort" })} />

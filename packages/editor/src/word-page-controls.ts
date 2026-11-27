@@ -2,6 +2,7 @@ import { DocumentError } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
 import { addWordPageBorderControls } from "./word-page-border-controls.js";
 import { addWordSectionNoteControls } from "./word-page-note-controls.js";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 /** Page forms edit native section definitions; auxiliary stories use the same
  * rich-text adapter over a temporary view projection of the original session. */
 export function createWordPageControls(
@@ -13,23 +14,35 @@ export function createWordPageControls(
   onError: (error: unknown) => void,
 ): { open(): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let shell: HTMLElement | undefined, panel: HTMLElement | undefined, controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
-    panel?.remove();
+    shell?.remove();
     controller = undefined;
+    shell = undefined;
     panel = undefined;
   };
   function open(): void {
     close();
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "页面设置");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "页面设置",
+      title: "页面设置",
+      dock: "right",
+      closeLabel: "关闭页面设置",
+      onClose: close,
+      signal,
+      width: "344px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    panel.style.display = "grid";
+    panel.style.gridTemplateColumns = "repeat(2,minmax(0,1fr))";
+    panel.style.alignContent = "start";
+    panel.style.gap = "8px 10px";
+    parent.insertBefore(shell, before);
     const metadata = session.snapshot().metadata;
     if (metadata.presentation)
       throw new DocumentError("InvalidOperation", "页面设置需要 Word 文档。");
@@ -104,7 +117,6 @@ export function createWordPageControls(
         { op: "setWordOptions", nodeId: root.dataset.nodeId!, mirrorMargins: mirror.checked },
       ]);
     });
-    button("关闭页面设置", close);
     button("返回正文", () => editStory());
     const section = choose(
       "当前节",

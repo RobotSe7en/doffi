@@ -1,5 +1,6 @@
 import { createOpaqueId, DocumentError, getWordOutline } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
+import { createOfficeDialog } from "./office-dialog.js";
 export interface WordReferenceRange {
   paragraphId: string;
   endNodeId?: string;
@@ -16,9 +17,14 @@ export function createWordLinkControls(
   onError: (error: unknown) => void,
 ): { open(kind: "link" | "bookmark" | "reference" | "caption"): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let dialogUI: ReturnType<typeof createOfficeDialog> | undefined,
+    panel: HTMLElement | undefined,
+    controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
+    dialogUI?.close();
+    dialogUI?.dialog.remove();
+    dialogUI = undefined;
     panel?.remove();
     panel = undefined;
   };
@@ -28,12 +34,26 @@ export function createWordLinkControls(
     if (!range) throw new DocumentError("InvalidOperation", "请先在段落中选择文字或放置光标。");
     controller = new AbortController();
     const signal = controller.signal;
+    const title =
+      kind === "bookmark"
+        ? "书签"
+        : kind === "reference"
+          ? "交叉引用"
+          : kind === "caption"
+            ? "题注"
+            : "插入超链接";
+    dialogUI = createOfficeDialog(document, title);
+    dialogUI.dialog.style.width = "480px";
+    dialogUI.content.style.minHeight = "0";
+    dialogUI.content.style.marginTop = "12px";
     panel = document.createElement("section");
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", "链接和引用");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    panel.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    dialogUI.content.append(panel);
+    parent.insertBefore(dialogUI.dialog, before);
+    dialogUI.dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); }, { signal });
+    dialogUI.show();
     const apply = (operations: DocumentOperation[]): void => {
       const snapshot = session.snapshot();
       session.commit(
@@ -60,7 +80,8 @@ export function createWordLinkControls(
         },
         { signal },
       );
-      panel!.append(node);
+      if (name === "关闭链接和引用") dialogUI!.footer.append(node);
+      else panel!.append(node);
     };
     const field = (name: string, value = ""): HTMLInputElement => {
       const label = document.createElement("label"),

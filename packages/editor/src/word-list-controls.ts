@@ -6,6 +6,7 @@ import type {
   WordNumberLevel,
 } from "@doffi/core";
 import { wordImageResource } from "./word-image-resource.js";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 
 const BUILTIN_PIC_BULLETS: readonly (readonly [string, string, (ctx: CanvasRenderingContext2D) => void])[] = [
   [
@@ -104,10 +105,11 @@ export function createWordListControls(
   onError: (error: unknown) => void,
 ): { open(): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let shell: HTMLElement | undefined, panel: HTMLElement | undefined, controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
-    panel?.remove();
+    shell?.remove();
+    shell = undefined;
     panel = undefined;
     controller = undefined;
   };
@@ -115,14 +117,25 @@ export function createWordListControls(
     const ids = paragraphs();
     if (!ids.length) throw new DocumentError("InvalidOperation", "请先选择段落。");
     close();
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "列表设置");
-    panel.style.cssText =
-      "display:flex;flex-wrap:wrap;gap:8px;padding:12px;background:white;border:1px solid #dbe3ef";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "列表设置",
+      title: "项目符号和编号",
+      dock: "right",
+      closeLabel: "关闭列表设置",
+      onClose: close,
+      signal,
+      width: "332px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    panel.style.display = "grid";
+    panel.style.gridTemplateColumns = "repeat(2,minmax(0,1fr))";
+    panel.style.alignContent = "start";
+    panel.style.gap = "8px 10px";
+    parent.insertBefore(shell, before);
     const button = (name: string, run: () => void): void => {
       const button = document.createElement("button");
       button.type = "button";
@@ -178,7 +191,6 @@ export function createWordListControls(
       definition = metadata?.numbering.find((item) => item.numberingId === original),
       initialLevel = Number(first.attributes["data-word-level"] ?? 0),
       initial = definition?.levels.find((level) => level.level === initialLevel);
-    button("关闭列表设置", close);
     const existing = choose(
         "已有列表",
         (metadata?.numbering ?? []).map((item) => [item.numberingId, item.numberingId] as const),

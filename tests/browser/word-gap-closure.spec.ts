@@ -384,7 +384,7 @@ test("UI-02 Selection Pane rename/hide/show/reorder, contextual Table tabs, cont
     doc.dispatchEvent(new Event("selectionchange"));
   });
   await page.getByRole("tab", { name: "插入", exact: true }).click();
-  await page.getByRole("button", { name: "表格选项", exact: true }).click();
+  await page.getByRole("button", { name: "表格", exact: true }).click();
   await page.getByRole("menuitem", { name: "将文字转换成表格…", exact: true }).click();
   const t2t = page.getByRole("dialog", { name: "将文字转换成表格", exact: true });
   await expect(t2t).toBeVisible();

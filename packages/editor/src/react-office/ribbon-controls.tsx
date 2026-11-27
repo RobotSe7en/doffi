@@ -5,15 +5,47 @@ export function Group({
   title,
   children,
   className = "",
+  launcher,
 }: {
   title: string;
   children: ReactNode;
   className?: string;
+  launcher?:
+    | {
+        readonly label: string;
+        readonly run: () => void | Promise<void>;
+        readonly disabled?: boolean;
+      }
+    | undefined;
 }): ReactElement {
   return (
     <div className={"ribbon-group " + className} role="group" aria-label={title}>
       <div className="ribbon-group-content">{children}</div>
       <span className="ribbon-group-caption">{title}</span>
+      {launcher && (
+        <button
+          type="button"
+          className="ribbon-dialog-launcher"
+          aria-label={launcher.label}
+          title={launcher.label}
+          disabled={launcher.disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={launcher.run}
+        >
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.15"
+            aria-hidden="true"
+          >
+            <path d="M1.5 6V1.5H6M4.2 4.2L8.5 8.5M8.5 5.6V8.5H5.6" />
+          </svg>
+          <span>{launcher.label}</span>
+        </button>
+      )}
     </div>
   );
 }

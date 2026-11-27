@@ -908,11 +908,13 @@ export function App() {
   function runNative(id: string): void {
     const editor = nativeEditor();
     if (!editor) return;
+    setError("");
     void editor
       .executeCommand(id)
       .catch((reason) => setError(reason instanceof Error ? reason.message : "命令执行失败。"));
   }
   function runTextCommand(command: DocumentTextCommand): void | Promise<void> {
+    setError("");
     try {
       if (workbook) {
         const editor = workbookEditor.current;
@@ -1543,8 +1545,9 @@ export function App() {
             </p>
           )}
           {error && (
-            <p className="error-message" role="alert">
-              {error}
+            <p className="error-message" role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>{error}</span>
+              <button type="button" aria-label="关闭提示" onClick={() => setError("")} style={{ border: 0, background: "transparent", cursor: "pointer", fontSize: 15, lineHeight: 1, color: "inherit", padding: "0 4px" }}>×</button>
             </p>
           )}
           {submitted && (

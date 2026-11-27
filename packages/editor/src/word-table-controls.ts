@@ -6,6 +6,7 @@ import {
   DEFAULT_DOCUMENT_READ_LIMITS,
 } from "@doffi/core";
 import type { DocumentEditingSession, DocumentOperation } from "@doffi/core";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 export interface WordTableSelection {
   readonly paragraphId?: string;
   readonly tableId?: string;
@@ -20,11 +21,12 @@ export function createWordTableControls(
   onError: (error: unknown) => void,
 ): { open(insert: boolean): void; dispose(): void } {
   const document = before.ownerDocument;
-  let panel: HTMLElement | undefined, controller: AbortController | undefined;
+  let shell: HTMLElement | undefined, panel: HTMLElement | undefined, controller: AbortController | undefined;
   const close = (): void => {
     controller?.abort();
     controller = undefined;
-    panel?.remove();
+    shell?.remove();
+    shell = undefined;
     panel = undefined;
   };
   function open(insert: boolean, fixed?: WordTableSelection): void {
@@ -34,14 +36,25 @@ export function createWordTableControls(
       throw new DocumentError("InvalidOperation", "请先在正文段落中放置光标。");
     if (!insert && !selected.tableId)
       throw new DocumentError("InvalidOperation", "请先选择表格中的单元格。");
+    replaceSameSideDock(parent, "right");
     controller = new AbortController();
     const signal = controller.signal;
-    panel = document.createElement("section");
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", insert ? "插入表格" : "表格设置");
-    panel.style.cssText =
-      "padding:12px;background:white;border:1px solid #dbe3ef;max-height:300px;overflow:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px";
-    parent.insertBefore(panel, before);
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: insert ? "插入表格" : "表格设置",
+      title: insert ? "插入表格" : "表格属性",
+      dock: "right",
+      closeLabel: "关闭表格设置",
+      onClose: close,
+      signal,
+      width: "340px",
+    });
+    shell = chrome.panel;
+    panel = chrome.body;
+    panel.style.display = "grid";
+    panel.style.gridTemplateColumns = "repeat(2,minmax(0,1fr))";
+    panel.style.alignContent = "start";
+    panel.style.gap = "8px 10px";
+    parent.insertBefore(shell, before);
     const apply = (operations: DocumentOperation[]): void => {
       const snapshot = session.snapshot();
       session.commit(
@@ -117,7 +130,6 @@ export function createWordTableControls(
       panel!.append(register(label));
       return input;
     };
-    button("关闭表格设置", close, "common");
     if (insert) {
       const rows = field("表格行数", 3),
         columns = field("表格列数", 3);
@@ -162,20 +174,15 @@ export function createWordTableControls(
       }
     const active = cells.find((cell) => cell.id === selected.cellId) ?? cells[0]!;
     const tabBar = document.createElement("div");
+    tabBar.className = "word-pane-tabs";
     tabBar.setAttribute("role", "tablist");
     tabBar.setAttribute("aria-label", "表格属性选项卡");
-    tabBar.style.cssText = "width:100%;display:flex;gap:4px;border-bottom:1px solid #dbe3ef;padding-bottom:6px;margin-bottom:4px";
     let activeTab = "all";
     const tabButtons: { id: string; btn: HTMLButtonElement }[] = [];
     const applyTabFilter = (next: string): void => {
       activeTab = next;
       for (const item of tabButtons) {
-        const on = item.id === activeTab;
-        item.btn.setAttribute("aria-selected", String(on));
-        item.btn.style.background = on ? "#e8f1ff" : "#f8fafc";
-        item.btn.style.borderColor = on ? "#185abd" : "#d5dce6";
-        item.btn.style.color = on ? "#185abd" : "#334155";
-        item.btn.style.fontWeight = on ? "600" : "400";
+        item.btn.setAttribute("aria-selected", String(item.id === activeTab));
       }
       for (const entry of groupItems) {
         entry.node.hidden = activeTab !== "all" && entry.group !== "common" && entry.group !== activeTab;
@@ -192,12 +199,11 @@ export function createWordTableControls(
       btn.type = "button";
       btn.setAttribute("role", "tab");
       btn.textContent = label;
-      btn.style.cssText = "padding:3px 10px;border-radius:4px;border:1px solid #d5dce6;font-size:12px;cursor:pointer";
       btn.addEventListener("click", () => applyTabFilter(id), { signal });
       tabButtons.push({ id, btn });
       tabBar.append(btn);
     }
-    panel.prepend(tabBar);
+    shell.insertBefore(tabBar, panel);
     currentGroup = "common";
     const row = field("起始行", active.row + 1),
       column = field("起始列", active.column + 1),

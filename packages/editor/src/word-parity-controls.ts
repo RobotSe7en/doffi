@@ -2,6 +2,7 @@ import { DocumentError, WORD_ART_PAGE_BORDER_STYLES, getWordOutline } from "@dof
 import type { DocumentEditingSession, DocumentOperation, WordPageBorders } from "@doffi/core";
 import { evaluateWordTableFormula } from "@doffi/render";
 import { createOfficeDialog } from "./office-dialog.js";
+import { createWordDockedPane, replaceSameSideDock } from "./word-pane-chrome.js";
 import type { WordPasteMode } from "./clipboard-command.js";
 
 const ART_BORDER_LABELS: readonly (readonly [string, string])[] = [
@@ -1050,29 +1051,30 @@ export function createWordParityControls(
 
   function openOutlineView(): void {
     close();
+    replaceSameSideDock(parent, "left");
     controller = new AbortController();
     const signal = controller.signal;
-    const panel = document.createElement("section");
+    const chrome = createWordDockedPane(document, {
+      ariaLabel: "大纲编排视图",
+      title: "大纲视图",
+      dock: "left",
+      closeLabel: "关闭大纲视图",
+      onClose: close,
+      signal,
+      width: "320px",
+    });
+    const panel = chrome.panel;
+    const body = chrome.body;
     activePanel = panel;
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "大纲编排视图");
-    panel.style.cssText =
-      "padding:10px 16px;background:#fafcff;border-bottom:1px solid #d0d7e2;max-height:210px;overflow:auto;font:12px -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif";
 
     const collapsed = new Set<string>();
 
     const renderList = () => {
-      panel.replaceChildren();
-      const header = document.createElement("div");
-      header.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap";
-      const title = document.createElement("strong");
-      title.textContent = "大纲视图（升降级 / 折叠展开 / 整节移动）";
-      const closeBtn = document.createElement("button");
-      closeBtn.type = "button";
-      closeBtn.textContent = "关闭大纲视图";
-      closeBtn.addEventListener("click", close, { signal });
-      header.append(title, closeBtn);
-      panel.append(header);
+      body.replaceChildren();
+      const subtitle = document.createElement("p");
+      subtitle.className = "word-pane-muted";
+      subtitle.textContent = "支持标题升降级、折叠展开与整节上下移动，全部操作走统一撤销。";
+      body.append(subtitle);
 
       const snapshot = session.snapshot();
       const mainStory = snapshot.metadata.word?.stories.find((s) => s.kind === "main");
@@ -1245,10 +1247,11 @@ export function createWordParityControls(
       }
       if (!entries.length) {
         const empty = document.createElement("p");
+        empty.className = "word-pane-muted";
         empty.textContent = "文档中暂无段落。";
         list.append(empty);
       }
-      panel.append(list);
+      body.append(list);
     };
 
     renderList();
